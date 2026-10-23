@@ -57,6 +57,13 @@ These interaction patterns inform the view; they do not require guest tracing.
 - Components and machines retain their owner's explicit list order. State maps,
   timeline maps and effect maps use stable name order for presentation only.
   The guest's `state_ids`, initial state and concurrent traversal are untouched.
+- Tree rows and Details captions share semantic naming. A unique numeric
+  component uses its type name, not a count-looking type/number label;
+  same-type siblings add `#` and their actual component ID. Named components
+  retain their authored name. Descendants omit an exact owning-actor namespace
+  only when the result cannot collide with an actual unqualified sibling.
+  Different remaining owner paths stay distinct. Full runtime names and typed
+  identities remain available independently of these compact display labels.
 - Runtime storage traversal and display order are retained separately. Membership
   changes reconcile by identity and sort affected sibling lists; ordinary
   activity changes update decorations/revisions, not rows, labels or geometry.
@@ -73,12 +80,16 @@ These interaction patterns inform the view; they do not require guest tracing.
 - Manual navigation/scroll/pan stops following. Merely interacting with the game
   preview does not. Details stays available with the preview and selected
   hierarchy while playback, frame stepping and history review update the
-  inspected values. The compact title contains Actor/Back, Follow, and More; instance
-  mutation commands remain in More, the context menu, and the palette.
+  inspected values. A compact icon toolbar contains actor selection/Back,
+  Follow, and More, with full hover/keyboard hints and a checked Follow state;
+  instance mutation commands remain in More, the context menu, and the palette.
+  The toolbar belongs to the hierarchy area. The preview has no permanent
+  **Game Frame** strip, and the pane does not repeat **Paused** above content.
 - Switching tree/graph carries the explicit selected instance. The graph model,
   zoom and viewport survive returning to the tree and reopening that same machine.
-  Long tree identifiers elide the middle, retaining distinguishing suffixes; the
-  selected full identifier remains in the status bar. This uses the common text
+  Long tree identifiers elide the middle with one ellipsis glyph, retaining
+  distinguishing suffixes; the selected full identifier remains in the status
+  bar. This uses the common text
   layout owner, following [VS Code's middle truncation](https://github.com/microsoft/vscode/blob/main/src/vs/base/common/strings.ts).
 - Follow observes only the completed history position. Missing historical
   instances are visibly unavailable and cannot receive actions; live-branch
@@ -89,11 +100,34 @@ These interaction patterns inform the view; they do not require guest tracing.
 owner. A selected event payload is not a live Actor handle and does not select
 an actor by emitter display text.
 
+### Compact runtime transport
+
+The shared runtime timeline is one font-aware strip: frame back, Play/Pause,
+frame forward, the history range, review offset and explicit review decisions.
+Controls use the shared icon geometry and complete hover/keyboard hints,
+not font-dependent combinations of punctuation. Play/Pause reflects the actual
+displayed transport. The live endpoint needs no **Now** label; a reviewed
+position displays its offset from the retained present.
+
+Review decision slots and the offset column retain their geometry while a seek
+changes position, so entering review or changing the displayed digits cannot
+cancel a captured scrub. **View: Focus Runtime Timeline** enters the controls
+without a pointer or a new gameplay shortcut. Tab moves through eligible
+transport controls and back to the owning content; an unavailable range is
+skipped. Escape returns to that content through the normal focus owner.
+
+A selected Actor timeline has its own single-row program scrubber, with current
+time and duration beside the range. It does not add a second full-path heading
+or a redundant zero-time footer. Program scrubbing still calls the actual guest
+operation; it is not machine-history navigation.
+
 ## Pick in the live preview
 
-Hovering a standard sprite outlines its visible rectangle and shows its actual
-instance identifier (and prefab definition when present), also while the game
-has input focus. Hover alone neither pauses nor changes selection. With Studio
+Hovering a standard sprite outlines its visible rectangle. With Studio focus,
+the status area shows its actual instance identifier and prefab definition
+when present; game focus instead keeps the focus-release hint visible. Hover
+alone neither pauses nor changes selection, and the outline remains available
+while the game has input focus. With Studio
 input focus, right-click inspects that actor through the ordinary Actor Lab
 selection path and pauses the view. Primary click still focuses the game and
 reaches HID. With game input focus, pointer buttons within the unobscured
@@ -254,7 +288,7 @@ imply importing UE recording or adding guest instrumentation.
   seek checkpoint. Missing selections show unavailability instead of another actor.
 - The property reader is modeless client content with a local titlebar/client
   focus order. Game focus and the central transport remain usable. Scroll and
-  selected property survive source navigation; explicit Hide dismisses Details,
+  selected property survive source navigation; explicit Close dismisses Details,
   whereas detaching an editor retains the window's open intent and model.
 - Source and workbench Back/Forward retain the selected cart, World, actor and
   typed member, graph presentation/viewport and Details property. Navigation uses
@@ -275,9 +309,9 @@ decision; this design introduces no docking or split compatibility mode.
 
 #### Placement and size
 
-**Initial-placement proposal for validation in slice C:** align Details near
-the lower-right of its own preview, inset by the existing four-logical-pixel
-content margin. This establishes an obvious relationship to Actor Lab without
+Initially align Details near the lower-right of its own preview, inset by the
+existing four-logical-pixel content margin. This establishes an obvious
+relationship to Actor Lab without
 binding the window to the preview's clip. Constrain the resulting frame to the
 root work area so its titlebar actions remain reachable. If its requested size
 extends beyond the preview, it can extend over adjacent workbench content.
@@ -287,43 +321,46 @@ placement. The window may move across the root work area, including over another
 editor group or panel, but not over permanently reserved workbench chrome.
 Activating a different editor input detaches the Actor Lab window with its
 owner; it does not leave an orphaned always-on-top inspector. Returning to that
-Actor Lab restores its attachment and placement. An ordinary Hide/reopen within
+Actor Lab restores its attachment and placement. An ordinary Close/reopen within
 that input retains the subject, lock, collapse and property-view state.
 
 Details uses font- and work-area-relative requested dimensions,
 not desktop-pixel minima or a fixed `384 × 288` canvas assumption. Let `W × H`
 be the root work area, `c` the current common character advance, `l` the current
-font line height and `t = l + 8` the existing inspector-header metric:
+font line height and `t = l + 8` the window-header metric:
 
 | Dimension | Requested minimum | Initial request |
 | --- | --- | --- |
-| Width | `32c + 12`, enough for compact actions and a short subject path. | The larger of the minimum and `W / 2`. |
-| Expanded height | `t + 6l + 8`, retaining six text lines plus client padding. | The larger of the minimum and `H / 2`. |
+| Width | `32c + 12`, for icon actions and a compact semantic subject caption. | The larger of the minimum and `W / 2`. |
+| Expanded height | `7l + 16`, with a font-relative client area. | The larger of the minimum and `H / 2`. |
 | Collapsed height | Titlebar `t` only. | Uses the retained expanded width. |
 
-These are starting geometry choices for C's tiny-font and small-viewport
-validation. The actual arrangement fits the available work area even when it
-is smaller than a requested minimum, while retaining the requested expanded
-dimensions. The ordinary inspector wraps/scrolls its property content. It does
-not scale text or reintroduce a preview split to meet a minimum. Existing tiny
-font glyphs and capitalisation remain unchanged.
+Font changes recompute minimum size, header/actions and client rows without
+discarding the retained requested placement. Arrangement fits the available
+work area even when it is smaller than a requested minimum. Compact property
+rows account for both text metrics and disclosure-icon height; overflow stays
+inspectable through expansion and scrolling instead of scaling text or
+reintroducing a preview split. Both supported fonts provide the common single
+ellipsis glyph. Font choice and tiny-font capitalisation remain unchanged.
 
 #### Titlebar, lock and availability
 
-The title is **Details — subject path**, using the actual actor/member path,
-not only a leaf name. Middle truncation preserves distinguishing suffixes;
-the full title appears in the status bar while Details has focus.
-Before a subject is selected, the title is **Details — Select an instance**.
+The titlebar uses the same compact semantic name as the tree, not a repeated
+**Details — cart / actor / component / member** path. Before selection its
+caption is **Details**. The full qualified identity is supplied to a wrapped
+title hover hint and to the status bar while the Details family, including an
+owned property menu, has focus. Middle truncation uses the common single
+ellipsis glyph only when the caption itself exceeds its measured budget.
 
-The right-hand titlebar actions are **Lock**, collapse/expand (`-` / `+`), and
-**Hide**, using the existing compact action-bar measurements and hit targets.
-Lock is a persistent checked action: the common checked-button background/text
-distinguishes locked from unlocked without requiring an unavailable padlock
-glyph. Its checked state distinguishes following selection from keeping the
-subject named in the title. It is disabled until a subject exists; once locked it stays
-available for unlocking even if the subject becomes unavailable. Dragging the
-remaining titlebar moves the window without selecting an actor. The property
-inspector supplies client content, not a second titlebar or Hide control.
+The right-hand titlebar actions are real, font-independent **pin/unpin**,
+**collapse/expand** and **close X** icons, with measured hit targets and full
+hover/keyboard hints. Pinning Details locks the subject; the checked treatment
+distinguishes that state from following selection, and its reverse action is
+**Follow Selection**. This is separate from pinning an individual property.
+The subject-pin action is disabled until a subject exists; once locked it
+remains available for unlocking an unavailable subject. Dragging the remaining
+titlebar moves the window without selecting an actor. The property inspector
+supplies client content, not a second titlebar or close control.
 
 Unlocked Details immediately follows explicit tree/graph selection. Lock keeps
 the typed subject identity while tree navigation continues independently.
@@ -332,11 +369,12 @@ selection. The lock fixes identity, not values or time: playback and settled
 history positions keep refreshing that instance. Tree commands use tree
 selection; Details and its property menu use the Details subject.
 
-An absent subject keeps its last subject path, adds **Unavailable** to the title
+An absent subject keeps its last subject path, adds **Unavailable** to the caption
 and shows the existing unavailable-instance notice in the client with the
 common warning treatment. Subject-dependent mutations/source actions are
-disabled while the exact target is unavailable; Lock, collapse/expand and Hide
-remain usable. A temporary historical absence can resolve when that same
+disabled while the exact target is unavailable; subject pinning,
+collapse/expand and Close remain usable. A temporary historical absence can
+resolve when that same
 identity is present again. Heap replacement or retired identity never binds
 the window to a new same-named actor.
 
@@ -350,20 +388,24 @@ client hover/capture and owned transients retire, client focus goes to Expand,
 and no property formatting/layout runs solely for the collapsed client.
 Identity retirement still runs while collapsed or hidden.
 
-An active window uses the existing active-tab header/background/text and focus
-border treatment; an inactive window uses inactive header/text and a neutral
-border. Owned property menus belong to the same active family. Z order alone
+The shared window theme supplies distinct active/inactive header and text
+colours, content background, border and a common floating-surface shadow. Shadow
+pixels do not enlarge the window's input bounds. Owned property menus belong to
+the same active family. Z order alone
 does not indicate keyboard focus: programmatic raising never creates an active
 focus treatment. The focused titlebar action or property keeps its ordinary
-local focus indicator. The property inspector retains its familiar content
-colours; no shadow or new font/capitalisation scheme is required.
+local focus indicator. Selection, value-change accents and unavailability keep
+separate meanings in the property content; switching fonts does not change the
+icon geometry or introduce a new capitalisation policy.
 
 Escape first cancels a local interaction or dismisses a property popup, consuming
 that key once. Otherwise Escape in Details returns focus to the Actor Lab tree.
 Details remains open, with subject, lock, property selection, scroll and collapse
-state unchanged. It is not a Hide shortcut and does not reserve Escape while
+state unchanged. It is not a Close shortcut and does not reserve Escape while
 the game has focus. Tab traverses Details' eligible client and titlebar controls;
-workbench window/region activation provides a keyboard route back to Details.
+**Actor Lab: Inspect Instance** activates or reopens the retained Details
+instance even when a locked subject is unavailable and the tree has no current
+target. A new empty inspection still requires an actual subject.
 
 **Select Running Actor** and **Find in Actor** remain available from Details as
 explicit Actor Lab navigation commands. They change tree selection while a lock
@@ -372,11 +414,37 @@ commands stay in their tree/graph contexts; they do not acquire a misleading
 tree target from Details focus. Property and pin commands keep the Details
 subject as their origin.
 
-Hide clears the Details open intent through the admitted close path and returns
+Close clears the Details open intent through the admitted close path and returns
 focus to the tree only when the Details family owned focus. It preserves the
 instance model for reopening. Source navigation, game input and runtime
 transport continue through their existing owners; none depends on the window
 remaining visible.
+
+#### Compact values and explicit inspection
+
+Default Details rows present semantic fields with names and values on one
+font-measured line, rather than alternating label/value blocks. Scalars stay
+compact. Tables and domain references use typed identity summaries with
+disclosures; expanding a row requests its actual stored children. Collapsed
+references do not eagerly stringify an object graph. Aliases preserve the same
+underlying identity, and a cycle is labelled rather than expanded recursively.
+
+Component Details starts with meaningful instance fields and an Owner reference.
+The **Stored fields** disclosure makes raw storage, including internal fields,
+explicitly inspectable without making it the default property document. This
+is presentation, not removal or repair of representable guest values. Stored
+keys keep their guest kind, including numeric/string distinctions and holes.
+
+Enter activates a disclosure or the row's source action. Right/Left expand or
+collapse references and scalar text, with normal parent/child navigation. Long
+scalar/source text can be expanded and wrapped instead of being lost behind
+truncation. A clipped hovered or keyboard-selected row also exposes its full
+name and value through the shared passive, wrapped hint. This includes stored
+keys on table-valued rows, whose disclosure opens children rather than text.
+The hint consumes already-projected text, performs no guest reads and retires
+with its actual client surface. Scrolling, property identity, value-change
+markers, source locations and pin targets remain independent of the row's
+displayed width or position.
 
 ## Observed value changes
 

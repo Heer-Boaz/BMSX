@@ -1,0 +1,6 @@
+/** UI symbols have their own pixel geometry; changing a text font never changes their meaning. */
+export const WORKBENCH_ICON_SIZE = 7;
+
+export type WorkbenchIcon = 'pin' | 'unpin' | 'close' | 'collapse' | 'expand'
+	| 'play' | 'pause' | 'stepBack' | 'stepForward' | 'present' | 'accept' | 'back'
+	| 'more' | 'actor' | 'follow' | 'chevronRight' | 'chevronDown';

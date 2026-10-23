@@ -88,9 +88,11 @@ t.assert(view.resource.path === 'enemies/moon_tree.lua', 'Behavior Lens lost its
 t.assert(view.document.definitions.length === 1, 'Moon source should expose one behavior-tree registration');
 t.assert(view.source.nodes.length === 99, 'Moon behavior-tree topology is incomplete');
 t.assert(viewport.model.nodes[0].source === view.document.definitions[0], 'graph registration owns its root occurrence');
-t.assert(view.layout.viewportWidth === 384 && view.layout.viewportHeight === 288, 'test did not exercise the constrained IDE viewport');
+t.assert(view.layout.right - view.layout.left === 384, 'Behavior Lens did not use the constrained full-width editor area');
+t.assert(view.layout.top > 0 && view.layout.bottom > view.layout.top && view.layout.bottom <= 288,
+	'Behavior Lens content did not fit between permanent chrome in the constrained viewport');
 t.assert(view.layout.font.variant === 'tiny', 'Behavior Lens did not use the active IDE tiny font');
-t.assert(view.layout.rowHeight === 6, 'Behavior Lens row metrics do not come from the tiny IDE font');
+t.assert(view.layout.rowHeight === view.layout.font.lineHeight, 'Behavior Lens row metrics do not come from the active IDE font');
 
 const flyAttackOccurrences = view.source.nodes.filter(node =>
 	node.authoredRange.start.line === 14
@@ -173,7 +175,14 @@ const selectedRowKey = view.selection.rowKey;
 const selectedAuthoredLine = view.source.nodesByRowKey.get(selectedRowKey).authoredRange.start.line;
 await pressKey('Escape');
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'Escape did not return to source');
-t.replaceActiveCodeSource(`-- behavior lens refresh\n${originalSource}`);
+// A whole-buffer replacement retires source occurrences. An ordinary insertion
+// shifts the existing registration and is the operation whose identity survives.
+t.controlInput([{ type: 'key', code: 'ControlLeft', down: true }, { type: 'key', code: 'Home', down: true }]);
+await t.frames(1);
+t.controlInput([{ type: 'key', code: 'Home', down: false }, { type: 'key', code: 'ControlLeft', down: false }]);
+await t.frames(1);
+await pressKey('Enter');
+t.assert(sourceTab.context.model.buffer.getText() === `\n${originalSource}`, 'ordinary editor input did not insert exactly one leading newline');
 await t.frames(2);
 await chooseBehavior('bt moon');
 await t.frames(2);
@@ -190,12 +199,13 @@ t.assert(
 await pressKey('Escape');
 t.openLuaSource('player/player.lua');
 await t.frames(2);
-await chooseBehavior('fsm ids player');
+await chooseBehavior('fsm player');
 await t.frames(2);
 
 const fsmTab = t.activeWorkbenchTab();
 t.assert(fsmTab.kind === 'behavior_lens', 'player FSM did not open in a Behavior Lens input');
 const fsmView = fsmTab.view;
+t.assert(fsmView.resource.path === 'player/player.lua', 'the FSM picker chose another source resource');
 t.assert(fsmView.presentation.kind === 'state-graph', 'FSM must open its compound graph');
 await fsmTab.graphLayout.settled;
 await t.frames(1);
@@ -210,17 +220,22 @@ t.assert(projectilesState.authoredRange.start.line === 1410, 'concurrent project
 const stateGraph = fsmView.presentation.viewport;
 t.assert(stateGraph.model.nodesBySource.has(projectilesState.rowKey), 'concurrent state has no diagram card');
 const projectilesIndex = stateGraph.model.nodes.indexOf(stateGraph.model.nodesBySource.get(projectilesState.rowKey));
-for (let index = 0; index < projectilesIndex; index += 1) await pressKey('Tab');
+await pressKey('Home');
+for (let index = 0; index < projectilesIndex; index += 1) await pressKey('ArrowDown');
+t.assert(stateGraph.selection === stateGraph.model.nodesBySource.get(projectilesState.rowKey), 'keyboard traversal did not select the actual concurrent state');
+t.capture('behavior-lens-player-fsm-tiny-384x288');
 await pressKey('Enter');
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'activating the concurrent state did not return to source');
 t.assert(t.activeEditorDocument().view.cursorRow === projectilesState.authoredRange.start.line - 1, 'concurrent state navigated to the wrong line');
-await chooseBehavior('fsm ids player');
+await chooseBehavior('fsm player');
 await t.frames(2);
 t.assert(stateGraph.model.nodesBySource.has(flyingState.rowKey), 'nested state is missing from compound containment');
 const activeState = stateGraph.model.nodes.find(node => node.source.label === 'active');
 t.assert(activeState.children.some(node => node.source === flyingState), 'nested state was flattened out of its parent');
 const flyingIndex = stateGraph.model.nodes.indexOf(stateGraph.model.nodesBySource.get(flyingState.rowKey));
-for (let index = 0; index < flyingIndex; index += 1) await pressKey('Tab');
+await pressKey('Home');
+for (let index = 0; index < flyingIndex; index += 1) await pressKey('ArrowDown');
+t.assert(stateGraph.selection === stateGraph.model.nodesBySource.get(flyingState.rowKey), 'keyboard traversal did not select the actual nested state');
 await pressKey('Enter');
 t.assert(t.activeEditorDocument().view.cursorRow === flyingState.authoredRange.start.line - 1, 'nested state navigated to the wrong line');
 
@@ -239,6 +254,7 @@ const properties = effectView.presentation.tree;
 const periodRowIndex = properties.rows.findIndex(row => row.element.kind === 'property' && row.element.source.label.startsWith('period_ms ='));
 t.assert(periodRowIndex >= 0, 'real ActionEffect period is not present in the retained rows');
 await moveSelectionToIndex(properties, periodRowIndex);
+t.capture('behavior-lens-player-effect-tiny-384x288');
 await pressKey('Enter');
 t.assert(t.activeEditorDocument().model.resource.path === 'player/actioneffects.lua', 'ActionEffect navigation opened the wrong source');
 t.assert(t.activeEditorDocument().view.cursorRow === 16, 'ActionEffect period navigated to the wrong authored line');

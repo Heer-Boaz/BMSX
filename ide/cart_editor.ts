@@ -455,7 +455,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.menubar = new MenubarController(this.contextMenu, this.commands);
 		this.quickInput = new QuickInputController(this.contextMenu, () => this.surfaces.changed(),
 			next => next !== null && this.surfaces.isInContext(next.scope.surfaceScope, this.quickInput.pointerScope));
-		this.surfaces.attach({
+		const chromeSurface = this.surfaces.attach({
 			role: 'content', captureScope: this.chromeScope, isVisible: () => true,
 			getBounds: () => this.rootSurfaceBounds, getClip: () => this.rootSurfaceBounds,
 			draw: () => this.drawWorkbenchChrome(),
@@ -463,6 +463,7 @@ export class RuntimeCartEditor implements CartEditor {
 			handleWheel: event => handleWorkbenchChromeWheel(this, event),
 			onRetire: () => pointerCapture.cancelScope(this.chromeScope),
 		});
+		this.runtimeTimeline.attach(this.surfaces, chromeSurface, getWorkbenchWorkArea);
 		this.paneSurface = this.surfaces.attach({
 			role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true,
 			getBounds: getWorkbenchEditorBounds, getClip: getWorkbenchEditorBounds,
@@ -890,7 +891,7 @@ export class RuntimeCartEditor implements CartEditor {
 		renderTabBar(this.chromeRenderContext);
 		drawResourcePanel(this.resourcePanel);
 		this.gamePanel.draw();
-		this.runtimeTimeline.draw(this.overlayRenderer);
+		this.runtimeTimeline.draw();
 		drawProblemsPanel();
 		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane, this.luaEvaluation, this.serverConnectionState);
 	}

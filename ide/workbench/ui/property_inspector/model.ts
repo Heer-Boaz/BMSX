@@ -2,14 +2,23 @@ import { clamp } from '../../../../machine/ts/common/clamp';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { SCROLLBAR_WIDTH } from '../../../common/constants';
-import { writeWrappedMeasuredLine, type TextRangeMeasure } from '../../../common/text';
+import { ELLIPSIS, truncateMeasuredText, writeWrappedMeasuredLine, type TextRangeMeasure } from '../../../common/text';
 import type { WorkbenchPropertyElement } from '../property_tree';
 import { WorkbenchScrollViewport } from '../scroll_viewport';
+import { WORKBENCH_ICON_SIZE } from '../icon';
 
 /** Same property display contract as the compact tree, without its truncated columns. */
 export type InspectedProperty = Pick<WorkbenchPropertyElement, 'label' | 'value' | 'description' | 'warning'> & {
 	/** The inspecting owner compares observations; painting never advances that baseline. */
 	readonly valueChanged?: boolean;
+	/** Runtime values are compact rows; source excerpts remain full readable documents. */
+	readonly compact?: boolean;
+	readonly depth?: number;
+	readonly group?: boolean;
+	readonly expansion?: {
+		readonly expanded: boolean;
+		setExpanded(expanded: boolean): void;
+	};
 };
 export type InspectedPropertyRow<Element> = {
 	element: Element;
@@ -18,9 +27,21 @@ export type InspectedPropertyRow<Element> = {
 	readonly description: string[];
 	top: number;
 	bottom: number;
-	measured: { label: string; value: string; description: string };
+	labelLeft: number;
+	valueLeft: number;
+	disclosureLeft: number;
+	textExpandable: boolean;
+	textExpanded: boolean;
+	headerHeight: number;
+	measured: { label: string; value: string; description: string; depth: number; compact: boolean; group: boolean };
 };
 export const INSPECTOR_PADDING = 4;
+export const INSPECTOR_COMPACT_PADDING = 2;
+
+/** One compact row fits the active typeface and its font-independent disclosure icon. */
+export function compactPropertyRowHeight(font: BFont): number {
+	return Math.max(font.lineHeight, WORKBENCH_ICON_SIZE) + INSPECTOR_COMPACT_PADDING * 2;
+}
 
 /** One fully readable document. Values are measured once, not fetched during paint. */
 export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> {
@@ -33,6 +54,7 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 	private dirty = true;
 	private anchorIndex = -1;
 	private anchorOffset = 0;
+	private readonly expandedText = new WeakSet<Element>();
 
 	public setItems(items: readonly Element[]): void {
 		this.rows.length = 0;
@@ -71,8 +93,9 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 	}
 
 	private createRow(element: Element): InspectedPropertyRow<Element> {
-		return { element, label: [], value: [], description: [], top: 0, bottom: 0,
-			measured: { label: '', value: '', description: '' } };
+		return { element, label: [], value: [], description: [], top: 0, bottom: 0, labelLeft: 0, valueLeft: 0, disclosureLeft: 0,
+			textExpandable: false, textExpanded: false, headerHeight: 0,
+			measured: { label: '', value: '', description: '', depth: -1, compact: false, group: false } };
 	}
 
 	public layout(font: BFont, measure: TextRangeMeasure, bounds: RectBounds): void {
@@ -83,21 +106,64 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 			const remeasure = this.width !== width || this.font !== font;
 			this.width = width;
 			this.font = font;
+			const compactHeight = compactPropertyRowHeight(font), indentWidth = font.advance(' ') * 2;
 			height = 0;
 			for (const row of this.rows) {
 				row.top = height;
+				const compact = row.element.compact === true, depth = row.element.depth ?? 0, group = row.element.group === true;
+				const padding = compact ? INSPECTOR_COMPACT_PADDING : INSPECTOR_PADDING;
+				const rowChanged = remeasure || row.measured.depth !== depth || row.measured.compact !== compact || row.measured.group !== group;
+				row.measured.depth = depth; row.measured.compact = compact; row.measured.group = group;
+				const textExpanded = compact && row.element.expansion === undefined && this.expandedText.has(row.element);
+				const textExpansionChanged = row.textExpanded !== textExpanded;
+				row.textExpanded = textExpanded;
+				if (compact) {
+					row.disclosureLeft = padding + depth * indentWidth;
+					row.labelLeft = row.disclosureLeft + 10;
+					row.valueLeft = group || row.element.label.length === 0 ? row.labelLeft : Math.max(row.labelLeft + 8, width * 0.46 | 0);
+					row.headerHeight = compactHeight;
+				} else row.textExpandable = false;
+				if (compact && !textExpanded) {
+					if (rowChanged || textExpansionChanged || row.measured.label !== row.element.label) {
+						row.label.length = 1;
+						const end = row.element.label.indexOf('\n');
+						const label = end === -1 ? row.element.label : row.element.label.slice(0, end) + ELLIPSIS;
+						row.label[0] = truncateMeasuredText(label, (group ? width - padding : row.valueLeft - 4) - row.labelLeft, measure);
+						row.measured.label = row.element.label;
+					}
+					if (rowChanged || textExpansionChanged || row.measured.value !== row.element.value) {
+						row.value.length = 1;
+						const end = row.element.value.indexOf('\n');
+						const value = end === -1 ? row.element.value : row.element.value.slice(0, end) + ELLIPSIS;
+						row.value[0] = group ? '' : truncateMeasuredText(value, width - row.valueLeft - padding, measure);
+						row.measured.value = row.element.value;
+					}
+					row.textExpandable = row.label[0] !== row.element.label || !group && row.value[0] !== row.element.value;
+					if (rowChanged || textExpansionChanged || row.measured.description !== row.element.description) {
+						row.description.length = 0;
+						if (row.element.description.length !== 0)
+							for (const line of row.element.description.split('\n')) writeWrappedMeasuredLine(row.description, line,
+								width - row.labelLeft - padding, measure);
+						row.measured.description = row.element.description;
+					}
+					height += row.headerHeight;
+					if (row.description.length !== 0) height += row.description.length * font.lineHeight + padding;
+					row.bottom = height;
+					continue;
+				}
 				for (const field of PROPERTY_FIELDS) {
 					const lines = row[field];
 					const text = row.element[field];
-					if (remeasure || row.measured[field] !== text) {
+					if (rowChanged || textExpansionChanged || row.measured[field] !== text) {
 						lines.length = 0;
-						if (text.length > 0) for (const line of text.split('\n')) writeWrappedMeasuredLine(lines, line, width - INSPECTOR_PADDING * 2, measure);
+						if (text.length > 0) for (const line of text.split('\n')) writeWrappedMeasuredLine(lines, line,
+							width - (compact ? row.labelLeft : padding) - padding, measure);
 						row.measured[field] = text;
 					}
 					if (text.length === 0) continue;
-					height += lines.length * font.lineHeight + INSPECTOR_PADDING;
+					height += lines.length * font.lineHeight + padding;
 				}
-				height += INSPECTOR_PADDING;
+				height += padding;
 				row.bottom = height;
 			}
 			this.dirty = false;
@@ -118,6 +184,15 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 		// Reveal the value as well as its label. The scrollbar lead-aligns oversized
 		// rows, so a long callback is still read from its beginning, not its last line.
 		this.viewport.scrollbar.reveal(row.top, row.bottom, INSPECTOR_PADDING);
+	}
+
+	/** Text expansion is a local presentation change, not a request to inspect the guest again. */
+	public setValueExpanded(index: number, expanded: boolean): boolean {
+		const row = this.rows[index];
+		if (row?.element.compact !== true || !row.textExpandable || row.textExpanded === expanded) return false;
+		if (expanded) this.expandedText.add(row.element); else this.expandedText.delete(row.element);
+		this.captureScrollAnchor(); this.dirty = true;
+		return true;
 	}
 
 	public rowAt(y: number): number {

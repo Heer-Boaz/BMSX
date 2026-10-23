@@ -21,6 +21,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	public readonly detailsSubject: ActorTarget | undefined;
 	public readonly detailsLocked: boolean;
 	public readonly detailsSubjectPath: string;
+	public readonly detailsSubjectName: string;
 	public readonly detailsRetired: boolean;
 	private readonly outlineScroll: number;
 	private readonly splitRatio: number;
@@ -40,10 +41,12 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		this.detailsOpen = input.detailsWindow.open;
 		this.detailsSelection = input.detailsSelection;
 		this.detailsScroll = input.detailsScroll;
-		this.detailsSubject = input.details?.subject;
-		this.detailsLocked = input.details?.locked ?? false;
-		this.detailsSubjectPath = input.details?.subjectPath ?? '';
-		this.detailsRetired = input.details?.retired ?? false;
+		const details = input.details!;
+		this.detailsSubject = details.subject;
+		this.detailsLocked = details.locked;
+		this.detailsSubjectPath = details.subjectPath;
+		this.detailsSubjectName = details.subjectName;
+		this.detailsRetired = details.retired;
 		this.outlineScroll = input.outline.scroll;
 		this.splitRatio = input.split.ratio;
 	}
@@ -63,8 +66,8 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		input.detailsWindow.open = this.detailsOpen;
 		input.detailsSelection = this.detailsSelection;
 		input.detailsScroll = this.detailsScroll;
-		input.details?.restoreSubject(admitted ? this.detailsSubject : undefined, admitted && this.detailsLocked,
-			admitted ? this.detailsSubjectPath : '', admitted && this.detailsRetired);
+		input.details!.restoreSubject(admitted ? this.detailsSubject : undefined, admitted && this.detailsLocked,
+			admitted ? this.detailsSubjectPath : '', admitted ? this.detailsSubjectName : '', admitted && this.detailsRetired);
 		input.split.resize(this.splitRatio);
 	}
 

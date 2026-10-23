@@ -1,4 +1,5 @@
 import type { EditorCommandId } from '../../../common/commands';
+import type { WorkbenchIcon } from '../icon';
 
 export type WorkbenchDropdownMenuId =
 	| 'menubar.file'
@@ -13,6 +14,8 @@ export type WorkbenchActionMenuId = 'window.title' | 'play.title' | 'animation.t
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
 	readonly command: EditorCommandId;
+	readonly icon?: WorkbenchIcon;
+	readonly checkedIcon?: WorkbenchIcon;
 };
 
 export type WorkbenchMenuSeparator = {
@@ -147,19 +150,19 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'graph.resetZoom' },
 	],
 	'actorLab.stateGraph.title': [
-		{ type: 'command', command: 'actorLab.outline' },
-		{ type: 'command', command: 'actorLab.follow' },
-		{ type: 'command', command: 'actorLab.more' },
+		{ type: 'command', command: 'actorLab.outline', icon: 'back' },
+		{ type: 'command', command: 'actorLab.follow', icon: 'follow' },
+		{ type: 'command', command: 'actorLab.more', icon: 'more' },
 	],
 	'actorLab.title': [
-		{ type: 'command', command: 'actorLab.select' },
-		{ type: 'command', command: 'actorLab.follow' },
-		{ type: 'command', command: 'actorLab.more' },
+		{ type: 'command', command: 'actorLab.select', icon: 'actor' },
+		{ type: 'command', command: 'actorLab.follow', icon: 'follow' },
+		{ type: 'command', command: 'actorLab.more', icon: 'more' },
 	],
 	'actorLab.details.title': [
-		{ type: 'command', command: 'actorLab.lockDetails' },
-		{ type: 'command', command: 'window.collapse' },
-		{ type: 'command', command: 'window.hide' },
+		{ type: 'command', command: 'actorLab.lockDetails', icon: 'pin', checkedIcon: 'unpin' },
+		{ type: 'command', command: 'window.collapse', icon: 'collapse', checkedIcon: 'expand' },
+		{ type: 'command', command: 'window.hide', icon: 'close' },
 	],
 	'actorLab.property.context': [
 		{ type: 'command', command: 'actorLab.pinProperty' },
@@ -169,7 +172,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'propertyInspector.source' },
 	],
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
-	'window.title': [{ type: 'command', command: 'window.collapse' }, { type: 'command', command: 'window.hide' }],
+	'window.title': [{ type: 'command', command: 'window.collapse', icon: 'collapse', checkedIcon: 'expand' },
+		{ type: 'command', command: 'window.hide', icon: 'close' }],
 	'code.context': [
 		{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' },
 		{ type: 'separator' },
@@ -333,6 +337,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'gpuDebugger' },
 		{ type: 'command', command: 'gameView' },
 		{ type: 'command', command: 'gameView.togglePanel' },
+		{ type: 'command', command: 'runtime.focusTimeline' },
 		{ type: 'command', command: 'actorLab' },
 		{ type: 'command', command: 'sceneEditor' },
 		{ type: 'command', command: 'animation' },
@@ -393,11 +398,11 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'gamePanel.title': [{ type: 'command', command: 'gameView.closePanel' }],
 	'runtime.title': [
-		{ type: 'command', command: 'stepFrameBack' },
-		{ type: 'command', command: 'pause' },
-		{ type: 'command', command: 'stepFrame' },
-		{ type: 'command', command: 'runtime.resume' },
-		{ type: 'command', command: 'runtime.present' },
+		{ type: 'command', command: 'stepFrameBack', icon: 'stepBack' },
+		{ type: 'command', command: 'pause', icon: 'play' },
+		{ type: 'command', command: 'stepFrame', icon: 'stepForward' },
+		{ type: 'command', command: 'runtime.resume', icon: 'accept' },
+		{ type: 'command', command: 'runtime.present', icon: 'present' },
 	],
 	'editorTabs.title': [
 		{ type: 'command', command: 'tabs.scrollLeft' },

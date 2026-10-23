@@ -18,8 +18,9 @@ Native/browser auxiliary windows are a different host boundary: they have their
 own display, document, input and close lifetime. They are not represented by a
 flag on a canvas subwindow. Docking and tab-group rearrangement are separate
 layout features; neither is required for floating Details, and Details cannot
-be dragged back into a split. Existing font choice, capitalisation and tree
-twisties are unchanged.
+be dragged back into a split. Supported font choices and their capitalisation
+policy remain intact; shared icon geometry and single-glyph truncation are UI
+presentation primitives rather than text-font substitutes.
 
 This is internal Studio architecture. It adds no console hardware, BIOS,
 cartridge, guest-value, compiler or machine-snapshot contract. The architectural
@@ -37,6 +38,7 @@ exact UI. Source links pin the relevant revisions.
 | VS Code [modal editor part](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/modalEditorPart.ts#L154-L221), [drag](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/modalEditorPart.ts#L477-L568) and [layering](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/media/modalEditorPart.css#L7-L17) | An in-workbench shell composes existing editor content, scoped context, resizing and a shared pointer monitor. Its modality is explicit. | Reuse content and input infrastructure; do not copy modal behaviour into a modeless Details window. |
 | VS Code [auxiliary window service](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/services/auxiliaryWindow/browser/auxiliaryWindowService.ts) | A real host window has separate container and unload/resize lifetime. | Keep multi-host-window support outside the canvas window model. |
 | VS Code [context view](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/base/browser/ui/contextview/contextview.ts#L322-L352) and [container selection](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/platform/contextview/browser/contextViewService.ts#L19-L61) | A transient surface receives an anchor and content delegate with an attachment lifetime. | Popup placement and dismissal belong to presentation; menu/provider meaning remains in its controller. |
+| VS Code [action presentation](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/base/browser/ui/actionbar/actionViewItems.ts) and [Variables view](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/contrib/debug/browser/variablesView.ts) | Icon actions retain semantic labels/hints; a value tree requests explicit children rather than using its rendered preview as data. | Compact chrome and structured inspection keep their meaning independently of font size, clipped text or expanded presentation. |
 | Eclipse Theia [application shell](https://github.com/eclipse-theia/theia/blob/7c024f642855549f254e022d26526f4ee0ba8ba5/packages/core/src/browser/shell/application-shell.ts#L175-L300) | The shell owns areas and activation; panels/layouts own their child geometry. | One surface owner coordinates placement without replacing every existing control. |
 | Lumino [focus tracker](https://github.com/jupyterlab/lumino/blob/44aea979d5d2c77665d651383d27179a63596957/packages/widgets/src/focustracker.ts#L75-L106) | Actual focused widget and last current widget are different states. | Keyboard focus, active window and semantic command subject must not be conflated. |
 | Theia [dialogs](https://github.com/eclipse-theia/theia/blob/7c024f642855549f254e022d26526f4ee0ba8ba5/packages/core/src/browser/dialogs.ts#L75-L140) and [attachment/close](https://github.com/eclipse-theia/theia/blob/7c024f642855549f254e022d26526f4ee0ba8ba5/packages/core/src/browser/dialogs.ts#L235-L323) | Dialog stack, outside-input restriction and focus return have explicit owners. | A modal is an admission boundary, not a window with a large z value. |
@@ -211,6 +213,19 @@ client bounds and effective clip from it, the parent context and chrome metrics.
 These derived rectangles are retained and updated only when their inputs change.
 Painting, control layout, window hit tests and preview occlusion consume them
 directly; they do not reconstruct geometry independently.
+
+Window chrome measures a compact caption against the space left by its actual
+icon actions. The full qualified subject is separate hint/status content, not
+a path forced into every titlebar. Changing the active font remeasures text,
+header height and content constraints while preserving requested placement.
+Both fonts supply the same single ellipsis character; truncation is owned by
+the common measured-text path. Pin, close, expand/collapse and disclosure icons
+use shared pixel geometry, not punctuation strings in the chosen text font.
+
+Window surfaces have shared semantic theme colours for content, active/inactive
+header text and background, border and shadow. Menus, windows and passive hints
+reuse the same shadow primitive. A shadow contributes paint only: it neither
+extends opaque hit bounds nor excludes additional preview input.
 
 Contained children use client-relative placement; parent movement rearranges
 their root-coordinate bounds. Promoted popups use the owner's actual arranged
@@ -433,6 +448,13 @@ without changing its subject, lock, scroll or collapsed state. An Escape that
 dismissed a property menu does not also move focus to the tree. The rule applies
 inside Studio scopes; a gameplay Escape remains gameplay input.
 
+Concrete region activation commands name their owner. **Actor Lab: Inspect
+Instance** activates the retained Details instance, including a collapsed or
+unavailable locked subject. **View: Focus Runtime Timeline** enters the shared
+transport controls. Its local Tab order returns to the owning content and
+skips an unavailable range; it does not splice or restore a pane's internal
+focus ring. Neither command introduces a global gameplay key reservation.
+
 Command origin remains explicit through `InputFocusTarget.commandContext`.
 There is no global "current inspector". Tree commands name tree selection;
 Details commands name its subject/property; transport commands name its
@@ -476,6 +498,8 @@ their actual producer and consumer.
 | `ide/workbench/services/windows/service.ts` | Attach/detach, raise, admission/modal contexts and scoped retirement, composed by `RuntimeCartEditor`. No feature semantics or second input state. |
 | `ide/workbench/ui/window/control.ts` | Generic floating-window chrome, client layout, move/resize continuation and close affordance. `WorkbenchFloatingPanel` can be this concrete control; it is not the entire window system. |
 | `ide/workbench/render/window.ts` | Window chrome drawing through existing overlay commands and theme/font owners. |
+| `ide/workbench/ui/icon.ts`, `render/icon.ts`, `render/surface.ts` | Shared icon geometry and floating-surface shadow drawing; no text-glyph or hit-bound substitution. |
+| `ide/workbench/ui/tooltip.ts` | Retained, wrapped hover/keyboard feedback with explicit lifetime ownership, work-area placement and modal admission; no input targeting. |
 | Existing `ide/input/*` | Surface-driven targeting, canonical gesture state, focus scopes, hover and command origin. Replace independent overlay priority/scope branches. |
 | Existing host input owners | Device-class recipient selection and admitted pointer production shared by browser/remote input. No window classes in host adapters. |
 | Contribution modules | Content models, subject/selection, actions, provider results, invalidation and optional content persistence. |
@@ -531,7 +555,13 @@ it never resolves to a same-named replacement. Details actions use its subject;
 tree actions continue using tree selection.
 
 The property inspector retains property projection, scrolling, selection and
-property actions. It no longer supplies the window's title, close lifetime,
+property actions, including explicit child disclosure and scalar-text
+expansion. Clipped hovered or keyboard-selected names and values use shared
+passive feedback attached to the actual client surface, without further guest
+reads. The runtime property owner supplies compact typed summaries and child
+requests; raw stored fields remain an explicit inspection scope rather than an
+eager object dump.
+The inspector no longer supplies the window's title, close lifetime,
 global focus return or root capture cancellation. Chrome supplies title/close;
 Actor Details contributes the lock action and explicit subject context. Avoid
 duplicating inspector/window titlebars and close actions. Any inspector-specific
@@ -542,9 +572,10 @@ Details is a modeless owned floating surface, not a contained child of the
 preview. A new hit cannot reach the preview through Details; an existing
 captured guest gesture continues according to the central gesture rule.
 Its attachment follows the active Actor Lab input; changing editors hides that
-attachment while retaining the Details instance. The UI action labelled Hide
-requests the admitted close path, clearing open intent but retaining subject,
-lock and property-view state. It is not the presentation-only detach used for
+attachment while retaining the Details instance. The close X icon, labelled
+**Close Window** in its hint, requests the admitted close path, clearing open
+intent but retaining subject, lock and property-view state. It is not the
+presentation-only detach used for
 editor deactivation. Destroying the Actor Lab input disposes its Details
 instance. Its existing transport and inspection services remain usable without
 a window.
@@ -632,6 +663,10 @@ Acceptance:
   hides client input/paint, retires its continuation and transients, keeps the
   titlebar usable and restores the retained expanded bounds. Small viewports
   constrain arrangement without discarding requested placement.
+- Chrome uses pin/unpin, collapse/expand and close icons with semantic
+  hover/keyboard hints, a compact subject caption, a wrapped full-identity hint
+  and shared themed depth cues. The title budget excludes the measured action
+  targets. Truncation consumes one supported ellipsis glyph in either font.
 - Keyboard-only activation, local Tab traversal, titlebar actions,
   text/clipboard and command origin work without new global gameplay shortcuts.
   Escape consumes one local interaction first, otherwise returns Details focus
@@ -640,10 +675,16 @@ Acceptance:
   settled history; missing/retired subjects stay unavailable rather than
   resolving by name. Hidden/collapsed Details retains identity retirement but
   performs no hidden property layout, formatting or preview picking.
-- Title/path, checked lock action, unavailable presentation and active/inactive
-  chrome follow the [Details UX](studio_actor_tools.md#floating-details-ux).
+- Semantic caption/full identity, checked subject-pin action, unavailable
+  presentation and active/inactive chrome follow the
+  [Details UX](studio_actor_tools.md#floating-details-ux).
   Reopening keeps placement and view state within the same Actor Lab input;
   workspace persistence never resurrects a runtime handle.
+- Default Details uses compact measured name/value rows. Explicit disclosure
+  exposes actual typed children or full text, not a larger recursively formatted
+  preview. Actor Lab reclaims the redundant playback/preview heading strips;
+  the shared transport uses one icon/range row without a live-endpoint filler
+  label. Review readback cannot shift a captured slider's geometry.
 
 Contained-subwindow arrangement remains designed and provisional until a
 concrete contribution needs it. Its eventual implementation validates nested
@@ -676,6 +717,18 @@ Acceptance:
   browser supplying canvas coordinates. The shared preview projection is in
   place before B is accepted as correct embedded-game routing.
 
+### E — Remaining Studio contribution UX
+
+After the shared UI primitives and Actor Lab, review the remaining Studio
+features against the same contracts: both fonts and themes, constrained
+work areas, meaningful names and information hierarchy, icon/hint semantics,
+keyboard entry/exit, structured values and transport context. A shared-owner
+correction propagates through its real consumers; contribution-specific
+behaviour remains with that contribution. Each concrete issue needs its own
+implemented change and matching visual/interaction acceptance. This is a
+Studio-wide review scope, not a claim that every contribution is already
+covered by the Actor Lab design.
+
 Existing evidence owners include `tests/lua/{pointer_capture,pointer_hover,
 editor_focus,editor_panes,workbench_property_inspector,workbench_context_menu,
 editor_pointer_edges}.test.ts`, `tests/platform/{browser_pointer_contact,
@@ -693,3 +746,10 @@ allocations and frame timings separately. Unit tests/typechecks establish
 contracts, not performance or visible usability. Live Studio validation uses the native
 session/context workflow required by the repository instructions and observes
 actual input, frame/history and visible window behaviour.
+
+Visual layout acceptance can also render the ordinary Workbench offscreen
+through the existing headless IDE workflow. Exercise fonts, themes, minimum
+sizes, compact captions, value disclosure and input transitions in that actual
+frontend; a native headless game capture before IDE overlays is not window-UX
+evidence. The headless IDE driver's authored control input uses the ordinary
+ordered producer, separately from raw guest/gamepad/supervisor input.

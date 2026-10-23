@@ -12,6 +12,7 @@ import {
 	THEME_TOKEN_DARK_TEAL,
 	THEME_TOKEN_DEEP_GREY,
 	THEME_TOKEN_DEEP_TEAL,
+	THEME_TOKEN_DROP_SHADOW,
 	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND,
 	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND_HOVER,
 	THEME_TOKEN_ERROR_OVERLAY_LINE_HOVER,
@@ -114,7 +115,7 @@ type ThemeDefinition = {
 		position: number;
 	};
 	graph: { active: number };
-	inspection: { changedValue: number };
+	inspection: { label: number; changedValue: number };
 	focusBorder: number;
 	connection: {
 		connected: number;
@@ -138,6 +139,14 @@ type ThemeDefinition = {
 		border: number;
 		activeText: number;
 		inactiveText: number;
+	};
+	window: {
+		background: number;
+		activeHeader: number;
+		activeText: number;
+		inactiveHeader: number;
+		inactiveText: number;
+		border: number;
 	};
 	searchBackground: number;
 	highlightOverlay: number;
@@ -197,7 +206,9 @@ type ThemeOverlays = {
 
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
-		inspection: { changedValue: THEME_TOKEN_LIGHT_PURPLE },
+		window: { background: THEME_TOKEN_BLACK, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE,
+			inactiveHeader: THEME_TOKEN_NEAR_BLACK, inactiveText: THEME_TOKEN_TERMINAL_GREY, border: THEME_TOKEN_MID_GREY },
+		inspection: { label: THEME_TOKEN_HINT_GREY, changedValue: THEME_TOKEN_LIGHT_PURPLE },
 		markdown: {
 			codeBackground: THEME_TOKEN_DEEP_TEAL,
 			codeText: THEME_TOKEN_LIGHT_TEAL,
@@ -325,7 +336,9 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		},
 	},
 	light: {
-		inspection: { changedValue: THEME_TOKEN_DARK_PURPLE },
+		window: { background: THEME_TOKEN_GENTLE_WHITE, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE,
+			inactiveHeader: THEME_TOKEN_PANEL_GREY, inactiveText: THEME_TOKEN_TEXT_GREY, border: THEME_TOKEN_MID_GREY },
+		inspection: { label: THEME_TOKEN_STATUS_TEXT_GREY, changedValue: THEME_TOKEN_DARK_PURPLE },
 		markdown: {
 			codeBackground: THEME_TOKEN_PALE_TEAL,
 			codeText: THEME_TOKEN_DARK_TEAL,
@@ -559,6 +572,7 @@ export let COLOR_STATUS_ALERT: number;
 export let COLOR_TIMELINE_TRACK: number;
 export let COLOR_TIMELINE_POSITION: number;
 export let COLOR_GRAPH_ACTIVE: number;
+export let COLOR_INSPECTOR_LABEL: number;
 export let COLOR_INSPECTOR_VALUE_CHANGED: number;
 export let COLOR_SERVER_CONNECTED: number;
 export let COLOR_SERVER_DISCONNECTED: number;
@@ -649,7 +663,13 @@ export let COLOR_MENU_TEXT: number;
 export let COLOR_MENU_DISABLED_TEXT: number;
 export let COLOR_MENU_SELECTION_BACKGROUND: number;
 export let COLOR_MENU_SELECTION_TEXT: number;
-export let COLOR_MENU_SHADOW: number;
+export const COLOR_SURFACE_SHADOW = THEME_TOKEN_DROP_SHADOW;
+export let COLOR_WINDOW_BACKGROUND: number;
+export let COLOR_WINDOW_HEADER_ACTIVE_BACKGROUND: number;
+export let COLOR_WINDOW_HEADER_ACTIVE_TEXT: number;
+export let COLOR_WINDOW_HEADER_INACTIVE_BACKGROUND: number;
+export let COLOR_WINDOW_HEADER_INACTIVE_TEXT: number;
+export let COLOR_WINDOW_BORDER: number;
 export let COLOR_COMPLETION_BACKGROUND: number;
 export let COLOR_COMPLETION_BORDER: number;
 export let COLOR_COMPLETION_TEXT: number;
@@ -731,6 +751,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TIMELINE_TRACK = theme.timeline.track;
 	COLOR_TIMELINE_POSITION = theme.timeline.position;
 	COLOR_GRAPH_ACTIVE = theme.graph.active;
+	COLOR_INSPECTOR_LABEL = theme.inspection.label;
 	COLOR_INSPECTOR_VALUE_CHANGED = theme.inspection.changedValue;
 	COLOR_SERVER_CONNECTED = theme.connection.connected;
 	COLOR_SERVER_DISCONNECTED = theme.connection.disconnected;
@@ -804,7 +825,12 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_MENU_DISABLED_TEXT = theme.text.dim;
 	COLOR_MENU_SELECTION_BACKGROUND = theme.text.selection;
 	COLOR_MENU_SELECTION_TEXT = theme.text.selectionText;
-	COLOR_MENU_SHADOW = theme.surfaces.resourcePanelHighlight;
+	COLOR_WINDOW_BACKGROUND = theme.window.background;
+	COLOR_WINDOW_HEADER_ACTIVE_BACKGROUND = theme.window.activeHeader;
+	COLOR_WINDOW_HEADER_ACTIVE_TEXT = theme.window.activeText;
+	COLOR_WINDOW_HEADER_INACTIVE_BACKGROUND = theme.window.inactiveHeader;
+	COLOR_WINDOW_HEADER_INACTIVE_TEXT = theme.window.inactiveText;
+	COLOR_WINDOW_BORDER = theme.window.border;
 	COLOR_COMPLETION_BACKGROUND = completion.background;
 	COLOR_COMPLETION_BORDER = completion.border;
 	COLOR_COMPLETION_TEXT = completion.text;

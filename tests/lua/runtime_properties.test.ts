@@ -223,3 +223,50 @@ test('display-only occurrences retain unique rows but never enter a logical-watc
 	assert.equal(filtered.finish().length, 0);
 	assert.equal(identities.mock.callCount(), 0); assert.equal(formats.mock.callCount(), 0);
 });
+
+test('summary property references enumerate only expanded children and retain typed aliases and cycles', t => {
+	const { sources, guest } = fixture("object = { [1] = 'numeric', ['1'] = 'string', nested = { answer = 42 } }; object.self = object; key = {}; object[key] = 'reference'");
+	const object = guest.global('object'), properties = new BehaviorRuntimeProperties(sources, guest, undefined, 'summary');
+	const visits = t.mock.method(guest, 'visitTableEntries');
+	const stored = t.mock.method(guest, 'formatStoredEntries');
+	const refresh = () => { properties.begin(true); properties.field('instance', 'data', 'Data', object); return properties.finish(); };
+	const document = refresh(), root = document[0];
+	assert.match(root.value, /^Table #[0-9]+$/); assert.equal(root.compact, true);
+	assert.equal(root.expansion!.expanded, false); assert.equal(visits.mock.callCount(), 0);
+	for (let n = 0; n < 1000; n++) { assert.strictEqual(refresh(), document); assert.equal(properties.changed, false); }
+	assert.equal(visits.mock.callCount(), 0, 'closed references do not inspect their contents to make a preview');
+	root.expansion!.setExpanded(true);
+	assert.equal(properties.expansionPending, true);
+	refresh();
+	assert.equal(properties.expansionPending, false); assert.equal(visits.mock.callCount(), 1);
+	assert.equal(document.find(item => item.label === '[1]')!.value, 'numeric');
+	assert.equal(document.find(item => item.label === '1')!.value, 'string');
+	assert.match(document.find(item => item.value === 'reference')!.label, /^\[table #[0-9]+\]$/);
+	assert.equal(runtimePropertyIdentitiesEqual(document.find(item => item.label === '[1]')!.identity!, document.find(item => item.label === '1')!.identity!), false);
+	const cycle = document.find(item => item.label === 'self')!;
+	assert.match(cycle.value, /\(cycle\)$/); assert.equal(cycle.expansion, undefined);
+	assert.ok(document.slice(1).every(item => item.depth === 1 && item.watchIdentity === undefined));
+	const nested = document.find(item => item.label === 'nested')!;
+	nested.expansion!.setExpanded(true); refresh();
+	assert.equal(visits.mock.callCount(), 3, 'one root read plus its explicitly opened nested reference');
+	assert.equal(document.find(item => item.label === 'answer')!.value, '42');
+	assert.equal(document.find(item => item.label === 'answer')!.depth, 2);
+	root.expansion!.setExpanded(false); refresh();
+	assert.equal(document.length, 1); assert.equal(visits.mock.callCount(), 3);
+	assert.equal(stored.mock.callCount(), 0, 'structured values never materialize an object-graph display dump');
+});
+
+test('property indexes and selections distinguish equal child keys under typed parent paths', () => {
+	const index = new RuntimePropertyIndex<string>();
+	const left: RuntimePropertyIdentity = { section: 'stored', field: '', key: numeric.key, parent: field };
+	const right: RuntimePropertyIdentity = { ...left, parent: { section: 'owner', field: 'id' } };
+	const grandchild: RuntimePropertyIdentity = { ...left, parent: left };
+	index.set(left, 'left'); index.set(right, 'right'); index.set(grandchild, 'grandchild');
+	assert.equal(index.get(structuredClone(left)), 'left');
+	assert.equal(index.get(right), 'right'); assert.equal(index.get(grandchild), 'grandchild');
+	assert.equal(runtimePropertyIdentitiesEqual(left, right), false);
+	assert.equal(index.delete(left), true); assert.equal(index.get(left), undefined);
+	assert.equal(index.get(right), 'right'); assert.equal(index.get(grandchild), 'grandchild');
+	assert.equal(index.delete(grandchild), true); assert.equal(index.delete(right), true);
+	index.set(left, 'returned'); assert.equal(index.get(left), 'returned');
+});

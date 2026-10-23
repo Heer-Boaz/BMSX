@@ -7,7 +7,8 @@ import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../input/keyboard
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../input/pointer/capture';
 import type { PointerHoverService, PointerHoverTarget } from '../../input/pointer/hover';
-import type { WorkbenchActionBarState } from './action_bar';
+import type { WorkbenchActionBarItem, WorkbenchActionBarState } from './action_bar';
+import { editorCommandTitle } from '../../commands/catalog';
 
 const TRIGGER_KEYS = ['Enter', 'NumpadEnter', 'Space'] as const;
 const NAVIGATION_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const;
@@ -62,10 +63,23 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		this.unbindBlur();
 	}
 
+	/** Hover wins over keyboard focus; an armed gesture never has a competing tooltip. */
+	public get tooltipItem(): WorkbenchActionBarItem | undefined {
+		const state = this.input;
+		if (state === undefined || state.pressedCommand !== null) return undefined;
+		if (state.hoveredCommand !== null) {
+			for (const item of state.items) if (item.command === state.hoveredCommand && item.visible) return item;
+		} else if (state.hasFocus && state.focusedIndex >= 0) return state.items[state.focusedIndex];
+		return undefined;
+	}
+
 	/** Revoke disabled attempts even when there is no new pointer or key event. */
 	public update(): void {
 		const state = this.input!;
-		for (const item of state.items) item.enabled = item.visible && this.commands.isEnabled(item.command, this.focusTarget);
+		for (const item of state.items) {
+			item.enabled = item.visible && this.commands.isEnabled(item.command, this.focusTarget);
+			item.tooltip = editorCommandTitle(item.command, item.checked);
+		}
 		const command = this.pointerCommand === null ? state.pressedCommand : this.pointerCommand;
 		if (command !== null && !state.items.some(item => item.command === command && item.enabled)) this.cancelPointer();
 		if (state.hasFocus && (state.focusedIndex < 0 || !state.items[state.focusedIndex].enabled)) {

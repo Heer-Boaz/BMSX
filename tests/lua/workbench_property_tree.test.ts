@@ -38,11 +38,11 @@ test('property columns, footer and every hittable row share measured tiny-font g
 	const property = group.children[0];
 	assert.ok(font.measure(property.element.displayLabel) <= bounds.valueLeft - bounds.contentLeft - bounds.indentWidth - bounds.twistieWidth - 6);
 	assert.ok(font.measure(property.element.displayValue) <= bounds.contentRight - bounds.valueLeft - 8);
-	assert.ok(property.element.displayValue.endsWith('...'));
+	assert.ok(property.element.displayValue.endsWith('…'));
 	assert.equal(navigateWorkbenchTree(state, 'right'), NavigationResult.Selection);
 	layout();
 	assert.equal(state.descriptionLines.length, 3);
-	assert.ok(state.descriptionLines[2].endsWith('...'));
+	assert.ok(state.descriptionLines[2].endsWith('…'));
 	for (const line of state.descriptionLines) assert.ok(font.measure(line) <= bounds.contentRight - bounds.contentLeft - 8);
 	const previous = property.element.displayValue;
 	layout(240);

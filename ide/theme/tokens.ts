@@ -64,6 +64,7 @@ export const THEME_TOKEN_PALE_TEAL = 62;
 export const THEME_TOKEN_DEEP_TEAL = 63;
 export const THEME_TOKEN_DARK_PURPLE = 64;
 export const THEME_TOKEN_LIGHT_PURPLE = 65;
+export const THEME_TOKEN_DROP_SHADOW = 66;
 
 export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x00000000,
@@ -132,6 +133,7 @@ export const THEME_TOKEN_COLORS: readonly number[] = [
 	0xff123939,
 	0xff704087,
 	0xffd5b0f2,
+	0x60000000,
 ];
 
 export function resolveThemeTokenColor(token: number): number {

@@ -15,6 +15,10 @@ import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../action_ba
 import { WorkbenchActionBarControl } from '../action_bar_control';
 import { WorkbenchScrollControl } from '../scroll_control';
 import { WorkbenchPropertyInspectorModel, type InspectedProperty } from './model';
+import { WORKBENCH_ICON_SIZE } from '../icon';
+import { WorkbenchTooltip } from '../tooltip';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 
 export type PropertyInspection<Element> = {
 	readonly title: string;
@@ -39,6 +43,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private readonly scroll: WorkbenchScrollControl;
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly unbindBlur: () => void;
+	private readonly unbindFocus: () => void;
 	private readonly unbindGamepad: () => void;
 	private input: PropertyInspection<Element> | undefined;
 	private lifetime: DisposableStore | undefined;
@@ -47,11 +52,27 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private padPressed = false;
 	private returnFocus: InputFocusTarget | null = null;
 	private focusOrder: { previous: InputFocusTarget; next: InputFocusTarget } | undefined;
+	private feedback: WorkbenchTooltip | undefined;
+	private feedbackOwner: WorkbenchSurface | undefined;
+	private feedbackArea: (() => Readonly<RectBounds>) | undefined;
+	private readonly feedbackAnchor = create_rect_bounds();
+	private feedbackItem: Element | undefined;
+	private feedbackLabel = '';
+	private feedbackValue = '';
+	private feedbackDescription = '';
+	private feedbackText = '';
+	private feedbackKeyboard = false;
+	private feedbackPointer = false;
+	private feedbackScroll = 0;
+	private pointerKnown = false;
+	private pointerX = 0;
+	private pointerY = 0;
 
 	public constructor(private readonly focus: InputFocusService, capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget, public readonly chrome: 'header' | 'client' = 'header') {
 		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input), undefined,
 			() => { this.triggerKey = undefined; this.padPressed = false; });
 		this.focusTarget = this.scroll.focusTarget;
+		this.scroll.onWillScroll = () => this.retireFeedback();
 		this.unbindGamepad = this.focusTarget.bindGamepad(input => { this.handleGamepad(input); });
 		this.focusTarget.clipboard = { readOnly: true, copy: () => {
 			const selected = this.model.selectionIndex;
@@ -62,7 +83,10 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.focusTarget.previous = this.actions.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget;
 		this.actions.focusTarget.previous = this.focusTarget;
-		this.unbindBlur = this.focusTarget.onDidBlur(() => { this.triggerKey = undefined; this.padPressed = false; });
+		this.unbindFocus = this.focusTarget.onDidFocus(() => { this.feedbackKeyboard = true; });
+		this.unbindBlur = this.focusTarget.onDidBlur(() => {
+			this.triggerKey = undefined; this.padPressed = false; this.retireFeedback(); this.hover.release(this);
+		});
 		this.focusTarget.registerCommand('propertyInspector.source', {
 			isEnabled: () => this.isEnabled('propertyInspector.source'), run: () => this.openSource(),
 		});
@@ -79,6 +103,15 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	}
 
 	public get visible(): boolean { return this.input !== undefined; }
+
+	/** The containing surface owns feedback lifetime; the inspector does not know its placement kind. */
+	public attachFeedback(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>): void {
+		if (this.feedbackOwner === owner) return;
+		const feedback = this.feedback ??= new WorkbenchTooltip();
+		feedback.detach(); this.feedbackOwner = owner; this.feedbackArea = getWorkArea;
+		feedback.attach(surfaces, owner, getWorkArea);
+		this.feedbackScroll = this.model.viewport.scrollTop;
+	}
 
 	public show(input: PropertyInspection<Element>, focus = true): DisposableStore {
 		this.hide();
@@ -123,6 +156,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	}
 
 	public hide(): void {
+		this.retireFeedback(); this.feedback?.detach(); this.feedbackOwner = undefined; this.feedbackArea = undefined;
 		this.hover.release(this);
 		const ownedFocus = this.focusTarget.hasFocus || this.actions.focusTarget.hasFocus;
 		this.actions.clearInput();
@@ -138,6 +172,11 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	}
 
 	public updateItems(items: readonly Element[], equals: (left: Element, right: Element) => boolean): void {
+		if (this.feedbackItem !== undefined) {
+			let retained = false;
+			for (const item of items) if (equals(item, this.feedbackItem)) { retained = true; break; }
+			if (!retained) this.retireFeedback();
+		}
 		this.model.updateItems(items, equals);
 		const canOpenSource = this.chrome === 'header' && items.some(item => this.input!.canOpenSource(item));
 		if (this.actionBar.items[0].visible !== canOpenSource) {
@@ -147,7 +186,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		}
 	}
 
-	public dispose(): void { this.hide(); this.actions.dispose(); this.scroll.dispose(); this.unbindBlur(); this.unbindGamepad(); }
+	public dispose(): void { this.hide(); this.actions.dispose(); this.scroll.dispose(); this.unbindBlur(); this.unbindFocus(); this.unbindGamepad(); }
 
 	public update(): void {
 		if (!this.visible) return;
@@ -169,6 +208,34 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			this.layoutDirty = false;
 		}
 		this.model.layout(font, measure, this.content);
+		this.updateFeedback(font, measure, measureText);
+	}
+
+	private retireFeedback(): void {
+		this.feedbackKeyboard = false; this.feedbackPointer = false;
+		this.feedbackItem = undefined; this.feedbackLabel = ''; this.feedbackValue = ''; this.feedbackDescription = ''; this.feedbackText = '';
+		this.feedback?.hide();
+	}
+	private updateFeedback(font: BFont, measure: TextRangeMeasure, measureText: (text: string) => number): void {
+		if (this.feedbackOwner === undefined) return;
+		const view = this.model.viewport;
+		if (this.feedbackScroll !== view.scrollTop) { this.feedbackScroll = view.scrollTop; this.feedbackPointer = false; }
+		const index = this.feedbackKeyboard && this.focusTarget.hasFocus ? this.model.selectionIndex
+			: this.feedbackPointer ? this.model.hoverIndex : -1;
+		const row = this.model.rows[index];
+		if (!this.visible || this.feedbackOwner.retired || row === undefined || row.element.compact !== true || row.textExpanded
+			|| row.label[0] === row.element.label && (row.element.group === true || row.value[0] === row.element.value)) {
+			this.feedback!.hide(); return;
+		}
+		const top = view.offsetTop + row.top, bottom = top + row.headerHeight;
+		if (bottom <= view.bounds.top || top >= view.bounds.bottom) { this.feedback!.hide(); return; }
+		const item = row.element;
+		if (this.feedbackItem !== item || this.feedbackLabel !== item.label || this.feedbackValue !== item.value || this.feedbackDescription !== item.description) {
+			this.feedbackItem = item; this.feedbackLabel = item.label; this.feedbackValue = item.value; this.feedbackDescription = item.description;
+			this.feedbackText = `${item.label}\n${item.value}${item.description.length === 0 ? '' : `\n${item.description}`}`;
+		}
+		write_rect_bounds(this.feedbackAnchor, view.bounds.left, Math.max(top, view.bounds.top), view.bounds.right, Math.min(bottom, view.bounds.bottom));
+		this.feedback!.show(this.feedbackText, this.feedbackAnchor, font, measure, measureText, this.feedbackArea!());
 	}
 
 	public isEnabled(command: EditorCommandId): boolean {
@@ -192,11 +259,16 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		input.openSource(item);
 	}
 
-	public onPointerLeave(): void { this.model.hoverIndex = -1; }
+	public onPointerEnter(): void { this.feedbackPointer = true; this.feedbackKeyboard = false; }
+	public onPointerLeave(): void { this.model.hoverIndex = -1; this.retireFeedback(); }
 
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
+		let pointerIntent = false;
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.viewport.bounds)) {
+			pointerIntent = !this.pointerKnown || this.pointerX !== snapshot.viewportX || this.pointerY !== snapshot.viewportY || snapshot.justPressedButtons !== 0;
+			this.pointerKnown = true; this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY;
+			if (pointerIntent) { this.feedbackPointer = true; this.feedbackKeyboard = false; }
 			this.hover.visit(this);
 			const row = this.model.rowAt(snapshot.viewportY);
 			this.model.hoverIndex = row;
@@ -206,12 +278,26 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 				this.padPressed = false;
 				if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && this.onContextMenu !== undefined) {
 					this.focusTarget.focus();
+					this.feedbackKeyboard = false;
 					this.onContextMenu(snapshot.viewportX, snapshot.viewportY, false);
+					return true;
+				}
+				const item = this.model.rows[row], expansion = item.element.expansion;
+				const disclosureLeft = this.model.viewport.bounds.left + item.disclosureLeft;
+				if ((expansion !== undefined || item.textExpandable) && (snapshot.justPressedButtons & PointerButton.Primary) !== 0
+					&& snapshot.viewportX >= disclosureLeft && snapshot.viewportX < disclosureLeft + WORKBENCH_ICON_SIZE + 2
+					&& snapshot.viewportY < this.model.viewport.offsetTop + item.top + item.headerHeight) {
+					this.focusTarget.focus();
+					this.feedbackKeyboard = false;
+					if (expansion !== undefined) expansion.setExpanded(!expansion.expanded);
+					else this.model.setValueExpanded(row, !item.textExpanded);
 					return true;
 				}
 			}
 		} else this.hover.release(this);
-		return this.scroll.handlePointer(snapshot);
+		const handled = this.scroll.handlePointer(snapshot);
+		if (pointerIntent) this.feedbackKeyboard = false;
+		return handled;
 	}
 
 	public handleWheel(snapshot: PointerPosition, delta: number): boolean { return this.scroll.handleWheel(snapshot, delta); }
@@ -219,7 +305,12 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private handleKeyboard(input: KeyInputEvent): boolean {
 		if (input.modifiers !== KeyModifier.none) { this.triggerKey = undefined; return false; }
 		if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.close(); return true; }
+		if (isKeyJustPressed('ArrowRight', input) || isKeyJustPressed('ArrowLeft', input)) {
+			if (!this.navigateDisclosure(input.code === 'ArrowRight')) return false;
+			consumeIdeKey(input.code, input); return true;
+		}
 		for (const key of NAVIGATION_KEYS) if (isKeyDown(key, input)) {
+			this.feedbackKeyboard = true; this.feedbackPointer = false;
 			consumeIdeKey(key, input);
 			this.triggerKey = undefined;
 			this.padPressed = false;
@@ -230,10 +321,27 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		if (TRIGGER_KEYS.includes(input.code as typeof TRIGGER_KEYS[number]) && !input.consumed) {
 			if (input.down && !input.repeat && this.triggerKey === undefined) this.triggerKey = input.code;
 			consumeIdeKey(input.code, input);
-			if (input.code === this.triggerKey && !input.down) { this.triggerKey = undefined; this.openSource(); }
+			if (input.code === this.triggerKey && !input.down) { this.triggerKey = undefined; this.activate(); }
 			return true;
 		}
 		return false;
+	}
+
+	/** Shared tree/text disclosure policy for keyboard and controller navigation. */
+	private navigateDisclosure(expand: boolean): boolean {
+		const index = this.model.selectionIndex, item = this.model.rows[index]?.element;
+		if (item?.compact !== true) return false;
+		this.triggerKey = undefined; this.padPressed = false;
+		this.feedbackKeyboard = true; this.feedbackPointer = false;
+		if (expand) {
+			if (item.expansion !== undefined) {
+				if (!item.expansion.expanded) item.expansion.setExpanded(true);
+				else if (this.model.rows[index + 1] !== undefined && (this.model.rows[index + 1].element.depth ?? 0) > (item.depth ?? 0)) this.model.select(index + 1);
+			} else this.model.setValueExpanded(index, true);
+		} else if (item.expansion?.expanded) item.expansion.setExpanded(false);
+		else if (!this.model.setValueExpanded(index, false)) for (let parent = index - 1; parent >= 0; parent--)
+			if ((this.model.rows[parent].element.depth ?? 0) < (item.depth ?? 0)) { this.model.select(parent); break; }
+		return true;
 	}
 
 	private handleGamepad(input: PlayerInput): boolean {
@@ -242,11 +350,12 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		const back = gamepad.getButtonState('b');
 		if (back.justpressed && !back.consumed) { gamepad.consumeButton('b'); this.close(); return true; }
 		for (const button of PAD_NAVIGATION) if (input.controlButtonRepeatEdge(button, 'gamepad')) {
+			if ((button === 'left' || button === 'right') && !this.navigateDisclosure(button === 'right')) return false;
 			gamepad.consumeButton(button);
 			this.triggerKey = undefined;
 			this.padPressed = false;
 			if (button === 'up' || button === 'down') this.model.select(this.model.selectionIndex + (button === 'up' ? -1 : 1));
-			else {
+			else if (button === 'lb' || button === 'rb') {
 				const view = this.model.viewport;
 				view.scrollbar.setScroll(view.scrollTop + (button === 'lb' ? -view.height : view.height));
 			}
@@ -257,12 +366,18 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		if (activate.justpressed) this.padPressed = true;
 		if (activate.pressed || activate.justpressed || activate.justreleased) gamepad.consumeButton('a');
 		if (!this.padPressed) return false;
-		if (activate.justreleased) { this.padPressed = false; this.openSource(); }
+		if (activate.justreleased) { this.padPressed = false; this.activate(); }
 		else if (!activate.pressed) this.padPressed = false;
 		return true;
+	}
+	private activate(): void {
+		const row = this.model.rows[this.model.selectionIndex], expansion = row?.element.expansion;
+		if (expansion !== undefined) expansion.setExpanded(!expansion.expanded);
+		else if (row?.textExpandable && !this.input!.canOpenSource(row.element)) this.model.setValueExpanded(this.model.selectionIndex, !row.textExpanded);
+		else this.openSource();
 	}
 }
 
 const NAVIGATION_KEYS = ['ArrowUp', 'ArrowDown', 'Home', 'End'] as const;
 const TRIGGER_KEYS = ['Enter', 'NumpadEnter'] as const;
-const PAD_NAVIGATION = ['up', 'down', 'lb', 'rb'] as const;
+const PAD_NAVIGATION = ['up', 'down', 'left', 'right', 'lb', 'rb'] as const;

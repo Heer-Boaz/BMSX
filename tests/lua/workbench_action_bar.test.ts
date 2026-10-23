@@ -17,6 +17,8 @@ import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { api } from '../../ide/runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../ide/workbench/render/action_bar';
+import { WORKBENCH_ICON_SIZE, type WorkbenchIcon } from '../../ide/workbench/ui/icon';
+import { drawWorkbenchIcon } from '../../ide/workbench/render/icon';
 
 function fixture(t: TestContext) {
 	const focus = new InputFocusService();
@@ -62,6 +64,42 @@ function fixture(t: TestContext) {
 	return { focus, capture, hover, content, state, enabled, calls, commands, bar, input, player, frame, key, press, pointer,
 		execute: (callback: (command: EditorCommandId) => void) => { onExecute = callback; } };
 }
+
+test('compact window actions reserve icon cells instead of measuring hidden text at either font', () => {
+	const state = createWorkbenchActionBar('actorLab.details.title');
+	for (const variant of ['tiny', 'msx'] as const) {
+		const font = new Font({ variant });
+		let measurements = 0;
+		layoutWorkbenchActionBar(state, 200, 2, font.lineHeight + 6, text => { measurements++; return font.measure(text); }, font);
+		assert.equal(measurements, 0);
+		assert.deepEqual(state.items.map(item => item.icon), ['pin', 'collapse', 'close']);
+		assert.equal(state.items[2].tooltip, 'Close Window');
+		for (let index = 0; index < state.items.length; index++) {
+			const item = state.items[index];
+			assert.ok(item.bounds.right - item.bounds.left >= WORKBENCH_ICON_SIZE + 6);
+			assert.ok(item.bounds.top + WORKBENCH_ICON_SIZE <= item.bounds.bottom);
+			if (index > 0) assert.equal(item.bounds.left - state.items[index - 1].bounds.right, 2);
+		}
+	}
+});
+
+test('shared UI icons are retained pixel geometry, not font glyph substitutions', t => {
+	const icons = ['pin', 'unpin', 'close', 'collapse', 'expand', 'play', 'pause', 'stepBack', 'stepForward', 'present',
+		'accept', 'back', 'more', 'actor', 'follow', 'chevronRight', 'chevronDown'] as const satisfies readonly WorkbenchIcon[];
+	const pixels: number[][] = [];
+	t.mock.method(api, 'fill_rect', (...args) => { pixels.push(args); });
+	const glyphs = t.mock.method(api, 'blit_text_inline_with_font', () => {});
+	for (const icon of icons) {
+		pixels.length = 0;
+		drawWorkbenchIcon(icon, 11, 13, 1);
+		assert.ok(pixels.length > 0);
+		for (const [left, top, right, bottom] of pixels) {
+			assert.ok(left >= 11 && top >= 13 && right <= 11 + WORKBENCH_ICON_SIZE && bottom <= 13 + WORKBENCH_ICON_SIZE);
+			assert.ok(right > left && bottom > top);
+		}
+	}
+	assert.equal(glyphs.mock.callCount(), 0);
+});
 
 const PRIMARY = PointerButton.Primary;
 

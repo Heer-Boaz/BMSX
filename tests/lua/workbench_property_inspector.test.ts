@@ -10,10 +10,11 @@ import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { WorkbenchPropertyInspector } from '../../ide/workbench/ui/property_inspector/control';
-import { WorkbenchPropertyInspectorModel, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
+import { WorkbenchPropertyInspectorModel, compactPropertyRowHeight, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
 import { drawWorkbenchPropertyInspector } from '../../ide/workbench/render/property_inspector';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 function fixture(t: TestContext) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
@@ -322,4 +323,181 @@ test('client inspector leaves chrome to its window, preserves sibling capture an
 	assert.equal(escape.consumed, true); assert.equal(focus.target, tree);
 	assert.equal(inspector.visible, true);
 	inspector.dispose(); capture.cancel();
+});
+
+test('compact runtime fields use measured columns and expose complete clipped text without another value read', t => {
+	const f = fixture(t), inspector = f.inspector;
+	const value = 'a_complete_long_value_that_does_not_fit_the_small_value_column';
+	const item: InspectedProperty = { label: 'A long field label', value, description: '', warning: false, compact: true };
+	inspector.show({ title: 'Runtime', items: [item], dismissible: false, canOpenSource: () => false, openSource() {} });
+	f.bounds.right = 180; f.layout();
+	const row = inspector.model.rows[0];
+	assert.equal(row.label.length, 1); assert.equal(row.value.length, 1);
+	assert.equal(row.bottom - row.top, compactPropertyRowHeight(f.font));
+	assert.equal(row.textExpandable, true); assert.notEqual(row.value[0], value);
+	assert.ok(row.valueLeft > row.labelLeft);
+	assert.equal(inspector.focusTarget.clipboard!.copy!(), value);
+	f.press('ArrowRight'); f.layout();
+	assert.equal(row.textExpanded, true); assert.equal(row.value.join(''), value);
+	assert.equal(row.label.join(''), item.label);
+	assert.ok(row.bottom - row.top > compactPropertyRowHeight(f.font));
+	f.press('ArrowLeft'); f.layout();
+	assert.equal(row.textExpanded, false); assert.equal(row.value.length, 1);
+	const measured = f.measured();
+	for (let n = 0; n < 1000; n++) f.layout();
+	assert.equal(f.measured(), measured, 'clean compact cells do not remeasure or reformat');
+});
+
+test('runtime disclosure keyboard, pointer and activation call the owner while source activation remains separate', t => {
+	const f = fixture(t), inspector = f.inspector;
+	let requests = 0;
+	const expansion = { expanded: false, setExpanded(expanded: boolean) { this.expanded = expanded; requests++; } };
+	const item: InspectedProperty = { label: 'Data', value: 'Table #7', description: '', warning: false, compact: true, expansion };
+	inspector.show({ title: 'Runtime', items: [item], dismissible: false, canOpenSource: () => false, openSource() {} }); f.layout();
+	f.press('ArrowRight'); assert.equal(expansion.expanded, true);
+	f.press('ArrowLeft'); assert.equal(expansion.expanded, false);
+	f.press('Enter'); assert.equal(expansion.expanded, true);
+	const row = inspector.model.rows[0], view = inspector.model.viewport;
+	inspector.handlePointer({ valid: true, insideViewport: true, viewportX: view.bounds.left + row.disclosureLeft + 2,
+		viewportY: view.offsetTop + row.top + 5, pressedButtons: PointerButton.Primary,
+		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
+	assert.equal(expansion.expanded, false); assert.equal(requests, 4);
+	f.pad('right', true); f.pad('right', false); assert.equal(expansion.expanded, true);
+	f.pad('left', true); f.pad('left', false); assert.equal(expansion.expanded, false); assert.equal(requests, 6);
+});
+
+test('both Studio fonts fit the nine standard actor fields in compact default client height and keep raw section headings whole', () => {
+	for (const variant of ['tiny', 'msx'] as const) {
+		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+		const labels = ['ID', 'Definition', 'Active', 'X', 'Y', 'Z', 'Tags', 'Data', 'Events'];
+		model.setItems(labels.map((label, index) => ({ label, value: index < 2 ? 'nemesis_s.intro' : '0', compact: true, description: '', warning: false })));
+		const bounds = { left: 0, top: 0, right: 186, bottom: compactPropertyRowHeight(font) * 9 };
+		const measure = (text: string, start: number, end: number) => font.measure(text.slice(start, end));
+		model.layout(font, measure, bounds);
+		assert.deepEqual(model.rows.map(row => row.label[0]), labels);
+		assert.equal(model.rows[0].value[0], 'nemesis_s.intro'); assert.equal(model.rows[1].value[0], 'nemesis_s.intro');
+		assert.equal(model.rows[8].bottom, bounds.bottom);
+		assert.equal(model.viewport.contentHeight, bounds.bottom, 'scalar rows do not force scrolling by oversized paragraph padding');
+		model.setItems([{ label: 'Stored fields', value: 'Table #12', compact: true, group: true, description: '', warning: false }]);
+		model.layout(font, measure, bounds);
+		assert.equal(model.rows[0].label[0], 'Stored fields'); assert.equal(model.rows[0].value[0], '');
+	}
+});
+
+test('compact multiline scalar previews stay on one row and disclose their exact retained text', t => {
+	const f = fixture(t), item: InspectedProperty = { label: 'Text', value: 'first\nsecond', description: '', warning: false, compact: true };
+	f.inspector.show({ title: 'Runtime', items: [item], dismissible: false, canOpenSource: () => false, openSource() {} }); f.layout();
+	const row = f.inspector.model.rows[0];
+	assert.equal(row.value[0], 'first…'); assert.equal(row.bottom - row.top, compactPropertyRowHeight(f.font));
+	assert.equal(f.inspector.focusTarget.clipboard!.copy!(), item.value);
+	f.press('ArrowRight'); f.layout(); assert.deepEqual(row.value, ['first', 'second']);
+});
+
+function feedbackFixture(t: TestContext) {
+	const f = fixture(t), surfaces = new WorkbenchSurfaceService();
+	f.bounds.right = 180; f.bounds.bottom = 130;
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('inspector owner'), isVisible: () => true,
+		getBounds: () => f.bounds, getClip: () => area, draw: () => drawWorkbenchPropertyInspector(f.inspector) });
+	t.after(() => surfaces.dispose());
+	let childRequests = 0;
+	const expansion = { expanded: false, setExpanded(expanded: boolean) { this.expanded = expanded; childRequests++; } };
+	const item: InspectedProperty = { label: '_active_objects_by_definition', value: 'Table #7', description: '', warning: false,
+		compact: true, depth: 2, expansion };
+	const items: InspectedProperty[] = [item, ...Array.from({ length: 8 }, (_, index) => ({ label: `Scalar ${index}`, value: '0',
+		compact: true, depth: 0, description: '', warning: false }))];
+	f.inspector.show({ title: 'Runtime', items, dismissible: false, canOpenSource: () => false, openSource() {} }, false);
+	f.inspector.attachFeedback(surfaces, owner, () => area);
+	let font = new Font({ variant: 'msx' }), measurements = 0;
+	const measure = (text: string, start: number, end: number) => { measurements++; return font.measure(text.slice(start, end)); };
+	const measureText = (text: string) => { measurements++; return font.measure(text); };
+	const layout = () => f.inspector.layout(font, measure, measureText, f.bounds);
+	layout();
+	const labels: string[] = [];
+	t.mock.method(api, 'blit_text_inline_with_font', text => { labels.push(text); });
+	const overlay = createHostOverlayFixture(384, 288);
+	const paint = () => {
+		labels.length = 0;
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
+	};
+	const pointer = (offset = 0) => {
+		const view = f.inspector.model.viewport;
+		f.inspector.handlePointer({ valid: true, insideViewport: true, viewportX: view.bounds.left + 50 + offset,
+			viewportY: view.bounds.top + 5, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 });
+	};
+	return { ...f, surfaces, owner, area, item, items, labels, paint, layout, pointer,
+		measurements: () => measurements, childRequests: () => childRequests,
+		setFont: (variant: 'tiny' | 'msx') => { font = new Font({ variant }); layout(); } };
+}
+
+test('clipped table names expose full cached passive hover and keyboard focus feedback without inspecting children', t => {
+	const f = feedbackFixture(t), view = f.inspector.model.viewport;
+	assert.notEqual(f.inspector.model.rows[0].label[0], f.item.label);
+	f.paint(); assert.equal(f.labels.includes(f.item.label), false, 'unfocused unhovered cells do not create persistent popups');
+	f.pointer(); f.layout(); f.paint();
+	assert.equal(f.labels.includes(f.item.label), true); assert.equal(f.labels.includes(f.item.value), true);
+	assert.equal(f.childRequests(), 0, 'reading the full table name is not child expansion or guest execution');
+	assert.equal(f.surfaces.hitTest(view.bounds.left + 10, view.bounds.top + f.inspector.model.rows[0].headerHeight + 3), f.owner,
+		'feedback does not intercept the underlying content');
+	const measured = f.measurements();
+	for (let n = 0; n < 1000; n++) { f.inspector.update(); f.layout(); }
+	assert.equal(f.measurements(), measured); assert.equal(f.childRequests(), 0);
+	f.inspector.focusTarget.focus(); f.layout(); f.paint(); assert.equal(f.labels.includes(f.item.label), true);
+	f.parent.focus(); f.paint(); assert.equal(f.labels.includes(f.item.label), false, 'blur retires the full-name feedback immediately');
+	f.inspector.focusTarget.focus(); f.layout(); f.paint(); assert.equal(f.labels.includes(f.item.label), true);
+	f.setFont('tiny'); f.paint(); assert.equal(f.labels.includes(f.item.label), true, 'font changes reflow the same retained full text');
+	f.press('ArrowDown'); f.layout(); f.paint();
+	assert.equal(f.labels.includes(f.item.label), false, 'ordinary unclipped scalar selection never opens a hint');
+});
+
+test('property feedback retires on scroll, logical row replacement and containing surface lifetime', t => {
+	const f = feedbackFixture(t), view = f.inspector.model.viewport;
+	f.pointer(); f.layout(); f.paint(); assert.equal(f.labels.includes(f.item.label), true);
+	f.inspector.handleWheel({ valid: true, insideViewport: true, viewportX: view.bounds.left + 50, viewportY: view.bounds.top + 5 }, 30);
+	f.layout(); f.paint(); assert.equal(f.labels.includes(f.item.label), false);
+	f.inspector.model.viewport.scrollbar.setScroll(0); f.pointer(); f.layout(); f.paint();
+	assert.equal(f.labels.includes(f.item.label), false, 'stationary pointer feedback cannot follow an unrelated row after scrolling');
+	f.pointer(1); f.layout(); f.paint(); assert.equal(f.labels.includes(f.item.label), true);
+	const replacement = { ...f.item, label: '_other_full_stored_member_name', value: 'Table #8' };
+	f.inspector.updateItems([replacement, ...f.items.slice(1)], (left, right) => left.label === right.label);
+	f.layout(); f.paint();
+	assert.equal(f.labels.includes(f.item.label), false); assert.equal(f.labels.includes(replacement.label), false);
+	f.pointer(2); f.layout(); f.paint(); assert.equal(f.labels.includes(replacement.label), true);
+	f.owner.dispose(); f.paint(); assert.equal(f.labels.includes(replacement.label), false, 'feedback is retired with its actual content surface');
+});
+
+test('full property feedback respects the shared modal admission contract and inspector hide lifetime', t => {
+	const f = feedbackFixture(t);
+	f.pointer(); f.layout(); f.paint(); assert.equal(f.labels.includes(f.item.label), true);
+	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, lifetimeOwner: f.owner, captureScope: Symbol('modal'),
+		getBounds: () => f.area, getClip: () => f.area, isVisible: () => true, draw() {} });
+	f.paint(); assert.equal(f.labels.includes(f.item.label), false, 'feedback cannot paint over a modal that blocks its owner');
+	modal.dispose(); f.inspector.hide(); f.paint();
+	assert.equal(f.labels.includes(f.item.label), false);
+});
+
+test('disclosure navigation cancels held keyboard and controller activation before selecting another source or table', t => {
+	const f = fixture(t);
+	for (const trigger of ['keyboard', 'gamepad'] as const) for (const direction of ['ArrowRight', 'ArrowLeft'] as const)
+		for (const target of ['source', 'table'] as const) {
+			let opened = 0, parentChanges = 0, childChanges = 0;
+			const parentExpansion = { expanded: true, setExpanded(expanded: boolean) { this.expanded = expanded; parentChanges++; } };
+			const childExpansion = { expanded: false, setExpanded(expanded: boolean) { this.expanded = expanded; childChanges++; } };
+			const parent: InspectedProperty = { label: 'Parent', value: 'Table #1', description: '', warning: false, compact: true, depth: 0, expansion: parentExpansion };
+			const child: InspectedProperty = { label: 'Child', value: target === 'source' ? 'source.lua:3' : 'Table #2', description: '', warning: false,
+				compact: true, depth: 1, expansion: target === 'table' ? childExpansion : undefined };
+			f.inspector.show({ title: 'Runtime', items: [parent, child], dismissible: false,
+				canOpenSource: item => target === 'source' && item === child, openSource() { opened++; } }); f.layout();
+			f.inspector.model.select(direction === 'ArrowRight' ? 0 : 1);
+			if (trigger === 'keyboard') f.key('Enter', true); else f.pad('a', true);
+			f.press(direction);
+			assert.equal(f.inspector.model.selectionIndex, direction === 'ArrowRight' ? 1 : 0);
+			if (trigger === 'keyboard') f.key('Enter', false); else f.pad('a', false);
+			assert.equal(opened, 0, 'a release without a press on the new selection cannot open Source');
+			assert.equal(parentChanges, 0); assert.equal(childChanges, 0, 'a release cannot expand or collapse a newly selected table');
+			f.press('Enter');
+			if (direction === 'ArrowLeft') assert.equal(parentChanges, 1);
+			else if (target === 'source') assert.equal(opened, 1, 'fresh Source activation still works');
+			else assert.equal(childChanges, 1, 'fresh table activation still works');
+		}
 });

@@ -1,3 +1,4 @@
+import { actorNodeLabel } from './labels';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { GuestInvalidationReason, SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { BehaviorRuntimeProperties, runtimePropertyIdentitiesEqual, runtimeInspectionPropertiesEqual, type RuntimePropertyIdentity } from '../behavior_lens/runtime_properties';
@@ -47,12 +48,16 @@ export class ActorDetails {
 	private availableValue = false;
 	private retiredValue = false;
 	private titleValue = 'DETAILS — SELECT AN INSTANCE';
+	private captionValue = 'Details';
+	private subjectNameValue = '';
 	public get subject(): ActorTarget | undefined { return this.subjectValue; }
 	public get locked(): boolean { return this.lockedValue; }
 	public get subjectPath(): string { return this.subjectPathValue; }
+	public get subjectName(): string { return this.subjectNameValue; }
 	public get available(): boolean { return this.availableValue; }
 	public get retired(): boolean { return this.retiredValue; }
 	public get title(): string { return this.titleValue; }
+	public get caption(): string { return this.captionValue; }
 	private readonly properties: BehaviorRuntimeProperties;
 	private readonly runtime = new ActorRuntimeTree();
 	private subjectTree: ActorRuntimeTree | undefined;
@@ -62,6 +67,7 @@ export class ActorDetails {
 	private pathSubject: ActorTarget | undefined;
 	private titleSubject: ActorTarget | undefined;
 	private titlePath = '';
+	private titleName = '';
 	private titleAvailable = false;
 	private selection: readonly ActorNodeIdentity[] | undefined;
 	private domain: ResourceDomain | undefined;
@@ -69,7 +75,7 @@ export class ActorDetails {
 	private dirty = true;
 
 	public constructor(private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession) {
-		this.properties = new BehaviorRuntimeProperties(sources, guest);
+		this.properties = new BehaviorRuntimeProperties(sources, guest, undefined, 'summary');
 		this.watches = new ActorWatches(sources, guest);
 	}
 
@@ -82,11 +88,11 @@ export class ActorDetails {
 		const previous = this.subjectValue;
 		if (path === undefined || worldHashId === undefined) {
 			if (previous === undefined) return;
-			this.subjectValue = undefined; this.subjectPathValue = ''; this.availableValue = false;
+			this.subjectValue = undefined; this.subjectPathValue = ''; this.subjectNameValue = ''; this.availableValue = false;
 		} else {
 			if (previous !== undefined && previous.domain === domain && previous.worldHashId === worldHashId
 				&& previous.actorHashId === actorHashId && actorPathsEqual(previous.path, path)) return;
-			this.subjectValue = { domain, worldHashId, actorHashId, path }; this.subjectPathValue = '';
+			this.subjectValue = { domain, worldHashId, actorHashId, path }; this.subjectPathValue = ''; this.subjectNameValue = '';
 			this.availableValue = resolveActorTarget(current.roots, this.subjectValue, this.guest) !== undefined;
 			if (this.availableValue) this.updateSubjectPath(current);
 		}
@@ -96,13 +102,13 @@ export class ActorDetails {
 	}
 
 	public setLocked(locked: boolean): void {
-		if (!locked && this.lockedValue && this.retiredValue) this.restoreSubject(undefined, false, '', false);
+		if (!locked && this.lockedValue && this.retiredValue) this.restoreSubject(undefined, false, '', '', false);
 		this.lockedValue = locked && this.subjectValue !== undefined;
 	}
 
 	/** Navigation restores only an admitted identity bookmark, never a heap borrow. */
-	public restoreSubject(subject: ActorTarget | undefined, locked: boolean, path: string, retired: boolean): void {
-		this.subjectValue = subject; this.lockedValue = locked; this.subjectPathValue = path; this.retiredValue = retired;
+	public restoreSubject(subject: ActorTarget | undefined, locked: boolean, path: string, name: string, retired: boolean): void {
+		this.subjectValue = subject; this.lockedValue = locked; this.subjectPathValue = path; this.subjectNameValue = name; this.retiredValue = retired;
 		this.availableValue = false; this.subjectDirty = true; this.subjectTree = undefined;
 		this.selection = undefined; this.dirty = true;
 		this.updateTitle();
@@ -166,15 +172,17 @@ export class ActorDetails {
 		for (const identity of subject.path) {
 			const node = children.find(node => node.hashId === identity.hashId && node.kind === identity.kind
 				&& this.guest.matchesIdentity(node.key, identity.key))!;
-			labels.push(node.label); children = node.children;
+			labels.push(node.label); this.subjectNameValue = actorNodeLabel(node, children, tree.roots[0]); children = node.children;
 		}
 		this.subjectPathValue = `${subject.domain === -1 ? 'SYSTEM' : `CART ${subject.domain}`} / ${labels.join(' / ')}`;
 		this.pathSubject = subject; this.pathTree = tree; this.pathRevision = tree.topologyRevision;
 	}
 
 	private updateTitle(): void {
-		if (this.titleSubject === this.subjectValue && this.titlePath === this.subjectPathValue && this.titleAvailable === this.availableValue) return;
-		this.titleSubject = this.subjectValue; this.titlePath = this.subjectPathValue; this.titleAvailable = this.availableValue;
+		if (this.titleSubject === this.subjectValue && this.titlePath === this.subjectPathValue && this.titleAvailable === this.availableValue && this.titleName === this.subjectNameValue) return;
+		this.titleSubject = this.subjectValue; this.titlePath = this.subjectPathValue; this.titleAvailable = this.availableValue; this.titleName = this.subjectNameValue;
+		this.captionValue = this.subjectValue === undefined ? 'Details' : this.subjectPathValue === '' ? 'Unavailable'
+			: `${this.subjectNameValue}${this.availableValue ? '' : ' — Unavailable'}`;
 		this.titleValue = this.subjectValue === undefined ? 'DETAILS — SELECT AN INSTANCE'
 			: this.subjectPathValue === '' ? 'DETAILS — UNAVAILABLE' : `DETAILS — ${this.subjectPathValue}${this.availableValue ? '' : ' — UNAVAILABLE'}`;
 	}
@@ -188,8 +196,8 @@ export class ActorDetails {
 		const sameSelection = this.domain === domain && this.worldHashId === worldHashId && (this.selection === selection
 			|| this.selection !== undefined && selection !== undefined && actorPathsEqual(this.selection, selection));
 		this.selection = selection;
-		if (this.dirty || !sameSelection) {
-			properties.begin(this.dirty && sameSelection && node !== undefined);
+		if (this.dirty || !sameSelection || properties.expansionPending) {
+			properties.begin(this.dirty && sameSelection && node !== undefined, !this.dirty && sameSelection);
 			this.dirty = false;
 			this.domain = domain; this.worldHashId = worldHashId;
 			if (node === undefined) {

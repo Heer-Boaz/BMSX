@@ -41,6 +41,10 @@ import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { api } from '../../ide/runtime/overlay_api';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
+import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { RuntimeTimelineControl } from '../../ide/workbench/ui/runtime_timeline_control';
 
 /** Compiled guest representations, not JS table mocks. Actual cartlib construction is tested in the browser workflow. */
 const WORLD_SOURCE = `local fsm<const> = require('cartlib/fsm/fsm_component')
@@ -166,7 +170,7 @@ test('Actor Lab pin action enablement uses retained membership without guest rea
 	const input = controller.resolveInput(); t.after(() => input.dispose());
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
-	const pinned = input.details!.items.find(item => item.label === 'id')!, unpinned = input.details!.items.find(item => item.label === 'active')!;
+	const pinned = input.details!.items.find(item => item.label === 'ID')!, unpinned = input.details!.items.find(item => item.label === 'Active')!;
 	controller.pinProperty(input, pinned); controller.refreshDetails(input);
 	const pin = input.details!.watches.pins[0];
 	const displayOnly = { ...unpinned, watchIdentity: undefined };
@@ -233,7 +237,7 @@ test('locked Details property commands target its subject rather than a newly se
 	controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
 	assert.equal(controller.selected(input)!.hashId, choices[1].hashId);
 	assert.equal(input.details!.subject, subject); assert.equal(input.details!.locked, true);
-	const property = input.details!.items.find(item => item.label === 'active')!;
+	const property = input.details!.items.find(item => item.label === 'Active')!;
 	assert.equal(property.value, 'true', 'Details still projects the first actor, not the tree-selected inactive actor');
 	assert.equal(controller.canPinProperty(input, property), true);
 	controller.pinProperty(input, property); controller.refreshDetails(input);
@@ -243,7 +247,7 @@ test('locked Details property commands target its subject rather than a newly se
 	controller.setDetailsLocked(input, false);
 	assert.equal(input.details!.subject!.actorHashId, choices[1].hashId, 'unlock immediately adopts the current tree selection');
 	controller.refreshDetails(input);
-	const second = input.details!.items.find(item => item.watch === undefined && item.label === 'active')!;
+	const second = input.details!.items.find(item => item.watch === undefined && item.label === 'Active')!;
 	assert.equal(second.value, 'false');
 	assert.equal(controller.canPinProperty(input, second), true, 'the same semantic field on a different subject is not already pinned');
 	assert.equal(controller.canUnpinProperty(input, second), false);
@@ -269,6 +273,7 @@ test('navigation retains the independent Details lock and subject, but never res
 	f.guest.invalidate('heap-replaced');
 	controller.restoreSelection(input, saved, font); controller.refreshDetails(input);
 	assert.equal(input.details!.subject, undefined); assert.equal(input.details!.locked, false);
+	assert.equal(input.details!.subjectName, ''); assert.equal(input.details!.caption, 'Details');
 });
 
 test('the actual floating pane retains locked pins while collapsed or detached without formatting the hidden client', t => {
@@ -304,14 +309,36 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	const choices = readActorChoices(f.sources, f.guest, -1);
 	input.domain = -1;
 	pane.setInput(input, bounds); pane.update(); pane.focus();
+	const transport = new RuntimeTimelineControl(commands, () => pane.focus());
+	t.after(() => transport.dispose());
+	transport.attach(surfaces, owner, () => bounds);
+	transport.setContext(pane.runtimeControlContext, pane.runtimeTransport); transport.update();
+	assert.equal(transport.visible, true);
+	transport.focus();
+	assert.equal(inputFocus.target!.scope, transport.focusScope, 'the Workbench focus command can enter transport without a pointer');
+	inputFocus.moveFocus(false);
+	assert.equal(inputFocus.target, pane.runtimeControlContext, 'Tab leaves transport for its content when no history range is enabled');
+	transport.focus(); inputFocus.moveFocus(true);
+	assert.equal(inputFocus.target, pane.runtimeControlContext, 'Shift+Tab returns to the explicit owning content');
+	transport.setContext(undefined, undefined); assert.equal(transport.visible, false);
 	assert.equal(controller.selected(input), undefined);
 	assert.equal(input.details!.subject, undefined);
 	assert.equal(commands.isEnabled('actorLab.details'), false, 'a brand-new empty Details inspection is not admitted');
 	input.actorHashId = choices[0].hashId; input.dirty = true;
 	pane.update(); input.outline.selectionIndex = 0; input.rememberSelection();
+	assert.equal(input.split.bounds.top, bounds.top + 2, 'preview geometry no longer reserves duplicate playback and GAME FRAME headers');
+	const overlay = createHostOverlayFixture(384, 288);
+	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); pane.draw(); overlay.renderer.endFrame();
+	const frame = overlay.queue.consumeOverlayFrame(), chromeText: string[] = [];
+	for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+		const run = frame.commandRefs[index] as GlyphRenderSubmission;
+		chromeText.push((run.items as string).slice(run.item_start, run.item_end));
+	}
+	assert.ok(!chromeText.includes('PAUSED') && !chromeText.includes('GAME FRAME'));
+	assert.ok(!chromeText.includes('+') && !chromeText.includes('-'), 'tree disclosures render shared chevrons, not text font symbols');
 	pane.focus(); commands.execute('actorLab.details');
 	const details = input.details!, subject = details.subject!, path = details.subjectPath;
-	controller.pinProperty(input, details.items.find(item => item.label === 'active')!); pane.update();
+	controller.pinProperty(input, details.items.find(item => item.label === 'Active')!); pane.update();
 	const pin = details.watches.pins[0], preview = { ...input.previewBounds };
 	commands.execute('actorLab.lockDetails', pane.inspector.focusTarget);
 	pane.detailsWindow.setCollapsed(true);
@@ -345,7 +372,8 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	pane.update();
 	assert.equal(details.subject, subject); assert.equal(details.locked, true);
 	assert.equal(details.available, false); assert.equal(details.retired, false, 'historical absence does not retire the locked identity');
-	assert.match(input.detailsWindow.title, /UNAVAILABLE$/, 'collapsed chrome reports the actual historical availability');
+	assert.equal(input.detailsWindow.title, details.caption, 'window chrome consumes the compact caption, not the full subject path');
+	assert.match(input.detailsWindow.title, /Unavailable$/, 'collapsed chrome reports the actual historical availability');
 	assert.equal(resolveSubject.mock.callCount(), 1, 'one settled dirty observation resolves the visible collapsed subject');
 	for (let frame = 0; frame < 1000; frame++) pane.update();
 	assert.equal(resolveSubject.mock.callCount(), 1, 'clean collapsed updates do not repeat identity resolution');
@@ -355,7 +383,7 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	assert.equal(resolveSubject.mock.callCount(), 2);
 	assert.equal(details.subject, subject); assert.equal(details.locked, true);
 	assert.equal(details.available, true); assert.equal(details.retired, false);
-	assert.doesNotMatch(input.detailsWindow.title, /UNAVAILABLE$/, 'the same historical identity becomes available again without expanding');
+	assert.doesNotMatch(input.detailsWindow.title, /Unavailable$/, 'the same historical identity becomes available again without expanding');
 	for (let frame = 0; frame < 1000; frame++) pane.update();
 	assert.equal(resolveSubject.mock.callCount(), 2);
 	pane.detailsWindow.hide();
@@ -745,11 +773,49 @@ for (const reason of ['execution', 'history-restored', 'heap-replaced'] as const
 	next.dispose();
 });
 
+test('Actor Lab separates compact semantic labels from actual component identities and owner-qualified names', () => {
+	const source = `local fsm<const> = require('cartlib/fsm/fsm_component')
+local timelines<const> = require('cartlib/timeline/timeline_component')
+local left<const> = { localdef_id = 'demo.actor.left.same', states = {}, state_ids = {}, current_id = nil }
+local right<const> = { localdef_id = 'demo.actor.right.same', states = {}, state_ids = {}, current_id = nil }
+local alias<const> = { localdef_id = 'left.same', states = {}, state_ids = {}, current_id = nil }
+local timeline<const> = { id = 1, enabled = true, _parent_component_index = 1, _entries_by_id = { ['demo.actor.blank'] = { playing = true } } }
+local first<const> = { id = 2, enabled = true, _parent_component_index = 2, _started = true, _machines = { left, right, alias } }
+local second<const> = { id = 3, enabled = true, _parent_component_index = 3, _started = true, _machines = { right } }
+local actor<const> = { id = 'demo.actor', definition_id = 'demo.actor', active = true,
+ _components = { timeline, first, second }, _components_by_class = { [fsm] = { first, second }, [timelines] = { timeline } } }
+first.parent = actor; second.parent = actor; timeline.parent = actor
+return { _objects = { actor } }`;
+	const f = fixture(`local world<const> = require('cartlib/world/world')
+local fsm<const> = require('cartlib/fsm/fsm_component')
+function remove_component() world._objects[1]._components[3] = nil; world._objects[1]._components_by_class[fsm][2] = nil end
+return world`, true, source);
+	const choice = readActorChoices(f.sources, f.guest, -1)[0], input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true);
+	input.domain = -1; input.actorHashId = choice.hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
+	const root = input.outline.roots[0], [timeline, first, second] = root.children;
+	assert.equal(timeline.element.label, 'Timelines');
+	assert.equal(timeline.element.node.label, 'TIMELINES 1', 'full runtime label still identifies the real component ID');
+	assert.equal(first.element.label, 'State machines #2'); assert.equal(second.element.label, 'State machines #3');
+	assert.equal(timeline.children[0].element.label, 'blank');
+	assert.equal(first.children[0].element.label, 'demo.actor.left.same', 'a qualified name keeps its distinction from an actual unqualified sibling');
+	assert.equal(first.children[1].element.label, 'right.same'); assert.equal(first.children[2].element.label, 'left.same');
+	assert.equal(second.children[0].element.label, 'right.same');
+	assert.equal(first.children[0].element.node.name, 'demo.actor.left.same');
+	assert.equal(second.children[0].element.node.name, 'demo.actor.right.same', 'suffix collisions never discard distinct owner paths');
+	input.invalidate(); f.guest.invalidate('execution');
+	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove_component') as Closure, []);
+	projection.update();
+	assert.equal(root.children[1], first); assert.equal(first.element.label, 'State machines');
+	input.dispose(); f.stop.dispose();
+});
+
 test('ordinary pane retains stable rows, refreshes changed labels, releases detached branches and clears identities after machine replacement', () => {
 	const f = fixture(), choice = readActorChoices(f.sources, f.guest, f.stop.state.activeCartridge)[0], input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true);
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	projection.update();
+	assert.equal(input.outline.roots[0].children[0].element.label, 'State machines: states', 'named components retain their authored name');
 	const rows = input.outline.rows.slice();
 	assert.equal(projection.update(), false);
 	assert.ok(rows.every((row, index) => row === input.outline.rows[index]));
@@ -1102,4 +1168,44 @@ test('historical actor absence keeps collapse and follow bookmarks but heap repl
 	assert.strictEqual(input.follow.pending, target);
 	input.invalidate('heap-replaced');
 	assert.equal(input.follow.target, undefined); assert.equal(input.actorHashId, 0);
+});
+
+test('expanded stored values are inspectable selections but never fabricate logical pin commands', t => {
+	const worldSource = WORLD_SOURCE.replace('active = true, _components', 'active = true, data = { answer = 42 }, _components');
+	const f = fixture(ENTRY, true, worldSource); t.after(() => f.stop.dispose());
+	const input = f.controller.resolveInput(); t.after(() => input.dispose());
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	f.controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); f.controller.refreshDetails(input);
+	const data = input.details!.items.find(item => item.identity?.section === 'instance' && item.identity.field === 'data')!;
+	data.expansion!.setExpanded(true); f.controller.refreshDetails(input);
+	const stored = input.details!.items.find(item => item.label === 'answer')!;
+	assert.equal(stored.value, '42'); assert.ok(stored.identity?.parent);
+	assert.equal(stored.watchIdentity, undefined);
+	assert.equal(f.controller.canPinProperty(input, stored), false);
+	assert.equal(f.controller.canUnpinProperty(input, stored), false);
+	assert.equal(f.controller.canRevealPinnedProperty(input, stored), false);
+});
+
+for (const historical of [true, false]) test(`navigation restores the original compact Details name when actor A is ${historical ? 'historically unavailable' : 'retired'} after inspecting B`, t => {
+	const worldSource = WORLD_SOURCE.replace('id = 1, definition_id', "id = 'actor_a', definition_id")
+		.replace("id = '1', definition_id", "id = 'actor_b', definition_id");
+	const entry = ENTRY.replace('return world', 'function remove_a() world._objects = { world._objects[2] } end\nreturn world');
+	const f = fixture(entry, true, worldSource); t.after(() => f.stop.dispose());
+	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
+	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
+	controller.inspectActor(input, -1, choices.find(choice => choice.label === 'actor_a')!.hashId);
+	input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input); controller.setDetailsLocked(input, true);
+	const subject = input.details!.subject!, saved = controller.captureSelection(input); t.after(() => saved.dispose());
+	assert.equal(input.details!.caption, 'actor_a'); assert.equal(saved.detailsSubjectName, 'actor_a');
+	controller.setDetailsLocked(input, false);
+	controller.inspectActor(input, -1, choices.find(choice => choice.label === 'actor_b')!.hashId);
+	input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
+	assert.equal(input.details!.caption, 'actor_b');
+	f.guest.invalidate(historical ? 'history-restored' : 'execution');
+	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove_a') as Closure, []);
+	controller.restoreSelection(input, saved, font); controller.refreshDetails(input);
+	assert.equal(input.details!.subject, subject); assert.equal(input.details!.locked, true); assert.equal(input.details!.available, false);
+	assert.equal(input.details!.retired, !historical);
+	assert.match(input.details!.title, /actor_a.*UNAVAILABLE$/); assert.ok(!input.details!.title.includes('actor_b'));
+	assert.equal(input.details!.caption, 'actor_a — Unavailable', 'the unavailable caption belongs to the restored identity, never the last inspected actor');
 });

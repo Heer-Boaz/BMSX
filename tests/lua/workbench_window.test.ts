@@ -13,6 +13,10 @@ import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { ELLIPSIS } from '../../ide/common/text';
+import { drawWorkbenchWindow } from '../../ide/workbench/render/window';
+import * as colors from '../../ide/common/constants';
+import { WorkbenchTooltip } from '../../ide/workbench/ui/tooltip';
 
 const pointer = (x: number, y: number, buttons = 0, pressed = 0, released = 0): PointerInputSnapshot => ({
 	viewportX: x, viewportY: y, valid: true, insideViewport: true,
@@ -34,13 +38,14 @@ function fixture() {
 		isEnabled: (command, target) => focus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => focus.executeCommand(command, target),
 	};
-	function window(name: string, left = 40, top = 40, onRetireContent?: () => void) {
+	function window(name: string, left = 40, top = 40, onRetireContent?: () => void, getTitleTooltip?: () => string) {
 		const model = new WorkbenchWindowModel({ left, top, right: left + 240, bottom: top + 180 }, 120, 80);
 		model.title = name;
 		const actions = createWorkbenchActionBar('window.title');
 		let input = false, layouts = 0, restores = 0, retires = 0, painted = 0, clicked = 0, hidden = 0;
 		const control = new WorkbenchFloatingWindow(focus, capture, hover, surfaces, commands, {
 			model, actionBar: actions, lifetimeOwner: owner, focusReturn: parent, getWorkArea: () => workArea,
+			getTitleTooltip,
 			content: { draw() { painted += 1; }, handlePointer() { clicked += 1; } },
 			layoutContent() { layouts += 1; }, retireContentInput() { input = false; retires += 1; onRetireContent?.(); },
 			restoreContentInput() { input = true; restores += 1; }, focusContent() { client.focus(); }, onDidHide() { hidden += 1; },
@@ -190,7 +195,8 @@ test('collapse structurally retires client capture and transients, focuses expan
 	assert.equal(a.input(), false); assert.equal(a.retires(), 1);
 	assert.equal(f.focus.target!.scope, a.control.scope);
 	assert.equal(a.actions.items[a.actions.focusedIndex].command, 'window.collapse');
-	assert.equal(a.actions.items[a.actions.focusedIndex].label, '+');
+	assert.equal(a.actions.items[a.actions.focusedIndex].checked, true);
+	assert.equal(a.actions.items[a.actions.focusedIndex].checkedIcon, 'expand');
 	a.control.focusTarget.focus(); f.focus.moveFocus(true);
 	assert.equal(f.focus.target, a.control.actionFocusTarget, 'collapsed chrome-only reverse Tab order excludes the retired inspector');
 	assert.equal(a.model.requestedBounds.bottom - a.model.requestedBounds.top, height);
@@ -232,7 +238,7 @@ test('idle frames do no chrome measurement/layout and hide differs from pane det
 	a.model.title = 'CHANGED SUBJECT'; a.layout();
 	assert.ok(f.measurements() > measured); assert.equal(a.layouts(), layouts, 'title changes do not reformat unchanged content');
 	a.model.title = 'World/Actor/VeryLongParentName/VeryLongComponentName/SubjectSuffix'; a.layout();
-	assert.ok(a.model.displayTitle.includes('...') && a.model.displayTitle.endsWith('SubjectSuffix'), 'middle truncation retains the identifying subject suffix');
+	assert.ok(a.model.displayTitle.includes(ELLIPSIS) && a.model.displayTitle.endsWith('SubjectSuffix'), 'middle truncation retains the identifying subject suffix');
 	a.control.detach(); assert.equal(a.control.surface, undefined); assert.equal(a.model.open, true); assert.equal(a.hidden(), 0);
 	a.control.attach(); a.layout(); assert.equal(a.control.visible, true); assert.equal(a.restores(), 2);
 	a.client.focus(); a.control.focusTarget.focus();
@@ -244,4 +250,121 @@ test('idle frames do no chrome measurement/layout and hide differs from pane det
 	f.focus.handleKeyboard(actionEscape);
 	assert.equal(f.focus.target, f.parent); assert.equal(a.model.open, true); assert.equal(actionEscape.consumed, true);
 	a.control.hide(); assert.equal(a.model.open, false); assert.equal(a.hidden(), 1);
+});
+
+test('window icon tooltips are passive, modal-admitted, retained feedback with no idle measurement', t => {
+	const f = fixture(), a = f.window('SUBJECT'); a.show();
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const close = a.actions.items[1];
+	a.control.surface!.handlePointer!(pointer((close.bounds.left + close.bounds.right) >> 1,
+		(close.bounds.top + close.bounds.bottom) >> 1), 0);
+	a.control.update();
+	const labels: string[] = [];
+	t.mock.method(api, 'blit_text_inline_with_font', label => { labels.push(label); });
+	const { presenter, renderer } = createHostOverlayFixture(500, 400);
+	const paint = () => {
+		labels.length = 0;
+		renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
+	};
+	paint();
+	assert.ok(labels.includes('Close Window'), 'the icon exposes the actual command, not a hidden text abbreviation');
+	const tipX = close.bounds.right - f.font.measure('Close Window') - 4, tipY = close.bounds.bottom + 5;
+	assert.equal(f.surfaces.hitTest(tipX, tipY), a.control.clientSurface, 'tooltip pixels do not intercept underlying client input');
+	const measurements = f.measurements();
+	for (let frame = 0; frame < 1000; frame++) { a.layout(); a.control.update(); }
+	assert.equal(f.measurements(), measurements);
+	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('modal'), lifetimeOwner: f.owner,
+		getBounds: () => f.workArea, getClip: () => f.workArea, isVisible: () => true, draw() {} });
+	paint();
+	assert.equal(labels.includes('Close Window'), false, 'a blocked window cannot paint its tooltip above a modal');
+	modal.dispose();
+	a.control.hide(); a.show(); paint();
+	assert.equal(labels.includes('Close Window'), false, 'reattachment does not restore stale pointer feedback');
+});
+
+test('floating windows share a translucent surface shadow without extending their hit bounds', t => {
+	const f = fixture(), a = f.window('SUBJECT'); a.show();
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const fills: number[][] = [];
+	t.mock.method(api, 'fill_rect', (...args) => { fills.push(args); });
+	t.mock.method(api, 'blit_rect', () => {});
+	t.mock.method(api, 'blit_text_inline_with_font', () => {});
+	t.mock.method(api, 'pushClipRect', () => {});
+	t.mock.method(api, 'popClipRect', () => {});
+	drawWorkbenchWindow(a.model, a.actions, true);
+	const bounds = a.model.bounds;
+	assert.deepEqual(fills[0], [bounds.left + 2, bounds.top + 2, bounds.right + 2, bounds.bottom + 2, 0, colors.COLOR_SURFACE_SHADOW]);
+	assert.ok(fills.some(fill => fill[5] === colors.COLOR_WINDOW_HEADER_ACTIVE_BACKGROUND));
+	assert.equal(f.surfaces.hitTest(bounds.right + 1, bounds.bottom - 1), f.owner);
+	fills.length = 0;
+	drawWorkbenchWindow(a.model, a.actions, false);
+	assert.ok(fills.some(fill => fill[5] === colors.COLOR_WINDOW_HEADER_INACTIVE_BACKGROUND));
+});
+
+test('a compact window caption exposes its full owner-supplied path without spending permanent layout rows', t => {
+	const f = fixture(), title = 'CART 0 / nemesis_s.intro / Timelines / logo';
+	const a = f.window('logo', 40, 40, undefined, () => title); a.show();
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const header = a.model.header;
+	a.control.surface!.handlePointer!(pointer(header.left + 12, header.top + 7), 0);
+	a.control.update();
+	const labels: string[] = [];
+	t.mock.method(api, 'blit_text_inline_with_font', label => { labels.push(label); });
+	const { presenter, renderer } = createHostOverlayFixture(500, 400);
+	const paint = () => {
+		labels.length = 0;
+		renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
+	};
+	paint();
+	assert.ok(labels.includes('logo')); assert.ok(labels.includes(title));
+	assert.equal(a.model.header.bottom - a.model.header.top, f.font.lineHeight + 8);
+	a.control.onPointerLeave(); a.control.update(); paint();
+	assert.equal(labels.includes(title), false);
+});
+
+test('font changes reserve stable icon cells and measure the caption only in the remaining title budget', t => {
+	const f = fixture(), a = f.window('World/Actor/Component/SubjectSuffix'); a.show();
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.model.setRequestedBounds({ left: 40, top: 40, right: 170, bottom: 180 });
+	for (const variant of ['tiny', 'msx', 'tiny'] as const) {
+		const font = new Font({ variant });
+		a.control.layout(font, (text, from, to) => font.measure(text.slice(from, to)), text => font.measure(text));
+		const first = a.actions.items[0].bounds;
+		assert.ok(font.measure(a.model.displayTitle) <= first.left - a.model.header.left - 8);
+		assert.equal(a.model.header.bottom - a.model.header.top, font.lineHeight + 8);
+		assert.equal(a.actions.items[1].bounds.right, a.model.header.right - 3);
+		assert.ok(a.actions.items.every(item => item.bounds.left >= a.model.header.left));
+	}
+});
+
+test('long title tooltips wrap every path glyph instead of moving caption truncation into the hint', t => {
+	const f = fixture(), tooltip = new WorkbenchTooltip();
+	t.after(() => { tooltip.detach(); f.surfaces.dispose(); });
+	const area = { left: 0, top: 20, right: 120, bottom: 180 };
+	tooltip.attach(f.surfaces, f.owner, () => area);
+	const title = 'World/ActorWithALongName/ComponentWithALongName/FinalSubjectSuffix';
+	const labels: string[] = [];
+	t.mock.method(api, 'blit_text_inline_with_font', label => { labels.push(label); });
+	const { presenter, renderer } = createHostOverlayFixture(500, 400);
+	for (const variant of ['tiny', 'msx'] as const) {
+		const font = new Font({ variant });
+		let measurements = 0;
+		const measure = (text: string, from: number, to: number) => { measurements++; return font.measure(text.slice(from, to)); };
+		const measureText = (text: string) => { measurements++; return font.measure(text); };
+		const anchor = { left: 95, top: 160, right: 115, bottom: 175 };
+		tooltip.show(title, anchor, font, measure, measureText, area);
+		labels.length = 0;
+		renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame();
+		assert.ok(labels.length > 1);
+		assert.equal(labels.join(''), title);
+		assert.ok(labels.every(label => font.measure(label) <= area.right - area.left - 8));
+		assert.ok(tooltip.bounds.left >= area.left && tooltip.bounds.right <= area.right);
+		assert.ok(tooltip.bounds.top >= area.top && tooltip.bounds.bottom <= area.bottom);
+		const measured = measurements;
+		for (let frame = 0; frame < 1000; frame++) tooltip.show(title, anchor, font, measure, measureText, area);
+		assert.equal(measurements, measured);
+		anchor.left -= 10; anchor.right -= 10;
+		tooltip.show(title, anchor, font, measure, measureText, area);
+		assert.equal(measurements, measured, 'moving an anchor only places retained lines; it does not wrap the title again');
+	}
 });

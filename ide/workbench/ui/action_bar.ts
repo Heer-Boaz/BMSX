@@ -4,6 +4,7 @@ import { editorCommandTitle } from '../../commands/catalog';
 import type { EditorCommandId } from '../../common/commands';
 import { WORKBENCH_MENUS, type WorkbenchActionMenuId } from './menu/registry';
 import type { BFont } from '../../../machine/ts/render/shared/bitmap_font';
+import { WORKBENCH_ICON_SIZE, type WorkbenchIcon } from './icon';
 
 export const WORKBENCH_ACTION_BAR_ITEM_PADDING_X = 3;
 export const WORKBENCH_ACTION_BAR_ITEM_SPACING = 2;
@@ -11,6 +12,9 @@ export const WORKBENCH_ACTION_BAR_ITEM_SPACING = 2;
 export type WorkbenchActionBarItem = {
 	readonly command: EditorCommandId;
 	label: string;
+	tooltip: string;
+	icon?: WorkbenchIcon;
+	checkedIcon?: WorkbenchIcon;
 	readonly bounds: RectBounds;
 	visible: boolean;
 	enabled: boolean;
@@ -38,6 +42,9 @@ export function createWorkbenchActionBar(menuId: WorkbenchActionMenuId): Workben
 		items[index] = {
 			command: contribution.command,
 			label: editorCommandTitle(contribution.command, false, true),
+			tooltip: editorCommandTitle(contribution.command, false),
+			icon: contribution.icon,
+			checkedIcon: contribution.checkedIcon,
 			bounds: create_rect_bounds(),
 			visible: true,
 			enabled: false,
@@ -59,7 +66,9 @@ export function layoutWorkbenchActionBar(
 ): void {
 	const remeasure = state.measuredFont !== font || state.measuredBy !== measure;
 	for (const item of state.items) {
-		if (remeasure || item.measuredLabel !== item.label) {
+		if (item.icon !== undefined) {
+			item.width = Math.max(WORKBENCH_ICON_SIZE + WORKBENCH_ACTION_BAR_ITEM_PADDING_X * 2, bottom - top);
+		} else if (remeasure || item.measuredLabel !== item.label) {
 			item.width = measure(item.label) + WORKBENCH_ACTION_BAR_ITEM_PADDING_X * 2;
 			item.measuredLabel = item.label;
 		}

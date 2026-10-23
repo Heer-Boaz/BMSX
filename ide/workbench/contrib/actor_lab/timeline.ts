@@ -7,7 +7,6 @@ import type { ActorNode } from './runtime';
 /** Latest requested seek, not a playback clock or a queue of mouse samples. */
 export class ActorTimelineTransport {
 	public readonly slider = new WorkbenchSlider();
-	public label = '';
 	public positionLabel = '';
 	public durationLabel = '';
 	public entryHashId = 0;
@@ -41,7 +40,7 @@ export class ActorTimelineTransport {
 			const changed = this.entryHashId !== node.hashId || this.programHashId !== program.hashId;
 			if (changed) {
 				this.clear();
-				this.entryHashId = node.hashId; this.programHashId = program.hashId; this.label = `SCRUB ${node.label}`;
+				this.entryHashId = node.hashId; this.programHashId = program.hashId;
 				this.labelRevision += 1;
 			}
 			const duration = guest.readStringMember(program, 'duration_ms') as number | null;

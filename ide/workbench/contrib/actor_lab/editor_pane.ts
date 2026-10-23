@@ -42,11 +42,14 @@ import type { ActorViewportHit } from './viewport_pick';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WorkbenchFloatingWindow } from '../../ui/window/control';
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
+import { WorkbenchTooltip } from '../../ui/tooltip';
 
 export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInput> {
 	private gameInput!: GameInputControl;
 	private controller!: ActorLabController;
 	private readonly actions: WorkbenchActionBarControl;
+	private readonly actionTooltip = new WorkbenchTooltip();
 	private readonly timelineSlider: WorkbenchSliderControl;
 	private readonly scrub = (node: ActorNode, time: number, program: number, current: () => boolean, finished: (completed: boolean) => void) =>
 		this.controller.scrub(this.input, node, time, program, current, finished);
@@ -59,9 +62,6 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private pointerX = 0;
 	private pointerY = 0;
 	private viewportHit: ActorViewportHit | undefined;
-	private previewLabel = 'GAME FRAME';
-	private previewLabelSource = '';
-	private previewLabelWidth = -1;
 	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	public inspector!: WorkbenchPropertyInspector<ActorDetailsProperty>;
@@ -151,6 +151,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.detailsWindow = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, this.surfaces, this.commands, {
 			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: this.paneSurface,
 			focusReturn: this.focusTarget, getWorkArea: this.getWorkArea,
+			getTitleTooltip: () => input.details!.title,
 			content: {
 				draw: () => drawWorkbenchPropertyInspector(this.inspector),
 				handlePointer: snapshot => { this.inspector.handlePointer(snapshot); },
@@ -160,6 +161,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			retireContentInput: () => this.inspector.hide(),
 			restoreContentInput: () => {
 				this.controller.inspect(input, this.inspector, false, this.focusTarget);
+				this.inspector.attachFeedback(this.surfaces, this.detailsWindow.clientSurface!, this.getWorkArea);
 				this.restoreDetailsScroll = true;
 			},
 			focusContent: () => this.inspector.focusTarget.focus(),
@@ -225,7 +227,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			const items = this.controller.refreshDetails(input);
 			if (items !== undefined) this.inspector.updateItems(items, actorDetailsPropertiesEqual);
 		} else if (model.collapsed) this.controller.followDetailsSelection(input);
-		model.title = details.title;
+		model.title = details.caption;
 		const lock = input.detailsActions.items.find(item => item.command === 'actorLab.lockDetails')!;
 		if (lock.checked !== details.locked) { lock.checked = details.locked; model.invalidate(); }
 		this.detailsWindow.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
@@ -258,6 +260,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		super.activate();
 		this.createDetailsWindow();
 		this.renderedTopology = -1;
+		this.actionTooltip.attach(this.surfaces, this.paneSurface, this.getWorkArea);
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.split.setInput(this.input.split);
 		this.timelineSlider.setInput(this.input.timeline.slider);
@@ -273,6 +276,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public override clearInput(): void {
 		pointerHover.release(this);
 		this.navigationSelection = undefined;
+		this.actionTooltip.detach();
 		this.detailsWindow.dispose(); this.inspector.dispose(); this.gameInput.dispose(); this.actions.clearInput();
 		this.graph.clearInput(); this.boundGraph = undefined;
 		this.focusTarget.commandContext = this.focusTarget;
@@ -318,17 +322,18 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		const followLabel = input.follow.target === undefined ? 'Follow' : 'Unfollow';
 		const followChanged = follow.label !== followLabel;
 		follow.label = followLabel;
+		follow.checked = input.follow.target !== undefined;
 		if (this.timelineVisible) input.timelineLayout.update(input.timeline, layout);
 		const viewportChanged = layoutChanged || timelineChanged || graphChanged || this.splitRevision !== input.split.revision;
 		if (viewportChanged && input.follow.target !== undefined) input.follow.pending = input.follow.target;
 		if (followChanged || contentsChanged || viewportChanged) {
 			this.updateContentLayout();
-			layoutWorkbenchActionBar(input.presentation === 'outline' ? input.actionBar : input.stateGraphActions, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont());
-			if (input.presentation === 'graph') input.stateGraph!.titleLabel = truncateTextToWidth(input.stateGraph!.title, input.stateGraphActions.items[0].bounds.left - 8);
-			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.node.label,
+			layoutWorkbenchActionBar(input.presentation === 'outline' ? input.actionBar : input.stateGraphActions, input.split.position - 4,
+				layout.top + 2, layout.top + layout.rowHeight + 8, measureText, editorViewState.font.renderFont());
+			if (input.presentation === 'graph') input.stateGraph!.titleLabel = truncateTextToWidth(input.stateGraph!.title, input.split.position - 16);
+			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
 		}
-		if (layoutChanged) this.previewLabelWidth = -1;
 		this.updateViewportHit();
 		this.controller.layoutNavigation(input);
 		this.timelineSlider.update();
@@ -345,6 +350,10 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.updateDetailsWindow();
 		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
 		this.actions.update();
+		const tooltipItem = this.actions.tooltipItem;
+		if (tooltipItem !== undefined) this.actionTooltip.show(tooltipItem.tooltip, tooltipItem.bounds,
+			editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		else this.actionTooltip.hide();
 		this.inspector.update();
 		// The host publishes this pane's transport-aware bounds before update, not activation.
 		this.navigationSelection?.restoreViewport(input);
@@ -353,11 +362,11 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		drawEditorText(editorViewState.font, this.detailsWindow.hasFocus ? this.input.details!.title
 			: this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET'
-			: this.viewportHit !== undefined ? this.gameInput.focusTarget.hasFocus ? 'SHIFT+F1: INSPECT' : 'RIGHT CLICK: INSPECT'
+			: this.viewportHit !== undefined ? this.gameInput.focusTarget.hasFocus ? 'SHIFT+F1: INSPECT' : this.viewportHit.label
 			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
 	}
 	public draw(): void {
-		drawActorLab(this.input, this.controller.viewport.transport.state, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.previewLabel, this.controller.viewport);
+		drawActorLab(this.input, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.controller.viewport);
 		const hit = this.viewportHit;
 		if (hit !== undefined) {
 			const bounds = this.input.previewBounds, size = this.controller.viewport.presenter.offscreenCanvasSize;
@@ -383,7 +392,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		}
 	}
 	public onPointerLeave(): void {
-		this.viewportHover = false; this.viewportHit = undefined; this.previewLabel = 'GAME FRAME'; this.previewLabelSource = '';
+		this.viewportHover = false; this.viewportHit = undefined;
 	}
 	private updateViewportHit(): void {
 		if (!this.viewportHover) return;
@@ -394,10 +403,6 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.viewportHit = this.controller.viewportPicker.pick(this.input.domain,
 			(this.pointerX - bounds.left) * size.x / (bounds.right - bounds.left),
 			(this.pointerY - bounds.top) * size.y / (bounds.bottom - bounds.top));
-		const source = this.viewportHit?.label ?? 'GAME FRAME', width = bounds.right - bounds.left;
-		if (source !== this.previewLabelSource || width !== this.previewLabelWidth) {
-			this.previewLabel = truncateTextToWidth(source, width, 'middle'); this.previewLabelSource = source; this.previewLabelWidth = width;
-		}
 	}
 
 	public handleKeyboard(input: KeyInputEvent): void {
@@ -416,17 +421,17 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	}
 	private updateContentLayout(): void {
 		const { layout } = this.input;
-		const top = layout.top + layout.rowHeight + 7;
+		const top = layout.top + 2;
 		const bottom = layout.bottom - (this.input.timeline.visible ? this.input.timelineLayout.height : 0);
 		this.input.split.layout(layout.left, top, layout.right, bottom);
 		this.splitRevision = this.input.split.revision;
 		const divider = this.input.split.position;
 		const previewLeft = divider + 6;
-		const previewTop = top + layout.rowHeight + 4;
-		layoutGameFrame(this.input.previewBounds, previewLeft, previewTop, layout.right - 4, bottom - 4);
-		this.input.outline.updateLayout(4, top, divider, bottom,
-			layout.rowHeight + 4, editorViewState.font.advance(' ') * 2);
-		this.boundGraph?.viewport.layout(4, top + layout.rowHeight + 4, divider, bottom);
+		layoutGameFrame(this.input.previewBounds, previewLeft, top, layout.right - 4, bottom - 4);
+		const treeTop = top + layout.rowHeight + 9;
+		this.input.outline.updateLayout(4, treeTop, divider, bottom,
+			layout.rowHeight + 4, Math.max(editorViewState.font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2));
+		this.boundGraph?.viewport.layout(4, treeTop + layout.rowHeight + 4, divider, bottom);
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {

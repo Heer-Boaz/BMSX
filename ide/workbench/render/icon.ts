@@ -1,0 +1,32 @@
+import { api } from '../../runtime/overlay_api';
+import type { WorkbenchIcon } from '../ui/icon';
+
+/** Retained horizontal/vertical pixel runs: left, top, right, bottom, in a 7x7 cell. */
+const ICON_RUNS: Record<WorkbenchIcon, readonly number[]> = {
+	pin: [1, 0, 6, 1, 2, 1, 5, 3, 1, 3, 6, 4, 3, 4, 4, 7],
+	unpin: [3, 0, 6, 1, 2, 1, 3, 2, 5, 1, 6, 3, 1, 2, 2, 4, 4, 3, 5, 4, 2, 4, 4, 5, 1, 5, 2, 6, 0, 6, 1, 7],
+	close: [0, 0, 1, 1, 6, 0, 7, 1, 1, 1, 2, 2, 5, 1, 6, 2, 2, 2, 3, 3, 4, 2, 5, 3, 3, 3, 4, 4,
+		2, 4, 3, 5, 4, 4, 5, 5, 1, 5, 2, 6, 5, 5, 6, 6, 0, 6, 1, 7, 6, 6, 7, 7],
+	collapse: [1, 5, 6, 6],
+	expand: [1, 1, 6, 2, 1, 2, 2, 6, 5, 2, 6, 6, 2, 5, 5, 6],
+	play: [2, 0, 3, 1, 2, 1, 4, 2, 2, 2, 5, 3, 2, 3, 6, 4, 2, 4, 5, 5, 2, 5, 4, 6, 2, 6, 3, 7],
+	pause: [1, 0, 3, 7, 4, 0, 6, 7],
+	stepBack: [0, 0, 1, 7, 5, 0, 6, 1, 4, 1, 6, 2, 3, 2, 6, 3, 2, 3, 6, 4, 3, 4, 6, 5, 4, 5, 6, 6, 5, 6, 6, 7],
+	stepForward: [6, 0, 7, 7, 1, 0, 2, 1, 1, 1, 3, 2, 1, 2, 4, 3, 1, 3, 5, 4, 1, 4, 4, 5, 1, 5, 3, 6, 1, 6, 2, 7],
+	present: [6, 0, 7, 7, 3, 1, 4, 2, 4, 2, 5, 3, 0, 3, 6, 4, 4, 4, 5, 5, 3, 5, 4, 6],
+	accept: [6, 0, 7, 1, 5, 1, 6, 2, 4, 2, 5, 3, 0, 3, 1, 4, 3, 3, 4, 4, 1, 4, 3, 5, 2, 5, 3, 6],
+	back: [3, 0, 4, 1, 2, 1, 3, 2, 1, 2, 2, 3, 0, 3, 6, 4, 1, 4, 2, 5, 5, 4, 6, 7, 2, 5, 3, 6, 3, 6, 4, 7],
+	more: [0, 3, 1, 4, 3, 3, 4, 4, 6, 3, 7, 4],
+	actor: [2, 0, 5, 1, 1, 1, 2, 3, 5, 1, 6, 3, 2, 3, 5, 4, 1, 5, 6, 6, 0, 6, 7, 7],
+	follow: [3, 0, 4, 2, 1, 1, 3, 2, 4, 1, 6, 2, 1, 2, 2, 3, 5, 2, 6, 3, 0, 3, 2, 4, 3, 3, 4, 4,
+		5, 3, 7, 4, 1, 4, 2, 5, 5, 4, 6, 5, 1, 5, 3, 6, 4, 5, 6, 6, 3, 5, 4, 7],
+	chevronRight: [2, 1, 3, 2, 3, 2, 4, 3, 4, 3, 5, 4, 3, 4, 4, 5, 2, 5, 3, 6],
+	chevronDown: [1, 2, 2, 3, 5, 2, 6, 3, 2, 3, 3, 4, 4, 3, 5, 4, 3, 4, 4, 5],
+};
+
+export function drawWorkbenchIcon(icon: WorkbenchIcon, left: number, top: number, color: number): void {
+	const runs = ICON_RUNS[icon];
+	for (let index = 0; index < runs.length; index += 4) {
+		api.fill_rect(left + runs[index], top + runs[index + 1], left + runs[index + 2], top + runs[index + 3], 0, color);
+	}
+}

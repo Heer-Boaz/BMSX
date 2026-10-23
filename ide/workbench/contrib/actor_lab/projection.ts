@@ -7,8 +7,9 @@ import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNo
 import type { ActorLabInput } from './editor_input';
 import { findWorldActor, runtimeWorld, readRuntimeActors, type ActorNode } from './runtime';
 import { resolveActorPath } from './target';
+import { actorNodeLabel } from './labels';
 
-export type ActorRow = { node: ActorNode; displayLabel: string };
+export type ActorRow = { node: ActorNode; label: string; displayLabel: string };
 export type ActorChoice = QuickPickItem & { readonly domain: ResourceDomain; readonly hashId: number };
 
 export function readActorChoices(sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): ActorChoice[] {
@@ -64,7 +65,7 @@ export class ActorProjection {
 			const scroll = outline.scroll, firstRow = scroll | 0;
 			this.scrollAnchor = outline.rows[firstRow];
 			this.scrollAnchorOffset = scroll - firstRow;
-			this.children(null, input.runtime.roots);
+			this.children(null, input.runtime.roots, input.runtime.roots[0]);
 			rebuildWorkbenchTreeRows(outline, selected === undefined ? null : selected);
 			if (outline.selectionIndex === -1 && input.selectionPath !== undefined) {
 				const restored = resolveActorPath(input.runtime.roots, input.selectionPath, guest);
@@ -164,10 +165,11 @@ export class ActorProjection {
 		}
 	}
 
-	private children(parent: WorkbenchTreeNode<ActorRow> | null, nodes: readonly ActorNode[]): void {
+	private children(parent: WorkbenchTreeNode<ActorRow> | null, nodes: readonly ActorNode[], actor: ActorNode): void {
 		const siblings = parent === null ? this.input.outline.roots : parent.children;
 		for (let i = 0; i < nodes.length; i++) {
 			const node = nodes[i];
+			const label = actorNodeLabel(node, nodes, actor);
 			let found = i;
 			for (; found < siblings.length; found++) {
 				const previous = siblings[found].element.node;
@@ -177,14 +179,15 @@ export class ActorProjection {
 			}
 			let row: WorkbenchTreeNode<ActorRow>;
 			if (found === siblings.length) {
-				row = appendWorkbenchTreeNode(this.input.outline, parent, { node, displayLabel: '' });
+				row = appendWorkbenchTreeNode(this.input.outline, parent, { node, label, displayLabel: '' });
 				siblings.pop(); siblings.splice(i, 0, row);
 			} else {
 				row = siblings[found];
 				if (found !== i) { siblings.splice(found, 1); siblings.splice(i, 0, row); }
 				row.element.node = node;
+				row.element.label = label;
 			}
-			this.children(row, node.children);
+			this.children(row, node.children, actor);
 			row.expandable = row.children.length !== 0;
 		}
 		siblings.length = nodes.length;

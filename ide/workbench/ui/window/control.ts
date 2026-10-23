@@ -5,16 +5,17 @@ import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
+import { ELLIPSIS, truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import { InputFocusScope, type InputFocusService, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
-import type { PointerHoverService } from '../../../input/pointer/hover';
+import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import type { WorkbenchSurface, WorkbenchSurfaceCallbacks } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { drawWorkbenchWindow } from '../../render/window';
 import { layoutWorkbenchActionBar, type WorkbenchActionBarState } from '../action_bar';
 import { WorkbenchActionBarControl } from '../action_bar_control';
+import { WorkbenchTooltip } from '../tooltip';
 import { WindowResizeEdge, type WorkbenchWindowModel } from './model';
 
 export type WorkbenchWindowOptions = {
@@ -24,6 +25,7 @@ export type WorkbenchWindowOptions = {
 	readonly presentationParent?: WorkbenchSurface;
 	readonly focusReturn: InputFocusTarget;
 	getWorkArea(): Readonly<RectBounds>;
+	getTitleTooltip?(): string;
 	readonly content: WorkbenchSurfaceCallbacks;
 	layoutContent(bounds: Readonly<RectBounds>): void;
 	retireContentInput(): void;
@@ -33,7 +35,7 @@ export type WorkbenchWindowOptions = {
 };
 
 /** In-canvas chrome composes existing controls, surface ordering and pointer capture. */
-export class WorkbenchFloatingWindow implements PointerCaptureTarget {
+export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHoverTarget {
 	public readonly focusTarget: InputFocusTarget;
 	public readonly scope = new InputFocusScope(Symbol('window'));
 	public readonly clientFocusTarget: InputFocusTarget;
@@ -55,9 +57,11 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 	private measuredFont: BFont | undefined;
 	private measure: TextRangeMeasure | undefined;
 	private measureText: ((text: string) => number) | undefined;
+	private readonly tooltip = new WorkbenchTooltip();
+	private headerHovered = false;
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
-		hover: PointerHoverService, private readonly surfaces: WorkbenchSurfaceService, commands: EditorCommandRunner,
+		private readonly hover: PointerHoverService, private readonly surfaces: WorkbenchSurfaceService, commands: EditorCommandRunner,
 		private readonly options: WorkbenchWindowOptions) {
 		this.focusTarget = focus.createTarget(options.focusReturn, this.scope);
 		this.focusTarget.canFocus = () => this.visible;
@@ -77,7 +81,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 		this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('window.collapse', { isEnabled: () => this.visible, run: () => this.setCollapsed(!options.model.collapsed) });
 		this.focusTarget.registerCommand('window.hide', { isEnabled: () => this.visible, run: () => this.hide() });
-		this.updateCollapseLabel();
+		this.updateCollapseState();
 	}
 
 	public get visible(): boolean { return this.surface !== undefined && this.surface.visible; }
@@ -102,10 +106,12 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 				this.capture.cancelScope(this.scope.surfaceScope);
 				this.cancelPointer();
 				this.actions.clearInput();
+				this.hover.release(this); this.headerHovered = false; this.tooltip.hide();
 				if (ownedFocus) this.focus.setTarget(options.focusReturn);
 			},
 		});
 		this.actions.setInput(options.actionBar, this.focusTarget);
+		this.tooltip.attach(this.surfaces, this.surface, options.getWorkArea);
 		if (!this.model.collapsed) this.attachClient();
 	}
 
@@ -139,7 +145,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 		const clientHadFocus = this.focusedIn(this.clientSurface);
 		if (this.resizing !== WindowResizeEdge.None) this.cancelPointer();
 		this.model.setCollapsed(collapsed);
-		this.updateCollapseLabel();
+		this.updateCollapseState();
 		if (collapsed) {
 			this.clientSurface?.dispose();
 			if (clientHadFocus) {
@@ -164,18 +170,35 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 		this.measureText = measureText;
 		this.measuredRevision = model.revision;
 		const { header } = model;
-		layoutWorkbenchActionBar(this.options.actionBar, header.right - 4, header.top + 3, header.bottom - 3, measureText, font);
+		layoutWorkbenchActionBar(this.options.actionBar, header.right - 3, header.top + 2, header.bottom - 2, measureText, font);
 		const firstAction = this.options.actionBar.items.find(item => item.visible);
-		model.displayTitle = truncateMeasuredText(model.title, (firstAction === undefined ? header.right : firstAction.bounds.left) - header.left - 8, measure, '...', 'middle');
+		model.displayTitle = truncateMeasuredText(model.title, (firstAction === undefined ? header.right : firstAction.bounds.left) - header.left - 8, measure, ELLIPSIS, 'middle');
 		if (!model.collapsed && (arranged || fontChanged)) this.options.layoutContent(model.client);
+		this.updateTooltip();
 		this.surfaces.changed();
 	}
 
-	public update(): void { if (this.visible) this.actions.update(); }
-
-	private updateCollapseLabel(): void {
-		this.options.actionBar.items.find(item => item.command === 'window.collapse')!.label = this.model.collapsed ? '+' : '-';
+	public update(): void {
+		if (!this.visible) return;
+		this.actions.update();
+		this.updateTooltip();
 	}
+
+	private updateCollapseState(): void {
+		this.options.actionBar.items.find(item => item.command === 'window.collapse')!.checked = this.model.collapsed;
+	}
+
+	private updateTooltip(): void {
+		if (this.moving || this.resizing !== WindowResizeEdge.None) { this.tooltip.hide(); return; }
+		const item = this.actions.tooltipItem;
+		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, this.measuredFont!, this.measure!, this.measureText!, this.options.getWorkArea());
+		else if (this.headerHovered && (this.options.getTitleTooltip !== undefined || this.model.displayTitle !== this.model.title)) {
+			this.tooltip.show(this.options.getTitleTooltip?.() ?? this.model.title, this.model.header,
+				this.measuredFont!, this.measure!, this.measureText!, this.options.getWorkArea());
+		} else this.tooltip.hide();
+	}
+
+	public onPointerLeave(): void { this.headerHovered = false; }
 
 	private focusContent(): void {
 		if (this.model.collapsed) this.focusTarget.focus();
@@ -200,9 +223,12 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget {
 			this.surfaces.raise(this.surface!);
 			if (!this.focusedIn(this.surface)) this.focus.setTarget(this.scope.lastFocused ?? this.focusTarget);
 		}
-		if (this.actions.handlePointer(snapshot)) return;
+		if (this.actions.handlePointer(snapshot)) { this.hover.release(this); this.headerHovered = false; return; }
 		const edge = this.model.resizeEdgeAt(snapshot.viewportX, snapshot.viewportY);
 		const header = point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.header);
+		this.headerHovered = header;
+		if (header) this.hover.visit(this);
+		else this.hover.release(this);
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && (edge !== WindowResizeEdge.None || header)) {
 			this.focusTarget.focus();
 			this.startX = snapshot.viewportX; this.startY = snapshot.viewportY;

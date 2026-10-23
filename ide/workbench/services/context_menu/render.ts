@@ -4,6 +4,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
 import type { ContextMenuController } from './controller';
 import { CONTEXT_MENU_PADDING } from './model';
+import { drawWorkbenchSurfaceShadow } from '../../render/surface';
 
 export function layoutContextMenu(menu: ContextMenuController): void {
 	if (!menu.visible) return;
@@ -15,7 +16,7 @@ export function drawContextMenu(menu: ContextMenuController): void {
 	if (!menu.visible) return;
 	const model = menu.model;
 	const bounds = model.bounds;
-	api.fill_rect(bounds.left + 2, bounds.top + 2, bounds.right + 2, bounds.bottom + 2, 0, constants.COLOR_MENU_SHADOW);
+	drawWorkbenchSurfaceShadow(bounds);
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_MENU_BACKGROUND);
 	api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_MENU_BORDER);
 	const view = model.viewport;

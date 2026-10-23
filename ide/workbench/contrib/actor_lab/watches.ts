@@ -1,3 +1,4 @@
+import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { GuestInvalidationReason, SuspendedGuestSession } from '../../../runtime/suspended_guest';
@@ -12,7 +13,7 @@ export type ActorDetailsProperty = RuntimeInspectionProperty & { readonly watch?
 /** A pin owns only typed membership and presentation, not the mutable row it was pinned from. */
 export class ActorPropertyWatch {
 	public readonly item: {
-		label: string; value: string; description: string; warning: boolean; valueChanged: boolean;
+		label: string; value: string; description: string; warning: boolean; valueChanged: boolean; readonly compact: true;
 		source?: RuntimeInspectionProperty['source']; readonly watch: ActorPropertyWatch;
 	};
 	public available = true;
@@ -20,10 +21,11 @@ export class ActorPropertyWatch {
 	public observed = false;
 	private description = '';
 	private label: string;
+	private valueRevision: number | undefined;
 	public constructor(public readonly id: number, public readonly target: ActorTarget,
 		public readonly property: RuntimePropertyIdentity, private readonly context: string, initial: RuntimeInspectionProperty) {
 		this.label = initial.label;
-		this.item = { label: `PIN / ${initial.label}`, value: '', description: context, warning: false, valueChanged: false, watch: this };
+		this.item = { label: `PIN / ${initial.label}`, value: '', description: context, warning: false, valueChanged: false, compact: true, watch: this };
 		this.publish(initial);
 	}
 
@@ -35,9 +37,11 @@ export class ActorPropertyWatch {
 		const source = available ? property.source : undefined;
 		const description = available ? property.description : '';
 		const warning = available ? property.warning : true;
-		const valueChanged = available && this.available && !warning && (compareChanges ? this.item.value !== value : this.item.valueChanged);
+		const valueChanged = available && this.available && !warning && (compareChanges ? this.item.value !== value
+			|| property.valueRevision !== undefined && property.valueRevision !== this.valueRevision : this.item.valueChanged);
 		const changed = this.available !== available || this.label !== label || this.item.value !== value || this.item.source !== source
 			|| this.description !== description || this.item.warning !== warning || this.item.valueChanged !== valueChanged;
+		this.valueRevision = available ? property.valueRevision : undefined;
 		if (!changed) return false;
 		this.available = available;
 		if (this.label !== label) { this.label = label; this.item.label = `PIN / ${label}`; }
@@ -82,7 +86,7 @@ export class ActorWatches {
 		if (node === undefined) {
 			const index = new RuntimePropertyIndex<ActorPropertyWatch>();
 			node = { target, pins: [], index, properties: new BehaviorRuntimeProperties(this.sources, this.guest,
-				(section, field, key) => index.find(section, field, key, this.guest) !== undefined) };
+				(section, field, key) => index.find(section, field, key, this.guest) !== undefined, 'watch') };
 			actor.nodes.push(node);
 		}
 		node.pins.push(watch); node.index.set(watch.property, watch); this.pins.push(watch);
@@ -156,12 +160,24 @@ export class ActorWatches {
 			for (const group of actor.nodes) {
 				const node = tree === undefined || group.pins.every(pin => pin.retired)
 					? undefined : resolveActorTarget(tree.roots, group.target, this.guest);
+				let wanted = 0;
+				for (const pin of group.pins) { pin.observed = false; if (!pin.retired) wanted++; }
 				let properties: readonly RuntimeInspectionProperty[] | undefined;
 				if (node !== undefined) {
-					if (node === selected) properties = selectedProperties;
+					// The visible projection may omit stored members or show only a table identity.
+					// Reuse it only when it supplies every requested watch with equivalent value semantics.
+					let reuseSelected = node === selected, covered = 0;
+					if (reuseSelected) for (const property of selectedProperties) {
+						if (property.watchIdentity === undefined || group.index.get(property.watchIdentity) === undefined) continue;
+						if (property.valueTag === ValueTag.Table) {
+							reuseSelected = false; break;
+						}
+						covered++;
+					}
+					reuseSelected = reuseSelected && covered === wanted;
+					if (reuseSelected) properties = selectedProperties;
 					else { group.properties.begin(); properties = inspectActorNode(this.sources, this.guest, node, group.properties); }
 				}
-				for (const pin of group.pins) pin.observed = false;
 				if (properties !== undefined) for (const property of properties) {
 					const pin = property.watchIdentity === undefined ? undefined : group.index.get(property.watchIdentity);
 					if (pin === undefined) continue;
