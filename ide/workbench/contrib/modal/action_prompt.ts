@@ -1,7 +1,7 @@
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
-import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
+import { InputFocusScope, type InputFocusService, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
@@ -28,8 +28,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly onDidChangeVisibility: () => void = () => {},
 		private readonly acceptsFocusTransfer: (next: InputFocusTarget | null) => boolean = () => false) {
-		this.focusTarget = focus.createTarget();
-		this.focusTarget.scope.surfaceScope = this.pointerScope;
+		this.focusTarget = focus.createTarget(null, new InputFocusScope(this.pointerScope));
 		this.focusTarget.canFocus = () => this.visible;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());
 		this.unbindBlur = this.focusTarget.onDidBlur(next => { if (!this.acceptsFocusTransfer(next)) this.close(); });

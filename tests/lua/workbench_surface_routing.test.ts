@@ -320,7 +320,7 @@ test('actual Quick Input and action prompt retain their modal lifetime while the
 test('the actual lightbox keeps its property popup inside the pane admission context and retires it on close', t => {
 	const { editor } = fixture(t);
 	const cache = new ImagePreviewCache(async () => ({ width: 1, height: 1, pixels: new Uint8Array([1, 2, 3, 255]) }));
-	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.paneSurface);
+	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.paneSurface, editor.commands);
 	preview.layout(editor.paneSurface.getBounds(), editorViewState.lineHeight);
 	t.after(() => { preview.dispose(); cache.dispose(); });
 	preview.open('fixture:image');

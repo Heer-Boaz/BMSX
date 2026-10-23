@@ -375,7 +375,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'behaviorLens.graph.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeTree' },
-		{ type: 'command', command: 'behaviorLens.more' },
 	],
 	'behaviorLens.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
@@ -384,7 +383,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'behaviorLens.stateGraph.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeStateMachine' },
-		{ type: 'command', command: 'behaviorLens.more' },
 	],
 	'aem.title': [
 		{ type: 'command', command: 'aem.add' },
@@ -433,7 +431,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'behaviorLens.properties.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeEffect' },
-		{ type: 'command', command: 'behaviorLens.more' },
 	],
 	'cartMap.title': [{ type: 'command', command: 'cartMap.source' }],
 	'sceneEditor.title': [

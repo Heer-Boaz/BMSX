@@ -1,4 +1,5 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+import { api } from '../../../ide/runtime/overlay_api';
 import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
@@ -30,7 +31,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 		return field;
 	};
 	const open = async () => {
-		await click(properties.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+		await click(properties.actionBar.overflow!.button.bounds);
 		await test.clickContextCommand('behaviorLens.editProperty', 6);
 		check(editor.active && editor.control.field.focusTarget.hasFocus, 'effect: held Edit opens one real focused cell');
 	};
@@ -41,11 +42,11 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	ide.editor.commands.execute('behaviorLens.editProperty');
 	pane.update();
 	check(editor.handlePointer({ valid: true, insideViewport: true,
-		viewportX: (editor.bounds.left + editor.bounds.right) / 2, viewportY: (editor.bounds.top + editor.bounds.bottom) / 2,
+		viewportX: (editor.fieldBounds.left + editor.fieldBounds.right) / 2, viewportY: (editor.fieldBounds.top + editor.fieldBounds.bottom) / 2,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }),
 		'effect: update prepares the editable value hit target without painting it');
 	const draftScroll = properties.tree.scroll, draftEnd = editor.control.viewport.end;
-	pane.draw();
+	ide.editor.surfaces.draw(api);
 	check(properties.tree.scroll === draftScroll && editor.control.viewport.end === draftEnd,
 		'effect: paint consumes the prepared draft without scrolling or relaying out its input');
 	await press('Escape');

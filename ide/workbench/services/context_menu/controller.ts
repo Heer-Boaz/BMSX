@@ -4,7 +4,7 @@ import { editorCommandTitle } from '../../../commands/catalog';
 import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
-import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
+import { InputFocusScope, type InputFocusService, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
@@ -55,9 +55,8 @@ export class ContextMenuController implements PointerCaptureTarget {
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly onDidChangeVisibility: (lifetime?: DisposableStore) => void = () => {}) {
-		this.focusTarget = focus.createTarget();
+		this.focusTarget = focus.createTarget(null, new InputFocusScope(this.pointerScope));
 		this.focusTarget.canFocus = () => this.session !== undefined;
-		this.focusTarget.scope.surfaceScope = this.pointerScope;
 		this.scroll = new WorkbenchScrollControl(focus, capture, this.focusTarget, undefined, this.pointerScope);
 		this.scroll.setInput(this.model.viewport);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());

@@ -68,7 +68,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	version = model.version;
 	console.info('STUDIO: BT removal action ready for visual inspection');
 	for (const cancel of ['outside', 'escape', 'palette']) {
-		await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+		await click(graph.actionBar.overflow!.button.bounds);
 		const menu = ide.editor.contextMenu.model;
 		const row = menu.rows.find(row => row.command === remove)!;
 		movePointer({ left: menu.viewport.bounds.left, right: menu.viewport.bounds.right,
@@ -84,12 +84,12 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 		if (ide.editor.contextMenu.visible) await press('Escape');
 	}
 	await press('Tab'); await press('End');
-	check(graph.actionBar.items[graph.actionBar.focusedIndex].command === 'behaviorLens.more', 'A01: End reaches the menu for secondary graph actions');
+	check(graph.actionBar.focusedIndex === graph.actionBar.items.length && graph.actionBar.overflow!.button.visible, 'A01: End reaches the menu for secondary graph actions');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	await press('Escape');
 	check(graph.actionBar.hasFocus, 'A01: palette dismissal returns to the toolbar');
 	await press('Escape');
-	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+	await click(graph.actionBar.overflow!.button.bounds);
 	await test.clickContextCommand(remove, 6);
 	const removed = BT_ORDER_SOURCE.replace('\tnested; -- nested inline', '\t -- nested inline');
 	check(model.version === version + 1 && model.buffer.getText() === removed && children().length === 2

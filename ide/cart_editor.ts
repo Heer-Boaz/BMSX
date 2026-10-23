@@ -444,6 +444,7 @@ export class RuntimeCartEditor implements CartEditor {
 			frameNavigation,
 			debuggerExecution,
 		);
+		inputFocus.workbenchScope.commands = this.commands;
 		this.completion = new EditorCompletionController(sources, guest, fault, runtime);
 		this.tabBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this.commands, null, () => this.editorPanes.activePane?.focus());
 		this.tabBar.setInput(editorChromeState.tabActions, this.tabBar.focusTarget);
@@ -506,8 +507,8 @@ export class RuntimeCartEditor implements CartEditor {
 			gpu_debugger: () => new GpuDebuggerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			gte_debugger: () => new GteDebuggerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			terminal: () => new TerminalPane(this.resourcePanel, this.terminal, input, presenter),
-			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage, this.surfaces, this.paneSurface),
-			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage, this.surfaces, this.paneSurface),
+			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage, this.surfaces, this.paneSurface, this.commands),
+			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage, this.surfaces, this.paneSurface, this.commands),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, models => {
 				for (const model of models) openEditorTab(this.editorPanes, resolveCodeEditorInput(retainModelCodeTabContext(model)));
 			}),
@@ -523,7 +524,7 @@ export class RuntimeCartEditor implements CartEditor {
 			resource_view: () => new ResourceViewerEditorPane(),
 			aem_editor: () => new AemEditorPane(this.resourcePanel, this.aemEditor, this.commands, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			lua_program: () => new LuaProgramEditorPane(this.resourcePanel, this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
-			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
+			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.commands, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime, input, presenter),
 			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands, this.sources, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
@@ -902,6 +903,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		inputFocus.workbenchScope.commands = undefined;
 		this.unbindHostInput();
 		this.unbindEditorInputRetirement();
 		this.unbindSurfaceAdmission();

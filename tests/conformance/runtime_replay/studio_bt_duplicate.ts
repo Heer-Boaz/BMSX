@@ -37,7 +37,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	check(viewport.selection === children()[1] && children()[1].children.length === 2 && ide.editor.commands.isEnabled(duplicate),
 		'BT duplicate: expanded source member is selected through physical navigation');
 	console.info('STUDIO: BT duplicate action ready for visual inspection');
-	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+	await click(graph.actionBar.overflow!.button.bounds);
 	await test.clickContextCommand(duplicate, 6);
 	const duplicated = BT_ORDER_SOURCE.replace('\t-- nested documentation', '\tnested;\n\t-- nested documentation');
 	check(model.version === version + 1 && model.buffer.getText() === duplicated && children().length === 4

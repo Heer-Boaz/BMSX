@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import type { CartEditor } from '../../ide/cart_editor';
+import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
+import { handleEditorInput } from '../../ide/input/keyboard/dispatch';
 import { api } from '../../ide/runtime/overlay_api';
 import { ImagePreviewCache } from '../../ide/workbench/ui/image_preview';
 import { ImagePreviewOverlay } from '../../ide/workbench/ui/image_preview_overlay';
@@ -15,8 +18,10 @@ const pixels = { width: 2, height: 1, pixels: new Uint8Array([255, 0, 0, 255, 0,
 const bounds = { left: 0, top: 10, right: 140, bottom: 100 };
 const otherBounds = { left: 140, top: 10, right: 220, bottom: 100 };
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, commands: EditorCommandRunner = { isEnabled: () => true, execute() {} }) {
 	let changes = 0, wheel = 0, selections = 0, decodes = 0;
+	const previousCommands = inputFocus.workbenchScope.commands;
+	inputFocus.workbenchScope.commands = commands;
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; });
 	const owner = surfaces.attach({
 		role: 'content', captureScope: Symbol('image pane'), isVisible: () => true,
@@ -28,13 +33,74 @@ function fixture(t: TestContext) {
 		getBounds: () => otherBounds, getClip: () => otherBounds, draw() {},
 	});
 	const cache = new ImagePreviewCache(async () => { decodes++; return pixels; });
-	const preview = new ImagePreviewOverlay(cache, surfaces, owner);
+	const preview = new ImagePreviewOverlay(cache, surfaces, owner, commands);
 	const origin = inputFocus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
 	preview.layout(bounds, 6);
-	t.after(() => { preview.dispose(); cache.dispose(); surfaces.dispose(); inputFocus.setTarget(null); });
+	t.after(() => {
+		preview.dispose(); cache.dispose(); surfaces.dispose(); inputFocus.setTarget(null);
+		inputFocus.workbenchScope.commands = previousCommands;
+	});
 	return { preview, cache, surfaces, owner, other, origin,
 		changes: () => changes, wheel: () => wheel, selections: () => selections, decodes: () => decodes };
 }
+
+test('the isolated lightbox admits only explicit tab commands, closing and returning focus before their actual workbench runner', t => {
+	const order: string[] = [], executed: EditorCommandId[] = [];
+	const commands: EditorCommandRunner = {
+		isEnabled: (_command, target) => { assert.equal(target, f.origin); return true; },
+		execute(command, target) {
+			assert.equal(f.preview.visible, false, 'the image must close before a tab action changes its owner');
+			assert.equal(inputFocus.target, f.origin, 'the actual originating control must regain focus before execution');
+			assert.equal(target, f.origin, 'the tab action must keep its captured origin, not the retired modal');
+			assert.equal(inputFocus.commandRunner, commands);
+			executed.push(command); order.push(command);
+		},
+	};
+	const f = fixture(t, commands);
+	f.origin.onDidFocus(() => {
+		assert.equal(f.preview.visible, false, 'return-focus publication cannot expose an open lightbox');
+		order.push('return origin');
+	});
+	// Exercise the production dispatcher; its command route comes from the real focus service.
+	const editor = { surfaces: f.surfaces, clipboardTarget: undefined } as CartEditor;
+	for (const [code, modifiers, command] of [
+		['KeyW', KeyModifier.ctrl, 'tabs.close'],
+		['Tab', KeyModifier.ctrl, 'tabs.next'],
+		['Tab', KeyModifier.ctrl | KeyModifier.shift, 'tabs.previous'],
+	] as const) {
+		f.preview.open('image');
+		const modal = inputFocus.target;
+		assert.equal(inputFocus.commandRunner, undefined, 'the modal must not inherit the application command route');
+		for (const [blockedCode, blockedModifiers] of [
+			['KeyS', KeyModifier.ctrl], ['KeyP', KeyModifier.ctrl | KeyModifier.shift],
+		] as const) {
+			const event = new KeyInputEvent(blockedCode, blockedModifiers);
+			handleEditorInput(event, editor);
+			assert.equal(f.preview.visible, true); assert.equal(inputFocus.target, modal);
+			assert.deepEqual(order, [], 'Save or Palette borrowed the underlying application command route');
+		}
+		const event = new KeyInputEvent(code, modifiers);
+		handleEditorInput(event, editor);
+		assert.equal(event.consumed, true);
+		assert.deepEqual(order, ['return origin', command]);
+		order.length = 0;
+	}
+	assert.deepEqual(executed, ['tabs.close', 'tabs.next', 'tabs.previous']);
+});
+
+test('a disabled explicit tab command is consumed without closing or escaping the isolated lightbox', t => {
+	let executed = 0;
+	const commands: EditorCommandRunner = { isEnabled: () => false, execute() { executed++; } };
+	const f = fixture(t, commands);
+	const editor = { surfaces: f.surfaces, clipboardTarget: undefined } as CartEditor;
+	f.preview.open('image');
+	const modal = inputFocus.target;
+	assert.equal(inputFocus.commandRunner, undefined);
+	const event = new KeyInputEvent('KeyW', KeyModifier.ctrl);
+	handleEditorInput(event, editor);
+	assert.equal(event.consumed, true); assert.equal(executed, 0);
+	assert.equal(f.preview.visible, true); assert.equal(inputFocus.target, modal);
+});
 
 test('the shared lightbox owns local pointer and wheel admission rather than asking each pane to block', t => {
 	const f = fixture(t);

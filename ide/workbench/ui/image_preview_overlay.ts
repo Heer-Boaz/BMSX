@@ -1,10 +1,11 @@
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
+import type { EditorCommandRunner } from '../../common/commands';
 import type { IDisposable } from '../../common/lifecycle';
 import * as colors from '../../common/constants';
 import { truncateMeasuredText } from '../../common/text';
 import { measureTextRange } from '../../editor/common/text/layout';
 import { editorViewState } from '../../editor/ui/view/state';
-import { inputFocus, type InputFocusTarget } from '../../input/focus';
+import { InputFocusScope, inputFocus, type InputFocusTarget } from '../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../input/keyboard/key_input';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { api } from '../../runtime/overlay_api';
@@ -14,7 +15,7 @@ import type { WorkbenchSurfaceService } from '../services/windows/service';
 
 /** Local image inspection, not an external URL opener or a DOM overlay over the canvas. */
 export class ImagePreviewOverlay {
-	private readonly focus = inputFocus.createTarget();
+	private readonly focus = inputFocus.createTarget(null, new InputFocusScope(Symbol('image preview')));
 	private readonly bounds = create_rect_bounds();
 	private rowHeight = 0;
 	private returnFocus: InputFocusTarget | null = null;
@@ -22,7 +23,13 @@ export class ImagePreviewOverlay {
 	private image: IDisposable | undefined;
 	public readonly surface: WorkbenchSurface;
 	public get visible(): boolean { return this.url !== undefined; }
-	public constructor(private readonly previews: ImagePreviewCache, private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface) {
+	public constructor(private readonly previews: ImagePreviewCache, private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner) {
+		for (const command of ['tabs.close', 'tabs.next', 'tabs.previous'] as const) {
+			this.focus.registerCommand(command, {
+				isEnabled: () => commands.isEnabled(command, this.returnFocus),
+				run: () => { const origin = this.returnFocus; this.close(); commands.execute(command, origin); },
+			});
+		}
 		this.focus.canFocus = () => this.visible;
 		this.focus.bindKeyboard(input => {
 			if (isKeyJustPressed('Escape', input) || isKeyJustPressed('Enter', input)) {
@@ -30,7 +37,7 @@ export class ImagePreviewOverlay {
 			}
 		});
 		this.surface = surfaces.attach({
-			role: 'modal', lifetimeOwner: owner, blockedScope: owner, captureScope: Symbol('image preview'),
+			role: 'modal', lifetimeOwner: owner, blockedScope: owner, captureScope: this.focus.scope.surfaceScope,
 			getBounds: () => this.bounds, getClip: () => this.bounds, isVisible: () => this.visible,
 			draw: () => this.draw(),
 			handlePointer: snapshot => {
@@ -38,7 +45,6 @@ export class ImagePreviewOverlay {
 			},
 			onRetire: () => this.close(),
 		});
-		this.focus.scope.surfaceScope = this.surface.captureScope;
 	}
 	public open(url: string): void {
 		if (!this.visible) this.returnFocus = inputFocus.target;

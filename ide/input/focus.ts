@@ -1,5 +1,5 @@
 import type { ClipboardTarget } from '../../hosts/common/clipboard';
-import type { EditorCommandId } from '../common/commands';
+import type { EditorCommandId, EditorCommandRunner } from '../common/commands';
 import type { PlayerInput } from '../../hosts/common/input/player';
 import type { KeyInputEvent, TextInputTarget } from '../../hosts/common/input/text';
 import type { RectBounds } from '../../machine/ts/common/rect';
@@ -32,7 +32,10 @@ export interface InputEdit {
 /** Shared membership and reactivation state; focus return and command origin stay independent. */
 export class InputFocusScope {
 	public lastFocused: InputFocusTarget | null = null;
-	public constructor(public surfaceScope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE) {}
+	public commands: EditorCommandRunner | undefined;
+	/** Command ancestry is independent of presentation and the control's focus-return parent. */
+	public constructor(public surfaceScope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE,
+		public readonly commandParent: InputFocusScope | null = null) {}
 }
 
 /** A retained canvas control, not a document or an editor-input classification. */
@@ -147,6 +150,7 @@ export class InputFocusTarget {
 
 /** Single canvas focus owner. Menus preserve the invoking control's command context. */
 export class InputFocusService {
+	public readonly workbenchScope = new InputFocusScope();
 	private targetValue: InputFocusTarget | null = null;
 	private readonly changeListeners = new Set<() => void>();
 	private focusRevision = 0;
@@ -174,8 +178,15 @@ export class InputFocusService {
 	}
 
 	public createTarget(parent: InputFocusTarget | null = null,
-		scope: InputFocusScope = parent === null ? new InputFocusScope() : parent.scope): InputFocusTarget {
+		scope: InputFocusScope = parent === null ? new InputFocusScope(WORKBENCH_POINTER_SCOPE, this.workbenchScope) : parent.scope): InputFocusTarget {
 		return new InputFocusTarget(this, parent, scope);
+	}
+
+	/** An isolated scope ends the route; it never falls back to an unrelated workbench. */
+	public get commandRunner(): EditorCommandRunner | undefined {
+		let scope = this.targetValue === null ? this.workbenchScope : this.targetValue.scope;
+		while (scope.commands === undefined && scope.commandParent !== null) scope = scope.commandParent;
+		return scope.commands;
 	}
 
 	public get target(): InputFocusTarget | null {

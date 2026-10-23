@@ -1,3 +1,4 @@
+import type { EditorCommandRunner } from '../../../common/commands';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { ImageDecoder } from '../../../../hosts/common/image';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -23,9 +24,9 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly transcriptView: AssistantTranscriptControl;
-	public constructor(resources: ResourcePanelController, decodeImage: ImageDecoder, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface) {
+	public constructor(resources: ResourcePanelController, decodeImage: ImageDecoder, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner) {
 		super(resources);
-		this.previews = new ImagePreviewCache(decodeImage); this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner);
+		this.previews = new ImagePreviewCache(decodeImage); this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner, commands);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview);
 		this.focusTarget.registerCommand('conversations.older', { isEnabled: () => !this.input.conversation.pending && this.input.conversation.olderCursor !== null,
 			run: () => { void this.input.conversation.older(); } });

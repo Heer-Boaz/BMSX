@@ -6,6 +6,7 @@ import { uppercaseOutsideStrings } from '../../../common/text';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { createWorkbenchPropertyTree, type WorkbenchPropertyElement, type WorkbenchPropertyTree } from '../../ui/property_tree';
 import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { ActionEffectSourceDefinition } from './action_effect_model';
 import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
@@ -42,7 +43,7 @@ export type BehaviorLensEffectProperties = {
 };
 
 export function createBehaviorLensEffectProperties(): BehaviorLensEffectProperties {
-	return { kind: 'properties', actionBar: createWorkbenchActionBar('behaviorLens.properties.title'),
+	return { kind: 'properties', actionBar: createWorkbenchActionBar('behaviorLens.properties.title', true, WORKBENCH_MENUS['behaviorLens.properties.actions']),
 		tree: createWorkbenchPropertyTree(), nodesBySource: new Map(), collapsedRowKeys: new Set(), collapsedGroups: new Set(), selectedGroup: undefined,
 		dirty: true, summary: '', emptyText: '' };
 }

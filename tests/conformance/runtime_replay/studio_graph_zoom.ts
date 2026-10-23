@@ -19,7 +19,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	const centerX = (viewport.bounds.left + viewport.bounds.right) / 2, centerY = (viewport.bounds.top + viewport.bounds.bottom) / 2;
 	const anchorX = viewport.viewportToGraphX(centerX), anchorY = viewport.viewportToGraphY(centerY);
 	await runPaletteCommand('Graph: Zoom Out');
-	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+	await click(graph.actionBar.overflow!.button.bounds);
 	await test.clickContextCommand('graph.zoomOut');
 	check(viewport.zoom === 1 / 3 && Math.abs(viewport.viewportToGraphX(centerX) - anchorX) < 1e-7
 		&& Math.abs(viewport.viewportToGraphY(centerY) - anchorY) < 1e-7, 'zoom: toolbar/palette preserve the canvas-center anchor');
@@ -27,7 +27,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	await runPaletteCommand('Graph: Reset Zoom (100%)');
 	check(viewport.zoom === 1, 'zoom: explicit 1:1 control restores font/layout scale');
 	console.info(`STUDIO: ${graph.kind} 100-percent canvas ready for visual inspection`);
-	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+	await click(graph.actionBar.overflow!.button.bounds);
 	await test.clickContextCommand('graph.zoomIn');
 	await runPaletteCommand('Graph: Zoom In');
 	check(viewport.zoom === 3 && viewport.model === model, 'zoom: integer magnification uses the same retained diagram');

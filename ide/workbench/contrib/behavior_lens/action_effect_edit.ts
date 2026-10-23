@@ -1,22 +1,10 @@
 import type { EffectPropertyWrite } from './action_effect_index';
-import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
-import { DisposableStore } from '../../../common/lifecycle';
-import type { PointerSnapshot } from '../../../common/models';
-import { ValueInput } from '../../../editor/ui/inline/value_input';
-import { drawValueInput } from '../../../editor/ui/inline/value_input_render';
-import type { InputFocusTarget } from '../../../input/focus';
-import { PointerButton } from '../../../../hosts/common/input/pointer_event';
-import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
-import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language/lua/source_edits';
+import type { LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
+import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { BehaviorLensInput } from './editor_input';
-import type { BehaviorLensEffectProperties, EffectPropertyElement } from './action_effect_properties';
 import type { BehaviorLensViewState } from './view_model';
-import type { WorkbenchTreeNode } from '../../ui/tree_view';
-import { revealWorkbenchListSelection } from '../../ui/list_view';
-import { api } from '../../../runtime/overlay_api';
 import { behaviorSourceEditState, captureBehaviorSourceBookmark, copyBehaviorSourceBookmark } from './source_bookmark';
 import { mapTextOffset } from '../../../editor/text/text_change';
-import type { EditorTextModel } from '../../../editor/model/text_model';
 
 /** Retained source field, not a resolved runtime value or a referenced initializer. */
 export function selectedActionEffectProperty(view: BehaviorLensViewState): EffectPropertyWrite | undefined {
@@ -26,99 +14,20 @@ export function selectedActionEffectProperty(view: BehaviorLensViewState): Effec
 	return selected.element.write;
 }
 
-/** One generation-bound property cell editing its actual written source owner. */
-export class ActionEffectPropertyEdit {
-	public readonly control: ValueInput<LuaFieldValueEdit>;
-	public readonly bounds = create_rect_bounds();
-	private binding: { input: BehaviorLensInput; model: EditorTextModel; properties: BehaviorLensEffectProperties; write: EffectPropertyWrite; row: WorkbenchTreeNode<EffectPropertyElement>; index: number } | undefined;
-	private lifetime: DisposableStore | undefined;
-	private readonly unbindBlur: () => void;
-
-	public constructor(parent: InputFocusTarget) {
-		this.control = new ValueInput(parent, {
-			options: { allowSpace: true, singleLine: true },
-			invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
-			format: value => value.edit.text,
-			parse: text => parseLuaFieldValueEdit(this.binding!.model.buffer, this.binding!.write.file.chunk.locations, this.binding!.write.field, text),
-		}, value => {
-			const { input, model } = this.binding!;
-			const selectedRange = this.binding!.write.sourceSelection === 'field' ? value.fieldRange : value.expressionRange;
-			const before = captureBehaviorSourceBookmark(input.view, input.view.selection!);
-			const after = copyBehaviorSourceBookmark(before);
-			this.close();
-			model.pushEditOperations([value.edit], behaviorSourceEditState.of(before), changes => {
-				// This command replaces a selected expression, unlike ordinary text
-				// markers which deliberately collapse when their source is replaced.
-				for (const step of after.path) if (step.resource.path === model.resource.path) {
-					step.start = mapTextOffset(step.start, changes, 1);
-					step.end = mapTextOffset(step.end, changes, -1);
-				}
-				Object.assign(after.path[after.path.length - 1], luaSourceRangeToTextRange(model.buffer, selectedRange));
-				return behaviorSourceEditState.of(after);
-			});
-		});
-		this.control.field.focusTarget.canFocus = () => this.active;
-		this.control.field.focusTarget.next = parent;
-		this.control.field.focusTarget.previous = parent;
-		// ValueInput commits/cancels its draft first; then detach its source binding.
-		this.unbindBlur = this.control.field.focusTarget.onDidBlur(() => this.close());
-	}
-
-	public get active(): boolean { return this.binding !== undefined; }
-
-	public open(input: BehaviorLensInput, properties: BehaviorLensEffectProperties, write: EffectPropertyWrite): void {
-		this.close();
-		const tree = properties.tree;
-		const field = write.field;
-		const locations = write.file.chunk.locations;
-		const model = input.view.source.models.get(write.file.file)!;
-		revealWorkbenchListSelection(tree);
-		this.binding = { input, model, properties, write, row: tree.rows[tree.selectionIndex], index: tree.selectionIndex };
-		const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
-		this.control.setValue({ edit: { offset: span.start, deleteLength: span.end - span.start,
-			text: readLuaSourceRange(model.buffer, locations.range(field.value.span)) }, fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span) });
-		this.lifetime = new DisposableStore();
-		this.lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.close()) });
-		this.control.field.focusTarget.focus();
-	}
-
-	public close(): void {
-		this.control.cancel();
-		this.binding = undefined;
-		this.lifetime?.dispose();
-		this.lifetime = undefined;
-		this.control.field.focusTarget.release();
-	}
-
-	public update(): void {
-		if (this.binding === undefined) return;
-		if (this.binding.model.readOnly) this.close();
-		else this.layout();
-	}
-
-	private layout(): void {
-		const binding = this.binding!;
-		revealWorkbenchListSelection(binding.properties.tree);
-		const { layout, scroll } = binding.properties.tree;
-		const top = layout.contentTop + (binding.index - scroll) * layout.rowHeight;
-		write_rect_bounds(this.bounds, binding.row.element.displayValueLeft - 3, top, layout.contentRight - 2, top + layout.rowHeight);
-		this.control.layout(this.bounds.right - this.bounds.left);
-	}
-
-	public draw(): void {
-		api.pushClipRect(this.bounds.left, this.bounds.top, this.bounds.right, this.bounds.bottom);
-		drawValueInput(this.control, this.bounds);
-		api.popClipRect();
-	}
-
-	public handlePointer(snapshot: PointerSnapshot): boolean {
-		if (!this.active) return false;
-		if (!this.control.field.pointerSelecting && (!snapshot.valid || !snapshot.insideViewport
-			|| !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds))) return false;
-		this.control.handlePointer(this.bounds.left + 3, snapshot.viewportX,
-			(snapshot.justPressedButtons & PointerButton.Primary) !== 0, (snapshot.pressedButtons & PointerButton.Primary) !== 0);
-		return true;
-	}
-
-	public dispose(): void { this.close(); this.unbindBlur(); this.control.dispose(); }
+/** Replace the actual written expression and associate its authored selection with source history. */
+export function applyActionEffectPropertyEdit(input: BehaviorLensInput, write: EffectPropertyWrite, value: LuaFieldValueEdit): void {
+	const model = input.view.source.models.get(write.file.file)!;
+	const selectedRange = write.sourceSelection === 'field' ? value.fieldRange : value.expressionRange;
+	const before = captureBehaviorSourceBookmark(input.view, input.view.selection!);
+	const after = copyBehaviorSourceBookmark(before);
+	model.pushEditOperations([value.edit], behaviorSourceEditState.of(before), changes => {
+		// Explicit replacement selects the new expression; ordinary text markers
+		// deliberately collapse when their original source occurrence disappears.
+		for (const step of after.path) if (step.resource.path === model.resource.path) {
+			step.start = mapTextOffset(step.start, changes, 1);
+			step.end = mapTextOffset(step.end, changes, -1);
+		}
+		Object.assign(after.path[after.path.length - 1], luaSourceRangeToTextRange(model.buffer, selectedRange));
+		return behaviorSourceEditState.of(after);
+	});
 }

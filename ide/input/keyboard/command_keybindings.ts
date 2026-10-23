@@ -3,7 +3,7 @@ import type {
 	EditorCommandId,
 } from '../../common/commands';
 import { KeyModifier } from '../../../hosts/common/input/text';
-import { inputFocus } from '../focus';
+import { inputFocus, type InputFocusTarget } from '../focus';
 
 export type EditorModifierConstraint = {
 	readonly any?: KeyModifier;
@@ -21,7 +21,7 @@ export type EditorCommandKeybinding = {
 	readonly command: EditorCommandId;
 	readonly modifiers: EditorModifierConstraint;
 	/** Applicability is distinct from command enablement (e.g. empty field history). */
-	readonly when?: () => boolean;
+	readonly when?: (target: InputFocusTarget | null) => boolean;
 	readonly repeat?: boolean;
 };
 
@@ -39,10 +39,10 @@ const NO_MODIFIERS: EditorModifierConstraint = {
 };
 
 const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
-	{ code: 'Tab', command: 'suggest.accept', modifiers: NO_MODIFIERS, when: () => inputFocus.getCommand('suggest.accept')?.isEnabled() === true },
-	{ code: 'KeyZ', command: 'undo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: () => inputFocus.getCommand('undo') !== undefined, repeat: true },
-	{ code: 'KeyZ', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt }, when: () => inputFocus.getCommand('redo') !== undefined, repeat: true },
-	{ code: 'KeyY', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: () => inputFocus.getCommand('redo') !== undefined, repeat: true },
+	{ code: 'Tab', command: 'suggest.accept', modifiers: NO_MODIFIERS, when: target => target?.getCommand('suggest.accept')?.isEnabled() === true },
+	{ code: 'KeyZ', command: 'undo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('undo') !== undefined, repeat: true },
+	{ code: 'KeyZ', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt }, when: target => target?.getCommand('redo') !== undefined, repeat: true },
+	{ code: 'KeyY', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('redo') !== undefined, repeat: true },
 	{ code: 'KeyS', command: 'save', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'KeyO', command: 'symbolSearch', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift } },
 	{ code: 'KeyE', command: 'runtimeErrorFocus', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
@@ -52,16 +52,19 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'KeyW', command: 'tabs.close', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
+	{ code: 'Tab', command: 'tabs.next', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
+	{ code: 'Tab', command: 'tabs.previous', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
 	{ code: 'F10', command: 'menubar.focus', modifiers: NO_MODIFIERS },
 	{ code: 'KeyN', command: 'createResource', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
-	{ code: 'ContextMenu', command: 'contextMenu', modifiers: NO_MODIFIERS, when: () => inputFocus.getCommand('contextMenu') !== undefined },
-	{ code: 'F10', command: 'contextMenu', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS }, when: () => inputFocus.getCommand('contextMenu') !== undefined },
+	{ code: 'ContextMenu', command: 'contextMenu', modifiers: NO_MODIFIERS, when: target => target?.getCommand('contextMenu') !== undefined },
+	{ code: 'F10', command: 'contextMenu', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS }, when: target => target?.getCommand('contextMenu') !== undefined },
 	{ code: 'ArrowLeft', command: 'navigateBack', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift } },
 	{ code: 'ArrowRight', command: 'navigateForward', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift } },
 	{ code: 'KeyP', command: 'commandPalette', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
-	{ code: 'KeyF', command: 'actorLab.find', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: () => inputFocus.getCommand('actorLab.find') !== undefined },
-	{ code: 'KeyD', command: 'behaviorLens.duplicateChild', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: () => inputFocus.getCommand('behaviorLens.duplicateChild') !== undefined },
-	{ code: 'Delete', command: 'behaviorLens.removeChild', modifiers: NO_MODIFIERS, when: () => inputFocus.getCommand('behaviorLens.removeChild') !== undefined },
+	{ code: 'KeyF', command: 'actorLab.find', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('actorLab.find') !== undefined },
+	{ code: 'KeyD', command: 'behaviorLens.duplicateChild', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('behaviorLens.duplicateChild') !== undefined },
+	{ code: 'Delete', command: 'behaviorLens.removeChild', modifiers: NO_MODIFIERS, when: target => target?.getCommand('behaviorLens.removeChild') !== undefined },
 	{ code: 'F5', command: 'debugContinue', modifiers: NO_MODIFIERS },
 	{ code: 'F7', command: 'stepFrame', modifiers: NO_MODIFIERS },
 	{ code: 'F7', command: 'stepFrameBack', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS } },
@@ -133,17 +136,18 @@ function matchesModifierConstraint(
 export function resolveEditorCommandKeybinding(
 	code: string,
 	modifiers: KeyModifier,
-	commands: EditorCommandEnablement,
+	commands: EditorCommandEnablement | undefined,
+	target: InputFocusTarget | null = inputFocus.target,
 ): EditorCommandKeybinding | null {
 	for (let groupIndex = EDITOR_DEFAULT_KEYBINDING_GROUPS.length - 1; groupIndex >= 0; groupIndex -= 1) {
 		const bindings = EDITOR_DEFAULT_KEYBINDING_GROUPS[groupIndex].bindings;
 		for (let bindingIndex = bindings.length - 1; bindingIndex >= 0; bindingIndex -= 1) {
 			const binding = bindings[bindingIndex];
-			if (binding.code === code
-				&& matchesModifierConstraint(binding.modifiers, modifiers)
-				&& (binding.when === undefined ? commands.isEnabled(binding.command) : binding.when())) {
-				return binding;
-			}
+			if (binding.code !== code || !matchesModifierConstraint(binding.modifiers, modifiers)) continue;
+			const ownCommand = target?.getCommand(binding.command);
+			if (ownCommand === undefined && commands === undefined) continue;
+			if (binding.when !== undefined ? binding.when(target)
+				: ownCommand !== undefined || commands!.isEnabled(binding.command, target)) return binding;
 		}
 	}
 	return null;

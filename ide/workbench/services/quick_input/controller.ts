@@ -7,7 +7,7 @@ import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';
-import { inputFocus, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { advanceQuickInputSelection } from '../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../editor/render/caret';
@@ -29,7 +29,7 @@ type QuickInputSession = {
 /** One transient workbench surface, independent of editor panes and their documents. */
 export class QuickInputController implements PointerCaptureTarget {
 	public readonly pointerScope = Symbol('quick input');
-	public readonly field = new TextField(null, INPUT_OPTIONS);
+	public readonly field = new TextField(null, INPUT_OPTIONS, new InputFocusScope(this.pointerScope));
 	public readonly model = new QuickPickModel();
 	public readonly textViewport = new SingleLineFieldViewport();
 	public readonly layout = {
@@ -58,7 +58,6 @@ export class QuickInputController implements PointerCaptureTarget {
 	public constructor(private readonly contextMenu: ContextMenuController,
 		private readonly onDidChangeVisibility: () => void = () => {},
 		private readonly acceptsFocusTransfer: (next: InputFocusTarget | null) => boolean = () => false) {
-		this.field.focusTarget.scope.surfaceScope = this.pointerScope;
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.field.onDidChangeText(() => {
 			this.cancelPointer();

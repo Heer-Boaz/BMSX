@@ -7,7 +7,7 @@ import { AssistantReferences } from './references';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
-import type { EditorCommandId } from '../../../common/commands';
+import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { truncateMeasuredText } from '../../../common/text';
@@ -56,10 +56,10 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	private unbindDraft: (() => void) | undefined;
 	private unbindAttachmentClipboard: (() => void) | undefined;
 	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
-		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface) {
+		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner) {
 		super(resources);
 		this.previews = new ImagePreviewCache(decodeImage);
-		this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner);
+		this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner, commands);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview, () => this.execute('assistant.review'));
 		this.attachments = new AssistantAttachmentStrip(this.previews, url => this.preview.open(url));
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });

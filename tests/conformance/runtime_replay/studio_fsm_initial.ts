@@ -47,7 +47,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 	if (imported) main.refreshResource({ ...mainResource, source: { ...mainResource.source, generated: true } });
 	check(ide.editor.commands.isEnabled('behaviorLens.setInitialState'), 'initial: an actual state enables its command even with a read-only registration');
 	const version = model.version;
-	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+	await click(graph.actionBar.overflow!.button.bounds);
 	await test.clickContextCommand('behaviorLens.setInitialState', 8);
 	await lens.graphLayout.settled; await frame();
 	const changed = source.replace("'idle'),", "'active'),");

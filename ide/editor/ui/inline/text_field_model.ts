@@ -1,6 +1,6 @@
 import type { InlineInputOptions, Position } from '../../../common/models';
 import type { ClipboardContents, ClipboardImage, ClipboardTarget } from '../../../../hosts/common/clipboard';
-import { inputFocus, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { deleteSelection, pasteFieldText, selectedText, getCursorOffset, selectionAnchorOffset,
 	setCursorFromOffset, setSelectionAnchorFromOffset, clearSelection } from './text_field';
 import { showEditorMessage } from '../../../common/feedback_state';
@@ -41,8 +41,8 @@ export class TextField<T = unknown> implements ClipboardTarget, TextInputTarget 
 	private readonly redoStack: TextFieldRevision<T>[] = [];
 	private readonly changeListeners = new Set<() => void>();
 
-	public constructor(parent: InputFocusTarget | null = null, public readonly options: InlineInputOptions = { allowSpace: true }) {
-		this.focusTarget = inputFocus.createTarget(parent);
+	public constructor(parent: InputFocusTarget | null = null, public readonly options: InlineInputOptions = { allowSpace: true }, scope?: InputFocusScope) {
+		this.focusTarget = inputFocus.createTarget(parent, scope);
 		this.focusTarget.clipboard = this;
 		this.focusTarget.textInput = this;
 		this.focusTarget.registerCommand('undo', {

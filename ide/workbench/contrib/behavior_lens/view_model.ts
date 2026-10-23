@@ -2,6 +2,7 @@ import { BehaviorSourceIndex } from './source_index';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { WorkbenchListState } from '../../ui/list_view';
 import { WorkbenchGraphViewport } from '../../ui/graph/viewport';
@@ -88,7 +89,7 @@ export function createBehaviorLensOutline(): BehaviorLensOutline {
 }
 
 export function createBehaviorLensGraph(): BehaviorLensGraph {
-	return { kind: 'graph', actionBar: createWorkbenchActionBar('behaviorLens.graph.title'),
+	return { kind: 'graph', actionBar: createWorkbenchActionBar('behaviorLens.graph.title', true, WORKBENCH_MENUS['behaviorLens.graph.actions']),
 		viewport: new WorkbenchGraphViewport<BehaviorGraphModel>({ ...createWorkbenchGraphModel(editorViewState.font.renderFont(), [], []),
 			nodesBySource: new Map(), edgesBySource: new Map() }),
 		dirty: true, position: 'initial' };
@@ -96,7 +97,7 @@ export function createBehaviorLensGraph(): BehaviorLensGraph {
 
 export function createBehaviorLensStateGraph(): BehaviorLensStateGraph {
 	const emptyModel = emptyStateGraph(editorViewState.font.renderFont());
-	return { kind: 'state-graph', actionBar: createWorkbenchActionBar('behaviorLens.stateGraph.title'),
+	return { kind: 'state-graph', actionBar: createWorkbenchActionBar('behaviorLens.stateGraph.title', true, WORKBENCH_MENUS['behaviorLens.stateGraph.actions']),
 		viewport: new WorkbenchGraphViewport(emptyModel), emptyModel,
 		layoutState: { kind: 'idle' }, dirty: true, position: 'initial' };
 }

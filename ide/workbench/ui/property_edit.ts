@@ -29,7 +29,7 @@ type PropertyEditBinding<T> = {
 export class WorkbenchPropertyEdit<T> {
 	public readonly bounds = create_rect_bounds();
 	public readonly fieldBounds = create_rect_bounds();
-	private readonly scope = new InputFocusScope(Symbol('property edit'));
+	private readonly scope: InputFocusScope;
 	private surface: WorkbenchSurface | undefined;
 	private caption = '';
 	private captionSource = '';
@@ -43,6 +43,7 @@ export class WorkbenchPropertyEdit<T> {
 	public constructor(parent: InputFocusTarget, format: (value: T) => string,
 		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface,
 		private readonly getWorkArea: () => Readonly<RectBounds>) {
+		this.scope = new InputFocusScope(Symbol('property edit'), parent.scope);
 		const context = inputFocus.createTarget(parent, this.scope);
 		context.canFocus = () => false;
 		this.control = new ValueInput(context, { options: { singleLine: true, allowSpace: true }, format,

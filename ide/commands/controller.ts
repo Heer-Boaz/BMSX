@@ -29,7 +29,7 @@ import { executeEditorViewCommand, isEditorViewCommand } from './view';
 import { editorViewState } from '../editor/ui/view/state';
 import { problemsPanel } from '../workbench/contrib/problems/panel/controller';
 import { isActiveLuaCodeTab } from '../workbench/ui/code_tab/contexts';
-import { getActiveTab, isBehaviorLensActive, isCodeTabActive, isScenarioLabActive } from '../workbench/ui/tabs';
+import { closeActiveTab, cycleTab, getActiveTab, isBehaviorLensActive, isCodeTabActive, isScenarioLabActive } from '../workbench/ui/tabs';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
 import { TextEditorInput } from '../workbench/common/editor_input';
@@ -55,7 +55,7 @@ import { getTextFileRuntimeSourceStatus } from '../workbench/services/working_co
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
-	'navigateBack', 'navigateForward',
+	'navigateBack', 'navigateForward', 'tabs.close', 'tabs.next', 'tabs.previous',
 	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
 	'scenarioLab.play', 'play.reset', 'play.source',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
@@ -194,7 +194,6 @@ export class IdeCommandController {
 			case 'actorLab.pinProperty': case 'actorLab.unpinProperty': case 'actorLab.revealPinnedProperty':
 			case 'behaviorLens.details':
 			case 'sceneEditor.details': case 'sceneEditor.outline':
-			case 'behaviorLens.more':
 			case 'behaviorLens.inspectRuntimeEffect':
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
@@ -250,6 +249,9 @@ export class IdeCommandController {
 				} else this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
 				if (!this.debuggerState.plans.controlSuspended) this.execution.requestExecution(false);
 				return;
+			case 'tabs.close': closeActiveTab(this.editor.editorPanes); return;
+			case 'tabs.next': cycleTab(this.editor.editorPanes, 1); return;
+			case 'tabs.previous': cycleTab(this.editor.editorPanes, -1); return;
 			case 'tabs.scrollLeft': case 'tabs.scrollRight':
 				editorChromeState.tabScrollbar.setScroll(editorChromeState.tabScrollbar.getScroll()
 					+ (command === 'tabs.scrollLeft' ? -1 : 1) * editorChromeState.tabViewportBounds.right * 0.75);
@@ -450,7 +452,6 @@ export class IdeCommandController {
 			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more': case 'actorLab.find':
 			case 'actorLab.pinProperty': case 'actorLab.unpinProperty': case 'actorLab.revealPinnedProperty':
 			case 'behaviorLens.details':
-			case 'behaviorLens.more':
 			case 'behaviorLens.inspectRuntimeEffect':
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
@@ -503,6 +504,8 @@ export class IdeCommandController {
 			}
 			case 'debugEvaluation':
 				return this.runtimeTasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
+			case 'tabs.close': return editorTabGroup.activeTab?.closable === true;
+			case 'tabs.next': case 'tabs.previous': return editorTabGroup.tabs.length > 1;
 			case 'tabs.scrollLeft': return editorChromeState.tabScrollbar.getScroll() > 0;
 			case 'tabs.scrollRight': return editorChromeState.tabScrollbar.getScroll() < editorChromeState.tabScrollbar.getMaximumScroll();
 			case 'openEditors': return editorTabGroup.tabs.length > 0;

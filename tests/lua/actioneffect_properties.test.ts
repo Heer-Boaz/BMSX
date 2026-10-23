@@ -2,12 +2,14 @@ import { semanticSnapshot } from './semantic_test_harness';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { EditorFont } from '../../ide/editor/ui/view/font';
+import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
-import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../ide/language/lua/field_value_edit';
 import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
@@ -18,12 +20,15 @@ import { acceptEffectPropertySelection } from '../../ide/workbench/contrib/behav
 import { setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ide/workbench/ui/property_tree_pointer';
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../helpers/actioneffect_source_fixture';
-import { ActionEffectPropertyEdit, selectedActionEffectProperty } from '../../ide/workbench/contrib/behavior_lens/action_effect_edit';
+import { applyActionEffectPropertyEdit, selectedActionEffectProperty } from '../../ide/workbench/contrib/behavior_lens/action_effect_edit';
+import type { EffectPropertyWrite } from '../../ide/workbench/contrib/behavior_lens/action_effect_index';
 import { inputFocus } from '../../ide/input/focus';
 import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
+import { WorkbenchPropertyEdit } from '../../ide/workbench/ui/property_edit';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Record<string, string>> = {}) {
-	editorViewState.font = new EditorFont('tiny');
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const resource = { domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 	const service = new EditorTextModelService();
 	const model = service.retain(resource, 'lua', source);
@@ -51,6 +56,30 @@ function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Rec
 	return { model, models, service, view, input, properties, update, refresh, move };
 }
 
+function propertyEditFixture(t: TestContext, f: ReturnType<typeof fixture>, paneWidth = 384) {
+	const parent = inputFocus.createTarget();
+	parent.bindKeyboard(() => {}); parent.focus();
+	const root = { left: 0, top: 24, right: 384, bottom: 274 };
+	const pane = { ...root, right: paneWidth };
+	f.view.layout.right = paneWidth; f.update();
+	const surfaces = new WorkbenchSurfaceService();
+	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope, isVisible: () => true,
+		getBounds: () => pane, getClip: () => pane, draw() {} });
+	const edit = new WorkbenchPropertyEdit<LuaFieldValueEdit>(parent, value => value.edit.text, surfaces, owner, () => root);
+	const openProperty = (write: EffectPropertyWrite) => {
+		const model = f.models.get(write.file.file)!, locations = write.file.chunk.locations, field = write.field;
+		const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
+		const lifetime = edit.open({ model, tree: f.properties.tree, row: f.properties.tree.rows[f.properties.tree.selectionIndex],
+			parse: text => parseLuaFieldValueEdit(model.buffer, locations, field, text),
+			apply: value => { applyActionEffectPropertyEdit(f.input, write, value); f.refresh(); },
+		}, { edit: { offset: span.start, deleteLength: span.end - span.start, text: readLuaSourceRange(model.buffer, locations.range(field.value.span)) },
+			fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span) });
+		lifetime.add({ dispose: f.view.source.onDidInvalidate(() => edit.close()) });
+	};
+	t.after(() => { edit.dispose(); inputFocus.setTarget(null); surfaces.dispose(); f.input.dispose(); });
+	return { parent, edit, openProperty, surfaces, owner, root, pane };
+}
+
 test('imported property cells use their written models; Save/dirty and nearest source history cover only this definition', t => {
 	const root = `local fx<const> = require('cartlib/actioneffects')
 fx.register_effect('imported', require('blueprint'))
@@ -58,9 +87,7 @@ fx.register_effect('other', require('other'))`;
 	const blueprint = "return { period_ms = 40, blocked_tags = require('tags'), handler = require('callback') }";
 	const f = fixture(root, 0, { 'blueprint.lua': blueprint, 'tags.lua': "return { 'busy' }",
 		'other.lua': 'return { period_ms = 99 }', 'callback.lua': 'return function() error("not evaluated") end' });
-	const parent = inputFocus.createTarget();
-	const edit = new ActionEffectPropertyEdit(parent);
-	t.after(() => { edit.dispose(); inputFocus.setTarget(null); f.input.dispose(); });
+	const { edit, openProperty } = propertyEditFixture(t, f);
 	const provider = f.models.get('blueprint.lua')!, tags = f.models.get('tags.lua')!, other = f.models.get('other.lua')!;
 	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } });
 	assert.equal(f.input.readOnly, false, 'a read-only registration does not make a writable provider read-only');
@@ -71,18 +98,23 @@ fx.register_effect('other', require('other'))`;
 		const row = f.properties.tree.rows.find(row => row.element.kind === 'property' && row.element.source.label.startsWith(label))!;
 		f.properties.tree.selectionIndex = f.properties.tree.rows.indexOf(row);
 		acceptEffectPropertySelection(f.view, f.properties, false);
-		edit.open(f.input, f.properties, selectedActionEffectProperty(f.view)!);
+		openProperty(selectedActionEffectProperty(f.view)!);
 		insertValue(edit.control.field, value);
 		assert.equal(edit.control.commit(), true);
-		f.refresh();
 	};
 	change('period_ms', '40 * 2');
 	assert.equal(provider.buffer.getText(), blueprint.replace('40', '40 * 2'));
+	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, provider.resource.path);
+	assert.equal(readLuaSourceRange(provider.buffer, selectedBehaviorLensSourceRange(f.view)!), 'period_ms = 40 * 2',
+		'a named property retains the newly written field selection in its imported owner');
 	assert.equal(f.model.buffer.getText(), root);
 	assert.equal(f.model.version, 1);
 	assert.equal(f.input.isDirty(), true);
 	change("'busy'", "'Busy Changed'");
 	assert.equal(tags.buffer.getText(), "return { 'Busy Changed' }");
+	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, tags.resource.path);
+	assert.equal(readLuaSourceRange(tags.buffer, selectedBehaviorLensSourceRange(f.view)!), "'Busy Changed'",
+		'a requirement entry retains only its written expression, not the registration or parent list');
 	assert.equal(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label, "'Busy Changed'");
 	other.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated\n' }]);
 	for (const expected of [tags, provider]) {
@@ -102,6 +134,8 @@ fx.register_effect('other', require('other'))`;
 	assert.equal(tags.lastSavedSource, "return { 'Busy Changed' }");
 	// Removing a written import must not forget edits made to that source in this input.
 	change('blocked_tags', "{ 'local' }");
+	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, provider.resource.path);
+	assert.equal(readLuaSourceRange(provider.buffer, selectedBehaviorLensSourceRange(f.view)!), "{ 'local' }");
 	assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, provider, tags]));
 	provider.undo(); f.refresh();
 	assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, provider, tags]));
@@ -118,11 +152,31 @@ fx.register_effect('other', require('other'))`;
 	assert.equal(f.input.getWorkingCopies(), stableCopies, 'stable navigation/presentation does not rebuild source membership');
 });
 
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} ActionEffect drafts use the actual shared transient beyond a narrow value column`, t => {
+	const f = fixture(ACTIONEFFECT_SOURCE, 1);
+	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	const ui = propertyEditFixture(t, f, variant === 'tiny' ? 78 : 118);
+	const row = f.properties.tree.rows.find(row => row.element.kind === 'property' && row.element.source.label.startsWith('required_tags'))!;
+	f.properties.tree.selectionIndex = f.properties.tree.rows.indexOf(row);
+	acceptEffectPropertySelection(f.view, f.properties, false);
+	ui.openProperty(selectedActionEffectProperty(f.view)!);
+	assert.ok(ui.edit.bounds.right > ui.pane.right);
+	assert.ok(ui.edit.fieldBounds.right - ui.edit.fieldBounds.left - 6 >= editorViewState.charAdvance * 24);
+	assert.ok(ui.edit.bounds.left >= ui.root.left && ui.edit.bounds.right <= ui.root.right);
+	const scope = ui.edit.control.field.focusTarget.scope.surfaceScope;
+	const surface = ui.surfaces.findByScope(scope)!;
+	assert.equal(surface.role, 'transient'); assert.equal(surface.lifetimeOwner, ui.owner);
+	assert.equal(ui.surfaces.hitTest(ui.edit.fieldBounds.right - 2, ui.edit.fieldBounds.top + 2), surface);
+	insertValue(ui.edit.control.field, "{ 'draft', 'not committed' }");
+	ui.owner.dispose();
+	assert.equal(ui.edit.active, false); assert.equal(ui.edit.control.pending, false);
+	assert.equal(ui.surfaces.findByScope(scope), undefined);
+	assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE); assert.equal(f.model.canUndo, false);
+});
+
 test('property drafts edit written expressions and retain ordinary source history in the chosen effect', t => {
 	const f = fixture(ACTIONEFFECT_SOURCE, 1);
-	const parent = inputFocus.createTarget();
-	const edit = new ActionEffectPropertyEdit(parent);
-	t.after(() => { edit.dispose(); inputFocus.setTarget(null); f.input.dispose(); });
+	const { edit, openProperty } = propertyEditFixture(t, f);
 	for (const [name, value] of [['period_ms', '25 * 2 --[[kept]] '], ['event', " 'Different Event' "], ['defer_cooldown_commit', '(false)'], ['required_tags', "{ 'one', 'two' }"]]) {
 		const row = f.properties.tree.rows.find(row => row.element.kind === 'property' && (row.element.source.label === name || row.element.source.label.startsWith(name)))!;
 		f.properties.tree.selectionIndex = f.properties.tree.rows.indexOf(row);
@@ -130,7 +184,7 @@ test('property drafts edit written expressions and retain ordinary source histor
 		const property = selectedActionEffectProperty(f.view)!;
 		const field = property.field;
 		const originalValue = readLuaSourceRange(f.model.buffer, property.file.chunk.locations.range(field.value.span));
-		edit.open(f.input, f.properties, property);
+		openProperty(property);
 		insertValue(edit.control.field, value);
 		assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE);
 		inputFocus.executeCommand('undo'); assert.equal(edit.control.field.text, originalValue);
@@ -138,7 +192,6 @@ test('property drafts edit written expressions and retain ordinary source histor
 		assert.equal(edit.control.commit(), true);
 		assert.equal(edit.active, false);
 		assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE.replace(name + ' = ' + originalValue, name + ' = ' + value));
-		f.refresh();
 		assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 		assert.ok(f.view.selection, `selection after editing ${name}`);
 		assert.ok(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label.startsWith(name));
@@ -151,12 +204,10 @@ test('property drafts edit written expressions and retain ordinary source histor
 
 test('property drafts cancel on invalidation and read-only; invalid Enter retains text and blur discards it', t => {
 	const f = fixture();
-	const parent = inputFocus.createTarget();
-	const edit = new ActionEffectPropertyEdit(parent);
-	t.after(() => { edit.dispose(); inputFocus.setTarget(null); f.input.dispose(); });
+	const { parent, edit, openProperty } = propertyEditFixture(t, f);
 	const open = () => {
 		f.properties.tree.selectionIndex = 1; acceptEffectPropertySelection(f.view, f.properties, false);
-		edit.open(f.input, f.properties, selectedActionEffectProperty(f.view)!);
+		openProperty(selectedActionEffectProperty(f.view)!);
 	};
 	open(); insertValue(edit.control.field, '2 -- invalid');
 	assert.equal(edit.control.commit(), false);

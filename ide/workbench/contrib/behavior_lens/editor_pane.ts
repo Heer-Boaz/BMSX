@@ -45,7 +45,12 @@ import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control'
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import { buildBehaviorInspection } from './inspection';
 import { runtimeInspectionPropertiesEqual, type RuntimeInspectionProperty } from './runtime_properties';
-import { ActionEffectPropertyEdit, selectedActionEffectProperty } from './action_effect_edit';
+import { applyActionEffectPropertyEdit, selectedActionEffectProperty } from './action_effect_edit';
+import { WorkbenchPropertyEdit } from '../../ui/property_edit';
+import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
+import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language/lua/source_edits';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import type { WorkbenchSurface } from '../../services/windows/model';
 import { addActionEffectProperty, editableActionEffect, removeActionEffectProperty } from './action_effect_authoring';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 
@@ -65,7 +70,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, pointerHover, this.graph.focusTarget);
 	public readonly inspector = new WorkbenchPropertyInspector<RuntimeInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionBar: WorkbenchActionBarControl;
-	public readonly propertyEdit: ActionEffectPropertyEdit;
+	public readonly propertyEdit: WorkbenchPropertyEdit<LuaFieldValueEdit>;
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) => {
 		const input = this.input;
 		const model = input.view.source.models.get(target.file.file)!;
@@ -109,20 +114,14 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController,
 		private readonly frameNavigation: RuntimeFrameNavigation,
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>,
 	) {
 		super(resourcePanel);
-		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
-		this.propertyEdit = new ActionEffectPropertyEdit(this.focusTarget);
-		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.more', {
-			isEnabled: () => this.input.view.presentation.kind !== 'outline' && !this.inspector.visible && !this.sourceEditReview.visible,
-			run: () => {
-				this.focus();
-				const view = this.input.view, bounds = view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds;
-				this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS[BEHAVIOR_ACTION_MENUS[view.presentation.kind]], this.commands, { selectFirst: true,
-					onWillShow: lifetime => { lifetime.add({ dispose: view.source.onDidInvalidate(() => this.contextMenu.hide()) }); },
-				});
-			},
-		});
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
+		this.actionBar.onDidOpenOverflow = lifetime => {
+			lifetime.add({ dispose: this.input.view.source.onDidInvalidate(() => this.contextMenu.hide()) });
+		};
+		this.propertyEdit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, getWorkArea);
 		for (const target of [this.focusTarget, this.inspector.focusTarget]) {
 			target.registerCommand('runtime.pause', { isEnabled: () => this.input.runtimeInspection !== undefined,
 				run: () => { this.input.runtimeInspection!.running = false; } });
@@ -278,7 +277,6 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		}
 		drawBehaviorLens(view, this.graph.hover, this.graph.focusTarget.hasFocus, this.graph.dragFeedback,
 			this.graph.connectionHandles, this.sourceEditReview.visible ? this.sourceEditReview : undefined);
-		if (this.propertyEdit.active) this.propertyEdit.draw();
 	}
 
 	public handleKeyboard(event: KeyInputEvent): void {
@@ -303,7 +301,6 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		now: number,
 	): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
-		if (this.propertyEdit.handlePointer(snapshot)) return true;
 		if (this.sourceEditReview.visible) return this.sourceEditReview.handlePointer(snapshot, justPressed, now);
 		if (this.actionBar.handlePointer(snapshot)) return true;
 		const view = this.input.view;
@@ -375,11 +372,21 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		this.controller.updateView(this.input);
 		const properties = this.input.view.presentation;
 		if (properties.kind === 'properties') {
-			const property = selectedActionEffectProperty(this.input.view)!;
+			const input = this.input, property = selectedActionEffectProperty(input.view)!;
 			const range = property.file.chunk.locations.range(property.field.value.span);
 			if (range.start.line !== range.end.line) {
 				this.controller.openWrittenSource(this.input, range);
-			} else this.propertyEdit.open(this.input, properties, property);
+			} else {
+				const model = input.view.source.models.get(property.file.file)!;
+				const locations = property.file.chunk.locations;
+				const span = luaSourceRangeToTextRange(model.buffer, range);
+				const lifetime = this.propertyEdit.open({ model, tree: properties.tree, row: properties.tree.rows[properties.tree.selectionIndex],
+					parse: text => parseLuaFieldValueEdit(model.buffer, locations, property.field, text),
+					apply: value => { applyActionEffectPropertyEdit(input, property, value); this.controller.updateView(input); },
+				}, { edit: { offset: span.start, deleteLength: span.end - span.start, text: readLuaSourceRange(model.buffer, range) },
+					fieldRange: locations.range(property.field.span), expressionRange: range });
+				lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.propertyEdit.close()) });
+			}
 		}
 	}
 
@@ -433,8 +440,3 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		}
 	}
 }
-
-const BEHAVIOR_ACTION_MENUS = {
-	outline: 'behaviorLens.canvas.context', graph: 'behaviorLens.graph.actions',
-	'state-graph': 'behaviorLens.stateGraph.actions', properties: 'behaviorLens.properties.actions',
-} as const;

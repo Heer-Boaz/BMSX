@@ -56,6 +56,14 @@ closures, DTOs, item filtering arrays or measurement work are introduced.
 Subscriptions associated with a physical pointer attempt have that lifetime,
 not the lifetime of a render frame.
 
+Behavior Lens graph, state-graph and property title bars contribute primary
+actions and their existing secondary command menus to the same responsive
+toolbar. The shared More icon presents secondary actions and primaries that no
+longer fit; each command appears once. Header text consumes the space left by
+the actual painted toolbar, including when every primary has moved to More.
+The popup belongs to the invoking source generation and retires on invalidation.
+It is not a separate contribution command or a second toolbar implementation.
+
 ## Evidence gate
 
 Independent control tests cover pointer and keyboard cancellation, disable during

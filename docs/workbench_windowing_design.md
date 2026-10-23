@@ -433,6 +433,17 @@ Menus and Quick Input preserve the invoking command origin separately from
 their own temporary keyboard focus. Closing one restores focus only if its
 family still owns focus; it cannot steal focus back from a different window.
 
+Keybindings resolve against the admitted control's input context, not its surface
+role. A control's own command wins, including when disabled; otherwise its focus
+scope reaches the actual application command runner through explicit command
+ancestry. Ordinary modeless tools inherit their owner's command scope. Menu,
+Quick Input and prompt controls use isolated scopes, so their temporary keyboard
+focus cannot dispatch underlying document commands. Their invoking
+`commandContext` remains an action origin, not keyboard inheritance. A control
+can explicitly own an admitted command: the local image lightbox owns editor
+close/cycle commands and dismisses before invoking them. Surface ordering and
+modal admission govern which control receives input, not command classification.
+
 Tab traverses the active window's eligible controls, including its chrome
 actions. A root modal contains traversal globally; an owner-local modal contains
 it only while focus is within its blocked group. Unrelated active windows keep
@@ -652,12 +663,12 @@ lease.
 
 ## Anchored property editing
 
-Animation, AEM and Program properties share one source-bound value editor. Its
-active draft is an anchored transient with its own surface and focus scope, not
-property-cell overpaint. The field keeps at least 24 active-font cells where the
-root work area permits, independently of a narrow owning pane; its measured
-label identifies the edited property. The existing line viewport scrolls longer
-expressions without replacing authored text. Generic surface ordering, clipping,
+Animation, AEM, Program and Behavior Lens properties share one source-bound value
+editor. Its active draft is an anchored transient with its own surface and focus
+scope, not property-cell overpaint. The field keeps at least 24 active-font cells
+where the root work area permits, independently of a narrow owning pane; its
+measured label identifies the edited property. The existing line viewport scrolls
+longer expressions without replacing authored text. Generic surface ordering, clipping,
 shadow, pointer routing and retirement apply to this editor as to other popups.
 
 This transient does not block unrelated UI. Ordinary focus departure accepts a
@@ -666,6 +677,12 @@ syntax, canonical text models, generation invalidation and document history
 remain with the contribution. Publication completes the owning projection before
 another source command captures its target. The popup retains local draft Undo;
 ending it returns focus to the containing property view, not a detached field.
+Its focused text control owns physical Undo/Redo; Tab follows its declared focus
+links. Normal Save and command-palette actions remain available because this is
+a non-modal editor, and source-consuming commands first accept a valid draft.
+Behavior Lens retains its written-field selection bookmarks with that source
+history; the shared editor owns no effect syntax, imported-model lookup or
+selection reconstruction. Multiline authored code opens in the source editor.
 
 ## Implementation order and acceptance
 

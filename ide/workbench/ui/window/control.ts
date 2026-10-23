@@ -37,10 +37,10 @@ export type WorkbenchWindowOptions = {
 /** In-canvas chrome composes existing controls, surface ordering and pointer capture. */
 export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHoverTarget {
 	public readonly focusTarget: InputFocusTarget;
-	public readonly scope = new InputFocusScope(Symbol('window'));
+	public readonly scope: InputFocusScope;
 	public readonly clientFocusTarget: InputFocusTarget;
 	public readonly actionFocusTarget: InputFocusTarget;
-	public readonly clientScope = new InputFocusScope(Symbol('window client'));
+	public readonly clientScope: InputFocusScope;
 	public surface: WorkbenchSurface | undefined;
 	public clientSurface: WorkbenchSurface | undefined;
 	public readonly actions: WorkbenchActionBarControl;
@@ -63,6 +63,8 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly hover: PointerHoverService, private readonly surfaces: WorkbenchSurfaceService, commands: EditorCommandRunner,
 		private readonly options: WorkbenchWindowOptions) {
+		this.scope = new InputFocusScope(Symbol('window'), options.focusReturn.scope);
+		this.clientScope = new InputFocusScope(Symbol('window client'), this.scope);
 		this.focusTarget = focus.createTarget(options.focusReturn, this.scope);
 		this.focusTarget.canFocus = () => this.visible;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
