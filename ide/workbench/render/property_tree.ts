@@ -17,12 +17,15 @@ export function drawWorkbenchPropertyTree<Element extends WorkbenchPropertyEleme
 		const element = node.element;
 		const y = layout.contentTop + (index - firstRow) * layout.rowHeight;
 		const x = layout.contentLeft + node.depth * layout.indentWidth;
-		const selected = index === state.selectionIndex;
-		if (element.kind === 'group') api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
+		const selected = index === state.selectionIndex, hovered = index === state.hoverIndex;
+		const group = element.kind === 'group', header = group && !hovered;
+		if (group) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 		else api.fill_rect(element.displayValueLeft - 4, y, layout.contentRight, y + layout.rowHeight, 0, colors.COLOR_CODE_BACKGROUND);
-		if (index === state.hoverIndex) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
+		if (hovered) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
 		if (selected) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
-		const color = selected ? colors.COLOR_SELECTION_TEXT : element.warning ? colors.COLOR_STATUS_WARNING : colors.COLOR_RESOURCE_VIEWER_TEXT;
+		const color = selected ? colors.COLOR_SELECTION_TEXT : element.warning
+			? header ? colors.COLOR_PROBLEMS_PANEL_WARNING : colors.COLOR_INSPECTOR_WARNING_TEXT
+			: header ? colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT;
 		if (node.expandable) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
 			x + ((layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((layout.rowHeight - WORKBENCH_ICON_SIZE) >> 1), color);
 		api.blit_text_inline_with_font(element.displayLabel, x + layout.twistieWidth + 2, y + 2, 0, color, font);
