@@ -11,6 +11,8 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WORKBENCH_MENUS, type WorkbenchMenuItem } from '../../ide/workbench/ui/menu/registry';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 
 const PRIMARY = PointerButton.Primary;
 const ITEMS: readonly WorkbenchMenuItem[] = [
@@ -71,6 +73,68 @@ test('popup owns one lifetime, cancels old capture and never steals focus on blu
 	f.show(); other.focus(); assert.equal(f.menu.visible, false); assert.equal(f.focus.target, other);
 	f.origin.focus(); f.show(); f.focus.setTarget(null);
 	assert.equal(f.menu.visible, false); assert.equal(f.focus.target, null, 'pane clear/IDE hide has no hidden focus restore');
+});
+
+for (const operation of ['hide', 'show'] as const) test(`a newer popup opened during ${operation} retirement supersedes the retiring request`, t => {
+	const f = fixture(t);
+	const old = f.show();
+	old.add({ dispose: () => f.menu.show(8, 8, [{ type: 'command', command: 'save' }], f.commands, { selectFirst: true }) });
+	if (operation === 'hide') f.menu.hide();
+	else {
+		const superseded = f.menu.show(12, 12, [{ type: 'command', command: 'undo' }], f.commands, { selectFirst: true });
+		assert.equal(superseded.isDisposed, true);
+	}
+	assert.equal(f.menu.visible, true); assert.equal(f.menu.model.rows[0].command, 'save');
+	assert.equal(f.focus.target, f.menu.focusTarget); assert.equal(f.focus.admittedTarget, f.menu.focusTarget);
+	assert.equal(f.menu.invocationOrigin, f.origin); assert.equal(f.menu.focusTarget.commandContext, f.origin);
+	f.menu.hide(); assert.equal(f.focus.target, f.origin, 'replacement returns to the real original invoker, never the retired menu');
+});
+
+test('retirement during onWillShow never admits a popup and a newer opening owns its returned lifetime', t => {
+	const f = fixture(t);
+	const cancelled = f.menu.show(8, 8, ITEMS, f.commands, { onWillShow: () => f.menu.hide() });
+	assert.equal(cancelled.isDisposed, true); assert.equal(f.menu.visible, false); assert.equal(f.focus.target, f.origin);
+	const replaced = f.menu.show(8, 8, ITEMS, f.commands, { onWillShow: () => f.menu.show(12, 12,
+		[{ type: 'command', command: 'save' }], f.commands, { selectFirst: true }) });
+	assert.equal(replaced.isDisposed, true); assert.equal(f.menu.visible, true);
+	assert.equal(f.menu.model.rows[0].command, 'save'); assert.equal(f.focus.target, f.menu.focusTarget);
+});
+
+test('a replacement opened after retirement chooses the newer concrete invoker, not the retiring popup origin', t => {
+	const f = fixture(t), newer = f.focus.createTarget(); newer.bindKeyboard(() => {});
+	const old = f.show();
+	old.add({ dispose: () => { newer.focus(); f.menu.show(12, 12, [{ type: 'command', command: 'save' }], f.commands); } });
+	f.menu.hide(); assert.equal(f.menu.visible, true); assert.equal(f.menu.invocationOrigin, newer);
+	f.menu.hide(); assert.equal(f.focus.target, newer);
+});
+
+test('real popup surfaces distinguish owned disposal from external owner retirement through Escape, replacement and teardown', t => {
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), surfaces = new WorkbenchSurfaceService();
+	const bounds = { left: 0, top: 0, right: 384, bottom: 288 };
+	const root = surfaces.attach({ role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true, getBounds: () => bounds, getClip: () => bounds, draw() {} });
+	const origin = focus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
+	let surface = root, externalRetirements = 0;
+	const menu = new ContextMenuController(focus, capture, lifetime => {
+		if (lifetime === undefined) return;
+		surface = surfaces.attach({ role: 'transient', outsidePress: 'consume', captureScope: menu.pointerScope, lifetimeOwner: root,
+			isVisible: () => menu.visible, getBounds: () => menu.model.bounds, getClip: () => bounds, draw() {},
+			onRetire: () => {
+				if (lifetime.isDisposed) return;
+				externalRetirements++; capture.cancelScope(menu.pointerScope); menu.hide();
+			} });
+		lifetime.add(surface);
+	});
+	t.after(() => { menu.dispose(); surfaces.dispose(); });
+	const commands = { isEnabled: () => true, execute() {} };
+	const first = menu.show(2, 2, ITEMS, commands, { selectFirst: true });
+	menu.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
+	assert.equal(first.isDisposed, true); assert.equal(focus.target, origin); assert.equal(externalRetirements, 0);
+	const previous = menu.show(2, 2, ITEMS, commands);
+	previous.add({ dispose: () => menu.show(2, 2, [{ type: 'command', command: 'save' }], commands) });
+	menu.hide(); assert.equal(menu.visible, true); assert.equal(menu.model.rows[0].command, 'save'); assert.equal(focus.target, menu.focusTarget);
+	surface.dispose(); assert.equal(menu.visible, false); assert.equal(focus.target, origin); assert.equal(externalRetirements, 1);
+	menu.show(2, 2, ITEMS, commands); root.dispose();
+	assert.equal(menu.visible, false); assert.equal(focus.target, origin); assert.equal(externalRetirements, 2);
 });
 
 test('keyboard skips separators/disabled commands, preserves selection without pointer motion and restores focus', t => {

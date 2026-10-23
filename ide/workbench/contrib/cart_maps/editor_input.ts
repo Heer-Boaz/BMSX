@@ -1,4 +1,4 @@
-import { create_rect_bounds } from '../../../../machine/ts/common/rect';
+import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { resourceIdentityKey } from '../../../common/resource';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { EditorEditStateType } from '../../../editor/model/edit_state';
@@ -45,8 +45,9 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 	public readonly grid = new CartMapGrid();
 	public readonly actionBar = createWorkbenchActionBar('cartMap.title');
 	public readonly fieldBounds = [create_rect_bounds(), create_rect_bounds()] as const;
-	public readonly layout: FullWidthWorkbenchLayout & { gridLeft: number; sourceTitle: string; selectionTitle: string; sourceVersion: number } = {
-		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, gridLeft: 0, sourceTitle: '', selectionTitle: '', sourceVersion: -1,
+	public readonly layout: FullWidthWorkbenchLayout & { gridLeft: number; sourceTitle: string; outlineTitle: string; selectionTitle: string; selectionLabel: string; sourceVersion: number; sourceBounds: RectBounds; selectionBounds: RectBounds } = {
+		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, gridLeft: 0, sourceTitle: '', outlineTitle: '', selectionTitle: '', selectionLabel: '', sourceVersion: -1,
+		sourceBounds: create_rect_bounds(), selectionBounds: create_rect_bounds(),
 	};
 	public get selected(): CartMapItem | undefined { return this.tree.rows[this.tree.selectionIndex]?.element.item; }
 	public constructor(public readonly workingCopy: EditorTextModel, public readonly mapKind: CartMapKind) {

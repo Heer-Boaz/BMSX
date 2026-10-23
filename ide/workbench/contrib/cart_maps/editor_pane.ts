@@ -30,6 +30,10 @@ import { projectCartMap, selectCartMapRow, createCartMapMove } from './source_pr
 import { layoutCartMap } from './layout';
 import { drawCartMap } from './render';
 import { CartMapNavigationSelection, restoreCartMapView } from './view_snapshot';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import { WorkbenchTooltip } from '../../ui/tooltip';
+import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 
 /** Display seeds carry coordinates; an accepted draft carries a versioned source proposal. */
 export type CartMapCoordinateEdit = { readonly coordinate: number; readonly edit?: EditorModelEdit };
@@ -41,8 +45,12 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	private readonly gridFocus = inputFocus.createTarget(this.focusTarget);
 	private readonly unbindGrid = this.gridFocus.bindKeyboard(input => this.handleGridKeyboard(input));
 	private boundRevision = -1;
-	public constructor(resources: ResourcePanelController, controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState) {
+	private readonly tooltip = new WorkbenchTooltip();
+	private headerHovered: 'source' | 'selection' | undefined;
+	public constructor(resources: ResourcePanelController, controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
+		this.tooltip.attach(surfaces, paneSurface, getWorkArea);
 		this.gridFocus.commandContext = this.focusTarget;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.focusTarget.registerCommand('cartMap.source', { isEnabled: () => true, run: () => controller.openSource(this.input) });
@@ -102,8 +110,13 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 			this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 			this.boundRevision = this.input.viewRevision;
 		}
-		this.actions.update();
 		layoutCartMap(this.input, this.contentBounds, changed);
+		this.actions.update();
+		const hint = this.actions.tooltipItem, layout = this.input.layout;
+		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		else if (this.headerHovered !== undefined) this.tooltip.show(this.headerHovered === 'source' ? this.input.workingCopy.resource.path : layout.selectionLabel,
+			this.headerHovered === 'source' ? layout.sourceBounds : layout.selectionBounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		else this.tooltip.hide();
 		if (this.input.selected !== undefined) for (let axis = 0; axis < this.controls.length; axis++) {
 			const bounds = this.input.fieldBounds[axis];
 			this.controls[axis].layout(bounds.right - bounds.left);
@@ -148,6 +161,11 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		}
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
+		const layout = this.input.layout;
+		this.headerHovered = !snapshot.valid || !snapshot.insideViewport ? undefined
+			: point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.sourceBounds) ? 'source'
+			: layout.selectionLabel !== '' && point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.selectionBounds) ? 'selection' : undefined;
+		if (this.headerHovered !== undefined) { pointerHover.visit(this); if (justPressed) this.focus(); return true; }
 		if (this.actions.handlePointer(snapshot)) return true;
 		for (let axis = 0; axis < this.controls.length; axis++) {
 			const control = this.controls[axis], bounds = this.input.fieldBounds[axis];
@@ -197,11 +215,14 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		api.popClipRect();
 	}
 	public override clearInput(): void {
+		this.tooltip.hide(); this.headerHovered = undefined;
 		this.scrollbar.cancelPointer(); this.actions.clearInput();
 		for (const control of this.controls) { control.cancel(); control.field.focusTarget.release(); }
 		super.clearInput();
 	}
+	public onPointerLeave(): void { this.headerHovered = undefined; }
 	public override dispose(): void {
+		this.tooltip.detach();
 		this.scrollbar.cancelPointer(); this.actions.dispose(); this.unbindGrid();
 		for (const control of this.controls) control.dispose();
 		super.dispose();

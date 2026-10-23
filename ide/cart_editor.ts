@@ -526,8 +526,8 @@ export class RuntimeCartEditor implements CartEditor {
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.commands, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime, input, presenter),
-			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands, this.sources),
-			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources),
+			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands, this.sources, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
+			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,
 				this.scenarioLab,
@@ -883,6 +883,8 @@ export class RuntimeCartEditor implements CartEditor {
 			handlePointer: snapshot => { if (!this.menubar.handlePointer(snapshot)) this.contextMenu.handlePointer(snapshot); },
 			handleWheel: event => { this.contextMenu.handleWheel(event.deltaY); return true; },
 			onRetire: () => {
+				// Session disposal already retires its own capture and presentation.
+				if (lifetime.isDisposed) return;
 				pointerCapture.cancelScope(this.contextMenu.pointerScope);
 				this.contextMenu.hide();
 			},

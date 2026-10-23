@@ -1,4 +1,4 @@
-import { create_rect_bounds } from '../../../../machine/ts/common/rect';
+import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { LuaChunk, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
@@ -10,7 +10,7 @@ import { createWorkbenchActionBar } from '../../ui/action_bar';
 import type { SceneOutlineElement } from './outline';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
-import { sourceTabDescription } from '../../ui/tab/titles';
+import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
 import type { SceneSourceDocument } from './model';
 import type { SceneOptionProperty } from './option_properties';
 
@@ -23,6 +23,7 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 	public position: { readonly outlineScroll: number; readonly detailsScroll: number } | undefined;
 	public parsed: LuaChunk;
 	public sourceText = '';
+	public readonly sourceCaption: string;
 	public readonly details = new WorkbenchScrollViewport();
 	public readonly detailsText: { text: string; top: number; warning: boolean }[] = [];
 	public readonly wrappedLines: string[] = [];
@@ -31,19 +32,20 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		roots: [], rows: [], selectionIndex: -1, scroll: 0, hoverIndex: -1,
 		layout: { contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0, indentWidth: 0, twistieWidth: 0 },
 	};
-	public readonly actionBar = createWorkbenchActionBar('sceneEditor.title');
+	public readonly actionBar = createWorkbenchActionBar('sceneEditor.title', true);
 	public readonly properties = POSITION_AXES.map(axis => ({
 		axis, label: axis.toUpperCase(), field: null as LuaTableField | null,
 		value: null as number | null, sourceText: '', text: '', contentBounds: create_rect_bounds(), bounds: create_rect_bounds(),
 	}));
 	public optionProperties: readonly SceneOptionProperty[] = [];
-	public readonly layout: FullWidthWorkbenchLayout & { detailsLeft: number; projectedOffsetTop: number } = {
+	public readonly layout: FullWidthWorkbenchLayout & { detailsLeft: number; projectedOffsetTop: number; outlineTitle: string; detailsTitle: string; sourceBounds: RectBounds } = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
-		detailsLeft: 0, projectedOffsetTop: 0,
+		detailsLeft: 0, projectedOffsetTop: 0, outlineTitle: '', detailsTitle: '', sourceBounds: create_rect_bounds(),
 	};
 
 	public constructor(public readonly workingCopy: EditorTextModel) {
 		super(`scene:${resourceIdentityKey(workingCopy.resource)}`, 'scene_editor', 'SCENE EDITOR', true);
+		this.sourceCaption = computeResourceTabTitle(workingCopy.resource);
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
 	}
 }

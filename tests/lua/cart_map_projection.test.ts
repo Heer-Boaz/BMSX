@@ -14,6 +14,7 @@ import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 const SOURCE = [
 	'2:', "  map: ['....', '....']",
@@ -185,11 +186,14 @@ test('accepted map moves and focused history reveal the restored member in both 
 		codeVertical: input.grid.vertical, codeHorizontal: input.grid.horizontal, viewerVertical: input.grid.vertical,
 		resourceVertical: input.tree.scrollbar, resourceHorizontal: input.grid.horizontal,
 	}, () => {}, pointerCapture);
+	const bounds = { left: 0, top: 0, right: 320, bottom: 200 }, surfaces = new WorkbenchSurfaceService();
+	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('map fixture'), getBounds: () => bounds, getClip: () => bounds, isVisible: () => true, draw() {} });
 	const pane = new CartMapPane({ hide() {} } as ResourcePanelController, null!,
-		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]));
+		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, () => bounds);
 	t.after(() => {
 		inputFocus.setTarget(null);
 		pane.clearInput(); pane.dispose(); input.dispose(); model.dispose();
+		surfaces.dispose();
 		editorViewState.scrollbarController = previousScrollbarController;
 	});
 	pane.setInput(input, { left: 0, top: 0, right: 320, bottom: 200 });

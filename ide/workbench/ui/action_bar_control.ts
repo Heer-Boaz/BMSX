@@ -194,12 +194,17 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	}
 	private invoke(command: WorkbenchActionBarAction, context: InputFocusTarget): void {
 		if (command !== WORKBENCH_ACTION_BAR_OVERFLOW) { this.commands.execute(command, context); return; }
+		this.openOverflow();
+	}
+	/** Named pane commands and physical More activation share the same owned popup. */
+	public openOverflow(): void {
 		const state = this.input!, overflow = state.overflow!;
-		const session = this.contextMenu!.show(overflow.button.bounds.left, overflow.button.bounds.bottom, overflow.items,
-			this.commands, { placement: 'below', selectFirst: true, invocationOrigin: this.focusTarget });
-		this.overflowSession = session;
-		session.add({ dispose: () => { if (this.overflowSession === session) this.overflowSession = undefined; } });
-		this.onDidOpenOverflow?.(session);
+		this.contextMenu!.show(overflow.button.bounds.left, overflow.button.bounds.bottom, overflow.items,
+			this.commands, { placement: 'below', selectFirst: true, invocationOrigin: this.focusTarget, onWillShow: session => {
+				this.overflowSession = session;
+				session.add({ dispose: () => { if (this.overflowSession === session) this.overflowSession = undefined; } });
+				this.onDidOpenOverflow?.(session);
+			} });
 	}
 
 	private handleKeyboard(input: KeyInputEvent): void {

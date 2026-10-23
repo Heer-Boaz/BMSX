@@ -14,6 +14,8 @@ import { ContextMenuModel, type ContextMenuPlacement } from './model';
 import { layoutContextMenu } from './render';
 
 export type ContextMenuOptions = {
+	/** Install domain lifetime subscriptions before focus can publish a departing draft. */
+	readonly onWillShow?: (lifetime: DisposableStore) => void;
 	readonly selectFirst?: boolean;
 	readonly placement?: ContextMenuPlacement;
 	readonly shortTitles?: boolean;
@@ -40,6 +42,8 @@ export class ContextMenuController implements PointerCaptureTarget {
 	public readonly focusTarget: InputFocusTarget;
 	private readonly scroll: WorkbenchScrollControl;
 	private session: ContextMenuSession | undefined;
+	private retiringSession: ContextMenuSession | undefined;
+	private requestRevision = 0;
 	private pressedIndex = -1;
 	private triggerKey: string | undefined;
 	private revision = 0;
@@ -52,23 +56,29 @@ export class ContextMenuController implements PointerCaptureTarget {
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly onDidChangeVisibility: (lifetime?: DisposableStore) => void = () => {}) {
 		this.focusTarget = focus.createTarget();
+		this.focusTarget.canFocus = () => this.session !== undefined;
 		this.focusTarget.scope.surfaceScope = this.pointerScope;
 		this.scroll = new WorkbenchScrollControl(focus, capture, this.focusTarget, undefined, this.pointerScope);
 		this.scroll.setInput(this.model.viewport);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());
-		this.unbindBlur = this.focusTarget.onDidBlur(() => this.hide(false));
+		this.unbindBlur = this.focusTarget.onDidBlur(() => { if (this.session !== undefined) this.hide(false); });
 	}
 
 	public get visible(): boolean { return this.session !== undefined; }
 	public get invocationOrigin(): InputFocusTarget | null { return this.session!.invocationOrigin; }
 
-	/** The caller attaches source/target invalidation to the returned popup lifetime. */
+	/** Domain invalidation belongs in onWillShow, before departing focus can publish source changes. */
 	public show(x: number, y: number, items: readonly WorkbenchMenuItem[], commands: ContextMenuCommandRunner,
 		options: ContextMenuOptions = {}): DisposableStore {
-		const origin = this.session === undefined ? this.focus.target : this.session.returnFocus;
-		this.hide(false);
-		this.capture.cancel();
+		const request = ++this.requestRevision;
 		const disposables = new DisposableStore();
+		const focusOrigin = this.focus.target === null ? this.focus.pendingTarget : this.focus.target;
+		const origin = this.session !== undefined ? this.session.returnFocus
+			: this.retiringSession !== undefined && focusOrigin === this.focusTarget ? this.retiringSession.returnFocus : focusOrigin;
+		this.retireSession(false);
+		if (request !== this.requestRevision) { disposables.dispose(); return disposables; }
+		this.capture.cancel();
+		if (request !== this.requestRevision) { disposables.dispose(); return disposables; }
 		const invocationOrigin = options.invocationOrigin === undefined ? origin : options.invocationOrigin;
 		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: origin, commandOrigin: invocationOrigin, disposables, options };
 		this.session = session;
@@ -79,7 +89,11 @@ export class ContextMenuController implements PointerCaptureTarget {
 		// The source session owns its presentation attachment. It must already
 		// exist when the focus owner evaluates the popup's surface admission.
 		this.onDidChangeVisibility(disposables);
+		if (this.session !== session) return disposables;
+		options.onWillShow?.(disposables);
+		if (this.session !== session) return disposables;
 		this.focusTarget.focus();
+		if (this.session !== session) return disposables;
 		const returnFocus = session.returnFocus = this.focus.resolveTarget(origin);
 		const commandOrigin = session.commandOrigin = options.invocationOrigin === undefined ? returnFocus : this.focus.resolveTarget(invocationOrigin);
 		this.focusTarget.commandContext = commandOrigin === null ? this.focusTarget : commandOrigin.commandContext;
@@ -91,13 +105,23 @@ export class ContextMenuController implements PointerCaptureTarget {
 	}
 
 	public hide(restoreFocus = true): void {
+		this.requestRevision++;
+		this.retireSession(restoreFocus);
+	}
+
+	private retireSession(restoreFocus: boolean): void {
 		const session = this.session;
 		if (session === undefined) return;
+		const request = this.requestRevision;
 		this.session = undefined;
+		this.retiringSession = session;
 		this.cancelPointer();
 		this.scroll.cancelPointer();
 		session.disposables.dispose();
-		if (restoreFocus && this.focusTarget.hasFocus) this.focus.setTarget(session.returnFocus);
+		if (this.retiringSession === session) this.retiringSession = undefined;
+		if (request !== this.requestRevision) return;
+		if (restoreFocus && (this.focusTarget.hasFocus || this.focus.pendingTarget === this.focusTarget)) this.focus.setTarget(session.returnFocus);
+		if (request !== this.requestRevision) return;
 		this.focusTarget.commandContext = this.focusTarget;
 		this.onDidChangeVisibility();
 	}

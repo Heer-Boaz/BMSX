@@ -2,6 +2,7 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { createWorkbenchPropertyTree } from '../../ui/property_tree';
 import type { WorkbenchListState } from '../../ui/list_view';
 import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
@@ -37,7 +38,8 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 	public readonly keys = new AnimationKeyViewport();
 	public readonly overview = new AnimationOverview();
 	public readonly framePreview = new AnimationFramePreview();
-	public readonly actionBar = createWorkbenchActionBar('animation.title');
+	public readonly actionBar = createWorkbenchActionBar('animation.title', true, WORKBENCH_MENUS['animation.context']);
+	public caption = '';
 	public status = '';
 	private readonly projectionListeners = new Set<() => void>();
 	public constructor(public readonly workingCopy: EditorTextModel, definitionRange?: TrackedTextRange,

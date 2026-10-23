@@ -25,14 +25,28 @@ import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 
-function scene() {
-	const path = 'viewport.lua';
+function scene(path = 'viewport.lua') {
 	const model = new EditorTextModel({ domain: 0, path, source: { resid: 'viewport', type: 'lua' } }, 'lua', SCENE_VIEWPORT_SOURCE);
 	const input = new SceneEditorInput(model);
 	installSceneOutline(input, buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SCENE_VIEWPORT_SOURCE, path))));
 	selectSceneOutlineRow(input, 1);
 	return input;
 }
+
+for (const variant of ['tiny', 'msx'] as const) test(`a long authored Scene basename retains a hittable More and bounded column captions at the ${variant} sash minimum`, () => {
+	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	const input = scene(`scenes/${'long_authored_scene_'.repeat(12)}.lua`);
+	const width = variant === 'tiny' ? 78 : 118;
+	layoutSceneEditor(input, true, false, { left: 0, top: 24, right: width, bottom: 276 });
+	const bar = input.actionBar, layout = input.layout, more = bar.overflow!.button;
+	assert.equal(more.visible, true); assert.ok(more.bounds.right - more.bounds.left >= 13);
+	assert.ok(more.bounds.left >= layout.left + 4 && more.bounds.right <= layout.right - 4);
+	assert.ok(editorViewState.font.measure(input.sourceText) <= layout.sourceBounds.right - layout.sourceBounds.left);
+	assert.ok(editorViewState.font.measure(layout.outlineTitle) <= layout.detailsLeft - layout.left - 8);
+	assert.ok(editorViewState.font.measure(layout.detailsTitle) <= layout.right - layout.detailsLeft - 8);
+	assert.equal(input.workingCopy.resource.path, `scenes/${'long_authored_scene_'.repeat(12)}.lua`);
+	input.dispose(); input.workingCopy.dispose();
+});
 
 for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 	test(`scene details measure and scroll in ${font}, ${width}px, independent of pane height`, t => {

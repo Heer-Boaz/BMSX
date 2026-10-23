@@ -149,6 +149,8 @@ export class InputFocusTarget {
 export class InputFocusService {
 	private targetValue: InputFocusTarget | null = null;
 	private readonly changeListeners = new Set<() => void>();
+	private focusRevision = 0;
+	private pendingTargetValue: InputFocusTarget | null = null;
 	private scopeAdmission: ((scope: InputFocusScope) => boolean) | undefined;
 
 	/** The frontend supplies structural admission; focus retains its own authoritative state. */
@@ -164,7 +166,11 @@ export class InputFocusService {
 
 	/** Native text owners synchronize only after an actual control interaction. */
 	public notifyTargetChanged(): void {
-		for (const listener of this.changeListeners) listener();
+		const revision = this.focusRevision;
+		for (const listener of this.changeListeners) {
+			listener();
+			if (revision !== this.focusRevision) break;
+		}
 	}
 
 	public createTarget(parent: InputFocusTarget | null = null,
@@ -175,6 +181,8 @@ export class InputFocusService {
 	public get target(): InputFocusTarget | null {
 		return this.targetValue;
 	}
+	/** The current transition owns admission until departing blur handlers finish. */
+	public get pendingTarget(): InputFocusTarget | null { return this.pendingTargetValue; }
 
 	public get admittedTarget(): InputFocusTarget | null {
 		const target = this.targetValue;
@@ -185,13 +193,19 @@ export class InputFocusService {
 	public setTarget(target: InputFocusTarget | null): void {
 		target = this.resolveTarget(target);
 		if (target !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) return;
+		const revision = ++this.focusRevision;
+		this.pendingTargetValue = target;
 		const previous = this.targetValue;
-		if (previous === target) { this.notifyTargetChanged(); return; }
+		if (previous === target) { this.pendingTargetValue = null; this.notifyTargetChanged(); return; }
 		// Like Godot's Viewport, detach before notifying the departing control.
 		this.targetValue = null;
 		if (previous !== null) previous.didBlur(target);
+		if (revision !== this.focusRevision) return;
+		target = this.resolveTarget(target);
+		this.pendingTargetValue = null;
 		this.targetValue = target;
 		if (target !== null) { target.scope.lastFocused = target; target.didFocus(); }
+		if (revision !== this.focusRevision) return;
 		this.notifyTargetChanged();
 	}
 

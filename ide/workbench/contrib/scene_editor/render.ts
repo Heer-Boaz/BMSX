@@ -16,11 +16,11 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 	const rowHeight = outline.layout.rowHeight;
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_CODE_BACKGROUND);
-	api.blit_text_inline_with_font(input.sourceText, 4, layout.top + 2, 0, color, font);
+	api.blit_text_inline_with_font(input.sourceText, layout.left + 4, layout.top + 2, 0, color, font);
 	renderWorkbenchActionBar(input.actionBar, font);
-	api.blit_text_inline_with_font('SCENES / MEMBERS', 4, layout.top + rowHeight + 2, 0, color, font);
+	api.blit_text_inline_with_font(layout.outlineTitle, layout.left + 4, layout.top + rowHeight + 2, 0, color, font);
 	api.fill_rect(layout.detailsLeft - 1, layout.top + rowHeight, layout.detailsLeft, layout.bottom, 0, constants.COLOR_HEADER_BUTTON_BORDER);
-	api.blit_text_inline_with_font('PROPERTIES', layout.detailsLeft + 4, layout.top + rowHeight + 2, 0, color, font);
+	api.blit_text_inline_with_font(layout.detailsTitle, layout.detailsLeft + 4, layout.top + rowHeight + 2, 0, color, font);
 	api.pushClipRect(outline.layout.contentLeft, outline.layout.contentTop, outline.layout.contentRight, outline.layout.contentBottom);
 	if (outline.roots.length === 0) api.blit_text_inline_with_font('NO DIRECT SCENE DEFINITIONS', 4, outline.layout.contentTop + 2, 0, color, font);
 	const firstRow = outline.scroll | 0;

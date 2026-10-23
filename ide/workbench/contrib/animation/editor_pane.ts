@@ -15,7 +15,6 @@ import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
-import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchPropertyEdit } from '../../ui/property_edit';
@@ -34,12 +33,14 @@ import { AnimationKeyControl } from './key_control';
 import { AnimationLaneControl } from './lane_control';
 import { layoutAnimationEditor } from './layout';
 import { drawAnimationEditor } from './render';
+import { WorkbenchTooltip } from '../../ui/tooltip';
 
 const TRACK_NAVIGATION = [['ArrowUp', -1], ['ArrowDown', 1]] as const;
 const DETAILS_NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['Home', 'home'], ['End', 'end']] as const;
 
 export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationEditorInput> {
 	private readonly actions: WorkbenchActionBarControl;
+	private readonly actionTooltip = new WorkbenchTooltip();
 	private readonly propertyPointer = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly detailsFocus = inputFocus.createTarget(this.focusTarget);
 	private readonly edit = new WorkbenchPropertyEdit<LuaFieldValueEdit>(this.detailsFocus, value => value.edit.text);
@@ -55,13 +56,18 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	private keyRevision = -1;
 	private left = 0; private top = 0; private right = 0; private bottom = 0;
 	public constructor(resources: ResourcePanelController, private readonly controller: AnimationEditorController,
-		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>) {
+		private readonly commands: IdeCommandController, contextMenu: ContextMenuController,
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
 		this.propertyPointer.attachFeedback(surfaces, paneSurface, getWorkArea, this.detailsFocus);
 		this.keys = new AnimationKeyControl(this.focusTarget, controller, controller.authoring);
 		this.lanes = new AnimationLaneControl(this.focusTarget, controller);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
+		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
+		this.actions.onDidOpenOverflow = lifetime => {
+			this.keys.cancelPointer(); this.lanes.cancelPointer(); this.propertyPointer.hideFeedback(); this.actionTooltip.hide();
+			lifetime.add({ dispose: this.input.onDidInvalidateProjection(() => contextMenu.hide()) });
+		};
 		this.detailsFocus.commandContext = this.focusTarget;
 		this.unbindDetailsKeyboard = this.detailsFocus.bindKeyboard(player => this.handleDetailsKeyboard(player));
 		this.focusTarget.registerCommand('animation.addTrack', { isEnabled: () => this.controller.authoring.canAddTrack(this.input), run: () => this.controller.authoring.addTrack(this.input) });
@@ -87,11 +93,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 			const range = property.source.file.chunk.locations.range(property.field.value.span);
 			return range.start.line === range.end.line && !this.controller.modelFor(this.input, property.source.file).readOnly;
 		}, run: () => this.editProperty() });
-		this.focusTarget.registerCommand('animation.more', { isEnabled: () => true, run: () => {
-			const bounds = this.input.actionBar.items.find(item => item.command === 'animation.more')!.bounds;
-			this.propertyPointer.hideFeedback();
-			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['animation.context'], commands, { selectFirst: true });
-		} });
+		this.focusTarget.registerCommand('animation.more', { isEnabled: () => this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
 		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
 			isEnabled: () => { const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction); return model !== undefined && !model.readOnly; },
 			run: () => executeTextHistoryCommand(this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!, direction),
@@ -109,11 +111,13 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	public override clearInput(): void {
 		this.unbindProjection?.(); this.unbindProjection = undefined; this.edit.close(); this.keys.clearInput(); this.lanes.clearInput(); this.actions.clearInput();
 		this.image.clearInput(); this.imageBitmap = undefined;
+		this.actionTooltip.hide();
 		this.propertyPointer.clear(); this.detailsFocus.release(); super.clearInput();
 	}
 	public override dispose(): void {
 		this.unbindProjection?.(); this.keys.dispose(); this.lanes.dispose(); this.image.dispose(); this.actions.dispose(); this.edit.dispose(); this.unbindDetailsKeyboard();
 		this.propertyPointer.dispose(); super.dispose();
+		this.actionTooltip.detach();
 	}
 	private editProperty(): void {
 		this.propertyPointer.hideFeedback();
@@ -159,6 +163,9 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 			details.contentLeft, details.contentTop, details.contentRight, details.bottom);
 		this.propertyPointer.updateFeedback(this.input.details);
 		this.edit.update(); this.actions.update();
+		const hint = this.actions.tooltipItem;
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		else this.actionTooltip.hide();
 	}
 	public draw(): void { drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus); if (this.edit.active) this.edit.draw(); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }

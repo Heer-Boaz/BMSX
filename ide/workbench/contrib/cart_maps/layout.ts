@@ -19,11 +19,15 @@ export function layoutCartMap(input: CartMapInput, bounds: Readonly<RectBounds>,
 					tree.layout.contentRight - tree.layout.contentLeft - (node.depth + 1) * tree.layout.indentWidth);
 			}
 			layout.sourceTitle = truncateTextToWidth(input.workingCopy.resource.path, input.actionBar.items[0].bounds.left - layout.left - 8);
+			write_rect_bounds(layout.sourceBounds, layout.left + 4, layout.top, input.actionBar.bounds.left - 4, layout.top + row);
+			layout.outlineTitle = truncateTextToWidth(input.mapKind === 'pietious' ? 'Rooms' : 'Markers', layout.gridLeft - layout.left - 8);
 			layout.sourceVersion = input.version;
 		}
 		const element = tree.rows[tree.selectionIndex]?.element;
-		layout.selectionTitle = truncateTextToWidth(element === undefined ? 'SELECT AN OBJECT / MARKER' : element.label,
+		layout.selectionLabel = element?.item === undefined ? '' : element.label;
+		layout.selectionTitle = truncateTextToWidth(layout.selectionLabel,
 			layout.right - layout.gridLeft - 8);
+		write_rect_bounds(layout.selectionBounds, layout.gridLeft + 4, layout.top + row, layout.right - 4, layout.top + row * 2);
 		const fieldsTop = layout.top + row * 2;
 		const width = Math.max(0, Math.trunc((layout.right - layout.gridLeft - 8) / 2));
 		write_rect_bounds(input.fieldBounds[0], layout.gridLeft + 16, fieldsTop, layout.gridLeft + width, fieldsTop + row);

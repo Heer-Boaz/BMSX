@@ -2,6 +2,7 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
 import { createWorkbenchPropertyTree } from '../../ui/property_tree';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
+import type { WorkbenchMenuItem } from '../../ui/menu/registry';
 import type { LuaProgramKind, LuaProgramOccurrence, LuaProgramProperty } from './source';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
@@ -28,7 +29,8 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 	public stateHashId = 0;
 	public stateRevision = -1;
 	public status = '';
-	public readonly actionBar = createWorkbenchActionBar('luaProgram.title');
+	public readonly secondaryActions: WorkbenchMenuItem[] = [];
+	public readonly actionBar = createWorkbenchActionBar('luaProgram.title', true, this.secondaryActions);
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, };
 	public constructor(public readonly workingCopy: EditorTextModel, public readonly programKind: LuaProgramKind, span: TrackedTextRange, guest: SuspendedGuestSession) {
 		super(`program:${nextInputId++}`, 'lua_program', programKind === 'progression' ? 'PROGRESSION' : 'INPUT BINDINGS', true);

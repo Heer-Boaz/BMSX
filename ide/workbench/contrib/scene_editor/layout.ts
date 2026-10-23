@@ -6,7 +6,7 @@ import { uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../comm
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { getWorkbenchEditorBounds, updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { layoutWorkbenchActionBar } from '../../ui/action_bar';
+import { layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ui/action_bar';
 import { clampWorkbenchListScroll, layoutWorkbenchList } from '../../ui/list_view';
 import type { WorkbenchTreeLayout, WorkbenchTreeNode } from '../../ui/tree_view';
 import type { SceneEditorInput } from './editor_input';
@@ -31,8 +31,13 @@ export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boole
 		treeLayout.twistieWidth = treeLayout.indentWidth;
 		clampWorkbenchListScroll(input.outline);
 		if (changed || contentChanged) layoutSceneOutlineNodes(input.outline.roots, treeLayout);
-		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + rowHeight, measureText, editorViewState.font.renderFont(), layout.left + PADDING);
-		input.sourceText = truncateTextToWidth(input.workingCopy.resource.path, input.actionBar.items[0].bounds.left - PADDING * 2);
+		const caption = input.sourceCaption;
+		const actionLeft = Math.min(layout.left + measureText(caption) + PADDING * 3, layout.right - PADDING * 2 - Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, rowHeight));
+		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + rowHeight, measureText, editorViewState.font.renderFont(), actionLeft);
+		input.sourceText = truncateTextToWidth(caption, input.actionBar.bounds.left - layout.left - PADDING * 2);
+		write_rect_bounds(layout.sourceBounds, layout.left + PADDING, layout.top, input.actionBar.bounds.left - PADDING, layout.top + rowHeight);
+		layout.outlineTitle = truncateTextToWidth('Scenes', layout.detailsLeft - layout.left - PADDING * 2);
+		layout.detailsTitle = truncateTextToWidth('Details', layout.right - layout.detailsLeft - PADDING * 2);
 		const width = layout.right - constants.SCROLLBAR_WIDTH - layout.detailsLeft;
 		const height = measureSceneDetails(input, width);
 		input.details.layout(layout.detailsLeft, contentTop, layout.right, layout.bottom, height);

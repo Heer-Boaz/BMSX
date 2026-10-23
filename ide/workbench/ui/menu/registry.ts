@@ -95,7 +95,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'animation.addTrack' },
 		{ type: 'command', command: 'animation.addKey' },
 		{ type: 'command', command: 'animation.addFrame' },
-		{ type: 'command', command: 'animation.more' },
 	],
 	'animation.context': [
 		{ type: 'command', command: 'animation.duplicate' },
@@ -396,7 +395,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'luaProgram.source' },
 		{ type: 'command', command: 'luaProgram.live' },
 		{ type: 'command', command: 'luaProgram.authoring' },
-		{ type: 'command', command: 'luaProgram.more' },
 	],
 	'gamePanel.title': [{ type: 'command', command: 'gameView.closePanel' }],
 	'runtime.title': [

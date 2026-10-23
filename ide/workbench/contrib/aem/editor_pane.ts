@@ -137,8 +137,9 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 	private openContextMenu(x: number, y: number, keyboard = false): void {
 		this.pointer.hideFeedback();
 		const input = this.input;
-		const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS['aem.context'], this.commands, { selectFirst: keyboard });
-		lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['aem.context'], this.commands, { selectFirst: keyboard,
+			onWillShow: lifetime => { lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) }); },
+		});
 	}
 	public handleWheel(event: WheelInputSnapshot): void {
 		const tree = this.input.tree, layout = tree.layout;

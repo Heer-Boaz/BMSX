@@ -30,6 +30,11 @@ import { layoutSceneEditor } from './layout';
 import { selectSceneOutlineRow } from './outline';
 import { SceneOptionEditor } from './option_editor';
 import type { SceneOptionProperty } from './option_properties';
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import { WorkbenchTooltip } from '../../ui/tooltip';
+import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInput> {
@@ -45,14 +50,23 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	private readonly actionBar: WorkbenchActionBarControl;
 	private readonly details: WorkbenchScrollControl;
 	private readonly unbindFieldFocus: readonly (() => void)[];
+	private readonly actionTooltip = new WorkbenchTooltip();
+	private sourceHovered = false;
 
 	public constructor(resourcePanel: ResourcePanelController,
 		private readonly controller: SceneEditorController,
 		commands: IdeCommandController,
 		private readonly sources: RuntimeSourceState,
+		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
+		private readonly getWorkArea: () => Readonly<RectBounds>,
 	) {
 		super(resourcePanel);
-		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
+		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
+		this.actionBar.onDidOpenOverflow = lifetime => {
+			this.actionTooltip.hide(); this.sourceHovered = false;
+			lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
+		};
 		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 		this.details.focusTarget.commandContext = this.focusTarget;
 		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.focusTarget, INTEGER_INPUT_FORMAT, value => {
@@ -88,7 +102,6 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.controller.refresh(this.input);
 		const changed = this.boundVersion !== this.input.version;
 		if (changed) this.bindProperties();
-		this.actionBar.update();
 		if (layoutSceneEditor(this.input, changed, false, this.contentBounds)) {
 			this.details.lineStep = this.input.outline.layout.rowHeight;
 			for (let index = 0; index < this.controls.length; index += 1) {
@@ -98,6 +111,11 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 				if (this.options.controls[index].field.focusTarget.hasFocus) this.revealOption(this.input.optionProperties[index]);
 			}
 		}
+		this.actionBar.update();
+		const hint = this.actionBar.tooltipItem;
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		else if (this.sourceHovered) this.actionTooltip.show(this.input.workingCopy.resource.path, this.input.layout.sourceBounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		else this.actionTooltip.hide();
 		for (let index = 0; index < this.controls.length; index++) {
 			if (this.controls[index].field.readOnly) continue;
 			const bounds = this.input.properties[index].bounds;
@@ -195,10 +213,13 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 
 	public onPointerLeave(): void {
 		this.input.outline.hoverIndex = -1;
+		this.sourceHovered = false;
 	}
 
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.layout)) return false;
+		this.sourceHovered = point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.layout.sourceBounds);
+		if (this.sourceHovered) { pointerHover.visit(this); if (justPressed) this.focus(); return true; }
 		if (this.actionBar.handlePointer(snapshot)) return true;
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const control = this.controls[index];
@@ -242,6 +263,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	public override dispose(): void {
 		pointerHover.release(this);
 		this.actionBar.dispose();
+		this.actionTooltip.detach();
 		this.details.dispose();
 		this.options.clear();
 		for (const unbind of this.unbindFieldFocus) unbind();
@@ -252,6 +274,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	public override clearInput(): void {
 		pointerHover.release(this);
 		this.actionBar.clearInput();
+		this.actionTooltip.hide(); this.sourceHovered = false;
 		this.details.clearInput();
 		this.options.clear();
 		super.clearInput();

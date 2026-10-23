@@ -7,7 +7,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerSnapshot } from '../../ide/common/models';
-import { InputFocusService } from '../../ide/input/focus';
+import { InputFocusService, inputFocus } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
@@ -18,6 +18,11 @@ import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { api } from '../../ide/runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../ide/workbench/render/action_bar';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { ValueInput } from '../../ide/editor/ui/inline/value_input';
+import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { WORKBENCH_MENUS } from '../../ide/workbench/ui/menu/registry';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 const PRIMARY = PointerButton.Primary;
 const CAPTIONS = {
@@ -43,7 +48,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const menu of Object.keys(C
 				const left = font.measure(CAPTIONS[menu]) + 12;
 				layoutWorkbenchActionBar(state, width - 4, 2, font.lineHeight + 6, measure, font, left);
 				const primary = state.items.filter(item => item.visible && !item.overflowed), secondary = state.overflow!.items;
-				assert.deepEqual([...primary.map(item => item.command), ...secondary.map(item => item.command)], authored.map(item => item.command));
+				assert.deepEqual([...primary.map(item => item.command), ...secondary.filter(item => item.type === 'command').map(item => item.command)], authored.map(item => item.command));
 				assert.deepEqual(primary, authored.slice(0, primary.length), 'overflow removes a trailing suffix, not arbitrary actions');
 				for (const item of primary) assert.ok(item.bounds.left >= left && item.bounds.right <= width - 4);
 				assert.equal(state.overflow!.button.visible, secondary.length !== 0);
@@ -152,4 +157,67 @@ test('a sub-icon toolbar budget clips painted More geometry but keeps keyboard a
 	assert.deepEqual(clips, [[60, 10, 63, 22]]);
 	f.open(true); assert.equal(f.bar.tooltipItem, undefined, 'the popup does not compete with a toolbar hint');
 	f.press('End'); f.press('Enter'); assert.equal(f.calls.length, 1);
+});
+
+test('one More merges the overflowed primary suffix and authored secondary groups without duplicate commands or nested More', () => {
+	const state = createWorkbenchActionBar('animation.title', true, WORKBENCH_MENUS['animation.context']);
+	state.items.find(item => item.command === 'animation.addFrame')!.visible = false;
+	const font = new Font({ variant: 'msx' }), measure = (text: string) => font.measure(text);
+	for (const width of [384, 118, 78, 384]) {
+		layoutWorkbenchActionBar(state, width - 4, 10, 22, measure, font, 36);
+		const entries = state.overflow!.items, commands = entries.filter(item => item.type === 'command').map(item => item.command);
+		assert.equal(entries[0].type, 'command'); assert.equal(entries.at(-1)!.type, 'command');
+		assert.equal(new Set(commands).size, commands.length);
+		assert.ok(!commands.includes('animation.more'));
+		assert.deepEqual(commands.slice(0, state.items.filter(item => item.overflowed).length), state.items.filter(item => item.overflowed).map(item => item.command));
+		assert.ok(commands.includes('animation.addFrame'), 'secondary retains the existing domain visibility policy independently of primary visibility');
+		assert.ok(commands.includes('animation.source'));
+		const firstSecondary = entries.findIndex(item => item.type === 'command' && item.command === 'animation.duplicate');
+		if (firstSecondary > 0) assert.equal(entries[firstSecondary - 1].type, 'separator');
+		for (let index = 1; index < entries.length; index++) assert.ok(entries[index].type !== 'separator' || entries[index - 1].type !== 'separator');
+		const retained = entries.slice(), revision = state.layoutRevision;
+		for (let frame = 0; frame < 50; frame++) layoutWorkbenchActionBar(state, width - 4, 10, 22, measure, font, 36);
+		assert.deepEqual(entries, retained); assert.equal(state.layoutRevision, revision);
+	}
+});
+
+for (const replacement of ['origin', 'other', 'none', 'menu'] as const) test(`valid departing drafts invalidate the popup before focus admission and preserve ${replacement} focus intent`, t => {
+	const capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const content = inputFocus.createTarget(); content.bindKeyboard(() => {});
+	const other = inputFocus.createTarget(); other.bindKeyboard(() => {});
+	const model = new EditorTextModel({ domain: 0, path: 'actual.lua', source: { resid: 'actual', type: 'lua' } }, 'lua', '1');
+	const field = new ValueInput(content, INTEGER_INPUT_FORMAT, value => model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.getText().length, text: String(value) }]));
+	const surfaces = new WorkbenchSurfaceService(), area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const root = surfaces.attach({ role: 'content', captureScope: content.scope.surfaceScope, getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });
+	const menu = new ContextMenuController(inputFocus, capture, lifetime => {
+		if (lifetime === undefined) return;
+		lifetime.add(surfaces.attach({ role: 'transient', outsidePress: 'consume', captureScope: menu.pointerScope, lifetimeOwner: root,
+			getBounds: () => menu.model.bounds, getClip: () => area, isVisible: () => menu.visible, draw() {},
+			onRetire: () => { if (!lifetime.isDisposed) { capture.cancelScope(menu.pointerScope); menu.hide(); } } }));
+	});
+	const state = createWorkbenchActionBar('aem.title', true);
+	layoutWorkbenchActionBar(state, 120, 10, 22, text => text.length * 4, null, 80);
+	const bar = new WorkbenchActionBarControl(inputFocus, capture, hover, { isEnabled: () => true, execute: () => assert.fail('retired popup executed') }, content, () => content.focus(), menu);
+	bar.setInput(state, content); bar.update();
+	let subscribed = false, detached = false;
+	bar.onDidOpenOverflow = lifetime => {
+		subscribed = true;
+		lifetime.add({ dispose: model.onDidChangeContent(() => {
+			assert.equal(subscribed, true); menu.hide();
+			if (replacement === 'other') other.focus();
+			else if (replacement === 'none') inputFocus.setTarget(null);
+			else if (replacement === 'menu') menu.show(4, 40, [{ type: 'command', command: 'save' }], { isEnabled: () => true, execute() {} }, { selectFirst: true });
+		}) });
+		lifetime.add({ dispose: () => { detached = true; } });
+	};
+	t.after(() => { bar.dispose(); menu.dispose(); surfaces.dispose(); field.dispose(); model.dispose(); inputFocus.setTarget(null); });
+	field.setValue(1); field.field.focusTarget.focus(); setFieldText(field.field, '2', false);
+	const bounds = state.overflow!.button.bounds;
+	bar.handlePointer({ valid: true, insideViewport: true, viewportX: bounds.left + 1, viewportY: bounds.top + 1,
+		pressedButtons: PRIMARY, justPressedButtons: PRIMARY, justReleasedButtons: PRIMARY });
+	assert.equal(model.buffer.getText(), '2'); assert.equal(detached, true);
+	assert.equal(menu.visible, replacement === 'menu');
+	const expected = replacement === 'origin' ? field.field.focusTarget : replacement === 'other' ? other : replacement === 'menu' ? menu.focusTarget : null;
+	assert.equal(inputFocus.target, expected); assert.equal(inputFocus.admittedTarget, expected);
+	if (replacement === 'menu') { bar.clearInput(); assert.equal(menu.visible, true, 'retired original overflow cannot dismiss its replacement'); }
 });

@@ -20,7 +20,7 @@ export function openCodeContextMenu(editor: CartEditor, row: number, column: num
 	const model = activeCodeEditor.model;
 	const token = resolveContextMenuToken(row, column, model.resource.path);
 	activeCodeEditor.focusTarget.focus();
-	const lifetime = editor.contextMenu.show(x, y, codeContextMenuItems(token), {
+	editor.contextMenu.show(x, y, codeContextMenuItems(token), {
 		isEnabled: command => editor.commands.isEnabled(command),
 		execute: command => {
 			switch (command) {
@@ -29,8 +29,9 @@ export function openCodeContextMenu(editor: CartEditor, row: number, column: num
 			}
 			editor.commands.execute(command);
 		},
-	}, { selectFirst: keyboard });
-	lifetime.add({ dispose: model.onDidChangeContent(() => editor.contextMenu.hide()) });
+	}, { selectFirst: keyboard,
+		onWillShow: lifetime => { lifetime.add({ dispose: model.onDidChangeContent(() => editor.contextMenu.hide()) }); },
+	});
 }
 
 export function openCodeContextMenuAtCursor(editor: CartEditor): void {
