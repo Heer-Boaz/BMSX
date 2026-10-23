@@ -113,7 +113,7 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 		const { frame, layout } = this.input;
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		api.blit_text_inline_with_font(this.title, layout.left + 4, layout.top + 4, 0, colors.COLOR_STATUS_TEXT, editorViewState.font.renderFont());
-		renderWorkbenchActionBar(this.input.actionBar, editorViewState.font.renderFont());
+		renderWorkbenchActionBar(this.input.actionBar, editorViewState.font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		const bitmap = this.session?.frames.bitmap;
 		if (bitmap !== undefined) api.drawBitmap(bitmap, frame.left, frame.top, frame.right, frame.bottom);
 		else api.blit_text_inline_with_font(this.state.toUpperCase(), layout.left + 4, layout.top + layout.rowHeight + 10, 0,

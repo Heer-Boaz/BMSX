@@ -36,6 +36,7 @@ import { truncateMeasuredText } from '../../../common/text';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { projectAemSource } from './source';
 import * as colors from '../../../common/constants';
+import { api } from '../../../runtime/overlay_api';
 
 export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> {
 	private readonly pointer = new WorkbenchPropertyTreePointer(pointerHover);
@@ -112,8 +113,9 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 	}
 	public draw(): void {
 		const input = this.input;
+		api.fill_rect(input.layout.left, input.layout.top, input.layout.right, input.layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		drawEditorText(editorViewState.font, this.caption, input.layout.left + 4, input.layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
-		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont());
+		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		drawWorkbenchPropertyTree(input.tree);
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }

@@ -14,8 +14,8 @@ import { drawWorkbenchIcon } from './icon';
 export function renderWorkbenchActionBar(
 	state: WorkbenchActionBarState,
 	font: BFont,
-	iconForeground = constants.COLOR_HEADER_BUTTON_TEXT,
-	disabledIconForeground = constants.COLOR_HEADER_BUTTON_TEXT_DISABLED,
+	iconForeground: number,
+	disabledIconForeground: number,
 ): void {
 	if (state.overflow !== undefined) api.pushClipRect(state.bounds.left, state.bounds.top, state.bounds.right, state.bounds.bottom);
 	const count = state.items.length + (state.overflow?.button.visible ? 1 : 0);

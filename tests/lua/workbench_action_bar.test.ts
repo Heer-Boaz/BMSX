@@ -17,6 +17,7 @@ import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { api } from '../../ide/runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../ide/workbench/render/action_bar';
+import * as colors from '../../ide/common/constants';
 import { WORKBENCH_ICON_SIZE, type WorkbenchIcon } from '../../ide/workbench/ui/icon';
 import { drawWorkbenchIcon } from '../../ide/workbench/render/icon';
 
@@ -326,7 +327,7 @@ test('tiny-font rendering distinguishes hover, keyboard focus, pressed and disab
 	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => font.measure(text), font, 0);
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		renderWorkbenchActionBar(f.state, font); overlay.renderer.endFrame();
+		renderWorkbenchActionBar(f.state, font, colors.COLOR_HEADER_BUTTON_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(); stream.reset(256, 212);
 		for (let index = 0; index < frame.commandCount; index += 1) stream.appendEntry(frame.commandKinds[index], frame.commandRefs[index]);
 	};

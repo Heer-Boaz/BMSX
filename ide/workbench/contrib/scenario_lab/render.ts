@@ -83,7 +83,7 @@ function drawToolbar(
 		constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT,
 		renderFont,
 	);
-	renderWorkbenchActionBar(state.actionBar, renderFont);
+	renderWorkbenchActionBar(state.actionBar, renderFont, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT, constants.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 }
 
 function drawPaneHeaders(state: ScenarioLabViewState, renderFont: BFont): void {

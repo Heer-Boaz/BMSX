@@ -12,7 +12,7 @@ export function drawRuntimeTimeline(layout: RuntimeTimelineLayout, actions: Work
 	const bounds = layout.bounds;
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.top + 1, 0, colors.COLOR_TAB_BORDER);
-	renderWorkbenchActionBar(actions, font);
+	renderWorkbenchActionBar(actions, font, colors.COLOR_STATUS_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 	drawWorkbenchSlider(range, focused);
 	if (layout.positionLabel !== '') api.blit_text_inline_with_font(layout.positionLabel, layout.positionLeft,
 		bounds.top + ((bounds.bottom - bounds.top - font.lineHeight) >> 1), 0, colors.COLOR_STATUS_TEXT, font);

@@ -210,7 +210,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		for (let index = 0; index + 1 < input.footer.lines.length; index++) {
 			api.blit_text_inline_with_font(input.footer.lines[index], STATUS_BAR_CONNECTION_WIDTH + 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
 		}
-		renderWorkbenchActionBar(input.turnActions, font);
+		renderWorkbenchActionBar(input.turnActions, font, textColor, colors.COLOR_DESCRIPTION_TEXT);
 		if (input.busySince !== undefined) {
 			const y = this.contentTop - layout.rowHeight - 4;
 			api.blit_text_inline_with_font(SPINNER[Math.trunc((performance.now() - input.busySince) / 150) & 3], 4, y, 0, colors.COLOR_STATUS_SUCCESS, font);

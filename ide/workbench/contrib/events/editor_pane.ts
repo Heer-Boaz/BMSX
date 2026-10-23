@@ -199,7 +199,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		if (this.inspector.visible) { drawWorkbenchPropertyInspector(this.inspector); return; }
 		const input = this.input, { layout, viewport } = input, font = layout.font!.renderFont();
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
-		renderWorkbenchActionBar(input.actions, font);
+		renderWorkbenchActionBar(input.actions, font, colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		const timelineLeft = viewport.bounds.left, tickLeft = timelineLeft + this.timelineWidth, eventLeft = tickLeft + this.tickWidth;
 		const headerTop = layout.top + layout.rowHeight + 10, headerColor = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
 		api.blit_text_inline_with_font('Timeline', timelineLeft, headerTop, 0, headerColor, font);

@@ -20,6 +20,10 @@ import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
+import { drawAnimationEditor } from '../../ide/workbench/contrib/animation/render';
+import { layoutWorkbenchPropertyTree } from '../../ide/workbench/ui/property_tree';
 
 function fixture(t: TestContext, theme: string, variant: FontVariant) {
 	const previousTheme = colors.getActiveIdeThemeVariant();
@@ -67,6 +71,25 @@ for (const theme of ['dark', 'light']) {
 		assert.notEqual(colors.COLOR_PROBLEMS_PANEL_LOCATION, syntaxDim);
 	});
 	for (const variant of ['tiny', 'msx'] as const) {
+		test(`${theme}/${variant} the animation pane paints its own body beneath captions and bare actions`, t => {
+			const f = fixture(t, theme, variant), bounds = { left: 4, top: 26, right: 380, bottom: 268 };
+			const model = new EditorTextModel({ domain: 0, path: 'empty.lua', source: { resid: 'empty', type: 'lua' } }, 'lua', 'return { tracks = {} }');
+			const input = new AnimationEditorInput(model);
+			t.after(() => { input.dispose(); model.dispose(); });
+			input.caption = 'Animation';
+			layoutWorkbenchActionBar(input.actionBar, bounds.right - 4, bounds.top, bounds.top + f.font.lineHeight + 6,
+				text => f.font.measure(text), f.font.renderFont(), bounds.left + 4);
+			layoutWorkbenchPropertyTree(input.details, f.font.renderFont(), (text, start, end) => f.font.measure(text.slice(start, end)),
+				196, 90, bounds.right, bounds.bottom);
+			const frame = f.draw(() => {
+				api.fill_rect(0, 0, 384, 288, 0, colors.COLOR_FRAME);
+				drawAnimationEditor(input, bounds, false);
+			});
+			const background = fillsWithin(frame, bounds).find(rect => rect.area.left === bounds.left && rect.area.top === bounds.top
+				&& rect.area.right === bounds.right && rect.area.bottom === bounds.bottom);
+			assert.ok(background, 'the root frame is not the editor body surface');
+			assert.equal(background.color, resolveThemeTokenColor(colors.COLOR_CODE_BACKGROUND));
+		});
 		test(`${theme}/${variant} bare action icons inherit their owning surface while painted labels retain button ink`, t => {
 			const f = fixture(t, theme, variant), state = createWorkbenchActionBar('romInspector.title');
 			for (const item of state.items) item.enabled = true;
@@ -90,7 +113,7 @@ for (const theme of ['dark', 'light']) {
 			const disabled = state.items[0], enabled = state.items[1];
 			disabled.enabled = false; disabled.checked = true; state.hoveredCommand = disabled.command;
 			layoutWorkbenchActionBar(state, 360, 10, 10 + f.font.lineHeight + 6, text => f.font.measure(text), f.font.renderFont(), 4);
-			const commands = glyphs(f.draw(() => renderWorkbenchActionBar(state, f.font.renderFont())));
+			const commands = glyphs(f.draw(() => renderWorkbenchActionBar(state, f.font.renderFont(), colors.COLOR_HEADER_BUTTON_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED)));
 			assert.equal(commands.find(command => command.items === disabled.label)!.color, resolveThemeTokenColor(THEME_TOKEN_MUTED_GREY));
 			assert.equal(commands.find(command => command.items === enabled.label)!.color, resolveThemeTokenColor(colors.COLOR_HEADER_BUTTON_TEXT));
 		});

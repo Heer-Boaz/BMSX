@@ -115,7 +115,7 @@ export class GamePanel {
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		api.fill_rect(bounds.left, bounds.top, bounds.right, this.headerBottom, 0, colors.COLOR_STATUS_BACKGROUND);
 		api.blit_text_inline_with_font('GAME', bounds.left + 4, bounds.top + 2, 0, colors.COLOR_STATUS_TEXT, font);
-		renderWorkbenchActionBar(this.actionBar, font);
+		renderWorkbenchActionBar(this.actionBar, font, colors.COLOR_STATUS_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 		api.drawFrame(this.frame.left, this.frame.top, this.frame.right, this.frame.bottom);
 		this.gameInput.draw();
 		drawWorkbenchSplit(this.split, this.sash.hovered || this.sash.focusTarget.hasFocus);

@@ -92,7 +92,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		const { layout, actionBar, viewport, rows } = this.input;
 		const font = editorViewState.font.renderFont();
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
-		renderWorkbenchActionBar(actionBar, font);
+		renderWorkbenchActionBar(actionBar, font, colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		api.blit_text_inline_with_font(this.input.heading, 4, layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		api.blit_text_inline_with_font(this.input.status, 4, layout.top + layout.rowHeight + 6, 0,
 			this.input.proposal.state === 'stale' || this.input.proposal.state === 'failed' ? colors.COLOR_STATUS_WARNING : colors.COLOR_RESOURCE_VIEWER_TEXT, font);

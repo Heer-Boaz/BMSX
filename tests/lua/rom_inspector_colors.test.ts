@@ -98,6 +98,19 @@ test('the actual ROM minimap distinguishes every typed asset payload rather than
 });
 
 for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {
+	test(`${theme}/${variant} the actual ROM toolbar inherits its body surface ink`, t => {
+		const f = fixture(t); colors.setIdeThemeVariant(theme); f.layout(variant);
+		const icon = f.input.actions.items.find(item => item.icon === 'info')!;
+		const fills: number[][] = [], fill = api.fill_rect;
+		t.mock.method(api, 'fill_rect', (...args) => { fills.push(args); fill.call(api, ...args); });
+		for (const enabled of [true, false]) {
+			icon.enabled = enabled; fills.length = 0; f.draw();
+			const pattern = fills.filter(([left, top, right, bottom]) => left >= icon.bounds.left && right <= icon.bounds.right
+				&& top >= icon.bounds.top && bottom <= icon.bounds.bottom);
+			assert.ok(pattern.length > 0, 'the actual contribution must draw its Info icon');
+			for (const rect of pattern) assert.equal(rect[5], enabled ? colors.COLOR_RESOURCE_VIEWER_TEXT : colors.COLOR_DESCRIPTION_TEXT);
+		}
+	});
 	test(`${theme}/${variant} section colors use typed payload, physical buffer and exact symbols identity`, t => {
 		const f = fixture(t); colors.setIdeThemeVariant(theme); f.layout(variant);
 		for (const type of ASSET_TYPES) {

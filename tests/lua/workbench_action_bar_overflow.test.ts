@@ -17,6 +17,7 @@ import type { WorkbenchActionMenuId } from '../../ide/workbench/ui/menu/registry
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { api } from '../../ide/runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../ide/workbench/render/action_bar';
+import * as colors from '../../ide/common/constants';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
@@ -172,7 +173,7 @@ test('a sub-icon toolbar budget clips painted More geometry but keeps keyboard a
 	const clips: number[][] = [];
 	t.mock.method(api, 'pushClipRect', (...args) => { clips.push(args); });
 	t.mock.method(api, 'popClipRect', () => {}); t.mock.method(api, 'fill_rect', () => {});
-	renderWorkbenchActionBar(f.state, f.font);
+	renderWorkbenchActionBar(f.state, f.font, colors.COLOR_HEADER_BUTTON_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 	assert.deepEqual(clips, [[60, 10, 63, 22]]);
 	f.open(true); assert.equal(f.bar.tooltipItem, undefined, 'the popup does not compete with a toolbar hint');
 	f.press('End'); f.press('Enter'); assert.equal(f.calls.length, 1);

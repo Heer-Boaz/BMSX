@@ -13,7 +13,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { api } from '../../../runtime/overlay_api';
-import { COLOR_RESOURCE_VIEWER_BACKGROUND, COLOR_RESOURCE_VIEWER_TEXT } from '../../../common/constants';
+import { COLOR_DESCRIPTION_TEXT, COLOR_RESOURCE_VIEWER_BACKGROUND, COLOR_RESOURCE_VIEWER_TEXT } from '../../../common/constants';
 import type { TestTargetInspection } from '../../../testing/retained_inspection';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 import { truncateMeasuredText } from '../../../common/text';
@@ -141,7 +141,7 @@ export class ScenarioTargetInspection {
 		const header = this.header;
 		api.fill_rect(header.left, header.top, header.right, header.bottom, 0, COLOR_RESOURCE_VIEWER_BACKGROUND);
 		drawEditorText(editorViewState.font, this.title, header.left + 4, header.top + 4, 0, COLOR_RESOURCE_VIEWER_TEXT);
-		renderWorkbenchActionBar(this.bar, this.headerFont!);
+		renderWorkbenchActionBar(this.bar, this.headerFont!, COLOR_RESOURCE_VIEWER_TEXT, COLOR_DESCRIPTION_TEXT);
 		drawWorkbenchPropertyTree(this.model!.tree);
 	}
 

@@ -18,7 +18,7 @@ export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graph
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	const graph = input.presentation === 'graph' ? input.stateGraph : undefined;
-	renderWorkbenchActionBar(graph === undefined ? input.actionBar : input.stateGraphActions, font);
+	renderWorkbenchActionBar(graph === undefined ? input.actionBar : input.stateGraphActions, font, color, colors.COLOR_DESCRIPTION_TEXT);
 	const tree = outline.layout;
 	if (graph !== undefined) {
 		api.pushClipRect(graph.viewport.canvas.left, tree.contentTop, graph.viewport.canvas.right, graph.viewport.canvas.bottom);

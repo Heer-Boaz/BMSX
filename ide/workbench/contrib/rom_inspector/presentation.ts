@@ -66,7 +66,7 @@ export function drawRomInspector(input: RomInspectorInput, view: RomInspectorPre
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	api.blit_text_inline_with_font(view.title, layout.left + 4, layout.top + 3, 0, color, font);
-	renderWorkbenchActionBar(input.actions, font);
+	renderWorkbenchActionBar(input.actions, font, color, colors.COLOR_DESCRIPTION_TEXT);
 	api.blit_text_inline_with_font('Filter', layout.left + 4, input.filterBounds.top + 2, 0, color, font);
 	api.blit_rect(input.filterBounds.left, input.filterBounds.top, input.filterBounds.right, input.filterBounds.bottom, 0,
 		filter.focusTarget.hasFocus ? colors.COLOR_HEADER_BUTTON_ACTIVE_TEXT : colors.COLOR_HEADER_BUTTON_BORDER);

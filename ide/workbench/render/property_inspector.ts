@@ -15,7 +15,7 @@ export function drawWorkbenchPropertyInspector<Element extends InspectedProperty
 	if (inspector.chrome === 'header') {
 		api.fill_rect(bounds.left, bounds.top, bounds.right, view.bounds.top, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 		api.blit_text_inline_with_font(inspector.title, bounds.left + 4, bounds.top + 4, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT, font);
-		renderWorkbenchActionBar(inspector.actionBar, font);
+		renderWorkbenchActionBar(inspector.actionBar, font, colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 	}
 	api.pushClipRect(view.bounds.left, view.bounds.top, view.bounds.right, view.bounds.bottom);
 	const offset = view.offsetTop;

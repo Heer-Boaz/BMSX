@@ -378,7 +378,7 @@ export class RomEntryInspectorWindow {
 	private draw(): void {
 		const input = this.input, bounds = input.readerWindow.client, font = editorViewState.font.renderFont();
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
-		renderWorkbenchActionBar(input.readerViewActions, font);
+		renderWorkbenchActionBar(input.readerViewActions, font, colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		if (input.reader.subject === undefined) api.blit_text_inline_with_font('No entry selected', input.readerContentBounds.left + 4,
 			input.readerContentBounds.top + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		else if (this.attachedView === 'info') drawWorkbenchPropertyInspector(this.inspector);

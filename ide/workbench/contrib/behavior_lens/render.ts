@@ -23,7 +23,7 @@ export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchG
 	api.fill_rect(layout.left, layout.top, layout.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 	api.fill_rect(layout.left, layout.headerBottom, layout.right, layout.headerBottom + 1, 0, constants.COLOR_TAB_BORDER);
 	const renderFont = editorViewState.font.renderFont();
-	renderWorkbenchActionBar(state.presentation.actionBar, renderFont);
+	renderWorkbenchActionBar(state.presentation.actionBar, renderFont, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT, constants.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 	api.blit_text_inline_span_with_font(
 		layout.headerText,
 		0,

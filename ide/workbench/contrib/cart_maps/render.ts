@@ -15,7 +15,7 @@ export function drawCartMap(input: CartMapInput, controls: readonly ValueInput<C
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	api.blit_text_inline_with_font(layout.sourceTitle, layout.left + 4, layout.top + 2, 0, color, font);
-	renderWorkbenchActionBar(input.actionBar, font);
+	renderWorkbenchActionBar(input.actionBar, font, color, colors.COLOR_DESCRIPTION_TEXT);
 	api.blit_text_inline_with_font(layout.outlineTitle, layout.left + 4, layout.top + rowHeight + 2, 0, color, font);
 	api.blit_text_inline_with_font(layout.selectionTitle, layout.gridLeft + 4, layout.top + rowHeight + 2, 0, color, font);
 	api.pushClipRect(tree.layout.contentLeft, tree.layout.contentTop, tree.layout.contentRight, tree.layout.contentBottom);

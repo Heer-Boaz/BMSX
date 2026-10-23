@@ -31,6 +31,7 @@ import type { ResourcePanelController } from '../resources/panel/controller';
 import type { LuaProgramController } from './controller';
 import type { LuaProgramInput } from './editor_input';
 import * as colors from '../../../common/constants';
+import { api } from '../../../runtime/overlay_api';
 import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ActionStringTester } from '../scenario_lab/actionstring';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
@@ -163,8 +164,9 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 	}
 	public draw(): void {
 		const input = this.input;
+		api.fill_rect(input.layout.left, input.layout.top, input.layout.right, input.layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		drawEditorText(editorViewState.font, this.headerLabel, input.layout.left + 4, input.layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
-		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont());
+		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		drawWorkbenchPropertyTree(input.liveVisible ? input.live : input.tree);
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }

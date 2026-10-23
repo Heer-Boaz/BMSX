@@ -10,8 +10,9 @@ import type { AnimationEditorInput } from './editor_input';
 export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonly<RectBounds>, keysFocused: boolean): void {
 	const { font } = editorViewState;
 	const text = colors.COLOR_RESOURCE_VIEWER_TEXT;
+	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	drawEditorText(font, input.caption, bounds.left + 4, bounds.top + 2, 0, text);
-	renderWorkbenchActionBar(input.actionBar, font.renderFont());
+	renderWorkbenchActionBar(input.actionBar, font.renderFont(), text, colors.COLOR_DESCRIPTION_TEXT);
 	const list = input.tracks;
 	const layout = list.layout;
 	const firstRow = list.scroll | 0;

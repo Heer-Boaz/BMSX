@@ -69,7 +69,7 @@ export function renderTabBar(context: ChromeRenderContext): void {
 		api.fill_rect(x - 1, barTop, x + 1, rowBottom, 0, constants.COLOR_TAB_ACTIVE_TEXT);
 	}
 	api.popClipRect();
-	renderWorkbenchActionBar(editorChromeState.tabActions, editorViewState.font.renderFont());
+	renderWorkbenchActionBar(editorChromeState.tabActions, editorViewState.font.renderFont(), constants.COLOR_STATUS_TEXT, constants.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 	if (scrollbar.isVisible()) scrollbar.draw(constants.COLOR_TAB_BAR_BACKGROUND, constants.COLOR_TAB_BORDER);
 }
 
