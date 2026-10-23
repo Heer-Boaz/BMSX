@@ -35,6 +35,7 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
+import { SceneOutlineFeedback } from './feedback';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInput> {
@@ -51,6 +52,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	private readonly details: WorkbenchScrollControl;
 	private readonly unbindFieldFocus: readonly (() => void)[];
 	private readonly actionTooltip = new WorkbenchTooltip();
+	private readonly identityFeedback: SceneOutlineFeedback;
 	private sourceHovered = false;
 
 	public constructor(resourcePanel: ResourcePanelController,
@@ -61,10 +63,12 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		private readonly getWorkArea: () => Readonly<RectBounds>,
 	) {
 		super(resourcePanel);
+		this.identityFeedback = new SceneOutlineFeedback(surfaces, paneSurface, getWorkArea, this.focusTarget);
 		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionBar.onDidOpenOverflow = lifetime => {
 			this.actionTooltip.hide(); this.sourceHovered = false;
+			this.identityFeedback.clear();
 			lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
 		};
 		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
@@ -116,6 +120,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
 		else if (this.sourceHovered) this.actionTooltip.show(this.input.workingCopy.resource.path, this.input.layout.sourceBounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
 		else this.actionTooltip.hide();
+		this.identityFeedback.update(editorViewState.font.renderFont(), measureTextRange, measureText);
 		for (let index = 0; index < this.controls.length; index++) {
 			if (this.controls[index].field.readOnly) continue;
 			const bounds = this.input.properties[index].bounds;
@@ -202,6 +207,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 			if (isKeyDown(code, input)) {
 				consumeIdeKey(code, input);
 				if (navigateWorkbenchTree(this.input.outline, command) !== WorkbenchTreeNavigationResult.None) this.select(this.input.outline.selectionIndex, false);
+				this.identityFeedback.keyboardSelection(this.input);
 				return;
 			}
 		}
@@ -214,10 +220,14 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	public onPointerLeave(): void {
 		this.input.outline.hoverIndex = -1;
 		this.sourceHovered = false;
+		this.identityFeedback.onPointerLeave();
 	}
 
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.layout)) return false;
+		const index = workbenchListRowIndexAtPosition(this.input.outline, snapshot.viewportX, snapshot.viewportY);
+		this.input.outline.hoverIndex = index;
+		this.identityFeedback.pointer(this.input, index, snapshot);
 		this.sourceHovered = point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.layout.sourceBounds);
 		if (this.sourceHovered) { pointerHover.visit(this); if (justPressed) this.focus(); return true; }
 		if (this.actionBar.handlePointer(snapshot)) return true;
@@ -240,10 +250,8 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 			}
 		}
 		if (this.details.handlePointer(snapshot)) return true;
-		const index = workbenchListRowIndexAtPosition(this.input.outline, snapshot.viewportX, snapshot.viewportY);
 		if (index >= 0) pointerHover.visit(this);
 		else pointerHover.release(this);
-		this.input.outline.hoverIndex = index;
 		if (justPressed) {
 			if (index >= 0) this.select(index, workbenchTreeTwistieContainsPosition(this.input.outline, index, snapshot.viewportX));
 			else this.focus();
@@ -264,6 +272,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		pointerHover.release(this);
 		this.actionBar.dispose();
 		this.actionTooltip.detach();
+		this.identityFeedback.dispose();
 		this.details.dispose();
 		this.options.clear();
 		for (const unbind of this.unbindFieldFocus) unbind();
@@ -275,6 +284,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		pointerHover.release(this);
 		this.actionBar.clearInput();
 		this.actionTooltip.hide(); this.sourceHovered = false;
+		this.identityFeedback.clear();
 		this.details.clearInput();
 		this.options.clear();
 		super.clearInput();

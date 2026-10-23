@@ -12,10 +12,10 @@ export function drawSingleLineField(field: TextField, view: SingleLineFieldViewp
 	const left = bounds.left + 3;
 	const top = bounds.top + 2;
 	const font = editorViewState.font.renderFont();
-	const selection = resolveInlineFieldSelectionState(field);
+	const selection = resolveInlineFieldSelectionState(field), focused = field.focusTarget.hasFocus;
 	const start = Math.max(view.start, selection.selectionStart);
 	const end = Math.min(view.end, selection.selectionEnd);
-	if (selection.hasSelection && start < end) {
+	if (focused && selection.hasSelection && start < end) {
 		const selectionLeft = left + view.advances[start] - view.offset;
 		const selectionRight = left + view.advances[end] - view.offset;
 		api.fill_rect(selectionLeft, top, selectionRight, top + editorViewState.lineHeight, 0, constants.SELECTION_OVERLAY);
@@ -25,7 +25,7 @@ export function drawSingleLineField(field: TextField, view: SingleLineFieldViewp
 	} else {
 		api.blit_text_inline_span_with_font(field.text, view.start, view.end, left, top, 0, color, font);
 	}
-	if (field.focusTarget.hasFocus) {
+	if (focused) {
 		const caretLeft = left + view.advances[selection.cursorOffset] - view.offset;
 		drawInlineCaret(api, field, caretLeft, top, caretLeft + view.caretWidth, top + editorViewState.lineHeight,
 			caretLeft, true);

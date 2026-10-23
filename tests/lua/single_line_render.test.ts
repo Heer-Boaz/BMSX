@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import * as colors from '../../ide/common/constants';
+import { ValueInput } from '../../ide/editor/ui/inline/value_input';
+import { drawValueInput } from '../../ide/editor/ui/inline/value_input_render';
+import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
+import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { inputFocus } from '../../ide/input/focus';
+import { api } from '../../ide/runtime/overlay_api';
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} line edits paint active selection only for their actual focused field`, t => {
+	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {});
+	const first = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => {}), second = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => {});
+	t.after(() => { inputFocus.setTarget(null); first.dispose(); second.dispose(); });
+	first.setValue(17); second.setValue(29);
+	first.field.focusTarget.focus(); second.field.focusTarget.focus();
+	assert.notEqual(first.field.selectionAnchor, null); assert.notEqual(second.field.selectionAnchor, null);
+	const fills: Parameters<typeof api.fill_rect>[] = [], spans: Parameters<typeof api.blit_text_inline_span_with_font>[] = [];
+	t.mock.method(api, 'fill_rect', (...args: Parameters<typeof api.fill_rect>) => { fills.push(args); });
+	t.mock.method(api, 'blit_rect', () => {});
+	t.mock.method(api, 'fill_rect_color', () => {});
+	t.mock.method(api, 'blit_text_inline_with_font', () => {});
+	t.mock.method(api, 'blit_text_inline_span_with_font', (...args: Parameters<typeof api.blit_text_inline_span_with_font>) => { spans.push(args); });
+	const bounds = { left: 4, top: 30, right: 100, bottom: 46 };
+	first.layout(96); drawValueInput(first, bounds);
+	assert.equal(fills.some(fill => fill[5] === colors.SELECTION_OVERLAY), false);
+	assert.equal(spans.some(span => span[6] === colors.COLOR_SELECTION_TEXT), false);
+	fills.length = 0; spans.length = 0;
+	second.layout(96); drawValueInput(second, bounds);
+	assert.equal(fills.some(fill => fill[5] === colors.SELECTION_OVERLAY), true);
+	assert.equal(spans.some(span => span[6] === colors.COLOR_SELECTION_TEXT), true);
+	assert.deepEqual([first.field.text, second.field.text], ['17', '29']);
+	assert.notEqual(first.field.selectionAnchor, null, 'presentation does not mutate the retained draft/selection history');
+});

@@ -64,7 +64,7 @@ function measureSceneDetails(input: SceneEditorInput, width: number): number {
 	const node = input.outline.rows[input.outline.selectionIndex];
 	if (node === undefined) return 0;
 	const textWidth = width - PADDING * 2;
-	let top = appendDetailsText(input, uppercaseOutsideStrings(node.parent === null ? node.element.label : node.parent.element.label), textWidth, PADDING);
+	let top = appendDetailsText(input, uppercaseOutsideStrings(node.element.label), textWidth, PADDING);
 	top = appendDetailsText(input, uppercaseOutsideStrings(node.element.detail), textWidth, top);
 	if (node.element.kind === 'scene') return top;
 	top = appendDetailsText(input, 'POSITION / WORLD UNITS', textWidth, top);
@@ -99,8 +99,10 @@ function appendDetailsText(input: SceneEditorInput, text: string, width: number,
 function layoutSceneOutlineNodes(nodes: readonly WorkbenchTreeNode<SceneOutlineElement>[], layout: WorkbenchTreeLayout): void {
 	for (const node of nodes) {
 		const badge = node.element.kind === 'scene' && node.element.scene.resolution === 'partial' ? '* ' : '';
-		node.element.displayLabel = truncateTextToWidth(badge + uppercaseOutsideStrings(node.element.label),
+		const label = badge + uppercaseOutsideStrings(node.element.label);
+		node.element.displayLabel = truncateTextToWidth(label,
 			layout.contentRight - layout.contentLeft - node.depth * layout.indentWidth - layout.twistieWidth);
+		node.element.labelClipped = node.element.displayLabel !== label;
 		layoutSceneOutlineNodes(node.children, layout);
 	}
 }
