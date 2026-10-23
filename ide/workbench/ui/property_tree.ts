@@ -1,6 +1,7 @@
 import type { BFont } from '../../../machine/ts/render/shared/bitmap_font';
 import { truncateMeasuredText, writeWrappedMeasuredText, type TextRangeMeasure } from '../../common/text';
 import { clampWorkbenchListScroll, layoutWorkbenchList } from './list_view';
+import { WORKBENCH_ICON_SIZE } from './icon';
 import type { WorkbenchTreeLayout, WorkbenchTreeNode, WorkbenchTreeState } from './tree_view';
 
 /** Display data only. Contributions retain their own property/source bindings. */
@@ -16,17 +17,18 @@ export type WorkbenchPropertyElement = {
 };
 
 export type WorkbenchPropertyTree<Element extends WorkbenchPropertyElement> = WorkbenchTreeState<Element> & {
-	readonly layout: WorkbenchTreeLayout & { valueLeft: number; bottom: number; font: BFont | null };
+	readonly layout: WorkbenchTreeLayout & { valueLeft: number; bottom: number; font: BFont | null; measure: TextRangeMeasure | undefined };
 	textDirty: boolean;
 	readonly descriptionLines: string[];
 	descriptionElement: Element | undefined;
+	descriptionClipped: boolean;
 };
 
 export function createWorkbenchPropertyTree<Element extends WorkbenchPropertyElement>(): WorkbenchPropertyTree<Element> {
 	return { roots: [], rows: [], selectionIndex: -1, hoverIndex: -1, scroll: 0, textDirty: true,
-		descriptionLines: [], descriptionElement: undefined,
+		descriptionLines: [], descriptionElement: undefined, descriptionClipped: false,
 		layout: { contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0,
-			indentWidth: 0, twistieWidth: 0, valueLeft: 0, bottom: 0, font: null } };
+			indentWidth: 0, twistieWidth: 0, valueLeft: 0, bottom: 0, font: null, measure: undefined } };
 }
 
 /** Layout and text are retained across scrolling, hover and unchanged frames. */
@@ -39,14 +41,17 @@ export function layoutWorkbenchPropertyTree<Element extends WorkbenchPropertyEle
 		|| layout.contentRight !== right || layout.bottom !== bottom;
 	if (changed) {
 		layout.font = font;
+		layout.measure = measure;
 		layout.bottom = bottom;
 		layout.valueLeft = left + ((right - left) * 0.4 | 0);
-		layout.indentWidth = font.advance(' ') * 2;
+		layout.indentWidth = Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 4);
 		layout.twistieWidth = layout.indentWidth;
-		layoutWorkbenchList(layout, left, top, right, bottom - font.lineHeight * 3 - 8, font.lineHeight + 4);
+		layout.contentLeft = left; layout.contentRight = right;
+		// Source descriptions keep a stable footer across selection and gestures. Trees without descriptions reclaim it.
+		const footerHeight = writePropertyText(state.roots, layout, measure) ? font.lineHeight * 3 + 8 : 0;
+		layoutWorkbenchList(layout, left, top, right, bottom - footerHeight, Math.max(font.lineHeight, WORKBENCH_ICON_SIZE) + 4);
 		// The description owns the remainder; every hittable list row is actually painted.
 		layout.contentBottom = top + layout.visibleRowCount * layout.rowHeight;
-		writePropertyText(state.roots, layout, measure);
 		clampWorkbenchListScroll(state);
 		state.textDirty = false;
 	}
@@ -54,20 +59,25 @@ export function layoutWorkbenchPropertyTree<Element extends WorkbenchPropertyEle
 	if (changed || state.descriptionElement !== selected) {
 		state.descriptionElement = selected;
 		const text = selected === undefined ? '' : selected.description;
-		writeWrappedMeasuredText(state.descriptionLines, text, right - left - 8, right - left - 8, 3, measure);
+		state.descriptionClipped = writeWrappedMeasuredText(state.descriptionLines, text, right - left - 8, right - left - 8, 3, measure);
 	}
 }
 
 function writePropertyText<Element extends WorkbenchPropertyElement>(
 	nodes: readonly WorkbenchTreeNode<Element>[], layout: WorkbenchPropertyTree<Element>['layout'], measure: TextRangeMeasure,
-): void {
+): boolean {
+	let hasDescription = false;
 	for (const node of nodes) {
 		const element = node.element;
 		const labelLeft = layout.contentLeft + node.depth * layout.indentWidth + layout.twistieWidth + 2;
-		element.displayValueLeft = element.label.length === 0 ? labelLeft : layout.valueLeft + 4;
+		// Deep names partition their remaining row, rather than disappearing behind the root's value column.
+		element.displayValueLeft = element.label.length === 0 ? labelLeft
+			: Math.max(layout.valueLeft + 4, labelLeft + ((layout.contentRight - labelLeft - 8) * 0.4 | 0) + 4);
 		element.displayLabel = truncateMeasuredText(element.label,
-			(element.kind === 'group' && element.value.length === 0 ? layout.contentRight : layout.valueLeft) - labelLeft - 4, measure);
+			(element.kind === 'group' && element.value.length === 0 ? layout.contentRight : element.displayValueLeft - 4) - labelLeft - 4, measure);
 		element.displayValue = truncateMeasuredText(element.value, layout.contentRight - element.displayValueLeft - 4, measure);
-		writePropertyText(node.children, layout, measure);
+		const childrenHaveDescription = writePropertyText(node.children, layout, measure);
+		hasDescription = hasDescription || element.description.length > 0 || childrenHaveDescription;
 	}
+	return hasDescription;
 }

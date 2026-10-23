@@ -1,3 +1,4 @@
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
@@ -10,8 +11,8 @@ export function layoutCartMap(input: CartMapInput, bounds: Readonly<RectBounds>,
 	const row = layout.rowHeight + 4;
 	if (resized || changed) {
 		layout.gridLeft = layout.left + Math.trunc((layout.right - layout.left) * 0.32);
-		tree.updateLayout(layout.left + 4, layout.top + row * 2, layout.gridLeft - 4, layout.bottom, row, editorViewState.font.advance(' ') * 2);
-		layoutWorkbenchActionBar(input.actionBar, layout.right - 4, layout.top, layout.top + row, measureText, editorViewState.font.renderFont());
+		tree.updateLayout(layout.left + 4, layout.top + row * 2, layout.gridLeft - 4, layout.bottom, row, Math.max(editorViewState.font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2));
+		layoutWorkbenchActionBar(input.actionBar, layout.right - 4, layout.top, layout.top + row, measureText, editorViewState.font.renderFont(), layout.left + 4);
 		if (resized || layout.sourceVersion !== input.version) {
 			for (const root of tree.roots) for (const node of [root, ...root.children]) {
 				node.element.displayLabel = truncateTextToWidth(node.element.label,

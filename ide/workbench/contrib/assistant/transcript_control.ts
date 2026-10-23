@@ -57,7 +57,7 @@ export class AssistantTranscriptControl {
 					const preview = this.previews.use(row.image.url);
 					api.fill_rect(8, imageTop + 2, right, imageBottom, 0, colors.COLOR_MARKDOWN_CODE_BACKGROUND);
 					if (preview.bitmap) drawImagePreview(preview.bitmap, 10, imageTop + 4, right - 2, imageBottom - layout.rowHeight);
-					else api.blit_text_inline_with_font(preview.error ? 'Image unavailable' : 'Loading image...', 12, imageTop + 8, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
+					else api.blit_text_inline_with_font(preview.error ? 'Image unavailable' : 'Loading image…', 12, imageTop + 8, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
 					api.blit_text_inline_with_font(row.image.label, 12, imageBottom - layout.rowHeight, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
 				}
 				continue;

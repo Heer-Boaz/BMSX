@@ -1,3 +1,5 @@
+import { drawWorkbenchIcon } from '../../render/icon';
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import * as colors from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ValueInput } from '../../../editor/ui/inline/value_input';
@@ -25,7 +27,8 @@ export function drawCartMap(input: CartMapInput, controls: readonly ValueInput<C
 		const selected = index === tree.selectionIndex;
 		const textColor = selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT : node.element.diagnostic === null ? color : colors.COLOR_STATUS_WARNING;
 		if (selected) api.fill_rect(tree.layout.contentLeft, y, tree.layout.contentRight, y + rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
-		if (node.expandable) api.blit_text_inline_with_font(node.collapsed ? '+' : '-', x, y + 2, 0, textColor, font);
+		if (node.expandable) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
+			x + ((tree.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), textColor);
 		api.blit_text_inline_with_font(node.element.displayLabel, x + tree.layout.twistieWidth, y + 2, 0,
 			textColor, font);
 	}

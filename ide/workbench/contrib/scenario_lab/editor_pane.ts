@@ -32,6 +32,12 @@ import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from './pointer';
 import { executeScenarioLabNavigation, updateScenarioLabStatus, type ScenarioLabNavigationCommand } from './navigation';
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import { WorkbenchTooltip } from '../../ui/tooltip';
+import { editorTextModelService } from '../../../editor/model/model_service';
+import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense/model_lifetime';
 
 export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<ScenarioLabInput> {
 	public override getSelection(): ScenarioLabNavigationSelection {
@@ -67,14 +73,20 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		}
 	};
 	private readonly actionBar: WorkbenchActionBarControl;
+	private readonly actionTooltip = new WorkbenchTooltip();
 
 	public constructor(
 		resourcePanel: ResourcePanelController,
 		private readonly controller: ScenarioLabController,
 		private readonly commands: IdeCommandController,
+		contextMenu: ContextMenuController,
+		surfaces: WorkbenchSurfaceService,
+		paneSurface: WorkbenchSurface,
+		private readonly getWorkArea: () => Readonly<RectBounds>,
 	) {
 		super(resourcePanel);
-		this.targetInspection = new ScenarioTargetInspection(this.resultsFocus, commands);
+		this.targetInspection = new ScenarioTargetInspection(this.resultsFocus, commands, contextMenu, surfaces, paneSurface, getWorkArea);
+		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
 		const inspectStop = {
 			isEnabled: () => this.controller.runs.debugger?.stopped === true && this.targetInspection.model === undefined,
 			run: () => { this.inspector.hide(); this.targetInspection.show(this.controller.runs.debugger!.inspect()); },
@@ -91,7 +103,13 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 				&& this.selectedDetailsRow() !== undefined,
 			run: () => this.openDetails(this.selectedDetailsRow()!),
 		});
-		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
+		this.actionBar.onDidOpenOverflow = lifetime => {
+			this.actionTooltip.hide();
+			lifetime.add({ dispose: controller.runs.onDidChangeRun(() => contextMenu.hide()) });
+			for (const root of this.input.view.collection.roots)
+				lifetime.add(subscribeToLuaModelChanges(editorTextModelService, root.domain, () => contextMenu.hide()));
+		};
 		this.focusTarget.next = this.resultsFocus;
 		this.resultsFocus.previous = this.focusTarget;
 		this.resultsFocus.next = this.split.focusTarget;
@@ -126,6 +144,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.targetInspection.hide();
 		pointerHover.release(this);
 		this.actionBar.clearInput();
+		this.actionTooltip.hide();
 		super.clearInput();
 	}
 
@@ -135,6 +154,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.targetInspection.dispose();
 		pointerHover.release(this);
 		this.actionBar.dispose();
+		this.actionTooltip.detach();
 		this.unbindResultsKeyboard(); this.unbindResultsGamepad();
 		this.unbindTestsFocus();
 		this.unbindResultsFocus();
@@ -145,6 +165,10 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		const view = this.input.view;
 		this.controller.updateView(view);
 		this.actionBar.update();
+		const hint = this.actionBar.tooltipItem;
+		if (hint !== undefined && !this.inspector.visible && this.targetInspection.model === undefined)
+			this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		else this.actionTooltip.hide();
 		if (this.inspectedMessage !== undefined && selectedScenarioResultRow(this.input.view)?.id !== this.inspectedMessage.id) this.inspector.hide();
 		this.inspector.update();
 		this.targetInspection.update(view.layout);

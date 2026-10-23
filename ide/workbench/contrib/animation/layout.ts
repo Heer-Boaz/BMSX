@@ -19,7 +19,7 @@ export function layoutAnimationEditor(input: AnimationEditorInput, bounds: Reado
 		if (item.command === 'animation.addFrame') item.visible = input.document?.family === 'sprite';
 		else if (item.command === 'animation.addTrack' || item.command === 'animation.addKey') item.visible = input.document?.family === 'timeline';
 	}
-	layoutWorkbenchActionBar(input.actionBar, bounds.right - 4, bounds.top, bounds.top + rowHeight, measureText, font.renderFont());
+	layoutWorkbenchActionBar(input.actionBar, bounds.right - 4, bounds.top, bounds.top + rowHeight, measureText, font.renderFont(), bounds.left + 4);
 	layoutWorkbenchList(input.tracks.layout, bounds.left + 4, top, listRight - 4, overviewBottom, rowHeight);
 	input.overview.layout(listRight + 8, top, bounds.right - 8, overviewBottom);
 	clampWorkbenchListScroll(input.tracks);

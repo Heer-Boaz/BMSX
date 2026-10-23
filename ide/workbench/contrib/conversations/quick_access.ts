@@ -14,11 +14,11 @@ export async function chooseObservedConversation(input: ConversationObserverInpu
 	if (page === undefined || input.lifetime.signal.aborted || editorTabGroup.activeTab !== input) return;
 	const choices: Choice[] = page.threads.map(thread => ({ kind: 'thread', id: thread.id, label: thread.title,
 		description: new Date(thread.updatedAt * 1000).toLocaleString(), detail: thread.id }));
-	if (page.nextCursor !== null) choices.push({ kind: 'page', cursor: page.nextCursor, label: 'Older conversations...', description: 'Next page', detail: '' });
-	choices.push({ kind: 'search', label: 'Search all conversations...', description: 'Search saved titles', detail: '' });
+	if (page.nextCursor !== null) choices.push({ kind: 'page', cursor: page.nextCursor, label: 'Older conversations…', description: 'Next page', detail: '' });
+	choices.push({ kind: 'search', label: 'Search all conversations…', description: 'Search saved titles', detail: '' });
 	quickInput.pick('Codex CLI conversations', 'Read only - continue writing in the CLI', () => new TextQuickPickProvider(choices), choice => {
 		if (choice.kind === 'page') void chooseObservedConversation(input, quickInput, choice.cursor, search);
-		else if (choice.kind === 'search') quickInput.input('Search Codex conversations', 'Title contains...', search ?? '', async value => value,
+		else if (choice.kind === 'search') quickInput.input('Search Codex conversations', 'Title contains…', search ?? '', async value => value,
 			value => { void chooseObservedConversation(input, quickInput, undefined, value); });
 		else void input.conversation.select(choice.id);
 	});

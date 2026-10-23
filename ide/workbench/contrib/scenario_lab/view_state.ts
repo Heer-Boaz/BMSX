@@ -60,7 +60,7 @@ export function createScenarioLabViewState(
 		split: new WorkbenchSplitView(5 / 12),
 		splitRevision: -1,
 		layout: createScenarioLabLayout(),
-		actionBar: createWorkbenchActionBar('scenarioLab.title'),
+		actionBar: createWorkbenchActionBar('scenarioLab.title', true),
 		status: {
 			info: '',
 			renderedInfo: '',

@@ -1,7 +1,10 @@
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
+import { InputFocusService } from '../../ide/input/focus';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
@@ -13,15 +16,15 @@ import { appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRow
 import { scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
-function fixture(count = 40) {
+function fixture(count = 40, groupDescription = 'A GROUP, NOT A PROPERTY.', property: Partial<WorkbenchPropertyElement> = {}) {
 	const font = new Font({ variant: 'tiny' });
 	let measurements = 0;
 	const measure = (text: string, start: number, end: number) => { measurements += 1; return font.measure(text.slice(start, end)); };
 	const state = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
-	const group = appendWorkbenchTreeNode(state, null, { kind: 'group', label: 'GROUP', value: '', description: 'A GROUP, NOT A PROPERTY.', warning: false, displayLabel: '', displayValue: '', displayValueLeft: 0 });
+	const group = appendWorkbenchTreeNode(state, null, { kind: 'group', label: 'GROUP', value: '', description: groupDescription, warning: false, displayLabel: '', displayValue: '', displayValueLeft: 0 });
 	for (let index = 0; index < count; index += 1) appendWorkbenchTreeNode(state, group, {
 		kind: 'property', label: `A LONG PROPERTY LABEL ${index}`, value: 'a_very_long_source_expression() * cadence() + another_long_source_call()',
-		description: 'AUTHORED SOURCE. '.repeat(40), warning: index === 2, displayLabel: '', displayValue: '', displayValueLeft: 0,
+		description: 'AUTHORED SOURCE. '.repeat(40), warning: index === 2, displayLabel: '', displayValue: '', displayValueLeft: 0, ...property,
 	});
 	rebuildWorkbenchTreeRows(state, group);
 	const layout = (right = 384) => layoutWorkbenchPropertyTree(state, font, measure, 4, 20, right - 4, 268);
@@ -177,11 +180,112 @@ test('lazy tree owners advertise expansion before reading children, with separat
 	const node = appendWorkbenchTreeNode(state, null, ownerValue, true);
 	node.expandable = true;
 	rebuildWorkbenchTreeRows(state, node); state.textDirty = true; layout(240);
-	assert.ok(font.measure(node.element.displayLabel) <= state.layout.valueLeft - state.layout.contentLeft - state.layout.twistieWidth - 6);
+	assert.ok(font.measure(node.element.displayLabel) <= node.element.displayValueLeft - state.layout.contentLeft - state.layout.twistieWidth - 10);
 	assert.equal(navigateWorkbenchTree(state, 'right'), NavigationResult.Collapse);
 	assert.equal(node.collapsed, false); assert.equal(node.children.length, 0, 'tree control never invokes a data loader');
 	appendWorkbenchTreeNode(state, node, { ...group.element, kind: 'property', label: 'loaded by owner' });
 	rebuildWorkbenchTreeRows(state, node);
 	assert.equal(navigateWorkbenchTree(state, 'right'), NavigationResult.Selection);
 	assert.equal(state.rows[state.selectionIndex].parent, node);
+});
+
+
+test('deep property names and values partition the remaining row in both real fonts at narrow widths', () => {
+	for (const variant of ['tiny', 'msx'] as const) {
+		const state = createWorkbenchPropertyTree<WorkbenchPropertyElement>(), font = new Font({ variant });
+		let parent = null;
+		for (let depth = 0; depth < 8; depth++) {
+			parent = appendWorkbenchTreeNode(state, parent, { kind: 'property', label: 'audio_id', value: 'music_story', description: '', warning: false,
+				displayLabel: '', displayValue: '', displayValueLeft: 0 });
+		}
+		rebuildWorkbenchTreeRows(state, parent);
+		layoutWorkbenchPropertyTree(state, font, (s, a, b) => font.measure(s.slice(a, b)), 4, 20, 196, 268);
+		assert.ok(state.layout.twistieWidth >= WORKBENCH_ICON_SIZE + 4);
+		assert.ok(state.layout.rowHeight >= WORKBENCH_ICON_SIZE + 4);
+		for (const node of state.rows) {
+			const labelLeft = state.layout.contentLeft + node.depth * state.layout.indentWidth + state.layout.twistieWidth + 2;
+			assert.ok(node.element.displayLabel.length > 1, `${variant} depth ${node.depth} keeps an actual name, not an empty column`);
+			assert.ok(node.element.displayValue.length > 1);
+			assert.ok(font.measure(node.element.displayLabel) <= node.element.displayValueLeft - labelLeft - 8);
+			assert.ok(font.measure(node.element.displayValue) <= state.layout.contentRight - node.element.displayValueLeft - 4);
+		}
+		assert.ok(state.layout.bottom - state.layout.contentBottom < state.layout.rowHeight, 'empty descriptions do not reserve three blank footer lines');
+	}
+});
+
+test('description footer reservation stays stable when a collapsed group contains the only descriptions', () => {
+	const f = fixture(1, '');
+	const child = f.group.children[0]; child.collapsed = false;
+	f.group.collapsed = true; rebuildWorkbenchTreeRows(f.state, f.group); f.state.textDirty = true; f.layout();
+	const bottom = f.state.layout.contentBottom;
+	navigateWorkbenchTree(f.state, 'right'); navigateWorkbenchTree(f.state, 'right'); f.layout();
+	assert.equal(f.state.layout.contentBottom, bottom); assert.equal(f.state.descriptionLines.length, 3);
+	assert.equal(f.state.descriptionClipped, true);
+});
+
+function feedbackFixture(t: TestContext, property: Partial<WorkbenchPropertyElement> = {}) {
+	const f = fixture(40, undefined, { label: 'music_transition', value: 'music_story', description: 'res/data/events.aem.yaml:6', ...property }), surfaces = new WorkbenchSurfaceService(), focus = new InputFocusService();
+	const parent = focus.createTarget(), target = focus.createTarget(parent);
+	parent.bindKeyboard(() => {}); target.bindKeyboard(() => {}); parent.focus();
+	const hover = new PointerHoverService(), pointer = new WorkbenchPropertyTreePointer(hover);
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('property tree'), isVisible: () => true,
+		getBounds: () => area, getClip: () => area, draw: () => drawWorkbenchPropertyTree(f.state) });
+	pointer.attachFeedback(surfaces, owner, () => area, target);
+	const child = f.group.children[0];
+	f.state.textDirty = true; f.layout(200); pointer.updateFeedback(f.state);
+	const texts: string[] = []; t.mock.method(api, 'blit_text_inline_with_font', text => texts.push(text));
+	const overlay = createHostOverlayFixture(384, 288);
+	const paint = () => { texts.length = 0; overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
+	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
+		viewportX: f.state.layout.contentLeft + 20, viewportY: f.state.layout.contentTop + f.state.layout.rowHeight + 3 };
+	const move = (delta = 0) => { point.viewportX += delta; hover.beginDispatch(); pointer.handle(f.state, point, false, 0); hover.endDispatch(); };
+	t.after(() => { pointer.dispose(); surfaces.dispose(); });
+	return { ...f, surfaces, owner, area, parent, target, pointer, child, texts, paint, point, move };
+}
+
+test('clipped property names and values expose full cached passive hover and keyboard feedback', t => {
+	const f = feedbackFixture(t);
+	assert.notEqual(f.child.element.displayLabel, f.child.element.label);
+	f.paint(); assert.equal(f.texts.includes(f.child.element.label), false);
+	f.move(); f.paint();
+	assert.ok(f.texts.includes(f.child.element.label)); assert.ok(f.texts.includes(f.child.element.value)); assert.ok(f.texts.includes(f.child.element.description));
+	assert.equal(f.surfaces.hitTest(f.point.viewportX, f.point.viewportY), f.owner, 'passive feedback never intercepts source/edit gestures');
+	const measurements = f.measurements();
+	for (let n = 0; n < 1000; n++) { f.layout(200); f.pointer.updateFeedback(f.state); }
+	assert.equal(f.measurements(), measurements, 'full-text feedback retains strings and measured wrapping across clean frames');
+	f.state.selectionIndex = 1; f.target.focus(); f.pointer.keyboardSelection(f.state); f.paint();
+	assert.ok(f.texts.includes(f.child.element.label));
+	f.parent.focus(); f.paint(); assert.equal(f.texts.includes(f.child.element.label), false);
+	f.target.focus(); f.paint(); assert.ok(f.texts.includes(f.child.element.label));
+	f.pointer.hideFeedback(); f.paint(); assert.equal(f.texts.includes(f.child.element.label), false, 'opening source edit or context UI retires feedback');
+});
+
+test('description-only clipping exposes complete retained annotation without changing list/source activation', t => {
+	const description = 'z'.repeat(150), f = feedbackFixture(t, { label: 'ID', value: '7', description });
+	f.state.selectionIndex = 1; f.layout(200);
+	assert.equal(f.child.element.displayLabel, 'ID'); assert.equal(f.child.element.displayValue, '7'); assert.equal(f.state.descriptionClipped, true);
+	f.target.focus(); f.pointer.keyboardSelection(f.state); f.paint();
+	assert.ok(f.texts.join('').includes(description), 'the description is reachable even though its name/value need no truncation');
+	assert.equal(f.pointer.handle(f.state, f.point, true, 100), PointerResult.Selection);
+	assert.equal(f.pointer.handle(f.state, f.point, true, 110), PointerResult.Activate, 'feedback does not replace double-click edit/source activation');
+});
+
+test('property full-text feedback retires on scroll, projection replacement, clear, modal and surface lifetime', t => {
+	const f = feedbackFixture(t);
+	f.move(); f.paint(); assert.ok(f.texts.includes(f.child.element.label));
+	scrollWorkbenchList(f.state, 1); f.pointer.updateFeedback(f.state); f.paint(); assert.equal(f.texts.includes(f.child.element.label), false);
+	scrollWorkbenchList(f.state, -1); f.pointer.updateFeedback(f.state); f.move(); f.paint(); assert.equal(f.texts.includes(f.child.element.label), false, 'stationary pointer cannot rebind after scroll');
+	f.move(1); f.paint(); assert.ok(f.texts.includes(f.child.element.label));
+	const old = f.child, replacement = { ...old, element: { ...old.element, label: 'other_music_transition' } };
+	f.group.children[0] = replacement; rebuildWorkbenchTreeRows(f.state, f.group); f.state.textDirty = true; f.layout(200); f.pointer.updateFeedback(f.state); f.paint();
+	assert.equal(f.texts.includes(old.element.label), false); assert.equal(f.texts.includes(replacement.element.label), false, 'new source projection cannot inherit an existing hover');
+	f.move(1); f.paint(); assert.ok(f.texts.includes(replacement.element.label));
+	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('modal'), getBounds: () => f.area, getClip: () => f.area, isVisible: () => true, draw() {} });
+	f.paint(); assert.equal(f.texts.includes(replacement.element.label), false); modal.dispose();
+	f.pointer.clear(); f.paint(); assert.equal(f.texts.includes(replacement.element.label), false);
+	const retained = f.pointer as unknown as { feedbackNode: unknown; tree: unknown; feedbackText: string };
+	assert.equal(retained.feedbackNode, undefined); assert.equal(retained.tree, undefined); assert.equal(retained.feedbackText, '', 'input retirement does not retain authored AST/source element bindings');
+	f.move(1); f.paint(); assert.ok(f.texts.includes(replacement.element.label));
+	f.owner.dispose(); f.paint(); assert.equal(f.texts.includes(replacement.element.label), false);
 });

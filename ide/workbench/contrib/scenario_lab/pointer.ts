@@ -79,13 +79,13 @@ export function handleScenarioLabPointerInput(
 	const testIndex = testPane.hoverIndex;
 	if (testIndex >= 0) {
 		const row = testPane.rows[testIndex];
+		selectScenarioLabTestRow(state, testIndex);
 		if (pointerHitsTwistie(snapshot, row)) {
 			toggleScenarioLabTestRow(state, testIndex);
 			state.lastPointerClickTimeMs = 0;
 			state.lastPointerClickRowId = null;
 			return ScenarioLabPointerResult.Handled;
 		}
-		selectScenarioLabTestRow(state, testIndex);
 		return recordPointerClick(state, `test:${row.id}`, currentTimeMs)
 			? ScenarioLabPointerResult.Activate
 			: ScenarioLabPointerResult.Handled;
@@ -94,13 +94,13 @@ export function handleScenarioLabPointerInput(
 	const resultIndex = resultPane.hoverIndex;
 	if (resultIndex >= 0) {
 		const row = resultPane.rows[resultIndex];
+		selectScenarioLabResultRow(state, resultIndex);
 		if (pointerHitsTwistie(snapshot, row)) {
 			toggleScenarioLabResultRow(state, resultIndex);
 			state.lastPointerClickTimeMs = 0;
 			state.lastPointerClickRowId = null;
 			return ScenarioLabPointerResult.Handled;
 		}
-		selectScenarioLabResultRow(state, resultIndex);
 		return recordPointerClick(state, `result:${row.id}`, currentTimeMs)
 			? ScenarioLabPointerResult.Activate
 			: ScenarioLabPointerResult.Handled;

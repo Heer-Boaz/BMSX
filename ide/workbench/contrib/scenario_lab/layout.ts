@@ -4,6 +4,7 @@ import { measureText, truncateTextToWidth } from '../../../editor/common/text/la
 import { editorViewState } from '../../../editor/ui/view/state';
 import { getWorkbenchEditorBounds, updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import {
 	clampWorkbenchListScroll,
 	layoutWorkbenchList,
@@ -35,6 +36,7 @@ export function createScenarioLabLayout(): ScenarioLabLayout {
 		right: 0,
 		bottom: 0,
 		toolbarBottom: 0,
+		caption: '',
 		rowHeight: 0,
 		font: null,
 	};
@@ -50,6 +52,7 @@ export function createScenarioLabPaneLayout(): ScenarioLabPaneLayout {
 		contentBottom: 0,
 		rowHeight: 0,
 		visibleRowCount: 0,
+		indentWidth: 0,
 	};
 }
 
@@ -59,7 +62,7 @@ function scenarioStateBadge(state: ScenarioResultState | null): string {
 	}
 	switch (state) {
 		case 'queued': return '[ ]';
-		case 'preparing': return '[...]';
+		case 'preparing': return '[…]';
 		case 'running': return '[RUN]';
 		case 'passed': return '[OK]';
 		case 'failed': return '[X]';
@@ -71,26 +74,24 @@ function scenarioStateBadge(state: ScenarioResultState | null): string {
 function writeScenarioTestText(state: ScenarioLabViewState): void {
 	const pane = state.testPane;
 	const layout = pane.layout;
-	const availableWidth = layout.contentRight - layout.contentLeft - PANE_PADDING_X * 2;
-	const indentWidth = editorViewState.charAdvance * TREE_INDENT_COLUMNS;
 	updateScenarioTestResultStates(state);
 	for (let index = 0; index < pane.rows.length; index += 1) {
 		const row = pane.rows[index];
 		let rawText: string;
 		if (row.kind === 'root') {
-			const marker = row.expanded ? '-' : '+';
-			rawText = `${marker} ${row.root.label} (${row.root.testCount})`;
+			rawText = `${row.root.label} (${row.root.testCount})`;
 		} else if (row.kind === 'module') {
-			rawText = `${row.expanded ? '-' : '+'} ${row.module.label} (${row.module.children.length})${row.module.diagnostic === null ? '' : ' / INVALID'}`;
+			rawText = `${row.module.label} (${row.module.children.length})${row.module.diagnostic === null ? '' : ' / INVALID'}`;
 		} else {
-			rawText = `  ${scenarioStateBadge(row.latestState)} ${row.test.label}`;
+			rawText = `${scenarioStateBadge(row.latestState)} ${row.test.label}`;
 		}
+		row.twistieLeft = layout.contentLeft + PANE_PADDING_X + row.depth * layout.indentWidth;
+		row.twistieRight = row.twistieLeft + layout.indentWidth;
+		row.textLeft = row.twistieRight + 2;
 		row.text = truncateTextToWidth(
 			uppercaseOutsideStrings(rawText),
-			availableWidth,
+			layout.contentRight - row.textLeft - PANE_PADDING_X,
 		);
-		row.twistieLeft = layout.contentLeft + PANE_PADDING_X + row.depth * indentWidth;
-		row.twistieRight = row.twistieLeft + indentWidth;
 	}
 }
 
@@ -98,11 +99,11 @@ function resultSummaryText(row: ScenarioLabResultRow): string {
 	const result = row.result;
 	if (result === null) {
 		const run = row.run;
-		return `${row.expanded ? '-' : '+'} ${scenarioStateBadge(run.state)} ${run.mode.toUpperCase()} ${run.sequence}  ${run.completedCount}/${run.items.length}  OK ${run.passedCount} X ${run.failedCount} C ${run.cancelledCount} S ${run.skippedCount}`;
+		return `${scenarioStateBadge(run.state)} ${run.mode.toUpperCase()} ${run.sequence}  ${run.completedCount}/${run.items.length}  OK ${run.passedCount} X ${run.failedCount} C ${run.cancelledCount} S ${run.skippedCount}`;
 	}
-	const startTick = result.startTick === null ? '...' : String(result.startTick);
-	const endTick = result.endTick === null ? '...' : String(result.endTick);
-	return `  ${row.expanded ? '-' : '+'} ${scenarioStateBadge(result.state)} ${result.test.label}  REV ${result.sourceRevision}  T${startTick}-${endTick}`;
+	const startTick = result.startTick === null ? '…' : String(result.startTick);
+	const endTick = result.endTick === null ? '…' : String(result.endTick);
+	return `${scenarioStateBadge(result.state)} ${result.test.label}  REV ${result.sourceRevision}  T${startTick}-${endTick}`;
 }
 
 function semanticPathTail(defId: string): string {
@@ -116,20 +117,20 @@ function resultDetailText(row: ScenarioLabResultRow): string {
 		case 'result':
 			return resultSummaryText(row);
 		case 'failure':
-			return `  ERROR  ${row.failure.message}`;
+			return `ERROR  ${row.failure.message}`;
 		case 'log': {
 			const log = row.log;
-			return `  LOG T${log.tick}  ${log.text}`;
+			return `LOG T${log.tick}  ${log.text}`;
 		}
 		case 'capture': {
 			const capture = row.capture;
 			const frame = capture.presentedFrame === null ? '-' : String(capture.presentedFrame);
-			return `  CAP T${capture.requestTick} F${frame}  ${capture.label}`;
+			return `CAP T${capture.requestTick} F${frame}  ${capture.label}`;
 		}
 		case 'fsm_transition': {
 			const transition = row.transition;
 			const outcome = transition.outcome === 'committed' ? 'OK' : 'NO';
-			return `  FSM [${outcome}] ${semanticPathTail(transition.fromDefId)} > ${semanticPathTail(transition.toDefId)}  @${transition.producerTimeMillisecondsWord}MS #${transition.producerSequence}`;
+			return `FSM [${outcome}] ${semanticPathTail(transition.fromDefId)} > ${semanticPathTail(transition.toDefId)}  @${transition.producerTimeMillisecondsWord}MS #${transition.producerSequence}`;
 		}
 		case 'actioneffect_fact': {
 			const fact = row.fact;
@@ -137,9 +138,9 @@ function resultDetailText(row: ScenarioLabResultRow): string {
 				const outcome = fact.outcome === 'accepted'
 					? 'OK'
 					: `NO:${fact.outcome}`;
-				return `  EFFECT TRIGGER [${outcome}] ${fact.effectId}  @${fact.producerTimeMillisecondsWord}MS #${fact.producerSequence}`;
+				return `EFFECT TRIGGER [${outcome}] ${fact.effectId}  @${fact.producerTimeMillisecondsWord}MS #${fact.producerSequence}`;
 			}
-			return `  EFFECT ${fact.kind} ${fact.effectId} x${fact.activeCount}  @${fact.producerTimeMillisecondsWord}MS #${fact.producerSequence}`;
+			return `EFFECT ${fact.kind} ${fact.effectId} x${fact.activeCount}  @${fact.producerTimeMillisecondsWord}MS #${fact.producerSequence}`;
 		}
 	}
 }
@@ -147,16 +148,15 @@ function resultDetailText(row: ScenarioLabResultRow): string {
 function writeScenarioResultText(state: ScenarioLabViewState): void {
 	const pane = state.resultPane;
 	const layout = pane.layout;
-	const availableWidth = layout.contentRight - layout.contentLeft - PANE_PADDING_X * 2;
-	const markerWidth = editorViewState.charAdvance * TREE_INDENT_COLUMNS;
 	for (let index = 0; index < pane.rows.length; index += 1) {
 		const row = pane.rows[index];
+		row.twistieLeft = layout.contentLeft + PANE_PADDING_X + row.depth * layout.indentWidth;
+		row.twistieRight = row.twistieLeft + layout.indentWidth;
+		row.textLeft = row.twistieRight + 2;
 		row.text = truncateTextToWidth(
 			uppercaseOutsideStrings(resultDetailText(row)),
-			availableWidth,
+			layout.contentRight - row.textLeft - PANE_PADDING_X,
 		);
-		row.twistieLeft = layout.contentLeft + PANE_PADDING_X;
-		row.twistieRight = row.twistieLeft + markerWidth;
 	}
 }
 
@@ -179,13 +179,14 @@ function layoutScenarioLabPane<Row>(
 ): void {
 	pane.layout.headerTop = headerTop;
 	pane.layout.headerBottom = headerBottom;
+	pane.layout.indentWidth = Math.max(editorViewState.charAdvance * TREE_INDENT_COLUMNS, WORKBENCH_ICON_SIZE + 2);
 	layoutWorkbenchList(
 		pane.layout,
 		left,
 		headerBottom + 1,
 		right,
 		bottom,
-		rowHeight,
+		Math.max(rowHeight, WORKBENCH_ICON_SIZE) + 2,
 	);
 }
 
@@ -232,8 +233,9 @@ export function prepareScenarioLabLayout(state: ScenarioLabViewState, bounds: Re
 			layout.top + 1,
 			layout.toolbarBottom - 1,
 			measureText,
-			editorViewState.font.renderFont(),
+			editorViewState.font.renderFont(), layout.left + measureText('SCENARIO LAB') + 12,
 		);
+		layout.caption = truncateTextToWidth('SCENARIO LAB', state.actionBar.bounds.left - layout.left - 8);
 		state.actionsDirty = false;
 	}
 	if (state.testPane.textDirty) {

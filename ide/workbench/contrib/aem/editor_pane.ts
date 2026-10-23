@@ -1,5 +1,7 @@
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -29,6 +31,9 @@ import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AemEditorController } from './controller';
 import type { AemEditorInput } from './editor_input';
+import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
+import { truncateMeasuredText } from '../../../common/text';
+import { WorkbenchTooltip } from '../../ui/tooltip';
 import { projectAemSource } from './source';
 import * as colors from '../../../common/constants';
 
@@ -36,9 +41,22 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 	private readonly pointer = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly edit: WorkbenchPropertyEdit<EditorTextEdit>;
-	public constructor(resources: ResourcePanelController, private readonly controller: AemEditorController, private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController) {
+	private readonly actionTooltip = new WorkbenchTooltip();
+	private captionFont: BFont | undefined;
+	private captionSource = '';
+	private captionWidth = 0;
+	private captionRevision = -1;
+	private caption = '';
+	public constructor(resources: ResourcePanelController, private readonly controller: AemEditorController, private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
+		this.pointer.attachFeedback(surfaces, paneSurface, getWorkArea, this.focusTarget);
+		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
+		this.actions.onDidOpenOverflow = lifetime => {
+			this.pointer.hideFeedback(); this.actionTooltip.hide();
+			lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
+		};
 		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.text);
 		this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
@@ -58,9 +76,10 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 		});
 	}
 	protected override activate(): void { super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
-	public override clearInput(): void { this.edit.close(); this.pointer.clear(); this.actions.clearInput(); super.clearInput(); }
-	public override dispose(): void { this.edit.dispose(); this.pointer.clear(); this.actions.dispose(); super.dispose(); }
+	public override clearInput(): void { this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); this.captionRevision = -1; super.clearInput(); }
+	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
 	private editProperty(): void {
+		this.pointer.hideFeedback();
 		const input = this.input, row = input.tree.rows[input.tree.selectionIndex], model = input.workingCopy, range = row.element.node.range!;
 		const lifetime = this.edit.open({ model, tree: input.tree, row,
 			parse: text => {
@@ -73,15 +92,27 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 	public override update(): void {
 		projectAemSource(this.input); updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);
 		const { layout, actionBar, tree } = this.input;
-		layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont());
+		const font = editorViewState.font.renderFont();
+		if (this.captionFont !== font || this.captionSource !== this.input.title) {
+			this.captionFont = font; this.captionSource = this.input.title; this.captionWidth = measureText(this.input.title); this.captionRevision = -1;
+		}
+		layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, font, layout.left + this.captionWidth + 12);
+		if (this.captionRevision !== actionBar.layoutRevision) {
+			this.captionRevision = actionBar.layoutRevision;
+			this.caption = truncateMeasuredText(this.input.title, actionBar.bounds.left - layout.left - 8, measureTextRange);
+		}
 		layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), measureTextRange, layout.left + 4,
 			layout.top + layout.rowHeight + 7, layout.right - 4, layout.bottom);
+		this.pointer.updateFeedback(tree);
 		this.edit.update();
 		this.actions.update();
+		const hint = this.actions.tooltipItem;
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, font, measureTextRange, measureText, this.getWorkArea());
+		else this.actionTooltip.hide();
 	}
 	public draw(): void {
 		const input = this.input;
-		drawEditorText(editorViewState.font, input.title, input.layout.left + 4, input.layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
+		drawEditorText(editorViewState.font, this.caption, input.layout.left + 4, input.layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
 		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont());
 		drawWorkbenchPropertyTree(input.tree);
 		if (this.edit.active) this.edit.draw();
@@ -89,7 +120,7 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
 	public handleKeyboard(input: KeyInputEvent): void {
 		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
-			consumeIdeKey(key, input); navigateWorkbenchTree(this.input.tree, command); return;
+			consumeIdeKey(key, input); navigateWorkbenchTree(this.input.tree, command); this.pointer.keyboardSelection(this.input.tree); return;
 		}
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); if (this.commands.isEnabled('aem.edit')) this.commands.execute('aem.edit'); }
 		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); if (this.commands.isEnabled('aem.remove')) this.commands.execute('aem.remove'); }
@@ -104,6 +135,7 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 		return true;
 	}
 	private openContextMenu(x: number, y: number, keyboard = false): void {
+		this.pointer.hideFeedback();
 		const input = this.input;
 		const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS['aem.context'], this.commands, { selectFirst: keyboard });
 		lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });

@@ -97,7 +97,7 @@ export class AssistantChatCommands {
 			if (input.lifetime.signal.aborted || getActiveTab() !== input) return;
 			const items = page.threads.map(thread => ({ label: thread.title, description: new Date(thread.updatedAt * 1000).toLocaleString(), detail: '',
 				id: thread.id, cursor: undefined as string | undefined }));
-			if (page.nextCursor !== null) items.push({ label: 'Older conversations...', description: 'Load the next page', detail: '', id: '', cursor: page.nextCursor });
+			if (page.nextCursor !== null) items.push({ label: 'Older conversations…', description: 'Load the next page', detail: '', id: '', cursor: page.nextCursor });
 			this.quickInput.pick('Codex history', 'Filter this page; /history text searches saved titles', () => new TextQuickPickProvider(items), item => {
 				if (item.cursor !== undefined) void this.history(input, item.cursor, search);
 				else void input.conversation.openConversation(item.id);

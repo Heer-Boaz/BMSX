@@ -120,7 +120,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			accept: async () => {
 				if (this.field.readOnly) return; // One outstanding submission per input session.
 				this.field.readOnly = true;
-				this.message = 'WORKING...';
+				this.message = 'WORKING…';
 				this.labelsDirty = true;
 				let result: T;
 				try { result = await submit(this.field.text); }

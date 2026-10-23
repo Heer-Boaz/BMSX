@@ -4,6 +4,8 @@ import { api } from '../../runtime/overlay_api';
 import {
 	WORKBENCH_ACTION_BAR_ITEM_PADDING_X,
 	type WorkbenchActionBarState,
+	type WorkbenchActionBarAction,
+	type WorkbenchActionBarItem,
 } from '../ui/action_bar';
 import { WORKBENCH_ICON_SIZE } from '../ui/icon';
 import { drawWorkbenchIcon } from './icon';
@@ -13,9 +15,11 @@ export function renderWorkbenchActionBar(
 	font: BFont,
 	foreground = constants.COLOR_HEADER_BUTTON_TEXT,
 ): void {
-	for (let index = 0; index < state.items.length; index += 1) {
-		const item = state.items[index];
-		if (!item.visible) continue;
+	if (state.overflow !== undefined) api.pushClipRect(state.bounds.left, state.bounds.top, state.bounds.right, state.bounds.bottom);
+	const count = state.items.length + (state.overflow?.button.visible ? 1 : 0);
+	for (let index = 0; index < count; index += 1) {
+		const item: WorkbenchActionBarItem<WorkbenchActionBarAction> = index === state.items.length ? state.overflow!.button : state.items[index];
+		if (!item.visible || item.overflowed) continue;
 		const enabled = item.enabled;
 		const hovered = state.hoveredCommand === item.command;
 		const pressed = state.pressedCommand === item.command || item.checked;
@@ -65,4 +69,5 @@ export function renderWorkbenchActionBar(
 		if (focused) api.fill_rect(item.bounds.left + 2, item.bounds.bottom - 2,
 			item.bounds.right - 2, item.bounds.bottom - 1, 0, textColor);
 	}
+	if (state.overflow !== undefined) api.popClipRect();
 }

@@ -1,6 +1,8 @@
 import * as constants from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
+import { drawWorkbenchIcon } from '../../render/icon';
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import {
 	renderWorkbenchActionBar,
@@ -11,7 +13,6 @@ import {
 	type ScenarioLabViewState,
 } from './view_model';
 
-const TITLE = 'SCENARIO LAB';
 const TESTS_HEADER = 'TESTS';
 const RESULTS_HEADER = 'RESULTS';
 const EMPTY_TESTS_TEXT = 'NO PACKAGED SCENARIO TESTS';
@@ -73,9 +74,9 @@ function drawToolbar(
 		constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND,
 	);
 	api.blit_text_inline_span_with_font(
-		TITLE,
+		layout.caption,
 		0,
-		TITLE.length,
+		layout.caption.length,
 		layout.left + TEXT_PADDING_X,
 		layout.top + TEXT_PADDING_Y,
 		0,
@@ -127,6 +128,7 @@ function drawPaneHeaders(state: ScenarioLabViewState, renderFont: BFont): void {
 function drawTestRows(state: ScenarioLabViewState, renderFont: BFont): void {
 	const pane = state.testPane;
 	const layout = pane.layout;
+	api.pushClipRect(layout.contentLeft, layout.contentTop, layout.contentRight, layout.contentBottom);
 	if (pane.rows.length === 0) {
 		api.blit_text_inline_span_with_font(
 			EMPTY_TESTS_TEXT,
@@ -138,6 +140,7 @@ function drawTestRows(state: ScenarioLabViewState, renderFont: BFont): void {
 			constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM,
 			renderFont,
 		);
+		api.popClipRect();
 		return;
 	}
 	const firstRow = pane.scroll | 0;
@@ -153,26 +156,29 @@ function drawTestRows(state: ScenarioLabViewState, renderFont: BFont): void {
 		if (selected) {
 			api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, constants.SELECTION_OVERLAY);
 		}
+		const color = selected ? constants.COLOR_SELECTION_TEXT : row.kind === 'root'
+			? constants.COLOR_RESOURCE_VIEWER_TEXT : stateTextColor(row.latestState);
+		if (row.expandable) drawWorkbenchIcon(row.expanded ? 'chevronDown' : 'chevronRight',
+			row.twistieLeft + ((row.twistieRight - row.twistieLeft - WORKBENCH_ICON_SIZE) >> 1),
+			y + ((layout.rowHeight - WORKBENCH_ICON_SIZE) >> 1), color);
 		api.blit_text_inline_span_with_font(
 			row.text,
 			0,
 			row.text.length,
-			layout.contentLeft + TEXT_PADDING_X,
-			y,
+			row.textLeft,
+			y + ((layout.rowHeight - renderFont.lineHeight) >> 1),
 			0,
-			selected
-				? constants.COLOR_SELECTION_TEXT
-				: (row.kind === 'root'
-					? constants.COLOR_RESOURCE_VIEWER_TEXT
-					: stateTextColor(row.latestState)),
+			color,
 			renderFont,
 		);
 	}
+	api.popClipRect();
 }
 
 function drawResultRows(state: ScenarioLabViewState, renderFont: BFont): void {
 	const pane = state.resultPane;
 	const layout = pane.layout;
+	api.pushClipRect(layout.contentLeft, layout.contentTop, layout.contentRight, layout.contentBottom);
 	if (pane.rows.length === 0) {
 		api.blit_text_inline_span_with_font(
 			EMPTY_RESULTS_TEXT,
@@ -184,6 +190,7 @@ function drawResultRows(state: ScenarioLabViewState, renderFont: BFont): void {
 			constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM,
 			renderFont,
 		);
+		api.popClipRect();
 		return;
 	}
 	const firstRow = pane.scroll | 0;
@@ -199,19 +206,22 @@ function drawResultRows(state: ScenarioLabViewState, renderFont: BFont): void {
 		if (selected) {
 			api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, constants.SELECTION_OVERLAY);
 		}
+		const color = selected ? constants.COLOR_SELECTION_TEXT : resultTextColor(row);
+		if (row.expandable) drawWorkbenchIcon(row.expanded ? 'chevronDown' : 'chevronRight',
+			row.twistieLeft + ((row.twistieRight - row.twistieLeft - WORKBENCH_ICON_SIZE) >> 1),
+			y + ((layout.rowHeight - WORKBENCH_ICON_SIZE) >> 1), color);
 		api.blit_text_inline_span_with_font(
 			row.text,
 			0,
 			row.text.length,
-			layout.contentLeft + TEXT_PADDING_X,
-			y,
+			row.textLeft,
+			y + ((layout.rowHeight - renderFont.lineHeight) >> 1),
 			0,
-			selected
-				? constants.COLOR_SELECTION_TEXT
-				: resultTextColor(row),
+			color,
 			renderFont,
 		);
 	}
+	api.popClipRect();
 }
 
 /** Draws the retained explorer/result projection using the active IDE font. */

@@ -63,7 +63,7 @@ test('named workbench menu materializes one retained generic action bar', () => 
 	const expected = WORKBENCH_MENUS['scenarioLab.title'].map(item => item.command);
 	const actionBar = createWorkbenchActionBar('scenarioLab.title');
 	const firstBounds = actionBar.items[0].bounds;
-	layoutWorkbenchActionBar(actionBar, 200, 10, 20, text => text.length * 4, null);
+	layoutWorkbenchActionBar(actionBar, 200, 10, 20, text => text.length * 4, null, 0);
 
 	assert.deepEqual(actionBar.items.map(item => item.command), expected);
 	assert.equal(actionBar.items[0].bounds, firstBounds);

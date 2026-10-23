@@ -71,7 +71,7 @@ export class AssistantAttachmentStrip {
 			api.blit_rect(x, top, right, bottom, 0, selected ? colors.COLOR_STATUS_SUCCESS : colors.COLOR_QUICK_OPEN_OUTLINE);
 			const image = images[index], preview = image.state === 'ready' ? this.previews.use(image.url!, image.preview) : undefined;
 			if (preview?.bitmap) drawImagePreview(preview.bitmap, x + 3, top + 3, right - 3, bottom - this.rowHeight - 3);
-			else api.blit_text_inline_with_font(image.state === 'error' || preview?.error ? 'Unreadable' : 'Loading...', x + 4, top + this.rowHeight * 2, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
+			else api.blit_text_inline_with_font(image.state === 'error' || preview?.error ? 'Unreadable' : 'Loading…', x + 4, top + this.rowHeight * 2, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
 			api.blit_text_inline_with_font(this.labels[index], x + 4, bottom - this.rowHeight, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 			// Contextual remove affordance stays away from the image's preview target.
 			api.fill_rect(right - this.rowHeight - 2, bottom - this.rowHeight - 1, right - 1, bottom - 1, 0, colors.COLOR_STATUS_BACKGROUND);

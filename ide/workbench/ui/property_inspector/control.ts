@@ -199,7 +199,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			write_rect_bounds(this.bounds, bounds.left, bounds.top, bounds.right, bounds.bottom);
 			const headerBottom = this.chrome === 'header' ? bounds.top + font.lineHeight + 8 : bounds.top;
 			if (this.chrome === 'header') {
-				layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, headerBottom - 2, measureText, font);
+				layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, headerBottom - 2, measureText, font, bounds.left + 4);
 				const firstAction = this.actionBar.items.find(item => item.visible);
 				this.title = truncateMeasuredText(this.input!.title, (firstAction === undefined ? bounds.right : firstAction.bounds.left) - bounds.left - 8, measure);
 			}

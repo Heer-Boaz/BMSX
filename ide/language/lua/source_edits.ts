@@ -17,6 +17,7 @@ import type { LuaTokenSequence } from '../../../toolchain/ts/lua/syntax/token_se
 import type { EditorTextEdit } from '../../editor/model/text_model';
 import type { TextBuffer } from '../../editor/text/text_buffer';
 import type { TrackedTextRange } from '../../editor/text/text_change';
+import { ELLIPSIS } from '../../common/text';
 
 /** Lua ranges are one-based and inclusive; text markers are half-open UTF-16 offsets. */
 export function luaSourceRangeToTextRange(buffer: TextBuffer, range: LuaSourceRange): TrackedTextRange {
@@ -84,7 +85,7 @@ export function createLuaStringValueEdit(buffer: TextBuffer, locations: LuaSourc
 export function readLuaSourceLinePreview(buffer: TextBuffer, range: LuaSourceRange): string {
 	if (range.start.line === range.end.line) return readLuaSourceRange(buffer, range);
 	const row = range.start.line - 1;
-	return buffer.getTextRange(buffer.offsetAt(row, range.start.column - 1), buffer.getLineEndOffset(row)) + '...';
+	return buffer.getTextRange(buffer.offsetAt(row, range.start.column - 1), buffer.getLineEndOffset(row)) + ELLIPSIS;
 }
 
 /** Expression display, not printed replacement source. Function bodies stay in full inspection. */

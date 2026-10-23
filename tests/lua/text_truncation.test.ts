@@ -10,7 +10,7 @@ test('shared labels and wrapped previews use one measured ellipsis glyph', () =>
 	assert.equal(truncateMeasuredText('abcdef', 1, measure), '…');
 	assert.equal(appendMeasuredTruncationMarker('abcdef', 4, measure), 'abc…');
 	const lines: string[] = [];
-	writeWrappedMeasuredText(lines, 'one two three', 4, 4, 1, measure);
+	assert.equal(writeWrappedMeasuredText(lines, 'one two three', 4, 4, 1, measure), true);
 	assert.deepEqual(lines, ['one…']);
 });
 
@@ -34,4 +34,14 @@ test('middle truncation does not split surrogate pairs at either retained bounda
 		assert.equal(truncated.isWellFormed(), true);
 		assert.ok(measure(truncated, 0, truncated.length) <= width);
 	}
+});
+
+test('wrapped text reports clipping from actual consumed ranges, not the last glyph', () => {
+	const lines: string[] = [];
+	assert.equal(writeWrappedMeasuredText(lines, 'authored…', 20, 20, 1, measure), false);
+	assert.deepEqual(lines, ['authored…']);
+	assert.equal(writeWrappedMeasuredText(lines, '', 20, 20, 1, measure), false);
+	assert.equal(writeWrappedMeasuredText(lines, 'unpainted', 20, 20, 0, measure), true);
+	assert.equal(writeWrappedMeasuredText(lines, 'one two', 4, 4, 2, measure), false);
+	assert.deepEqual(lines, ['one', 'two']);
 });

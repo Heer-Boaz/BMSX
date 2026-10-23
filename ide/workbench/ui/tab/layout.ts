@@ -102,7 +102,7 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 	for (const item of actions.items) item.visible = overflow;
 	let tabsRight = viewportWidth;
 	if (overflow) {
-		layoutWorkbenchActionBar(actions, viewportWidth - 1, barTop + 1, rowBottom - 1, context.measureText, font);
+		layoutWorkbenchActionBar(actions, viewportWidth - 1, barTop + 1, rowBottom - 1, context.measureText, font, 0);
 		tabsRight = actions.items[0].bounds.left - constants.TAB_BUTTON_SPACING;
 	}
 	// Overflow actions own real strip space. Truncate against that final viewport,

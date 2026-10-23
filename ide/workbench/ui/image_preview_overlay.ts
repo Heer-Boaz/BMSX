@@ -69,7 +69,7 @@ export class ImagePreviewOverlay {
 		api.blit_text_inline_with_font('Image preview', left + 8, top + 8, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		const preview = this.previews.use(this.url!);
 		if (preview.bitmap) drawImagePreview(preview.bitmap, left + 8, top + rowHeight + 12, right - 8, bottom - rowHeight - 12);
-		else api.blit_text_inline_with_font(truncateMeasuredText(preview.error ?? 'Loading image...', right - left - 20, measureTextRange), left + 10, top + rowHeight * 3, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
+		else api.blit_text_inline_with_font(truncateMeasuredText(preview.error ?? 'Loading image…', right - left - 20, measureTextRange), left + 10, top + rowHeight * 3, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
 		api.blit_text_inline_with_font('Click or Esc to close', left + 8, bottom - rowHeight - 6, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
 	}
 }

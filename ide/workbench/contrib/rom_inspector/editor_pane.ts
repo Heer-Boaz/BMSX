@@ -214,7 +214,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		for (const item of input.contentActions.items) if (item.command === 'romInspector.collision') item.checked = input.showCollision;
 		const row = layout.rowHeight, left = layout.left, right = layout.right;
 		if (layoutChanged || changed || contentChanged) {
-			layoutWorkbenchActionBar(input.actions, right - 4, layout.top + 2, layout.top + row + 6, measureText, layout.font!.renderFont());
+			layoutWorkbenchActionBar(input.actions, right - 4, layout.top + 2, layout.top + row + 6, measureText, layout.font!.renderFont(), left + 4);
 			write_rect_bounds(input.filterBounds, left + measureText('Filter') + 10, layout.top + row + 10, right - 4, layout.top + row * 2 + 16);
 			write_rect_bounds(input.mapBounds, left + 4, input.filterBounds.bottom + 4, right - 4, input.filterBounds.bottom + 10);
 			const top = input.mapBounds.bottom + 5, split = left + Math.trunc((right - left) * 0.42);
@@ -232,7 +232,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 			this.list.lineStep = row * 2 + 4; this.bytes.lineStep = row;
 		}
 		if (layoutChanged || contentActionsChanged) layoutWorkbenchActionBar(input.contentActions, right - 4,
-			input.detailsBounds.bottom + 2, input.detailsBounds.bottom + row + 6, measureText, layout.font!.renderFont());
+			input.detailsBounds.bottom + 2, input.detailsBounds.bottom + row + 6, measureText, layout.font!.renderFont(), left + 4);
 		this.filterViewport.update(this.filter, input.filterBounds.right - input.filterBounds.left - 6,
 			editorViewState.inlineFieldMetricsRef, layout.font!.renderFont());
 		this.inspector.layout(layout.font!.renderFont(), measureTextRange, measureText, input.detailsBounds);

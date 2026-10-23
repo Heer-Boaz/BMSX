@@ -1,5 +1,7 @@
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -45,8 +47,10 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 	private headerFont: typeof editorViewState.font | undefined;
 	public constructor(resources: ResourcePanelController, private readonly controller: LuaProgramController,
 		private readonly commands: IdeCommandController, private readonly tester: ActionStringTester,
-		private readonly frameNavigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController) {
+		private readonly frameNavigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
+		this.pointer.attachFeedback(surfaces, paneSurface, getWorkArea, this.focusTarget);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text);
 		this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
@@ -106,9 +110,10 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 	public override get runtimeControlContext() { return this.input.liveVisible ? this.focusTarget : undefined; }
 	protected override activate(): void { super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
 	public override clearInput(): void { this.input.running = false; this.input.invalidateProjection(); this.edit.close(); this.pointer.clear(); this.actions.clearInput(); super.clearInput(); }
-	public override dispose(): void { this.edit.dispose(); this.pointer.clear(); this.actions.dispose(); super.dispose(); }
+	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actions.dispose(); super.dispose(); }
 	private selected() { return this.input.liveVisible ? undefined : this.input.tree.rows[this.input.tree.selectionIndex]?.element; }
 	private editProperty(): void {
+		this.pointer.hideFeedback();
 		const input = this.input, row = input.tree.rows[input.tree.selectionIndex], property = row.element;
 		const model = input.sourceModels.get(property.file.file)!, locations = property.file.chunk.locations, field = property.field!;
 		const valueRange = locations.range(field.value.span), fieldRange = locations.range(field.span);
@@ -128,7 +133,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 				: item.command === 'luaProgram.live' ? !input.liveVisible
 				: item.command === 'luaProgram.add' || item.command === 'luaProgram.edit' ? !input.liveVisible : true;
 		}
-		layoutWorkbenchActionBar(input.actionBar, input.layout.right - 4, input.layout.top, input.layout.top + input.layout.rowHeight + 4, measureText, editorViewState.font.renderFont());
+		layoutWorkbenchActionBar(input.actionBar, input.layout.right - 4, input.layout.top, input.layout.top + input.layout.rowHeight + 4, measureText, editorViewState.font.renderFont(), input.layout.left + 4);
 		const header = input.liveVisible ? input.instanceLabel : input.title;
 		const headerWidth = input.actionBar.items.find(item => item.visible)!.bounds.left - input.layout.left - 12;
 		if (this.headerSource !== header || this.headerLive !== input.liveVisible || this.headerWidth !== headerWidth || this.headerFont !== editorViewState.font) {
@@ -137,6 +142,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		}
 		layoutWorkbenchPropertyTree(input.liveVisible ? input.live : input.tree, editorViewState.font.renderFont(), measureTextRange,
 			input.layout.left + 4, input.layout.top + input.layout.rowHeight + 7, input.layout.right - 4, input.layout.bottom);
+		this.pointer.updateFeedback(input.liveVisible ? input.live : input.tree);
 		this.edit.update();
 		this.actions.update();
 	}
@@ -153,6 +159,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			if (navigateWorkbenchTree(tree, command) === WorkbenchTreeNavigationResult.Collapse && this.input.liveVisible) this.controller.resolveRuntime(this.input);
+			this.pointer.keyboardSelection(tree);
 			return;
 		}
 		if (isKeyJustPressed('Enter', input)) {
@@ -180,6 +187,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		if (row !== undefined && setWorkbenchTreeCollapsed(tree, tree.selectionIndex, !row.collapsed)) this.controller.resolveRuntime(this.input);
 	}
 	private openContextMenu(x: number, y: number, keyboard = false): void {
+		this.pointer.hideFeedback();
 		const input = this.input;
 		input.running = false;
 		const items = WORKBENCH_MENUS['luaProgram.context'].filter(item => item.type !== 'command' || this.commands.isEnabled(item.command));

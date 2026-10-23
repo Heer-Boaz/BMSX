@@ -35,8 +35,8 @@ function second() events:emit('second', nil, {}) end
 function unmount() progression.unmount(1) end
 `;
 
-function fixture(optLevel: 0 | 3) {
-	const { images } = createCartlibProgramHarness(ENTRY, { optLevel, modules: ['cartlib/progression', 'cartlib/event_matcher', 'cartlib/event_matcher_syntax']
+function fixture(optLevel: 0 | 3, source = ENTRY) {
+	const { images } = createCartlibProgramHarness(source, { optLevel, modules: ['cartlib/progression', 'cartlib/event_matcher', 'cartlib/event_matcher_syntax']
 		.map(path => ({path, source: readFileSync(`${path}.lua`, 'utf8')})) });
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC },
 		{sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() {return false;}, applyInputControllerVibrationEffect() {}});
@@ -47,21 +47,23 @@ function fixture(optLevel: 0 | 3) {
 	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
 	runtime.machine.cpu.runUntilDepth(0, 1_000_000);
 	const guest = new SuspendedGuestSession(runtime);
-	const model = new EditorTextModel({ domain: 0, path: 'entry.lua', source: {type: 'lua', resid: 'entry'} }, 'lua', ENTRY);
-	const input = new LuaProgramInput(model, 'progression', {start: 0, end: ENTRY.length}, guest);
+	const model = new EditorTextModel({ domain: 0, path: 'entry.lua', source: {type: 'lua', resid: 'entry'} }, 'lua', source);
+	const input = new LuaProgramInput(model, 'progression', {start: 0, end: source.length}, guest);
 	input.liveVisible = true;
 	const choices = readProgramInstances(sources, guest, 0, 'progression');
 	input.instance = choices.find(item => item.identity.tag === ValueTag.Number)!.identity;
 	const projection = new LuaProgramRuntimeProjection(sources, guest);
 	projection.refresh(input);
 	const invoke = (name: string) => { guest.invalidate(); runCompletionClosure(runtime.machine.cpu, guest.global(name) as Closure, []); projection.refresh(input); };
-	return {runtime, guest, input, projection, choices, invoke};
+	return {runtime, sources, guest, input, projection, choices, invoke};
 }
 
 for (const optLevel of [0, 3] as const) {
 test(`progression projection reads real contexts and once-only receipts without guest execution (O${optLevel})`, t => {
 	const f = fixture(optLevel); t.after(() => f.input.dispose());
 	assert.deepEqual(f.choices.map(item => item.identity.tag).sort(), [ValueTag.Number, ValueTag.String]);
+	assert.deepEqual(f.choices.map(item => item.description).sort(), ['Mounted number context', 'Mounted string context']);
+	assert.deepEqual(f.input.live.roots.map(row => row.element.label), ['heard', '1 / first', '1 / second', 'repeat / second']);
 	const roots = f.input.live.roots.slice(), revision = f.input.stateRevision;
 	const values = roots.map(row => row.element.value);
 	let traversals = 0;
@@ -81,6 +83,36 @@ test(`progression projection reads real contexts and once-only receipts without 
 	assert.equal(f.input.stateRevision, revision);
 	assert.equal(roots.filter((row, i) => row.element.value !== previous[i]).length, 1, 'the string rule ID has an independent receipt');
 	assert.equal(f.input.live.textDirty, true);
+});
+
+test(`mounted table contexts use central typed identity summaries without reading their contents (O${optLevel})`, t => {
+	const f = fixture(optLevel, ENTRY + `
+context_a = { name = 'not a display identity', nested = {} }
+context_b = { name = 'not a display identity', nested = {} }
+progression.mount(context_a, program)
+progression.mount(context_b, program)
+`);
+	t.after(() => f.input.dispose());
+	const choices = f.choices.filter(item => item.identity.tag === ValueTag.Table);
+	assert.equal(choices.length, 2);
+	assert.deepEqual(choices.map(item => item.label), choices.map(item => `Table #${item.identity.scalar}`));
+	assert.notEqual(choices[0].label, choices[1].label);
+	assert.ok(choices.every(item => item.description === 'Mounted table context' && item.detail === 'Revision 0'));
+	const visit = f.guest.visitTableEntries.bind(f.guest);
+	t.mock.method(f.guest, 'visitTableEntries', (...args: Parameters<typeof visit>) => {
+		assert.ok(choices.every(choice => !f.guest.matchesIdentity(args[0], choice.identity)), 'context labels enumerated object contents');
+		return visit(...args);
+	});
+	assert.deepEqual(readProgramInstances(f.sources, f.guest, 0, 'progression').map(item => item.label), f.choices.map(item => item.label));
+});
+
+test(`rule identities lead shared-event labels while complete event identity remains available (O${optLevel})`, t => {
+	const f = fixture(optLevel, ENTRY.replace("{id = 1, on = 'first'", "{id = 'dash', on = 'shared.long.event'")
+		.replace("{id = '1', on = 'second'", "{id = 'twin', on = 'shared.long.event'")
+		.replace("{id = 'repeat', on = 'second'", "{id = 'complete', on = 'shared.long.event'"));
+	t.after(() => f.input.dispose());
+	assert.deepEqual(f.input.live.roots.slice(1).map(row => row.element.label),
+		['dash / shared.long.event', 'twin / shared.long.event', 'complete / shared.long.event']);
 });
 
 test(`history restore reacquires the typed context bookmark and restored state (O${optLevel})`, t => {

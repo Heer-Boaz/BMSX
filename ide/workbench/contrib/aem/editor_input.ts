@@ -20,7 +20,7 @@ export type AemProperty = WorkbenchPropertyElement & {
 
 export class AemEditorInput extends WorkingCopyEditorInput<`aem:${string}`, 'aem_editor'> {
 	public readonly tree = createWorkbenchPropertyTree<AemProperty>();
-	public readonly actionBar = createWorkbenchActionBar('aem.title');
+	public readonly actionBar = createWorkbenchActionBar('aem.title', true);
 	public version = -1;
 	public document: Document | undefined;
 	public source = '';

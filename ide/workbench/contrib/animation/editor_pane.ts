@@ -13,6 +13,8 @@ import { executeTextHistoryCommand } from '../../../editor/editing/history_comma
 import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
@@ -53,8 +55,10 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	private keyRevision = -1;
 	private left = 0; private top = 0; private right = 0; private bottom = 0;
 	public constructor(resources: ResourcePanelController, private readonly controller: AnimationEditorController,
-		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController) {
+		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
+		this.propertyPointer.attachFeedback(surfaces, paneSurface, getWorkArea, this.detailsFocus);
 		this.keys = new AnimationKeyControl(this.focusTarget, controller, controller.authoring);
 		this.lanes = new AnimationLaneControl(this.focusTarget, controller);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
@@ -85,6 +89,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		}, run: () => this.editProperty() });
 		this.focusTarget.registerCommand('animation.more', { isEnabled: () => true, run: () => {
 			const bounds = this.input.actionBar.items.find(item => item.command === 'animation.more')!.bounds;
+			this.propertyPointer.hideFeedback();
 			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['animation.context'], commands, { selectFirst: true });
 		} });
 		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
@@ -108,9 +113,10 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	}
 	public override dispose(): void {
 		this.unbindProjection?.(); this.keys.dispose(); this.lanes.dispose(); this.image.dispose(); this.actions.dispose(); this.edit.dispose(); this.unbindDetailsKeyboard();
-		this.propertyPointer.clear(); super.dispose();
+		this.propertyPointer.dispose(); super.dispose();
 	}
 	private editProperty(): void {
+		this.propertyPointer.hideFeedback();
 		const row = this.input.details.rows[this.input.details.selectionIndex], property = row.element;
 		const model = this.controller.modelFor(this.input, property.source.file), locations = property.source.file.chunk.locations;
 		const valueRange = locations.range(property.field.value.span), range = luaSourceRangeToTextRange(model.buffer, valueRange);
@@ -151,6 +157,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		const details = this.input.details.layout;
 		layoutWorkbenchPropertyTree(this.input.details, editorViewState.font.renderFont(), measureTextRange,
 			details.contentLeft, details.contentTop, details.contentRight, details.bottom);
+		this.propertyPointer.updateFeedback(this.input.details);
 		this.edit.update(); this.actions.update();
 	}
 	public draw(): void { drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus); if (this.edit.active) this.edit.draw(); }
@@ -169,7 +176,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	}
 	private handleDetailsKeyboard(player: KeyInputEvent): void {
 		for (const [key, command] of DETAILS_NAVIGATION) {
-			if (isKeyDown(key, player)) { consumeIdeKey(key, player); navigateWorkbenchTree(this.input.details, command); this.controller.selectProperty(this.input, this.input.details.selectionIndex); return; }
+			if (isKeyDown(key, player)) { consumeIdeKey(key, player); navigateWorkbenchTree(this.input.details, command); this.controller.selectProperty(this.input, this.input.details.selectionIndex); this.propertyPointer.keyboardSelection(this.input.details); return; }
 		}
 		if (isKeyJustPressed('Enter', player)) { consumeIdeKey('Enter', player); this.commands.execute('animation.edit'); }
 	}

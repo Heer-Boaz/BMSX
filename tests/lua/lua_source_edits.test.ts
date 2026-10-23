@@ -33,6 +33,8 @@ test('expression previews keep references verbatim and summarize only inline fun
 		['function(...) return ... end', 'function(...)'],
 		['callbacks["Mixed  Case"]', 'callbacks["Mixed  Case"]'],
 		['cadence() * ticks', 'cadence() * ticks'],
+		['{\n value = 1,\n}', '{…'],
+		['"..."', '"..."'],
 	]) {
 		const source = `local values<const> = { value = ${expression} }`;
 		const model = new EditorTextModel(resource, 'lua', source);

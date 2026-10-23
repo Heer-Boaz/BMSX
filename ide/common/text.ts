@@ -213,6 +213,7 @@ export function appendMeasuredTruncationMarker(text: string, maxWidth: number, m
 	return text.slice(0, findMeasuredPrefixEnd(text, bodyWidth, measureRange)) + marker;
 }
 
+/** Writes the retained lines and reports whether the line budget truncated the input. */
 export function writeWrappedMeasuredText(
 	lines: string[],
 	text: string,
@@ -221,7 +222,7 @@ export function writeWrappedMeasuredText(
 	maxLines: number,
 	measureRange: TextRangeMeasure,
 	truncationMarker = ELLIPSIS,
-): void {
+): boolean {
 	lines.length = 0;
 	let lineStart = skipLeadingHorizontalWhitespace(text, 0, text.length);
 	let lineWidth = firstLineWidth;
@@ -234,13 +235,14 @@ export function writeWrappedMeasuredText(
 	}
 	if (lines.length === 0) {
 		lines.push('');
-		return;
+		return lineStart < text.length;
 	}
 	if (lineStart < text.length) {
 		const lastIndex = lines.length - 1;
 		const lastLineWidth = lines.length === 1 ? firstLineWidth : subsequentWidth;
 		lines[lastIndex] = appendMeasuredTruncationMarker(lines[lastIndex], lastLineWidth, measureRange, truncationMarker);
 	}
+	return lineStart < text.length;
 }
 
 /** Word-wrap ranges let styled text retain its source spans without searching substrings. */

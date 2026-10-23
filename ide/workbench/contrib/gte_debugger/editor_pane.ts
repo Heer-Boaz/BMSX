@@ -207,7 +207,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		write_rect_bounds(input.visualBounds, split + 4, top, layout.right - 4, layout.bottom);
 		this.scroll.lineStep = layout.rowHeight;
 		if (input.following && input.projection.rows.length > 0) list.scrollbar.reveal(list.contentHeight - layout.rowHeight, list.contentHeight, 0);
-		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, top - 4, measureText, layout.font!.renderFont());
+		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, top - 4, measureText, layout.font!.renderFont(), layout.left + 4);
 		input.actions.items[0].checked = input.following; this.actions.update();
 		this.synchronizeSelection();
 		const selectedChanged = this.diagramDirty;

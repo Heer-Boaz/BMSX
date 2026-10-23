@@ -196,7 +196,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 				: model.entries[input.selectedEntry]?.proposal !== undefined;
 			if (item.visible !== visible) { item.visible = visible; actionsChanged = true; }
 		}
-		if (actionsChanged) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, footerTop - row - 4, footerTop, measureText, editorViewState.font.renderFont());
+		if (actionsChanged) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, footerTop - row - 4, footerTop, measureText, editorViewState.font.renderFont(), layout.left + 4);
 		this.actions.update(); this.references.update(input);
 	}
 	public draw(): void {
@@ -222,7 +222,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		const bounds = input.composerBounds;
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_QUICK_OPEN_OUTLINE);
 		if (input.draft.text.length === 0) {
-			const placeholder = input.conversation.state === 'running' ? 'Queue a message...' : 'Message your assistant...';
+			const placeholder = input.conversation.state === 'running' ? 'Queue a message…' : 'Message your assistant…';
 			api.pushClipRect(bounds.left + 3, bounds.top + 1, bounds.right - 3, bounds.bottom - 1);
 			api.blit_text_inline_with_font(placeholder, bounds.left + 3, bounds.top + 2, 0, colors.COLOR_QUICK_OPEN_PLACEHOLDER, font);
 			api.popClipRect();

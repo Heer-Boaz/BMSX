@@ -37,6 +37,7 @@ type ScenarioLabTestRowBase = {
 	readonly depth: number;
 	latestState: ScenarioResultState | null;
 	text: string;
+	textLeft: number;
 	twistieLeft: number;
 	twistieRight: number;
 };
@@ -61,7 +62,9 @@ export type ScenarioLabTestRow = ScenarioLabTestRowBase & ({
 
 type ScenarioLabResultRowBase = {
 	readonly id: string;
+	readonly depth: number;
 	text: string;
+	textLeft: number;
 	twistieLeft: number;
 	twistieRight: number;
 };
@@ -123,6 +126,7 @@ export type ScenarioLabMessageRow = Extract<ScenarioLabResultRow, { kind: 'log' 
 export type ScenarioLabInspectableRow = Extract<ScenarioLabResultRow, { kind: 'result' | 'log' | 'failure' }>;
 
 export type ScenarioLabPaneLayout = WorkbenchListLayout & {
+	indentWidth: number;
 	headerTop: number;
 	headerBottom: number;
 };
@@ -151,6 +155,7 @@ export type ScenarioLabLayout = {
 	right: number;
 	bottom: number;
 	toolbarBottom: number;
+	caption: string;
 	rowHeight: number;
 	font: EditorFont | null;
 };

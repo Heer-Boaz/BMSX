@@ -179,7 +179,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 			else if (input.projection.removed > 0) viewport.scrollbar.setScroll(scrollTop - input.projection.removed * row);
 		}
 		this.scroll.lineStep = row;
-		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, layout.top + row + 6, measureText, layout.font!.renderFont());
+		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, layout.top + row + 6, measureText, layout.font!.renderFont(), layout.left + 4);
 		this.actions.update();
 		const historyStatus = history.status;
 		const selected = input.projection.rows[input.selected], selectedSequence = selected === undefined ? -1 : selected.sequence;

@@ -1,9 +1,10 @@
-import { valueTag, ValueTag } from '../../../../machine/ts/machine/cpu/value';
+import { valueTag, ValueTag, valueTypeNameForLuaTag } from '../../../../machine/ts/machine/cpu/value';
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
+import { SuspendedValuePresentation } from '../../../runtime/value_presentation';
 import { visitRuntimeComponents } from '../behavior_lens/runtime_components';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ui/tree_view';
@@ -29,10 +30,14 @@ export function readProgramInstances(sources: RuntimeSourceState, guest: Suspend
 	const items: ProgramInstanceChoice[] = [];
 	if (kind === 'progression') {
 		const runtimes = progressionRuntimes(sources, guest, domain);
-		if (runtimes !== undefined) guest.visitTableEntries(runtimes, (ctx, rt) => {
-			items.push({ label: guest.formatValue(ctx), description: 'MOUNTED CONTEXT',
-				detail: `Revision ${guest.formatValue(guest.readStringMember(guest.readStringMember(rt, 'state'), 'revision'))}`, identity: guest.identity(ctx) });
-		});
+		if (runtimes !== undefined) {
+			const context = new SuspendedValuePresentation(guest, 'summary');
+			guest.visitTableEntries(runtimes, (ctx, rt) => {
+				const identity = guest.identity(ctx);
+				items.push({ label: context.update(ctx), description: `Mounted ${valueTypeNameForLuaTag(identity.tag)} context`,
+					detail: `Revision ${guest.formatValue(guest.readStringMember(guest.readStringMember(rt, 'state'), 'revision'))}`, identity });
+			});
+		}
 	} else visitRuntimeComponents(sources, guest, domain, 'cartlib/input/actioneffect/actioneffect_component', component => {
 		items.push({ label: guest.formatValue(guest.readStringMember(component, 'id')), description: 'INPUT COMPONENT',
 			detail: `Owner ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, identity: guest.identity(component) });
@@ -100,7 +105,7 @@ export class LuaProgramRuntimeProjection {
 			guest.visitTableEntries(guest.readStringMember(program, 'rules_by_event'), (event, rules) => {
 				guest.visitTableEntries(rules, (_index, rule) => {
 					const id = guest.readStringMember(rule, 'id');
-					const element = this.append(input, `${guest.formatValue(event)} / ${guest.formatValue(id)}`, '',
+					const element = this.append(input, `${guest.formatValue(id)} / ${guest.formatValue(event)}`, '',
 						guest.previewValue(rule, 3, 32));
 					if (guest.isTruthy(guest.readStringMember(rule, 'apply_once'))) {
 						const identity = guest.identity(id);

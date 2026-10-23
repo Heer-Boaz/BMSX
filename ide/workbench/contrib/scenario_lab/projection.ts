@@ -35,6 +35,7 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 			expanded,
 			latestState: null,
 			text: '',
+			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,
 		});
@@ -44,11 +45,11 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 		for (const module of state.collection.resolveRoot(root.id)) {
 			const expanded = !pane.collapsedNodeIds.has(module.id);
 			pane.rows.push({ id: module.id, kind: 'module', root, module, test: null, depth: 1,
-				expandable: true, expanded, latestState: null, text: '', twistieLeft: 0, twistieRight: 0 });
+				expandable: true, expanded, latestState: null, text: '', textLeft: 0, twistieLeft: 0, twistieRight: 0 });
 			if (!expanded) continue;
 			for (const test of module.children) {
 				pane.rows.push({ id: test.id, kind: 'test', root, test, depth: 2,
-					expandable: false, expanded: false, latestState: null, text: '', twistieLeft: 0, twistieRight: 0 });
+					expandable: false, expanded: false, latestState: null, text: '', textLeft: 0, twistieLeft: 0, twistieRight: 0 });
 			}
 		}
 	}
@@ -109,6 +110,7 @@ function appendScenarioResultDetails(
 		pane.rows.push({
 			id: `${result.id}:failure:${index}`,
 			kind: 'failure',
+			depth: 2,
 			run,
 			result,
 			failure,
@@ -116,6 +118,7 @@ function appendScenarioResultDetails(
 			expandable: false,
 			expanded: false,
 			text: '',
+			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,
 		});
@@ -125,6 +128,7 @@ function appendScenarioResultDetails(
 		pane.rows.push({
 			id: log.id,
 			kind: 'log',
+			depth: 2,
 			run,
 			result,
 			log,
@@ -132,6 +136,7 @@ function appendScenarioResultDetails(
 			expandable: false,
 			expanded: false,
 			text: '',
+			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,
 		});
@@ -143,6 +148,7 @@ function appendScenarioResultDetails(
 			pane.rows.push({
 				id: transition.id,
 				kind: 'fsm_transition',
+				depth: 2,
 				run,
 				result,
 				trace: fsmTrace,
@@ -150,6 +156,7 @@ function appendScenarioResultDetails(
 				expandable: false,
 				expanded: false,
 				text: '',
+				textLeft: 0,
 				twistieLeft: 0,
 				twistieRight: 0,
 			});
@@ -162,6 +169,7 @@ function appendScenarioResultDetails(
 			pane.rows.push({
 				id: fact.id,
 				kind: 'actioneffect_fact',
+				depth: 2,
 				run,
 				result,
 				trace: actionEffectTrace,
@@ -169,6 +177,7 @@ function appendScenarioResultDetails(
 				expandable: false,
 				expanded: false,
 				text: '',
+				textLeft: 0,
 				twistieLeft: 0,
 				twistieRight: 0,
 			});
@@ -179,12 +188,14 @@ function appendScenarioResultDetails(
 		pane.rows.push({
 			id: capture.id,
 			kind: 'capture',
+			depth: 2,
 			run,
 			result,
 			capture,
 			expandable: false,
 			expanded: false,
 			text: '',
+			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,
 		});
@@ -199,11 +210,13 @@ function appendScenarioRunRows(
 	pane.rows.push({
 		id: run.id,
 		kind: 'run',
+		depth: 0,
 		run,
 		result: null,
 		expandable: true,
 		expanded,
 		text: '',
+		textLeft: 0,
 		twistieLeft: 0,
 		twistieRight: 0,
 	});
@@ -217,11 +230,13 @@ function appendScenarioRunRows(
 		pane.rows.push({
 			id: result.id,
 			kind: 'result',
+			depth: 1,
 			run,
 			result,
 			expandable: true,
 			expanded: resultExpanded,
 			text: '',
+			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,
 		});

@@ -27,7 +27,7 @@ function fixture(t: TestContext) {
 	const content = focus.createTarget();
 	content.bindKeyboard(() => {});
 	const state = createWorkbenchActionBar('sourceEditReview.title');
-	layoutWorkbenchActionBar(state, 240, 10, 22, text => text.length * 4, null);
+	layoutWorkbenchActionBar(state, 240, 10, 22, text => text.length * 4, null, 0);
 	const enabled = new Set(state.items.map(item => item.command));
 	const calls: EditorCommandId[] = [];
 	let onExecute = (_command: EditorCommandId) => {};
@@ -70,7 +70,7 @@ test('compact window actions reserve icon cells instead of measuring hidden text
 	for (const variant of ['tiny', 'msx'] as const) {
 		const font = new Font({ variant });
 		let measurements = 0;
-		layoutWorkbenchActionBar(state, 200, 2, font.lineHeight + 6, text => { measurements++; return font.measure(text); }, font);
+		layoutWorkbenchActionBar(state, 200, 2, font.lineHeight + 6, text => { measurements++; return font.measure(text); }, font, 0);
 		assert.equal(measurements, 0);
 		assert.deepEqual(state.items.map(item => item.icon), ['pin', 'collapse', 'close']);
 		assert.equal(state.items[2].tooltip, 'Close Window');
@@ -323,7 +323,7 @@ test('tiny-font rendering distinguishes hover, keyboard focus, pressed and disab
 	const font = new Font({ variant: 'tiny' });
 	const overlay = createHostOverlayFixture(256, 212);
 	const stream = new HostOverlayQuadStream();
-	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => font.measure(text), font);
+	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => font.measure(text), font, 0);
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 		renderWorkbenchActionBar(f.state, font); overlay.renderer.endFrame();
@@ -371,7 +371,7 @@ test('hidden actions occupy no layout and cannot be focused, pressed or released
 	const f = fixture(t), first = f.state.items[0], middle = f.state.items[1], last = f.state.items[2];
 	const oldLeft = first.bounds.left;
 	middle.visible = false;
-	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => text.length * 4, null);
+	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => text.length * 4, null, 0);
 	assert.ok(first.bounds.left > oldLeft);
 	assert.equal(first.bounds.right + 2, last.bounds.left);
 	f.bar.focusTarget.focus(); f.press('ArrowRight'); assert.equal(f.state.focusedIndex, 2);

@@ -29,6 +29,10 @@ import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { handleScenarioLabKeyboardInput } from './keyboard';
 import { TestTargetInspectionModel } from './target_inspection_model';
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import { WorkbenchTooltip } from '../../ui/tooltip';
 
 /** Ordinary Scenario Lab attachment. Closing this view never disposes its retained test target. */
 export class ScenarioTargetInspection {
@@ -36,7 +40,8 @@ export class ScenarioTargetInspection {
 	private readonly focus: InputFocusTarget;
 	private readonly pointer = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly details: WorkbenchPropertyInspector<InspectedProperty>;
-	private readonly bar = createWorkbenchActionBar('scenarioLab.target');
+	private readonly bar = createWorkbenchActionBar('scenarioLab.target', true);
+	private readonly actionTooltip = new WorkbenchTooltip();
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly unbindKeyboard: () => void;
 	private unbindInspection: (() => void) | undefined;
@@ -44,10 +49,14 @@ export class ScenarioTargetInspection {
 	private headerFont: BFont | undefined;
 	private title = '';
 
-	public constructor(private readonly parent: InputFocusTarget, private readonly commands: IdeCommandController) {
+	public constructor(private readonly parent: InputFocusTarget, private readonly commands: IdeCommandController,
+		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
+		private readonly getWorkArea: () => Readonly<RectBounds>) {
 		this.focus = inputFocus.createTarget(parent);
 		this.details = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focus);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focus, () => this.focus.focus());
+		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focus, () => this.focus.focus(), contextMenu);
+		this.actions.onDidOpenOverflow = () => this.actionTooltip.hide();
 		this.focus.next = this.actions.focusTarget; this.focus.previous = this.actions.focusTarget;
 		this.actions.focusTarget.next = this.focus; this.actions.focusTarget.previous = this.focus;
 		this.unbindKeyboard = this.focus.bindKeyboard(input => this.keyboard(input));
@@ -68,15 +77,17 @@ export class ScenarioTargetInspection {
 	public hide(): void {
 		this.unbindInspection?.(); this.unbindInspection = undefined;
 		this.details.hide(); this.pointer.clear(); this.actions.clearInput();
+		this.actionTooltip.hide();
 		if (this.focus.hasFocus || this.actions.focusTarget.hasFocus) this.parent.focus();
 		this.model?.inspection.dispose(); this.model = undefined;
 	}
-	public dispose(): void { this.hide(); this.details.dispose(); this.actions.dispose(); this.unbindKeyboard(); }
+	public dispose(): void { this.hide(); this.details.dispose(); this.actions.dispose(); this.actionTooltip.detach(); this.unbindKeyboard(); }
 	public update(bounds: Readonly<RectBounds>): void {
 		if (this.model === undefined) return;
-		this.details.update(); this.actions.update();
+		this.details.update();
 		const font = editorViewState.font;
 		if (this.details.visible) {
+			this.actionTooltip.hide();
 			this.details.layout(font.renderFont(), measureTextRange, measureText, bounds);
 			return;
 		}
@@ -84,10 +95,14 @@ export class ScenarioTargetInspection {
 		if (this.headerFont !== renderFont || this.header.left !== bounds.left || this.header.top !== bounds.top || this.header.right !== bounds.right) {
 			this.headerFont = renderFont;
 			write_rect_bounds(this.header, bounds.left, bounds.top, bounds.right, top);
-			layoutWorkbenchActionBar(this.bar, bounds.right - 4, bounds.top + 2, top - 2, measureText, renderFont);
-			const state = this.model.inspection.state, first = this.bar.items.find(item => item.visible)!;
-			this.title = truncateMeasuredText(state.role === 'retained-test' ? 'TEST / POST-MORTEM / CASE-END HEAP' : `TEST / STOPPED / ${state.reason}`, first.bounds.left - bounds.left - 8, measureTextRange);
+			layoutWorkbenchActionBar(this.bar, bounds.right - 4, bounds.top + 2, top - 2, measureText, renderFont, bounds.left + measureText('TEST') + 12);
+			const state = this.model.inspection.state;
+			this.title = truncateMeasuredText(state.role === 'retained-test' ? 'TEST / POST-MORTEM / CASE-END HEAP' : `TEST / STOPPED / ${state.reason}`, this.bar.bounds.left - bounds.left - 8, measureTextRange);
 		}
+		this.actions.update();
+		const hint = this.actions.tooltipItem;
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, renderFont, measureTextRange, measureText, this.getWorkArea());
+		else this.actionTooltip.hide();
 		layoutWorkbenchPropertyTree(this.model.tree, renderFont, measureTextRange, bounds.left, top, bounds.right, bounds.bottom);
 	}
 	public isEnabled(command: EditorCommandId): boolean {

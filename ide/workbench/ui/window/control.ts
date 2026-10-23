@@ -170,7 +170,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.measureText = measureText;
 		this.measuredRevision = model.revision;
 		const { header } = model;
-		layoutWorkbenchActionBar(this.options.actionBar, header.right - 3, header.top + 2, header.bottom - 2, measureText, font);
+		layoutWorkbenchActionBar(this.options.actionBar, header.right - 3, header.top + 2, header.bottom - 2, measureText, font, header.left + 4);
 		const firstAction = this.options.actionBar.items.find(item => item.visible);
 		model.displayTitle = truncateMeasuredText(model.title, (firstAction === undefined ? header.right : firstAction.bounds.left) - header.left - 8, measure, ELLIPSIS, 'middle');
 		if (!model.collapsed && (arranged || fontChanged)) this.options.layoutContent(model.client);

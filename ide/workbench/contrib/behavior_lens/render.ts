@@ -44,7 +44,7 @@ export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchG
 	if (outline.kind !== 'outline') {
 		drawWorkbenchGraph(outline.viewport, hover, focused, drag, handles);
 		if (outline.viewport.model.nodes.length === 0) {
-			const message = outline.kind === 'state-graph' && outline.layoutState.kind === 'pending' ? 'LAYING OUT STATE MACHINE...'
+			const message = outline.kind === 'state-graph' && outline.layoutState.kind === 'pending' ? 'LAYING OUT STATE MACHINE…'
 				: outline.kind === 'state-graph' && outline.layoutState.kind === 'failed' ? 'LAYOUT FAILED - SOURCE REMAINS AVAILABLE'
 					: 'DEFINITION REMOVED - CHOOSE A BEHAVIOR';
 			api.blit_text_inline_with_font(message, layout.left + 4, layout.headerBottom + 8,

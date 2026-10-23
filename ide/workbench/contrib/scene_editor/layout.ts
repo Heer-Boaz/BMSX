@@ -1,3 +1,4 @@
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { write_rect_bounds } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
@@ -26,11 +27,11 @@ export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boole
 		layoutWorkbenchList(treeLayout, PADDING, contentTop, layout.detailsLeft - PADDING, layout.bottom, rowHeight);
 		// The row-based tree draws whole rows; its hit area excludes a partial last row.
 		treeLayout.contentBottom = treeLayout.contentTop + treeLayout.visibleRowCount * rowHeight;
-		treeLayout.indentWidth = editorViewState.font.advance(' ') * 2;
+		treeLayout.indentWidth = Math.max(editorViewState.font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2);
 		treeLayout.twistieWidth = treeLayout.indentWidth;
 		clampWorkbenchListScroll(input.outline);
 		if (changed || contentChanged) layoutSceneOutlineNodes(input.outline.roots, treeLayout);
-		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + rowHeight, measureText, editorViewState.font.renderFont());
+		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + rowHeight, measureText, editorViewState.font.renderFont(), layout.left + PADDING);
 		input.sourceText = truncateTextToWidth(input.workingCopy.resource.path, input.actionBar.items[0].bounds.left - PADDING * 2);
 		const width = layout.right - constants.SCROLLBAR_WIDTH - layout.detailsLeft;
 		const height = measureSceneDetails(input, width);

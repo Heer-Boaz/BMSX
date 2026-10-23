@@ -64,7 +64,7 @@ export function renderSearchBar(): void {
 		? editorSearchState.globalJob !== null
 		: editorSearchState.job !== null;
 	if (searchWorking) {
-		const workingText = 'SEARCHING...';
+		const workingText = 'SEARCHING…';
 		const workingWidth = measureText(workingText);
 		drawEditorText(editorViewState.font, workingText, infoX - workingWidth, labelY, 0, constants.COLOR_SEARCH_TEXT);
 	} else if (total > 0 || (editorSearchState.query && editorSearchState.query.length > 0)) {

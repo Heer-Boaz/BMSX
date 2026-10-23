@@ -162,7 +162,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		if (input.following && input.projection.rows.length > 0) list.scrollbar.reveal(list.contentHeight - layout.rowHeight, list.contentHeight, 0);
 		const wordsActive = input.view === 'words';
 		this.setWordsActive(wordsActive);
-		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, top - 4, measureText, layout.font!.renderFont());
+		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, top - 4, measureText, layout.font!.renderFont(), layout.left + 4);
 		input.actions.items[0].checked = input.following; this.actions.update();
 		if (selectedChanged || layoutChanged) this.canvas.layout(input, this.presentation, layout.font!.renderFont());
 		this.diagramDirty = false;

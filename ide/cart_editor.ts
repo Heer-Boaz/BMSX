@@ -499,7 +499,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.editorPanes = new EditorPanes({
 			play_session: () => new PlayEditorPane(this.resourcePanel, this.commands, this.contextMenu, this.navigation),
-			animation: () => new AnimationEditorPane(this.resourcePanel, this.animations, this.commands, this.contextMenu),
+			animation: () => new AnimationEditorPane(this.resourcePanel, this.animations, this.commands, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			host_error: () => new HostErrorPane(this.resourcePanel),
 			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu),
@@ -521,8 +521,8 @@ export class RuntimeCartEditor implements CartEditor {
 				this.debuggerState,
 			),
 			resource_view: () => new ResourceViewerEditorPane(),
-			aem_editor: () => new AemEditorPane(this.resourcePanel, this.aemEditor, this.commands, this.contextMenu),
-			lua_program: () => new LuaProgramEditorPane(this.resourcePanel, this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu),
+			aem_editor: () => new AemEditorPane(this.resourcePanel, this.aemEditor, this.commands, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
+			lua_program: () => new LuaProgramEditorPane(this.resourcePanel, this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.commands, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime, input, presenter),
@@ -532,6 +532,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.resourcePanel,
 				this.scenarioLab,
 				this.commands,
+				this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea,
 			),
 		});
 		this.unbindEditorInputRetirement = this.editorPanes.onDidClearEditor(() => {

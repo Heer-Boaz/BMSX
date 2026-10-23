@@ -242,7 +242,7 @@ second]=],
 		assert.equal(rows.get(fields[3].source.rowKey)!.element.value, 'function()');
 		const list = fields[4]; assert.ok(list.kind === 'list');
 		assert.equal(rows.get(list.entries[0].node.rowKey)!.element.value, '[[Mixed  Case]]');
-		assert.equal(rows.get(list.entries[1].node.rowKey)!.element.value, '[=[first...');
+		assert.equal(rows.get(list.entries[1].node.rowKey)!.element.value, '[=[first…');
 		assert.ok(!f.properties.tree.roots.some(root => root.element.kind === 'group' && root.element.group === 'grant'));
 	} finally { f.input.dispose(); }
 });

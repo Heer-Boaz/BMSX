@@ -102,7 +102,7 @@ export class GamePanel {
 			write_rect_bounds(this.bounds, left, top, right, bottom);
 			this.measuredFont = editorViewState.font;
 			this.headerBottom = top + editorViewState.lineHeight + 6;
-			layoutWorkbenchActionBar(this.actionBar, right - 4, top + 2, this.headerBottom - 2, measureText, editorViewState.font.renderFont());
+			layoutWorkbenchActionBar(this.actionBar, right - 4, top + 2, this.headerBottom - 2, measureText, editorViewState.font.renderFont(), left + 4);
 			layoutGameFrame(this.frame, left + 4, this.headerBottom + 4, right - 4, bottom - 4);
 		}
 		this.actions.update();

@@ -88,7 +88,7 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 		const { frame, layout } = this.input;
 		const relayout = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
 		if (relayout) {
-			layoutWorkbenchActionBar(this.input.actionBar, layout.right - 4, layout.top + 2, layout.top + layout.rowHeight + 4, measureText, layout.font!.renderFont());
+			layoutWorkbenchActionBar(this.input.actionBar, layout.right - 4, layout.top + 2, layout.top + layout.rowHeight + 4, measureText, layout.font!.renderFont(), layout.left + 4);
 			layoutGameFrame(frame, layout.left + 4, layout.top + layout.rowHeight + 10, layout.right - 4, layout.bottom - 4);
 		}
 		if (relayout || this.titleSource !== this.input.handle.title) {

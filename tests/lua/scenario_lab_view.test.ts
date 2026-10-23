@@ -14,6 +14,8 @@ import {
 import { refreshScenarioLabProjection } from '../../ide/workbench/contrib/scenario_lab/projection';
 import { drawScenarioLab } from '../../ide/workbench/contrib/scenario_lab/render';
 import { prepareScenarioLabLayout } from '../../ide/workbench/contrib/scenario_lab/layout';
+import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from '../../ide/workbench/contrib/scenario_lab/pointer';
+import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
 import { ScenarioLabNavigationSelection } from '../../ide/workbench/contrib/scenario_lab/navigation_selection';
 import { describeScenarioMessage, describeScenarioMessageDetails, describeScenarioTestResult } from '../../ide/workbench/contrib/scenario_lab/message_inspection';
 import { WorkbenchPropertyInspectorModel } from '../../ide/workbench/ui/property_inspector/model';
@@ -24,7 +26,7 @@ import {
 import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
 import { createScenarioLabViewState } from '../../ide/workbench/contrib/scenario_lab/view_state';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import {
 	createScenarioTestSourceRecord,
 	createScenarioTestSourceState,
@@ -35,7 +37,7 @@ const VIEWPORT_HEIGHT = 288;
 const CODE_AREA_TOP = 24;
 const CODE_AREA_BOTTOM = 276;
 
-function installTinyWorkbenchViewport(t: TestContext): EditorFont {
+function installWorkbenchViewport(t: TestContext, variant: 'tiny' | 'msx' = 'tiny'): EditorFont {
 	const previous = {
 		font: editorViewState.font,
 		lineHeight: editorViewState.lineHeight,
@@ -54,7 +56,7 @@ function installTinyWorkbenchViewport(t: TestContext): EditorFont {
 		editorViewState.codeAreaTop = previous.codeAreaTop;
 		editorViewState.codeAreaBottom = previous.codeAreaBottom;
 	});
-	const font = new EditorFont('tiny');
+	const font = new EditorFont(variant);
 	editorViewState.font = font;
 	editorViewState.lineHeight = font.lineHeight;
 	editorViewState.charAdvance = font.advance('M');
@@ -65,8 +67,8 @@ function installTinyWorkbenchViewport(t: TestContext): EditorFont {
 	return font;
 }
 
-function createViewFixture(t: TestContext) {
-	installTinyWorkbenchViewport(t);
+function createViewFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
+	installWorkbenchViewport(t, variant);
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/b_assert.lua', 20),
@@ -446,12 +448,13 @@ test('scenario result projection retains ordered ActionEffect facts', (t) => {
 });
 
 test('scenario workbench renderer uses the active tiny IDE font and retained text', (t) => {
-	const tinyFont = installTinyWorkbenchViewport(t);
+	const tinyFont = installWorkbenchViewport(t);
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 	]));
 	const results = new ScenarioResultService();
 	const view = createScenarioLabViewState(collection, results, false);
+	prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM });
 	const { queue, renderer, presenter } = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
 	renderer.beginFrame(presenter);
 	api.beginFrame(renderer);
@@ -475,6 +478,51 @@ test('scenario workbench renderer uses the active tiny IDE font and retained tex
 	}
 	assert.ok(glyphCount >= 8);
 	assert.equal(titleFound, true);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`Scenario tree paint, indentation and disclosure hits share geometry in ${variant}`, t => {
+	const { collection, results, view } = createViewFixture(t, variant);
+	const sourceModule = collection.roots[0].children[0], item = sourceModule.children[0];
+	const run = results.beginRun(item.id, [{ test: item, source: sourceModule.source, sourceRevision: 1 }]);
+	const result = results.startItem(run, 0, 0);
+	results.appendLog(result, 1, 'retained log');
+	results.complete(result, 2); results.completeRun(run);
+	prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM });
+	const testPane = view.testPane, resultPane = view.resultPane;
+	assert.deepEqual(resultPane.rows.map(row => row.depth), [0, 1, 2]);
+	for (const pane of [testPane, resultPane]) {
+		assert.ok(pane.layout.rowHeight >= WORKBENCH_ICON_SIZE + 2);
+		assert.ok(pane.layout.rowHeight >= editorViewState.font.lineHeight + 2);
+		for (const row of pane.rows) {
+			assert.equal(row.twistieLeft, pane.layout.contentLeft + 4 + row.depth * pane.layout.indentWidth);
+			assert.equal(row.textLeft, row.twistieRight + 2);
+			assert.doesNotMatch(row.text, /^[+-]|^\s/, 'indentation/disclosure is geometry, not source-text padding');
+		}
+	}
+	const { queue, renderer, presenter } = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+	renderer.beginFrame(presenter); api.beginFrame(renderer); drawScenarioLab(view); renderer.endFrame();
+	const frame = queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], rectangles: RectRenderSubmission[] = [];
+	for (let index = 0; index < frame.commandCount; index++) {
+		if (frame.commandKinds[index] === Host2DKind.Glyphs) glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
+		else if (frame.commandKinds[index] === Host2DKind.Rect) rectangles.push(frame.commandRefs[index] as RectRenderSubmission);
+	}
+	for (const [pane, rowIndex] of [[resultPane, 1], [testPane, 1]] as const) {
+		const row = pane.rows[rowIndex], top = pane.layout.contentTop + rowIndex * pane.layout.rowHeight;
+		const text = glyphs.find(glyph => glyph.items === row.text)!;
+		assert.equal(text.x, row.textLeft);
+		assert.equal(text.y, top + ((pane.layout.rowHeight - editorViewState.font.lineHeight) >> 1));
+		const iconLeft = row.twistieLeft + ((row.twistieRight - row.twistieLeft - WORKBENCH_ICON_SIZE) >> 1);
+		const iconTop = top + ((pane.layout.rowHeight - WORKBENCH_ICON_SIZE) >> 1);
+		const painted = rectangles.find(({ area }) => area.left >= iconLeft && area.right <= iconLeft + WORKBENCH_ICON_SIZE
+			&& area.top >= iconTop && area.bottom <= iconTop + WORKBENCH_ICON_SIZE)!;
+		assert.ok(painted, 'the expandable row did not paint its shared icon');
+		assert.equal(handleScenarioLabPointerInput(view, { valid: true, insideViewport: true,
+			viewportX: painted.area.left, viewportY: painted.area.top,
+			pressedButtons: 1, justPressedButtons: 1, justReleasedButtons: 0 }, true, 1000 + rowIndex), ScenarioLabPointerResult.Handled);
+		assert.equal(pane.rows[rowIndex].expanded, false, 'a press on a painted chevron pixel did not collapse its branch');
+		assert.equal(pane.selectionIndex, rowIndex, 'the clicked branch did not become the keyboard cursor');
+		assert.equal(view.focus, pane === resultPane ? 'results' : 'tests', 'the disclosure press focused a different pane');
+	}
 });
 
 

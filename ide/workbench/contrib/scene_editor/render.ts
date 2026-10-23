@@ -1,3 +1,5 @@
+import { drawWorkbenchIcon } from '../../render/icon';
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import * as constants from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ValueInput } from '../../../editor/ui/inline/value_input';
@@ -29,7 +31,8 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 		const x = outline.layout.contentLeft + node.depth * outline.layout.indentWidth;
 		if (index === outline.selectionIndex) api.fill_rect(outline.layout.contentLeft, y,
 			outline.layout.contentRight, y + rowHeight, 0, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT);
-		if (node.children.length > 0) api.blit_text_inline_with_font(node.collapsed ? '+' : '-', x, y + 2, 0, color, font);
+		if (node.children.length > 0) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
+			x + ((outline.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), color);
 		api.blit_text_inline_with_font(node.element.displayLabel, x + outline.layout.twistieWidth, y + 2, 0, color, font);
 	}
 	api.popClipRect();
