@@ -16,6 +16,10 @@ import { drawScenarioLab } from '../../ide/workbench/contrib/scenario_lab/render
 import { prepareScenarioLabLayout } from '../../ide/workbench/contrib/scenario_lab/layout';
 import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from '../../ide/workbench/contrib/scenario_lab/pointer';
 import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
+import { ScenarioLabRowFeedback } from '../../ide/workbench/contrib/scenario_lab/feedback';
+import { scenarioModuleCaptions, scenarioTestIdentity } from '../../ide/workbench/contrib/scenario_lab/labels';
+import { InputFocusService } from '../../ide/input/focus';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { ScenarioLabNavigationSelection } from '../../ide/workbench/contrib/scenario_lab/navigation_selection';
 import { describeScenarioMessage, describeScenarioMessageDetails, describeScenarioTestResult } from '../../ide/workbench/contrib/scenario_lab/message_inspection';
 import { WorkbenchPropertyInspectorModel } from '../../ide/workbench/ui/property_inspector/model';
@@ -23,7 +27,7 @@ import {
 	SCENARIO_RESULT_LOG_RETAIN_COUNT,
 	ScenarioResultService,
 } from '../../ide/testing/scenario/result_service';
-import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
+import { ScenarioTestCollection, scenarioTestId } from '../../ide/testing/scenario/test_collection';
 import { createScenarioLabViewState } from '../../ide/workbench/contrib/scenario_lab/view_state';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
@@ -77,6 +81,98 @@ function createViewFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 	const view = createScenarioLabViewState(collection, results, false);
 	prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM });
 	return { collection, results, view };
+}
+
+for (const variant of ['tiny', 'msx'] as const) {
+	test(`Scenario ${variant} module captions use their actual root without changing authored case/source membership`, t => {
+		const font = installWorkbenchViewport(t, variant);
+		const records = ['nemesis_s_bel_encounter', 'nemesis_s_cinematic_flow', 'different_project_intro', 'nemesis_s_intro', 'intro', 'a/same', 'b/same']
+			.map((name, index) => createScenarioTestSourceRecord(`tests/carts/nemesis_s/${name}_assert.lua`, index));
+		const sources = createScenarioTestSourceState(records), collection = new ScenarioTestCollection(sources);
+		const root = collection.roots[0], view = createScenarioLabViewState(collection, new ScenarioResultService(), false);
+		prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: 222, bottom: CODE_AREA_BOTTOM });
+		const rows = view.testPane.rows.filter(row => row.kind === 'module');
+		assert.equal(rows.find(row => row.module.label === 'nemesis_s_bel_encounter')!.caption, 'bel_encounter');
+		assert.equal(rows.find(row => row.module.label === 'nemesis_s_cinematic_flow')!.caption, 'cinematic_flow');
+		assert.equal(rows.find(row => row.module.label === 'different_project_intro')!.caption, 'different_project_intro');
+		assert.equal(rows.find(row => row.module.label === 'nemesis_s_intro')!.caption, 'nemesis_s_intro', 'an exact namespace elision cannot collide with an already unqualified sibling');
+		assert.equal(new Set(rows.map(row => row.caption)).size, rows.length, 'duplicate original basenames use their real distinct source paths');
+		const encounter = rows.find(row => row.caption === 'bel_encounter')!, cinematic = rows.find(row => row.caption === 'cinematic_flow')!;
+		assert.notEqual(encounter.text, cinematic.text, 'the constrained first glyphs identify different modules');
+		for (const row of rows) {
+			assert.ok(font.measure(row.text) <= view.testPane.layout.contentRight - row.textLeft - 4);
+			assert.ok(row.feedbackText.includes(row.module.resource.path));
+		}
+		const item = encounter.module.children[0], testRowIndex = view.testPane.rows.findIndex(row => row.kind === 'test' && row.test === item);
+		assert.equal(view.testPane.rows[testRowIndex].caption, 'sample', 'authored case names are never stripped or synthesized');
+		view.testPane.selectionIndex = testRowIndex;
+		const source = executeScenarioLabNavigation(view, 'activate');
+		assert.deepEqual(source, { kind: 'open-source', location: { resource: item.resource, line: item.range.start.line, column: item.range.start.column } });
+		assert.equal(item.id, scenarioTestId(0, item.assetId, 'sample'));
+		assert.equal(scenarioModuleCaptions({ ...root, label: 'different_project' }).get(encounter.module), 'nemesis_s_bel_encounter', 'a different root cannot elide another project namespace');
+		const otherSlot = { ...item, resource: { ...item.resource, domain: 1 as const }, id: scenarioTestId(1, item.assetId, item.caseName) };
+		assert.notEqual(scenarioTestIdentity(item), scenarioTestIdentity(otherSlot), 'same source and case in another physical cartridge retains distinct membership');
+		assert.notEqual(scenarioTestIdentity(item), scenarioTestIdentity(cinematic.module.children[0]), 'same authored case in another module retains distinct source identity');
+		assert.deepEqual(records.map(record => record.src), records.map(() => "return { kind = 'unit', tests = { sample = function() end } }"));
+		const retainedRows = view.testPane.rows.slice(), retainedTexts = view.testPane.rows.map(row => row.feedbackText);
+		for (let frame = 0; frame < 1000; frame++) prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: 222, bottom: CODE_AREA_BOTTOM });
+		assert.ok(view.testPane.rows.every((row, index) => row === retainedRows[index] && row.feedbackText === retainedTexts[index]));
+	});
+}
+
+function scenarioFeedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
+	const { view, collection, results } = createViewFixture(t, variant), font = editorViewState.font.renderFont();
+	prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: 222, bottom: CODE_AREA_BOTTOM });
+	const surfaces = new WorkbenchSurfaceService(), focus = new InputFocusService();
+	const parent = focus.createTarget(), testsFocus = focus.createTarget(parent), resultsFocus = focus.createTarget(parent);
+	parent.bindKeyboard(() => {}); testsFocus.bindKeyboard(() => {}); resultsFocus.bindKeyboard(() => {});
+	const area = { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM };
+	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('Scenario'), isVisible: () => true,
+		getBounds: () => area, getClip: () => area, draw() {} });
+	const feedback = new ScenarioLabRowFeedback(surfaces, owner, () => area, testsFocus, resultsFocus);
+	let measurements = 0;
+	const measure = (text: string, from: number, to: number) => { measurements++; return font.measure(text.slice(from, to)); };
+	const measureText = (text: string) => { measurements++; return font.measure(text); };
+	const labels: string[] = []; t.mock.method(api, 'blit_text_inline_with_font', label => labels.push(label));
+	const overlay = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+	const update = () => feedback.update(font, measure, measureText);
+	const paint = () => { labels.length = 0; overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
+	t.after(() => { feedback.dispose(); surfaces.dispose(); });
+	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
+		viewportX: 40, viewportY: view.testPane.layout.contentTop + view.testPane.layout.rowHeight + 2 };
+	return { view, collection, results, surfaces, owner, area, parent, testsFocus, resultsFocus, feedback, labels, paint, point, update, measurements: () => measurements };
+}
+
+for (const variant of ['tiny', 'msx'] as const) {
+	test(`Scenario ${variant} row feedback exposes full qualified membership for pointer and keyboard without idle formatting`, t => {
+		const f = scenarioFeedbackFixture(t, variant), row = f.view.testPane.rows[1];
+		f.view.testPane.hoverIndex = 1; f.feedback.pointer(f.view, f.point); f.update(); f.paint();
+		assert.ok(f.labels.join('').includes(row.identity));
+		assert.equal(f.surfaces.hitTest(f.point.viewportX, f.point.viewportY), f.owner, 'identity feedback is passive');
+		const measured = f.measurements();
+		for (let frame = 0; frame < 1000; frame++) f.update();
+		assert.equal(f.measurements(), measured, 'stable row feedback does not remeasure/rebuild strings');
+		f.feedback.onPointerLeave(); f.paint(); assert.deepEqual(f.labels, []);
+		f.view.testPane.selectionIndex = 2; f.testsFocus.focus(); f.feedback.keyboardSelection(f.view); f.update(); f.paint();
+		assert.ok(f.labels.join('').includes(f.view.testPane.rows[2].identity.replace('\n', '')));
+		f.parent.focus(); f.paint(); assert.deepEqual(f.labels, [], 'actual focus departure retires keyboard feedback immediately');
+		f.view.testPane.hoverIndex = 1; f.feedback.pointer(f.view, f.point); f.update(); f.paint(); assert.ok(f.labels.length > 0);
+		f.view.testPane.hoverIndex = -1; f.point.viewportX++; f.feedback.pointer(f.view, f.point); f.update(); f.paint();
+		assert.deepEqual(f.labels, [], 'the pane header and empty list space are not row feedback anchors');
+		f.view.testPane.hoverIndex = 1; f.point.viewportX++; f.feedback.pointer(f.view, f.point); f.update();
+		f.view.testPane.scroll += 1; f.update(); f.paint(); assert.deepEqual(f.labels, []);
+		f.view.testPane.scroll -= 1; f.feedback.pointer(f.view, f.point); f.update(); f.paint(); assert.deepEqual(f.labels, [], 'stationary hover cannot adopt a row after scrolling');
+		f.point.viewportX++; f.feedback.pointer(f.view, f.point); f.update(); f.paint(); assert.ok(f.labels.length > 0);
+		f.view.testPane.rowsDirty = true; prepareScenarioLabLayout(f.view, { left: 0, top: CODE_AREA_TOP, right: 222, bottom: CODE_AREA_BOTTOM });
+		f.update(); f.paint(); assert.deepEqual(f.labels, [], 'a reprojection with the same index cannot inherit source feedback');
+		f.point.viewportX++; f.view.testPane.hoverIndex = 1; f.feedback.pointer(f.view, f.point); f.update(); f.paint(); assert.ok(f.labels.length > 0);
+		const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('modal'), isVisible: () => true,
+			getBounds: () => f.area, getClip: () => f.area, draw() {} });
+		f.paint(); assert.deepEqual(f.labels, []); modal.dispose();
+		f.feedback.clear(); f.paint(); assert.deepEqual(f.labels, []);
+		f.point.viewportX++; f.feedback.pointer(f.view, f.point); f.update(); f.paint(); assert.ok(f.labels.length > 0);
+		f.owner.dispose(); f.update(); f.paint(); assert.deepEqual(f.labels, [], 'the actual surface lifetime owns feedback retirement');
+	});
 }
 
 test('Scenario Lab observes shared discovery revisions even when another consumer refreshes them first', t => {

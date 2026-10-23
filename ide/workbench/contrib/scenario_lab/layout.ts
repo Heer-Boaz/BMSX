@@ -14,6 +14,7 @@ import {
 	updateScenarioTestResultStates,
 } from './projection';
 import type { ScenarioResultState } from '../../../testing/scenario/result_service';
+import { scenarioTestIdentity } from './labels';
 import {
 	type ScenarioLabLayout,
 	type ScenarioLabPaneLayout,
@@ -79,11 +80,15 @@ function writeScenarioTestText(state: ScenarioLabViewState): void {
 		const row = pane.rows[index];
 		let rawText: string;
 		if (row.kind === 'root') {
-			rawText = `${row.root.label} (${row.root.testCount})`;
+			rawText = `${row.caption} (${row.root.testCount})`;
 		} else if (row.kind === 'module') {
-			rawText = `${row.module.label} (${row.module.children.length})${row.module.diagnostic === null ? '' : ' / INVALID'}`;
+			rawText = `${row.caption} (${row.module.children.length})${row.module.diagnostic === null ? '' : ' / INVALID'}`;
 		} else {
-			rawText = `${scenarioStateBadge(row.latestState)} ${row.test.label}`;
+			rawText = `${scenarioStateBadge(row.latestState)} ${row.caption}`;
+		}
+		if (row.fullText !== rawText) {
+			row.fullText = rawText;
+			row.feedbackText = row.kind === 'test' ? row.identity : rawText + '\n' + row.identity;
 		}
 		row.twistieLeft = layout.contentLeft + PANE_PADDING_X + row.depth * layout.indentWidth;
 		row.twistieRight = row.twistieLeft + layout.indentWidth;
@@ -150,11 +155,16 @@ function writeScenarioResultText(state: ScenarioLabViewState): void {
 	const layout = pane.layout;
 	for (let index = 0; index < pane.rows.length; index += 1) {
 		const row = pane.rows[index];
+		const fullText = resultDetailText(row);
+		if (row.fullText !== fullText) {
+			row.fullText = fullText;
+			row.feedbackText = fullText + (row.result === null ? '' : '\n' + scenarioTestIdentity(row.result.test));
+		}
 		row.twistieLeft = layout.contentLeft + PANE_PADDING_X + row.depth * layout.indentWidth;
 		row.twistieRight = row.twistieLeft + layout.indentWidth;
 		row.textLeft = row.twistieRight + 2;
 		row.text = truncateTextToWidth(
-			uppercaseOutsideStrings(resultDetailText(row)),
+			uppercaseOutsideStrings(row.fullText),
 			layout.contentRight - row.textLeft - PANE_PADDING_X,
 		);
 	}

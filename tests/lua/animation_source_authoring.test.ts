@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { findNamedLuaTableField } from '../../toolchain/ts/lua/syntax/table_fields';
+import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { semanticSnapshot } from './semantic_test_harness';
 import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animation/source';
 import { AnimationKeyViewport } from '../../ide/workbench/contrib/animation/key_viewport';
@@ -16,6 +18,51 @@ function project(source: string, imports: readonly { path: string; source: strin
 	return buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path),
 		...imports.map(item => buildLuaFileSemanticData(item.source, item.path))));
 }
+
+test('track captions preserve authored names, callback references and real property bindings without invented targets', () => {
+	const source = `local apply_slide = function() error('source projection must not execute callbacks') end
+		local handlers = require('handlers')
+		return { tracks = {
+			{ kind='value', apply=apply_slide, keys={} },
+			{ kind='value', apply=handlers.visible, keys={} },
+			{ kind='value', name='Curtain reveal', apply=handlers.visible, path={'ignored_by_callback'}, keys={} },
+			{ kind='value', path={'presentation','members','curtain','visible'}, keys={} },
+			{ kind='value', binding='picture', path={'offset','x'}, keys={} },
+			{ kind='tag', name='', start={time_ms=0}, ['end']={time_ms=1} },
+		} }`;
+	const document = project(source, [{ path: 'handlers.lua', source: "return { visible=function() error('never evaluate imported callbacks') end }" }])!;
+	assert.deepEqual(document.tracks.map(track => track.label), [
+		'apply_slide', 'handlers.visible', 'Curtain reveal', 'presentation.members.curtain.visible', 'picture.offset.x', '',
+	]);
+	const written = findNamedLuaTableField(document.root.table, 'tracks')!.value;
+	assert.ok(written.kind === LuaSyntaxKind.TableConstructorExpression);
+	for (let index = 0; index < document.tracks.length; index++) {
+		const track = document.tracks[index];
+		assert.equal(track.field, written.fields[index]);
+		assert.equal(track.source!.table, written.fields[index].value);
+		assert.equal(track.file.chunk.locations.range(track.field.span), document.root.file.chunk.locations.range(written.fields[index].span));
+	}
+	assert.equal(document.root.file.source, source, 'display captions never replace authored names, callback expressions or property paths');
+});
+
+test('anonymous and unresolved track captions identify their real occurrence, including same-line callback columns', () => {
+	const source = "return { tracks={{kind='value',apply=function(target,value) end,keys={}},{kind='value',apply=function(target,value) end,keys={}},{kind='sample',apply=make_callback()},{kind='event',keys={} },make_track(),external_track} }";
+	const document = project(source)!, tracks = document.tracks;
+	for (let index = 0; index < 3; index++) {
+		const track = tracks[index], apply = findNamedLuaTableField(track.source!.table, 'apply')!;
+		const position = track.source!.file.chunk.locations.range(apply.value.span).start;
+		assert.equal(track.label, `Apply @${position.line}:${position.column}`);
+	}
+	assert.notEqual(tracks[0].label, tracks[1].label, 'two anonymous callbacks on one source line retain distinct written columns');
+	const eventPosition = tracks[3].file.chunk.locations.range(tracks[3].field.value.span).start;
+	assert.equal(tracks[3].label, `event @${eventPosition.line}:${eventPosition.column}`);
+	const unresolvedPosition = tracks[4].file.chunk.locations.range(tracks[4].field.value.span).start;
+	assert.equal(tracks[4].source, undefined);
+	assert.equal(tracks[4].label, `Source @${unresolvedPosition.line}:${unresolvedPosition.column}`);
+	assert.equal(tracks[5].label, 'external_track');
+	assert.equal(document.root.file.source, source);
+	assert.ok(tracks.every(track => !track.label.includes('target /') && !/^Track [0-9]/.test(track.label)));
+});
 
 test('imported key definitions retain their authored owner and coordinate domain', () => {
 	const document = project("return {frame_duration=20,duration_ms=100,tracks=require('tracks')}", [{ path: 'tracks.lua',

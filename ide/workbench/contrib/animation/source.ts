@@ -2,6 +2,7 @@ import { LuaSyntaxKind, LuaTableFieldKind, type LuaExpression, type LuaTableCons
 import { findNamedLuaTableField, staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { findLuaModuleExport } from '../../../../toolchain/ts/lua/semantic/module_bindings';
+import { resolveStaticLuaExpressionPath } from '../../../../toolchain/ts/lua/semantic/expression_path';
 import type { ResourceIdentity } from '../../../common/resource';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { readLuaNumberLiteral } from '../../../language/lua/source_edits';
@@ -59,8 +60,25 @@ export function buildAnimationSourceDocument(resource: ResourceIdentity, snapsho
 		const binding = source === undefined ? undefined : readStringField(reader, source, 'binding');
 		const path = source === undefined ? undefined : readPath(reader, source);
 		const name = source === undefined ? undefined : readStringField(reader, source, 'name');
+		const apply = source === undefined ? null : findNamedLuaTableField(source.table, 'apply');
+		let label: string;
+		if (name !== undefined) label = name;
+		else if (apply !== null) {
+			const reference = resolveStaticLuaExpressionPath(apply.value);
+			if (reference !== null) label = reference;
+			else {
+				const position = source!.file.chunk.locations.range(apply.value.span).start;
+				label = `Apply @${position.line}:${position.column}`;
+			}
+		} else if (binding !== undefined || path !== undefined) {
+			label = binding === undefined ? path! : path === undefined ? binding : `${binding}.${path}`;
+		} else {
+			const reference = resolveStaticLuaExpressionPath(entry.value);
+			const position = tracksSource.file.chunk.locations.range(entry.value.span).start;
+			label = reference === null ? `${kind === undefined ? 'Source' : kind} @${position.line}:${position.column}` : reference;
+		}
 		tracks.push({ file: tracksSource.file, field: entry, source, keysSource, keys, keyIndex: indexAnimationKeys(keys, unit), unit, kind, interpolation,
-			label: source === undefined ? `Track ${tracks.length + 1} / source` : `${name ?? (binding === undefined ? 'target' : binding)}${path === undefined ? '' : `.${path}`} / ${kind === undefined ? 'source' : kind}` });
+			label });
 	}
 	const durationMs = findNamedLuaTableField(root.table, 'duration_ms');
 	const durationFrames = findNamedLuaTableField(root.table, 'duration_frames');

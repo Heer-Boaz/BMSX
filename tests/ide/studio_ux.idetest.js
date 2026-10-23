@@ -124,6 +124,11 @@ await t.frames(3);
 const scenarios = t.activeWorkbenchTab();
 t.assert(scenarios.kind === 'scenario_lab' && scenarios.view.testPane.rows.some(row => row.kind === 'test'),
 	'the packaged Scenario Lab test cases did not open');
+const scenarioModules = scenarios.view.testPane.rows.filter(row => row.kind === 'module');
+t.assert(scenarioModules.some(row => row.caption === 'bel_encounter') && scenarioModules.some(row => row.caption === 'cinematic_flow'),
+	'the module captions still repeat the actual owning project namespace');
+t.assert(scenarioModules.every(row => row.identity.includes(row.module.resource.path)
+	&& row.id === row.module.id && row.root.id === row.module.parentId), 'compact captions replaced full source membership');
 // Scenario Lab stores its font/layout with the view, not the editor input.
 await matrix('scenario-tests', scenarios, scenarios.view.layout);
 t.assert(scenarios.view.testPane.rows[scenarios.view.testPane.selectionIndex].kind === 'test',
@@ -136,6 +141,43 @@ t.command('gameView.togglePanel');
 await t.frames(3);
 await matrix('scenario-debug-game-panel', scenarios, scenarios.view.layout);
 await press('ControlLeft', 'ShiftLeft', 'KeyT');
+// Full membership belongs to the retained row, available through normal focus and hover.
+const scenarioTests = scenarios.view.testPane;
+const originalDebugCaseId = scenarioTests.rows[scenarioTests.selectionIndex].id;
+const disclosureModuleIndex = scenarioTests.rows.findIndex(row => row.kind === 'module' && row.caption === 'bel_encounter');
+t.assert(disclosureModuleIndex >= 0, 'the actual encounter module is no longer in the current catalog');
+await click(scenarioTests.rows[0].textLeft + 2, scenarioTests.layout.contentTop + scenarioTests.layout.rowHeight / 2);
+await press('Home');
+for (let row = 0; row < disclosureModuleIndex; row++) await press('ArrowDown');
+const scenarioModule = scenarioTests.rows[scenarioTests.selectionIndex];
+t.assert(scenarioModule.kind === 'module' && scenarioModule.caption === 'bel_encounter'
+	&& scenarioModule.text !== scenarioModule.fullText.toUpperCase(), 'narrow MSX selection did not retain the clipped semantic module caption');
+await capture('scenario-msx-narrow-module-full-identity-keyboard');
+await press('ArrowDown');
+const scenarioCase = scenarioTests.rows[scenarioTests.selectionIndex];
+t.assert(scenarioCase.kind === 'test' && scenarioCase.caption === scenarioCase.test.caseName
+	&& scenarioCase.identity.includes(scenarioCase.test.resource.path), 'keyboard row identity no longer names the actual authored test case');
+await capture('scenario-msx-narrow-case-full-identity-keyboard');
+const moduleHoverY = scenarioTests.layout.contentTop + (disclosureModuleIndex - (scenarioTests.scroll | 0)) * scenarioTests.layout.rowHeight + scenarioTests.layout.rowHeight / 2;
+t.controlInput([{ type: 'pointer', x: scenarioModule.textLeft + 2, y: moduleHoverY }]);
+await capture('scenario-msx-narrow-module-full-identity-hover');
+const actualTestId = scenarioCase.id;
+await press('Enter');
+await t.frames(3);
+const scenarioSource = t.activeWorkbenchTab();
+t.assert(scenarioSource.kind === 'code_editor' && scenarioSource.workingCopy.resource.path === scenarioCase.test.resource.path
+	&& scenarioSource.workingCopy.resource.domain === scenarioCase.test.resource.domain, 'compact test caption changed Source command ownership');
+t.command('scenarioLab');
+await t.frames(3);
+t.assert(t.activeWorkbenchTab() === scenarios && scenarioTests.rows[scenarioTests.selectionIndex].id === actualTestId,
+	'returning from authored Source changed the selected typed case membership');
+// Restore the actual paused test scope before exercising its original results and action bar.
+const originalCaseIndex = scenarioTests.rows.findIndex(row => row.id === originalDebugCaseId);
+t.assert(originalCaseIndex >= 0, 'the originating stopped test case lost its typed membership');
+await press('Home');
+for (let row = 0; row < originalCaseIndex; row++) await press('ArrowDown');
+const scenarioResults = scenarios.view.resultPane;
+await click(scenarioResults.rows[0].textLeft + 2, scenarioResults.layout.contentTop + scenarioResults.layout.rowHeight / 2);
 const scenarioBar = scenarios.view.actionBar, scenarioMore = scenarioBar.overflow.button;
 t.assert(scenarioMore.visible, 'the constrained stopped-test toolbar has no More affordance');
 await click((scenarioMore.bounds.left + scenarioMore.bounds.right) / 2, (scenarioMore.bounds.top + scenarioMore.bounds.bottom) / 2);

@@ -12,6 +12,7 @@ import type {
 	ScenarioLabTestRow,
 	ScenarioLabViewState,
 } from './view_model';
+import { scenarioModuleCaptions, scenarioTestIdentity } from './labels';
 
 type ScenarioLabIdentifiedRow = ScenarioLabTestRow | ScenarioLabResultRow;
 
@@ -31,10 +32,14 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 			root,
 			test: null,
 			depth: 0,
+			caption: root.label,
+			identity: `Cartridge ${root.domain} / ${root.label}`,
 			expandable: true,
 			expanded,
 			latestState: null,
 			text: '',
+			fullText: '',
+			feedbackText: '',
 			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,
@@ -42,14 +47,17 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 		if (!expanded) {
 			continue;
 		}
+		const captions = scenarioModuleCaptions(root);
 		for (const module of state.collection.resolveRoot(root.id)) {
 			const expanded = !pane.collapsedNodeIds.has(module.id);
 			pane.rows.push({ id: module.id, kind: 'module', root, module, test: null, depth: 1,
-				expandable: true, expanded, latestState: null, text: '', textLeft: 0, twistieLeft: 0, twistieRight: 0 });
+				caption: captions.get(module)!, identity: `Cartridge ${root.domain} / ${module.resource.path}`,
+				expandable: true, expanded, latestState: null, text: '', fullText: '', feedbackText: '', textLeft: 0, twistieLeft: 0, twistieRight: 0 });
 			if (!expanded) continue;
 			for (const test of module.children) {
 				pane.rows.push({ id: test.id, kind: 'test', root, test, depth: 2,
-					expandable: false, expanded: false, latestState: null, text: '', textLeft: 0, twistieLeft: 0, twistieRight: 0 });
+					caption: test.label, identity: scenarioTestIdentity(test),
+					expandable: false, expanded: false, latestState: null, text: '', fullText: '', feedbackText: '', textLeft: 0, twistieLeft: 0, twistieRight: 0 });
 			}
 		}
 	}
@@ -118,6 +126,8 @@ function appendScenarioResultDetails(
 			expandable: false,
 			expanded: false,
 			text: '',
+			fullText: '',
+			feedbackText: '',
 			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,
@@ -136,6 +146,8 @@ function appendScenarioResultDetails(
 			expandable: false,
 			expanded: false,
 			text: '',
+			fullText: '',
+			feedbackText: '',
 			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,
@@ -156,6 +168,8 @@ function appendScenarioResultDetails(
 				expandable: false,
 				expanded: false,
 				text: '',
+				fullText: '',
+				feedbackText: '',
 				textLeft: 0,
 				twistieLeft: 0,
 				twistieRight: 0,
@@ -177,6 +191,8 @@ function appendScenarioResultDetails(
 				expandable: false,
 				expanded: false,
 				text: '',
+				fullText: '',
+				feedbackText: '',
 				textLeft: 0,
 				twistieLeft: 0,
 				twistieRight: 0,
@@ -195,6 +211,8 @@ function appendScenarioResultDetails(
 			expandable: false,
 			expanded: false,
 			text: '',
+			fullText: '',
+			feedbackText: '',
 			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,
@@ -216,6 +234,8 @@ function appendScenarioRunRows(
 		expandable: true,
 		expanded,
 		text: '',
+		fullText: '',
+		feedbackText: '',
 		textLeft: 0,
 		twistieLeft: 0,
 		twistieRight: 0,
@@ -236,6 +256,8 @@ function appendScenarioRunRows(
 			expandable: true,
 			expanded: resultExpanded,
 			text: '',
+			fullText: '',
+			feedbackText: '',
 			textLeft: 0,
 			twistieLeft: 0,
 			twistieRight: 0,

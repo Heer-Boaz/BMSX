@@ -38,6 +38,7 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense/model_lifetime';
+import { ScenarioLabRowFeedback } from './feedback';
 
 export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<ScenarioLabInput> {
 	public override getSelection(): ScenarioLabNavigationSelection {
@@ -52,10 +53,12 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	private readonly unbindTestsFocus = this.focusTarget.onDidFocus(() => {
 		this.input.view.focus = 'tests';
 		updateScenarioLabStatus(this.input.view);
+		this.rowFeedback.keyboardSelection(this.input.view);
 	});
 	private readonly unbindResultsFocus = this.resultsFocus.onDidFocus(() => {
 		this.input.view.focus = 'results';
 		updateScenarioLabStatus(this.input.view);
+		this.rowFeedback.keyboardSelection(this.input.view);
 	});
 	public readonly inspector = new WorkbenchPropertyInspector<ScenarioMessageProperty>(inputFocus, pointerCapture, pointerHover, this.resultsFocus);
 	public readonly targetInspection: ScenarioTargetInspection;
@@ -66,7 +69,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		prepareScenarioLabLayout(view, this.contentBounds);
 		const result = executeScenarioLabNavigation(view, command);
 		switch (result.kind) {
-			case 'none': case 'changed': return;
+			case 'none': case 'changed': this.rowFeedback.keyboardSelection(view); return;
 			case 'inspect-message': this.openDetails(result.row); return;
 			case 'open-source': this.controller.openSource(result.location); return;
 			case 'actioneffect-source': this.controller.openActionEffectSource(view, result.executionDomain, result.effectId); return;
@@ -74,6 +77,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	};
 	private readonly actionBar: WorkbenchActionBarControl;
 	private readonly actionTooltip = new WorkbenchTooltip();
+	private readonly rowFeedback: ScenarioLabRowFeedback;
 
 	public constructor(
 		resourcePanel: ResourcePanelController,
@@ -87,6 +91,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		super(resourcePanel);
 		this.targetInspection = new ScenarioTargetInspection(this.resultsFocus, commands, contextMenu, surfaces, paneSurface, getWorkArea);
 		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.rowFeedback = new ScenarioLabRowFeedback(surfaces, paneSurface, getWorkArea, this.focusTarget, this.resultsFocus);
 		const inspectStop = {
 			isEnabled: () => this.controller.runs.debugger?.stopped === true && this.targetInspection.model === undefined,
 			run: () => { this.inspector.hide(); this.targetInspection.show(this.controller.runs.debugger!.inspect()); },
@@ -106,6 +111,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionBar.onDidOpenOverflow = lifetime => {
 			this.actionTooltip.hide();
+			this.rowFeedback.clear();
 			lifetime.add({ dispose: controller.runs.onDidChangeRun(() => contextMenu.hide()) });
 			for (const root of this.input.view.collection.roots)
 				lifetime.add(subscribeToLuaModelChanges(editorTextModelService, root.domain, () => contextMenu.hide()));
@@ -145,6 +151,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		pointerHover.release(this);
 		this.actionBar.clearInput();
 		this.actionTooltip.hide();
+		this.rowFeedback.clear();
 		super.clearInput();
 	}
 
@@ -155,6 +162,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		pointerHover.release(this);
 		this.actionBar.dispose();
 		this.actionTooltip.detach();
+		this.rowFeedback.dispose();
 		this.unbindResultsKeyboard(); this.unbindResultsGamepad();
 		this.unbindTestsFocus();
 		this.unbindResultsFocus();
@@ -169,6 +177,8 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		if (hint !== undefined && !this.inspector.visible && this.targetInspection.model === undefined)
 			this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
 		else this.actionTooltip.hide();
+		if (hint !== undefined || this.inspector.visible || this.targetInspection.model !== undefined) this.rowFeedback.clear();
+		else this.rowFeedback.update(editorViewState.font.renderFont(), measureTextRange, measureText);
 		if (this.inspectedMessage !== undefined && selectedScenarioResultRow(this.input.view)?.id !== this.inspectedMessage.id) this.inspector.hide();
 		this.inspector.update();
 		this.targetInspection.update(view.layout);
@@ -214,6 +224,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	public onPointerLeave(): void {
 		this.input.view.testPane.hoverIndex = -1;
 		this.input.view.resultPane.hoverIndex = -1;
+		this.rowFeedback.onPointerLeave();
 	}
 
 	protected override handleViewPointer(
@@ -232,6 +243,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		if (result === ScenarioLabPointerResult.Outside) { pointerHover.release(this); return false; }
 		pointerHover.visit(this);
 		if (justPressed) this.focus();
+		this.rowFeedback.pointer(view, snapshot);
 		if (result === ScenarioLabPointerResult.Activate) this.navigate('activate');
 		return true;
 	}

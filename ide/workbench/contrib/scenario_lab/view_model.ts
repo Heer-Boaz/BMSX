@@ -35,8 +35,12 @@ type ScenarioLabTestRowBase = {
 	readonly id: ScenarioLabTestRowId;
 	readonly root: ScenarioTestRoot;
 	readonly depth: number;
+	readonly caption: string;
+	readonly identity: string;
 	latestState: ScenarioResultState | null;
 	text: string;
+	fullText: string;
+	feedbackText: string;
 	textLeft: number;
 	twistieLeft: number;
 	twistieRight: number;
@@ -64,6 +68,8 @@ type ScenarioLabResultRowBase = {
 	readonly id: string;
 	readonly depth: number;
 	text: string;
+	fullText: string;
+	feedbackText: string;
 	textLeft: number;
 	twistieLeft: number;
 	twistieRight: number;
