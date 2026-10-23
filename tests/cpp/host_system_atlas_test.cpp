@@ -45,6 +45,22 @@ int main() {
 	}
 	require(missingImageRejected, "host system atlas lookup should reject missing image ids");
 	for (auto variant : {bmsx::FontVariant::Msx, bmsx::FontVariant::Tiny}) {
+		for (auto style : {bmsx::FontStyle::Normal, bmsx::FontStyle::Italic}) {
+			bmsx::Font symbols(variant, style);
+			const auto& ellipsis = symbols.getGlyph(0x2026u);
+			require(ellipsis.imgid != symbols.getGlyph(static_cast<bmsx::u32>('?')).imgid, "ellipsis must not use the fallback glyph");
+			require(ellipsis.imgid.find("_ellipsis") != std::string::npos, "ellipsis uses one native atlas glyph");
+			require(ellipsis.height == symbols.lineHeight(), "ellipsis preserves the font baseline");
+			require(ellipsis.advance < symbols.advance('.') * 3, "ellipsis is narrower than three dot glyphs");
+			require(symbols.measure("\xe2\x80\xa6") == ellipsis.advance, "UTF-8 text measures one ellipsis glyph");
+			int opaque = 0;
+			for (int y = 0; y < ellipsis.height; ++y) {
+				for (int x = 0; x < ellipsis.width; ++x) {
+					if (bmsx::HOST_SYSTEM_ATLAS.pixels[((ellipsis.rect.v + y) * bmsx::HOST_SYSTEM_ATLAS.width + ellipsis.rect.u + x) * 4u + 3u] != 0) ++opaque;
+				}
+			}
+			require(opaque == 3, "one ellipsis glyph contains three single-pixel dots");
+		}
 		bmsx::Font normal(variant), font(variant, bmsx::FontStyle::Italic);
 		require(font.lineHeight() == normal.lineHeight(), "italic fonts preserve the baseline");
 		for (bmsx::u32 code = 32; code <= 126; ++code) {

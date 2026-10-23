@@ -1,8 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { truncateMeasuredText } from '../../ide/common/text';
+import { appendMeasuredTruncationMarker, ELLIPSIS, truncateMeasuredText, writeWrappedMeasuredText } from '../../ide/common/text';
 
 const measure = (text: string, start: number, end: number) => Array.from(text.slice(start, end)).length;
+
+test('shared labels and wrapped previews use one measured ellipsis glyph', () => {
+	assert.equal(ELLIPSIS.length, 1);
+	assert.equal(truncateMeasuredText('abcdef', 4, measure), 'abc…');
+	assert.equal(truncateMeasuredText('abcdef', 1, measure), '…');
+	assert.equal(appendMeasuredTruncationMarker('abcdef', 4, measure), 'abc…');
+	const lines: string[] = [];
+	writeWrappedMeasuredText(lines, 'one two three', 4, 4, 1, measure);
+	assert.deepEqual(lines, ['one…']);
+});
 
 test('middle truncation fits measured width and preserves both identifying ends', () => {
 	const value = 'namespace.component.distinguishing_suffix';

@@ -11,7 +11,7 @@ import potpack from 'potpack';
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { addHostFontStyles } from './host_font_styles';
+import { addHostFontResources } from './host_fonts';
 
 type HostAtlasImage = {
 	id: string;
@@ -167,7 +167,7 @@ async function generateHostSystemAtlasArtifacts(): Promise<boolean> {
 		virtualRoot: biosVirtualRoot,
 	});
 	const resources = await getResourcesList(resMeta);
-	await addHostFontStyles(resources);
+	await addHostFontResources(resources);
 	return writeHostSystemAtlasArtifacts(buildHostAtlasFromResources(resources));
 }
 

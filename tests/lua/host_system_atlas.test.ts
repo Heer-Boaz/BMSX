@@ -24,6 +24,27 @@ test('host system atlas image lookup is strict', () => {
 	assert.throws(() => hostSystemAtlasImage('missing_host_atlas_image'), /not in the host system atlas/);
 });
 
+test('both host fonts have a compact native ellipsis glyph, including italic text', () => {
+	for (const variant of ['msx', 'tiny'] as const) {
+		for (const style of ['normal', 'italic'] as const) {
+			const font = new Font({ variant, style }), glyph = font.getGlyph('…');
+			assert.notEqual(glyph.imgid, font.getGlyph('?').imgid);
+			assert.match(glyph.imgid, /_ellipsis(?:_italic)?$/);
+			assert.equal(glyph.height, font.lineHeight);
+			assert.ok(glyph.advance < font.advance('.') * 3);
+			let opaque = 0;
+			for (let y = 0; y < glyph.height; y++) {
+				for (let x = 0; x < glyph.width; x++) {
+					const alpha = HOST_SYSTEM_ATLAS.pixels[((glyph.rect.v + y) * HOST_SYSTEM_ATLAS.width + glyph.rect.u + x) * 4 + 3];
+					if (alpha !== 0) opaque++;
+				}
+			}
+			assert.equal(opaque, 3, 'one atlas glyph contains the three dots; rendering never expands them into characters');
+			assert.equal(font.getGlyph('…'), glyph, 'glyph geometry is retained');
+		}
+	}
+});
+
 
 test('host italic glyphs preserve the baseline and contain the sheared source pixels in both variants', () => {
 	for (const variant of ['msx', 'tiny'] as const) {

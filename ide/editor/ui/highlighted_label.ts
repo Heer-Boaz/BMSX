@@ -1,11 +1,10 @@
 import { ScratchBuffer } from '../../../machine/ts/common/scratchbuffer';
-import { findMeasuredPrefixEnd } from '../../common/text';
+import { ELLIPSIS, findMeasuredPrefixEnd } from '../../common/text';
 import { api } from '../../runtime/overlay_api';
 import { measureTextRange } from '../common/text/layout';
 import { editorViewState } from './view/state';
 
 type LabelRun = { start: number; end: number; x: number; highlighted: boolean };
-const ELLIPSIS = '...';
 
 /** Retained bitmap label geometry; source spans arrive from the query owner. */
 export class HighlightedLabel {

@@ -53,6 +53,7 @@ function buildMsxCharMap(): GlyphMap {
 		'-': withPrefix('streep'),
 		'–': withPrefix('streep'),
 		'.': withPrefix('dot'),
+		'…': withPrefix('ellipsis'),
 		'/': withPrefix('slash'),
 		':': withPrefix('colon'),
 		';': withPrefix('code_0x3b'),
@@ -94,6 +95,7 @@ function buildTinyCharMap(): GlyphMap {
 	const withPrefix = fontImagePrefix(prefix);
 	const map: GlyphMap = {
 		'•': withPrefix('bullet'),
+		'…': withPrefix('ellipsis'),
 		'█': withPrefix('code_0x5f'),
 		'¡': withPrefix('inverted_exclamation'),
 		'¤': withPrefix('flower'),

@@ -68,6 +68,7 @@ GlyphMap buildMsxCharMap() {
 	map[static_cast<u32>('-')] = withPrefix("streep");
 	map[0x2013] = withPrefix("streep");
 	map[static_cast<u32>('.')] = withPrefix("dot");
+	map[0x2026] = withPrefix("ellipsis");
 	map[static_cast<u32>('/')] = withPrefix("slash");
 	map[static_cast<u32>(':')] = withPrefix("colon");
 	map[static_cast<u32>(';')] = withPrefix("code_0x3b");
@@ -114,6 +115,7 @@ GlyphMap buildTinyCharMap() {
 	map[0x2013] = withPrefix("code_0x2d");
 	map[0x2014] = withPrefix("code_0x2d");
 	map[0x2022] = withPrefix("bullet");
+	map[0x2026] = withPrefix("ellipsis");
 	map[0x2588] = withPrefix("code_0x5f");
 	map[0x00A1] = withPrefix("inverted_exclamation");
 	map[0x00A4] = withPrefix("flower");

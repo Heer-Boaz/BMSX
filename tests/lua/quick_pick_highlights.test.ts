@@ -95,10 +95,10 @@ test('command word positions explain abbreviations without marking equivalent se
 
 test('highlighted labels own prefix clipping and ellipsis, with retained proportional run geometry', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
-	t.mock.method(editorViewState.font, 'advance', (char: string) => char === 'W' ? 9 : 2);
+	t.mock.method(editorViewState.font, 'advance', (char: string) => char === 'W' ? 9 : char === '…' ? 6 : 2);
 	const label = new HighlightedLabel();
-	label.layout('WiWiWi', 30); // 33 px full text; 6 px ellipsis -> 22 px body.
-	assert.equal(label.visibleEnd, 4); assert.equal(label.marker, '...');
+	label.layout('WiWiWi', 30); // 33 px full text; one 6 px ellipsis leaves a 24 px body.
+	assert.equal(label.visibleEnd, 4); assert.equal(label.marker, '…');
 	label.beginHighlights(); label.addHighlight(1, 3); label.addHighlight(4, 6); label.endHighlights();
 	assert.deepEqual([...label.runs], [
 		{ start: 0, end: 1, x: 0, highlighted: false },

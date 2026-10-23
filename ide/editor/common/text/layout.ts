@@ -3,7 +3,7 @@
 import { getCodeAreaBounds } from '../../ui/view/view';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import type { HighlightLine } from '../../../common/models';
-import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
+import { ELLIPSIS, truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
 import { editorViewState } from '../../ui/view/state';
 import { activeCodeEditor } from '../../ui/code_editor_state';
 import * as constants from '../../../common/constants';
@@ -25,7 +25,7 @@ export function measureText(text: string): number {
 }
 
 export function truncateTextToWidth(text: string, maxWidth: number, placement: 'end' | 'middle' = 'end'): string {
-	return truncateMeasuredText(text, maxWidth, measureTextRange, '...', placement);
+	return truncateMeasuredText(text, maxWidth, measureTextRange, ELLIPSIS, placement);
 }
 
 export function assertMonospace(): void { // TODO: WTF IS THIS SHIT?!?!?!?!?!?!?!?!! WHY HAS THIS EVER BEEN IMPLEMENTED?!?!?!?!?!?!?!

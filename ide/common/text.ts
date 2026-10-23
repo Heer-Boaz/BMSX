@@ -82,6 +82,7 @@ export function uppercaseOutsideStrings(text: string): string {
 }
 
 export type TextRangeMeasure = (text: string, start: number, end: number) => number;
+export const ELLIPSIS = '…';
 
 /** Smallest contiguous replacement between two UTF-16 source snapshots. */
 export function changedTextRange(previous: string, next: string): { start: number; previousEnd: number; nextEnd: number } | undefined {
@@ -173,7 +174,7 @@ export function findMeasuredPrefixEnd(text: string, maxWidth: number, measureRan
 	return best;
 }
 
-export function truncateMeasuredText(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = '...', placement: 'end' | 'middle' = 'end'): string {
+export function truncateMeasuredText(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = ELLIPSIS, placement: 'end' | 'middle' = 'end'): string {
 	if (maxWidth <= 0) {
 		return '';
 	}
@@ -200,7 +201,7 @@ export function truncateMeasuredText(text: string, maxWidth: number, measureRang
 	return text.slice(0, prefix) + marker + text.slice(low);
 }
 
-export function appendMeasuredTruncationMarker(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = '...'): string {
+export function appendMeasuredTruncationMarker(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = ELLIPSIS): string {
 	const markerWidth = measureRange(marker, 0, marker.length);
 	if (markerWidth > maxWidth) {
 		return '';
@@ -219,7 +220,7 @@ export function writeWrappedMeasuredText(
 	subsequentWidth: number,
 	maxLines: number,
 	measureRange: TextRangeMeasure,
-	truncationMarker = '...',
+	truncationMarker = ELLIPSIS,
 ): void {
 	lines.length = 0;
 	let lineStart = skipLeadingHorizontalWhitespace(text, 0, text.length);
