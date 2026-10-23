@@ -7,6 +7,7 @@ import { drawEditorText } from '../../../../editor/render/text_renderer';
 import type { PanelLayout } from './layout';
 import type { ProblemsPanelController } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
+import { renderWorkbenchActionBar } from '../../../render/action_bar';
 
 let emptyProblemsMessage = '';
 let emptyProblemsSource = '';
@@ -49,7 +50,10 @@ export function drawProblemsPanelSurface(
 
 	const headerX = bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
 	const headerY = layout.headerTop + constants.PROBLEMS_PANEL_HEADER_PADDING_Y;
-	drawEditorText(editorViewState.font, controller.getHeaderLabel(), headerX, headerY, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
+	const header = controller.header;
+	drawEditorText(editorViewState.font, header.title, headerX, headerY, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
+	if (header.summary.length > 0) drawEditorText(editorViewState.font, header.summary, header.summaryLeft, headerY, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
+	renderWorkbenchActionBar(header.actions, editorViewState.font.renderFont());
 
 	const contentLeft = bounds.left + constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
 	const contentRight = bounds.right - constants.PROBLEMS_PANEL_CONTENT_PADDING_X;

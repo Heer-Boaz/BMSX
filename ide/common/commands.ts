@@ -126,6 +126,7 @@ export type EditorCommandId =
 	| 'behaviorLens.addProperty' | 'behaviorLens.removeProperty'
 	| 'propertyInspector.source'
 	| 'propertyInspector.close'
+	| 'problems.coverage'
 	| 'window.collapse' | 'window.hide'
 	| 'luaProgram.edit' | 'luaProgram.add' | 'luaProgram.remove' | 'luaProgram.source' | 'luaProgram.live' | 'luaProgram.authoring' | 'luaProgram.selectInstance' | 'luaProgram.more' | 'luaProgram.testInput'
 	| 'tabs.scrollLeft' | 'tabs.scrollRight'

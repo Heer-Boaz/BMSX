@@ -16,6 +16,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'graph.resetZoom': { category: 'Graph', title: 'Reset Zoom (100%)', shortTitle: '1:1' },
 	'propertyInspector.source': { category: 'Inspect', title: 'Open Property Source', shortTitle: 'Source' },
 	'propertyInspector.close': { category: 'Inspect', title: 'Close Property Details', shortTitle: 'Back' },
+	'problems.coverage': { category: 'Problems', title: 'Show Diagnostic Coverage' },
 	'window.collapse': { category: 'Window', title: 'Collapse Window', activeTitle: 'Expand Window' },
 	'window.hide': { category: 'Window', title: 'Close Window', shortTitle: 'Close' },
 	'sourceEditReview.apply': { category: 'Review', title: 'Apply Source Edit', shortTitle: 'Apply' },

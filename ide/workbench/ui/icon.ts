@@ -3,4 +3,4 @@ export const WORKBENCH_ICON_SIZE = 7;
 
 export type WorkbenchIcon = 'pin' | 'unpin' | 'close' | 'collapse' | 'expand'
 	| 'play' | 'pause' | 'stepBack' | 'stepForward' | 'present' | 'accept' | 'back'
-	| 'more' | 'actor' | 'follow' | 'chevronRight' | 'chevronDown';
+	| 'more' | 'info' | 'actor' | 'follow' | 'chevronRight' | 'chevronDown';

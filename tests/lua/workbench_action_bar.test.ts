@@ -85,7 +85,7 @@ test('compact window actions reserve icon cells instead of measuring hidden text
 
 test('shared UI icons are retained pixel geometry, not font glyph substitutions', t => {
 	const icons = ['pin', 'unpin', 'close', 'collapse', 'expand', 'play', 'pause', 'stepBack', 'stepForward', 'present',
-		'accept', 'back', 'more', 'actor', 'follow', 'chevronRight', 'chevronDown'] as const satisfies readonly WorkbenchIcon[];
+		'accept', 'back', 'more', 'info', 'actor', 'follow', 'chevronRight', 'chevronDown'] as const satisfies readonly WorkbenchIcon[];
 	const pixels: number[][] = [];
 	t.mock.method(api, 'fill_rect', (...args) => { pixels.push(args); });
 	const glyphs = t.mock.method(api, 'blit_text_inline_with_font', () => {});

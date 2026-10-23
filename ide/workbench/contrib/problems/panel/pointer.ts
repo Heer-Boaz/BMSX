@@ -32,6 +32,7 @@ export function handleProblemsPanelPointerInput(
 		}
 		return false;
 	}
+	if (controller.header.handlePointer(snapshot)) { controller.setHoverIndex(-1); return true; }
 	if (justPressed) {
 		controller.setFocused(true);
 	}

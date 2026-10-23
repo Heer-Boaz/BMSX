@@ -9,6 +9,7 @@ import { getVisibleProblemsPanelHeight, statusAreaHeight } from '../../../common
 import * as constants from '../../../../common/constants';
 import { problemsPanel } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
+import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 
 export type PanelLayout = {
 	headerTop: number;
@@ -44,7 +45,7 @@ function renderSeverityLabel(severity: EditorDiagnosticSeverity): string {
 }
 
 export function problemsPanelHeaderHeight(): number {
-	return editorViewState.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
+	return Math.max(editorViewState.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2, WORKBENCH_ICON_SIZE + 5);
 }
 
 function targetVisibleRows(diagnosticCount: number): number {

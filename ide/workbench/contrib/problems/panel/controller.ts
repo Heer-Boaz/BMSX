@@ -26,6 +26,7 @@ import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from 
 import { handleProblemsPanelPointerInput } from './pointer';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 import { inputFocus } from '../../../../input/focus';
+import { ProblemsPanelHeader } from './header';
 
 export {
 	getProblemsPanelBounds,
@@ -36,9 +37,10 @@ export {
 const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 
 export class ProblemsPanelController implements PointerHoverTarget {
-	public onPointerLeave(): void { this.hoverIndex = -1; }
+	public onPointerLeave(): void { this.hoverIndex = -1; this.header.onPointerLeave(); }
 	private visible = false;
 	public readonly focusTarget = inputFocus.createTarget();
+	public readonly header = new ProblemsPanelHeader(this.focusTarget);
 	private diagnostics: readonly EditorDiagnostic[] = EMPTY_DIAGNOSTICS;
 	private selectionIndex = -1;
 	private hoverIndex = -1;
@@ -49,7 +51,6 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	private cachedLayout: PanelLayout = null;
 	private fixedHeightPx: number = null;
 	private lastAvailableWidth = 1;
-	private headerLabel = 'PROBLEMS (0)';
 	public emptyMessage = 'No resources checked.';
 
 	public get isVisible(): boolean {
@@ -57,7 +58,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	}
 
 	public get isFocused(): boolean {
-		return this.focusTarget.hasFocus;
+		return this.focusTarget.hasFocus || this.header.hasFocus;
 	}
 
 	public get selectedDiagnostic(): EditorDiagnostic {
@@ -77,6 +78,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	public show(): void {
 		if (this.visible) return;
 		this.visible = true;
+		this.header.setVisible(true);
 		this.scrollPosition = 0; // open at top
 		this.hoverIndex = -1;
 		this.selectionIndex = -1; // no implicit selection on open
@@ -89,6 +91,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 			return;
 		}
 		this.visible = false;
+		this.header.setVisible(false);
 		this.focusTarget.release();
 		this.hoverIndex = -1;
 		this.cachedLayout = null;
@@ -124,10 +127,6 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		return this.cachedLayout;
 	}
 
-	public getHeaderLabel(): string {
-		return this.headerLabel;
-	}
-
 	public resolveAvailableWidth(bounds: RectBounds): number {
 		return bounds.right - bounds.left - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2;
 	}
@@ -135,6 +134,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	public prepareLayout(bounds: RectBounds): PanelLayout {
 		this.cachedLayout = writeProblemsPanelLayout(bounds, this.layout);
 		this.lastAvailableWidth = this.resolveAvailableWidth(bounds);
+		this.header.layout(editorViewState.font.renderFont(), bounds.left, this.layout.headerTop, bounds.right, this.layout.headerBottom);
 		return this.layout;
 	}
 
@@ -145,7 +145,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 
 	public setDiagnostics(diagnostics: readonly EditorDiagnostic[], coverage: DiagnosticsCoverage): void {
 		this.diagnostics = diagnostics;
-		this.headerLabel = `PROBLEMS (${diagnostics.length}) / ${coverage.ready} CHECKED, ${coverage.pending} PENDING, ${coverage.unsupported} UNSUPPORTED, ${coverage.failed} FAILED`;
+		this.header.setCoverage(diagnostics.length, coverage);
 		this.emptyMessage = coverage.failed > 0 ? 'Diagnostic computation failed.'
 			: coverage.pending > 0 ? 'Diagnostics pending.'
 				: coverage.ready === 0 ? 'No resources checked.'
@@ -167,6 +167,13 @@ export class ProblemsPanelController implements PointerHoverTarget {
 			bounds,
 			layout,
 		);
+	}
+
+	public update(): void {
+		const bounds = getProblemsPanelBounds();
+		if (bounds === null) return;
+		this.prepareLayout(bounds);
+		this.header.updateFeedback();
 	}
 
 	public handlePointer(

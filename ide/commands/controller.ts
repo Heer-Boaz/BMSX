@@ -267,6 +267,7 @@ export class IdeCommandController {
 				}
 				return;
 			case 'runtime.focusTimeline': this.editor.runtimeTimeline.focus(); return;
+			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
 			case 'runtime.pause':
 				inputFocus.executeCommand(command, target);
 				this.selectedTransport.pause();
@@ -511,6 +512,7 @@ export class IdeCommandController {
 				if (context?.getCommand(command) !== undefined) return context.getCommand(command)!.isEnabled();
 				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
 			case 'runtime.focusTimeline': return this.editor.isActive && this.editor.runtimeTimeline.visible;
+			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
 			case 'runtime.pause': return this.selectedTransport.playbackEnabled;
 			case 'runtime.present':
 			case 'runtime.accept':
