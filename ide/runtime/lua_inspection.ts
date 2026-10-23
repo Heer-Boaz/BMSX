@@ -13,7 +13,7 @@ import { sourcePositionInRange } from '../../toolchain/ts/lua/semantic/source_ra
 import { sourceRangesEqual, type SourceRange } from '../../toolchain/ts/lua/source_range';
 import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
-import { Blua32GlobalRegisterFile, resolveRuntimeLuaSource, type RuntimeSourceState, type RuntimeInstalledSourceState } from './sources';
+import { Blua32GlobalRegisterFile, resolveRuntimeLuaSource, type Blua32SourceImage, type RuntimeSourceState, type RuntimeInstalledSourceState } from './sources';
 import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import type { SuspendedGuestRead, SuspendedGuestSession, SuspendedGuestValue, RuntimeFunctionLocationBuffer } from './suspended_guest';
 import type { RuntimeStackFrame } from './stack_trace';
@@ -125,6 +125,23 @@ export type RuntimeLuaFunctionSource = {
 	readonly range: SourceRange;
 	readonly installedSource: string;
 };
+
+export type CapturedLuaSourceLocation = {
+	readonly resource: ResourceIdentity;
+	readonly range: SourceRange;
+	readonly installedSource: string;
+};
+
+/** Resolve an observed PC only in its captured installation, not current media or issuing-slot aliases. */
+export function capturedLuaSourceAtPc(image: Blua32SourceImage, pc: number): CapturedLuaSourceLocation | undefined {
+	if (image.symbols === null) return undefined;
+	const range = blua32SourceRangeAtPc(image.symbols, image.layout.header.textAddress, pc);
+	if (range === null) return undefined;
+	const source = image.sources.get(toLuaModulePath(range.path));
+	if (source === undefined) return undefined;
+	return { resource: { domain: image.sourceDomain, path: source.displayPath },
+		range: { path: source.displayPath, start: range.start, end: range.end }, installedSource: readBlua32CompiledSource(source) };
+}
 
 /** Read a module-scoped local retained by this closure, not a same-name local in a factory. */
 export function readRuntimeLuaModuleCapture(

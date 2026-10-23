@@ -90,7 +90,7 @@ scope. A planned slice is a dependency, not an implementation-status claim.
 | Role | Placement and input behaviour | Product consumer | Planned scope |
 | --- | --- | --- | --- |
 | Layout content | Bounds supplied by the existing workbench or pane layout. | Editor group, resource panel, game panel, timeline. | A: publish the existing layout roots. |
-| Modeless window | Independently placed within its stacking context; its full opaque rectangle excludes surfaces behind it. | Actor Lab Details; GPU operation Details. | C: chrome and first product window; GPU uses the same container. |
+| Modeless window | Independently placed within its stacking context; its full opaque rectangle excludes surfaces behind it. | Actor Lab Details; GPU operation and GTE command Details. | C: chrome and first product window; hardware Details use the same container. |
 | Contained subwindow | Independently ordered inside a window's client area, bounded by that client's effective clip. | No concrete product consumer yet. | Designed, provisional and not validated by a product consumer; no nested arrangement implementation in A–C. |
 | Anchored transient | Owner-relative anchor, explicit dismissal and input policy; may escape the owner's content clip. | Context menu, submenu, completion popup, interactive hover. | A: migrate existing transients. |
 | Modal surface | Blocks a named scope and confines focus/commands within it until resolved. | Root action prompt/Quick Input; pane-local image lightbox. | A: root and existing owner-local blocking. |
@@ -611,9 +611,44 @@ A changed observation or raw-word page replaces the inspector document in its
 existing attachment, ending old keyboard/controller activations, scroll drags
 and feedback before the new fields receive input. Unchanged documents retain
 their measured rows; hidden and collapsed clients perform no field formatting.
-Restoring a client applies its bookmark at the actual reflow boundary, before
-another input occurrence. GTE and editable source inspectors have their own
-subject/source lifetimes and require separate integrations.
+The shared inspector bookmark retains selection, top row and its intra-row offset,
+not an absolute scroll pixel. Restoration resolves that row at the actual reflow
+boundary, preserving a visible selection across changed font or annotation metrics
+without pulling deliberately offscreen selections into view or restarting long
+property text. It finishes before another input occurrence. Editable source
+inspectors have different subject and mutation lifetimes and require their own
+integrations.
+
+## GTE command Details
+
+GTE Details composes the same modeless window and property document beside the
+command list and diagram. Its subject is the input's selected owned observation,
+including the normal register banks or the distinct PLUS acceptance/publication
+banks. Follow owns changing that subject; Details adds neither another pin nor
+another capture. Placement, collapse, close, focus return, empty selection and
+expired-observation behavior follow the GPU window contract.
+
+The Source icon and actionable source row refer only to the instruction observed
+in the selected capture's installed image. PLUS publication refers to its observed
+acceptance source, never a later synchronization instruction. An unobserved or
+unmapped source remains explicitly unavailable. The captured source's own resource
+domain and written path determine navigation, not the issuing CPU domain or the
+latest installed image.
+
+Source admission compares captured source bytes with the current resource-owned
+working copy, including unsaved edits, or its workspace source when no text model
+is retained. Changed or unavailable authored source disables navigation; Undo can
+restore the original byte correspondence. Model identity/version and registry
+publication drive this comparison, not paint or repeated full-text reads. Source
+status refreshes only the provenance row, preserving the captured register rows
+and reading position.
+
+A new observation retires old property activations and pending Source-icon
+attempts. Provenance changes also retire Source attempts without interrupting
+Close or Collapse during Follow. Popup actions remain bound to the observation
+and source generation that opened the popup. Source navigation detaches the
+pane's surfaces, not the input's window intent, selected snapshot or observation
+lease.
 
 ## Implementation order and acceptance
 

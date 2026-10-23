@@ -3,6 +3,8 @@ import type { WorkbenchIcon } from '../ui/icon';
 
 /** Retained horizontal/vertical pixel runs: left, top, right, bottom, in a 7x7 cell. */
 const ICON_RUNS: Record<WorkbenchIcon, readonly number[]> = {
+	source: [3, 0, 6, 1, 6, 1, 7, 7, 2, 6, 6, 7, 2, 4, 3, 6, 2, 0, 3, 1, 3, 1, 4, 2,
+		0, 2, 5, 3, 3, 3, 4, 4, 2, 4, 3, 5],
 	info: [1, 0, 6, 1, 0, 1, 1, 6, 6, 1, 7, 6, 1, 6, 6, 7, 3, 2, 4, 3, 3, 4, 4, 6],
 	pin: [1, 0, 6, 1, 2, 1, 5, 3, 1, 3, 6, 4, 3, 4, 4, 7],
 	unpin: [3, 0, 6, 1, 2, 1, 3, 2, 5, 1, 6, 3, 1, 2, 2, 4, 4, 3, 5, 4, 2, 4, 4, 5, 1, 5, 2, 6, 0, 6, 1, 7],

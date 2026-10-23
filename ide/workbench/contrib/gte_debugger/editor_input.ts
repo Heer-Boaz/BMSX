@@ -5,6 +5,8 @@ import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
+import type { PropertyInspectorViewState } from '../../ui/property_inspector/model';
+import { WorkbenchWindowModel } from '../../ui/window/model';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import { GteCommandProjection, type GteDebugPlane, type GteDebugView } from './presentation';
@@ -14,6 +16,10 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
 	public readonly actions = createWorkbenchActionBar('gte.title');
+	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
+	public readonly detailsActions = createWorkbenchActionBar('gte.details.title');
+	public detailsPlacementInitialized = false;
+	public readonly detailsView: PropertyInspectorViewState = { selectionIndex: 0, selectionVisible: false, anchorIndex: 0, anchorOffset: 0 };
 	public readonly list = new WorkbenchScrollViewport();
 	public readonly projection = new GteCommandProjection();
 	public readonly selected = new GteCommandSnapshot();
@@ -38,14 +44,15 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 	private copySelection(sequence: number): void {
 		if (sequence === this.selected.sequence) return;
 		this.history.copy(sequence, this.selected);
-		this.selectedPoint = 0;
+		this.selectedPoint = 0; this.detailsView.selectionIndex = 0; this.detailsView.selectionVisible = false; this.detailsView.anchorIndex = 0; this.detailsView.anchorOffset = 0;
 		this.selectionRevision++;
 	}
 	public clear(): void {
 		this.history.clear(); this.following = true; this.clearSelection();
 	}
 	private clearSelection(): void {
-		this.selected.sequence = -1; this.selected.image = null; this.selectedPoint = 0; this.selectionRevision++;
+		this.selected.sequence = -1; this.selected.image = null; this.selectedPoint = 0;
+		this.detailsView.selectionIndex = 0; this.detailsView.selectionVisible = false; this.detailsView.anchorIndex = 0; this.detailsView.anchorOffset = 0; this.selectionRevision++;
 	}
 	public update(): boolean {
 		if (this.generation !== this.history.generation) {

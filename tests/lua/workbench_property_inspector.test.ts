@@ -634,3 +634,59 @@ test('a different inspected observation retires its scroll capture and resets on
 	snapshot.viewportY += 50; snapshot.justPressedButtons = 0;
 	f.inspector.handlePointer(snapshot); f.layout(); assert.equal(view.scrollTop, 0, 'the remainder of an old hold does not drag a new document');
 });
+
+test('detached inspector mementos anchor rows across provenance and font reflow without dragging an offscreen selection into view', () => {
+	const tiny = new Font({ variant: 'tiny' }), msx = new Font({ variant: 'msx' });
+	const bounds = { left: 0, top: 20, right: 280, bottom: 110 };
+	const fields: InspectedProperty[] = Array.from({ length: 30 }, (_, index) => ({ compact: true, descriptionDisplay: 'disclosure',
+		label: `Word[${index}]`, value: '00000000h', description: 'Captured raw word.', warning: false }));
+	const original = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+	original.setItems(fields); original.layout(tiny, (text, a, b) => tiny.measure(text.slice(a, b)), bounds);
+	original.select(0); original.viewport.scrollbar.setScroll(200);
+	const state = { selectionIndex: 0, selectionVisible: false, anchorIndex: 0, anchorOffset: 0 };
+	original.saveViewState(state); assert.equal(state.selectionVisible, false);
+	const restored = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+	const changed = fields.slice();
+	changed[1] = { ...fields[1], descriptionDisplay: 'inline', description: 'Source changed.\nNavigation is disabled.\nThe captured register words remain unchanged.' };
+	restored.setItems(changed); restored.restoreViewState(state);
+	restored.layout(msx, (text, a, b) => msx.measure(text.slice(a, b)), bounds);
+	assert.equal(restored.selectionIndex, 0);
+	assert.equal(restored.rowAt(bounds.top), state.anchorIndex);
+	assert.equal(restored.viewport.scrollTop - restored.rows[state.anchorIndex].top, state.anchorOffset);
+	assert.ok(restored.viewport.offsetTop + restored.rows[0].bottom < bounds.top, 'a deliberately offscreen selection stays offscreen');
+});
+
+test('restoring within an oversized selected property preserves the reading offset instead of revealing its beginning', () => {
+	const font = new Font({ variant: 'tiny' }), bounds = { left: 0, top: 20, right: 280, bottom: 110 };
+	const fields = [{ label: 'Callback', value: Array.from({ length: 80 }, (_, index) => `line_${index}()`).join('\n'), description: '', warning: false }];
+	const model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+	model.setItems(fields); model.layout(font, (text, a, b) => font.measure(text.slice(a, b)), bounds);
+	model.viewport.scrollbar.setScroll(200);
+	const state = { selectionIndex: 0, selectionVisible: false, anchorIndex: 0, anchorOffset: 0 };
+	model.saveViewState(state); assert.equal(state.selectionVisible, true);
+	model.setItems(fields); model.restoreViewState(state);
+	model.layout(font, (text, a, b) => font.measure(text.slice(a, b)), bounds);
+	assert.equal(model.viewport.scrollTop, 200);
+});
+
+test('document input cancellation retires keyboard and controller attempts without detaching or blurring the inspector', t => {
+	const f = fixture(t), target = f.inspector.focusTarget;
+	f.key('Enter', true); target.cancelInput(); f.key('Enter', false);
+	assert.equal(f.opened(), -1); assert.equal(f.inspector.visible, true); assert.equal(f.focus.target, target);
+	f.pad('a', true); target.cancelInput(); f.pad('a', false);
+	assert.equal(f.opened(), -1); assert.equal(f.inspector.visible, true); assert.equal(f.focus.target, target);
+	f.pad('a', true); f.pad('a', false); assert.equal(f.opened(), 0);
+});
+
+
+test('source admission may retire the held activation synchronously before the release commits', t => {
+	const f = fixture(t);
+	let retire = false, opened = 0;
+	f.inspector.show({ title: 'Captured source', items: f.items, dismissible: false,
+		canOpenSource: () => { if (retire) f.inspector.focusTarget.cancelInput(); return true; }, openSource() { opened++; } });
+	f.layout();
+	f.key('Enter', true); retire = true; f.key('Enter', false); assert.equal(opened, 0);
+	retire = false; f.pad('a', true); retire = true; f.pad('a', false); assert.equal(opened, 0);
+	retire = false; f.press('Enter'); assert.equal(opened, 1);
+	f.pad('a', true); f.pad('a', false); assert.equal(opened, 2);
+});

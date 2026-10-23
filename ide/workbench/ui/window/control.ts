@@ -43,7 +43,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public readonly clientScope = new InputFocusScope(Symbol('window client'));
 	public surface: WorkbenchSurface | undefined;
 	public clientSurface: WorkbenchSurface | undefined;
-	private readonly actions: WorkbenchActionBarControl;
+	public readonly actions: WorkbenchActionBarControl;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindClientKeyboard: () => void;
 	private readonly startBounds = create_rect_bounds();

@@ -37,6 +37,13 @@ export type InspectedPropertyRow<Element> = {
 	headerHeight: number;
 	measured: { label: string; value: string; description: string; depth: number; compact: boolean; group: boolean; descriptionDisplay: InspectedProperty['descriptionDisplay'] };
 };
+/** A document-relative reading position survives client detachment and changed row metrics. */
+export type PropertyInspectorViewState = {
+	selectionIndex: number;
+	selectionVisible: boolean;
+	anchorIndex: number;
+	anchorOffset: number;
+};
 export const INSPECTOR_PADDING = 4;
 export const INSPECTOR_COMPACT_PADDING = 2;
 
@@ -57,6 +64,7 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 	private anchorIndex = -1;
 	private anchorOffset = 0;
 	private revealElement: Element | undefined;
+	private restoreSelectionVisible = false;
 	private readonly expandedText = new WeakSet<Element>();
 
 	public setItems(items: readonly Element[]): void {
@@ -71,7 +79,25 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 		this.viewport.scrollbar.setScroll(0);
 		this.anchorIndex = -1;
 		this.revealElement = undefined;
+		this.restoreSelectionVisible = false;
 		this.dirty = true;
+	}
+
+	/** Write into the input-owned memento; no per-frame snapshot allocations. */
+	public saveViewState(state: PropertyInspectorViewState): void {
+		state.selectionIndex = this.selectionIndex;
+		const selected = this.rows[this.selectionIndex];
+		state.selectionVisible = selected !== undefined && selected.top < this.viewport.scrollTop + this.viewport.height && selected.bottom > this.viewport.scrollTop;
+		state.anchorIndex = this.rowAt(this.viewport.bounds.top);
+		state.anchorOffset = state.anchorIndex < 0 ? 0 : this.viewport.scrollTop - this.rows[state.anchorIndex].top;
+	}
+
+	/** The owner restores only the same document; its next actual layout resolves the anchor. */
+	public restoreViewState(state: Readonly<PropertyInspectorViewState>): void {
+		this.selectionIndex = state.selectionIndex;
+		this.restoreSelectionVisible = state.selectionVisible;
+		this.anchorIndex = state.anchorIndex;
+		this.anchorOffset = state.anchorOffset;
 	}
 
 	/** Refresh a property document by owner-supplied identity, without reopening its control. */
@@ -184,6 +210,12 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 			const anchor = this.rows[this.anchorIndex];
 			this.viewport.scrollbar.setScroll(anchor.top + Math.min(this.anchorOffset, anchor.bottom - anchor.top - 1));
 			this.anchorIndex = -1;
+		}
+		if (this.restoreSelectionVisible) {
+			this.restoreSelectionVisible = false;
+			const selected = this.rows[this.selectionIndex];
+			if (selected.top >= this.viewport.scrollTop + this.viewport.height || selected.bottom <= this.viewport.scrollTop)
+				this.viewport.scrollbar.reveal(selected.top, selected.bottom, INSPECTOR_PADDING);
 		}
 		// Explicit disclosure reveals the newly measured extent once; ordinary layout preserves its scroll anchor.
 		if (this.revealElement !== undefined) {

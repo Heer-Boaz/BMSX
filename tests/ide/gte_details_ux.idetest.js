@@ -19,6 +19,16 @@ t.assert(input.kind === 'gte_debugger', 'the actual GTE contribution did not ope
 for (let step = 0; step < 4; step++) { t.command('stepFrame'); await t.frames(12); }
 t.assert(input.history.count > 0 && input.selected.sequence >= 0, 'the cart did not issue observable GTE commands');
 t.command('gte.details'); await t.frames(2);
+// Drag and resize the real window to a large reading area for disclosure checks.
+const window = input.detailsWindow;
+const drag = async (x, y, endX, endY) => {
+	t.controlInput([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+	t.controlInput([{ type: 'pointer', x: endX, y: endY }]); await t.frames(2);
+	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+};
+await drag(window.header.left + 20, window.header.top + 4, 24, input.layout.top + 4);
+await drag(window.bounds.right - 1, window.bounds.bottom - 1, input.layout.right - 4, input.layout.bottom - 4);
+await click(window.client.left + 20, window.client.top + 4);
 const sequence = input.selected.sequence, before = Array.from(input.selected.beforeData), after = Array.from(input.selected.afterData);
 const cycles = t.runtime().machine.scheduler.nowCycles;
 for (let font = 0; font < 2; font++) {
@@ -27,7 +37,7 @@ for (let font = 0; font < 2; font++) {
 		await press('Home'); await capture(`gte-details-${variant}-${theme}-compact`);
 		await press('End');
 		if (theme === 0) {
-			await click(6, input.layout.bottom - 10);
+			await click(window.client.left + 5, window.client.bottom - 8);
 			await capture(`gte-details-${variant}-${theme}-pointer-explanation`);
 			await press('ArrowLeft'); await press('End');
 		}
@@ -42,6 +52,8 @@ for (let font = 0; font < 2; font++) {
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 await press('Escape');
-t.assert(t.activeWorkbenchTab() === input && input.selected.sequence === sequence, 'Back lost the captured GTE event');
+t.assert(t.activeWorkbenchTab() === input && input.selected.sequence === sequence && window.open, 'Escape lost the captured GTE event or closed its modeless window');
+t.command('gte.details'); await t.frames(2); t.command('window.hide'); await t.frames(2);
+t.assert(!window.open, 'explicit Close left GTE Details open');
 t.assert(authored.context.model.buffer.getText() === source, 'hardware inspection changed authored source');
 await capture('gte-details-back-to-observation');

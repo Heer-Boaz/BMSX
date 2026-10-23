@@ -5,10 +5,11 @@ import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
+import type { PropertyInspectorViewState } from '../../ui/property_inspector/model';
 import { WorkbenchWindowModel } from '../../ui/window/model';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
-import { GpuOperationProjection, type GpuDebugView } from './presentation';
+import { GPU_RAW_WORDS_PER_PAGE, GpuOperationProjection, type GpuDebugView } from './presentation';
 
 /** Retained optional GPU observation, independent of the reusable pane's attachment. */
 export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_debugger'> {
@@ -23,20 +24,26 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
 	public readonly detailsActions = createWorkbenchActionBar('window.title');
 	public detailsPlacementInitialized = false;
-	public detailsScroll = 0;
-	public detailsRow = 0;
+	public readonly detailsView: PropertyInspectorViewState = { selectionIndex: 0, selectionVisible: false, anchorIndex: 0, anchorOffset: 0 };
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
 	public following = true;
 	public running = false;
 	public filter = '';
 	public view: GpuDebugView = 'geometry';
 	public selectedPoint = 0;
-	public selectedWord = 0;
+	private selectedWordValue = 0;
 	public selectionRevision = 0;
 	private generation = -1;
 	public constructor(public readonly history: RuntimeGpuHistory) {
 		super('gpu-debugger', 'gpu_debugger', 'GPU OPERATIONS', true);
 		this.disposables.add(history.observe());
+	}
+	public get selectedWord(): number { return this.selectedWordValue; }
+	public set selectedWord(value: number) {
+		if (Math.trunc(value / GPU_RAW_WORDS_PER_PAGE) !== Math.trunc(this.selectedWordValue / GPU_RAW_WORDS_PER_PAGE)) {
+			this.detailsView.selectionIndex = 0; this.detailsView.selectionVisible = false; this.detailsView.anchorIndex = 0; this.detailsView.anchorOffset = 0;
+		}
+		this.selectedWordValue = value;
 	}
 	public select(sequence: number): void { this.following = false; this.copySelection(sequence); }
 	private copySelection(sequence: number): void {
@@ -44,8 +51,8 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 		this.history.copy(sequence, this.selected); this.resetPosition();
 	}
 	private resetPosition(): void {
-		this.selectedPoint = 0; this.selectedWord = 0;
-		this.detailsScroll = 0; this.detailsRow = 0;
+		this.selectedPoint = 0; this.selectedWordValue = 0;
+		this.detailsView.selectionIndex = 0; this.detailsView.selectionVisible = false; this.detailsView.anchorIndex = 0; this.detailsView.anchorOffset = 0;
 		this.words.scrollbar.setScroll(0); this.selectionRevision++;
 	}
 	public clear(): void { this.history.clear(); this.following = true; this.clearSelection(); }

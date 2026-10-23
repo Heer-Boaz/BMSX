@@ -85,7 +85,7 @@ test('compact window actions reserve icon cells instead of measuring hidden text
 
 test('shared UI icons are retained pixel geometry, not font glyph substitutions', t => {
 	const icons = ['pin', 'unpin', 'close', 'collapse', 'expand', 'play', 'pause', 'stepBack', 'stepForward', 'present',
-		'accept', 'back', 'more', 'info', 'actor', 'follow', 'chevronRight', 'chevronDown'] as const satisfies readonly WorkbenchIcon[];
+		'accept', 'back', 'source', 'more', 'info', 'actor', 'follow', 'chevronRight', 'chevronDown'] as const satisfies readonly WorkbenchIcon[];
 	const pixels: number[][] = [];
 	t.mock.method(api, 'fill_rect', (...args) => { pixels.push(args); });
 	const glyphs = t.mock.method(api, 'blit_text_inline_with_font', () => {});
@@ -382,4 +382,20 @@ test('hidden actions occupy no layout and cannot be focused, pressed or released
 	assert.deepEqual(f.calls, [], 'hiding cancels keyboard activation even after reappearance');
 	last.visible = false; f.bar.update(); assert.equal(f.state.focusedIndex, -1);
 	f.press('Enter'); assert.deepEqual(f.calls, []);
+});
+
+
+test('subject invalidation retires only its armed action for pointer and keyboard', t => {
+	const f = fixture(t), command = f.state.items[0].command, other = f.state.items[1].command;
+	f.pointer(0, PointerButton.Primary, PointerButton.Primary);
+	f.bar.cancelCommand(other);
+	assert.equal(f.state.pressedCommand, command);
+	f.bar.cancelCommand(command);
+	f.pointer(0, 0, 0, PointerButton.Primary);
+	assert.deepEqual(f.calls, []);
+	f.bar.focusTarget.focus(); f.state.focusedIndex = 0;
+	f.key('Enter', true); f.bar.cancelCommand(command); f.key('Enter', false);
+	assert.deepEqual(f.calls, []);
+	f.key('Enter', true); f.bar.cancelCommand(other); f.key('Enter', false);
+	assert.deepEqual(f.calls, [command]);
 });

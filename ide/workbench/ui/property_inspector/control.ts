@@ -332,7 +332,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		if (TRIGGER_KEYS.includes(input.code as typeof TRIGGER_KEYS[number]) && !input.consumed) {
 			if (input.down && !input.repeat && this.triggerKey === undefined) this.triggerKey = input.code;
 			consumeIdeKey(input.code, input);
-			if (input.code === this.triggerKey && !input.down) { this.triggerKey = undefined; this.activate(); }
+			if (input.code === this.triggerKey && !input.down) this.activate();
 			return true;
 		}
 		return false;
@@ -377,15 +377,25 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		if (activate.justpressed) this.padPressed = true;
 		if (activate.pressed || activate.justpressed || activate.justreleased) gamepad.consumeButton('a');
 		if (!this.padPressed) return false;
-		if (activate.justreleased) { this.padPressed = false; this.activate(); }
+		if (activate.justreleased) this.activate();
 		else if (!activate.pressed) this.padPressed = false;
 		return true;
 	}
 	private activate(): void {
 		const row = this.model.rows[this.model.selectionIndex], expansion = row?.element.expansion;
+		const triggerKey = this.triggerKey, padPressed = this.padPressed;
+		// Source admission may synchronously retire the attempt after an authored revision.
+		const canOpenSource = expansion === undefined && row !== undefined && this.input!.canOpenSource(row.element);
+		const admitted = this.triggerKey === triggerKey && this.padPressed === padPressed;
+		this.triggerKey = undefined; this.padPressed = false;
+		if (!admitted) return;
 		if (expansion !== undefined) expansion.setExpanded(!expansion.expanded);
-		else if (row?.textExpandable && !this.input!.canOpenSource(row.element)) this.model.setValueExpanded(this.model.selectionIndex, !row.textExpanded);
-		else this.openSource();
+		else if (row?.textExpandable && !canOpenSource) this.model.setValueExpanded(this.model.selectionIndex, !row.textExpanded);
+		else if (canOpenSource) {
+			const input = this.input!;
+			if (input.dismissible !== false) this.hide();
+			input.openSource(row.element);
+		}
 	}
 }
 

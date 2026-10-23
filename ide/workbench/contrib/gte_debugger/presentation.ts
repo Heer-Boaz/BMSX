@@ -177,10 +177,10 @@ export class GteDebugPresentation {
 		if (record.kind !== 'normal') return this.plusDetails(record);
 		const flag = record.afterControl[31];
 		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'Command', value: `${gteCommandName(record.commandWord)} ${formatNumberAsHex(record.commandWord, 8)}`,
-			description: `${this.summary}\nNominal command cost: ${record.nominalCycles} cycles; not elapsed frame time. SF=${record.commandWord >>> 19 & 1}, LM=${record.commandWord >>> 10 & 1}.`, warning: false },
+			description: `Timeline ${record.timeline}, tick ${record.completedTick}, cycle ${record.cycles}. Nominal ${record.nominalCycles} cycles; not elapsed frame time. SF=${record.commandWord >>> 19 & 1}, LM=${record.commandWord >>> 10 & 1}.`, warning: false },
 			{ compact: true, descriptionDisplay: 'inline', label: 'Result FLAG', value: this.flags, description: 'Per-command output; subsequent commands may replace FLAG. ERROR does not summarize every saturation bit.', warning: flag !== 0 },
 			{ compact: true, descriptionDisplay: 'inline', label: 'Projection at issue', value: `OFX=${decodeSignedQ16_16(record.beforeControl[24])}, OFY=${decodeSignedQ16_16(record.beforeControl[25])}, H=${record.beforeControl[26] & 0xffff}`,
-				description: 'H consumes the unsigned low halfword. GTE has no framebuffer mapping. Three inputs are an ordered triple, not proof of a submitted GPU primitive. NCLIP computes area; software chooses culling and clipping.', warning: false });
+				description: 'H uses its unsigned low halfword. GTE has no framebuffer mapping. An ordered triple is not proof of a GPU primitive. NCLIP gives area; software chooses culling/clipping.', warning: false });
 		for (const [label, before, after] of [['D', record.beforeData, record.afterData], ['C', record.beforeControl, record.afterControl]] as const) {
 			for (let index = 0; index < 32; index++) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: `${label}[${index}]${before[index] !== after[index] ? ' changed' : ''}`,
 				value: `${formatNumberAsHex(before[index], 8)} -> ${formatNumberAsHex(after[index], 8)}`,

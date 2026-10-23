@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { KeyModifier, type KeyInputEvent } from '../../../hosts/common/input/text';
-import type { EditorCommandRunner } from '../../common/commands';
+import type { EditorCommandId, EditorCommandRunner } from '../../common/commands';
 import type { PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../input/keyboard/key_input';
@@ -101,6 +101,11 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		if (state.hasFocus && (selected === undefined || !selected.visible || selected.overflowed || !selected.enabled)) {
 			this.moveFocus(1, state.focusedIndex === state.items.length ? -1 : state.focusedIndex);
 		}
+	}
+
+	/** A subject change revokes its action without interrupting unrelated window controls. */
+	public cancelCommand(command: EditorCommandId): void {
+		if (this.pointerCommand === command || this.input?.pressedCommand === command) this.cancelPointer();
 	}
 
 	public cancelPointer(): void {

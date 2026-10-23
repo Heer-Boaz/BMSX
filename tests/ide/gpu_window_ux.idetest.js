@@ -119,14 +119,14 @@ await capture('gpu-window-explicit-raw-explanation');
 await press('ArrowLeft');
 await clickAction('window.collapse');
 t.assert(window.open && window.collapsed && window.bounds.bottom === window.header.bottom, 'Collapse retained a hidden client-sized input area');
-const retainedRow = input.detailsRow, retainedScroll = input.detailsScroll;
-t.assert(retainedRow > 0 && retainedScroll > 0, 'client retirement discarded the selected raw row/scroll position');
+const retainedView = { ...input.detailsView };
+t.assert(retainedView.selectionIndex > 0 && retainedView.anchorIndex > 0, 'client retirement discarded the selected raw row/scroll position');
 await clickAction('window.collapse');
 await capture('gpu-window-expanded-retained-row');
 await clickAction('window.hide');
-t.assert(!window.open && input.detailsRow === retainedRow && input.detailsScroll === retainedScroll, 'Close disposed retained Details state');
+t.assert(!window.open && Object.keys(retainedView).every(key => input.detailsView[key] === retainedView[key]), 'Close disposed retained Details state');
 t.command('gpu.details'); await t.frames(3);
-t.assert(window.open && input.detailsRow === retainedRow && input.detailsScroll === retainedScroll, 'reopening Details lost its selected row/scroll');
+t.assert(window.open && Object.keys(retainedView).every(key => input.detailsView[key] === retainedView[key]), 'reopening Details lost its selected row/scroll');
 sameOperation(first); await capture('gpu-window-reopened-retained-row');
 
 // Retiring a client capture drains the physical hold; it cannot become a diagram press.

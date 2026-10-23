@@ -1,30 +1,25 @@
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
-import { toLuaModulePath } from '../../../../toolchain/ts/lua/module_path';
-import { blua32SourceRangeAtPc } from '../../../../toolchain/ts/rompack/blua32_symbols';
-import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../../../toolchain/ts/rompack/blua32_sources';
-import type { ExecutionDomainId } from '../../../../machine/ts/spec/blua32/execution_domain';
 import type { IdeCommandController } from '../../../commands/controller';
-import type { EditorCommandId } from '../../../common/commands';
+import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { truncateMeasuredText } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
+import { editorTextModelService } from '../../../editor/model/model_service';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isKeyDown, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
-import type { GteCommandSnapshot } from '../../../runtime/gte_history';
 import { api } from '../../../runtime/overlay_api';
-import { resolveRuntimeLuaSource, type RuntimeSourceState } from '../../../runtime/sources';
-import { readWorkspaceLuaSourceText } from '../../../workspace/files';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import type { ContextMenuController } from '../../services/context_menu/controller';
+import { CapturedLuaSourceBinding } from '../../services/working_copy/captured_lua_source';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { QuickInputController } from '../../services/quick_input/controller';
@@ -33,12 +28,12 @@ import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
-import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { GteDebuggerInput } from './editor_input';
 import { GteDebugPresentation, gteCommandName, type GteDebugPlane, type GteDebugView } from './presentation';
+import { GteDetailsWindow } from './details_window';
 import { drawGteDebugger, GteDebugCanvas, type GteCommandRow } from './render';
 
 const COMMANDS = ['gte.follow', 'gte.view', 'gte.details', 'gte.source', 'gte.goToFrame', 'gte.filter', 'gte.clear', 'gte.more'] as const;
@@ -59,7 +54,7 @@ const PLUS_VIEWS: GteViewChoice[] = [
 export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInput> {
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event));
-	private readonly inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focusTarget);
+	private details: GteDetailsWindow | undefined;
 	private readonly presentation = new GteDebugPresentation();
 	private readonly canvas = new GteDebugCanvas();
 	private readonly rows: GteCommandRow[] = [];
@@ -68,11 +63,8 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	private historyRevision = -1;
 	private following = false;
 	private selectedReachable = false;
-	private sourceLocation: { range: NonNullable<ReturnType<typeof blua32SourceRangeAtPc>>; domain: ExecutionDomainId; compiled: Blua32CompiledSource } | undefined;
-	private sourceChanged = false;
-	private sourceUnavailable = false;
-	private sourceSnapshot: GteCommandSnapshot | undefined;
 	private sourceRevision = -1;
+	private readonly source: CapturedLuaSourceBinding;
 	private diagramDirty = false;
 	private rowFirst = -1;
 	private rowLast = -1;
@@ -81,10 +73,11 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	private freshLayout = true;
 	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
-		private readonly contextMenu: ContextMenuController, private readonly sources: RuntimeSourceState,
+		private readonly contextMenu: ContextMenuController, sources: RuntimeSourceState,
 		private readonly sourceNavigation: EditorNavigationController, private readonly surfaces: WorkbenchSurfaceService,
 		private readonly paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
+		this.source = new CapturedLuaSourceBinding(editorTextModelService, sources);
 		this.scroll.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled,
@@ -94,9 +87,9 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) this.focusTarget.registerCommand(command, {
 			isEnabled: () => navigation.canStep(direction), run: () => { this.input.running = false; navigation.step(direction); },
 		});
-		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => !this.inspector.visible, run: () => {
-			this.input.following = false; this.refreshSource();
-			this.contextMenu.show(this.input.list.bounds.left, this.input.list.bounds.top, WORKBENCH_MENUS['gte.context'], this, { selectFirst: true });
+		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput, run: () => {
+			this.input.following = false;
+			this.showContextMenu(this.input.list.bounds.left, this.input.list.bounds.top, true);
 		} });
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		// The pane's keyboard target owns the non-scrolling diagram.
@@ -107,65 +100,68 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override get runtimeTransport() { return this.commands.transport; }
-	public override focus(): void { (this.inspector.visible ? this.inspector : this.scroll).focusTarget.focus(); }
+	public override focus(): void { this.scroll.focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.labels.clear();
-		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.list); this.update();
-		this.refreshSource();
+		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.list);
+		const details = this.details = new GteDetailsWindow(this.input, this.commands, this.surfaces, this.paneSurface, this.scroll.focusTarget,
+			this.getWorkArea, () => { this.synchronizeSelection(); return this.presentation.details(this.input.selected); }, this.source, () => this.openSource());
+		for (const target of [details.window.focusTarget, details.inspector.focusTarget])
+			for (const command of [...COMMANDS, 'pause', 'runtime.pause', 'runtime.resume', 'stepFrameBack', 'stepFrame'] as const)
+				if (command !== 'gte.source') target.registerCommand(command, this.focusTarget.getCommand(command)!);
+		this.sourceRevision = -1;
+		this.update();
 	}
 	public override clearInput(): void {
-		this.input.running = false; this.contextMenu.hide(); this.inspector.hide();
+		this.input.running = false; this.contextMenu.hide(); this.details!.dispose(); this.details = undefined;
 		this.actions.clearInput(); this.scroll.clearInput();
-		this.sourceSnapshot = undefined; this.sourceLocation = undefined;
-		this.presentation.reset(); this.labels.clear(); this.rows.length = 0;
+		this.source.clear(); this.presentation.reset(); this.labels.clear(); this.rows.length = 0;
 		super.clearInput();
 	}
-	public override dispose(): void { if (this.hasInput) this.clearInput(); this.inspector.dispose(); this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
-	private cacheSource(): void {
-		const record = this.input.selected, image = record.image;
-		this.sourceLocation = undefined; this.sourceChanged = false; this.sourceUnavailable = false;
-		if (record.domain === undefined || record.pc === undefined || image === null || image.symbols === null) return;
-		const range = blua32SourceRangeAtPc(image.symbols, image.layout.header.textAddress, record.pc);
-		if (range === null) return;
-		const compiled = image.sources.get(toLuaModulePath(range.path));
-		if (compiled !== undefined) this.sourceLocation = { range, domain: record.domain, compiled };
-	}
+	public override dispose(): void { if (this.hasInput) this.clearInput(); this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
 	/** Input events may select and inspect another command before the next host frame. */
 	private synchronizeSelection(): void {
 		const input = this.input;
 		if (this.presentation.update(input.selected, input.selectionRevision, input.view, input.plane)) this.diagramDirty = true;
-		if (this.sourceSnapshot !== input.selected || this.sourceRevision !== input.selectionRevision) {
-			this.sourceSnapshot = input.selected; this.sourceRevision = input.selectionRevision;
-			this.cacheSource();
+		if (this.sourceRevision !== input.selectionRevision) {
+			this.sourceRevision = input.selectionRevision;
+			if (input.selected.sequence < 0) this.source.clear();
+			else this.source.bind(input.selected.image, input.selected.pc);
 		}
 	}
-	/** Authored-source comparison occurs at action admission, not in the drawing loop. */
-	private refreshSource() {
-		const location = this.sourceLocation;
-		if (location === undefined) return undefined;
-		const current = resolveRuntimeLuaSource(this.sources, { domain: location.domain, path: location.range.path });
-		this.sourceUnavailable = current === null;
-		if (current === null) return undefined;
-		this.sourceChanged = readBlua32CompiledSource(location.compiled) !== readWorkspaceLuaSourceText(current.registry, current.record);
-		return current;
+
+	/** A popup owns the selected observation and source generation present at admission. */
+	private showContextMenu(x: number, y: number, selectFirst = false): void {
+		this.synchronizeSelection(); this.source.update();
+		const input = this.input, revision = input.selectionRevision, sourceRevision = this.source.revision;
+		const commands: EditorCommandRunner = {
+			isEnabled: command => {
+				if (!this.hasInput || this.input !== input) return false;
+				this.synchronizeSelection(); this.source.update();
+				return revision === input.selectionRevision && sourceRevision === this.source.revision && this.isEnabled(command);
+			},
+			execute: command => { if (commands.isEnabled(command)) this.execute(command); },
+		};
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['gte.context'], commands, { selectFirst });
 	}
+
 	private openSource(): void {
-		this.synchronizeSelection();
-		const current = this.refreshSource();
-		if (current === undefined || this.sourceChanged) { showEditorMessage('Source changed or unavailable.', colors.COLOR_STATUS_WARNING, 3); return; }
-		const range = this.sourceLocation!.range;
-		this.sourceNavigation.focusChunkSourceForContext(current.domain, current.record.source_path,
-			{ row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.end.line === range.start.line ? range.end.column - 1 : range.start.column });
+		this.synchronizeSelection(); this.source.update();
+		if (this.source.status !== 'available') return;
+		const { resource, range } = this.source.location!;
+		void this.sourceNavigation.focusChunkSource(resource,
+			{ row: range.start.line - 1, startColumn: range.start.column - 1,
+				endColumn: range.end.line === range.start.line ? range.end.column - 1 : range.start.column });
 	}
 	public isEnabled(command: EditorCommandId): boolean {
-		if (!this.hasInput || this.inspector.visible) return false;
+		if (!this.hasInput) return false;
 		const input = this.input, selected = input.selected.sequence >= 0;
 		if (command === 'gte.source') {
-			this.synchronizeSelection();
-			return this.sourceLocation !== undefined && !this.sourceChanged && !this.sourceUnavailable;
+			this.synchronizeSelection(); this.source.update();
+			return this.source.status === 'available';
 		}
 		if (command === 'gte.goToFrame') return selected && this.navigation.available && input.history.canSeek(input.selected);
-		if (command === 'gte.details') return selected;
+		if (command === 'gte.details') return selected || input.detailsWindow.open;
 		if (command === 'gte.clear') return input.history.count > 0;
 		return command === 'gte.follow' || command === 'gte.view' || command === 'gte.filter' || command === 'gte.more';
 	}
@@ -183,7 +179,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 			}
 			case 'gte.filter': this.quickInput.input('Filter GTE events', 'Opcode or PLUS phase; empty shows all', input.filter, async text => text, text => { input.filter = text; input.list.scrollbar.setScroll(0); }); break;
 			case 'gte.clear': input.clear(); break;
-			case 'gte.more': { input.following = false; this.refreshSource(); const bounds = input.actions.items[2].bounds; this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['gte.context'], this); break; }
+			case 'gte.more': { input.following = false; const bounds = input.actions.items[2].bounds; this.showContextMenu(bounds.left, bounds.bottom); break; }
 			case 'gte.source': this.openSource(); break;
 			case 'gte.goToFrame': {
 				input.running = false; const sequence = input.selected.sequence;
@@ -192,13 +188,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 			}
 			case 'gte.details': {
 				input.following = false;
-				this.refreshSource();
-				const source = this.sourceLocation, properties = this.presentation.details(input.selected).slice();
-				properties.splice(1, 0, { compact: true, descriptionDisplay: this.sourceChanged ? 'inline' : 'disclosure', label: input.selected.kind === 'normal' ? 'Issuing source' : 'Acceptance source', value: source === undefined || this.sourceUnavailable ? 'Source unavailable' : `${source.range.path}:${source.range.start.line}:${source.range.start.column}`,
-					description: this.sourceChanged ? 'Source changed since this command was compiled. Source navigation is disabled.' : input.selected.kind === 'normal' ? 'Location belongs to the captured installed program.' : 'Location belongs to the observed command acceptance, not an instruction which later synchronized publication.', warning: this.sourceChanged });
-				this.inspector.show({ title: `GTE EVENT #${input.selected.sequence}`, items: properties, canOpenSource: () => source !== undefined && !this.sourceChanged && !this.sourceUnavailable,
-					openSource: () => this.openSource() });
-				this.inspector.attachFeedback(this.surfaces, this.paneSurface, this.getWorkArea); break;
+				this.details!.show(); break;
 			}
 		}
 	}
@@ -247,12 +237,11 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 			this.status = truncateMeasuredText(`${input.following ? input.projection.rows.length === 0 ? 'WAITING' : 'FOLLOWING' : 'PINNED'} | ${input.history.observing ? 'Observing' : 'Stopped'}${this.presentation.summary === '' ? '' : ` | ${this.presentation.summary}`}${outsideList ? ' | Record expired' : ''}${input.selected.sequence >= 0 && !selectedReachable ? ' | Frame unavailable' : ''}`, layout.right - layout.left - 8, measureTextRange);
 			this.historyRevision = input.history.revision; this.following = input.following; this.selectedReachable = selectedReachable;
 		}
-		if (this.inspector.visible) { this.inspector.layout(layout.font!.renderFont(), measureTextRange, measureText, this.contentBounds); this.inspector.update(); }
+		this.details!.update();
 	}
-	public draw(): void { if (this.inspector.visible) drawWorkbenchPropertyInspector(this.inspector); else drawGteDebugger(this.input, this.presentation, this.canvas, this.rows, this.focusTarget.hasFocus); }
+	public draw(): void { drawGteDebugger(this.input, this.presentation, this.canvas, this.rows, this.focusTarget.hasFocus); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
-		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.actions.handlePointer(snapshot)) return true;
 		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
 		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport
@@ -265,7 +254,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 				const point = this.canvas.hit(snapshot.viewportX, snapshot.viewportY);
 				if (point >= 0) { this.input.following = false; this.input.selectedPoint = point; }
 			}
-			if (secondary) { this.input.following = false; this.refreshSource(); this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['gte.context'], this); return true; }
+			if (secondary) { this.input.following = false; this.showContextMenu(snapshot.viewportX, snapshot.viewportY); return true; }
 		}
 		return this.scroll.handlePointer(snapshot);
 	}
@@ -289,6 +278,6 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	}
 	public handleKeyboard(event: KeyInputEvent): void { this.navigate(event); }
 	public handleWheel(event: WheelInputSnapshot): void {
-		(this.inspector.visible ? this.inspector : this.scroll).handleWheel(event, event.deltaY * this.input.layout.rowHeight);
+		this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);
 	}
 }

@@ -91,7 +91,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'gte.follow': { category: 'GTE', title: 'Follow Latest Command', shortTitle: 'Follow' },
 	'gte.view': { category: 'GTE', title: 'Choose Geometry View', shortTitle: 'View' },
 	'gte.details': { category: 'GTE', title: 'Inspect Command Details', shortTitle: 'Details' },
-	'gte.source': { category: 'GTE', title: 'Open Issuing Source', shortTitle: 'Source' },
+	'gte.source': { category: 'GTE', title: 'Open Captured Source', shortTitle: 'Source' },
 	'gte.goToFrame': { category: 'GTE', title: 'Go to Boundary Before Command', shortTitle: 'Go to Frame' },
 	'gte.filter': { category: 'GTE', title: 'Filter Commands', shortTitle: 'Filter' },
 	'gte.clear': { category: 'GTE', title: 'Clear Command History', shortTitle: 'Clear' },

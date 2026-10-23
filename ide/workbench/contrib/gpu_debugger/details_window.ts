@@ -27,7 +27,6 @@ export class GpuDetailsWindow {
 	private expired = false;
 	private titleTooltip = '';
 	private items: readonly InspectedProperty[] = NO_SELECTION;
-	private restoreScroll = false;
 
 	public constructor(private readonly input: GpuDebuggerInput, commands: EditorCommandRunner,
 		private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
@@ -41,12 +40,11 @@ export class GpuDetailsWindow {
 				handlePointer: snapshot => { this.inspector.handlePointer(snapshot); },
 				handleWheel: event => this.inspector.handleWheel(event, event.deltaY * editorViewState.lineHeight * 3),
 			},
-			layoutContent: bounds => this.layoutClient(bounds),
+			layoutContent: bounds => this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, bounds),
 			restoreContentInput: () => this.refreshDocument(),
 			retireContentInput: () => {
 				if (this.documentRevision === input.selectionRevision && this.documentPage === Math.trunc(input.selectedWord / GPU_RAW_WORDS_PER_PAGE)) {
-					input.detailsScroll = this.inspector.model.viewport.scrollTop;
-					input.detailsRow = this.inspector.model.selectionIndex;
+					this.inspector.model.saveViewState(input.detailsView);
 				}
 				this.inspector.hide();
 			},
@@ -93,7 +91,6 @@ export class GpuDetailsWindow {
 		const input = this.input, rawPage = Math.trunc(input.selectedWord / GPU_RAW_WORDS_PER_PAGE);
 		const changed = this.documentRevision !== input.selectionRevision || this.documentPage !== rawPage;
 		if (changed) {
-			if (this.documentPage !== rawPage) { input.detailsScroll = 0; input.detailsRow = 0; }
 			this.items = input.selected.sequence < 0 ? NO_SELECTION : this.getProperties(rawPage);
 			this.documentRevision = input.selectionRevision; this.documentPage = rawPage;
 		}
@@ -101,20 +98,10 @@ export class GpuDetailsWindow {
 			this.inspector.show({ title: 'GPU Details', items: this.items, dismissible: false, focusReturn: this.focusReturn,
 				canOpenSource: () => false, openSource() {} }, false);
 			this.inspector.attachFeedback(this.surfaces, this.window.clientSurface!, this.getWorkArea);
-			this.inspector.model.selectionIndex = input.detailsRow;
-			this.restoreScroll = true;
+			this.inspector.model.restoreViewState(input.detailsView);
 		} else if (changed) {
 			this.inspector.replaceItems(this.items);
-			this.restoreScroll = true;
-		}
-	}
-
-	/** Complete attachment restoration at its first reflow, before another input occurrence. */
-	private layoutClient(bounds: Readonly<RectBounds>): void {
-		this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, bounds);
-		if (this.restoreScroll) {
-			this.inspector.model.viewport.scrollbar.setScroll(this.input.detailsScroll);
-			this.restoreScroll = false;
+			this.inspector.model.restoreViewState(input.detailsView);
 		}
 	}
 
@@ -127,7 +114,7 @@ export class GpuDetailsWindow {
 		const font = editorViewState.font.renderFont();
 		this.window.layout(font, measureTextRange, measureText);
 		if (!model.collapsed) {
-			this.layoutClient(model.client);
+			this.inspector.layout(font, measureTextRange, measureText, model.client);
 			this.inspector.update();
 		}
 		this.window.update();

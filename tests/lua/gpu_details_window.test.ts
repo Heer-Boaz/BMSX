@@ -41,19 +41,20 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx') {
 		getBounds: () => area, getClip: () => area, draw() {} });
 	const presentation = new GpuDebugPresentation();
 	let formats = 0;
-	const details = new GpuDetailsWindow(input, {
+	const createDetails = () => new GpuDetailsWindow(input, {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	}, surfaces, owner, origin, () => area, page => {
 		formats++; presentation.update(input.selected, input.selectionRevision, input.view);
 		return presentation.details(input.selected, page);
 	});
+	const details = createDetails();
 	t.after(() => { details.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); history.dispose(); });
 	const press = (code: string) => {
 		inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, true));
 		inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false));
 	};
-	return { runtime, input, history, emit, write, area, surfaces, owner, origin, details, formats: () => formats, press };
+	return { runtime, input, history, emit, write, area, surfaces, owner, origin, details, createDetails, formats: () => formats, press };
 }
 
 for (const variant of ['tiny', 'msx'] as const) test(`GPU ${variant} Details is an owned modeless client with icon chrome and no idle formatting or measurements`, t => {
@@ -103,9 +104,9 @@ test('GPU collapse and close retain view bookmarks, but a newer selected observa
 	const f = fixture(t), { input, details } = f; details.show();
 	const last = details.inspector.model.rows.length - 1;
 	details.inspector.model.select(last);
-	const scroll = details.inspector.model.viewport.scrollTop, requested = { ...input.detailsWindow.requestedBounds };
+	const anchor = details.inspector.model.rowAt(details.inspector.model.viewport.bounds.top), scroll = details.inspector.model.viewport.scrollTop, requested = { ...input.detailsWindow.requestedBounds };
 	details.window.setCollapsed(true);
-	assert.equal(details.inspector.visible, false); assert.equal(input.detailsRow, last); assert.equal(input.detailsScroll, scroll);
+	assert.equal(details.inspector.visible, false); assert.equal(input.detailsView.selectionIndex, last); assert.equal(input.detailsView.anchorIndex, anchor);
 	for (let frame = 0; frame < 1000; frame++) details.update();
 	assert.equal(f.formats(), 1);
 	details.window.setCollapsed(false);
@@ -119,7 +120,7 @@ test('GPU collapse and close retain view bookmarks, but a newer selected observa
 	details.inspector.model.select(last);
 	f.emit(0x77); input.update(); input.select(input.history.endSequence - 1);
 	details.window.setCollapsed(true); // A new input occurrence can precede its first paint.
-	assert.equal(input.detailsRow, 0); assert.equal(input.detailsScroll, 0);
+	assert.equal(input.detailsView.selectionIndex, 0); assert.equal(input.detailsView.anchorIndex, 0);
 	details.window.setCollapsed(false); details.update();
 	assert.equal(details.inspector.model.selectionIndex, 0); assert.equal(f.formats(), 2);
 	assert.deepEqual(input.detailsWindow.requestedBounds, requested);
@@ -134,10 +135,26 @@ test('GPU Details raw-page changes use the owned upload words and retire the pre
 	assert.match(details.inspector.model.rows.find(row => row.element.label === 'Raw words')!.element.value, /Page 2\/2/);
 	assert.equal(details.inspector.model.rows.find(row => row.element.label === 'Word[65]')!.element.value, '1111003Eh');
 	details.inspector.model.select(details.inspector.model.rows.length - 1); details.window.setCollapsed(true);
-	assert.ok(input.detailsRow > 0); assert.ok(input.detailsScroll > 0);
+	assert.ok(input.detailsView.selectionIndex > 0); assert.ok(input.detailsView.anchorIndex > 0);
 	input.selectedWord = 0; details.window.setCollapsed(false); details.update();
 	assert.equal(details.inspector.model.selectionIndex, 0); assert.equal(details.inspector.model.viewport.scrollTop, 0);
 	assert.equal(details.inspector.model.rows.some(row => row.element.label === 'Word[65]'), false);
 	assert.match(details.inspector.model.rows.find(row => row.element.label === 'Raw words')!.element.value, /Page 1\/2/);
 	assert.equal(input.selected.words[65], 0x1111003e); assert.equal(f.formats(), 3);
+});
+
+
+test('GPU pane detachment restores the retained page document instead of mistaking a fresh control for a page change', t => {
+	const f = fixture(t), { input, details } = f;
+	details.show(); details.inspector.model.select(details.inspector.model.rows.length - 1);
+	const selected = details.inspector.model.selectionIndex, scroll = details.inspector.model.viewport.scrollTop;
+	details.dispose();
+	const restored = f.createDetails(); t.after(() => restored.dispose()); restored.update();
+	assert.equal(restored.inspector.model.selectionIndex, selected);
+	assert.equal(restored.inspector.model.viewport.scrollTop, scroll);
+	restored.window.setCollapsed(true); configureFontVariant(new VirtualHeadlessClock(), 'tiny', null); restored.update();
+	restored.window.setCollapsed(false); restored.update();
+	const row = restored.inspector.model.rows[selected], view = restored.inspector.model.viewport;
+	assert.ok(view.offsetTop + row.top < view.bounds.bottom && view.offsetTop + row.bottom > view.bounds.top);
+	assert.equal(input.detailsWindow.open, true);
 });
