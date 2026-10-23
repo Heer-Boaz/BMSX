@@ -1,15 +1,8 @@
 // Exercise the shipped cinematic scenario, not a synthetic guest or command map.
-let pressId = 1;
 const press = async (...codes) => {
-	for (const code of codes) {
-		t.postInput({ type: 'button', deviceId: 'keyboard:0', code,
-			down: true, value: 1, timestamp: 0, pressId: pressId++ });
-	}
+	t.controlInput(codes.map(code => ({ type: 'key', code, down: true })));
 	await t.frames(2);
-	for (const code of codes) {
-		t.postInput({ type: 'button', deviceId: 'keyboard:0', code,
-			down: false, value: 0, timestamp: 0, pressId: pressId++ });
-	}
+	t.controlInput(codes.slice().reverse().map(code => ({ type: 'key', code, down: false })));
 	await t.frames(2);
 };
 const palette = async query => {

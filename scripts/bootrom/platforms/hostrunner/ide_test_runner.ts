@@ -6,6 +6,8 @@ import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harnes
 import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { InputEventWriter, InputEvt } from '../../../../hosts/common/input/contracts';
+import type { HostControlInputEvent } from '../../../../hosts/common/control/protocol';
+import type { RemoteInput } from '../../../../hosts/common/input/remote';
 import type { HeadlessCaptureCoordinator } from '../headless_capture';
 
 export interface IdeTestRunnerOptions {
@@ -14,7 +16,10 @@ export interface IdeTestRunnerOptions {
 	ide: HeadlessIdeHarness;
 	logger: (msg: string) => void;
 	clock: HostClock;
+	/** Physical device data for guest, gamepad and supervisor tests; never synthesizes editor events. */
 	input: InputEventWriter;
+	/** Authored UI occurrences through the ordinary ordered input producer. Owns press IDs and timestamps. */
+	controlInput: RemoteInput;
 	capture: HeadlessCaptureCoordinator;
 }
 
@@ -85,6 +90,7 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		waitForCart,
 		frames: waitFrames,
 		postInput: (event: InputEvt) => options.input.post(event),
+		controlInput: (events: readonly HostControlInputEvent[]) => options.controlInput.apply(events),
 		capture: (description: string) => options.capture.captureNow(description, `ide:${label}`),
 		performHotResume: () => options.ide.performHotResume(),
 		toggleBreakpoint: (path: string, line: number) => options.ide.toggleLuaBreakpoint(path, line),

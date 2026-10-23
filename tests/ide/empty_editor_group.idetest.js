@@ -1,29 +1,23 @@
 // Headless IDE test: an editor group without inputs is an ordinary workbench state.
 // Run: npm run ide:test -- <gameromname> tests/ide/empty_editor_group.idetest.js
 const LOG_LEVEL_ERROR = 3;
-let pressId = 1;
 
 const press = async (...codes) => {
-	for (const code of codes) {
-		t.postInput({ type: 'button', deviceId: 'keyboard:0', code, down: true, value: 1, timestamp: 0, pressId: pressId++ });
-	}
+	t.controlInput(codes.map(code => ({ type: 'key', code, down: true })));
 	await t.frames(1);
-	for (const code of codes) {
-		t.postInput({ type: 'button', deviceId: 'keyboard:0', code, down: false, value: 0, timestamp: 0, pressId: pressId++ });
-	}
+	t.controlInput(codes.slice().reverse().map(code => ({ type: 'key', code, down: false })));
 	await t.frames(1);
 };
 
 const pointerAt = async (x, y) => {
-	t.postInput({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x, y, timestamp: 0 });
+	t.controlInput([{ type: 'pointer', x, y }]);
 	await t.frames(1);
 };
 
 const clickPointer = async () => {
-	const id = pressId++;
-	t.postInput({ type: 'button', deviceId: 'pointer:0', code: 'pointer_primary', down: true, value: 1, timestamp: 0, pressId: id });
+	t.controlInput([{ type: 'button', button: 'primary', down: true }]);
 	await t.frames(1);
-	t.postInput({ type: 'button', deviceId: 'pointer:0', code: 'pointer_primary', down: false, value: 0, timestamp: 0, pressId: id });
+	t.controlInput([{ type: 'button', button: 'primary', down: false }]);
 	await t.frames(1);
 };
 
@@ -55,7 +49,7 @@ t.capture('empty editor group watermark');
 // Every per-frame consumer and direct entry point of the editor area runs without an input.
 await pointerAt(192, 150);
 await clickPointer();
-t.postInput({ type: 'axis1', deviceId: 'pointer:0', code: 'pointer_wheel', x: 120, timestamp: 0 });
+t.controlInput([{ type: 'wheel', deltaY: 120 }]);
 await t.frames(2);
 await press('ControlLeft', 'Tab');
 await press('ControlLeft', 'KeyW');

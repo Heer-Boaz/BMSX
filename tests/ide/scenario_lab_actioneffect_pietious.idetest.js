@@ -1,35 +1,12 @@
-const clickPointer = async (x, y, pressId) => {
-	t.postInput({
-		type: 'axis2',
-		deviceId: 'pointer:0',
-		code: 'pointer_position',
-		x,
-		y,
-		timestamp: 0,
-	});
+const clickPointer = async (x, y) => {
+	t.controlInput([{ type: 'pointer', x, y }]);
 	await t.frames(1);
-	t.postInput({
-		type: 'button',
-		deviceId: 'pointer:0',
-		code: 'pointer_primary',
-		down: true,
-		value: 1,
-		timestamp: 0,
-		pressId,
-	});
+	t.controlInput([{ type: 'button', button: 'primary', down: true }]);
 	await t.frames(1);
 };
 
-const releasePointer = async (pressId) => {
-	t.postInput({
-		type: 'button',
-		deviceId: 'pointer:0',
-		code: 'pointer_primary',
-		down: false,
-		value: 0,
-		timestamp: 0,
-		pressId,
-	});
+const releasePointer = async () => {
+	t.controlInput([{ type: 'button', button: 'primary', down: false }]);
 	await t.frames(1);
 };
 
@@ -66,8 +43,8 @@ t.assert(testRowIndex >= 0, 'packaged Pietious ActionEffect scenario is missing'
 const testRowY = testPane.layout.contentTop
 	+ (testRowIndex - testPane.scroll) * view.layout.rowHeight
 	+ 1;
-await clickPointer(testPane.layout.contentLeft + 40, testRowY, 1);
-await releasePointer(1);
+await clickPointer(testPane.layout.contentLeft + 40, testRowY);
+await releasePointer();
 t.assert(testPane.selectionIndex === testRowIndex,
 `pointer did not select the Pietious ActionEffect scenario: selected=${testPane.selectionIndex} target=${testRowIndex} y=${testRowY} scroll=${testPane.scroll} top=${testPane.layout.contentTop} bottom=${testPane.layout.contentBottom} row=${view.layout.rowHeight}`);
 

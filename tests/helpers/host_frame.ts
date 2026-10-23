@@ -15,16 +15,17 @@ import { createHostOverlayFixture } from './host_overlay';
 /** Production host owners with an offscreen presenter and a device-free audio sink. */
 export function createHostFrameFixture(runtime = createFrameRuntime()) {
 	const clock = new VirtualHeadlessClock();
-	const input = new Input(clock, new HeadlessInputHub(), -1);
+	const inputHub = new HeadlessInputHub();
+	const input = new Input(clock, inputHub, -1);
 	const sink = new DiscardingAudioSink();
 	const audio = new HostAudioOutput(new HostAudioDevice(sink), runtime.machine.audioController, runtime.timing.ufpsScaled);
 	audio.device.select(audio);
-	const { presenter } = createHostOverlayFixture(256, 212);
+	const { presenter, backend } = createHostOverlayFixture(256, 212);
 	const screen = new RenderPresentationState();
 	const tasks = new RuntimeTaskQueue(audio, presenter);
 	const errors: string[] = [];
 	const rewind = new HostRewind(runtime, presenter, screen, tasks, audio, { log(_level, text) { errors.push(text); } });
 	const execution = new HostExecutionControl(audio);
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, 0, rewind, execution);
-	return { runtime, clock, input, sink, audio, presenter, screen, tasks, errors, rewind, execution, session };
+	return { runtime, clock, input, inputHub, sink, audio, presenter, backend, screen, tasks, errors, rewind, execution, session };
 }

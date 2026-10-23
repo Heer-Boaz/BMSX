@@ -294,6 +294,8 @@ async function main(): Promise<void> {
 						RESOURCE_PANEL_DEFAULT_RATIO,
 						() => new NodeGraphLayoutEngine(new Worker(path.join(__dirname, 'graph-layout.node-worker.cjs'))),
 					);
+					const controlInput = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input),
+						event => ide.editor.dispatchPointer(event), event => ide.editor.dispatchWheel(event));
 					systemOutput.flush(runtime, logOutput);
 					audioOutput.device.select(audioOutput);
 					const interrupt = (): never => {
@@ -342,6 +344,7 @@ async function main(): Promise<void> {
 								logger: inputLogger,
 								clock,
 								input: inputHub,
+								controlInput,
 								capture,
 							}),
 							new Promise<never>((_resolve, reject) => {
@@ -352,6 +355,7 @@ async function main(): Promise<void> {
 						]);
 						passed = true;
 					} finally {
+						controlInput.release();
 						process.removeListener('SIGINT', interrupt);
 						process.removeListener('SIGTERM', terminate);
 						await capture.flushWrites(passed);

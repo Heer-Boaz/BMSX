@@ -1,4 +1,5 @@
-const pressKey = async (code, pressId) => {
+// BIOS monitor input remains physical guest input, not ordered Studio editing.
+const pressGuestKey = async (code, pressId) => {
 	t.postInput({
 		type: 'button',
 		deviceId: 'keyboard:0',
@@ -21,45 +22,19 @@ const pressKey = async (code, pressId) => {
 	await t.frames(2);
 };
 
-const pressModifiedF5 = async (modifier, pressId) => {
-	t.postInput({
-		type: 'button',
-		deviceId: 'keyboard:0',
-		code: modifier,
-		down: true,
-		value: 1,
-		timestamp: 0,
-		pressId,
-	});
+const pressKey = async code => {
+	t.controlInput([{ type: 'key', code, down: true }]);
+	await t.frames(2);
+	t.controlInput([{ type: 'key', code, down: false }]);
+	await t.frames(2);
+};
+
+const pressModifiedF5 = async modifier => {
+	t.controlInput([{ type: 'key', code: modifier, down: true }]);
 	await t.frames(1);
-	t.postInput({
-		type: 'button',
-		deviceId: 'keyboard:0',
-		code: 'F5',
-		down: true,
-		value: 1,
-		timestamp: 0,
-		pressId: pressId + 1,
-	});
+	t.controlInput([{ type: 'key', code: 'F5', down: true }]);
 	await t.frames(1);
-	t.postInput({
-		type: 'button',
-		deviceId: 'keyboard:0',
-		code: 'F5',
-		down: false,
-		value: 0,
-		timestamp: 0,
-		pressId: pressId + 1,
-	});
-	t.postInput({
-		type: 'button',
-		deviceId: 'keyboard:0',
-		code: modifier,
-		down: false,
-		value: 0,
-		timestamp: 0,
-		pressId,
-	});
+	t.controlInput([{ type: 'key', code: 'F5', down: false }, { type: 'key', code: modifier, down: false }]);
 	await t.frames(1);
 };
 
@@ -104,38 +79,15 @@ const openWorkbenchWithHostChord = async (pressId) => {
 	await t.frames(1);
 };
 
-const clickPointer = async (x, y, pressId) => {
-	t.postInput({
-		type: 'axis2',
-		deviceId: 'pointer:0',
-		code: 'pointer_position',
-		x,
-		y,
-		timestamp: 0,
-	});
+const clickPointer = async (x, y) => {
+	t.controlInput([{ type: 'pointer', x, y }]);
 	await t.frames(1);
-	t.postInput({
-		type: 'button',
-		deviceId: 'pointer:0',
-		code: 'pointer_primary',
-		down: true,
-		value: 1,
-		timestamp: 0,
-		pressId,
-	});
+	t.controlInput([{ type: 'button', button: 'primary', down: true }]);
 	await t.frames(1);
 };
 
-const releasePointer = async (pressId) => {
-	t.postInput({
-		type: 'button',
-		deviceId: 'pointer:0',
-		code: 'pointer_primary',
-		down: false,
-		value: 0,
-		timestamp: 0,
-		pressId,
-	});
+const releasePointer = async () => {
+	t.controlInput([{ type: 'button', button: 'primary', down: false }]);
 	await t.frames(1);
 };
 
@@ -173,10 +125,10 @@ const canonicalCartridge = sources.cartridgeSlots[0].rom;
 
 t.openLuaSource('cart.lua');
 await t.frames(2);
-await clickPointer(64, 4, 10);
-await releasePointer(10);
-await clickPointer(64, 20, 11);
-await releasePointer(11);
+await clickPointer(64, 4);
+await releasePointer();
+await clickPointer(64, 20);
+await releasePointer();
 await t.frames(2);
 const labTab = t.activeWorkbenchTab();
 t.assert(labTab.kind === 'scenario_lab', 'View menu did not activate the Scenario Lab workbench input');
@@ -206,11 +158,11 @@ t.assert(testRowIndex >= 0, 'packaged pause scenario is missing from the test tr
 const testRowY = testPane.layout.contentTop
 	+ (testRowIndex - testPane.scroll) * view.layout.rowHeight
 	+ 1;
-await clickPointer(testPane.layout.contentLeft + 40, testRowY, 20);
+await clickPointer(testPane.layout.contentLeft + 40, testRowY);
 t.assert(testPane.selectionIndex === testRowIndex, 'pointer did not select the requested scenario');
-await releasePointer(20);
-await pressKey('ArrowUp', 21);
-await pressKey('ArrowDown', 22);
+await releasePointer();
+await pressKey('ArrowUp');
+await pressKey('ArrowDown');
 t.assert(testPane.selectionIndex === testRowIndex, 'keyboard navigation did not select the requested scenario');
 t.assert(testPane.selectedNodeId === testPane.rows[testRowIndex].test.id, 'test selection lost its stable identity');
 t.capture('scenario-lab-tests-tiny-384x288');
@@ -220,10 +172,8 @@ t.assert(runAction.command === 'scenarioLab.run', 'Scenario Lab title menu did n
 const runBounds = runAction.bounds;
 await clickPointer(
 	runBounds.left + 1,
-	runBounds.top + 1,
-	100,
-);
-await releasePointer(100);
+	runBounds.top + 1);
+await releasePointer();
 t.assert(view.runActive, 'Run action did not start the selected scenario');
 const interruptedResult = await waitForLiveFsmTrace(view, 600);
 t.postInput({ type: 'supervisor-request', down: true });
@@ -240,17 +190,17 @@ t.assert(!t.workbenchActive(), 'BIOS terminal entry opened host workbench chrome
 const terminalStartMachineTick = runtime.frameScheduler.lastTickSequence;
 const terminalStartLogCount = interruptedResult.logs.length;
 const terminalStartTransitionCount = interruptedResult.fsmTransitionTrace.transitions.length;
-await pressKey('KeyC', 200);
-await pressKey('KeyO', 201);
-await pressKey('KeyN', 202);
-await pressKey('KeyT', 203);
+await pressGuestKey('KeyC', 200);
+await pressGuestKey('KeyO', 201);
+await pressGuestKey('KeyN', 202);
+await pressGuestKey('KeyT', 203);
 t.assert(!cpu.isUserMode(), 'physical monitor text resumed the cartridge before submit');
 t.assert(runtime.frameScheduler.lastTickSequence > terminalStartMachineTick,
 	'BIOS terminal stopped the machine clock during scenario suspension');
 t.assert(interruptedResult.logs.length === terminalStartLogCount
 	&& interruptedResult.fsmTransitionTrace.transitions.length === terminalStartTransitionCount,
 	'scenario protocol or observations advanced while the BIOS terminal owned execution');
-await pressKey('Enter', 204);
+await pressGuestKey('Enter', 204);
 for (let frame = 0; frame < 120 && !cpu.isUserMode(); frame += 1) {
 	await t.frames(1);
 }
@@ -297,23 +247,18 @@ const actionEffectTestRowIndex = testPane.rows.findIndex(row =>
 	row.kind === 'test'
 	&& row.test.resource.path === 'tests/carts/nemesis_s/nemesis_s_msx_weapons_assert.lua');
 t.assert(actionEffectTestRowIndex >= 0, 'packaged ActionEffect scenario is missing from the test tree');
-let navigationPressId = 200;
 while (testPane.selectionIndex < actionEffectTestRowIndex) {
-	await pressKey('ArrowDown', navigationPressId);
-	navigationPressId += 1;
+	await pressKey('ArrowDown');
 }
 while (testPane.selectionIndex > actionEffectTestRowIndex) {
-	await pressKey('ArrowUp', navigationPressId);
-	navigationPressId += 1;
+	await pressKey('ArrowUp');
 }
 t.assert(testPane.selectedNodeId === testPane.rows[actionEffectTestRowIndex].test.id,
 'keyboard navigation did not select the ActionEffect scenario');
 await clickPointer(
 	runBounds.left + 1,
-	runBounds.top + 1,
-	300,
-);
-await releasePointer(300);
+	runBounds.top + 1);
+await releasePointer();
 t.assert(view.runActive, 'Run action did not start the ActionEffect scenario');
 await waitForRunToFinish(view, 1200);
 await t.frames(2);
@@ -353,17 +298,15 @@ t.assert(resultPane.rows.some(row => row.kind === 'actioneffect_fact' && row.fac
 'Scenario Lab did not project recorded ActionEffect facts');
 t.capture('scenario-lab-actioneffect-result-tiny-384x288');
 
-await pressKey('Tab', 310);
+await pressKey('Tab');
 t.assert(view.focus === 'results', 'Tab did not move focus to result history');
 const fireFactRowIndex = resultPane.rows.findIndex(row =>
 	row.kind === 'actioneffect_fact' && row.fact === fireTrigger);
 t.assert(fireFactRowIndex > 0, 'accepted fire fact is missing from result navigation');
 while (resultPane.selectionIndex < fireFactRowIndex) {
-	await pressKey('ArrowDown', navigationPressId);
-	navigationPressId += 1;
+	await pressKey('ArrowDown');
 }
-await pressKey('Enter', navigationPressId);
-navigationPressId += 1;
+await pressKey('Enter');
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'ActionEffect fact activation did not open source');
 t.assert(t.activeEditorDocument().model.resource.path === 'player/actioneffects.lua', 'ActionEffect fact activation opened the wrong registration resource');
 t.assert(t.activeEditorDocument().view.cursorRow === 15, 'ActionEffect fact activation did not select the fire_salvo registration');
@@ -374,24 +317,21 @@ t.assert(t.activeWorkbenchTab() === labTab && labTab.view === view, 'source navi
 const firstLogRowIndex = resultPane.rows.findIndex(row => row.kind === 'log');
 t.assert(firstLogRowIndex > 0, 'completed ActionEffect scenario has no retained log');
 while (resultPane.selectionIndex > firstLogRowIndex) {
-	await pressKey('ArrowUp', navigationPressId);
-	navigationPressId += 1;
+	await pressKey('ArrowUp');
 }
 while (resultPane.selectionIndex < firstLogRowIndex) {
-	await pressKey('ArrowDown', navigationPressId);
-	navigationPressId += 1;
+	await pressKey('ArrowDown');
 }
 const detailRow = resultPane.rows[resultPane.selectionIndex];
 t.assert(detailRow.kind === 'log', 'result navigation did not reach the first retained log');
-await pressKey('Enter', navigationPressId);
-navigationPressId += 1;
+await pressKey('Enter');
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'result activation did not open source');
 t.assert(t.activeEditorDocument().model.resource.path === detailRow.location.resource.path, 'result activation opened the wrong source resource');
 
 t.command('scenarioLab');
 await t.frames(2);
 t.assert(t.activeWorkbenchTab() === labTab && labTab.view === view, 'reopening duplicated the Scenario Lab input or view');
-await pressModifiedF5('ControlLeft', 320);
+await pressModifiedF5('ControlLeft');
 t.assert(view.runActive, 'Ctrl+F5 did not rerun the selected scenario');
 
 await openWorkbenchWithHostChord(330);
@@ -401,7 +341,7 @@ const stoppedMachineCycle = runtime.machine.scheduler.nowCycles;
 await t.frames(3);
 t.assert(runtime.machine.scheduler.nowCycles === stoppedMachineCycle,
 	'blocking workbench advanced the machine during an active scenario');
-await pressModifiedF5('ShiftLeft', 340);
+await pressModifiedF5('ShiftLeft');
 await waitForRunToFinish(view, 1200);
 await t.frames(2);
 
@@ -420,12 +360,12 @@ t.assert(rootRow.kind === 'root'
 	&& !rootRow.text.includes('CART 0'),
 	'Scenario Lab did not present the project suite identity');
 const rootRowY = testPane.layout.contentTop + 1;
-await clickPointer(testPane.layout.contentLeft + 40, rootRowY, 400);
-await releasePointer(400);
+await clickPointer(testPane.layout.contentLeft + 40, rootRowY);
+await releasePointer();
 t.assert(testPane.selectionIndex === 0 && testPane.selectedNodeId === rootRow.root.id,
 	'pointer did not select the project suite');
-await clickPointer(runBounds.left + 1, runBounds.top + 1, 401);
-await releasePointer(401);
+await clickPointer(runBounds.left + 1, runBounds.top + 1);
+await releasePointer();
 t.assert(view.runActive, 'Run action did not start the selected project suite');
 await waitForRunToFinish(view, 50000);
 await t.frames(2);
@@ -449,7 +389,7 @@ t.assert(resultPane.rows[0].kind === 'run'
 	'result projection did not retain the aggregate run and its item results');
 t.capture('scenario-lab-suite-result-tiny-384x288');
 
-await pressModifiedF5('ControlLeft', 420);
+await pressModifiedF5('ControlLeft');
 t.assert(view.runActive, 'Ctrl+F5 did not rerun the complete project suite scope');
 const cancelledSuite = view.resultService.liveRun;
 t.assert(cancelledSuite !== null
@@ -457,7 +397,7 @@ t.assert(cancelledSuite !== null
 	&& cancelledSuite.items.length === 22,
 	'rerun did not preserve the previous project suite scope');
 await openWorkbenchWithHostChord(430);
-await pressModifiedF5('ShiftLeft', 440);
+await pressModifiedF5('ShiftLeft');
 await waitForRunToFinish(view, 1200);
 await t.frames(2);
 t.assert(cancelledSuite.state === 'cancelled'
