@@ -66,6 +66,7 @@ export const DEFAULT_THEME = 'light';
 
 type ThemeDefinition = {
 	disabledForeground: number;
+	descriptionForeground: number;
 	surfaces: {
 		frame: number;
 		topBar: number;
@@ -209,6 +210,7 @@ type ThemeOverlays = {
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
 		disabledForeground: THEME_TOKEN_MUTED_GREY,
+		descriptionForeground: THEME_TOKEN_HINT_GREY,
 		window: { background: THEME_TOKEN_BLACK, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
 			inactiveHeader: THEME_TOKEN_NEAR_BLACK, inactiveText: THEME_TOKEN_TERMINAL_GREY, border: THEME_TOKEN_MID_GREY },
 		inspection: { label: THEME_TOKEN_HINT_GREY, changedValue: THEME_TOKEN_LIGHT_PURPLE },
@@ -340,6 +342,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	},
 	light: {
 		disabledForeground: THEME_TOKEN_MUTED_GREY,
+		descriptionForeground: THEME_TOKEN_MUTED_GREY,
 		window: { background: THEME_TOKEN_GENTLE_WHITE, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
 			inactiveHeader: THEME_TOKEN_PANEL_GREY, inactiveText: THEME_TOKEN_TEXT_GREY, border: THEME_TOKEN_MID_GREY },
 		inspection: { label: THEME_TOKEN_STATUS_TEXT_GREY, changedValue: THEME_TOKEN_DARK_PURPLE },
@@ -577,6 +580,7 @@ export let COLOR_TIMELINE_TRACK: number;
 export let COLOR_TIMELINE_POSITION: number;
 export let COLOR_GRAPH_ACTIVE: number;
 export let COLOR_INSPECTOR_LABEL: number;
+export let COLOR_DESCRIPTION_TEXT: number;
 export let COLOR_INSPECTOR_VALUE_CHANGED: number;
 export let COLOR_SERVER_CONNECTED: number;
 export let COLOR_SERVER_DISCONNECTED: number;
@@ -757,6 +761,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TIMELINE_POSITION = theme.timeline.position;
 	COLOR_GRAPH_ACTIVE = theme.graph.active;
 	COLOR_INSPECTOR_LABEL = theme.inspection.label;
+	COLOR_DESCRIPTION_TEXT = theme.descriptionForeground;
 	COLOR_INSPECTOR_VALUE_CHANGED = theme.inspection.changedValue;
 	COLOR_SERVER_CONNECTED = theme.connection.connected;
 	COLOR_SERVER_DISCONNECTED = theme.connection.disconnected;

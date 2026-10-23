@@ -16,6 +16,7 @@ import { drawWorkbenchPropertyInspector } from '../../ide/workbench/render/prope
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import * as colors from '../../ide/common/constants';
 
 function fixture(t: TestContext) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
@@ -52,6 +53,41 @@ function fixture(t: TestContext) {
 	return { inspector, focus, parent, capture, hover, items, font, bounds, show, layout, key, press, pad,
 		measured: () => measured, opened: () => opened, disposed: () => disposed };
 }
+
+test('property descriptions use neutral UI ink in paragraph, inline and expanded rows without changing value semantics', t => {
+	const previousTheme = colors.getActiveIdeThemeVariant(), f = fixture(t);
+	t.after(() => colors.setIdeThemeVariant(previousTheme));
+	const overlay = createHostOverlayFixture(384, 288), glyphs = new Map<string, number>();
+	t.mock.method(api, 'blit_text_inline_with_font', (text, _x, _y, _z, color) => { glyphs.set(text, color); });
+	for (const theme of ['dark', 'light']) for (const variant of ['tiny', 'msx'] as const) {
+		colors.setIdeThemeVariant(theme);
+		const font = new Font({ variant });
+		const measure = (text: string, start: number, end: number) => font.measure(text.slice(start, end));
+		const measureText = (text: string) => font.measure(text);
+		for (const mode of ['paragraph', 'inline', 'expanded'] as const) for (const selected of [false, true])
+			for (const severity of ['normal', 'warning', 'changed'] as const) {
+				const item: InspectedProperty = { label: 'Label', value: 'Value', description: 'Explanation', warning: severity === 'warning',
+					valueChanged: severity === 'changed', compact: mode !== 'paragraph', descriptionDisplay: mode === 'expanded' ? 'disclosure' : 'inline' };
+				f.inspector.show({ title: 'Properties', items: [item], dismissible: false, canOpenSource: () => false, openSource() {} }, false);
+				f.inspector.layout(font, measure, measureText, f.bounds);
+				if (mode === 'expanded') {
+					assert.equal(f.inspector.model.setValueExpanded(0, true), true);
+					f.inspector.layout(font, measure, measureText, f.bounds);
+					assert.equal(f.inspector.model.rows[0].textExpanded, true);
+				}
+				f.inspector.model.selectionIndex = selected ? 0 : -1;
+				glyphs.clear();
+				overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+				drawWorkbenchPropertyInspector(f.inspector); overlay.renderer.endFrame();
+				const selectionCoversText = selected && mode !== 'paragraph';
+				const context = `${theme}/${variant}/${mode}/${selected ? 'selected' : 'unselected'}/${severity}`;
+				assert.equal(glyphs.get(item.description), selectionCoversText ? colors.COLOR_SELECTION_TEXT : colors.COLOR_DESCRIPTION_TEXT, context);
+				assert.equal(glyphs.get(item.value), selectionCoversText ? colors.COLOR_SELECTION_TEXT
+					: severity === 'warning' ? colors.COLOR_STATUS_WARNING : severity === 'changed' ? colors.COLOR_INSPECTOR_VALUE_CHANGED
+						: colors.COLOR_RESOURCE_VIEWER_TEXT, `${context}: existing value color`);
+			}
+	}
+});
 
 test('a popup cannot restore inspector or toolbar focus after their inspection ends', t => {
 	const f = fixture(t);
