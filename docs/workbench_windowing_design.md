@@ -650,6 +650,23 @@ and source generation that opened the popup. Source navigation detaches the
 pane's surfaces, not the input's window intent, selected snapshot or observation
 lease.
 
+## Anchored property editing
+
+Animation, AEM and Program properties share one source-bound value editor. Its
+active draft is an anchored transient with its own surface and focus scope, not
+property-cell overpaint. The field keeps at least 24 active-font cells where the
+root work area permits, independently of a narrow owning pane; its measured
+label identifies the edited property. The existing line viewport scrolls longer
+expressions without replacing authored text. Generic surface ordering, clipping,
+shadow, pointer routing and retirement apply to this editor as to other popups.
+
+This transient does not block unrelated UI. Ordinary focus departure accepts a
+valid draft once; Escape or source/attachment retirement cancels it. Source
+syntax, canonical text models, generation invalidation and document history
+remain with the contribution. Publication completes the owning projection before
+another source command captures its target. The popup retains local draft Undo;
+ending it returns focus to the containing property view, not a detached field.
+
 ## Implementation order and acceptance
 
 The slices below separate reviewable owner changes and define their own

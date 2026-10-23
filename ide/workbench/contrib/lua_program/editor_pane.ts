@@ -61,7 +61,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 			input.running = false; this.pointer.hideFeedback(); this.actionTooltip.hide();
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => contextMenu.hide()) });
 		};
-		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text);
+		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, getWorkArea);
 		this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('luaProgram.edit', { isEnabled: () => {
@@ -126,7 +126,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		const range = luaSourceRangeToTextRange(model.buffer, valueRange);
 		const lifetime = this.edit.open({ model, tree: input.tree, row,
 			parse: text => parseLuaFieldValueEdit(model.buffer, locations, field, text),
-			apply: value => model.pushEditOperations([value.edit]),
+			apply: value => { model.pushEditOperations([value.edit]); this.controller.refresh(input); },
 		}, { edit: { offset: range.start, deleteLength: range.end - range.start, text: readLuaSourceRange(model.buffer, valueRange) }, fieldRange, expressionRange: valueRange });
 		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.edit.close()) });
 	}
@@ -166,7 +166,6 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		drawEditorText(editorViewState.font, this.headerLabel, input.layout.left + 4, input.layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
 		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont());
 		drawWorkbenchPropertyTree(input.liveVisible ? input.live : input.tree);
-		if (this.edit.active) this.edit.draw();
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
 	public handleKeyboard(input: KeyInputEvent): void {
@@ -185,7 +184,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); if (this.commands.isEnabled('luaProgram.remove')) this.commands.execute('luaProgram.remove'); }
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
-		if (this.edit.handlePointer(snapshot) || this.actions.handlePointer(snapshot)) return true;
+		if (this.actions.handlePointer(snapshot)) return true;
 		const result = this.pointer.handle(this.input.liveVisible ? this.input.live : this.input.tree, snapshot, justPressed, now);
 		if (result === WorkbenchPropertyPointerResult.Outside) return false;
 		if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) this.focus();

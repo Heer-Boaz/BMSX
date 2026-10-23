@@ -37,6 +37,9 @@ for (let font = 0; font < 2; font++) {
 	await press('Enter');
 	for (const code of ['KeyS', 'KeyF', 'KeyX']) await press(code);
 	t.assert(model.buffer.getText() === original, 'a local field draft published before normal blur admission');
+	await capture(`aem-${input.layout.font.variant}-minimum-property-editor-theme-0`);
+	t.command('theme-toggle'); await t.frames(2); await capture(`aem-${input.layout.font.variant}-minimum-property-editor-theme-1`);
+	t.command('theme-toggle'); await t.frames(2);
 	const more = input.actionBar.overflow.button;
 	t.assert(more.visible && more.bounds.right > more.bounds.left, 'the minimum-width More action is not reachable');
 	await click((more.bounds.left + more.bounds.right) / 2, (more.bounds.top + more.bounds.bottom) / 2);

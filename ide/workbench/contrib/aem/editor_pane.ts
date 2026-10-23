@@ -57,7 +57,7 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 			this.pointer.hideFeedback(); this.actionTooltip.hide();
 			lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
 		};
-		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.text);
+		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.text, surfaces, paneSurface, getWorkArea);
 		this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('aem.edit', { isEnabled: () => !this.input.workingCopy.readOnly && this.input.tree.rows[this.input.tree.selectionIndex]?.element.inlineEditable === true,
@@ -85,7 +85,7 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 			parse: text => {
 				try { return { value: createStructuredValueEdit(input.source, aemDocumentFormat(model.resource.path), row.element.node, text) }; }
 				catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
-			}, apply: edit => model.pushEditOperations([edit]),
+			}, apply: edit => { model.pushEditOperations([edit]); projectAemSource(input); },
 		}, { offset: range[0], deleteLength: range[1] - range[0], text: input.source.slice(range[0], range[1]) });
 		lifetime.add({ dispose: model.onDidChangeContent(() => this.edit.close()) });
 	}
@@ -115,7 +115,6 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 		drawEditorText(editorViewState.font, this.caption, input.layout.left + 4, input.layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
 		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont());
 		drawWorkbenchPropertyTree(input.tree);
-		if (this.edit.active) this.edit.draw();
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
 	public handleKeyboard(input: KeyInputEvent): void {
@@ -126,7 +125,7 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); if (this.commands.isEnabled('aem.remove')) this.commands.execute('aem.remove'); }
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
-		if (this.edit.handlePointer(snapshot) || this.actions.handlePointer(snapshot)) return true;
+		if (this.actions.handlePointer(snapshot)) return true;
 		const result = this.pointer.handle(this.input.tree, snapshot, justPressed, now);
 		if (result === WorkbenchPropertyPointerResult.Outside) return false;
 		if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) this.focus();

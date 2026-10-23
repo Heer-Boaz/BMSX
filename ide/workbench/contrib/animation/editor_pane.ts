@@ -43,7 +43,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	private readonly actionTooltip = new WorkbenchTooltip();
 	private readonly propertyPointer = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly detailsFocus = inputFocus.createTarget(this.focusTarget);
-	private readonly edit = new WorkbenchPropertyEdit<LuaFieldValueEdit>(this.detailsFocus, value => value.edit.text);
+	private readonly edit: WorkbenchPropertyEdit<LuaFieldValueEdit>;
 	private readonly keys: AnimationKeyControl;
 	private readonly lanes: AnimationLaneControl;
 	private readonly image = new WorkbenchImageControl(inputFocus, pointerCapture, this.focusTarget);
@@ -59,6 +59,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		private readonly commands: IdeCommandController, contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
+		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, getWorkArea);
 		this.propertyPointer.attachFeedback(surfaces, paneSurface, getWorkArea, this.detailsFocus);
 		this.keys = new AnimationKeyControl(this.focusTarget, controller, controller.authoring);
 		this.lanes = new AnimationLaneControl(this.focusTarget, controller);
@@ -121,11 +122,11 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	}
 	private editProperty(): void {
 		this.propertyPointer.hideFeedback();
-		const row = this.input.details.rows[this.input.details.selectionIndex], property = row.element;
-		const model = this.controller.modelFor(this.input, property.source.file), locations = property.source.file.chunk.locations;
+		const input = this.input, row = input.details.rows[input.details.selectionIndex], property = row.element;
+		const model = this.controller.modelFor(input, property.source.file), locations = property.source.file.chunk.locations;
 		const valueRange = locations.range(property.field.value.span), range = luaSourceRangeToTextRange(model.buffer, valueRange);
-		this.edit.open({ model, tree: this.input.details, row, parse: text => parseLuaFieldValueEdit(model.buffer, locations, property.field, text),
-			apply: value => model.pushEditOperations([value.edit]) }, { edit: { offset: range.start, deleteLength: range.end - range.start, text: readLuaSourceRange(model.buffer, valueRange) },
+		this.edit.open({ model, tree: input.details, row, parse: text => parseLuaFieldValueEdit(model.buffer, locations, property.field, text),
+			apply: value => { model.pushEditOperations([value.edit]); this.controller.refresh(input); } }, { edit: { offset: range.start, deleteLength: range.end - range.start, text: readLuaSourceRange(model.buffer, valueRange) },
 			fieldRange: locations.range(property.field.span), expressionRange: valueRange });
 	}
 	public override update(): void {
@@ -167,7 +168,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
 		else this.actionTooltip.hide();
 	}
-	public draw(): void { drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus); if (this.edit.active) this.edit.draw(); }
+	public draw(): void { drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
 	public handleKeyboard(player: KeyInputEvent): void {
 		if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.lanes.cancelPointer(); return; }
@@ -189,7 +190,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.imageBitmap !== undefined && this.image.handlePointer(snapshot)) return true;
-		if (this.edit.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.keys.handlePointer(snapshot) || this.lanes.handlePointer(snapshot)) return true;
+		if (this.actions.handlePointer(snapshot) || this.keys.handlePointer(snapshot) || this.lanes.handlePointer(snapshot)) return true;
 		const result = this.propertyPointer.handle(this.input.details, snapshot, justPressed, now);
 		if (result !== WorkbenchPropertyPointerResult.Outside) {
 			if (justPressed) { this.detailsFocus.focus(); this.controller.selectProperty(this.input, this.input.details.selectionIndex); }

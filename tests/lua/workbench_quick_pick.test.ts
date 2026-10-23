@@ -1,4 +1,5 @@
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
@@ -52,8 +53,11 @@ test('popup origins and cancellation belong to the containing scope after an inl
 	const model = new EditorTextModel({ domain: 0, path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', 'return 20');
 	const parent = inputFocus.createTarget();
 	parent.registerCommand('undo', { isEnabled: () => model.history.canUndo(model), run: () => model.undo() });
-	const edit = new WorkbenchPropertyEdit<string>(parent, value => value);
-	t.after(() => { menu.dispose(); edit.dispose(); model.dispose(); });
+	const surfaces = new WorkbenchSurfaceService(), area = { left: 0, top: 24, right: 384, bottom: 274 };
+	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope, isVisible: () => true,
+		getBounds: () => area, getClip: () => area, draw() {} });
+	const edit = new WorkbenchPropertyEdit<string>(parent, value => value, surfaces, owner, () => area);
+	t.after(() => { menu.dispose(); edit.dispose(); surfaces.dispose(); model.dispose(); });
 	const tree = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
 	const row = appendWorkbenchTreeNode<WorkbenchPropertyElement>(tree, null, { kind: 'property', label: 'value', value: '20', description: '', warning: false,
 		displayLabel: '', displayValue: '', displayValueLeft: 0 });
