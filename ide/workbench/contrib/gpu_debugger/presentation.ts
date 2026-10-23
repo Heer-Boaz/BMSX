@@ -158,7 +158,7 @@ export class GpuDebugPresentation {
 	public details(record: GpuOperationSnapshot, rawPage = 0): readonly InspectedProperty[] {
 		this.properties.length = 0;
 		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'GPU operation', value: `${gpuOperationName(record)} / ${formatNumberAsHex(record.opcode, 2)}`,
-			description: `${this.summary}\nLogical execution start ${record.startCycles}; actual observation ${record.cycles}. This is not completion, presentation or original GP0 traffic. No CPU/GTE or asset identity is inferred. Geometry is a diagram, not exact raster coverage; no historical VRAM image is supplied.`, warning: false },
+			description: `Timeline ${record.timeline}, tick ${record.completedTick}; logical start ${record.startCycles}, observed ${record.cycles} cycles. Emitted operation, not completion, presentation or original GP0. Diagram only: no exact raster coverage, historical VRAM or inferred CPU/GTE/asset identity.`, warning: false },
 			{ compact: true, descriptionDisplay: 'disclosure', label: 'Area / offset', value: `${formatNumberAsHex(record.drawingAreaTopLeftWord, 8)} / ${formatNumberAsHex(record.drawingAreaBottomRightWord, 8)} / ${formatNumberAsHex(record.drawingOffsetWord, 8)}`,
 				description: `Latched offset (${gxGpuSigned11(record.drawingOffsetWord)},${rules.gxGpuDrawingOffsetY(record.drawingOffsetWord)}). Polygon/line offsets are integer sums; rectangle origins wrap at signed 11 bits. Fill and transfer operations have their own address rules. Diagram edges do not claim exact raster coverage.`, warning: false },
 			{ compact: true, descriptionDisplay: 'disclosure', label: 'Draw mode', value: formatNumberAsHex(record.drawModeWord, 8),

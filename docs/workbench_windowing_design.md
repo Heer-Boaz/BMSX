@@ -90,7 +90,7 @@ scope. A planned slice is a dependency, not an implementation-status claim.
 | Role | Placement and input behaviour | Product consumer | Planned scope |
 | --- | --- | --- | --- |
 | Layout content | Bounds supplied by the existing workbench or pane layout. | Editor group, resource panel, game panel, timeline. | A: publish the existing layout roots. |
-| Modeless window | Independently placed within its stacking context; its full opaque rectangle excludes surfaces behind it. | Floating Actor Lab Details. | C: chrome and first product window. |
+| Modeless window | Independently placed within its stacking context; its full opaque rectangle excludes surfaces behind it. | Actor Lab Details; GPU operation Details. | C: chrome and first product window; GPU uses the same container. |
 | Contained subwindow | Independently ordered inside a window's client area, bounded by that client's effective clip. | No concrete product consumer yet. | Designed, provisional and not validated by a product consumer; no nested arrangement implementation in A–C. |
 | Anchored transient | Owner-relative anchor, explicit dismissal and input policy; may escape the owner's content clip. | Context menu, submenu, completion popup, interactive hover. | A: migrate existing transients. |
 | Modal surface | Blocks a named scope and confines focus/commands within it until resolved. | Root action prompt/Quick Input; pane-local image lightbox. | A: root and existing owner-local blocking. |
@@ -587,6 +587,33 @@ central unobscured route; no window-rectangle scans inside Actor Lab. The
 completed-frame geometry/identity requirements in
 [Actor picking](studio_actor_tools.md#selection-geometry-extension-boundary)
 remain unchanged.
+
+## GPU operation Details
+
+GPU Details is another modeless client of the same window container, not a
+replacement for the operation list or diagram. It follows the GPU input's owned
+selected snapshot; the existing Follow/selection policy owns freezing that
+observation. It introduces neither an independent Details pin nor another
+history borrow, decoder or raw-word copy. The caption identifies the actual
+operation sequence and type; expired observations remain explicitly historical.
+Clear leaves an open, explicitly empty Details window rather than resolving a
+replacement ring slot.
+
+The input retains placement, open/collapse intent and property-view bookmarks.
+The pane owns surfaces and controls. Initial placement is lower-left above the
+shared runtime transport; user movement is permitted throughout the root work
+area. Default geometry preserves useful diagram context in both fonts, while
+minimum-sized clients scroll their full field/annotation document. Escape
+returns focus to the operation list without closing Details. Editor detachment
+retains open intent; Close clears it without discarding placement.
+
+A changed observation or raw-word page replaces the inspector document in its
+existing attachment, ending old keyboard/controller activations, scroll drags
+and feedback before the new fields receive input. Unchanged documents retain
+their measured rows; hidden and collapsed clients perform no field formatting.
+Restoring a client applies its bookmark at the actual reflow boundary, before
+another input occurrence. GTE and editable source inspectors have their own
+subject/source lifetimes and require separate integrations.
 
 ## Implementation order and acceptance
 

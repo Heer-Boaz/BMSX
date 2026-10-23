@@ -60,8 +60,12 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 	private readonly expandedText = new WeakSet<Element>();
 
 	public setItems(items: readonly Element[]): void {
-		this.rows.length = 0;
-		for (const element of items) this.rows.push(this.createRow(element));
+		for (let index = 0; index < items.length; index++) {
+			const row = this.rows[index];
+			if (row === undefined) this.rows.push(this.createRow(items[index]));
+			else row.element = items[index];
+		}
+		this.rows.length = items.length;
 		this.selectionIndex = items.length === 0 ? -1 : 0;
 		this.hoverIndex = -1;
 		this.viewport.scrollbar.setScroll(0);

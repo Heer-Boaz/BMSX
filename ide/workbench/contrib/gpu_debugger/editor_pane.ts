@@ -17,7 +17,6 @@ import { pointerHover } from '../../../input/pointer/hover';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
@@ -27,12 +26,12 @@ import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
-import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { GpuDebuggerInput } from './editor_input';
-import { GPU_RAW_WORDS_PER_PAGE, GpuDebugPresentation, gpuOperationName, type GpuDebugView } from './presentation';
+import { GpuDebugPresentation, gpuOperationName, type GpuDebugView } from './presentation';
 import { drawGpuDebugger, GpuDebugCanvas, type GpuOperationRow, type GpuWordRow } from './render';
+import { GpuDetailsWindow } from './details_window';
 
 const COMMANDS = ['gpu.follow', 'gpu.view', 'gpu.details', 'gpu.goToFrame', 'gpu.filter', 'gpu.clear', 'gpu.more'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
@@ -48,7 +47,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
 	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event, false));
 	private readonly words = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event, true));
-	private readonly inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focusTarget);
+	private details: GpuDetailsWindow | undefined;
 	private readonly presentation = new GpuDebugPresentation();
 	private readonly canvas = new GpuDebugCanvas();
 	private readonly rows: GpuOperationRow[] = [];
@@ -82,7 +81,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) this.focusTarget.registerCommand(command, {
 			isEnabled: () => navigation.canStep(direction), run: () => { this.input.running = false; navigation.step(direction); },
 		});
-		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => !this.inspector.visible, run: () => {
+		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput, run: () => {
 			this.input.following = false;
 			this.contextMenu.show(this.input.list.bounds.left, this.input.list.bounds.top, WORKBENCH_MENUS['gpu.context'], this, { selectFirst: true });
 		} });
@@ -95,16 +94,23 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override get runtimeTransport() { return this.commands.transport; }
-	public override focus(): void { (this.inspector.visible ? this.inspector : this.wordsActive ? this.words : this.list).focusTarget.focus(); }
+	public override focus(): void { (this.wordsActive ? this.words : this.list).focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.wordRevision = -1;
-		this.actions.setInput(this.input.actions, this.focusTarget); this.list.setInput(this.input.list); this.update();
+		this.actions.setInput(this.input.actions, this.focusTarget); this.list.setInput(this.input.list);
+		const details = this.details = new GpuDetailsWindow(this.input, this.commands, this.surfaces, this.paneSurface, this.list.focusTarget,
+			this.getWorkArea, rawPage => { this.synchronizeSelection(); return this.presentation.details(this.input.selected, rawPage); });
+		for (const target of [details.window.focusTarget, details.inspector.focusTarget])
+			for (const command of [...COMMANDS, 'pause', 'runtime.pause', 'runtime.resume', 'stepFrameBack', 'stepFrame'] as const)
+				target.registerCommand(command, this.focusTarget.getCommand(command)!);
+		this.update();
 	}
 	public override clearInput(): void {
-		this.input.running = false; this.contextMenu.hide(); this.inspector.hide(); this.actions.clearInput(); this.list.clearInput(); this.setWordsActive(false);
+		this.input.running = false; this.contextMenu.hide(); this.details!.dispose(); this.details = undefined;
+		this.actions.clearInput(); this.list.clearInput(); this.setWordsActive(false);
 		this.presentation.reset(); this.labels.clear(); this.rows.length = 0; this.wordRows.length = 0; super.clearInput();
 	}
-	public override dispose(): void { if (this.hasInput) this.clearInput(); this.inspector.dispose(); this.actions.dispose(); this.list.dispose(); this.words.dispose(); super.dispose(); }
+	public override dispose(): void { if (this.hasInput) this.clearInput(); this.actions.dispose(); this.list.dispose(); this.words.dispose(); super.dispose(); }
 	private synchronizeSelection(): void {
 		const input = this.input;
 		if (this.presentation.update(input.selected, input.selectionRevision, input.view)) this.diagramDirty = true;
@@ -124,8 +130,8 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		this.wordsActive = active;
 	}
 	public isEnabled(command: EditorCommandId): boolean {
-		if (!this.hasInput || this.inspector.visible) return false;
-		if (command === 'gpu.details') return this.input.selected.sequence >= 0;
+		if (!this.hasInput) return false;
+		if (command === 'gpu.details') return this.input.selected.sequence >= 0 || this.input.detailsWindow.open;
 		if (command === 'gpu.goToFrame') return this.input.selected.sequence >= 0 && this.navigation.available && this.input.history.canSeek(this.input.selected);
 		if (command === 'gpu.clear') return this.input.history.count > 0;
 		return command === 'gpu.follow' || command === 'gpu.view' || command === 'gpu.filter' || command === 'gpu.more';
@@ -142,9 +148,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 			case 'gpu.more': { input.following = false; const bounds = input.actions.items[2].bounds; this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['gpu.context'], this); break; }
 			case 'gpu.details': {
 				input.following = false;
-				const rawPage = Math.trunc(input.selectedWord / GPU_RAW_WORDS_PER_PAGE);
-				this.inspector.show({ title: `GPU OPERATION #${input.selected.sequence}`, items: this.presentation.details(input.selected, rawPage), canOpenSource: () => false, openSource: () => {} });
-				this.inspector.attachFeedback(this.surfaces, this.paneSurface, this.getWorkArea); break;
+				this.details!.show(); break;
 			}
 			case 'gpu.goToFrame': {
 				input.running = false; const sequence = input.selected.sequence;
@@ -192,7 +196,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 			this.status = truncateMeasuredText(`${input.following ? input.projection.rows.length === 0 ? 'WAITING' : 'FOLLOWING' : 'PINNED'}${this.presentation.summary === '' ? '' : ` | ${this.presentation.summary}`}${expired ? ' | Record expired' : ''}${input.selected.sequence >= 0 && !reachable ? ' | Frame unavailable' : ''}`, layout.right - layout.left - 8, measureTextRange);
 			this.historyRevision = input.history.revision; this.following = input.following; this.reachable = reachable;
 		}
-		if (this.inspector.visible) { this.inspector.layout(layout.font!.renderFont(), measureTextRange, measureText, this.contentBounds); this.inspector.update(); }
+		this.details!.update();
 	}
 	/** Formatting work follows only the visible word window and owned snapshot revision. */
 	private updateWordRows(layoutChanged: boolean): void {
@@ -208,10 +212,9 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		}
 		this.wordRows.length = count; this.wordFirst = first; this.wordLast = end; this.wordOffset = words.offsetTop; this.wordRevision = input.selectionRevision;
 	}
-	public draw(): void { if (this.inspector.visible) drawWorkbenchPropertyInspector(this.inspector); else drawGpuDebugger(this.input, this.presentation, this.canvas, this.rows, this.wordRows, this.focusTarget.hasFocus); }
+	public draw(): void { drawGpuDebugger(this.input, this.presentation, this.canvas, this.rows, this.wordRows, this.focusTarget.hasFocus); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
-		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.actions.handlePointer(snapshot)) return true;
 		const input = this.input, secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
 		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport
@@ -251,7 +254,6 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	public handleKeyboard(event: KeyInputEvent): void { this.navigate(event, false); }
 	public handleWheel(event: WheelInputSnapshot): void {
 		const delta = event.deltaY * this.input.layout.rowHeight;
-		if (this.inspector.visible) this.inspector.handleWheel(event, delta);
-		else if (!this.wordsActive || !this.words.handleWheel(event, delta)) this.list.handleWheel(event, delta);
+		if (!this.wordsActive || !this.words.handleWheel(event, delta)) this.list.handleWheel(event, delta);
 	}
 }

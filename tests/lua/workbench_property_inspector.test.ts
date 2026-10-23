@@ -1,4 +1,5 @@
 import { KeyInputEvent } from '../../hosts/common/input/text';
+import type { PointerSnapshot } from '../../ide/common/models';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -596,4 +597,40 @@ test('queued navigation supersedes an earlier explicit expansion reveal before t
 	assert.equal(model.selectionIndex, 7);
 	assert.ok(view.offsetTop + selected.top >= bounds.top && view.offsetTop + selected.bottom <= bounds.bottom,
 		'the latest actual navigation owns reveal after reflow, not the earlier expanded row');
+});
+
+test('a different inspected observation retires held keyboard and gamepad activation without changing control focus', t => {
+	const f = fixture(t);
+	for (const trigger of ['Enter', 'NumpadEnter', 'gamepad'] as const) {
+		const old: InspectedProperty = { label: 'Old observation', value: '12345678h', description: 'Captured word.',
+			warning: false, compact: true, descriptionDisplay: 'disclosure' };
+		const next = { ...old, label: 'New observation', value: '87654321h' };
+		f.inspector.show({ title: 'Hardware', items: [old], dismissible: false, canOpenSource: () => false, openSource() {} }); f.layout();
+		if (trigger === 'gamepad') f.pad('a', true); else f.key(trigger, true);
+		const row = f.inspector.model.rows[0], focused = f.focus.target;
+		f.inspector.replaceItems([next]); f.layout();
+		if (trigger === 'gamepad') f.pad('a', false); else f.key(trigger, false);
+		f.layout();
+		assert.equal(f.focus.target, focused, 'a new document does not hide/show the inspector or restore focus');
+		assert.equal(f.inspector.model.rows[0], row, 'presentation storage can be retained independently of observation identity');
+		assert.equal(row.element, next); assert.equal(row.textExpanded, false, 'an old release must not activate the next observation');
+		f.press('Enter'); f.layout(); assert.equal(row.textExpanded, true, 'a fresh press/release still activates the new document');
+	}
+});
+
+test('a different inspected observation retires its scroll capture and resets only document-local view state', t => {
+	const f = fixture(t), rows: InspectedProperty[] = Array.from({ length: 30 }, (_, index) => ({ label: `Word[${index}]`,
+		value: '12345678h', description: 'Captured word.', warning: false, compact: true, descriptionDisplay: 'disclosure' }));
+	f.bounds.bottom = 150;
+	f.inspector.show({ title: 'Hardware', items: rows, dismissible: false, canOpenSource: () => false, openSource() {} }); f.layout();
+	const view = f.inspector.model.viewport, thumb = view.scrollbar.getThumb()!;
+	const snapshot: PointerSnapshot = { valid: true, insideViewport: true, viewportX: thumb.left + 1, viewportY: thumb.top + 1,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	f.inspector.handlePointer(snapshot); assert.equal(f.capture.active, true);
+	const replacement = rows.map(row => ({ ...row, value: '87654321h' }));
+	f.inspector.replaceItems(replacement); f.layout();
+	assert.equal(f.capture.active, false);
+	assert.equal(f.inspector.model.selectionIndex, 0); assert.equal(view.scrollTop, 0);
+	snapshot.viewportY += 50; snapshot.justPressedButtons = 0;
+	f.inspector.handlePointer(snapshot); f.layout(); assert.equal(view.scrollTop, 0, 'the remainder of an old hold does not drag a new document');
 });

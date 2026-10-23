@@ -186,6 +186,16 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		}
 	}
 
+	/** A new subject ends document-local attempts, not the inspector's attachment or focus. */
+	public replaceItems(items: readonly Element[]): void {
+		this.triggerKey = undefined; this.padPressed = false;
+		this.scroll.cancelPointer(); this.actions.cancelPointer();
+		this.retireFeedback(); this.hover.release(this);
+		this.model.setItems(items);
+		this.actionBar.items[0].visible = this.chrome === 'header' && items.some(item => this.input!.canOpenSource(item));
+		this.updateFocusOrder(); this.layoutDirty = true;
+	}
+
 	public dispose(): void { this.hide(); this.actions.dispose(); this.scroll.dispose(); this.unbindBlur(); this.unbindFocus(); this.unbindGamepad(); }
 
 	public update(): void {

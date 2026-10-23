@@ -5,6 +5,7 @@ import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
+import { WorkbenchWindowModel } from '../../ui/window/model';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import { GpuOperationProjection, type GpuDebugView } from './presentation';
@@ -19,6 +20,11 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 	public readonly list = new WorkbenchScrollViewport();
 	public readonly words = new WorkbenchScrollViewport();
 	public readonly visualBounds = create_rect_bounds();
+	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
+	public readonly detailsActions = createWorkbenchActionBar('window.title');
+	public detailsPlacementInitialized = false;
+	public detailsScroll = 0;
+	public detailsRow = 0;
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
 	public following = true;
 	public running = false;
@@ -39,6 +45,7 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 	}
 	private resetPosition(): void {
 		this.selectedPoint = 0; this.selectedWord = 0;
+		this.detailsScroll = 0; this.detailsRow = 0;
 		this.words.scrollbar.setScroll(0); this.selectionRevision++;
 	}
 	public clear(): void { this.history.clear(); this.following = true; this.clearSelection(); }
