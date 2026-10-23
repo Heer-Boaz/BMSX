@@ -2,7 +2,7 @@ import type { EditorDiagnostic, EditorDiagnosticSeverity } from '../../../../com
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { EditorFont } from '../../../../editor/ui/view/font';
 import { measureText, measureTextRange } from '../../../../editor/common/text/layout';
-import { writeWrappedMeasuredText } from '../../../../common/text';
+import { writeWrappedMeasuredText, truncateMeasuredText } from '../../../../common/text';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
 import { getVisibleProblemsPanelHeight, statusAreaHeight } from '../../../common/layout';
@@ -10,6 +10,8 @@ import * as constants from '../../../../common/constants';
 import { problemsPanel } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
+import { computeSourceLabel } from '../../../../common/paths';
+import { sourceTabDescription } from '../../../ui/tab/titles';
 
 export type PanelLayout = {
 	headerTop: number;
@@ -29,13 +31,13 @@ export type ProblemsPanelItemLayout = {
 	severityLabel: string;
 	severityWidth: number;
 	firstLineWidth: number;
+	location: string;
+	feedback: string;
 	height: number;
 	lines: string[];
 };
 
 const panelBoundsScratch: RectBounds = create_rect_bounds();
-
-const EMPTY_PROBLEM_MESSAGE = '(no details)';
 
 function renderSeverityLabel(severity: EditorDiagnosticSeverity): string {
 	switch (severity) {
@@ -48,23 +50,13 @@ export function problemsPanelHeaderHeight(): number {
 	return Math.max(editorViewState.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2, WORKBENCH_ICON_SIZE + 5);
 }
 
-function targetVisibleRows(diagnosticCount: number): number {
-	if (diagnosticCount === 0) {
-		return constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS;
-	}
-	return clamp(
-		diagnosticCount,
-		constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS,
-		constants.PROBLEMS_PANEL_MAX_VISIBLE_ROWS,
-	);
-}
-
-export function computeProblemsPanelVisibleHeight(diagnosticCount: number, fixedHeightPx: number): number {
+export function computeProblemsPanelVisibleHeight(contentHeightPx: number, fixedHeightPx: number): number {
 	const headerHeight = problemsPanelHeaderHeight();
 	if (fixedHeightPx && fixedHeightPx > headerHeight + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2) {
 		return fixedHeightPx;
 	}
-	const contentHeight = Math.max(editorViewState.lineHeight, targetVisibleRows(diagnosticCount) * editorViewState.lineHeight);
+	const contentHeight = clamp(contentHeightPx, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS * editorViewState.lineHeight,
+		constants.PROBLEMS_PANEL_MAX_VISIBLE_ROWS * editorViewState.lineHeight);
 	return headerHeight + contentHeight + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2;
 }
 
@@ -102,6 +94,8 @@ export function createProblemsPanelItemLayout(): ProblemsPanelItemLayout {
 		severityLabel: '',
 		severityWidth: 0,
 		firstLineWidth: 0,
+		location: '',
+		feedback: '',
 		height: 0,
 		lines: [],
 	};
@@ -111,7 +105,7 @@ export function writeProblemsPanelItemLayout(out: ProblemsPanelItemLayout, diagn
 	const lineHeight = editorViewState.lineHeight;
 	const font = editorViewState.font;
 	const severity = diagnostic.severity;
-	const message = diagnostic.message.length > 0 ? diagnostic.message : EMPTY_PROBLEM_MESSAGE;
+	const message = diagnostic.message;
 	if (
 		out.diagnostic === diagnostic
 		&& out.availableWidth === availableWidth
@@ -126,6 +120,10 @@ export function writeProblemsPanelItemLayout(out: ProblemsPanelItemLayout, diagn
 	const severityWidth = measureText(severityLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS;
 	const firstLineWidth = availableWidth - severityWidth;
 	writeWrappedMeasuredText(out.lines, message, firstLineWidth, availableWidth, constants.PROBLEMS_PANEL_MAX_WRAP_LINES, measureTextRange);
+	const identity = diagnostic.model.identity, line = diagnostic.row + 1, column = diagnostic.startColumn + 1;
+	const position = `:${line}:${column}`;
+	out.location = truncateMeasuredText(computeSourceLabel(identity.path), availableWidth - measureText(position), measureTextRange) + position;
+	out.feedback = `${sourceTabDescription(identity)}:${line}:${column}\n${message}`;
 	out.diagnostic = diagnostic;
 	out.availableWidth = availableWidth;
 	out.lineHeight = lineHeight;
@@ -135,7 +133,7 @@ export function writeProblemsPanelItemLayout(out: ProblemsPanelItemLayout, diagn
 	out.severityLabel = severityLabel;
 	out.severityWidth = severityWidth;
 	out.firstLineWidth = firstLineWidth;
-	out.height = out.lines.length * lineHeight;
+	out.height = (out.lines.length + 1) * lineHeight;
 	return out;
 }
 

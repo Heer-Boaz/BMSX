@@ -51,8 +51,7 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 		assert.notEqual(colors.INACTIVE_SELECTION_OVERLAY, colors.SELECTION_OVERLAY);
 		for (const run of text) {
 			if (run.y < layout.contentTop) continue;
-			assert.equal(run.color, resolveThemeTokenColor(run.items === 'E'
-				? colors.COLOR_DIAGNOSTIC_ERROR : colors.COLOR_INACTIVE_SELECTION_TEXT));
+			assert.equal(run.color, resolveThemeTokenColor(colors.COLOR_INACTIVE_SELECTION_TEXT));
 		}
 		const item = controller.getItemLayout(0);
 		assert.ok(item.lines.length > 1, 'fixture exercises wrapped diagnostics');
@@ -67,8 +66,7 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 		}
 		for (const run of activeText) {
 			if (run.y < layout.contentTop) continue;
-			assert.equal(run.color, resolveThemeTokenColor(run.items === 'E'
-				? colors.COLOR_DIAGNOSTIC_ERROR : colors.COLOR_SELECTION_TEXT));
+			assert.equal(run.color, resolveThemeTokenColor(colors.COLOR_SELECTION_TEXT));
 		}
 		assert.deepEqual(activeText.map(run => [run.items, run.x, run.y]), text.map(run => [run.items, run.x, run.y]), 'focus does not shift/reflow source diagnostics');
 		assert.equal(controller.getItemLayout(0), item, 'focus retains the measured diagnostic');

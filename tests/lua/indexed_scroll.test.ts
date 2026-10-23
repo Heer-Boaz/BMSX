@@ -144,7 +144,8 @@ test('Problems wheel prepares current variable-height layout after show, resize 
 	t.after(() => { controller.hide(); model.dispose(); });
 	const wide = { left: 0, top: 0, right: 320, bottom: 100 };
 	assert.equal(controller.getCachedLayout(), null);
-	assert.equal(controller.handlePointerWheel(1, wide), true);
+	const firstRowLines = controller.getItemLayout(0, controller.resolveAvailableWidth(wide)).height / editorViewState.lineHeight;
+	assert.equal(controller.handlePointerWheel(firstRowLines, wide), true);
 	assert.equal(controller.getScrollIndex(), 1, 'first wheel after showing and installing diagnostics is not dropped');
 	const wideHeight = controller.getItemLayout(1).height;
 	const narrow = { ...wide, right: 80 };

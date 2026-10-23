@@ -27,6 +27,11 @@ import { handleProblemsPanelPointerInput } from './pointer';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 import { inputFocus } from '../../../../input/focus';
 import { ProblemsPanelHeader } from './header';
+import type { EditorCommandRunner } from '../../../../common/commands';
+import { measureText, measureTextRange } from '../../../../editor/common/text/layout';
+import type { WorkbenchSurface } from '../../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../../services/windows/service';
+import { WorkbenchTooltip } from '../../../ui/tooltip';
 
 export {
 	getProblemsPanelBounds,
@@ -37,7 +42,7 @@ export {
 const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 
 export class ProblemsPanelController implements PointerHoverTarget {
-	public onPointerLeave(): void { this.hoverIndex = -1; this.header.onPointerLeave(); }
+	public onPointerLeave(): void { this.hoverIndex = -1; this.header.onPointerLeave(); this.feedback.hide(); }
 	private visible = false;
 	public readonly focusTarget = inputFocus.createTarget();
 	public readonly header = new ProblemsPanelHeader(this.focusTarget);
@@ -51,7 +56,26 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	private cachedLayout: PanelLayout = null;
 	private fixedHeightPx: number = null;
 	private lastAvailableWidth = 1;
+	private readonly feedback = new WorkbenchTooltip();
+	private feedbackArea: (() => Readonly<RectBounds>) | undefined;
+	private unbindFeedbackBlur: (() => void) | undefined;
 	public emptyMessage = 'No resources checked.';
+
+	public constructor() {
+		this.focusTarget.clipboard = { readOnly: true, copy: () => this.selectionIndex < 0 ? null : this.getItemLayout(this.selectionIndex).feedback };
+	}
+
+	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>, commands: EditorCommandRunner): void {
+		this.header.attach(surfaces, owner, getWorkArea, commands);
+		this.feedback.attach(surfaces, owner, getWorkArea); this.feedbackArea = getWorkArea;
+		this.unbindFeedbackBlur = this.focusTarget.onDidBlur(() => this.feedback.hide());
+	}
+
+	public detach(): void {
+		this.feedback.detach(); this.feedbackArea = undefined;
+		this.unbindFeedbackBlur?.(); this.unbindFeedbackBlur = undefined;
+		this.header.detach();
+	}
 
 	public get isVisible(): boolean {
 		return this.visible;
@@ -72,7 +96,12 @@ export class ProblemsPanelController implements PointerHoverTarget {
 
 	public get visibleHeight(): number {
 		if (!this.visible) return 0;
-		return computeProblemsPanelVisibleHeight(this.diagnostics.length, this.fixedHeightPx);
+		if (this.fixedHeightPx !== null) return computeProblemsPanelVisibleHeight(0, this.fixedHeightPx);
+		const width = editorViewState.viewportWidth - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2;
+		const limit = constants.PROBLEMS_PANEL_MAX_VISIBLE_ROWS * editorViewState.lineHeight;
+		let contentHeight = 0;
+		for (let index = 0; index < this.diagnostics.length && contentHeight < limit; index++) contentHeight += this.getItemLayout(index, width).height;
+		return computeProblemsPanelVisibleHeight(contentHeight, this.fixedHeightPx);
 	}
 
 	public show(): void {
@@ -91,6 +120,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 			return;
 		}
 		this.visible = false;
+		this.feedback.hide();
 		this.header.setVisible(false);
 		this.focusTarget.release();
 		this.hoverIndex = -1;
@@ -104,6 +134,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 
 	public setHoverIndex(index: number): void {
 		this.hoverIndex = index;
+		if (index < 0) this.feedback.hide();
 	}
 
 	public setSelectionIndex(index: number): void {
@@ -144,6 +175,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	}
 
 	public setDiagnostics(diagnostics: readonly EditorDiagnostic[], coverage: DiagnosticsCoverage): void {
+		this.feedback.hide();
 		this.diagnostics = diagnostics;
 		this.header.setCoverage(diagnostics.length, coverage);
 		this.emptyMessage = coverage.failed > 0 ? 'Diagnostic computation failed.'
@@ -174,6 +206,22 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		if (bounds === null) return;
 		this.prepareLayout(bounds);
 		this.header.updateFeedback();
+		this.updateFeedback(bounds);
+	}
+
+	/** The row is compact; its passive disclosure retains the qualified resource and whole message. */
+	public updateFeedback(bounds: RectBounds): void {
+		if (!this.visible || this.feedbackArea === undefined) return;
+		if (this.header.hasFocus || this.header.actions.hoveredCommand !== null) { this.feedback.hide(); return; }
+		const index = this.hoverIndex >= 0 ? this.hoverIndex : this.focusTarget.hasFocus ? this.selectionIndex : -1;
+		if (index < this.getScrollIndex()) { this.feedback.hide(); return; }
+		const layout = this.cachedLayout;
+		let top = layout.contentTop;
+		for (let row = this.getScrollIndex(); row < index; row++) top += this.getItemLayout(row).height;
+		if (top >= layout.contentBottom) { this.feedback.hide(); return; }
+		const item = this.getItemLayout(index);
+		// Disclose outside the part, not over a neighboring diagnostic card.
+		this.feedback.show(item.feedback, bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.feedbackArea());
 	}
 
 	public handlePointer(

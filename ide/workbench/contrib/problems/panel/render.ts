@@ -17,9 +17,9 @@ let emptyProblemsMessageFont: EditorFont = null;
 function severityColor(severity: 'error' | 'warning'): number {
 	switch (severity) {
 		case 'error':
-			return constants.COLOR_DIAGNOSTIC_ERROR;
+			return constants.COLOR_PROBLEMS_PANEL_ERROR;
 		case 'warning':
-			return constants.COLOR_DIAGNOSTIC_WARNING;
+			return constants.COLOR_PROBLEMS_PANEL_WARNING;
 	}
 }
 
@@ -82,16 +82,19 @@ export function drawProblemsPanelSurface(
 		}
 
 		let textCursorX = contentLeft;
-		const color = isHovered && !isSelected ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : severityColor(diagnostic.severity);
-		drawEditorText(editorViewState.font, itemLayout.severityLabel, textCursorX, rowTop, 0, color);
-		textCursorX += itemLayout.severityWidth;
-
 		const messageColor = isSelected
 			? (focused ? constants.COLOR_SELECTION_TEXT : constants.COLOR_INACTIVE_SELECTION_TEXT)
 			: (isHovered ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : constants.COLOR_PROBLEMS_PANEL_TEXT);
+		const color = isSelected ? messageColor : severityColor(diagnostic.severity);
+		const messageTop = rowTop + editorViewState.lineHeight;
+		drawEditorText(editorViewState.font, itemLayout.severityLabel, textCursorX, messageTop, 0, color);
+		textCursorX += itemLayout.severityWidth;
+
+		drawEditorText(editorViewState.font, itemLayout.location, contentLeft, rowTop, 0,
+			isSelected ? messageColor : constants.COLOR_PROBLEMS_PANEL_LOCATION);
 		for (let lineIndex = 0; lineIndex < wrapped.length; lineIndex += 1) {
 			const x = lineIndex === 0 ? textCursorX : contentLeft;
-			const y = rowTop + lineIndex * editorViewState.lineHeight;
+			const y = messageTop + lineIndex * editorViewState.lineHeight;
 			drawEditorText(editorViewState.font, wrapped[lineIndex], x, y, 0, messageColor);
 		}
 

@@ -18,6 +18,7 @@ const keys = WATERMARK_COMMANDS.map(command => EDITOR_COMMAND_KEYBINDING_LABELS.
 let measuredFont: EditorFont | null = null;
 let titleColumnWidth = 0;
 let rowWidth = 0;
+let stackedWidth = 0;
 
 function measureWatermark(font: EditorFont): void {
 	measuredFont = font;
@@ -29,6 +30,7 @@ function measureWatermark(font: EditorFont): void {
 		const keyWidth = measureText(keys[index]);
 		if (keyWidth > keyColumnWidth) keyColumnWidth = keyWidth;
 	}
+	stackedWidth = Math.max(titleColumnWidth, keyColumnWidth);
 	titleColumnWidth += editorViewState.charAdvance * WATERMARK_COLUMN_GAP_CHARS;
 	rowWidth = titleColumnWidth + keyColumnWidth;
 }
@@ -39,12 +41,19 @@ export function drawEditorGroupWatermark(): void {
 	const font = editorViewState.font;
 	if (font !== measuredFont) measureWatermark(font);
 	const lineHeight = editorViewState.lineHeight;
-	const rowHeight = lineHeight * 2;
-	const left = bounds.left + ((bounds.right - bounds.left - rowWidth) >> 1);
-	let top = bounds.top + ((bounds.bottom - bounds.top - rowHeight * titles.length) >> 1);
-	for (let index = 0; index < titles.length; index += 1) {
-		drawEditorText(font, titles[index], left, top, 0, constants.COLOR_TAB_INACTIVE_TEXT);
-		drawEditorText(font, keys[index], left + titleColumnWidth, top, 0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+	const availableWidth = bounds.right - bounds.left - 8;
+	const stacked = rowWidth > availableWidth;
+	const width = stacked ? stackedWidth : rowWidth;
+	if (width > availableWidth) return;
+	const rowHeight = lineHeight * (stacked ? 3 : 2);
+	const count = Math.min(titles.length, Math.trunc((bounds.bottom - bounds.top - 8) / rowHeight));
+	if (count <= 0) return;
+	const left = bounds.left + Math.trunc((bounds.right - bounds.left - width) / 2);
+	let top = bounds.top + Math.trunc((bounds.bottom - bounds.top - rowHeight * count) / 2);
+	for (let index = 0; index < count; index += 1) {
+		drawEditorText(font, titles[index], left, top, 0, constants.COLOR_DESCRIPTION_TEXT);
+		drawEditorText(font, keys[index], stacked ? left : left + titleColumnWidth,
+			stacked ? top + lineHeight : top, 0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 		top += rowHeight;
 	}
 }

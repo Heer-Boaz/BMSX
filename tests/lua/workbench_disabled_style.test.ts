@@ -54,7 +54,7 @@ function fillsWithin(frame: HostOverlayFrame, bounds: RectBounds): RectRenderSub
 }
 
 for (const theme of ['dark', 'light']) {
-	test(`${theme} disabled control roles remain neutral without changing syntax DIM or Problems locations`, t => {
+	test(`${theme} disabled control roles remain neutral and independent of syntax and diagnostic locations`, t => {
 		fixture(t, theme, 'tiny');
 		assert.equal(colors.COLOR_HEADER_BUTTON_TEXT_DISABLED, THEME_TOKEN_MUTED_GREY);
 		assert.equal(colors.COLOR_MENU_DISABLED_TEXT, THEME_TOKEN_MUTED_GREY);
@@ -63,7 +63,8 @@ for (const theme of ['dark', 'light']) {
 			assert.notEqual(resolveThemeTokenColor(colors.COLOR_MENU_DISABLED_TEXT), resolveThemeTokenColor(role));
 		const syntaxDim = theme === 'dark' ? THEME_TOKEN_TERMINAL_LIGHT_RED : THEME_TOKEN_COMMENT_GREY;
 		assert.equal(colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM, syntaxDim);
-		assert.equal(colors.COLOR_PROBLEMS_PANEL_LOCATION, syntaxDim);
+		assert.equal(colors.COLOR_PROBLEMS_PANEL_LOCATION, colors.COLOR_PROBLEMS_PANEL_TEXT);
+		assert.notEqual(colors.COLOR_PROBLEMS_PANEL_LOCATION, syntaxDim);
 	});
 	for (const variant of ['tiny', 'msx'] as const) {
 		test(`${theme}/${variant} actual action labels stay neutral when disabled, checked and hovered`, t => {

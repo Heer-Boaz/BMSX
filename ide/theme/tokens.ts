@@ -85,6 +85,8 @@ export const THEME_TOKEN_ROM_TOC = 81;
 export const THEME_TOKEN_ROM_BLUA32 = 82;
 export const THEME_TOKEN_ROM_SYMBOLS = 83;
 export const THEME_TOKEN_ROM_UNREFERENCED = 84;
+export const THEME_TOKEN_PROBLEM_ERROR_TEXT = 85;
+export const THEME_TOKEN_PROBLEM_WARNING_TEXT = 86;
 
 export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x00000000,
@@ -172,6 +174,8 @@ export const THEME_TOKEN_COLORS: readonly number[] = [
 	0xffffb000,
 	0xffff6fae,
 	0xff4b5563,
+	0xff990000,
+	0xff684c00,
 ];
 
 export function resolveThemeTokenColor(token: number): number {

@@ -637,7 +637,7 @@ export class RuntimeCartEditor implements CartEditor {
 			const surface = this.surfaces.findByScope(scope.surfaceScope);
 			return surface !== undefined && this.surfaces.isAdmitted(surface);
 		});
-		problemsPanel.header.attach(this.surfaces, chromeSurface, getWorkbenchWorkArea, this.commands);
+		problemsPanel.attach(this.surfaces, chromeSurface, getWorkbenchWorkArea, this.commands);
 		this.input.setEditingInput(this);
 		this.unbindHostInput = input.onDidChangeEditingInputEnabled(() => {
 			if (input.editingInputEnabled) pointerCapture.interrupt(input.pointerButtonsDown);
@@ -928,7 +928,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.quickInput.dispose();
 		this.unbindQuickInputFields();
 		this.unbindProblemsPanel();
-		problemsPanel.header.detach();
+		problemsPanel.detach();
 		this.completion.dispose();
 		clearExecutionStopHighlights();
 		if (this.isAvailable) {

@@ -6,6 +6,8 @@ import {
 	THEME_TOKEN_BORDER_GREY,
 	THEME_TOKEN_BROWN,
 	THEME_TOKEN_COMMENT_GREY,
+	THEME_TOKEN_PROBLEM_ERROR_TEXT,
+	THEME_TOKEN_PROBLEM_WARNING_TEXT,
 	THEME_TOKEN_CYAN_BLUE,
 	THEME_TOKEN_DARK_NAVY,
 	THEME_TOKEN_DARK_PURPLE,
@@ -483,8 +485,10 @@ function buildPanelBase(theme: ThemeDefinition) {
 			headerText: theme.text.topBar,
 			border: theme.text.topBar,
 			text: theme.status.text,
-			location: theme.text.dim,
-			hoverText: theme.status.warning,
+			location: theme.status.text,
+			error: THEME_TOKEN_PROBLEM_ERROR_TEXT,
+			warning: THEME_TOKEN_PROBLEM_WARNING_TEXT,
+			hoverText: theme.status.text,
 			selectionBorder: theme.text.topBar,
 		},
 		resource: {
@@ -594,6 +598,8 @@ export let COLOR_PROBLEMS_PANEL_BORDER: number;
 export let COLOR_PROBLEMS_PANEL_SELECTION_BORDER: number;
 export let COLOR_PROBLEMS_PANEL_TEXT: number;
 export let COLOR_PROBLEMS_PANEL_LOCATION: number;
+export let COLOR_PROBLEMS_PANEL_ERROR: number;
+export let COLOR_PROBLEMS_PANEL_WARNING: number;
 export let COLOR_PROBLEMS_PANEL_HOVER_TEXT: number;
 export let COLOR_RESOURCE_PANEL_BACKGROUND: number;
 export let COLOR_RESOURCE_PANEL_TEXT: number;
@@ -773,6 +779,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_PROBLEMS_PANEL_BORDER = panel.problems.border;
 	COLOR_PROBLEMS_PANEL_TEXT = panel.problems.text;
 	COLOR_PROBLEMS_PANEL_LOCATION = panel.problems.location;
+	COLOR_PROBLEMS_PANEL_ERROR = panel.problems.error;
+	COLOR_PROBLEMS_PANEL_WARNING = panel.problems.warning;
 	COLOR_PROBLEMS_PANEL_HOVER_TEXT = panel.problems.hoverText;
 	COLOR_PROBLEMS_PANEL_SELECTION_BORDER = panel.problems.selectionBorder;
 	COLOR_RESOURCE_PANEL_BACKGROUND = panel.resource.background;
