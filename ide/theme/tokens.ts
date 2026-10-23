@@ -66,6 +66,26 @@ export const THEME_TOKEN_DARK_PURPLE = 64;
 export const THEME_TOKEN_LIGHT_PURPLE = 65;
 export const THEME_TOKEN_DROP_SHADOW = 66;
 
+// Stable categorical ink for artifact byte maps, independent of UI-state colors.
+export const THEME_TOKEN_ASSET_IMAGE = 67;
+export const THEME_TOKEN_ASSET_TEXTURE = 68;
+export const THEME_TOKEN_ASSET_AUDIO = 69;
+export const THEME_TOKEN_ASSET_DATA = 70;
+export const THEME_TOKEN_ASSET_BINARY = 71;
+export const THEME_TOKEN_ASSET_COLLISION = 72;
+export const THEME_TOKEN_ASSET_ROMLABEL = 73;
+export const THEME_TOKEN_ASSET_MODEL = 74;
+export const THEME_TOKEN_ASSET_AEM = 75;
+export const THEME_TOKEN_ASSET_LUA = 76;
+export const THEME_TOKEN_ASSET_CODE = 77;
+export const THEME_TOKEN_ROM_HEADER = 78;
+export const THEME_TOKEN_ROM_MANIFEST = 79;
+export const THEME_TOKEN_ROM_METADATA = 80;
+export const THEME_TOKEN_ROM_TOC = 81;
+export const THEME_TOKEN_ROM_BLUA32 = 82;
+export const THEME_TOKEN_ROM_SYMBOLS = 83;
+export const THEME_TOKEN_ROM_UNREFERENCED = 84;
+
 export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x00000000,
 	0xff000000,
@@ -134,6 +154,24 @@ export const THEME_TOKEN_COLORS: readonly number[] = [
 	0xff704087,
 	0xffd5b0f2,
 	0x60000000,
+	0xfff2d947,
+	0xff14b8a6,
+	0xff60a5fa,
+	0xff84cc16,
+	0xff94a3b8,
+	0xffd4a72c,
+	0xff8b5e3c,
+	0xffe879f9,
+	0xffa3e635,
+	0xff6ee7b7,
+	0xff38bdf8,
+	0xff64748b,
+	0xfffb7185,
+	0xfff97316,
+	0xffc084fc,
+	0xffffb000,
+	0xffff6fae,
+	0xff4b5563,
 ];
 
 export function resolveThemeTokenColor(token: number): number {

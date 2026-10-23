@@ -9,6 +9,7 @@ import { drawSingleLineField } from '../../../editor/ui/inline/single_line_rende
 import { api } from '../../../runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { RomInspectorInput } from './editor_input';
+import { romInspectionSectionColor } from './colors';
 
 /** Bounded, visible-row formatting cache. Paint consumes strings, never reparses ROM data. */
 export class RomInspectorPresentation {
@@ -90,7 +91,7 @@ export class RomInspectorPresentation {
 			for (const section of model.inspection.sections) {
 				const left = bounds.left + Math.trunc(section.start / input.snapshot.rom.byteLength * width);
 				const right = bounds.left + Math.trunc(section.end / input.snapshot.rom.byteLength * width);
-				if (right > left) this.map.push({ left, right, color: SECTION_COLORS[section.kind] });
+				if (right > left) this.map.push({ left, right, color: romInspectionSectionColor(section) });
 			}
 		}
 		this.revision = model.revision;
@@ -153,10 +154,3 @@ export function drawRomInspector(input: RomInspectorInput, view: RomInspectorPre
 	}
 	api.popClipRect();
 }
-
-const SECTION_COLORS = {
-	header: colors.COLOR_STATUS_WARNING, manifest: colors.COLOR_INSPECTOR_VALUE_CHANGED,
-	toc: colors.COLOR_HEADER_BUTTON_ACTIVE_TEXT, metadata: colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM,
-	blua32: colors.COLOR_RESOURCE_PANEL_HIGHLIGHT, asset: colors.COLOR_RESOURCE_VIEWER_TEXT,
-	unreferenced: colors.COLOR_HEADER_BUTTON_BACKGROUND,
-};

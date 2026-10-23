@@ -44,9 +44,14 @@ remain CLI/TUI operations; Studio has no full-dump/export action.
 
 The Assets view filters and sorts TOC entries, previews images/textures, and
 shows typed metadata and file ranges. Layout shows the disjoint physical
-sections; clicking the size map selects its section. Code browses one function
-at a time. Source opens the existing editor for a resolvable authored resource;
-it does not edit packed bytes. The content picker keeps the selected asset while
+sections; clicking the size map selects its section. Map colors distinguish the
+physical section, asset type and auxiliary payload (model texture or collision),
+including the symbols image. The categorical palette is stable across UI themes;
+status, selection and syntax colors do not classify ROM bytes. Its stripe remains
+proportional to file offsets: subpixel payloads are not inflated, and logical
+atlas-image metadata does not acquire fabricated pixel spans. Code browses one
+function at a time. Source opens the existing editor for a resolvable authored
+resource; it does not edit packed bytes. The content picker keeps the selected asset while
 switching between its preview and each actual buffer (data, metadata, model
 texture, collision). A TOC deletion record is an operation, not an empty image:
 it has no preview or stored byte range.
