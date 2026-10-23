@@ -14,6 +14,7 @@ export function renderWorkbenchActionBar(
 	state: WorkbenchActionBarState,
 	font: BFont,
 	foreground = constants.COLOR_HEADER_BUTTON_TEXT,
+	disabledForeground = constants.COLOR_HEADER_BUTTON_TEXT_DISABLED,
 ): void {
 	if (state.overflow !== undefined) api.pushClipRect(state.bounds.left, state.bounds.top, state.bounds.right, state.bounds.bottom);
 	const count = state.items.length + (state.overflow?.button.visible ? 1 : 0);
@@ -25,6 +26,7 @@ export function renderWorkbenchActionBar(
 		const pressed = state.pressedCommand === item.command || item.checked;
 		const focused = state.hasFocus && state.focusedIndex === index;
 		const highlighted = hovered || focused;
+		const paintsBackground = item.icon === undefined || hovered || pressed || focused;
 		const background = !enabled
 			? constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND
 			: pressed ? constants.COLOR_HEADER_BUTTON_PRESSED_BACKGROUND
@@ -32,12 +34,12 @@ export function renderWorkbenchActionBar(
 				? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
 				: constants.COLOR_HEADER_BUTTON_BACKGROUND);
 		const textColor = !enabled
-			? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED
+			? (paintsBackground ? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED : disabledForeground)
 			: pressed ? constants.COLOR_HEADER_BUTTON_PRESSED_TEXT
 			: (highlighted
 				? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT
 				: foreground);
-		if (item.icon === undefined || hovered || pressed || focused) api.fill_rect(
+		if (paintsBackground) api.fill_rect(
 			item.bounds.left,
 			item.bounds.top,
 			item.bounds.right,

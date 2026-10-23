@@ -16,7 +16,8 @@ export function drawWorkbenchWindow(model: WorkbenchWindowModel, actions: Workbe
 	api.pushClipRect(header.left, header.top, header.right, header.bottom);
 	api.blit_text_inline_with_font(model.displayTitle, header.left + 4, header.top + 4, 0,
 		text, font);
-	renderWorkbenchActionBar(actions, font, text);
+	renderWorkbenchActionBar(actions, font, text,
+		active ? colors.COLOR_WINDOW_HEADER_ACTIVE_TEXT_DISABLED : colors.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 	api.popClipRect();
 	api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, active ? colors.COLOR_FOCUS_BORDER : colors.COLOR_WINDOW_BORDER);
 	if (!model.collapsed) api.fill_rect(header.left + 1, header.bottom - 1, header.right - 1, header.bottom, 0, colors.COLOR_WINDOW_BORDER);

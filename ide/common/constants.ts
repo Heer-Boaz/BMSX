@@ -65,6 +65,7 @@ export const DOUBLE_CLICK_MAX_INTERVAL_MS = 320;
 export const DEFAULT_THEME = 'light';
 
 type ThemeDefinition = {
+	disabledForeground: number;
 	surfaces: {
 		frame: number;
 		topBar: number;
@@ -144,6 +145,7 @@ type ThemeDefinition = {
 		background: number;
 		activeHeader: number;
 		activeText: number;
+		activeDisabledText: number;
 		inactiveHeader: number;
 		inactiveText: number;
 		border: number;
@@ -206,7 +208,8 @@ type ThemeOverlays = {
 
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
-		window: { background: THEME_TOKEN_BLACK, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE,
+		disabledForeground: THEME_TOKEN_MUTED_GREY,
+		window: { background: THEME_TOKEN_BLACK, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
 			inactiveHeader: THEME_TOKEN_NEAR_BLACK, inactiveText: THEME_TOKEN_TERMINAL_GREY, border: THEME_TOKEN_MID_GREY },
 		inspection: { label: THEME_TOKEN_HINT_GREY, changedValue: THEME_TOKEN_LIGHT_PURPLE },
 		markdown: {
@@ -336,7 +339,8 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		},
 	},
 	light: {
-		window: { background: THEME_TOKEN_GENTLE_WHITE, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE,
+		disabledForeground: THEME_TOKEN_MUTED_GREY,
+		window: { background: THEME_TOKEN_GENTLE_WHITE, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
 			inactiveHeader: THEME_TOKEN_PANEL_GREY, inactiveText: THEME_TOKEN_TEXT_GREY, border: THEME_TOKEN_MID_GREY },
 		inspection: { label: THEME_TOKEN_STATUS_TEXT_GREY, changedValue: THEME_TOKEN_DARK_PURPLE },
 		markdown: {
@@ -509,7 +513,7 @@ function buildHeaderButtonBase(theme: ThemeDefinition) {
 		border: theme.text.topBar,
 		disabledBackground: theme.surfaces.gutter,
 		text: theme.text.topBar,
-		disabledText: theme.text.dim,
+		disabledText: theme.disabledForeground,
 		activeBackground: theme.status.warning,
 		activeText: theme.text.topBar,
 		pressedBackground: theme.text.selection,
@@ -667,6 +671,7 @@ export const COLOR_SURFACE_SHADOW = THEME_TOKEN_DROP_SHADOW;
 export let COLOR_WINDOW_BACKGROUND: number;
 export let COLOR_WINDOW_HEADER_ACTIVE_BACKGROUND: number;
 export let COLOR_WINDOW_HEADER_ACTIVE_TEXT: number;
+export let COLOR_WINDOW_HEADER_ACTIVE_TEXT_DISABLED: number;
 export let COLOR_WINDOW_HEADER_INACTIVE_BACKGROUND: number;
 export let COLOR_WINDOW_HEADER_INACTIVE_TEXT: number;
 export let COLOR_WINDOW_BORDER: number;
@@ -822,12 +827,13 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_MENU_BACKGROUND = theme.surfaces.topBar;
 	COLOR_MENU_BORDER = theme.tab.border;
 	COLOR_MENU_TEXT = theme.text.topBar;
-	COLOR_MENU_DISABLED_TEXT = theme.text.dim;
+	COLOR_MENU_DISABLED_TEXT = theme.disabledForeground;
 	COLOR_MENU_SELECTION_BACKGROUND = theme.text.selection;
 	COLOR_MENU_SELECTION_TEXT = theme.text.selectionText;
 	COLOR_WINDOW_BACKGROUND = theme.window.background;
 	COLOR_WINDOW_HEADER_ACTIVE_BACKGROUND = theme.window.activeHeader;
 	COLOR_WINDOW_HEADER_ACTIVE_TEXT = theme.window.activeText;
+	COLOR_WINDOW_HEADER_ACTIVE_TEXT_DISABLED = theme.window.activeDisabledText;
 	COLOR_WINDOW_HEADER_INACTIVE_BACKGROUND = theme.window.inactiveHeader;
 	COLOR_WINDOW_HEADER_INACTIVE_TEXT = theme.window.inactiveText;
 	COLOR_WINDOW_BORDER = theme.window.border;
