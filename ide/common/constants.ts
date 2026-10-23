@@ -119,7 +119,7 @@ type ThemeDefinition = {
 		position: number;
 	};
 	graph: { active: number };
-	inspection: { label: number; changedValue: number };
+	inspection: { label: number; changedValue: number; warningValue: number };
 	focusBorder: number;
 	connection: {
 		connected: number;
@@ -215,7 +215,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		descriptionForeground: THEME_TOKEN_HINT_GREY,
 		window: { background: THEME_TOKEN_BLACK, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
 			inactiveHeader: THEME_TOKEN_NEAR_BLACK, inactiveText: THEME_TOKEN_TERMINAL_GREY, border: THEME_TOKEN_MID_GREY },
-		inspection: { label: THEME_TOKEN_HINT_GREY, changedValue: THEME_TOKEN_LIGHT_PURPLE },
+		inspection: { label: THEME_TOKEN_HINT_GREY, changedValue: THEME_TOKEN_LIGHT_PURPLE, warningValue: THEME_TOKEN_WARNING_AMBER },
 		markdown: {
 			codeBackground: THEME_TOKEN_DEEP_TEAL,
 			codeText: THEME_TOKEN_LIGHT_TEAL,
@@ -347,7 +347,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		descriptionForeground: THEME_TOKEN_MUTED_GREY,
 		window: { background: THEME_TOKEN_GENTLE_WHITE, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
 			inactiveHeader: THEME_TOKEN_PANEL_GREY, inactiveText: THEME_TOKEN_TEXT_GREY, border: THEME_TOKEN_MID_GREY },
-		inspection: { label: THEME_TOKEN_STATUS_TEXT_GREY, changedValue: THEME_TOKEN_DARK_PURPLE },
+		inspection: { label: THEME_TOKEN_STATUS_TEXT_GREY, changedValue: THEME_TOKEN_DARK_PURPLE, warningValue: THEME_TOKEN_PROBLEM_WARNING_TEXT },
 		markdown: {
 			codeBackground: THEME_TOKEN_PALE_TEAL,
 			codeText: THEME_TOKEN_DARK_TEAL,
@@ -586,6 +586,7 @@ export let COLOR_GRAPH_ACTIVE: number;
 export let COLOR_INSPECTOR_LABEL: number;
 export let COLOR_DESCRIPTION_TEXT: number;
 export let COLOR_INSPECTOR_VALUE_CHANGED: number;
+export let COLOR_INSPECTOR_WARNING_TEXT: number;
 export let COLOR_SERVER_CONNECTED: number;
 export let COLOR_SERVER_DISCONNECTED: number;
 export let COLOR_SERVER_CONNECTING: number;
@@ -769,6 +770,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_INSPECTOR_LABEL = theme.inspection.label;
 	COLOR_DESCRIPTION_TEXT = theme.descriptionForeground;
 	COLOR_INSPECTOR_VALUE_CHANGED = theme.inspection.changedValue;
+	COLOR_INSPECTOR_WARNING_TEXT = theme.inspection.warningValue;
 	COLOR_SERVER_CONNECTED = theme.connection.connected;
 	COLOR_SERVER_DISCONNECTED = theme.connection.disconnected;
 	COLOR_SERVER_CONNECTING = theme.connection.connecting;

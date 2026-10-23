@@ -67,6 +67,23 @@ for (const theme of ['dark', 'light']) {
 		assert.notEqual(colors.COLOR_PROBLEMS_PANEL_LOCATION, syntaxDim);
 	});
 	for (const variant of ['tiny', 'msx'] as const) {
+		test(`${theme}/${variant} bare action icons inherit their owning surface while painted labels retain button ink`, t => {
+			const f = fixture(t, theme, variant), state = createWorkbenchActionBar('romInspector.title');
+			for (const item of state.items) item.enabled = true;
+			const icon = state.items.find(item => item.icon !== undefined)!, label = state.items.find(item => item.icon === undefined)!;
+			layoutWorkbenchActionBar(state, 380, 10, 10 + f.font.lineHeight + 6, text => f.font.measure(text), f.font.renderFont(), 4);
+			const paint = () => f.draw(() => {
+				api.fill_rect(0, 0, 384, 288, 0, colors.COLOR_CODE_BACKGROUND);
+				renderWorkbenchActionBar(state, f.font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
+			});
+			let frame = paint();
+			assert.equal(glyphs(frame).find(command => command.items === label.label)!.color, resolveThemeTokenColor(colors.COLOR_HEADER_BUTTON_TEXT));
+			let pattern = fillsWithin(frame, icon.bounds); assert.ok(pattern.length > 0, 'the real icon pattern must be drawn');
+			for (const rect of pattern) assert.equal(rect.color, resolveThemeTokenColor(colors.COLOR_RESOURCE_VIEWER_TEXT));
+			icon.enabled = false; frame = paint();
+			pattern = fillsWithin(frame, icon.bounds); assert.ok(pattern.length > 0);
+			for (const rect of pattern) assert.equal(rect.color, resolveThemeTokenColor(colors.COLOR_DESCRIPTION_TEXT));
+		});
 		test(`${theme}/${variant} actual action labels stay neutral when disabled, checked and hovered`, t => {
 			const f = fixture(t, theme, variant), state = createWorkbenchActionBar('sourceEditReview.title');
 			for (const item of state.items) item.enabled = true;

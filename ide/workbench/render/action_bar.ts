@@ -10,11 +10,12 @@ import {
 import { WORKBENCH_ICON_SIZE } from '../ui/icon';
 import { drawWorkbenchIcon } from './icon';
 
+/** Bare icons inherit their surface ink; painted controls own their button foreground/background pair. */
 export function renderWorkbenchActionBar(
 	state: WorkbenchActionBarState,
 	font: BFont,
-	foreground = constants.COLOR_HEADER_BUTTON_TEXT,
-	disabledForeground = constants.COLOR_HEADER_BUTTON_TEXT_DISABLED,
+	iconForeground = constants.COLOR_HEADER_BUTTON_TEXT,
+	disabledIconForeground = constants.COLOR_HEADER_BUTTON_TEXT_DISABLED,
 ): void {
 	if (state.overflow !== undefined) api.pushClipRect(state.bounds.left, state.bounds.top, state.bounds.right, state.bounds.bottom);
 	const count = state.items.length + (state.overflow?.button.visible ? 1 : 0);
@@ -34,11 +35,11 @@ export function renderWorkbenchActionBar(
 				? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
 				: constants.COLOR_HEADER_BUTTON_BACKGROUND);
 		const textColor = !enabled
-			? (paintsBackground ? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED : disabledForeground)
+			? (paintsBackground ? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED : disabledIconForeground)
 			: pressed ? constants.COLOR_HEADER_BUTTON_PRESSED_TEXT
 			: (highlighted
 				? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT
-				: foreground);
+				: paintsBackground ? constants.COLOR_HEADER_BUTTON_TEXT : iconForeground);
 		if (paintsBackground) api.fill_rect(
 			item.bounds.left,
 			item.bounds.top,

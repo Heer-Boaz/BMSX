@@ -10,6 +10,7 @@ test('hover and Markdown text retain readable contrast on their actual surfaces 
 			['editor', constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, constants.COLOR_CODE_BACKGROUND, 7],
 			['workbench', constants.COLOR_RESOURCE_VIEWER_TEXT, constants.COLOR_RESOURCE_VIEWER_BACKGROUND, 7],
 			['changed inspector value', constants.COLOR_INSPECTOR_VALUE_CHANGED, constants.COLOR_RESOURCE_VIEWER_BACKGROUND, 4.5],
+			['inspector warning value', constants.COLOR_INSPECTOR_WARNING_TEXT, constants.COLOR_RESOURCE_VIEWER_BACKGROUND, 4.5],
 			['inspector property label', constants.COLOR_INSPECTOR_LABEL, constants.COLOR_RESOURCE_VIEWER_BACKGROUND, 4.5],
 			['inspector description', constants.COLOR_DESCRIPTION_TEXT, constants.COLOR_RESOURCE_VIEWER_BACKGROUND, 4.5],
 			['empty-group description', constants.COLOR_DESCRIPTION_TEXT, constants.COLOR_CODE_BACKGROUND, 4.5],

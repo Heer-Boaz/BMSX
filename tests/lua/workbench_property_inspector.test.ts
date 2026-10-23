@@ -83,7 +83,7 @@ test('property descriptions use neutral UI ink in paragraph, inline and expanded
 				const context = `${theme}/${variant}/${mode}/${selected ? 'selected' : 'unselected'}/${severity}`;
 				assert.equal(glyphs.get(item.description), selectionCoversText ? colors.COLOR_SELECTION_TEXT : colors.COLOR_DESCRIPTION_TEXT, context);
 				assert.equal(glyphs.get(item.value), selectionCoversText ? colors.COLOR_SELECTION_TEXT
-					: severity === 'warning' ? colors.COLOR_STATUS_WARNING : severity === 'changed' ? colors.COLOR_INSPECTOR_VALUE_CHANGED
+					: severity === 'warning' ? colors.COLOR_INSPECTOR_WARNING_TEXT : severity === 'changed' ? colors.COLOR_INSPECTOR_VALUE_CHANGED
 						: colors.COLOR_RESOURCE_VIEWER_TEXT, `${context}: existing value color`);
 			}
 	}

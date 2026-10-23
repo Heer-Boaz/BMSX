@@ -33,7 +33,7 @@ export function drawWorkbenchPropertyInspector<Element extends InspectedProperty
 			const foreground = selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT;
 			const labelColor = selected ? foreground : colors.COLOR_INSPECTOR_LABEL;
 			const descriptionColor = selected ? foreground : colors.COLOR_DESCRIPTION_TEXT;
-			const valueColor = selected ? foreground : row.element.warning ? colors.COLOR_STATUS_WARNING
+			const valueColor = selected ? foreground : row.element.warning ? colors.COLOR_INSPECTOR_WARNING_TEXT
 				: row.element.valueChanged ? colors.COLOR_INSPECTOR_VALUE_CHANGED : foreground;
 			const expanded = row.element.expansion?.expanded ?? row.textExpanded;
 			if (row.element.expansion !== undefined || row.textExpandable) drawWorkbenchIcon(expanded ? 'chevronDown' : 'chevronRight',
@@ -69,7 +69,7 @@ export function drawWorkbenchPropertyInspector<Element extends InspectedProperty
 			if (lines.length === 0) continue;
 			const color = field === 'label' ? selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT
 				: field === 'description' ? colors.COLOR_DESCRIPTION_TEXT
-					: row.element.warning ? colors.COLOR_STATUS_WARNING
+					: row.element.warning ? colors.COLOR_INSPECTOR_WARNING_TEXT
 						: changed ? colors.COLOR_INSPECTOR_VALUE_CHANGED : colors.COLOR_RESOURCE_VIEWER_TEXT;
 			if (field === 'value' && changed) api.fill_rect(view.bounds.left + 1, y, view.bounds.left + 3, y + font.lineHeight, 0,
 				colors.COLOR_INSPECTOR_VALUE_CHANGED);
