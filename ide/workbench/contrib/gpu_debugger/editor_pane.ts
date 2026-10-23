@@ -1,13 +1,15 @@
+import { clamp } from '../../../../machine/ts/common/clamp';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { formatNumberAsHex } from '../../../../machine/ts/common/byte_hex_string';
-import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { EditorCommandId } from '../../../common/commands';
+import type { DisposableStore } from '../../../common/lifecycle';
 import * as colors from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { truncateMeasuredText } from '../../../common/text';
+import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
@@ -21,59 +23,53 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { QuickInputController } from '../../services/quick_input/controller';
-import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
+import { WorkbenchTooltip } from '../../ui/tooltip';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { GpuDebuggerInput } from './editor_input';
-import { GpuDebugPresentation, gpuOperationName, type GpuDebugView } from './presentation';
-import { drawGpuDebugger, GpuDebugCanvas, type GpuOperationRow, type GpuWordRow } from './render';
+import { gpuOperationName } from './presentation';
+import { drawGpuDebugger, type GpuOperationRow } from './render';
 import { GpuDetailsWindow } from './details_window';
 
-const COMMANDS = ['gpu.follow', 'gpu.view', 'gpu.details', 'gpu.goToFrame', 'gpu.filter', 'gpu.clear', 'gpu.more'] as const;
+const COMMANDS = ['gpu.follow', 'gpu.view', 'gpu.details', 'gpu.goToFrame', 'gpu.filter', 'gpu.clear'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
-const VIEWS: { label: string; description: string; detail: string; view: GpuDebugView }[] = [
-	{ label: 'Geometry', description: 'Decoded drawing coordinates and latched bounds', detail: '', view: 'geometry' },
-	{ label: 'UV', description: 'Raw UV coordinates; no historical texture image', detail: '', view: 'uv' },
-	{ label: 'Color', description: 'Supplied RGB bytes, not rendered pixel colors', detail: '', view: 'color' },
-	{ label: 'Raw words', description: 'Every active operation word; scroll or Home/End', detail: '', view: 'words' },
-];
 
-/** Controls project owned operation evidence; all execution remains with the shared transport. */
+/** History selection and shared transport; optional observation decoding belongs to Details. */
 export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInput> {
-	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
-	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event, false));
-	private readonly words = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event, true));
+	private readonly actions: WorkbenchActionBarControl;
+	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event));
 	private details: GpuDetailsWindow | undefined;
-	private readonly presentation = new GpuDebugPresentation();
-	private readonly canvas = new GpuDebugCanvas();
 	private readonly rows: GpuOperationRow[] = [];
-	private readonly wordRows: GpuWordRow[] = [];
 	private readonly labels = new Map<number, string>();
+	private readonly emptyLines: string[] = [];
+	private readonly tooltip = new WorkbenchTooltip();
+	private menuSession: DisposableStore | undefined;
+	private filterSession: DisposableStore | undefined;
+	private unbindSelection: (() => void) | undefined;
 	private freshLayout = true;
-	private diagramDirty = false;
-	private wordsActive = false;
 	private rowFirst = -1;
 	private rowLast = -1;
 	private rowOffset: number | undefined;
-	private wordFirst = -1;
-	private wordLast = -1;
-	private wordOffset: number | undefined;
-	private wordRevision = -1;
 	private firstSequence = -1;
+	private labelGeneration = -1;
 	private historyRevision = -1;
+	private selectedRevision = -1;
 	private following = false;
 	private reachable = false;
 	private status = '';
+	private emptyFiltered: boolean | undefined;
 	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
 		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
 		private readonly paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
-		this.list.onWillScroll = this.words.onWillScroll = () => { this.input.following = false; };
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
+		this.actions.onDidOpenOverflow = lifetime => { this.input.following = false; this.ownMenu(lifetime); };
+		this.list.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { this.input.running = commands.transport.togglePlayback(); } });
 		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
@@ -81,75 +77,66 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) this.focusTarget.registerCommand(command, {
 			isEnabled: () => navigation.canStep(direction), run: () => { this.input.running = false; navigation.step(direction); },
 		});
-		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput, run: () => {
-			this.input.following = false;
-			this.contextMenu.show(this.input.list.bounds.left, this.input.list.bounds.top, WORKBENCH_MENUS['gpu.context'], this, { selectFirst: true });
-		} });
-		this.list.focusTarget.commandContext = this.focusTarget; this.words.focusTarget.commandContext = this.focusTarget;
-		// The pane's keyboard target owns the non-scrolling diagram.
-		this.actions.focusTarget.previous = this.focusTarget; this.actions.focusTarget.next = this.list.focusTarget;
-		this.list.focusTarget.previous = this.actions.focusTarget; this.list.focusTarget.next = this.focusTarget;
-		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.list.focusTarget;
+		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput, run: () => this.showContextMenu(this.input.list.bounds.left, this.input.list.bounds.top, true) });
+		this.list.focusTarget.registerCommand('contextMenu', this.focusTarget.getCommand('contextMenu')!);
+		this.list.focusTarget.commandContext = this.focusTarget;
+		this.actions.focusTarget.previous = this.list.focusTarget; this.actions.focusTarget.next = this.list.focusTarget;
+		this.list.focusTarget.previous = this.actions.focusTarget; this.list.focusTarget.next = this.actions.focusTarget;
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override get runtimeTransport() { return this.commands.transport; }
-	public override focus(): void { (this.wordsActive ? this.words : this.list).focusTarget.focus(); }
+	public override focus(): void { this.list.focusTarget.focus(); }
 	protected override activate(): void {
-		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.wordRevision = -1;
+		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.selectedRevision = -1;
 		this.actions.setInput(this.input.actions, this.focusTarget); this.list.setInput(this.input.list);
-		const details = this.details = new GpuDetailsWindow(this.input, this.commands, this.surfaces, this.paneSurface, this.list.focusTarget,
-			this.getWorkArea, rawPage => { this.synchronizeSelection(); return this.presentation.details(this.input.selected, rawPage); });
-		for (const target of [details.window.focusTarget, details.inspector.focusTarget])
+		this.tooltip.attach(this.surfaces, this.paneSurface, this.getWorkArea);
+		const details = this.details = new GpuDetailsWindow(this.input, this.commands, this.quickInput, this.contextMenu,
+			this.surfaces, this.paneSurface, this.list.focusTarget, this.getWorkArea);
+		for (const target of [details.window.focusTarget, details.inspector.focusTarget, details.diagram.focusTarget, details.words.focusTarget])
 			for (const command of [...COMMANDS, 'pause', 'runtime.pause', 'runtime.resume', 'stepFrameBack', 'stepFrame'] as const)
-				target.registerCommand(command, this.focusTarget.getCommand(command)!);
+				if (command !== 'gpu.view') target.registerCommand(command, this.focusTarget.getCommand(command)!);
+		this.unbindSelection = this.input.onWillChangeSelection(() => this.retireMenu());
 		this.update();
 	}
 	public override clearInput(): void {
-		this.input.running = false; this.contextMenu.hide(); this.details!.dispose(); this.details = undefined;
-		this.actions.clearInput(); this.list.clearInput(); this.setWordsActive(false);
-		this.presentation.reset(); this.labels.clear(); this.rows.length = 0; this.wordRows.length = 0; super.clearInput();
+		this.input.running = false; this.retireMenu();
+		if (this.filterSession !== undefined) this.quickInput.hide();
+		this.unbindSelection!(); this.unbindSelection = undefined;
+		this.details!.dispose(); this.details = undefined; this.tooltip.detach();
+		this.actions.clearInput(); this.list.clearInput(); this.labels.clear(); this.rows.length = 0; super.clearInput();
 	}
-	public override dispose(): void { if (this.hasInput) this.clearInput(); this.actions.dispose(); this.list.dispose(); this.words.dispose(); super.dispose(); }
-	private synchronizeSelection(): void {
-		const input = this.input;
-		if (this.presentation.update(input.selected, input.selectionRevision, input.view)) this.diagramDirty = true;
+	public override dispose(): void { if (this.hasInput) this.clearInput(); this.actions.dispose(); this.list.dispose(); super.dispose(); }
+	private ownMenu(lifetime: DisposableStore): void {
+		this.tooltip.hide(); this.menuSession = lifetime;
+		lifetime.add({ dispose: () => { if (this.menuSession === lifetime) this.menuSession = undefined; } });
 	}
-	/** The optional word viewport's attachment and tab links share one lifetime. */
-	private setWordsActive(active: boolean): void {
-		if (active === this.wordsActive) return;
-		if (active) {
-			this.words.setInput(this.input.words);
-			this.list.focusTarget.next = this.words.focusTarget; this.words.focusTarget.previous = this.list.focusTarget;
-			this.words.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.words.focusTarget;
-			if (this.focusTarget.hasFocus) this.words.focusTarget.focus();
-		} else {
-			this.words.clearInput();
-			this.list.focusTarget.next = this.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
-		}
-		this.wordsActive = active;
+	private retireMenu(): void { if (this.menuSession !== undefined) this.contextMenu.hide(); }
+	private showContextMenu(x: number, y: number, selectFirst = false): void {
+		this.input.following = false;
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['gpu.context'], this,
+			{ selectFirst, invocationOrigin: this.list.focusTarget, onWillShow: lifetime => this.ownMenu(lifetime) });
 	}
 	public isEnabled(command: EditorCommandId): boolean {
 		if (!this.hasInput) return false;
-		if (command === 'gpu.details') return this.input.selected.sequence >= 0 || this.input.detailsWindow.open;
+		if (command === 'gpu.details' || command === 'gpu.view') return this.input.selected.sequence >= 0 || this.input.detailsWindow.open;
 		if (command === 'gpu.goToFrame') return this.input.selected.sequence >= 0 && this.navigation.available && this.input.history.canSeek(this.input.selected);
 		if (command === 'gpu.clear') return this.input.history.count > 0;
-		return command === 'gpu.follow' || command === 'gpu.view' || command === 'gpu.filter' || command === 'gpu.more';
+		return command === 'gpu.follow' || command === 'gpu.filter';
 	}
 	public execute(command: EditorCommandId): void {
 		if (!this.isEnabled(command)) return;
-		this.synchronizeSelection();
 		const input = this.input;
 		switch (command) {
 			case 'gpu.follow': input.following = true; break;
-			case 'gpu.view': this.quickInput.pick('GPU VIEW', 'Choose operation evidence', () => new TextQuickPickProvider(VIEWS, VIEWS.findIndex(item => item.view === input.view)), item => { input.view = item.view; input.selectedPoint = 0; }); break;
-			case 'gpu.filter': this.quickInput.input('Filter GPU operations', 'Operation or opcode; empty shows all', input.filter, async text => text, text => { input.filter = text; input.list.scrollbar.setScroll(0); }); break;
-			case 'gpu.clear': input.clear(); break;
-			case 'gpu.more': { input.following = false; const bounds = input.actions.items[2].bounds; this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['gpu.context'], this); break; }
-			case 'gpu.details': {
-				input.following = false;
-				this.details!.show(); break;
+			case 'gpu.view': this.details!.show(); this.details!.chooseView(); break;
+			case 'gpu.filter': {
+				const lifetime = this.quickInput.input('Filter GPU operations', 'Operation or opcode; empty shows all', input.filter,
+					async text => text, text => { input.filter = text; input.list.scrollbar.setScroll(0); });
+				this.filterSession = lifetime; lifetime.add({ dispose: () => { if (this.filterSession === lifetime) this.filterSession = undefined; } }); break;
 			}
+			case 'gpu.clear': input.clear(); break;
+			case 'gpu.details': input.following = false; this.details!.show(); break;
 			case 'gpu.goToFrame': {
 				input.running = false; const sequence = input.selected.sequence;
 				void this.navigation.seek(input.selected.cycles).completion.then(result => showEditorMessage(result.status === 'completed'
@@ -158,23 +145,18 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		}
 	}
 	public override update(): void {
-		const input = this.input, { layout, list, words } = input;
+		const input = this.input, { layout, list } = input;
 		const layoutChanged = updateFullWidthWorkbenchLayout(layout, this.contentBounds) || this.freshLayout; this.freshLayout = false;
-		const projectionChanged = input.update(); this.synchronizeSelection();
-		const selectedChanged = this.diagramDirty;
-		const top = layout.top + layout.rowHeight + 10, split = layout.left + Math.trunc((layout.right - layout.left) * 0.30);
-		list.layout(layout.left + 4, top, split, layout.bottom, input.projection.rows.length * layout.rowHeight);
-		write_rect_bounds(input.visualBounds, split + 4, top, layout.right - 4, layout.bottom);
-		words.layout(split + 8, top + layout.rowHeight + 6, layout.right - 4, layout.bottom, input.selected.wordCount * layout.rowHeight);
-		this.list.lineStep = layout.rowHeight; this.words.lineStep = layout.rowHeight;
+		const projectionChanged = input.update();
+		const top = layout.top + layout.rowHeight + 10;
+		list.layout(layout.left + 4, top, layout.right - 4, layout.bottom, input.projection.rows.length * layout.rowHeight);
+		this.list.lineStep = layout.rowHeight;
 		if (input.following && input.projection.rows.length > 0) list.scrollbar.reveal(list.contentHeight - layout.rowHeight, list.contentHeight, 0);
-		const wordsActive = input.view === 'words';
-		this.setWordsActive(wordsActive);
 		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, top - 4, measureText, layout.font!.renderFont(), layout.left + 4);
 		input.actions.items[0].checked = input.following; this.actions.update();
-		if (selectedChanged || layoutChanged) this.canvas.layout(input, this.presentation, layout.font!.renderFont());
-		this.diagramDirty = false;
-		if (layoutChanged) this.labels.clear();
+		if (layoutChanged || this.labelGeneration !== input.history.generation) {
+			this.labelGeneration = input.history.generation; this.labels.clear();
+		}
 		if (this.firstSequence !== input.history.firstSequence) {
 			this.firstSequence = input.history.firstSequence; for (const sequence of this.labels.keys()) if (sequence < this.firstSequence) this.labels.delete(sequence);
 		}
@@ -184,76 +166,56 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 			let count = 0;
 			for (let index = first, y = list.offsetTop + first * layout.rowHeight; index < end && y < list.bounds.bottom; index++, y += layout.rowHeight) {
 				const sequence = input.projection.rows[index]; let label = this.labels.get(sequence);
-				if (label === undefined) { const record = input.history.at(sequence); label = truncateMeasuredText(`#${sequence} ${formatNumberAsHex(record.opcode, 2)} ${gpuOperationName(record)}`, list.bounds.right - list.bounds.left - 4, measureTextRange); this.labels.set(sequence, label); }
+				if (label === undefined) {
+					const record = input.history.at(sequence), operation = gpuOperationName(record), available = list.bounds.right - list.bounds.left - 4;
+					const qualified = `${operation} #${sequence} ${formatNumberAsHex(record.opcode, 2)}`;
+					label = measureText(qualified) <= available ? qualified : truncateMeasuredText(operation, available, measureTextRange); this.labels.set(sequence, label);
+				}
 				const row = this.rows[count]; if (row === undefined) this.rows.push({ sequence, top: y, label }); else { row.sequence = sequence; row.top = y; row.label = label; } count++;
 			}
 			this.rows.length = count; this.rowFirst = firstSequence; this.rowLast = lastSequence; this.rowOffset = list.offsetTop;
 		}
-		if (wordsActive) this.updateWordRows(layoutChanged);
+		if (layoutChanged || this.emptyFiltered !== (input.filter !== '')) {
+			this.emptyFiltered = input.filter !== ''; this.emptyLines.length = 0;
+			const width = list.bounds.right - list.bounds.left - 4;
+			writeWrappedMeasuredLine(this.emptyLines, input.filter === '' ? 'No GPU operations observed.' : 'No matching operations.', width, measureTextRange);
+			writeWrappedMeasuredLine(this.emptyLines, input.filter === '' ? 'Play or step the existing runtime.' : 'Change or clear the filter.', width, measureTextRange);
+		}
 		const reachable = input.selected.sequence >= 0 && input.history.canSeek(input.selected);
-		if (layoutChanged || selectedChanged || this.historyRevision !== input.history.revision || this.following !== input.following || this.reachable !== reachable) {
-			const expired = input.selected.sequence >= 0 && (input.selected.sequence < input.history.firstSequence || input.selected.sequence >= input.history.endSequence);
-			this.status = truncateMeasuredText(`${input.following ? input.projection.rows.length === 0 ? 'WAITING' : 'FOLLOWING' : 'PINNED'}${this.presentation.summary === '' ? '' : ` | ${this.presentation.summary}`}${expired ? ' | Record expired' : ''}${input.selected.sequence >= 0 && !reachable ? ' | Frame unavailable' : ''}`, layout.right - layout.left - 8, measureTextRange);
-			this.historyRevision = input.history.revision; this.following = input.following; this.reachable = reachable;
+		if (layoutChanged || this.selectedRevision !== input.selectionRevision || this.historyRevision !== input.history.revision || this.following !== input.following || this.reachable !== reachable) {
+			const record = input.selected, expired = record.sequence >= 0 && (record.sequence < input.history.firstSequence || record.sequence >= input.history.endSequence);
+			this.status = truncateMeasuredText(`${input.following ? input.projection.rows.length === 0 ? 'Waiting' : 'Following' : 'Pinned'}${record.sequence < 0 ? '' : ` | ${gpuOperationName(record)} #${record.sequence} T${record.timeline} | tick ${record.completedTick} | observed ${record.cycles}`}${expired ? ' | Record expired' : ''}${record.sequence >= 0 && !reachable ? ' | Frame unavailable' : ''}`, layout.right - layout.left - 8, measureTextRange);
+			this.historyRevision = input.history.revision; this.following = input.following; this.reachable = reachable; this.selectedRevision = input.selectionRevision;
 		}
 		this.details!.update();
+		const item = this.actions.tooltipItem;
+		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.getWorkArea()); else this.tooltip.hide();
 	}
-	/** Formatting work follows only the visible word window and owned snapshot revision. */
-	private updateWordRows(layoutChanged: boolean): void {
-		const input = this.input, { words, layout } = input;
-		// A new operation and a keyboard selection can arrive before its range is laid out.
-		if (this.wordRevision !== input.selectionRevision) words.scrollbar.reveal(input.selectedWord * layout.rowHeight, (input.selectedWord + 1) * layout.rowHeight, 0);
-		const first = Math.max(0, Math.trunc(words.scrollTop / layout.rowHeight)), end = Math.min(input.selected.wordCount, first + Math.trunc(words.height / layout.rowHeight) + 2);
-		if (!layoutChanged && this.wordFirst === first && this.wordLast === end && this.wordOffset === words.offsetTop && this.wordRevision === input.selectionRevision) return;
-		let count = 0;
-		for (let index = first, y = words.offsetTop + first * layout.rowHeight; index < end && y < words.bounds.bottom; index++, y += layout.rowHeight) {
-			const label = `${formatNumberAsHex(index, 6)}  ${formatNumberAsHex(input.selected.words[index], 8)}`;
-			const row = this.wordRows[count]; if (row === undefined) this.wordRows.push({ index, top: y, label }); else { row.index = index; row.top = y; row.label = label; } count++;
-		}
-		this.wordRows.length = count; this.wordFirst = first; this.wordLast = end; this.wordOffset = words.offsetTop; this.wordRevision = input.selectionRevision;
-	}
-	public draw(): void { drawGpuDebugger(this.input, this.presentation, this.canvas, this.rows, this.wordRows, this.focusTarget.hasFocus); }
+	public draw(): void { drawGpuDebugger(this.input, this.rows, this.emptyLines); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
 		const input = this.input, secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
-		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport
-			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.contentBounds)) {
-			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, input.list.bounds)) {
-				const index = Math.trunc((snapshot.viewportY - input.list.offsetTop) / input.layout.rowHeight);
-				if (index < input.projection.rows.length) input.select(input.projection.rows[index]);
-			} else if (this.wordsActive && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.words.bounds)) {
-				const index = Math.trunc((snapshot.viewportY - input.words.offsetTop) / input.layout.rowHeight);
-				if (index < input.selected.wordCount) { input.selectedWord = index; input.following = false; }
-			} else if (!this.wordsActive && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.visualBounds)) {
-				this.focusTarget.focus();
-				const point = this.canvas.hit(snapshot.viewportX, snapshot.viewportY); if (point >= 0) { input.selectedPoint = point; input.following = false; }
-			}
-			if (secondary) { input.following = false; this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['gpu.context'], this); return true; }
+		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.list.bounds)) {
+			const index = Math.trunc((snapshot.viewportY - input.list.offsetTop) / input.layout.rowHeight);
+			if (index < input.projection.rows.length) input.select(input.projection.rows[index]);
+			if (secondary) { this.showContextMenu(snapshot.viewportX, snapshot.viewportY); return true; }
 		}
-		return this.wordsActive && this.words.handlePointer(snapshot) || this.list.handlePointer(snapshot);
+		return this.list.handlePointer(snapshot);
 	}
-	private navigate(event: KeyInputEvent, rawWords: boolean): boolean {
+	private navigate(event: KeyInputEvent): boolean {
 		if (event.modifiers !== KeyModifier.none) return false;
 		if (isKeyJustPressed('Enter', event)) { consumeIdeKey('Enter', event); this.execute('gpu.details'); return true; }
-		const input = this.input;
-		for (const key of ['ArrowLeft', 'ArrowRight']) if (!rawWords && isKeyJustPressed(key, event) && this.presentation.points.length > 0) {
-			consumeIdeKey(key, event); input.following = false; input.selectedPoint = Math.max(0, Math.min(this.presentation.points.length - 1, input.selectedPoint + (key === 'ArrowLeft' ? -1 : 1))); return true;
-		}
 		for (const key of NAVIGATION) if (isKeyDown(key, event)) {
-			consumeIdeKey(key, event);
-			const viewport = rawWords ? input.words : input.list, count = rawWords ? input.selected.wordCount : input.projection.rows.length;
-			if (count === 0) return true;
-			const current = rawWords ? input.selectedWord : input.projection.rows.indexOf(input.selected.sequence), page = Math.max(1, Math.trunc(viewport.height / input.layout.rowHeight));
-			const index = Math.max(0, Math.min(count - 1, key === 'Home' ? 0 : key === 'End' ? count - 1 : current + (key === 'ArrowUp' ? -1 : key === 'ArrowDown' ? 1 : key === 'PageUp' ? -page : page)));
-			if (rawWords) { input.selectedWord = index; input.following = false; } else input.select(input.projection.rows[index]);
-			viewport.scrollbar.reveal(index * input.layout.rowHeight, (index + 1) * input.layout.rowHeight, 0); return true;
+			consumeIdeKey(key, event); const input = this.input, rows = input.projection.rows;
+			if (rows.length === 0) return true;
+			const current = rows.indexOf(input.selected.sequence), page = Math.max(1, Math.trunc(input.list.height / input.layout.rowHeight));
+			const index = clamp(key === 'Home' ? 0 : key === 'End' ? rows.length - 1
+				: current + (key === 'ArrowUp' ? -1 : key === 'ArrowDown' ? 1 : key === 'PageUp' ? -page : page), 0, rows.length - 1);
+			input.select(rows[index]); input.list.scrollbar.reveal(index * input.layout.rowHeight, (index + 1) * input.layout.rowHeight, 0); return true;
 		}
 		return false;
 	}
-	public handleKeyboard(event: KeyInputEvent): void { this.navigate(event, false); }
-	public handleWheel(event: WheelInputSnapshot): void {
-		const delta = event.deltaY * this.input.layout.rowHeight;
-		if (!this.wordsActive || !this.words.handleWheel(event, delta)) this.list.handleWheel(event, delta);
-	}
+	public handleKeyboard(event: KeyInputEvent): void { this.navigate(event); }
+	public handleWheel(event: WheelInputSnapshot): void { this.list.handleWheel(event, event.deltaY * this.input.layout.rowHeight); }
 }

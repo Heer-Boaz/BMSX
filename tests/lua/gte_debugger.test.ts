@@ -6,6 +6,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { IO_GX_GTE_PLUS_BASE } from '../../machine/ts/spec/bmsx/io';
 import { GteCommandSnapshot, RuntimeGteHistory } from '../../ide/runtime/gte_history';
+import { WORKBENCH_MENUS } from '../../ide/workbench/ui/menu/registry';
 import { GteDebuggerInput } from '../../ide/workbench/contrib/gte_debugger/editor_input';
 import { GteCommandProjection, GteDebugPresentation } from '../../ide/workbench/contrib/gte_debugger/presentation';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -52,6 +53,8 @@ function fixture() {
 
 test('GTE input follows by owned copy, pins across ring reuse and distinguishes clear from generation changes', () => {
 	const { history, input, issue } = fixture();
+	assert.equal(input.actions.overflow!.secondary, WORKBENCH_MENUS['gte.context']);
+	assert.ok(input.actions.overflow!.secondary!.some(item => item.type === 'command' && item.command === 'gte.source'));
 	input.update();
 	assert.equal(input.following, true);
 	assert.equal(input.selected.sequence, 2);
@@ -150,7 +153,7 @@ test('GTE visual facts use actual command operands, not later normal vectors or 
 	assert.equal(view.colors[0].word, 0x344b519e);
 	assert.equal(view.colors[0].argb, 0xff9e514b);
 	const empty = new GteCommandSnapshot(); view.update(empty, 1, 'auto');
-	assert.equal(view.heading, ''); assert.equal(view.summary, ''); assert.equal(view.flags, ''); assert.equal(view.explanation, '');
+	assert.equal(view.heading, 'No command selected'); assert.equal(view.summary, ''); assert.equal(view.flags, ''); assert.equal(view.explanation, 'Select an observed command in history.');
 	assert.equal(view.points.length, 0); assert.equal(view.colors.length, 0);
 	input.dispose();
 });
@@ -215,11 +218,11 @@ test('GTE compact Details preserve every before/after raw word and visible inter
 	assert.equal(registers.length, 64); assert.ok(properties.every(row => row.compact === true));
 	assert.equal(registers[0].value, '89ABCDEFh -> FEDCBA98h'); assert.match(registers[0].label, /changed/);
 	assert.ok(registers.every(row => row.descriptionDisplay === 'disclosure' && row.description.includes('not an MMIO alias read')));
-	assert.equal(properties[0].descriptionDisplay, 'inline'); assert.match(properties[0].description, /not elapsed frame time/);
-	const flag = properties.find(row => row.label === 'Result FLAG')!;
-	assert.equal(flag.warning, true); assert.equal(flag.descriptionDisplay, 'inline'); assert.match(flag.description, /does not summarize every saturation bit/);
-	const projection = properties.find(row => row.label === 'Projection at issue')!;
-	assert.equal(projection.descriptionDisplay, 'inline'); assert.match(projection.description, /no framebuffer mapping/);
+	assert.equal(properties[0].descriptionDisplay, 'disclosure'); assert.match(properties[0].description, /not elapsed frame time/);
+	const flag = properties.find(row => row.label === 'Result')!;
+	assert.equal(flag.warning, true); assert.equal(flag.descriptionDisplay, 'disclosure'); assert.match(flag.description, /does not summarize every saturation bit/);
+	const projection = properties.find(row => row.label === 'Projection')!;
+	assert.equal(projection.descriptionDisplay, 'disclosure'); assert.match(projection.description, /no framebuffer mapping/);
 	for (const variant of ['tiny', 'msx'] as const) {
 		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
 		let measurements = 0;
@@ -244,7 +247,7 @@ test('PLUS compact Details keep absent acceptance, result lifetime and writable-
 	const properties = view.details(record);
 	assert.ok(properties.every(row => row.compact === true));
 	const flag = properties.find(row => row.label === 'Published FLAG')!;
-	assert.equal(flag.descriptionDisplay, 'inline'); assert.match(flag.description, /Acceptance was not observed/); assert.match(flag.description, /next calculation/);
+	assert.equal(flag.descriptionDisplay, 'disclosure'); assert.match(flag.description, /Acceptance was not observed/); assert.match(flag.description, /next calculation/);
 	assert.equal(properties.filter(row => row.label.startsWith('Accepted[')).length, 0, 'unobserved accepted operands are not invented from published writable inputs');
 	const published = properties.filter(row => row.label.startsWith('Published['));
 	assert.equal(published.length, 10); assert.equal(published[0].value, '12345678h'); assert.equal(published[0].descriptionDisplay, 'disclosure');

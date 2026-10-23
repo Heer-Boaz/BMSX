@@ -12,10 +12,8 @@ import { IO_GX_GPU_GP0, IO_GX_GPU_GP1 } from '../../machine/ts/spec/bmsx/io';
 import { GpuOperationSnapshot, RuntimeGpuHistory } from '../../ide/runtime/gpu_history';
 import { GpuDebuggerInput } from '../../ide/workbench/contrib/gpu_debugger/editor_input';
 import {
-	GPU_RAW_WORDS_PER_PAGE,
 	GpuDebugPresentation,
 	GpuOperationProjection,
-	rawPageCount,
 } from '../../ide/workbench/contrib/gpu_debugger/presentation';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { eventHistoryRuntime } from '../helpers/event_history';
@@ -195,25 +193,21 @@ test('GPU textured polygon views keep supplied UV and colors aligned with real q
 	assert.deepEqual(view.triangles, [0, 1, 2]);
 });
 
-test('GPU raw details page only the active operation words, including uploads longer than one page', () => {
-	const count = GPU_RAW_WORDS_PER_PAGE + 6;
+test('GPU Properties keeps fixed decoded state while the independent Words table owns payload rows', () => {
+	const count = 70;
 	const view = new GpuDebugPresentation(), upload = new GpuOperationSnapshot(count * 2);
 	upload.sequence = 5; upload.kind = GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM; upload.opcode = 0xa0; upload.wordCount = count;
 	upload.words.fill(0xdeadbeef);
 	upload.words.set([0xa0000000, 0x00020001, 0x00010000 | (count - 3) * 2]);
 	for (let index = 3; index < upload.wordCount; index++) upload.words[index] = index;
-	view.update(upload, 1, 'words');
-	assert.equal(rawPageCount(upload), 2);
-	assert.equal(view.points.length, 0, 'transfer payloads do not become fabricated primitive vertices');
-	const firstCount = view.details(upload, 0).length;
-	const lastCount = view.details(upload, 1).length;
-	assert.ok(firstCount <= GPU_RAW_WORDS_PER_PAGE + 16, 'demand formatting stays bounded by one raw page and fixed state/vertices');
-	assert.equal(firstCount - lastCount, GPU_RAW_WORDS_PER_PAGE - (upload.wordCount - GPU_RAW_WORDS_PER_PAGE));
+	view.update(upload, 1, 'geometry');
+	const first = view.details(upload), firstCount = first.length;
+	assert.equal(first.find(item => item.label === 'Words')!.value, String(count));
+	assert.equal(first.some(item => item.label.startsWith('Word[')), false);
 	upload.wordCount = 3;
-	view.update(upload, 2, 'words');
-	assert.equal(rawPageCount(upload), 1);
-	assert.equal(firstCount - view.details(upload).length, GPU_RAW_WORDS_PER_PAGE - upload.wordCount,
-		'formatting work follows active wordCount, not stale capacity or prior high-water count');
+	view.update(upload, 2, 'geometry');
+	assert.equal(view.details(upload).length, firstCount, 'Properties work does not scale with payload length or snapshot capacity');
+	assert.equal(view.details(upload).find(item => item.label === 'Words')!.value, '3');
 });
 
 test('GPU filtering reports interior projection changes even when visible endpoints stay equal', () => {
@@ -227,18 +221,18 @@ test('GPU filtering reports interior projection changes even when visible endpoi
 	input.dispose();
 });
 
-test('GPU Details expose compact raw fields without discarding observation and paging limits', () => {
+test('GPU Properties expose compact decoded fields and the retained packet extent without duplicating payload rows', () => {
 	const record = new GpuOperationSnapshot(4), view = new GpuDebugPresentation();
 	record.sequence = 5; record.kind = GX_GPU_COMMAND_DRAW_POLYGON; record.opcode = 0x20; record.wordCount = 4;
 	record.words.set([0x20332211, 0x00010002, 0x00030004, 0x00050006]);
 	view.update(record, 1, 'geometry');
 	const properties = view.details(record), words = properties.filter(row => row.label.startsWith('Word['));
 	assert.ok(properties.every(row => row.compact === true));
-	assert.equal(properties[0].descriptionDisplay, 'inline'); assert.match(properties[0].description, /not completion/);
-	assert.equal(words.length, record.wordCount); assert.equal(words[0].value, '20332211h');
-	assert.ok(words.every(row => row.descriptionDisplay === 'disclosure' && row.description.includes('not reconstructed original GP0 packets')));
-	const raw = properties.find(row => row.label === 'Raw words')!;
-	assert.equal(raw.descriptionDisplay, 'inline'); assert.match(raw.description, /every active word/);
+	assert.equal(properties[0].descriptionDisplay, 'disclosure'); assert.match(properties[0].description, /not completion/);
+	assert.equal(words.length, 0);
+	const raw = properties.find(row => row.label === 'Words')!;
+	assert.equal(raw.value, String(record.wordCount));
+	assert.equal(raw.descriptionDisplay, 'disclosure'); assert.match(raw.description, /every active word/);
 	for (const variant of ['tiny', 'msx'] as const) {
 		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
 		let measurements = 0;

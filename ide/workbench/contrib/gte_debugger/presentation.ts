@@ -94,7 +94,7 @@ export class GteDebugPresentation {
 		this.record = record; this.revision = revision; this.requested = requested; this.requestedPlane = plane;
 		this.points.length = 0; this.colors.length = 0; this.connectPoints = false;
 		this.horizontalAxis = 'X'; this.verticalAxis = 'Y';
-		if (record.sequence < 0) { this.heading = ''; this.summary = ''; this.flags = ''; this.explanation = ''; return true; }
+		if (record.sequence < 0) { this.heading = 'No command selected'; this.summary = ''; this.flags = ''; this.explanation = 'Select an observed command in history.'; return true; }
 		this.summary = `#${record.sequence} T${record.timeline} | tick ${record.completedTick} | cycle ${record.cycles}`;
 		if (record.kind !== 'normal') { this.updatePlus(record, plane); return true; }
 		const fn = record.commandWord & 0x3f, projection = fn === gte.GX_GTE_FN_RTPS || fn === gte.GX_GTE_FN_RTPT;
@@ -137,7 +137,9 @@ export class GteDebugPresentation {
 				this.colors.push(color);
 			}
 			this.explanation = `IR0 in: ${lowSignedHalfword(record.beforeData[8])} / out: ${lowSignedHalfword(record.afterData[8])}`;
-		} else this.explanation = 'No operands in this view. See Details.';
+		} else this.explanation = this.view === 'color'
+			? 'This command has no RGB output. Choose Properties to inspect its captured registers.'
+			: 'No operands in this view. Choose Properties to inspect its captured registers.';
 		this.connectPoints = this.points.length === 3;
 		return true;
 	}
@@ -176,10 +178,10 @@ export class GteDebugPresentation {
 		this.properties.length = 0;
 		if (record.kind !== 'normal') return this.plusDetails(record);
 		const flag = record.afterControl[31];
-		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'Command', value: `${gteCommandName(record.commandWord)} ${formatNumberAsHex(record.commandWord, 8)}`,
+		this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: 'Command', value: `${gteCommandName(record.commandWord)} ${formatNumberAsHex(record.commandWord, 8)}`,
 			description: `Timeline ${record.timeline}, tick ${record.completedTick}, cycle ${record.cycles}. Nominal ${record.nominalCycles} cycles; not elapsed frame time. SF=${record.commandWord >>> 19 & 1}, LM=${record.commandWord >>> 10 & 1}.`, warning: false },
-			{ compact: true, descriptionDisplay: 'inline', label: 'Result FLAG', value: this.flags, description: 'Per-command output; subsequent commands may replace FLAG. ERROR does not summarize every saturation bit.', warning: flag !== 0 },
-			{ compact: true, descriptionDisplay: 'inline', label: 'Projection at issue', value: `OFX=${decodeSignedQ16_16(record.beforeControl[24])}, OFY=${decodeSignedQ16_16(record.beforeControl[25])}, H=${record.beforeControl[26] & 0xffff}`,
+			{ compact: true, descriptionDisplay: 'disclosure', label: 'Result', value: this.flags, description: 'Per-command output; subsequent commands may replace FLAG. ERROR does not summarize every saturation bit.', warning: flag !== 0 },
+			{ compact: true, descriptionDisplay: 'disclosure', label: 'Projection', value: `OFX=${decodeSignedQ16_16(record.beforeControl[24])}, OFY=${decodeSignedQ16_16(record.beforeControl[25])}, H=${record.beforeControl[26] & 0xffff}`,
 				description: 'H uses its unsigned low halfword. GTE has no framebuffer mapping. An ordered triple is not proof of a GPU primitive. NCLIP gives area; software chooses culling/clipping.', warning: false });
 		for (const [label, before, after] of [['D', record.beforeData, record.afterData], ['C', record.beforeControl, record.afterControl]] as const) {
 			for (let index = 0; index < 32; index++) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: `${label}[${index}]${before[index] !== after[index] ? ' changed' : ''}`,
@@ -190,17 +192,17 @@ export class GteDebugPresentation {
 	}
 	private plusDetails(record: GteCommandSnapshot): readonly InspectedProperty[] {
 		const accepted = record.kind === 'plus-accepted', hasInputs = accepted || record.acceptedSequence !== undefined;
-		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'PLUS event', value: gteCommandName(record.commandWord, record.kind),
+		this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: 'PLUS event', value: gteCommandName(record.commandWord, record.kind),
 			description: `${this.summary}\nRaw command ${formatNumberAsHex(record.commandWord, 8)}; selection uses only its low byte. PLUS has no normal SF/LM selectors.`, warning: false },
 			{ compact: true, descriptionDisplay: 'disclosure', label: 'Accept / due / publish',
 				value: `${accepted ? record.cycles : record.acceptedCycles === undefined ? 'Unobserved' : record.acceptedCycles} / ${record.deadlineCycles === undefined ? 'Unobserved' : record.deadlineCycles} / ${accepted ? 'Not in this record' : record.cycles}`,
 				description: `Nominal interval ${record.nominalCycles} cycles. Deadline and actual publication observation are distinct. CYCLES low bits retain the nominal interval; they are not a countdown.`, warning: false },
-			{ compact: true, descriptionDisplay: 'inline', label: accepted ? 'Result lifetime' : 'Published FLAG', value: this.flags,
+			{ compact: true, descriptionDisplay: 'disclosure', label: accepted ? 'Result lifetime' : 'Published FLAG', value: this.flags,
 				description: accepted ? 'RESULT and FLAG in the accepted bank belong to the preceding publication. This immutable event does not gain the pending result later.'
 					: `RESULT_XY, RESULT_Z and FLAG were observed together at publication.${hasInputs ? ` Accepted operands retained from #${record.acceptedSequence}.` : ' Acceptance was not observed; current writable input words do not identify this result\'s operands.'} Writable inputs at publication may belong to the next calculation.`, warning: !accepted && record.afterPlus[gte.GX_GTE_PLUS_FLAG] !== 0 });
 		if (hasInputs && (record.commandWord & 0xff) === gte.GX_GTE_PLUS_FN_VMAD3) {
 			const scalar = lowSignedHalfword(record.beforePlus[gte.GX_GTE_PLUS_SCALAR]);
-			this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'Scalar / units', value: `Scalar ${scalar} / 4096 = ${scalar / 4096}`,
+			this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: 'Scalar / units', value: `Scalar ${scalar} / 4096 = ${scalar / 4096}`,
 				description: 'Scalar uses a fixed signed Q12 scale. ADD, MUL and result retain raw coordinate counts in the units chosen by software; the debugger does not assume that those vectors are Q12 or recalculate VMAD3.', warning: false });
 		}
 		for (let bank = 0; bank < 2; bank++) {

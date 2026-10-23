@@ -18,12 +18,27 @@ const drag = async (x, y, targetX, targetY) => {
 };
 const capture = async label => { await t.frames(2); t.log(`VISUAL ${label}`); t.capture(label); };
 const sameBounds = (left, right) => left.left === right.left && left.top === right.top && left.right === right.right && left.bottom === right.bottom;
+const chooseView = async (label, page, view) => {
+	t.command('gte.view'); await t.frames(2); await press('ControlLeft', 'KeyA');
+	for (const character of label.toUpperCase()) await press(character === ' ' ? 'Space' : `Key${character}`);
+	await press('ControlLeft', 'Home'); await press('Enter'); await t.frames(2);
+	t.assert(input.inspectorPage === page, `the actual ${label} picker did not open its inspector page`);
+	if (view !== undefined) t.assert(input.view === view, `the actual ${label} picker lost its interpretation`);
+};
 
 await t.waitForCart(); await t.frames(90); t.openLuaSource('entry.lua'); await t.frames(2);
 const entry = t.activeWorkbenchTab(), entrySource = entry.context.model.buffer.getText();
 t.command('gteDebugger'); await t.frames(2);
 const input = t.activeWorkbenchTab();
 t.assert(input.kind === 'gte_debugger', 'the actual GTE contribution did not open');
+for (let font = 0; font < 2; font++) {
+	for (let theme = 0; theme < 2; theme++) {
+		t.assert(input.selected.sequence < 0 && input.projection.rows.length === 0, 'the waiting history fabricated an observed GTE command');
+		await capture(`gte-history-waiting-${input.layout.font.variant}-theme-${theme}`);
+		t.command('theme-toggle'); await t.frames(2);
+	}
+	await press('ControlLeft', 'ShiftLeft', 'KeyT');
+}
 for (let step = 0; step < 4; step++) { t.command('stepFrame'); await t.frames(12); }
 t.assert(input.projection.rows.length > 1 && input.selected.kind === 'normal' && input.selected.commandWord === 0x06,
 	'the shipped Starcatch renderer did not issue its actual NCLIP captures');
@@ -39,10 +54,12 @@ const sameCapture = expected => {
 		t.assert(expected[bank].every((word, index) => input.selected[bank][index] === word), `window interaction changed retained ${bank}`);
 	t.assert(t.runtime().machine.scheduler.nowCycles === stoppedCycles, 'presentation/source navigation advanced the paused guest');
 };
-const original = selected(), diagram = {};
+const original = selected(), historyBounds = {};
 for (let font = 0; font < 2; font++) {
-	diagram[input.layout.font.variant] = { ...input.visualBounds };
-	await capture(`gte-diagram-before-window-${input.layout.font.variant}`);
+	historyBounds[input.layout.font.variant] = { ...input.list.bounds };
+	t.assert(input.list.bounds.right - input.list.bounds.left >= input.layout.right - input.layout.left - 16,
+		'the command history retained a permanently reserved diagram column');
+	await capture(`gte-full-width-history-before-inspector-${input.layout.font.variant}`);
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 t.command('gte.details'); await t.frames(3);
@@ -52,15 +69,15 @@ const clickAction = async command => {
 	const bounds = action(command).bounds;
 	await click((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2);
 };
-const focusClient = async () => { await click(window.client.left + 20, window.client.top + 4); };
-const sourceRow = async () => { await focusClient(); await press('Home'); await press('ArrowDown'); };
+const focusClient = async () => { await click(input.inspectorBounds.left + 20, input.inspectorBounds.top + 4); };
+const sourceRow = async () => { await chooseView('Properties', 'properties'); await focusClient(); await press('Home'); await press('ArrowDown'); };
 t.assert(window.open && !window.collapsed, 'Details did not open an expanded modeless window');
 t.assert(action('window.hide').icon === 'close' && action('window.collapse').checkedIcon === 'expand', 'the window did not use shared native icon controls');
 t.assert(action('gte.source').icon === 'source' && action('gte.source').enabled, 'captured Source is not reachable through the actual window icon');
 for (let font = 0; font < 2; font++) {
 	const variant = input.layout.font.variant;
 	for (let theme = 0; theme < 2; theme++) {
-		t.assert(sameBounds(input.visualBounds, diagram[variant]), 'Details replaced or shrank the actual command diagram');
+		t.assert(sameBounds(input.list.bounds, historyBounds[variant]), 'opening the inspector changed the full-width command history');
 		t.assert(window.bounds.bottom <= input.layout.bottom, 'the default window obscured shared transport controls');
 		t.assert(window.header.bottom - window.header.top === input.layout.font.lineHeight + 8, 'window chrome ignored the active font');
 		t.assert(sameBounds(window.requestedBounds, initial), 'font/theme changes overwrote requested placement');
@@ -69,6 +86,50 @@ for (let font = 0; font < 2; font++) {
 		t.command('theme-toggle'); await t.frames(2);
 	}
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
+}
+
+// Interpretation pages stay inside this one inspector and preserve the register document.
+for (let font = 0; font < 2; font++) {
+	const variant = input.layout.font.variant;
+	await chooseView('Properties', 'properties'); await focusClient(); await press('End');
+	await chooseView('Automatic', 'diagram', 'auto');
+	const properties = { ...input.detailsView };
+	t.assert(properties.selectionIndex > 0, 'changing pages discarded the selected before/after register');
+	t.assert(input.diagram.bounds.left >= input.inspectorBounds.left && input.diagram.bounds.right <= input.inspectorBounds.right
+		&& input.diagram.bounds.top >= input.inspectorBounds.top && input.diagram.bounds.bottom <= input.inspectorBounds.bottom,
+		'the command diagram is not contained by the actual inspector client');
+	await focusClient(); await press('End');
+	t.assert(input.diagram.scrollTop === input.diagram.scrollbar.getMaximumScroll(), 'End did not reveal the final wrapped GTE annotation');
+	sameCapture(original); await capture(`gte-inspector-${variant}-diagram-final-annotation`);
+	await press('Home'); t.assert(input.diagram.scrollTop === 0, 'Home did not return to the actual GTE plot');
+	await chooseView('Input XY', 'diagram', 'input'); sameCapture(original);
+	await chooseView('Projected SXY', 'diagram', 'projected'); sameCapture(original);
+	await chooseView('Output RGB', 'diagram', 'color'); await focusClient(); await press('Home');
+	sameCapture(original); await capture(`gte-inspector-${variant}-nclip-has-no-rgb-result`);
+	await chooseView('Properties', 'properties');
+	t.assert(Object.keys(properties).every(key => input.detailsView[key] === properties[key]), 'diagram interpretation changes lost the raw-register bookmark');
+	await focusClient(); await press('Home'); await press('ControlLeft', 'ShiftLeft', 'KeyT');
+}
+
+// Direct inspection stops Follow rather than losing the selected point or reading position next frame.
+await chooseView('Automatic', 'diagram', 'auto'); await focusClient();
+t.command('gte.follow'); await t.frames(2); t.assert(input.following, 'Follow did not enable its real observation mode');
+await press('ArrowRight');
+t.assert(!input.following && input.selectedPoint === 1, 'diagram point navigation did not retain an explicit observed point');
+await press('Home'); t.command('gte.follow'); await t.frames(2);
+t.controlInput([{ type: 'pointer', x: input.diagram.bounds.left + 12, y: input.diagram.bounds.top + 4 }, { type: 'wheel', deltaY: 120 }]);
+await t.frames(3);
+t.assert(!input.following && input.diagram.scrollTop > 0, 'diagram scrolling did not stop Follow for the observed reading position');
+sameCapture(original); await capture('gte-inspector-scroll-retains-observation');
+
+// Both physical context-menu bindings act on the focused history and reach its real view chooser.
+for (const gesture of [['ContextMenu'], ['ShiftLeft', 'F10']]) {
+	await chooseView('Automatic', 'diagram', 'auto'); await clickAction('window.hide');
+	await press(...gesture); await press('Home'); await press('Enter');
+	for (const character of 'PROPERTIES') await press(`Key${character}`);
+	await press('ControlLeft', 'Home'); await press('Enter'); await t.frames(2);
+	t.assert(window.open && input.inspectorPage === 'properties', `${gesture.join('+')} did not expose the command history's inspector chooser`);
+	sameCapture(original); await capture(`gte-history-keyboard-context-${gesture.join('+')}`);
 }
 
 // Source belongs to this capture's issuing instruction, not the current CPU PC.
@@ -90,6 +151,9 @@ t.assert(t.activeWorkbenchTab() === input && window.open, 'returning from an uns
 for (let font = 0; font < 2; font++) {
 	await sourceRow(); await capture(`gte-window-${input.layout.font.variant}-source-changed`);
 	t.assert(!action('gte.source').enabled, 'the window Source icon admitted an unsaved changed source range');
+	await press('Home'); await capture(`gte-window-${input.layout.font.variant}-source-warning-light`);
+	t.command('theme-toggle'); await t.frames(2); await capture(`gte-window-${input.layout.font.variant}-source-warning-dark`);
+	t.command('theme-toggle'); await t.frames(2); await press('ArrowDown');
 	t.command('gte.source'); await t.frames(2);
 	await press('Enter');
 	t.assert(t.activeWorkbenchTab() === input, 'Source navigated with a stale captured range after an unsaved canonical edit');
@@ -128,9 +192,12 @@ t.assert(input.selected.sequence !== firstSequence, 'Follow did not change the c
 t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 t.assert(t.activeWorkbenchTab() === input, 'a retired Source icon press navigated using a newer capture');
 await press('Escape'); await press('Home');
-const more = input.actions.items.find(item => item.command === 'gte.more').bounds;
+const more = input.actions.overflow.button.bounds;
 await click((more.left + more.right) / 2, (more.top + more.bottom) / 2);
-await press('Home'); await press('ArrowDown');
+const sourceIndex = input.actions.overflow.items.filter(item => item.type === 'command').findIndex(item => item.command === 'gte.source');
+t.assert(sourceIndex >= 0, 'the actual More menu does not expose captured Source');
+await press('Home');
+for (let index = 0; index < sourceIndex; index++) await press('ArrowDown');
 await capture('gte-window-popup-captured-source');
 t.controlInput([{ type: 'key', code: 'Enter', down: true }]); await t.frames(1);
 t.command('gte.follow'); await t.frames(2);
@@ -145,8 +212,8 @@ await capture('gte-window-list-selection-retired-source-attempt');
 // Captured move/resize and document disclosure use the same shared chrome and raw snapshot.
 const beforeMove = { ...window.bounds };
 await drag(window.header.left + 12, (window.header.top + window.header.bottom) / 2,
-	window.header.left + 42, (window.header.top + window.header.bottom) / 2 - 35);
-t.assert(window.bounds.left === beforeMove.left + 30 && window.bounds.top === beforeMove.top - 35, 'titlebar capture stopped outside its old bounds');
+	window.header.left - 18, (window.header.top + window.header.bottom) / 2 - 35);
+t.assert(window.bounds.left === beforeMove.left - 30 && window.bounds.top === beforeMove.top - 35, 'titlebar capture stopped outside its old bounds');
 sameCapture(pinned); await capture('gte-window-moved-capture');
 const width = beforeMove.right - beforeMove.left, height = beforeMove.bottom - beforeMove.top;
 await drag(window.bounds.right - 1, window.bounds.bottom - 1,
@@ -198,6 +265,31 @@ await capture('gte-window-detached-over-canonical-source');
 t.command('gteDebugger'); await t.frames(3);
 t.assert(t.activeWorkbenchTab() === input && window.open && sameBounds(window.requestedBounds, placement), 'reattaching GTE lost its retained window placement');
 sameCapture(pinned); await capture('gte-window-reattached');
+
+// A constrained history never forces its root-owned inspector back into a cramped side column.
+for (let font = 0; font < 2; font++) {
+	const variant = input.layout.font.variant;
+	await clickAction('window.hide'); t.command('gameView.togglePanel'); await t.frames(3);
+	await drag(input.layout.right + 2, 80, 50, 80); t.command('gteDebugger'); await t.frames(2);
+	for (let theme = 0; theme < 2; theme++) {
+		t.assert(input.layout.right - input.layout.left === (variant === 'tiny' ? 78 : 118), 'the real GTE sash did not reach its supported font minimum');
+		t.assert(input.list.bounds.right - input.list.bounds.left >= input.layout.right - input.layout.left - 16,
+			'the minimum command history still shares a fixed diagram split');
+		await capture(`gte-history-minimum-${variant}-theme-${theme}`);
+		t.command('gte.details'); await t.frames(2); await chooseView('Properties', 'properties');
+		t.assert(input.inspectorBounds.right - input.inspectorBounds.left > input.list.bounds.right - input.list.bounds.left,
+			'the root-owned GTE inspector shrank to its constrained history pane');
+		await capture(`gte-inspector-minimum-owner-${variant}-theme-${theme}-properties`);
+		await chooseView('Automatic', 'diagram', 'auto'); await focusClient(); await press('Home');
+		sameCapture(pinned); await capture(`gte-inspector-minimum-owner-${variant}-theme-${theme}-diagram`);
+		await press('End');
+		t.assert(input.diagram.scrollTop === input.diagram.scrollbar.getMaximumScroll(), 'the narrow-owner command diagram cannot reveal its final annotation');
+		await chooseView('Properties', 'properties'); await clickAction('window.hide');
+		t.command('theme-toggle'); await t.frames(2);
+	}
+	t.command('gameView.togglePanel'); await t.frames(3); t.command('gteDebugger'); t.command('gte.details'); await t.frames(2);
+	await press('ControlLeft', 'ShiftLeft', 'KeyT');
+}
 
 // Clear is an explicit empty subject; inactive backing register arrays are not new evidence.
 await press('Escape'); t.command('gte.clear'); await t.frames(3);

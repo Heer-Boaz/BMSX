@@ -1,12 +1,14 @@
+import { clamp } from '../../../../machine/ts/common/clamp';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
-import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { IdeCommandController } from '../../../commands/controller';
-import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
+import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
+import type { DisposableStore } from '../../../common/lifecycle';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { truncateMeasuredText } from '../../../common/text';
+import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -23,40 +25,31 @@ import { CapturedLuaSourceBinding } from '../../services/working_copy/captured_l
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { QuickInputController } from '../../services/quick_input/controller';
-import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
+import { WorkbenchTooltip } from '../../ui/tooltip';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { GteDebuggerInput } from './editor_input';
-import { GteDebugPresentation, gteCommandName, type GteDebugPlane, type GteDebugView } from './presentation';
+import { gteCommandName } from './presentation';
 import { GteDetailsWindow } from './details_window';
-import { drawGteDebugger, GteDebugCanvas, type GteCommandRow } from './render';
+import { drawGteDebugger, type GteCommandRow } from './render';
 
-const COMMANDS = ['gte.follow', 'gte.view', 'gte.details', 'gte.source', 'gte.goToFrame', 'gte.filter', 'gte.clear', 'gte.more'] as const;
+const COMMANDS = ['gte.follow', 'gte.view', 'gte.details', 'gte.source', 'gte.goToFrame', 'gte.filter', 'gte.clear'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
-type GteViewChoice = { label: string; description: string; detail: string; view: GteDebugView; plane?: GteDebugPlane };
-const VIEWS: GteViewChoice[] = [
-	{ label: 'Automatic', description: 'Relevant output for the selected command', detail: '', view: 'auto' },
-	{ label: 'Input XY', description: 'Raw input XY plane; XYZ in numeric rows', detail: '', view: 'input' },
-	{ label: 'Projected SXY', description: 'Actual projection or NCLIP operands', detail: '', view: 'projected' },
-	{ label: 'Output RGB', description: 'Actual color FIFO result', detail: '', view: 'color' },
-];
-const PLUS_VIEWS: GteViewChoice[] = [
-	{ label: 'Vector XY', description: 'ADD, MUL and actual result; raw XYZ in rows', detail: '', view: 'input', plane: 'xy' },
-	{ label: 'Vector XZ', description: 'Depth plane; raw XYZ in rows', detail: '', view: 'input', plane: 'xz' },
-	{ label: 'Vector YZ', description: 'Depth plane; raw XYZ in rows', detail: '', view: 'input', plane: 'yz' },
-];
-
 export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInput> {
-	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
+	private readonly actions: WorkbenchActionBarControl;
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event));
 	private details: GteDetailsWindow | undefined;
-	private readonly presentation = new GteDebugPresentation();
-	private readonly canvas = new GteDebugCanvas();
+	private readonly tooltip = new WorkbenchTooltip();
+	private readonly emptyLines: string[] = [];
+	private emptyFiltered: boolean | undefined;
+	private popup: DisposableStore | undefined;
+	private unbindSelection: (() => void) | undefined;
+	private readonly unbindSource: () => void;
 	private readonly rows: GteCommandRow[] = [];
 	private readonly labels = new Map<number, string>();
 	private status = '';
@@ -65,11 +58,12 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	private selectedReachable = false;
 	private sourceRevision = -1;
 	private readonly source: CapturedLuaSourceBinding;
-	private diagramDirty = false;
+	private selectionRevision = -1;
 	private rowFirst = -1;
 	private rowLast = -1;
 	private listOffset: number | undefined;
 	private firstSequence = -1;
+	private labelGeneration = -1;
 	private freshLayout = true;
 	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
@@ -78,6 +72,11 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		private readonly paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
 		this.source = new CapturedLuaSourceBinding(editorTextModelService, sources);
+		this.unbindSource = this.source.onDidChange(() => this.retireContextMenu());
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
+		this.actions.onDidOpenOverflow = lifetime => {
+			this.input.following = false; this.source.update(); this.ownContextMenu(lifetime);
+		};
 		this.scroll.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled,
@@ -92,9 +91,10 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 			this.showContextMenu(this.input.list.bounds.left, this.input.list.bounds.top, true);
 		} });
 		this.scroll.focusTarget.commandContext = this.focusTarget;
-		// The pane's keyboard target owns the non-scrolling diagram.
-		this.actions.focusTarget.next = this.scroll.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
-		this.scroll.focusTarget.next = this.focusTarget; this.scroll.focusTarget.previous = this.actions.focusTarget;
+		this.scroll.focusTarget.registerCommand('contextMenu', this.focusTarget.getCommand('contextMenu')!);
+		// The full-width history and its actions are the main pane's reading controls.
+		this.actions.focusTarget.next = this.scroll.focusTarget; this.actions.focusTarget.previous = this.scroll.focusTarget;
+		this.scroll.focusTarget.next = this.actions.focusTarget; this.scroll.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.scroll.focusTarget;
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
@@ -104,25 +104,26 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	protected override activate(): void {
 		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.labels.clear();
 		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.list);
+		this.unbindSelection = this.input.onWillChangeSelection(() => { this.retireContextMenu(); this.actions.cancelCommand('gte.details'); });
+		this.tooltip.attach(this.surfaces, this.paneSurface, this.getWorkArea);
 		const details = this.details = new GteDetailsWindow(this.input, this.commands, this.surfaces, this.paneSurface, this.scroll.focusTarget,
-			this.getWorkArea, () => { this.synchronizeSelection(); return this.presentation.details(this.input.selected); }, this.source, () => this.openSource());
-		for (const target of [details.window.focusTarget, details.inspector.focusTarget])
+			this.getWorkArea, this.quickInput, this.contextMenu, this.source, () => this.openSource());
+		for (const target of [details.window.focusTarget, details.inspector.focusTarget, details.diagramControl.focusTarget, details.viewActions.focusTarget])
 			for (const command of [...COMMANDS, 'pause', 'runtime.pause', 'runtime.resume', 'stepFrameBack', 'stepFrame'] as const)
-				if (command !== 'gte.source') target.registerCommand(command, this.focusTarget.getCommand(command)!);
+				if (command !== 'gte.source' && command !== 'gte.view') target.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.sourceRevision = -1;
 		this.update();
 	}
 	public override clearInput(): void {
-		this.input.running = false; this.contextMenu.hide(); this.details!.dispose(); this.details = undefined;
+		this.input.running = false; this.unbindSelection!(); this.unbindSelection = undefined; this.retireContextMenu(); this.tooltip.detach(); this.details!.dispose(); this.details = undefined;
 		this.actions.clearInput(); this.scroll.clearInput();
-		this.source.clear(); this.presentation.reset(); this.labels.clear(); this.rows.length = 0;
+		this.source.clear(); this.labels.clear(); this.rows.length = 0;
 		super.clearInput();
 	}
-	public override dispose(): void { if (this.hasInput) this.clearInput(); this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
+	public override dispose(): void { if (this.hasInput) this.clearInput(); this.unbindSource(); this.source.clear(); this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
 	/** Input events may select and inspect another command before the next host frame. */
 	private synchronizeSelection(): void {
 		const input = this.input;
-		if (this.presentation.update(input.selected, input.selectionRevision, input.view, input.plane)) this.diagramDirty = true;
 		if (this.sourceRevision !== input.selectionRevision) {
 			this.sourceRevision = input.selectionRevision;
 			if (input.selected.sequence < 0) this.source.clear();
@@ -130,19 +131,17 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		}
 	}
 
-	/** A popup owns the selected observation and source generation present at admission. */
+	private ownContextMenu(lifetime: DisposableStore): void {
+		this.popup = lifetime; this.tooltip.hide();
+		lifetime.add({ dispose: () => { if (this.popup === lifetime) this.popup = undefined; } });
+	}
+	private retireContextMenu(): void { if (this.popup !== undefined) this.contextMenu.hide(); }
+	/** The actual menu lifetime retires with its captured selection or authored-source generation. */
 	private showContextMenu(x: number, y: number, selectFirst = false): void {
 		this.synchronizeSelection(); this.source.update();
-		const input = this.input, revision = input.selectionRevision, sourceRevision = this.source.revision;
-		const commands: EditorCommandRunner = {
-			isEnabled: command => {
-				if (!this.hasInput || this.input !== input) return false;
-				this.synchronizeSelection(); this.source.update();
-				return revision === input.selectionRevision && sourceRevision === this.source.revision && this.isEnabled(command);
-			},
-			execute: command => { if (commands.isEnabled(command)) this.execute(command); },
-		};
-		this.contextMenu.show(x, y, WORKBENCH_MENUS['gte.context'], commands, { selectFirst });
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['gte.context'], this.commands, {
+			selectFirst, invocationOrigin: this.scroll.focusTarget, onWillShow: lifetime => this.ownContextMenu(lifetime),
+		});
 	}
 
 	private openSource(): void {
@@ -162,8 +161,9 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		}
 		if (command === 'gte.goToFrame') return selected && this.navigation.available && input.history.canSeek(input.selected);
 		if (command === 'gte.details') return selected || input.detailsWindow.open;
+		if (command === 'gte.view') return selected;
 		if (command === 'gte.clear') return input.history.count > 0;
-		return command === 'gte.follow' || command === 'gte.view' || command === 'gte.filter' || command === 'gte.more';
+		return command === 'gte.follow' || command === 'gte.filter';
 	}
 	public execute(command: EditorCommandId): void {
 		if (!this.isEnabled(command)) return;
@@ -171,15 +171,9 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		const input = this.input;
 		switch (command) {
 			case 'gte.follow': input.following = true; break;
-			case 'gte.view': {
-				const plus = input.selected.kind !== 'normal', choices = plus ? PLUS_VIEWS : VIEWS;
-				this.quickInput.pick('GTE VIEW', 'Choose captured data', () => new TextQuickPickProvider(choices, choices.findIndex(item => plus ? item.plane === input.plane : item.view === input.view)), item => {
-					input.view = item.view; if (item.plane !== undefined) input.plane = item.plane;
-				}); break;
-			}
+			case 'gte.view': input.following = false; this.details!.show(); this.details!.chooseView(); break;
 			case 'gte.filter': this.quickInput.input('Filter GTE events', 'Opcode or PLUS phase; empty shows all', input.filter, async text => text, text => { input.filter = text; input.list.scrollbar.setScroll(0); }); break;
 			case 'gte.clear': input.clear(); break;
-			case 'gte.more': { input.following = false; const bounds = input.actions.items[2].bounds; this.showContextMenu(bounds.left, bounds.bottom); break; }
 			case 'gte.source': this.openSource(); break;
 			case 'gte.goToFrame': {
 				input.running = false; const sequence = input.selected.sequence;
@@ -196,18 +190,26 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		const input = this.input, { layout, list } = input;
 		const layoutChanged = updateFullWidthWorkbenchLayout(layout, this.contentBounds) || this.freshLayout;
 		this.freshLayout = false; const projectionChanged = input.update();
-		const top = layout.top + layout.rowHeight + 10, split = layout.left + Math.trunc((layout.right - layout.left) * 0.30);
-		list.layout(layout.left + 4, top, split, layout.bottom, input.projection.rows.length * layout.rowHeight);
-		write_rect_bounds(input.visualBounds, split + 4, top, layout.right - 4, layout.bottom);
+		const top = layout.top + layout.rowHeight + 10;
+		list.layout(layout.left + 4, top, layout.right - 4, layout.bottom, input.projection.rows.length * layout.rowHeight);
 		this.scroll.lineStep = layout.rowHeight;
 		if (input.following && input.projection.rows.length > 0) list.scrollbar.reveal(list.contentHeight - layout.rowHeight, list.contentHeight, 0);
 		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, top - 4, measureText, layout.font!.renderFont(), layout.left + 4);
 		input.actions.items[0].checked = input.following; this.actions.update();
 		this.synchronizeSelection();
-		const selectedChanged = this.diagramDirty;
-		if (selectedChanged || layoutChanged) this.canvas.layout(this.presentation, input.visualBounds, layout.font!.renderFont());
-		this.diagramDirty = false;
-		if (layoutChanged) this.labels.clear();
+		const selectedChanged = this.selectionRevision !== input.selectionRevision;
+		this.selectionRevision = input.selectionRevision;
+		this.source.update();
+		const hint = this.actions.tooltipItem;
+		if (hint === undefined) this.tooltip.hide();
+		else this.tooltip.show(hint.tooltip, hint.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		if (layoutChanged || this.emptyFiltered !== (input.filter !== '')) {
+			this.emptyFiltered = input.filter !== ''; this.emptyLines.length = 0;
+			writeWrappedMeasuredLine(this.emptyLines, this.emptyFiltered ? 'No matching GTE events.' : 'No GTE events observed. Play or step the existing runtime.', list.bounds.right - list.bounds.left - 8, measureTextRange);
+		}
+		if (layoutChanged || this.labelGeneration !== input.history.generation) {
+			this.labelGeneration = input.history.generation; this.labels.clear();
+		}
 		if (this.firstSequence !== input.history.firstSequence) {
 			this.firstSequence = input.history.firstSequence;
 			for (const sequence of this.labels.keys()) if (sequence < this.firstSequence) this.labels.delete(sequence);
@@ -222,7 +224,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 				let label = this.labels.get(sequence);
 				if (label === undefined) {
 					const record = input.history.at(sequence);
-					label = truncateMeasuredText(`#${sequence} ${gteCommandName(record.commandWord, record.kind)}`, list.bounds.right - list.bounds.left - 4, measureTextRange); this.labels.set(sequence, label);
+					label = truncateMeasuredText(`${gteCommandName(record.commandWord, record.kind)} #${sequence}`, list.bounds.right - list.bounds.left - 4, measureTextRange); this.labels.set(sequence, label);
 				}
 				const row = this.rows[count];
 				if (row === undefined) this.rows.push({ sequence, top: y, label });
@@ -234,12 +236,12 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		const selectedReachable = input.selected.sequence >= 0 && input.history.canSeek(input.selected);
 		if (layoutChanged || selectedChanged || this.historyRevision !== input.history.revision || this.following !== input.following || this.selectedReachable !== selectedReachable) {
 			const outsideList = input.selected.sequence >= 0 && (input.selected.sequence < input.history.firstSequence || input.selected.sequence >= input.history.endSequence);
-			this.status = truncateMeasuredText(`${input.following ? input.projection.rows.length === 0 ? 'WAITING' : 'FOLLOWING' : 'PINNED'} | ${input.history.observing ? 'Observing' : 'Stopped'}${this.presentation.summary === '' ? '' : ` | ${this.presentation.summary}`}${outsideList ? ' | Record expired' : ''}${input.selected.sequence >= 0 && !selectedReachable ? ' | Frame unavailable' : ''}`, layout.right - layout.left - 8, measureTextRange);
+			this.status = truncateMeasuredText(`${input.following ? input.projection.rows.length === 0 ? 'WAITING' : 'FOLLOWING' : 'PINNED'} | ${input.history.observing ? 'Observing' : 'Stopped'}${input.selected.sequence < 0 ? '' : ` | #${input.selected.sequence} T${input.selected.timeline} | tick ${input.selected.completedTick} | cycle ${input.selected.cycles}`}${outsideList ? ' | Record expired' : ''}${input.selected.sequence >= 0 && !selectedReachable ? ' | Frame unavailable' : ''}`, layout.right - layout.left - 8, measureTextRange);
 			this.historyRevision = input.history.revision; this.following = input.following; this.selectedReachable = selectedReachable;
 		}
 		this.details!.update();
 	}
-	public draw(): void { drawGteDebugger(this.input, this.presentation, this.canvas, this.rows, this.focusTarget.hasFocus); }
+	public draw(): void { drawGteDebugger(this.input, this.rows, this.emptyLines); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
@@ -249,10 +251,6 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.list.bounds)) {
 				const index = Math.trunc((snapshot.viewportY - this.input.list.offsetTop) / this.input.layout.rowHeight);
 				if (index < this.input.projection.rows.length) this.input.select(this.input.projection.rows[index]);
-			} else if (point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.visualBounds)) {
-				this.focusTarget.focus();
-				const point = this.canvas.hit(snapshot.viewportX, snapshot.viewportY);
-				if (point >= 0) { this.input.following = false; this.input.selectedPoint = point; }
 			}
 			if (secondary) { this.input.following = false; this.showContextMenu(snapshot.viewportX, snapshot.viewportY); return true; }
 		}
@@ -261,17 +259,14 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	private navigate(event: KeyInputEvent): boolean {
 		if (event.modifiers !== KeyModifier.none) return false;
 		if (isKeyJustPressed('Enter', event)) { consumeIdeKey('Enter', event); this.execute('gte.details'); return true; }
-		for (const key of ['ArrowLeft', 'ArrowRight']) if (isKeyJustPressed(key, event) && this.presentation.points.length > 0) {
-			consumeIdeKey(key, event); this.input.following = false;
-			this.input.selectedPoint = Math.max(0, Math.min(this.presentation.points.length - 1, this.input.selectedPoint + (key === 'ArrowLeft' ? -1 : 1)));
-			return true;
-		}
+
 		for (const key of NAVIGATION) if (isKeyDown(key, event)) {
 			consumeIdeKey(key, event);
 			const input = this.input, rows = input.projection.rows;
 			if (rows.length === 0) return true;
 			const current = rows.indexOf(input.selected.sequence), page = Math.max(1, Math.trunc(input.list.height / input.layout.rowHeight));
-			const index = Math.max(0, Math.min(rows.length - 1, key === 'Home' ? 0 : key === 'End' ? rows.length - 1 : current + (key === 'ArrowUp' ? -1 : key === 'ArrowDown' ? 1 : key === 'PageUp' ? -page : page)));
+			const index = clamp(key === 'Home' ? 0 : key === 'End' ? rows.length - 1
+				: current + (key === 'ArrowUp' ? -1 : key === 'ArrowDown' ? 1 : key === 'PageUp' ? -page : page), 0, rows.length - 1);
 			input.select(rows[index]); input.list.scrollbar.reveal(index * input.layout.rowHeight, (index + 1) * input.layout.rowHeight, 0); return true;
 		}
 		return false;

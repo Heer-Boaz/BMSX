@@ -4,23 +4,32 @@ import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import type { PropertyInspectorViewState } from '../../ui/property_inspector/model';
 import { WorkbenchWindowModel } from '../../ui/window/model';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
-import { GPU_RAW_WORDS_PER_PAGE, GpuOperationProjection, type GpuDebugView } from './presentation';
+import { GpuOperationProjection, type GpuDebugView } from './presentation';
+import type { GpuDiagramViewState } from './diagram';
+
+export type GpuInspectorPage = 'properties' | 'diagram' | 'words';
 
 /** Retained optional GPU observation, independent of the reusable pane's attachment. */
 export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_debugger'> {
 	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
-	public readonly actions = createWorkbenchActionBar('gpu.title');
+	public readonly actions = createWorkbenchActionBar('gpu.title', true, WORKBENCH_MENUS['gpu.context']);
 	public readonly projection = new GpuOperationProjection();
 	public readonly selected = new GpuOperationSnapshot();
 	public readonly list = new WorkbenchScrollViewport();
 	public readonly words = new WorkbenchScrollViewport();
-	public readonly visualBounds = create_rect_bounds();
+	public wordsRowHeight = 0;
+	public readonly diagram = new WorkbenchScrollViewport();
+	public readonly diagramView: GpuDiagramViewState = { section: 0, textOffset: 0, fraction: 0, atEnd: false };
+	public readonly inspectorBounds = create_rect_bounds();
+	public readonly inspectorActions = createWorkbenchActionBar('gpu.inspector.content', true);
+	public inspectorPage: GpuInspectorPage = 'properties';
 	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
 	public readonly detailsActions = createWorkbenchActionBar('window.title');
 	public detailsPlacementInitialized = false;
@@ -31,32 +40,37 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 	public filter = '';
 	public view: GpuDebugView = 'geometry';
 	public selectedPoint = 0;
-	private selectedWordValue = 0;
+	public selectedWord = 0;
 	public selectionRevision = 0;
 	private generation = -1;
+	private readonly selectionListeners = new Set<() => void>();
 	public constructor(public readonly history: RuntimeGpuHistory) {
 		super('gpu-debugger', 'gpu_debugger', 'GPU OPERATIONS', true);
 		this.disposables.add(history.observe());
 	}
-	public get selectedWord(): number { return this.selectedWordValue; }
-	public set selectedWord(value: number) {
-		if (Math.trunc(value / GPU_RAW_WORDS_PER_PAGE) !== Math.trunc(this.selectedWordValue / GPU_RAW_WORDS_PER_PAGE)) {
-			this.detailsView.selectionIndex = 0; this.detailsView.selectionVisible = false; this.detailsView.anchorIndex = 0; this.detailsView.anchorOffset = 0;
-		}
-		this.selectedWordValue = value;
-	}
 	public select(sequence: number): void { this.following = false; this.copySelection(sequence); }
+	/** Attached clients retire attempts and save the old document before its owned words change. */
+	public onWillChangeSelection(listener: () => void): () => void {
+		this.selectionListeners.add(listener); return () => this.selectionListeners.delete(listener);
+	}
 	private copySelection(sequence: number): void {
 		if (this.selected.sequence === sequence) return;
+		for (const listener of this.selectionListeners) listener();
 		this.history.copy(sequence, this.selected); this.resetPosition();
 	}
 	private resetPosition(): void {
-		this.selectedPoint = 0; this.selectedWordValue = 0;
+		this.selectedPoint = 0; this.selectedWord = 0;
 		this.detailsView.selectionIndex = 0; this.detailsView.selectionVisible = false; this.detailsView.anchorIndex = 0; this.detailsView.anchorOffset = 0;
-		this.words.scrollbar.setScroll(0); this.selectionRevision++;
+		this.words.scrollbar.setScroll(0); this.diagram.scrollbar.setScroll(0);
+		this.diagramView.section = 0; this.diagramView.textOffset = 0; this.diagramView.fraction = 0; this.diagramView.atEnd = false;
+		this.selectionRevision++;
 	}
 	public clear(): void { this.history.clear(); this.following = true; this.clearSelection(); }
-	private clearSelection(): void { this.selected.sequence = -1; this.selected.wordCount = 0; this.resetPosition(); }
+	private clearSelection(): void {
+		if (this.selected.sequence < 0) return;
+		for (const listener of this.selectionListeners) listener();
+		this.selected.sequence = -1; this.selected.wordCount = 0; this.resetPosition();
+	}
 	public update(): boolean {
 		if (this.generation !== this.history.generation) {
 			this.generation = this.history.generation;
@@ -70,6 +84,7 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 		}
 		return changed;
 	}
+	public override dispose(): void { this.selectionListeners.clear(); super.dispose(); }
 }
 
 export function openGpuDebugger(panes: EditorPanes, history: RuntimeGpuHistory): void {

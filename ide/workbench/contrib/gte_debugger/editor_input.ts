@@ -3,6 +3,7 @@ import { GteCommandSnapshot, type RuntimeGteHistory } from '../../../runtime/gte
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorPanes } from '../../services/editor/editor_panes';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import type { PropertyInspectorViewState } from '../../ui/property_inspector/model';
@@ -10,12 +11,13 @@ import { WorkbenchWindowModel } from '../../ui/window/model';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import { GteCommandProjection, type GteDebugPlane, type GteDebugView } from './presentation';
+import type { GteDiagramAnchor } from './diagram';
 
 /** A retained observation session. Source navigation detaches its pane, not its lease. */
 export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_debugger'> {
 	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
-	public readonly actions = createWorkbenchActionBar('gte.title');
+	public readonly actions = createWorkbenchActionBar('gte.title', true, WORKBENCH_MENUS['gte.context']);
 	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
 	public readonly detailsActions = createWorkbenchActionBar('gte.details.title');
 	public detailsPlacementInitialized = false;
@@ -23,7 +25,12 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 	public readonly list = new WorkbenchScrollViewport();
 	public readonly projection = new GteCommandProjection();
 	public readonly selected = new GteCommandSnapshot();
-	public readonly visualBounds = create_rect_bounds();
+	public readonly inspectorActions = createWorkbenchActionBar('gte.inspector.content', true);
+	public readonly inspectorBounds = create_rect_bounds();
+	public readonly diagram = new WorkbenchScrollViewport();
+	public readonly diagramAnchor: GteDiagramAnchor = { section: 'origin', offset: 0, fraction: 0, end: false, projectedScroll: undefined };
+	public inspectorPage: 'properties' | 'diagram' = 'properties';
+	private readonly selectionListeners = new Set<() => void>();
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
 	public following = true;
 	public running = false;
@@ -37,13 +44,20 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 		super('gte-debugger', 'gte_debugger', 'GTE', true);
 		this.disposables.add(history.observe());
 	}
+	public onWillChangeSelection(listener: () => void): () => void {
+		this.selectionListeners.add(listener);
+		return () => this.selectionListeners.delete(listener);
+	}
 	public select(sequence: number): void {
 		this.following = false;
 		this.copySelection(sequence);
 	}
 	private copySelection(sequence: number): void {
 		if (sequence === this.selected.sequence) return;
+		for (const listener of this.selectionListeners) listener();
 		this.history.copy(sequence, this.selected);
+		this.diagram.scrollbar.setScroll(0);
+		this.diagramAnchor.section = 'origin'; this.diagramAnchor.offset = 0; this.diagramAnchor.fraction = 0; this.diagramAnchor.end = false; this.diagramAnchor.projectedScroll = undefined;
 		this.selectedPoint = 0; this.detailsView.selectionIndex = 0; this.detailsView.selectionVisible = false; this.detailsView.anchorIndex = 0; this.detailsView.anchorOffset = 0;
 		this.selectionRevision++;
 	}
@@ -51,6 +65,10 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 		this.history.clear(); this.following = true; this.clearSelection();
 	}
 	private clearSelection(): void {
+		if (this.selected.sequence < 0) return;
+		for (const listener of this.selectionListeners) listener();
+		this.diagram.scrollbar.setScroll(0);
+		this.diagramAnchor.section = 'origin'; this.diagramAnchor.offset = 0; this.diagramAnchor.fraction = 0; this.diagramAnchor.end = false; this.diagramAnchor.projectedScroll = undefined;
 		this.selected.sequence = -1; this.selected.image = null; this.selectedPoint = 0;
 		this.detailsView.selectionIndex = 0; this.detailsView.selectionVisible = false; this.detailsView.anchorIndex = 0; this.detailsView.anchorOffset = 0; this.selectionRevision++;
 	}

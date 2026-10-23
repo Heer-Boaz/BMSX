@@ -9,7 +9,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'play.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'window.title' | 'play.title' | 'animation.title' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'window.title' | 'play.title' | 'animation.title' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -40,6 +40,8 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'gte.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'gte.details.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'gpu.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'gpu.inspector.content': readonly WorkbenchMenuCommandItem[];
+	readonly 'gte.inspector.content': readonly WorkbenchMenuCommandItem[];
 	readonly 'assistant.turn': readonly WorkbenchMenuCommandItem[];
 	readonly 'workspaceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'menubar.file': readonly WorkbenchMenuItem[];
@@ -255,11 +257,12 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'romInspector.source', icon: 'source' },
 	],
 	'gpu.title': [
-		{ type: 'command', command: 'gpu.follow' },
-		{ type: 'command', command: 'gpu.view' },
-		{ type: 'command', command: 'gpu.more' },
+		{ type: 'command', command: 'gpu.follow', icon: 'follow' },
+		{ type: 'command', command: 'gpu.details', icon: 'info' },
 	],
+	'gpu.inspector.content': [{ type: 'command', command: 'gpu.view' }],
 	'gpu.context': [
+		{ type: 'command', command: 'gpu.view' },
 		{ type: 'command', command: 'gpu.details' },
 		{ type: 'command', command: 'gpu.goToFrame' },
 		{ type: 'separator' },
@@ -267,14 +270,15 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'gpu.clear' },
 	],
 	'gte.title': [
-		{ type: 'command', command: 'gte.follow' },
-		{ type: 'command', command: 'gte.view' },
-		{ type: 'command', command: 'gte.more' },
+		{ type: 'command', command: 'gte.follow', icon: 'follow' },
+		{ type: 'command', command: 'gte.details', icon: 'info' },
 	],
+	'gte.inspector.content': [{ type: 'command', command: 'gte.view' }],
 	'gte.details.title': [{ type: 'command', command: 'gte.source', icon: 'source' },
 		{ type: 'command', command: 'window.collapse', icon: 'collapse', checkedIcon: 'expand' },
 		{ type: 'command', command: 'window.hide', icon: 'close' }],
 	'gte.context': [
+		{ type: 'command', command: 'gte.view' },
 		{ type: 'command', command: 'gte.details' },
 		{ type: 'command', command: 'gte.source' },
 		{ type: 'command', command: 'gte.goToFrame' },

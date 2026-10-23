@@ -7,10 +7,9 @@ import * as rules from '../../../../machine/ts/render/backend/gx_gpu_render_rule
 import type { GpuOperationRecord, GpuOperationSnapshot, RuntimeGpuHistory } from '../../../runtime/gpu_history';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 
-export type GpuDebugView = 'geometry' | 'uv' | 'color' | 'words';
+export type GpuDebugView = 'geometry' | 'uv' | 'color';
 export type GpuDebugVertex = { packetX: number; packetY: number; x: number; y: number; u: number; v: number; color: number; argb: number; label: string; value: string };
 export type GpuDebugPoint = { x: number; y: number; label: string; value: string };
-export const GPU_RAW_WORDS_PER_PAGE = 64;
 const OPERATION_NAMES: Readonly<Record<number, string>> = {
 	[commands.GX_GPU_COMMAND_DRAW_POLYGON]: 'Polygon', [commands.GX_GPU_COMMAND_DRAW_LINE]: 'Line',
 	[commands.GX_GPU_COMMAND_DRAW_POLYLINE]: 'Polyline segment', [commands.GX_GPU_COMMAND_DRAW_RECTANGLE]: 'Rectangle',
@@ -19,9 +18,6 @@ const OPERATION_NAMES: Readonly<Record<number, string>> = {
 };
 export function gpuOperationName(record: Readonly<GpuOperationRecord>): string {
 	return record.kind === commands.GX_GPU_COMMAND_DRAW_LINE && (record.opcode & 8) !== 0 ? 'Polyline segment' : OPERATION_NAMES[record.kind];
-}
-export function rawPageCount(record: Readonly<GpuOperationRecord>): number {
-	return Math.trunc((record.wordCount + GPU_RAW_WORDS_PER_PAGE - 1) / GPU_RAW_WORDS_PER_PAGE);
 }
 
 /** Incremental metadata projection; no mutable buffer slot is retained. */
@@ -81,7 +77,7 @@ export class GpuDebugPresentation {
 		this.vertices.length = 0; this.points.length = 0; this.edges.length = 0; this.triangles.length = 0;
 		this.textured = false; this.hasColor = false; this.gouraud = false; this.drawingArea = undefined;
 		if (record.sequence < 0) { this.heading = ''; this.summary = ''; this.explanation = ''; return true; }
-		this.heading = `${gpuOperationName(record)} ${formatNumberAsHex(record.opcode, 2)} / ${view === 'uv' ? 'RAW UV' : view === 'color' ? 'SUPPLIED RGB' : view === 'words' ? 'RAW WORDS' : 'DRAW XY / Y DOWN'}`;
+		this.heading = `${gpuOperationName(record)} ${formatNumberAsHex(record.opcode, 2)} / ${view === 'uv' ? 'RAW UV' : view === 'color' ? 'SUPPLIED RGB' : 'DRAW XY / Y DOWN'}`;
 		this.summary = `#${record.sequence} T${record.timeline} | tick ${record.completedTick} | observed ${record.cycles}`;
 		this.explanation = '';
 		const words = record.words, opcode = record.opcode, kind = record.kind;
@@ -131,7 +127,7 @@ export class GpuDebugPresentation {
 		}
 		for (const vertex of this.vertices) {
 			vertex.value = `${vertex.label} XY(${vertex.x},${vertex.y})${this.textured ? ` UV(${vertex.u},${vertex.v})` : ''}`;
-			if (view === 'words' || view === 'color' && (!this.hasColor || !this.gouraud && this.points.length > 0) || view === 'uv' && !this.textured) continue;
+			if (view === 'color' && (!this.hasColor || !this.gouraud && this.points.length > 0) || view === 'uv' && !this.textured) continue;
 			const point = this.pointStorage[this.points.length];
 			point.x = view === 'uv' ? vertex.u : vertex.x; point.y = view === 'uv' ? vertex.v : vertex.y;
 			point.label = vertex.label; point.value = view === 'uv' ? `${vertex.label} UV(${vertex.u},${vertex.v})` : view === 'color'
@@ -154,10 +150,10 @@ export class GpuDebugPresentation {
 		for (let index = 0; index < 4; index++) this.vertex(index, x + (index & 1 ? width : 0), y + (index & 2 ? height : 0), color, 0, 0, 0);
 		this.edges.push(0, 1, 1, 3, 3, 2, 2, 0);
 	}
-	/** Explicit Details formats only one raw page; the Raw words view virtualizes the complete operation. */
-	public details(record: GpuOperationSnapshot, rawPage = 0): readonly InspectedProperty[] {
+	/** Fixed decoded state; the independent Words page virtualizes the complete active operation. */
+	public details(record: GpuOperationSnapshot): readonly InspectedProperty[] {
 		this.properties.length = 0;
-		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'GPU operation', value: `${gpuOperationName(record)} / ${formatNumberAsHex(record.opcode, 2)}`,
+		this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: 'Operation', value: `${gpuOperationName(record)} / ${formatNumberAsHex(record.opcode, 2)}`,
 			description: `Timeline ${record.timeline}, tick ${record.completedTick}; logical start ${record.startCycles}, observed ${record.cycles} cycles. Emitted operation, not completion, presentation or original GP0. Diagram only: no exact raster coverage, historical VRAM or inferred CPU/GTE/asset identity.`, warning: false },
 			{ compact: true, descriptionDisplay: 'disclosure', label: 'Area / offset', value: `${formatNumberAsHex(record.drawingAreaTopLeftWord, 8)} / ${formatNumberAsHex(record.drawingAreaBottomRightWord, 8)} / ${formatNumberAsHex(record.drawingOffsetWord, 8)}`,
 				description: `Latched offset (${gxGpuSigned11(record.drawingOffsetWord)},${rules.gxGpuDrawingOffsetY(record.drawingOffsetWord)}). Polygon/line offsets are integer sums; rectangle origins wrap at signed 11 bits. Fill and transfer operations have their own address rules. Diagram edges do not claim exact raster coverage.`, warning: false },
@@ -186,10 +182,8 @@ export class GpuDebugPresentation {
 		}
 		for (const vertex of this.vertices) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: vertex.label, value: vertex.value,
 			description: `Packet XY (${vertex.packetX},${vertex.packetY})${this.hasColor ? `; supplied RGB (${vertex.color & 255},${vertex.color >>> 8 & 255},${vertex.color >>> 16 & 255})` : ''}. Rectangle/transfer border corners after V0 are diagram extents, not additional packet vertices.`, warning: false });
-		const start = rawPage * GPU_RAW_WORDS_PER_PAGE, end = Math.min(record.wordCount, start + GPU_RAW_WORDS_PER_PAGE);
-		this.properties.push({ compact: true, descriptionDisplay: 'inline', label: 'Raw words', value: `Page ${rawPage + 1}/${rawPageCount(record)} | words ${start}..${end - 1} of ${record.wordCount}`,
-			description: 'This page is bounded. View > Raw words exposes every active word with scrolling and Home/End; unused snapshot capacity is not data.', warning: false });
-		for (let index = start; index < end; index++) this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: `Word[${index}]`, value: formatNumberAsHex(record.words[index], 8), description: `Operation byte offset ${index * 4}. Emitted polyline segments and upload prefixes are not reconstructed original GP0 packets.`, warning: false });
+		this.properties.push({ compact: true, descriptionDisplay: 'disclosure', label: 'Words', value: String(record.wordCount),
+			description: 'View > Words exposes every active word with scrolling and Home/End; unused snapshot capacity is not data. Emitted polyline segments and upload prefixes are not reconstructed original GP0 packets.', warning: false });
 		return this.properties;
 	}
 }

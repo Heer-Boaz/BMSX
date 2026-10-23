@@ -35,6 +35,25 @@ const SCENARIO_STATES: readonly (readonly EditorCommandId[])[] = [
 		'scenarioLab.inspectStop', 'scenarioLab.revealRun', 'scenarioLab.cancel'],
 ];
 
+for (const variant of ['tiny', 'msx'] as const) for (const domain of ['gpu', 'gte'] as const) {
+	test(`${domain} history actions stay bounded and every inspector action is reachable once in ${variant}`, () => {
+		const font = new Font({ variant }), state = createWorkbenchActionBar(`${domain}.title`, true, WORKBENCH_MENUS[`${domain}.context`]);
+		assert.deepEqual(state.items.map(item => item.icon), ['follow', 'info']);
+		const expected = [
+			`${domain}.follow`, `${domain}.view`, `${domain}.details`, `${domain}.goToFrame`, `${domain}.filter`, `${domain}.clear`,
+			...(domain === 'gte' ? ['gte.source'] : []),
+		].sort();
+		for (const width of [384, variant === 'tiny' ? 78 : 118]) {
+			layoutWorkbenchActionBar(state, width - 4, 2, font.lineHeight + 6, text => font.measure(text), font, 4);
+			const primary = state.items.filter(item => item.visible && !item.overflowed);
+			const commands = [...primary.map(item => item.command), ...state.overflow!.items.filter(item => item.type === 'command').map(item => item.command)];
+			assert.deepEqual(commands.sort(), expected, 'real primary and secondary contributions retain each domain command exactly once');
+			for (const item of [...primary, state.overflow!.button]) assert.ok(item.bounds.left >= 4 && item.bounds.right <= width - 4);
+			assert.equal(state.overflow!.button.visible, true);
+		}
+	});
+}
+
 for (const variant of ['tiny', 'msx'] as const) for (const menu of Object.keys(CAPTIONS) as (keyof typeof CAPTIONS)[]) {
 	test(`${menu} retains a bounded ordered primary prefix and reachable secondary commands in ${variant}`, () => {
 		const state = createWorkbenchActionBar(menu, true), font = new Font({ variant });
