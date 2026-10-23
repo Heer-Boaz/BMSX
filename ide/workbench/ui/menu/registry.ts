@@ -239,6 +239,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'romInspector.collision' },
 	],
 	'romInspector.title': [
+		{ type: 'command', command: 'romInspector.key', icon: 'info' },
 		{ type: 'command', command: 'romInspector.assets' },
 		{ type: 'command', command: 'romInspector.structure' },
 		{ type: 'command', command: 'romInspector.code' },

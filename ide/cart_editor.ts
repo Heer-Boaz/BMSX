@@ -502,7 +502,7 @@ export class RuntimeCartEditor implements CartEditor {
 			play_session: () => new PlayEditorPane(this.resourcePanel, this.commands, this.contextMenu, this.navigation),
 			animation: () => new AnimationEditorPane(this.resourcePanel, this.animations, this.commands, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			host_error: () => new HostErrorPane(this.resourcePanel),
-			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
+			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu),
 			gpu_debugger: () => new GpuDebuggerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			gte_debugger: () => new GteDebuggerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, this.paneSurface, getWorkbenchWorkArea),

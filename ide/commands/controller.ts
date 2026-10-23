@@ -219,7 +219,7 @@ export class IdeCommandController {
 			case 'window.collapse': case 'window.hide':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
-			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
+			case 'romInspector.key': case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
 			case 'gpu.follow': case 'gpu.view': case 'gpu.details': case 'gpu.goToFrame': case 'gpu.filter': case 'gpu.clear': case 'gpu.more':
@@ -478,7 +478,7 @@ export class IdeCommandController {
 			case 'window.collapse': case 'window.hide':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
-			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
+			case 'romInspector.key': case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
 			case 'gpu.follow': case 'gpu.view': case 'gpu.details': case 'gpu.goToFrame': case 'gpu.filter': case 'gpu.clear': case 'gpu.more':

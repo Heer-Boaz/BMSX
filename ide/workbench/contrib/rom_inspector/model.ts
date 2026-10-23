@@ -8,6 +8,7 @@ import { indexBlua32FunctionInstructions } from '../../../../toolchain/ts/rompac
 import { inspectRom, romAssetByteLength, romAssetRanges, type RomAssetRangeKind, type RomInspectionSection } from '../../../../toolchain/ts/rompack/inspection';
 import type { ResourceDomain } from '../../../common/resource';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
+import { ROM_CATEGORIES, romAssetCategory, romInspectionSectionCategory, type RomInspectionCategory } from './colors';
 
 export type RomInspectorSnapshot = {
 	readonly domain: ResourceDomain;
@@ -27,7 +28,13 @@ export type RomInspectorByteRange = {
 	readonly start: number;
 	readonly end: number;
 };
+export type RomInspectorKeyEntry = {
+	readonly category: RomInspectionCategory;
+	readonly byteLength: number;
+	readonly sizeText: string;
+};
 export type RomInspectorRow = {
+	readonly category: RomInspectionCategory;
 	readonly label: string;
 	readonly type: string;
 	readonly byteLength: number;
@@ -46,6 +53,7 @@ export class RomInspectorModel {
 	public readonly inspection;
 	public readonly assets: readonly RomInspectorRow[];
 	public readonly sections: readonly RomInspectorRow[];
+	public readonly keyEntries: readonly RomInspectorKeyEntry[];
 	public readonly rows: RomInspectorRow[] = [];
 	public mode: RomInspectorMode = 'assets';
 	public filter = '';
@@ -65,19 +73,33 @@ export class RomInspectorModel {
 		this.inspection = inspectRom(snapshot.rom, snapshot.header, snapshot.assets);
 		this.assets = snapshot.assets.map(asset => {
 			const ranges = asset.op === 'delete' ? NO_RANGES : romAssetRanges(asset), first = ranges[0];
-			const byteLength = romAssetByteLength(asset), sourcePath = asset.source_path;
-			return { label: asset.resid, type: asset.type, byteLength, start: first?.start, end: first?.end, ranges, asset, sourcePath,
-				searchText: `${asset.resid} ${asset.type} ${sourcePath ?? ''}`.toLowerCase(), sizeText: formatByteSize(byteLength) };
+			const byteLength = romAssetByteLength(asset), sourcePath = asset.source_path, category = romAssetCategory(asset);
+			return { label: asset.resid, type: asset.type, category, byteLength, start: first?.start, end: first?.end, ranges, asset, sourcePath,
+				searchText: `${asset.resid} ${asset.type} ${category.label} ${sourcePath ?? ''}`.toLowerCase(), sizeText: formatByteSize(byteLength) };
 		});
 		this.sections = this.inspection.sections.map(section => this.sectionRow(section));
+		const entries: { category: RomInspectionCategory; byteLength: number; sizeText: string }[] = [];
+		const byCategory = new Map<RomInspectionCategory, typeof entries[number]>();
+		for (const row of this.sections) {
+			if (row.byteLength === 0) continue;
+			let entry = byCategory.get(row.category);
+			if (entry === undefined) {
+				entry = { category: row.category, byteLength: 0, sizeText: '' };
+				byCategory.set(row.category, entry); entries.push(entry);
+			}
+			entry.byteLength += row.byteLength;
+		}
+		entries.sort((left, right) => right.byteLength - left.byteLength || ENTRY_ORDER.compare(left.category.label, right.category.label));
+		for (const entry of entries) entry.sizeText = formatByteSize(entry.byteLength);
+		this.keyEntries = entries;
 		this.project();
 	}
 	private sectionRow(section: RomInspectionSection): RomInspectorRow {
 		const label = section.asset === undefined ? section.kind : `${section.asset.resid} / ${section.buffer}`;
-		const byteLength = section.end - section.start;
-		return { label, type: section.kind, byteLength, start: section.start, end: section.end,
+		const byteLength = section.end - section.start, category = romInspectionSectionCategory(section);
+		return { label, type: category.id, category, byteLength, start: section.start, end: section.end,
 			ranges: [{ kind: section.buffer ?? section.kind, start: section.start, end: section.end }], asset: section.asset,
-			sourcePath: section.asset?.source_path, searchText: `${label} ${section.kind}`.toLowerCase(), sizeText: formatByteSize(byteLength) };
+			sourcePath: section.asset?.source_path, searchText: `${label} ${category.id} ${category.label} ${section.kind}`.toLowerCase(), sizeText: formatByteSize(byteLength) };
 	}
 	public get selection(): RomInspectorRow | undefined { return this.selectedRow; }
 	public get ranges(): readonly RomInspectorByteRange[] { return this.selectedRow?.ranges ?? NO_RANGES; }
@@ -108,7 +130,7 @@ export class RomInspectorModel {
 		this.functions = code.layout.functions.map<RomInspectorRow>((fn, functionIndex) => {
 			const label = code.symbols === null ? formatNumberAsHex(fn.address, 8) : code.symbols.metadata.functionIds[functionIndex];
 			const sourcePath = code.symbols === null ? undefined : blua32SourceRangeAtPc(code.symbols, code.layout.header.textAddress, fn.codeAddress)?.path;
-			return { label, type: 'function', byteLength: fn.codeByteCount, start: fn.codeAddress - base, end: fn.codeAddress + fn.codeByteCount - base,
+			return { label, type: 'function', category: ROM_CATEGORIES.blua32, byteLength: fn.codeByteCount, start: fn.codeAddress - base, end: fn.codeAddress + fn.codeByteCount - base,
 				ranges: [{ kind: 'instructions', start: fn.codeAddress - base, end: fn.codeAddress + fn.codeByteCount - base }],
 				functionIndex, sourcePath, searchText: `${label} ${sourcePath ?? ''}`.toLowerCase(), sizeText: formatByteSize(fn.codeByteCount) };
 		});
@@ -146,7 +168,7 @@ export class RomInspectorModel {
 		const range = this.selectedRange;
 		if (range !== undefined) this.properties.push({ warning: false, label: `Selected ${range.kind} range`, value: `${formatNumberAsHex(range.start, 8)} .. ${formatNumberAsHex(range.end, 8)}`, description: 'File offsets; end exclusive' });
 		if (row.sourcePath !== undefined) this.properties.push({ warning: false, label: 'Authored source', value: row.sourcePath, description: 'Current source may differ' });
-		if (row.type === 'header') {
+		if (range?.kind === 'header') {
 			const header = this.snapshot.header;
 			this.properties.push(
 				{ warning: false, label: 'Header', value: `${header.headerSize} bytes`, description: '' },

@@ -96,6 +96,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'gte.filter': { category: 'GTE', title: 'Filter Commands', shortTitle: 'Filter' },
 	'gte.clear': { category: 'GTE', title: 'Clear Command History', shortTitle: 'Clear' },
 	'gte.more': { category: 'GTE', title: 'More Actions', shortTitle: 'More' },
+	'romInspector.key': { category: 'ROM Inspector', title: 'Show Map Key', shortTitle: 'Key' },
 	'romInspector.assets': { category: 'ROM Inspector', title: 'Show Assets', shortTitle: 'Assets' },
 	'romInspector.structure': { category: 'ROM Inspector', title: 'Show ROM Layout', shortTitle: 'Layout' },
 	'romInspector.code': { category: 'ROM Inspector', title: 'Browse Disassembly', shortTitle: 'Code' },

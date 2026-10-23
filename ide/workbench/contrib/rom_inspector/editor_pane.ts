@@ -19,6 +19,9 @@ import { api } from '../../../runtime/overlay_api';
 import { resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
@@ -26,6 +29,7 @@ import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
+import { WorkbenchTooltip } from '../../ui/tooltip';
 import { WorkbenchImageControl } from '../../ui/image_control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { EditorNavigationController } from '../resources/navigation';
@@ -33,8 +37,9 @@ import type { ResourcePanelController } from '../resources/panel/controller';
 import type { RomInspectorInput } from './editor_input';
 import type { RomInspectorByteRange, RomInspectorSort } from './model';
 import { drawRomInspector, RomInspectorPresentation } from './presentation';
+import { RomMapKeyWindow } from './key_window';
 
-const COMMANDS = ['romInspector.assets', 'romInspector.structure', 'romInspector.code', 'romInspector.sort', 'romInspector.source', 'romInspector.content', 'romInspector.zoom', 'romInspector.collision'] as const;
+const COMMANDS = ['romInspector.key', 'romInspector.assets', 'romInspector.structure', 'romInspector.code', 'romInspector.sort', 'romInspector.source', 'romInspector.content', 'romInspector.zoom', 'romInspector.collision'] as const;
 const HORIZONTAL_NAVIGATION = ['ArrowLeft', 'ArrowRight'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
 const SORTS: { label: string; description: string; detail: string; sort: RomInspectorSort; descending: boolean }[] = [
@@ -64,6 +69,8 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	private readonly horizontal = new ScrollbarPointerControl(pointerCapture);
 	private readonly inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly presentation = new RomInspectorPresentation();
+	private readonly actionTooltip = new WorkbenchTooltip();
+	private key: RomMapKeyWindow | undefined;
 	private readonly filter = new TextField(this.focusTarget, { allowSpace: true, singleLine: true });
 	private readonly filterViewport = new SingleLineFieldViewport();
 	private readonly filterPointer = {
@@ -82,13 +89,17 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	private imageActive = false;
 	private zoomMode: 'fit' | number | undefined;
 	private freshLayout = true;
-	public constructor(resources: ResourcePanelController, commands: EditorCommandRunner,
+	public constructor(resources: ResourcePanelController, private readonly commands: EditorCommandRunner,
 		private readonly sources: RuntimeSourceState, private readonly navigation: EditorNavigationController,
-		private readonly quickInput: QuickInputController) {
+		private readonly quickInput: QuickInputController, contextMenu: ContextMenuController,
+		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface,
+		private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.contentActions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget,
-			() => (this.input.showingImage ? this.image : this.bytes).focusTarget.focus());
+			() => (this.input.showingImage ? this.image : this.bytes).focusTarget.focus(), contextMenu);
+		this.actionTooltip.attach(surfaces, owner, getWorkArea);
+		this.actions.onDidOpenOverflow = this.contentActions.onDidOpenOverflow = () => this.actionTooltip.hide();
 		for (const target of [this.focusTarget, this.inspector.focusTarget, this.filter.focusTarget]) for (const command of COMMANDS)
 			target.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.list.focusTarget.commandContext = this.focusTarget;
@@ -106,6 +117,9 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	protected override activate(): void {
 		super.activate();
 		this.boundRevision = -1; this.boundContentRevision = -1; this.zoomMode = undefined; this.freshLayout = true; this.presentation.reset();
+		this.key = new RomMapKeyWindow(this.input, this.commands, this.surfaces, this.owner, this.list.focusTarget, this.getWorkArea);
+		for (const target of [this.key.window.focusTarget, this.key.scroll.focusTarget]) for (const command of COMMANDS)
+			target.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.actions.setInput(this.input.actions, this.focusTarget);
 		this.contentActions.setInput(this.input.contentActions, this.focusTarget);
 		this.image.setInput(this.input.imageView);
@@ -135,12 +149,13 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		if (command === 'romInspector.source') return this.source() !== undefined;
 		if (command === 'romInspector.sort') return this.input.model.mode !== 'structure';
 		if (command === 'romInspector.code') return this.input.snapshot.header.blua32ImageByteCount !== 0;
-		return command === 'romInspector.assets' || command === 'romInspector.structure';
+		return command === 'romInspector.key' || command === 'romInspector.assets' || command === 'romInspector.structure';
 	}
 	public execute(command: EditorCommandId): void {
 		if (!this.isEnabled(command)) return;
 		const input = this.input;
 		switch (command) {
+			case 'romInspector.key': this.key!.show(); break;
 			case 'romInspector.assets': input.model.setMode('assets'); input.list.scrollbar.setScroll(0); break;
 			case 'romInspector.structure': input.model.setMode('structure'); input.list.scrollbar.setScroll(0); break;
 			case 'romInspector.code': input.model.setMode('code'); input.list.scrollbar.setScroll(0); break;
@@ -232,14 +247,21 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 			this.list.lineStep = row * 2 + 4; this.bytes.lineStep = row;
 		}
 		if (layoutChanged || contentActionsChanged) layoutWorkbenchActionBar(input.contentActions, right - 4,
-			input.detailsBounds.bottom + 2, input.detailsBounds.bottom + row + 6, measureText, layout.font!.renderFont(), left + 4);
+			input.detailsBounds.bottom + 2, input.detailsBounds.bottom + row + 6, measureText, layout.font!.renderFont(), input.bytes.bounds.left + 4);
 		this.filterViewport.update(this.filter, input.filterBounds.right - input.filterBounds.left - 6,
 			editorViewState.inlineFieldMetricsRef, layout.font!.renderFont());
 		this.inspector.layout(layout.font!.renderFont(), measureTextRange, measureText, input.detailsBounds);
 		this.inspector.update();
 		this.actions.update(); this.contentActions.update();
+		const hint = input.actions.pressedCommand !== null || input.contentActions.pressedCommand !== null ? undefined
+			: input.actions.hoveredCommand !== null ? this.actions.tooltipItem
+			: input.contentActions.hoveredCommand !== null ? this.contentActions.tooltipItem
+			: this.actions.tooltipItem ?? this.contentActions.tooltipItem;
+		if (hint === undefined) this.actionTooltip.hide();
+		else this.actionTooltip.show(hint.tooltip, hint.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.getWorkArea());
 		this.presentation.update(input, layoutChanged, contentActionsChanged);
 		input.horizontal.layout(input.horizontalTrack, this.presentation.contentWidth, input.bytes.bounds.right - input.bytes.bounds.left, input.horizontal.getScroll());
+		this.key!.update();
 	}
 	private navigateBytes(player: KeyInputEvent): boolean {
 		for (const key of HORIZONTAL_NAVIGATION) {
@@ -333,6 +355,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		api.popClipRect();
 	}
 	public override clearInput(): void {
+		this.key!.dispose(); this.key = undefined; this.actionTooltip.hide();
 		this.horizontal.cancelPointer();
 		this.unbindFilterChange();
 		this.filter.focusTarget.release();
@@ -340,6 +363,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		super.clearInput();
 	}
 	public override dispose(): void {
+		this.key?.dispose(); this.key = undefined; this.actionTooltip.detach();
 		this.horizontal.cancelPointer();
 		this.inspector.dispose(); this.contentActions.dispose(); this.image.dispose(); this.actions.dispose(); this.list.dispose(); this.bytes.dispose();
 		this.unbindFilterKeyboard();

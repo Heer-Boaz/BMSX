@@ -9,6 +9,7 @@ import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { Scrollbar } from '../../ui/scrollbar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import { WorkbenchImageViewport } from '../../ui/image_viewport';
+import { WorkbenchWindowModel } from '../../ui/window/model';
 import { RomInspectorModel, type RomInspectorSnapshot, type RomInspectorRow } from './model';
 
 let snapshotSequence = 0;
@@ -27,8 +28,12 @@ export class RomInspectorInput extends ReadonlyEditorInput<`rom-inspector:${numb
 	private previewRow: RomInspectorRow | undefined;
 	private previewAsset: RomAsset | undefined;
 	private readonly texture: RomTextureDecodeCache = {};
-	public readonly actions = createWorkbenchActionBar('romInspector.title');
-	public readonly contentActions = createWorkbenchActionBar('romInspector.content');
+	public readonly actions = createWorkbenchActionBar('romInspector.title', true);
+	public readonly keyWindow = new WorkbenchWindowModel({ left: 0, top: 0, right: 0, bottom: 0 }, 0, 0);
+	public readonly keyActions = createWorkbenchActionBar('window.title');
+	public readonly keyViewport = new WorkbenchScrollViewport();
+	public keyPlacementInitialized = false;
+	public readonly contentActions = createWorkbenchActionBar('romInspector.content', true);
 	public readonly list = new WorkbenchScrollViewport();
 	public readonly bytes = new WorkbenchScrollViewport();
 	public readonly horizontal = new Scrollbar('horizontal');

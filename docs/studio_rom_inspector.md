@@ -50,8 +50,23 @@ including the symbols image. The categorical palette is stable across UI themes;
 status, selection and syntax colors do not classify ROM bytes. Its stripe remains
 proportional to file offsets: subpixel payloads are not inflated, and logical
 atlas-image metadata does not acquire fabricated pixel spans. Code browses one
-function at a time. Source opens the existing editor for a resolvable authored
-resource; it does not edit packed bytes. The content picker keeps the selected asset while
+function at a time. Layout rows use the same category names and swatches as the
+map rather than a generic asset label.
+
+The info action or `ROM Inspector: Show Map Key` opens an optional modeless key.
+It lists the snapshot's present physical categories, largest first, with color,
+name and stored byte amount. Total accounts for the complete image exactly once.
+Subpixel categories remain in the key; logical atlas metadata does not become
+additional image storage. The key is closed by default and does not reserve a
+permanent strip of workspace. Its measured minimum size follows the active font;
+its list scrolls with the keyboard and wheel. Existing window controls move,
+resize, collapse and close it. Escape returns focus to the ROM list without
+closing the key. Placement, open/collapse state and scroll belong to this
+snapshot input, so switching tabs does not retarget or reconstruct its subject.
+The ROM title and content toolbars use the shared responsive overflow.
+
+Source opens the existing editor for a resolvable authored resource; it does not
+edit packed bytes. The content picker keeps the selected asset while
 switching between its preview and each actual buffer (data, metadata, model
 texture, collision). A TOC deletion record is an operation, not an empty image:
 it has no preview or stored byte range.
@@ -80,6 +95,10 @@ not runtime profiling. No guest instructions, devices or C++ runtime behavior
 change for this view.
 
 ## References
+
+- [DevTools chart key](https://github.com/ChromeDevTools/devtools-frontend/blob/7be69dfa5dd9cdd753ef832a4cf55b8f253fb6aa/front_end/ui/legacy/components/perf_ui/PieChart.ts):
+  shared category color, name, amount and total, with keyboard access independent
+  of pointing at a chart pixel.
 
 - [Android Studio APK Analyzer](https://developer.android.com/studio/debug/apk-analyzer):
   inspect the built artifact alongside source and expose size contributors.

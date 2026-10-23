@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RomInspectorModel } from '../../ide/workbench/contrib/rom_inspector/model';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
+import { ROM_CATEGORIES } from '../../ide/workbench/contrib/rom_inspector/colors';
 import { parseCartHeader, type CartRomHeader } from '../../machine/ts/rompack/format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -111,6 +112,8 @@ test('Layout keeps its selected physical section instead of opening the asset pr
 	assert.deepEqual(model.selectedRange, { kind: 'header', start: 0, end: 72 });
 	model.select(model.rows.findIndex(row => row.start === 88));
 	assert.strictEqual(model.selection.asset, modelAsset);
+	assert.equal(model.selection.type, 'texture', 'Layout describes the actual model-texture buffer, not the generic asset container');
+	assert.equal(model.selection.category, ROM_CATEGORIES.texture);
 	assert.deepEqual(model.ranges, [{ kind: 'model-texture', start: 88, end: 104 }]);
 	assert.equal(model.canPreviewImage, false);
 });
@@ -127,6 +130,8 @@ test('empty code filters and non-code selections release instruction indexes and
 	const model = new RomInspectorModel({ domain: -1, label: 'System', rom: linked.romBytes, header: parseCartHeader(linked.romBytes), assets: [] });
 	model.setMode('code');
 	model.select(model.rows.findIndex(row => row.functionIndex === 1));
+	assert.equal(model.selection.type, 'function');
+	assert.equal(model.selection.category, ROM_CATEGORIES.blua32, 'function rows share program category without becoming physical map sections');
 	const expected = [linked.image.functions[1].codeAddress, linked.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES];
 	assert.deepEqual([...model.instructions], expected);
 	assert.equal(model.selectedRange.kind, 'instructions');

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
+import { formatByteSize } from '../../machine/ts/common/byte_hex_string';
 import { write_rect_bounds } from '../../machine/ts/common/rect';
 import type { CartRomHeader } from '../../machine/ts/rompack/format';
 import type { AssetType } from '../../machine/ts/rompack/toc';
@@ -8,7 +9,7 @@ import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import { RomInspectorPresentation, drawRomInspector } from '../../ide/workbench/contrib/rom_inspector/presentation';
-import { romInspectionSectionColor } from '../../ide/workbench/contrib/rom_inspector/colors';
+import { ROM_CATEGORIES, romAssetCategory, romInspectionSectionCategory, type RomInspectionCategoryId } from '../../ide/workbench/contrib/rom_inspector/colors';
 import * as palette from '../../ide/theme/tokens';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { SingleLineFieldViewport } from '../../ide/editor/ui/inline/single_line_viewport';
@@ -33,6 +34,12 @@ const SECTION_COLORS: Record<Exclude<RomInspectionSection['kind'], 'asset'>, num
 	header: palette.THEME_TOKEN_ROM_HEADER, manifest: palette.THEME_TOKEN_ROM_MANIFEST,
 	toc: palette.THEME_TOKEN_ROM_TOC, metadata: palette.THEME_TOKEN_ROM_METADATA,
 	blua32: palette.THEME_TOKEN_ROM_BLUA32, unreferenced: palette.THEME_TOKEN_ROM_UNREFERENCED,
+};
+const CATEGORY_LABELS: Record<RomInspectionCategoryId, string> = {
+	image: 'Image', texture: 'Texture', audio: 'Audio', data: 'Data', bin: 'Binary', collision_shape: 'Collision',
+	romlabel: 'ROM label', model: 'Model', aem: 'Event map', lua: 'Lua', code: 'Code',
+	header: 'Header', manifest: 'Manifest', toc: 'TOC', metadata: 'Metadata', blua32: 'BLua32',
+	unreferenced: 'Unreferenced', symbols: 'Symbols',
 };
 const header: CartRomHeader = {
 	headerSize: 72, manifestOffset: 72, manifestLength: 128,
@@ -97,17 +104,17 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 		const f = fixture(t); colors.setIdeThemeVariant(theme); f.layout(variant);
 		for (const type of ASSET_TYPES) {
 			const asset = f.assets.find(asset => asset.resid === type)!;
-			assert.equal(romInspectionSectionColor({ kind: 'asset', buffer: 'data', start: asset.start!, end: asset.end!, asset }), ASSET_COLORS[type]);
+			assert.equal(romInspectionSectionCategory({ kind: 'asset', buffer: 'data', start: asset.start!, end: asset.end!, asset }).color, ASSET_COLORS[type]);
 		}
 		for (const kind of ['header', 'manifest', 'toc', 'metadata', 'blua32', 'unreferenced'] as const)
-			assert.equal(romInspectionSectionColor({ kind, start: 0, end: 16 }), SECTION_COLORS[kind]);
+			assert.equal(romInspectionSectionCategory({ kind, start: 0, end: 16 }).color, SECTION_COLORS[kind]);
 		const model = f.assets.find(asset => asset.type === 'model')!;
-		assert.equal(romInspectionSectionColor({ kind: 'asset', buffer: 'model-texture', asset: model, start: 3328, end: 3520 }), ASSET_COLORS.texture);
-		assert.equal(romInspectionSectionColor({ kind: 'asset', buffer: 'collision', asset: model, start: 3520, end: 3712 }), ASSET_COLORS.collision_shape);
+		assert.equal(romInspectionSectionCategory({ kind: 'asset', buffer: 'model-texture', asset: model, start: 3328, end: 3520 }).color, ASSET_COLORS.texture);
+		assert.equal(romInspectionSectionCategory({ kind: 'asset', buffer: 'collision', asset: model, start: 3520, end: 3712 }).color, ASSET_COLORS.collision_shape);
 		const symbols = f.assets.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
-		assert.equal(romInspectionSectionColor({ kind: 'asset', buffer: 'data', asset: symbols, start: 3712, end: 3968 }), palette.THEME_TOKEN_ROM_SYMBOLS);
-		assert.equal(romInspectionSectionColor({ kind: 'asset', buffer: 'data', start: 0, end: 16,
-			asset: { resid: BLUA32_SYMBOLS_IMAGE_ID + '.source', type: 'bin' } }), ASSET_COLORS.bin, 'similar text is not the exact retained symbols asset');
+		assert.equal(romInspectionSectionCategory({ kind: 'asset', buffer: 'data', asset: symbols, start: 3712, end: 3968 }).color, palette.THEME_TOKEN_ROM_SYMBOLS);
+		assert.equal(romInspectionSectionCategory({ kind: 'asset', buffer: 'data', start: 0, end: 16,
+			asset: { resid: BLUA32_SYMBOLS_IMAGE_ID + '.source', type: 'bin' } }).color, ASSET_COLORS.bin, 'similar text is not the exact retained symbols asset');
 		const tokens = [...Object.values(ASSET_COLORS), ...Object.values(SECTION_COLORS), palette.THEME_TOKEN_ROM_SYMBOLS];
 		assert.equal(new Set(tokens.map(palette.resolveThemeTokenColor)).size, 18, 'all category meanings retain distinct colors');
 		for (const token of tokens) assert.equal(palette.resolveThemeTokenColor(token) >>> 24, 255, 'underlying content cannot change category ink');
@@ -125,7 +132,7 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 			const expected = physical.flatMap(section => {
 				const left = map.left + Math.trunc(section.start / f.input.snapshot.rom.length * mapWidth);
 				const right = map.left + Math.trunc(section.end / f.input.snapshot.rom.length * mapWidth);
-				return right > left ? [{ left, right, color: romInspectionSectionColor(section) }] : [];
+				return right > left ? [{ left, right, color: romInspectionSectionCategory(section).color }] : [];
 			});
 			assert.deepEqual(f.presentation.map, expected);
 			const rects = f.draw();
@@ -146,6 +153,7 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 test('idle, theme changes and table projections retain the existing physical map objects without remeasurement', t => {
 	const f = fixture(t); f.presentation.update(f.input, true);
 	const map = f.presentation.map, entries = map.slice(), values = map.map(segment => ({ ...segment }));
+	const key = f.input.model.keyEntries, keyEntries = key.slice();
 	const sections = f.input.model.inspection.sections;
 	let measurements = 0;
 	const font = editorViewState.font, measure = font.measure.bind(font), advance = font.advance.bind(font);
@@ -153,6 +161,8 @@ test('idle, theme changes and table projections retain the existing physical map
 	t.mock.method(font, 'advance', (text: string) => { measurements++; return advance(text); });
 	for (let frame = 0; frame < 1000; frame++) f.presentation.update(f.input, false);
 	assert.equal(measurements, 0);
+	assert.equal(f.input.model.keyEntries, key);
+	assert.ok(key.every((entry, index) => entry === keyEntries[index]));
 	for (const theme of ['dark', 'light']) {
 		colors.setIdeThemeVariant(theme); f.presentation.update(f.input, false);
 		assert.equal(f.presentation.map, map); assert.deepEqual(map, values);
@@ -164,5 +174,69 @@ test('idle, theme changes and table projections retain the existing physical map
 		assert.equal(f.input.model.inspection.sections, sections);
 		assert.equal(f.presentation.map, map); assert.deepEqual(map, values);
 		assert.ok(map.every((segment, index) => segment === entries[index]));
+		assert.equal(f.input.model.keyEntries, key);
+		assert.ok(key.every((entry, index) => entry === keyEntries[index]));
 	}
+});
+
+test('one immutable category catalog drives logical assets, meaningful Layout types and the byte key', t => {
+	const f = fixture(t), model = f.input.model;
+	for (const category of Object.values(ROM_CATEGORIES)) assert.equal(category.label, CATEGORY_LABELS[category.id]);
+	for (const row of model.assets) {
+		assert.equal(row.category, romAssetCategory(row.asset!));
+		assert.equal(row.type, row.asset!.type, 'the logical TOC type stays its original representation');
+	}
+	for (let index = 0; index < model.sections.length; index++) {
+		const row = model.sections[index], section = model.inspection.sections[index], category = romInspectionSectionCategory(section);
+		assert.equal(category, ROM_CATEGORIES[category.id]);
+		assert.equal(row.category, category); assert.equal(row.type, category.id);
+		assert.equal(row.asset, section.asset);
+		assert.deepEqual(row.ranges, [{ kind: section.buffer ?? section.kind, start: section.start, end: section.end }]);
+		assert.ok(row.searchText.includes(category.label.toLowerCase()), 'Layout search must include its displayed semantic type');
+	}
+	assert.equal(romAssetCategory({ resid: BLUA32_SYMBOLS_IMAGE_ID, type: 'bin' }), ROM_CATEGORIES.symbols);
+	assert.equal(romAssetCategory({ resid: BLUA32_SYMBOLS_IMAGE_ID + '.source', type: 'bin' }), ROM_CATEGORIES.bin);
+	const bytes = new Map<typeof ROM_CATEGORIES.header, number>();
+	for (const section of model.inspection.sections) if (section.end !== section.start) {
+		const category = romInspectionSectionCategory(section);
+		bytes.set(category, (bytes.get(category) ?? 0) + section.end - section.start);
+	}
+	assert.equal(model.keyEntries.length, bytes.size);
+	assert.equal(new Set(model.keyEntries.map(entry => entry.category)).size, model.keyEntries.length);
+	for (let index = 0; index < model.keyEntries.length; index++) {
+		const entry = model.keyEntries[index];
+		assert.equal(entry.category, ROM_CATEGORIES[entry.category.id]);
+		assert.equal(entry.byteLength, bytes.get(entry.category));
+		assert.equal(entry.sizeText, formatByteSize(entry.byteLength));
+		assert.ok(entry.byteLength > 0);
+		if (index > 0) assert.ok(model.keyEntries[index - 1].byteLength >= entry.byteLength);
+	}
+	assert.equal(model.keyEntries.reduce((sum, entry) => sum + entry.byteLength, 0), f.input.snapshot.rom.length);
+	model.setMode('structure'); model.filter = ROM_CATEGORIES.texture.label; model.project();
+	assert.ok(model.rows.some(row => row.asset?.type === 'model' && row.ranges[0].kind === 'model-texture'));
+	assert.ok(model.rows.every(row => row.category === ROM_CATEGORIES.texture));
+	f.presentation.update(f.input, true);
+	assert.ok(f.presentation.labels.every(row => row.detail.startsWith(ROM_CATEGORIES.texture.label)),
+		'the actual Layout projection must show Texture, not asset or its owning Model type');
+	const source = model.rows[0], range = model.selectedRange;
+	model.sort = 'size'; model.descending = true; model.project();
+	assert.equal(model.rows[0], source); assert.equal(model.selectedRange, range, 'sorting Layout cannot retarget the original physical range');
+});
+
+test('the byte key includes genuine subpixel payloads but not zero-only, metadata-only or deleted logical types', t => {
+	const f = fixture(t);
+	const assets: RomAsset[] = [
+		{ resid: 'zero-image', type: 'image', start: 512, end: 512 },
+		{ resid: 'tiny-audio', type: 'audio', start: 513, end: 514 },
+		{ resid: 'metadata-only-model', type: 'model', metabuffer_start: 4096, metabuffer_end: 4128 },
+		{ resid: 'removed-texture', type: 'texture', op: 'delete' },
+	];
+	finalizePackedRomAssets(assets);
+	const input = new RomInspectorInput({ ...f.input.snapshot, assets }); t.after(() => input.dispose());
+	const entries = input.model.keyEntries;
+	assert.equal(entries.find(entry => entry.category === ROM_CATEGORIES.audio)!.byteLength, 1);
+	for (const category of [ROM_CATEGORIES.image, ROM_CATEGORIES.model, ROM_CATEGORIES.texture])
+		assert.ok(!entries.some(entry => entry.category === category), 'logical type membership is not physical byte attribution');
+	assert.equal(entries.find(entry => entry.category === ROM_CATEGORIES.metadata)!.byteLength, header.metadataLength);
+	assert.equal(entries.reduce((sum, entry) => sum + entry.byteLength, 0), input.snapshot.rom.length);
 });

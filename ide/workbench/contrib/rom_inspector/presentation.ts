@@ -9,11 +9,12 @@ import { drawSingleLineField } from '../../../editor/ui/inline/single_line_rende
 import { api } from '../../../runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { RomInspectorInput } from './editor_input';
-import { romInspectionSectionColor } from './colors';
+import { romInspectionSectionCategory } from './colors';
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 
 /** Bounded, visible-row formatting cache. Paint consumes strings, never reparses ROM data. */
 export class RomInspectorPresentation {
-	public readonly labels: { index: number; name: string; detail: string; size: string; sizeWidth: number }[] = [];
+	public readonly labels: { index: number; name: string; detail: string; categoryColor: number; size: string; sizeWidth: number }[] = [];
 	public readonly lines: string[] = [];
 	public readonly map: { left: number; right: number; color: number }[] = [];
 	public firstLine = 0;
@@ -43,7 +44,8 @@ export class RomInspectorPresentation {
 			for (let index = first; index < end; index++) {
 				const row = model.rows[index], sizeWidth = measureText(row.sizeText);
 				this.labels.push({ index, name: truncateMeasuredText(row.label, width - sizeWidth - 12, measureTextRange), size: row.sizeText, sizeWidth,
-					detail: truncateMeasuredText(`${row.type}${row.start === undefined ? '' : `  ${formatNumberAsHex(row.start, 8)}`}`, width - 8, measureTextRange) });
+					categoryColor: row.category.color,
+					detail: truncateMeasuredText(`${row.functionIndex === undefined ? row.category.label : 'Function'}${row.start === undefined ? '' : `  ${formatNumberAsHex(row.start, 8)}`}`, width - WORKBENCH_ICON_SIZE - 12, measureTextRange) });
 			}
 			this.listFirst = first; this.listEnd = end;
 		}
@@ -72,15 +74,15 @@ export class RomInspectorPresentation {
 			this.contentFirst = contentFirst; this.contentEnd = contentEnd;
 		}
 		if (changed) {
-			const titleRight = input.actions.items.find(item => item.visible)?.bounds.left ?? layout.right;
+			const titleRight = input.actions.bounds.left;
 			this.title = truncateMeasuredText(input.snapshot.label, titleRight - layout.left - 8, measureTextRange);
-			this.status = `${formatByteSize(input.snapshot.rom.byteLength)} | ${model.rows.length} ${model.mode === 'code' ? 'functions' : model.mode} | ROM snapshot`;
+			this.status = `${formatByteSize(input.snapshot.rom.byteLength)} | ${model.rows.length} ${model.mode === 'code' ? 'functions' : model.mode === 'assets' ? 'assets' : 'sections'}`;
 			const range = model.selectedRange;
 			const map = input.mapBounds, scale = (map.right - map.left) / input.snapshot.rom.byteLength;
 			this.selectedSpan = range === undefined ? undefined : { left: map.left + range.start * scale, right: map.left + range.end * scale };
 		}
 		if (contentChanged || contentLayoutChanged) {
-			const titleRight = input.contentActions.items.find(item => item.visible)?.bounds.left ?? bytes.bounds.right;
+			const titleRight = input.contentActions.bounds.left;
 			const title = input.showingImage ? `IMAGE ${input.preview!.image.width}x${input.preview!.image.height}`
 				: model.selectedRange === undefined ? 'NO STORED BYTES' : model.mode === 'code' ? 'DISASSEMBLY' : 'BYTES';
 			this.contentTitle = truncateMeasuredText(title, titleRight - bytes.bounds.left - 8, measureTextRange);
@@ -91,7 +93,7 @@ export class RomInspectorPresentation {
 			for (const section of model.inspection.sections) {
 				const left = bounds.left + Math.trunc(section.start / input.snapshot.rom.byteLength * width);
 				const right = bounds.left + Math.trunc(section.end / input.snapshot.rom.byteLength * width);
-				if (right > left) this.map.push({ left, right, color: romInspectionSectionColor(section) });
+				if (right > left) this.map.push({ left, right, color: romInspectionSectionCategory(section).color });
 			}
 		}
 		this.revision = model.revision;
@@ -121,7 +123,10 @@ export function drawRomInspector(input: RomInspectorInput, view: RomInspectorPre
 		const textColor = selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT : color;
 		api.blit_text_inline_with_font(label.name, list.bounds.left + 4, y + 2, 0, textColor, font);
 		api.blit_text_inline_with_font(label.size, list.bounds.right - label.sizeWidth - 4, y + 2, 0, textColor, font);
-		api.blit_text_inline_with_font(label.detail, list.bounds.left + 4, y + 2 + layout.rowHeight, 0, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM, font);
+		const swatchSize = Math.min(WORKBENCH_ICON_SIZE, layout.rowHeight), detailTop = y + 2 + layout.rowHeight;
+		api.fill_rect(list.bounds.left + 4, detailTop, list.bounds.left + 4 + swatchSize, detailTop + swatchSize, 0, label.categoryColor);
+		api.blit_text_inline_with_font(label.detail, list.bounds.left + WORKBENCH_ICON_SIZE + 8, detailTop, 0,
+			selected ? textColor : colors.COLOR_INSPECTOR_LABEL, font);
 	}
 	if (model.rows.length === 0) api.blit_text_inline_with_font(model.filter === '' ? 'No entries in this image' : 'No matching entries', list.bounds.left + 4, list.bounds.top + 4, 0, color, font);
 	api.popClipRect();
