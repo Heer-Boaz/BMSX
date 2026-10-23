@@ -97,6 +97,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		const commandOrigin = session.commandOrigin = options.invocationOrigin === undefined ? returnFocus : this.focus.resolveTarget(invocationOrigin);
 		this.focusTarget.commandContext = commandOrigin === null ? this.focusTarget : commandOrigin.commandContext;
 		this.update();
+		if (this.session !== session) return disposables;
 		if (options.selectFirst) this.model.selectNext(1);
 		layoutContextMenu(this);
 		this.revision = this.model.viewport.revision;
@@ -126,18 +127,22 @@ export class ContextMenuController implements PointerCaptureTarget {
 	}
 
 	public update(): void {
-		if (this.session === undefined) return;
+		const session = this.session;
+		if (session === undefined) return;
 		if (this.revision !== this.model.viewport.revision) {
 			this.cancelPointer();
 			this.revision = this.model.viewport.revision;
 		}
 		for (const row of this.model.rows) {
 			if (row.command === undefined) continue;
-			row.enabled = this.session.commands.isEnabled(row.command, this.session.commandOrigin);
-			const active = this.session.commands.isActive?.(row.command) === true;
+			const enabled = session.commands.isEnabled(row.command, session.commandOrigin);
+			if (this.session !== session) return;
+			row.enabled = enabled;
+			const active = session.commands.isActive?.(row.command) === true;
+			if (this.session !== session) return;
 			if (active !== row.active) {
 				row.active = active;
-				this.model.setLabel(row, editorCommandTitle(row.command, active, this.session.options.shortTitles).toUpperCase());
+				this.model.setLabel(row, editorCommandTitle(row.command, active, session.options.shortTitles).toUpperCase());
 			}
 		}
 		if (this.pressedIndex >= 0 && !this.model.rows[this.pressedIndex].enabled) this.cancelPointer();
@@ -148,8 +153,9 @@ export class ContextMenuController implements PointerCaptureTarget {
 		const index = this.model.selectedIndex;
 		if (index < 0) return;
 		const command = this.model.rows[index].command!;
-		const { commands, commandOrigin } = this.session!;
-		if (!commands.isEnabled(command, commandOrigin)) return;
+		const session = this.session!, { commands, commandOrigin } = session;
+		const enabled = commands.isEnabled(command, commandOrigin);
+		if (this.session !== session || !enabled) return;
 		this.hide();
 		commands.execute(command, commandOrigin);
 	}

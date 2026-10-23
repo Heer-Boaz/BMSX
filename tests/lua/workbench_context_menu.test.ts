@@ -100,6 +100,61 @@ test('retirement during onWillShow never admits a popup and a newer opening owns
 	assert.equal(f.menu.model.rows[0].command, 'save'); assert.equal(f.focus.target, f.menu.focusTarget);
 });
 
+for (const callback of ['isEnabled', 'isActive'] as const) for (const replace of [false, true]) {
+	test(`initial popup ${callback} retirement${replace ? ' preserves its replacement' : ' leaves no admitted popup'}`, t => {
+		const f = fixture(t);
+		let retired = false;
+		const lifetime = f.menu.show(8, 8, ITEMS, { ...f.commands, [callback]: () => {
+			if (!retired) {
+				retired = true;
+				if (replace) f.menu.show(12, 12, [{ type: 'command', command: 'save' }], f.commands, { selectFirst: true });
+				else f.menu.hide();
+			}
+			return true;
+		} }, { selectFirst: true });
+		assert.equal(lifetime.isDisposed, true); assert.equal(f.menu.visible, replace);
+		if (replace) { assert.equal(f.menu.model.rows[0].command, 'save'); assert.equal(f.menu.model.selectedIndex, 0); }
+		else assert.equal(f.focus.target, f.origin);
+		assert.deepEqual(f.executed, []);
+	});
+	test(`popup ${callback} may retire its own session${replace ? ' and open a replacement' : ''} during update`, t => {
+		const f = fixture(t);
+		let retire = false;
+		const invoke = () => {
+			if (!retire) return true;
+			retire = false;
+			if (replace) f.menu.show(12, 12, [{ type: 'command', command: 'save' }], f.commands, { selectFirst: true });
+			else f.menu.hide();
+			return true;
+		};
+		f.menu.show(8, 8, ITEMS, { ...f.commands, [callback]: invoke });
+		retire = true;
+		assert.doesNotThrow(() => f.menu.update());
+		assert.equal(f.menu.visible, replace);
+		if (replace) { assert.equal(f.menu.model.rows[0].command, 'save'); assert.equal(f.focus.target, f.menu.focusTarget); }
+		assert.deepEqual(f.executed, []);
+	});
+}
+
+for (const replace of [false, true]) test(`an acceptance admission which retires its own popup cannot execute${replace ? ' or hide a replacement' : ''}`, t => {
+	const f = fixture(t);
+	let retire = false;
+	f.menu.show(8, 8, [{ type: 'command', command: 'undo' }], {
+		...f.commands, isEnabled: () => {
+			if (retire) {
+				retire = false;
+				if (replace) f.menu.show(12, 12, [{ type: 'command', command: 'save' }], f.commands, { selectFirst: true });
+				else f.menu.hide();
+			}
+			return true;
+		},
+	}, { selectFirst: true });
+	retire = true; f.menu.accept();
+	assert.deepEqual(f.executed, [], 'a fresh enabled result cannot revive the retired physical acceptance attempt');
+	assert.equal(f.menu.visible, replace);
+	if (replace) { assert.equal(f.menu.model.rows[0].command, 'save'); assert.equal(f.focus.target, f.menu.focusTarget); }
+});
+
 test('a replacement opened after retirement chooses the newer concrete invoker, not the retiring popup origin', t => {
 	const f = fixture(t), newer = f.focus.createTarget(); newer.bindKeyboard(() => {});
 	const old = f.show();
