@@ -88,10 +88,11 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(view.transcript.rows.every((row, index) => row === rows[index]), 'unchanged frames retain text layout');
 	await capture('response');
 	await press('Tab'); await press('Tab');
-	// The composer click cleared message selection; navigate from the first entry.
+	// Escape clears the retained transcript target before navigating from the first entry.
+	await press('Escape');
 	for (let index = 0; index <= reply.index; index++) await press('ArrowDown');
 	await press('ControlLeft', 'KeyC');
-	check(view.selectedEntry === reply.index && (await test.clipboard.readText()) === reply.text.getText(), 'transcript keyboard selects and copies an ordinary message');
+	check(view.selection.entry === reply && view.selection.imageIndex === undefined && (await test.clipboard.readText()) === reply.text.getText(), 'transcript keyboard selects and copies an ordinary message');
 	await press('ArrowUp');
 	await test.clickTab(mainTab.id); await test.clickTab(view.id);
 	check(conversation.state === 'ready' && proposal.state === 'pending', 'switching panes does not retire conversation/review');

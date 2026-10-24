@@ -26,7 +26,7 @@ export class AssistantTurnToolbar {
 		this.control = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, parent, focusContent, menu);
 		this.control.onDidOpenOverflow = lifetime => {
 			this.tooltip.hide();
-			lifetime.add({ dispose: this.input!.onWillChangeSelectedProposal(() => this.menu.hide()) });
+			lifetime.add({ dispose: this.input!.selection.onWillChangeProposal(() => this.menu.hide()) });
 		};
 	}
 
@@ -35,7 +35,7 @@ export class AssistantTurnToolbar {
 		this.input = input;
 		this.control.setInput(input.turnActions, context);
 		this.tooltip.attach(this.surfaces, this.owner, this.getWorkArea);
-		this.unbindProposal = input.onWillChangeSelectedProposal(() => {
+		this.unbindProposal = input.selection.onWillChangeProposal(() => {
 			this.control.cancelCommand('assistant.review');
 			this.control.cancelCommand(WORKBENCH_ACTION_BAR_OVERFLOW);
 			this.tooltip.hide();
@@ -51,7 +51,7 @@ export class AssistantTurnToolbar {
 			const visible = item.command === 'assistant.send' ? !queuedSend : item.command === 'assistant.queue' ? queuedSend
 				: item.command === 'assistant.direct' ? queuedSend && conversation.state === 'running'
 					: item.command === 'assistant.stop' ? conversation.state === 'running' || conversation.state === 'starting' || conversation.state === 'stopping'
-						: input.selectedProposal !== undefined;
+						: input.selection.proposal !== undefined;
 			if (item.visible !== visible) { item.visible = visible; changed = true; }
 		}
 		if (changed) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, input.footerTop - layout.rowHeight - 4,

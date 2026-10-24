@@ -103,7 +103,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame(); await capture('markdown-dark-msx');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	const reply = conversation.entries.find(entry => entry.kind === 'assistant')!;
-	const codeRow = view.transcript.rows.findIndex((row, index) => row.entry === reply.index && row.code
+	const codeRow = view.transcript.rows.findIndex((row, index) => row.entry === reply && row.code
 		&& view.viewport.offsetTop + (index + view.transcript.firstRow) * view.layout.rowHeight >= view.viewport.bounds.top
 		&& view.viewport.offsetTop + (index + view.transcript.firstRow + 1) * view.layout.rowHeight <= view.viewport.bounds.bottom);
 	check(codeRow >= 0, 'presentation: a formatted code row is visible for pointer selection');
@@ -111,29 +111,30 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	const codeBounds = { left: 12, right: 24, top: codeTop, bottom: codeTop + view.layout.rowHeight };
 	await test.click(codeBounds);
 	await press('ControlLeft', 'KeyC');
-	check(view.selectedEntry === reply.index && (await test.clipboard.readText()) === reply.text.getText(), 'presentation: click and Copy preserve the complete original Markdown');
+	check(view.selection.entry === reply && view.selection.imageIndex === undefined && (await test.clipboard.readText()) === reply.text.getText(), 'presentation: click and Copy preserve the complete original Markdown');
 	await capture('selected-code-msx');
 	await until(() => !editorFeedbackState.message.visible, 'presentation: shared clipboard confirmation expires without running the guest');
 	await test.click({ ...codeBounds, left: view.viewport.bounds.right - 2, right: view.viewport.bounds.right - 1 });
-	check(view.selectedEntry === -1, 'presentation: whitespace beside text clears the message selection');
+	check(view.selection.entry === undefined, 'presentation: whitespace beside text clears the message selection');
 	check(!ide.editor.commands.isEnabled('assistant.copy'), 'presentation: Copy is unavailable without a selected message');
 	await capture('deselected-beside-text');
 	await test.click(codeBounds);
 	const gap = view.transcript.rows.findIndex(row => row.runs.length === 0);
 	const gapTop = view.viewport.offsetTop + (gap + view.transcript.firstRow) * view.layout.rowHeight;
 	await test.click({ left: 12, right: 24, top: gapTop, bottom: gapTop + view.layout.rowHeight });
-	check(view.selectedEntry === -1, 'presentation: an empty separator does not select its neighbouring message');
+	check(view.selection.entry === undefined, 'presentation: an empty separator does not select its neighbouring message');
 	await test.click(codeBounds);
 	await test.click({ left: 12, right: 24, top: view.viewport.bounds.bottom - 2, bottom: view.viewport.bounds.bottom - 1 });
-	check(view.selectedEntry === -1, 'presentation: empty transcript space clears the message selection');
+	check(view.selection.entry === undefined, 'presentation: empty transcript space clears the message selection');
 	await capture('deselected-below-messages');
 	await test.click(codeBounds);
 	await test.click(view.composerBounds);
-	check(view.selectedEntry === -1 && view.draft.focusTarget.hasFocus, 'presentation: composer click clears message selection and retains field focus');
-	await capture('deselected-composer');
+	check(view.selection.entry === reply && view.selection.imageIndex === undefined && view.draft.focusTarget.hasFocus,
+		'presentation: composer focus retains the exact transcript target without borrowing its clipboard selection');
+	await capture('retained-selection-composer');
 	await test.click(codeBounds);
 	await press('Escape');
-	check(view.selectedEntry === -1, 'presentation: Escape clears transcript selection');
+	check(view.selection.entry === undefined, 'presentation: Escape clears transcript selection');
 	await test.click(codeBounds);
 	await press('ArrowUp'); await press('End');
 

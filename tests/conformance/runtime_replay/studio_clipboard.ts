@@ -69,7 +69,7 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 			const text = 'Clipboard: **literal** output';
 			view.conversation.notice(text); await test.frame();
 			const index = view.conversation.entries.length - 1;
-			const row = view.transcript.rows.findIndex(row => row.entry === index && !row.heading);
+			const row = view.transcript.rows.findIndex(row => row.entry === view.conversation.entries[index] && !row.heading);
 			const top = view.viewport.offsetTop + (view.transcript.firstRow + row) * view.layout.rowHeight;
 			await test.click({ left: view.viewport.bounds.left + 4, right: view.viewport.bounds.left + 16, top, bottom: top + view.layout.rowHeight });
 			return text;

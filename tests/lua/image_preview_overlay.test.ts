@@ -13,13 +13,23 @@ import { ImagePreviewCache } from '../../ide/workbench/ui/image_preview';
 import { ImagePreviewOverlay } from '../../ide/workbench/ui/image_preview_overlay';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
+import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import * as colors from '../../ide/common/constants';
+import { decodeImage, encodePngImage } from '../../hosts/node/headless/screenshot';
+import type { ImageDecoder } from '../../hosts/common/image';
+import type { HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
 
 const pixels = { width: 2, height: 1, pixels: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]) };
 const bounds = { left: 0, top: 10, right: 140, bottom: 100 };
 const otherBounds = { left: 140, top: 10, right: 220, bottom: 100 };
 
-function fixture(t: TestContext, commands: EditorCommandRunner = { isEnabled: () => true, execute() {} }) {
+function fixture(t: TestContext, commands: EditorCommandRunner = { isEnabled: () => true, execute() {} }, variant: FontVariant = 'tiny',
+	decode: ImageDecoder = async () => pixels) {
 	let changes = 0, wheel = 0, selections = 0, decodes = 0;
+	const previousFont = editorViewState.font;
+	editorViewState.font = new EditorFont(variant);
 	const previousCommands = inputFocus.workbenchScope.commands;
 	inputFocus.workbenchScope.commands = commands;
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; });
@@ -32,13 +42,14 @@ function fixture(t: TestContext, commands: EditorCommandRunner = { isEnabled: ()
 		role: 'content', captureScope: Symbol('unrelated pane'), isVisible: () => true,
 		getBounds: () => otherBounds, getClip: () => otherBounds, draw() {},
 	});
-	const cache = new ImagePreviewCache(async () => { decodes++; return pixels; });
+	const cache = new ImagePreviewCache((...args) => { decodes++; return decode(...args); });
 	const preview = new ImagePreviewOverlay(cache, surfaces, owner, commands);
 	const origin = inputFocus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
 	preview.layout(bounds, 6);
 	t.after(() => {
 		preview.dispose(); cache.dispose(); surfaces.dispose(); inputFocus.setTarget(null);
 		inputFocus.workbenchScope.commands = previousCommands;
+		editorViewState.font = previousFont;
 	});
 	return { preview, cache, surfaces, owner, other, origin,
 		changes: () => changes, wheel: () => wheel, selections: () => selections, decodes: () => decodes };
@@ -134,13 +145,17 @@ test('the shared lightbox owns local pointer and wheel admission rather than ask
 
 test('Escape and Enter dismiss from lightbox focus while replacement and retirement preserve correct focus ownership', t => {
 	const f = fixture(t);
+	assert.equal(f.preview.origin, null);
 	for (const code of ['Escape', 'Enter']) {
 		f.preview.open('first');
+		assert.equal(f.preview.origin, f.origin, 'the modal exposes its actual captured return relationship');
 		f.preview.open('second');
+		assert.equal(f.preview.origin, f.origin, 'replacing pixels does not replace the actual originating control');
 		const event = new KeyInputEvent(code, KeyModifier.none);
 		inputFocus.handleKeyboard(event);
 		assert.equal(event.consumed, true);
 		assert.equal(f.preview.visible, false);
+		assert.equal(f.preview.origin, null);
 		assert.equal(inputFocus.target, f.origin, 'replacing the image does not replace the return target with the modal itself');
 	}
 	f.preview.open('image');
@@ -157,7 +172,6 @@ test('Escape and Enter dismiss from lightbox focus while replacement and retirem
 
 test('only changed lightbox geometry and visibility publish invalidation, and separate surface painting retains its decoded bitmap', async t => {
 	const f = fixture(t), renderer = createHostOverlayFixture(220, 110);
-	editorViewState.font = new EditorFont('tiny');
 	const changes = f.changes();
 	for (let frame = 0; frame < 100; frame++) f.preview.layout(bounds, 6);
 	assert.equal(f.changes(), changes, 'unchanged layout does not rebuild or publish surface state');
@@ -178,4 +192,82 @@ test('only changed lightbox geometry and visibility publish invalidation, and se
 	f.preview.close();
 	const closed = f.changes(); f.preview.close();
 	assert.equal(f.changes(), closed, 'closing an already absent lightbox is not a structural change');
+});
+
+for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
+	test(`${variant}/${theme} minimum lightbox captions fit their actual modal surface and clean frames never remeasure`, t => {
+		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
+		t.after(() => colors.setIdeThemeVariant(previousTheme));
+		const f = fixture(t, undefined, variant), narrow = { ...bounds, right: variant === 'tiny' ? 78 : 118, bottom: 180 };
+		f.preview.layout(narrow, editorViewState.font.lineHeight); f.preview.open('image');
+		const overlay = createHostOverlayFixture(220, 180), font = editorViewState.font, advance = font.advance.bind(font);
+		let measurements = 0;
+		t.mock.method(font, 'advance', char => { measurements++; return advance(char); });
+		const paint = () => {
+			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+			return overlay.queue.consumeOverlayFrame();
+		};
+		const frame = paint(), labels: string[] = [];
+		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+			const run = frame.commandRefs[index] as GlyphRenderSubmission;
+			assert.equal(typeof run.items, 'string');
+			const label = run.items as string; labels.push(label);
+			assert.ok(run.x >= narrow.left + 8 && run.x + run.font!.measure(label) <= narrow.right - 8,
+				`actual painted caption '${label}' fits the modal's padded width`);
+		}
+		assert.ok(labels.includes('Image preview')); assert.ok(labels.includes('Click/Esc close'));
+		assert.ok(measurements > 0, 'the newly exposed loading state is measured once');
+		const measured = measurements, changes = f.changes();
+		for (let frame = 0; frame < 50; frame++) { f.preview.layout(narrow, font.lineHeight); paint(); }
+		assert.equal(measurements, measured); assert.equal(f.changes(), changes);
+		editorViewState.font = new EditorFont(variant); f.preview.layout(narrow, font.lineHeight);
+		assert.equal(f.changes(), changes + 1, 'font identity, not only line height, owns caption invalidation');
+	});
+}
+
+test('loading and an asynchronous decode error are each measured once, with status geometry invalidated by width or font', async t => {
+	const pending = Promise.withResolvers<Awaited<ReturnType<ImageDecoder>>>();
+	const f = fixture(t, undefined, 'tiny', () => pending.promise), narrow = { ...bounds, right: 78, bottom: 180 };
+	f.preview.layout(narrow, 6); f.preview.open('unavailable-image');
+	const overlay = createHostOverlayFixture(220, 180), font = editorViewState.font, advance = font.advance.bind(font);
+	let measurements = 0;
+	t.mock.method(font, 'advance', char => { measurements++; return advance(char); });
+	const paint = () => {
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		const frame = overlay.queue.consumeOverlayFrame(), labels: string[] = [];
+		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+			const run = frame.commandRefs[index] as GlyphRenderSubmission;
+			assert.equal(typeof run.items, 'string'); const label = run.items as string; labels.push(label);
+			assert.ok(run.x + run.font!.measure(label) <= f.preview.surface.getBounds().right - 8);
+		}
+		return labels;
+	};
+	paint(); const loading = measurements;
+	for (let frame = 0; frame < 50; frame++) paint(); assert.equal(measurements, loading);
+	pending.reject(new Error('The attached image could not be decoded because its encoded PNG image bytes are unavailable'));
+	await pending.promise.catch(() => {});
+	assert.ok(paint().some(label => label.startsWith('Error:'))); const unavailable = measurements;
+	assert.ok(unavailable > loading);
+	for (let frame = 0; frame < 50; frame++) paint(); assert.equal(measurements, unavailable);
+	f.preview.layout(bounds, 6); paint(); assert.ok(measurements > unavailable);
+	const expanded = measurements; for (let frame = 0; frame < 50; frame++) paint(); assert.equal(measurements, expanded);
+});
+
+test('a real Node PNG decode reaches the modal bitmap and remains leased while its transcript thumbnail is offscreen', async t => {
+	const url = await encodePngImage(pixels), decoded = await decodeImage(url, 512, 512);
+	const f = fixture(t), resource = f.cache.use(url, decoded), overlay = createHostOverlayFixture(220, 110);
+	let disposed = 0; resource.bitmap!.onDispose(() => { disposed++; });
+	f.preview.open(url); assert.equal(resource.retained, 1);
+	for (let frame = 0; frame < 4; frame++) {
+		f.cache.beginFrame(); f.cache.endFrame();
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		const commands = overlay.queue.consumeOverlayFrame(); let found = false;
+		for (let index = 0; index < commands.commandCount; index++) if (commands.commandKinds[index] === Host2DKind.Bitmap) {
+			const submission = commands.commandRefs[index] as HostBitmapRenderSubmission;
+			assert.equal(submission.bitmap.image, decoded); assert.deepEqual([...submission.bitmap.image.pixels], [...pixels.pixels]); found = true;
+		}
+		assert.equal(found, true); assert.equal(resource.retired, false); assert.equal(disposed, 0);
+	}
+	assert.equal(f.decodes(), 0, 'already decoded producer pixels are not decoded again for modal presentation');
+	f.preview.close(); f.cache.beginFrame(); f.cache.endFrame(); assert.equal(resource.retired, true); assert.equal(disposed, 1);
 });

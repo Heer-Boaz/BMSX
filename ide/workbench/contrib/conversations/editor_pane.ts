@@ -40,7 +40,6 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 		const layoutChanged = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
 		if (layoutChanged || input.projectedRevision !== conversation.revision) {
 			input.projectedRevision = conversation.revision;
-			this.transcriptView.scroll.lineStep = layout.rowHeight;
 			input.transcript.update(conversation.entries, layout.right - colors.SCROLLBAR_WIDTH - 16, measureStyledText, layout.font!);
 			input.footer.update(conversation, layout.right - STATUS_BAR_CONNECTION_WIDTH - 8, measureTextRange, layout.font!);
 		}
@@ -49,9 +48,7 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 		input.footerTop = layout.bottom - (input.footer.lines.length > 1 ? (input.footer.lines.length - 1) * row + 2 : 0);
 		const bottom = input.footerTop - 4 - (conversation.workStartedAt !== undefined ? row + 2 : 0);
 		const follow = viewport.scrollTop + viewport.height >= viewport.contentHeight;
-		const scroll = input.transcript.layout(viewport.scrollTop / row, Math.max(1, (bottom - layout.top - 4) / row), follow);
-		viewport.layout(4, layout.top + 4, layout.right, bottom, input.transcript.rowCount * row);
-		viewport.scrollbar.setScroll(scroll * row);
+		this.transcriptView.layout(layout.top + 4, bottom, follow, layoutChanged);
 	}
 	public draw(): void {
 		const { layout, conversation, footer, footerTop } = this.input;

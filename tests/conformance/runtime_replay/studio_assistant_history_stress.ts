@@ -14,9 +14,9 @@ export async function exerciseLongAssistantHistory(test: StudioFixture, view: As
 	conversation.notice('Synthetic 5,000-message viewport exercise. No model requests.');
 	const loadedAt = performance.now(); await test.frame(); const loadMs = performance.now() - loadedAt;
 	await test.click(viewport.bounds); await test.press('End'); await capture('history-5000-end');
-	check(transcript.rows.at(-1)!.entry === conversation.entries.length - 1, 'stress: keyboard End reaches the newest entry');
+	check(transcript.rows.at(-1)!.entry === conversation.entries.at(-1), 'stress: keyboard End reaches the newest entry');
 	await test.press('Home'); await capture('history-5000-start');
-	check(transcript.rowAt(0)!.entry === 0, 'stress: keyboard Home reaches the oldest entry');
+	check(transcript.rowAt(0)!.entry === conversation.entries[0], 'stress: keyboard Home reaches the oldest entry');
 	test.movePointer(viewport.scrollbar.getThumb()!); await test.frame();
 	test.setPointerButton('pointer_primary', true); await test.frame();
 	const track = viewport.scrollbar.getTrack();
@@ -30,14 +30,14 @@ export async function exerciseLongAssistantHistory(test: StudioFixture, view: As
 	check(!pointerCapture.active, 'stress: releasing the thumb ends capture');
 	await test.press('Home');
 	for (let index = 0; index < 7; index++) await test.press('PageDown');
-	const anchor = conversation.entries[transcript.rowAt(Math.trunc(viewport.scrollTop / view.layout.rowHeight))!.entry];
+	const anchor = transcript.rowAt(Math.trunc(viewport.scrollTop / view.layout.rowHeight))!.entry;
 	await capture('history-5000-reading');
 	const resizeAt = performance.now();
 	test.presenter.setFixedRenderTargetSize(640, 480);
 	test.ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport');
 	test.ide.editor.updateViewport(test.ide.overlayRenderer.viewportSize); await test.frame();
 	const resizeMs = performance.now() - resizeAt;
-	check(conversation.entries[transcript.rowAt(Math.trunc(viewport.scrollTop / view.layout.rowHeight))!.entry] === anchor,
+	check(transcript.rowAt(Math.trunc(viewport.scrollTop / view.layout.rowHeight))!.entry === anchor,
 		'stress: resizing preserves the message being read');
 	await capture('history-5000-resized');
 	await test.click(view.composerBounds);

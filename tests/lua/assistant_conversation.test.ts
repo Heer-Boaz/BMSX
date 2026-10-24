@@ -343,17 +343,17 @@ for (const outcome of ['applied', 'discarded', 'stale'] as const) {
 		const font = {}, measure = (_text: string, start: number, end: number) => end - start;
 		input.transcript.update(c.entries, 40, measure, font); input.transcript.layout(0, 30);
 		const index = c.entries.findIndex(entry => entry.proposal === proposal);
-		const heading = input.transcript.rows.findIndex(row => row.entry === index && row.heading);
+		const heading = input.transcript.rows.findIndex(row => row.entry === c.entries[index] && row.heading);
 		assert.equal(input.transcript.rows[heading].text, 'REVIEW: PENDING');
 		const rows = input.transcript.rows.slice();
 		for (const entry of c.entries) entry.text.getTextRange = () => assert.fail('settlement cannot read unchanged message text');
-		input.selectedEntry = 0;
+		input.selection.select(c.entries[0]);
 		const revision = c.revision;
 		if (outcome === 'applied') proposal.apply();
 		else if (outcome === 'discarded') proposal.dispose();
 		else f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- user\n' }]);
 		assert.equal(c.revision, revision + 1);
-		assert.equal(input.selectedEntry, 0);
+		assert.equal(input.selection.entry, c.entries[0]);
 		input.transcript.update(c.entries, 40, measure, font); input.transcript.layout(0, 30);
 		assert.equal(input.transcript.rows[heading].text, `REVIEW: ${outcome.toUpperCase()}`);
 		assert.ok(input.transcript.rows.every((row, index) => index === heading || row === rows[index]));
@@ -393,7 +393,7 @@ test('workspace clear resets detached projection identity before a same-sized re
 	f.connections[1].emit({ type: 'turn-completed', turnId: 'new', status: 'completed' });
 	input.transcript.update(c.entries, 40, measure, font); input.transcript.layout(0, 30);
 	assert.deepEqual(input.transcript.rows.map(row => row.text), ['New', '', 'New reply']);
-	assert.equal(input.selectedEntry, -1);
+	assert.equal(input.selection.entry, undefined);
 });
 
 test('old stream and delayed prompt failure cannot mutate a replacement conversation', async t => {
@@ -556,11 +556,11 @@ test('history pages are text only, revoke source proposals and retain existing b
 	assert.equal(proposal.state, 'stale'); assert.equal(c.thread, thread); assert.equal(c.queuePaused, true);
 	assert.ok(c.entries.every(entry => entry.kind !== 'proposal')); assert.throws(() => proposal.apply(), /stale/);
 	const retained = c.entries[0], buffer = retained.text;
-	view.selectedEntry = 0;
+	view.selection.select(c.entries[0]);
 	connection.pending = Promise.resolve({ thread, configuration, entries: [{ kind: 'user', text: 'Older user' }], nextCursor: null });
 	await c.loadOlder();
 	assert.equal(c.entries[1], retained); assert.equal(c.entries[1].text, buffer); assert.equal(retained.index, 1);
-	assert.equal(view.selectedEntry, 1);
+	assert.equal(view.selection.entry, retained);
 	assert.deepEqual(c.entries.map(entry => entry.index), [0, 1, 2]); assert.equal(c.olderCursor, null);
 	connection.pending = Promise.resolve(configuration); await c.newConversation();
 	assert.equal(c.entries.length, 0); assert.equal(c.thread, undefined);

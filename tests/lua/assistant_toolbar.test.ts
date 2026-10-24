@@ -90,8 +90,8 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 	input.footerTop = 256;
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {});
 	const opened: WorkspaceEditProposal[] = [], executed: string[] = [];
-	parent.registerCommand('assistant.review', { isEnabled: () => input.selectedProposal !== undefined,
-		run: () => { opened.push(input.selectedProposal!); } });
+	parent.registerCommand('assistant.review', { isEnabled: () => input.selection.proposal !== undefined,
+		run: () => { opened.push(input.selection.proposal!); } });
 	for (const command of ['assistant.send', 'assistant.queue', 'assistant.direct', 'assistant.stop'] as const)
 		parent.registerCommand(command, { isEnabled: () => command === 'assistant.stop' ? conversation.state === 'running' : input.draftHasText,
 			run: () => { executed.push(command); } });
@@ -186,11 +186,11 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 
 test('Review pointer and keyboard holds retire before exact proposal selection or publication changes', t => {
 	const f = toolbarFixture(t), first = f.proposal('Same title'), second = f.proposal('Same title');
-	f.conversation.proposal(first); f.conversation.proposal(second); f.input.selectedEntry = 0; f.toolbar.update(false);
+	f.conversation.proposal(first); f.conversation.proposal(second); f.input.selection.select(f.conversation.entries[0]); f.toolbar.update(false);
 	const review = f.input.turnActions.items.find(item => item.command === 'assistant.review')!;
 	f.pointer(review.bounds, PointerButton.Primary, PointerButton.Primary);
 	assert.equal(f.input.turnActions.pressedCommand, 'assistant.review');
-	f.input.selectedEntry = 1;
+	f.input.selection.select(f.conversation.entries[1]);
 	assert.equal(f.input.turnActions.pressedCommand, null, 'retirement is synchronous, before a frame update or release');
 	f.pointer(review.bounds, 0, 0, PointerButton.Primary); assert.deepEqual(f.opened, []);
 	f.toolbar.control.focusTarget.focus(); f.press('End'); f.key('Enter', true);
@@ -211,21 +211,21 @@ test('proposal changes retire only the owned overflow session and never retarget
 	f.open(); f.press('End'); f.press('Enter'); assert.deepEqual(f.opened, [second]);
 	f.open(); f.press('Escape');
 	f.menu.show(10, 10, [{ type: 'command', command: 'assistant.copy' }], { isEnabled: () => true, execute() {} });
-	f.input.selectedEntry = 0; assert.equal(f.menu.visible, true, 'a retired toolbar session cannot close another owner popup');
+	f.input.selection.select(f.conversation.entries[0]); assert.equal(f.menu.visible, true, 'a retired toolbar session cannot close another owner popup');
 	f.menu.hide();
 });
 
 for (const activation of ['pointer', 'keyboard'] as const) for (const change of ['selection', 'publication', 'reset'] as const)
 	test(`${activation} More retires before proposal ${change} rather than opening for another subject`, t => {
 		const f = toolbarFixture(t), first = f.proposal('Same title'), second = f.proposal('Same title');
-		f.conversation.proposal(first); f.conversation.proposal(second); f.input.selectedEntry = 0;
+		f.conversation.proposal(first); f.conversation.proposal(second); f.input.selection.select(f.conversation.entries[0]);
 		f.conversation.running(); f.layout(78);
 		const more = f.input.turnActions.overflow!.button;
 		assert.equal(more.visible, true);
 		if (activation === 'pointer') f.pointer(more.bounds, PointerButton.Primary, PointerButton.Primary);
 		else { f.toolbar.control.focusTarget.focus(); f.press('End'); f.key('Enter', true); }
 		assert.equal(f.input.turnActions.pressedCommand, more.command);
-		if (change === 'selection') f.input.selectedEntry = 1;
+		if (change === 'selection') f.input.selection.select(f.conversation.entries[1]);
 		else if (change === 'publication') f.conversation.proposal(f.proposal('Same title'));
 		else f.conversation.reset();
 		assert.equal(f.input.turnActions.pressedCommand, null, 'retirement precedes any next frame or old release');
@@ -238,12 +238,12 @@ for (const activation of ['pointer', 'keyboard'] as const) for (const change of 
 for (const activation of ['pointer', 'keyboard'] as const)
 	test(`${activation} More retains an admitted attempt for the same exact proposal`, t => {
 		const f = toolbarFixture(t), proposal = f.proposal('One exact proposal');
-		f.conversation.proposal(proposal); f.conversation.proposal(proposal); f.input.selectedEntry = 0;
+		f.conversation.proposal(proposal); f.conversation.proposal(proposal); f.input.selection.select(f.conversation.entries[0]);
 		f.conversation.running(); f.layout(78);
 		const more = f.input.turnActions.overflow!.button;
 		if (activation === 'pointer') f.pointer(more.bounds, PointerButton.Primary, PointerButton.Primary);
 		else { f.toolbar.control.focusTarget.focus(); f.press('End'); f.key('Enter', true); }
-		f.input.selectedEntry = 1;
+		f.input.selection.select(f.conversation.entries[1]);
 		assert.equal(f.input.turnActions.pressedCommand, more.command, 'entry indexing is not proposal identity');
 		if (activation === 'pointer') f.pointer(more.bounds, 0, 0, PointerButton.Primary);
 		else f.key('Enter', false);
@@ -267,13 +267,13 @@ for (const activation of ['pointer', 'keyboard'] as const)
 
 test('same exact proposal retains its attempt, while reset drains Review and does not cancel Send', t => {
 	const f = toolbarFixture(t), proposal = f.proposal('One proposal');
-	f.conversation.proposal(proposal); f.conversation.proposal(proposal); f.input.selectedEntry = 0; f.toolbar.update(false);
+	f.conversation.proposal(proposal); f.conversation.proposal(proposal); f.input.selection.select(f.conversation.entries[0]); f.toolbar.update(false);
 	const review = f.input.turnActions.items.find(item => item.command === 'assistant.review')!;
-	f.pointer(review.bounds, PointerButton.Primary, PointerButton.Primary); f.input.selectedEntry = 1;
+	f.pointer(review.bounds, PointerButton.Primary, PointerButton.Primary); f.input.selection.select(f.conversation.entries[1]);
 	assert.equal(f.input.turnActions.pressedCommand, 'assistant.review');
 	f.pointer(review.bounds, 0, 0, PointerButton.Primary); assert.deepEqual(f.opened, [proposal]);
 	f.pointer(review.bounds, PointerButton.Primary, PointerButton.Primary); f.conversation.reset();
-	assert.equal(f.input.selectedProposal, undefined); assert.equal(f.input.turnActions.pressedCommand, null);
+	assert.equal(f.input.selection.proposal, undefined); assert.equal(f.input.turnActions.pressedCommand, null);
 	f.pointer(review.bounds, 0, 0, PointerButton.Primary); assert.deepEqual(f.opened, [proposal]);
 	setFieldText(f.input.draft, '/help', false); f.toolbar.update(false);
 	const send = f.input.turnActions.items.find(item => item.command === 'assistant.send')!;
@@ -300,21 +300,21 @@ test('owned full-title feedback is retained, modal-admitted and retired with the
 
 test('proposal retirement precedes publication and toolbar detachment retires only its own interactions', t => {
 	const f = toolbarFixture(t), first = f.proposal('First'), second = f.proposal('Second');
-	f.conversation.proposal(first); f.conversation.proposal(second); f.input.selectedEntry = 0;
+	f.conversation.proposal(first); f.conversation.proposal(second); f.input.selection.select(f.conversation.entries[0]);
 	let observed = 0;
-	const unbind = f.input.onWillChangeSelectedProposal(() => {
-		assert.equal(f.input.selectedProposal, first);
-		assert.equal(f.input.selectedEntry, 0);
+	const unbind = f.input.selection.onWillChangeProposal(() => {
+		assert.equal(f.input.selection.proposal, first);
+		assert.equal(f.input.selection.entry, f.conversation.entries[0]);
 		observed++;
 	});
-	f.input.selectedEntry = 1; unbind(); assert.equal(observed, 1); assert.equal(f.input.selectedProposal, second);
+	f.input.selection.select(f.conversation.entries[1]); unbind(); assert.equal(observed, 1); assert.equal(f.input.selection.proposal, second);
 	f.conversation.running(); f.layout(78); f.open();
 	f.toolbar.clearInput(); assert.equal(f.menu.visible, false); assert.equal(pointerHover.has(f.toolbar.control), false);
 	f.toolbar.setInput(f.input, f.parent); f.layout(384);
 	const review = f.input.turnActions.items.find(item => item.command === 'assistant.review')!;
 	f.pointer(review.bounds, PointerButton.Primary, PointerButton.Primary);
 	f.toolbar.clearInput(); assert.equal(f.input.turnActions.pressedCommand, null);
-	f.input.selectedEntry = 0;
+	f.input.selection.select(f.conversation.entries[0]);
 	pointerCapture.dispatch({ valid: true, insideViewport: true, viewportX: review.bounds.left + 1, viewportY: review.bounds.top + 1,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 100);
 	assert.deepEqual(f.opened, []);

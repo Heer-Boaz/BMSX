@@ -99,28 +99,28 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	}
 	public override dispose(): void { this.clearInput(); this.preview.dispose(); this.turnToolbar.dispose(); this.transcriptView.dispose(); super.dispose(); }
 	public isEnabled(command: EditorCommandId): boolean {
-		const { conversation: model, selectedEntry } = this.input;
+		const { conversation: model, selection } = this.input;
 		const hasContent = this.input.draftHasText || this.input.attachments.images.length > 0;
 		const ready = this.input.attachments.ready;
 		switch (command) {
 			case 'assistant.send': case 'assistant.queue': return hasContent && !this.input.commandPending && (this.input.draft.text.startsWith('/') || ready && model.canSubmit);
 			case 'assistant.direct': return model.canDirect && ready && hasContent;
 			case 'assistant.stop': return this.chat.isEnabled(command);
-			case 'assistant.review': return this.input.selectedProposal !== undefined;
-			case 'assistant.copy': return selectedEntry >= 0;
+			case 'assistant.review': return selection.proposal !== undefined;
+			case 'assistant.copy': return selection.imageIndex === undefined && selection.entry !== undefined;
 			default: return false;
 		}
 	}
 	public execute(command: EditorCommandId): void {
 		if (!this.isEnabled(command)) return;
-		const { conversation: model, draft } = this.input;
+		const { draft } = this.input;
 		switch (command) {
 			case 'assistant.send': case 'assistant.queue': case 'assistant.direct':
 				draft.focusTarget.focus(); void this.chat.submit(this.input, command === 'assistant.direct'); break;
 			case 'assistant.stop': this.chat.execute(command); break;
-			case 'assistant.copy': void writeClipboard(this.clipboard, model.entries[this.input.selectedEntry].text.getText(), 'Copied message'); break;
+			case 'assistant.copy': void writeClipboard(this.clipboard, this.input.selection.entry!.text.getText(), 'Copied message'); break;
 			case 'assistant.review': {
-				const proposal = this.input.selectedProposal!;
+				const proposal = this.input.selection.proposal!;
 				const existing = editorTabGroup.tabs.find(input => input.kind === 'workspace_edit_review' && input.proposal === proposal);
 				openEditorTab(this.panes, existing ?? new WorkspaceEditReviewInput(proposal)); break;
 			}
@@ -132,7 +132,6 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		const row = layout.rowHeight;
 		this.preview.layout(layout, row);
 		if (changed) {
-			this.transcriptView.scroll.lineStep = row;
 			this.composer.rowHeight = editorViewState.lineHeight;
 		}
 		input.busySince = model.workStartedAt;
@@ -177,15 +176,12 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			this.transcriptView.scroll.focusTarget.next = hasImages ? stripFocus : input.draft.focusTarget;
 			if (!hasImages) {
 				// Retire the preview before its return control leaves the focus ring.
-				this.preview.close();
+				if (this.preview.origin === stripFocus) this.preview.close();
 				if (stripFocus.hasFocus) input.draft.focusTarget.focus();
 			}
 		}
 		const transcriptBottom = this.contentTop - 4 - (busy || input.editingQueuedId !== undefined ? row + 2 : 0);
-		const visibleRows = Math.max(1, (transcriptBottom - layout.top - 4) / row);
-		const scrollRow = input.transcript.layout(viewport.scrollTop / row, visibleRows, atEnd);
-		viewport.layout(4, layout.top + 4, layout.right, transcriptBottom, input.transcript.rowCount * row);
-		viewport.scrollbar.setScroll(scrollRow * row);
+		this.transcriptView.layout(layout.top + 4, transcriptBottom, atEnd, changed || composerChanged);
 
 		this.turnToolbar.update(changed || footerChanged); this.references.update(input);
 	}
