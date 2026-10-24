@@ -75,6 +75,19 @@
   ownership, blur boundaries, or make control flow harder to follow.
 - No useless `?? null` normalization.
 
+## UI test contracts
+
+- UI/integration tests verify observable behavior, state transitions and
+  ownership/lifetimes, not incidental labels, wording or pixel coordinates.
+- Text-content or geometry assertions require a specific contract and an
+  explicit reason. Exact producer/clipboard content can be a data-integrity
+  contract; positions and dimensions can be the subject of a focused layout
+  algorithm test. Neither is a default assertion strategy for a UI workflow.
+- Do not replace weak label checks with arbitrary geometry checks, freeze the
+  same details in a snapshot, or add production state/APIs solely for tests.
+  Put each regression at its real behavioral or component owner; remove tests
+  that prove no meaningful contract.
+
 ## Architecture gates
 
 - Never infer an implementation task from contextual documentation alone. Ask
