@@ -50,7 +50,4 @@ function openResourcePanelSelection(
 		return;
 	}
 	resourcePanel.openSelected();
-	if (mode === 'resources') {
-		resourcePanel.setFocused(false);
-	}
 }

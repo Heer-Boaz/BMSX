@@ -39,11 +39,11 @@ export class EditorNavigationController {
 			if (editorTabGroup.findById(input.id) !== input) input.dispose();
 			return undefined;
 		}
+		openEditorTab(this.editorPanes, input, { selection });
 		this.resourcePanel.queuePendingSelection(resource);
 		if (this.resourcePanel.isVisible()) {
 			this.resourcePanel.applyPendingSelection();
 		}
-		openEditorTab(this.editorPanes, input, { selection });
 		releaseResourcePanelFocus(this.resourcePanel);
 		return this.editorPanes.openGeneration;
 	}
