@@ -9,8 +9,8 @@ export interface WorkspaceBuilds {
 	readonly pending: readonly StudioBuildRequest[];
 	targets(): Promise<readonly string[]>;
 	submit(target: string, debug: boolean, optLevel: 0 | 1 | 2 | 3): Promise<StudioBuildJob>;
-	get(requestId: string): Promise<StudioBuildJob | undefined>;
+	get(requestId: string, signal?: AbortSignal): Promise<StudioBuildJob | undefined>;
 	cancel(requestId: string): Promise<StudioBuildJob>;
 	forget(requestId: string): void;
-	log(requestId: string): Promise<string>;
+	log(requestId: string, signal?: AbortSignal): Promise<string>;
 }

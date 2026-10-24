@@ -62,8 +62,8 @@ export class HttpWorkspaceBuilds implements WorkspaceBuilds {
 			}
 			throw new Error(`Build acknowledgement unavailable. Inspect request ${request.requestId} in Build Jobs before starting another build. ${String(error)}`); }
 	}
-	public async get(id: string): Promise<StudioBuildJob | undefined> {
-		const response = await this.request(`/jobs/${id}`, 'GET', undefined, true);
+	public async get(id: string, signal?: AbortSignal): Promise<StudioBuildJob | undefined> {
+		const response = await this.request(`/jobs/${id}`, 'GET', undefined, true, signal);
 		if (response.status === 404) return undefined;
 		const job = await response.json() as StudioBuildJob;
 		return this.acknowledge(job);
@@ -72,7 +72,7 @@ export class HttpWorkspaceBuilds implements WorkspaceBuilds {
 		const job = await (await this.request(`/jobs/${id}/cancel`, 'POST')).json() as StudioBuildJob;
 		return this.acknowledge(job);
 	}
-	public async log(id: string): Promise<string> { return (await this.request(`/jobs/${id}/log`)).json(); }
+	public async log(id: string, signal?: AbortSignal): Promise<string> { return (await this.request(`/jobs/${id}/log`, 'GET', undefined, false, signal)).json(); }
 
 	public forget(id: string): void { this.requests.delete(id); }
 
@@ -92,10 +92,10 @@ export class HttpWorkspaceBuilds implements WorkspaceBuilds {
 		terminal.sort((a, b) => b.acceptedAt - a.acceptedAt);
 		this.jobs = [...active, ...terminal.slice(0, 50 - active.length)];
 	}
-	private async request(path: string, method = 'GET', body?: unknown, allowNotFound = false): Promise<Response> {
+	private async request(path: string, method = 'GET', body?: unknown, allowNotFound = false, signal?: AbortSignal): Promise<Response> {
 		const response = await this.session.request(`/__bmsx__/builds${path}`, { method, cache: 'no-store',
 			headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
-			signal: AbortSignal.timeout(15000) });
+			signal: signal === undefined ? AbortSignal.timeout(15000) : AbortSignal.any([signal, AbortSignal.timeout(15000)]) });
 		if (!response.ok && !(allowNotFound && response.status === 404)) throw new BuildHttpError(response.status, await response.text());
 		return response;
 	}

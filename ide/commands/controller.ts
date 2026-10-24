@@ -114,7 +114,7 @@ export class IdeCommandController {
 		const edit = inputFocus.target?.commandContext.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
-			case 'list.find': {
+			case 'list.find': case 'text.find': case 'text.findNext': case 'text.findPrevious': {
 				const implementation = target?.getCommand(command);
 				if (implementation !== undefined && implementation.isEnabled()) implementation.run();
 				return;
@@ -227,6 +227,7 @@ export class IdeCommandController {
 			case 'romInspector.inspect': case 'romInspector.hold': case 'romInspector.key': case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
+			case 'buildLog.refresh': case 'buildLog.copyAll': case 'buildLog.output': case 'buildLog.error':
 			case 'gpu.follow': case 'gpu.view': case 'gpu.details': case 'gpu.goToFrame': case 'gpu.filter': case 'gpu.clear':
 			case 'gte.follow': case 'gte.view': case 'gte.details': case 'gte.source':
 			case 'gte.goToFrame': case 'gte.filter': case 'gte.clear':
@@ -384,7 +385,7 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
-			case 'list.find': return focus?.getCommand(command)?.isEnabled() === true;
+			case 'list.find': case 'text.find': case 'text.findNext': case 'text.findPrevious': return focus?.getCommand(command)?.isEnabled() === true;
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				return this.editor.play.isCommandEnabled(command);
@@ -487,6 +488,7 @@ export class IdeCommandController {
 			case 'romInspector.inspect': case 'romInspector.hold': case 'romInspector.key': case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
+			case 'buildLog.refresh': case 'buildLog.copyAll': case 'buildLog.output': case 'buildLog.error':
 			case 'gpu.follow': case 'gpu.view': case 'gpu.details': case 'gpu.goToFrame': case 'gpu.filter': case 'gpu.clear':
 			case 'gte.follow': case 'gte.view': case 'gte.details': case 'gte.source':
 			case 'gte.goToFrame': case 'gte.filter': case 'gte.clear':

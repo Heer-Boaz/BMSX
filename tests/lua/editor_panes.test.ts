@@ -33,6 +33,9 @@ import { inputFocus } from '../../ide/input/focus';
 import { closeTab } from '../../ide/workbench/ui/tabs';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
+import { openBuildLog } from '../../ide/workbench/contrib/builds/editor_input';
+import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
+import type { StudioBuildJob } from '../../hosts/common/studio_builds';
 
 class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public readonly focusTarget = inputFocus.createTarget();
@@ -142,6 +145,7 @@ function createEditorPanes() {
 		play_session: () => new RecordingEditorPane(),
 		animation: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'animation' }>>(),
 		host_error: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(),
+		build_log: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(),
 		rom_inspector: () => new RecordingEditorPane<RomInspectorInput>(),
 		event_viewer: () => new RecordingEditorPane<EventViewerInput>(),
 		gte_debugger: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(),
@@ -177,6 +181,43 @@ function createEditorPanes() {
 		resourceFactoryCount: () => resourceFactoryCount,
 	};
 }
+
+test('Build Output opens the actual request identity once, retains its document, and never reuses a closed transient input', async t => {
+	const harness = createEditorPanes();
+	editorTabGroup.clear();
+	t.after(() => { harness.editorPanes.clearEditor(); editorTabGroup.clear(); harness.editorPanes.dispose(); inputFocus.setTarget(null); });
+	const job: StudioBuildJob = { request: { requestId: 'request-42', target: 'nemesis_s', debug: true, optLevel: 0 },
+		state: 'failed', phase: 'compile', acceptedAt: 10, updatedAt: 20, version: { generation: 1, sequence: 2 }, error: 'Compiler error' };
+	const next: StudioBuildJob = { ...job, request: { ...job.request, requestId: 'request-43' } };
+	const requested: string[] = [];
+	const builds: WorkspaceBuilds = {
+		jobs: [job, next], pending: [], targets: async () => ['nemesis_s'],
+		submit: async () => { throw new Error('Opening output must never submit a build'); },
+		get: async id => { requested.push(id); return id === job.request.requestId ? job : next; },
+		log: async () => 'Exact\r\noutput\n',
+		cancel: async () => { throw new Error('Opening output must never cancel a build'); },
+		forget: () => { throw new Error('Opening output must never discard a receipt'); },
+	};
+	const first = openBuildLog(harness.editorPanes, builds, job);
+	await first.refresh();
+	assert.equal(first.id, 'build-log:request-42'); assert.equal(harness.editorPanes.activePane!.input, first);
+	assert.equal(first.resource, undefined); assert.equal(first.serializable, false); assert.equal(first.isDirty(), false);
+	assert.equal('workingCopy' in first, false, 'a durable build receipt is not an authored working copy');
+	const document = first.error!; document.select(0, 8);
+	assert.equal(document.copy(), 'Compiler');
+	const reopened = openBuildLog(harness.editorPanes, builds, job);
+	assert.equal(reopened, first); assert.equal(reopened.document, document); assert.equal(document.copy(), 'Compiler');
+	assert.equal(editorTabGroup.tabs.length, 1, 'the request ID, not its target label, owns the open tab');
+	const other = openBuildLog(harness.editorPanes, builds, next);
+	assert.notEqual(other, first); assert.equal(other.id, 'build-log:request-43'); assert.equal(editorTabGroup.tabs.length, 2);
+	assert.equal(other.job.request.target, first.job.request.target, 'same-target jobs still have independent identities');
+	closeTab(harness.editorPanes, first.id);
+	assert.equal(editorTabGroup.findById(first.id), undefined);
+	const replacement = openBuildLog(harness.editorPanes, builds, job);
+	assert.notEqual(replacement, first); assert.notEqual(replacement.error, document);
+	assert.equal(replacement.document.selectionStart, 0); assert.equal(replacement.document.copy(), null);
+	assert.ok(requested.every(id => id === 'request-42' || id === 'request-43'));
+});
 
 test('closing the last tab detaches its pane before disposal and leaves the group empty', () => {
 	const harness = createEditorPanes();

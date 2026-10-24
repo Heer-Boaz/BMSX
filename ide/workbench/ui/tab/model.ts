@@ -1,6 +1,7 @@
 import type { AnimationEditorInput } from '../../contrib/animation/editor_input';
 import type { PlayEditorInput } from '../../contrib/play/editor_input';
 import type { HostErrorInput } from '../../contrib/host_error/editor_input';
+import type { BuildLogInput } from '../../contrib/builds/editor_input';
 import type { RomInspectorInput } from '../../contrib/rom_inspector/editor_input';
 import type { CartMapInput } from '../../contrib/cart_maps/editor_input';
 import type { EventViewerInput } from '../../contrib/events/editor_input';
@@ -25,6 +26,7 @@ export type EditorInput =
 	| PlayEditorInput
 	| AnimationEditorInput
 	| HostErrorInput
+	| BuildLogInput
 	| RomInspectorInput
 	| EventViewerInput
 	| GteDebuggerInput

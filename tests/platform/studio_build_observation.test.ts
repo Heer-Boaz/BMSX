@@ -134,3 +134,36 @@ test('build receipts survive multiple windows and HTTP/stream reordering', { tim
 	assert.equal(puts, 3);
 	await context.close();
 });
+
+test('closing a Build Output reader aborts actual metadata and log fetches without cancelling its producer', { timeout: 30000 }, async t => {
+	const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
+		import { HttpWorkspaceBuilds } from './ide/browser/builds';
+		import { StudioHttpSession } from './ide/browser/http_session';
+		globalThis.client = new HttpWorkspaceBuilds(new StudioHttpSession(), () => {});
+	` }, bundle: true, platform: 'browser', format: 'iife', write: false });
+	let admitted = Promise.withResolvers<string>();
+	const methods: string[] = [];
+	const server = createServer((req, res) => {
+		if (req.url === '/') { res.end('<!doctype html><script src="/probe.js"></script>'); return; }
+		if (req.url === '/probe.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(bundle.outputFiles[0].text); return; }
+		if (req.url === '/__bmsx__/session') { res.end(JSON.stringify({ workspaceToken: 'test' })); return; }
+		methods.push(req.method!); admitted.resolve(req.url!);
+		// Leave the finite reader request in flight. The browser owns its cancellation, not a build job action.
+	});
+	server.listen(0, '127.0.0.1'); await once(server, 'listening');
+	const browser = await chromium.launch({ args: ['--no-sandbox'] });
+	t.after(async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`, page = await browser.newPage();
+	await page.goto(origin);
+	for (const method of ['get', 'log']) {
+		admitted = Promise.withResolvers<string>();
+		await page.evaluate(method => {
+			const root = globalThis as any; root.controller = new AbortController();
+			root.result = root.client[method]('retained-request', root.controller.signal).then(() => 'unexpected success', (error: Error) => error.name);
+		}, method);
+		assert.equal(await admitted.promise, `/__bmsx__/builds/jobs/retained-request${method === 'log' ? '/log' : ''}`);
+		await page.evaluate(() => (globalThis as any).controller.abort());
+		assert.equal(await page.evaluate(() => (globalThis as any).result), 'AbortError');
+	}
+	assert.deepEqual(methods, ['GET', 'GET'], 'reader close never sends producer cancellation or resubmission');
+});

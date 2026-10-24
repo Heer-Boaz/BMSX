@@ -7,6 +7,7 @@ import { AnimationEditorController } from './workbench/contrib/animation/control
 import { AnimationEditorPane } from './workbench/contrib/animation/editor_pane';
 import { AnimationInputSerializer } from './workbench/contrib/animation/editor_serializer';
 import { HostErrorPane } from './workbench/contrib/host_error/editor_pane';
+import { BuildLogPane } from './workbench/contrib/builds/editor_pane';
 import { RomInspectorPane } from './workbench/contrib/rom_inspector/editor_pane';
 import { CartMapController } from './workbench/contrib/cart_maps/controller';
 import { CartMapPane } from './workbench/contrib/cart_maps/editor_pane';
@@ -503,6 +504,7 @@ export class RuntimeCartEditor implements CartEditor {
 			play_session: () => new PlayEditorPane(this.resourcePanel, this.commands, this.contextMenu, this.navigation),
 			animation: () => new AnimationEditorPane(this.resourcePanel, this.animations, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea),
 			host_error: () => new HostErrorPane(this.resourcePanel),
+			build_log: () => new BuildLogPane(this.resourcePanel, this.clipboard, this.contextMenu, this.surfaces, this.paneSurface, workArea),
 			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput, this.contextMenu, this.surfaces, this.paneSurface, workArea),
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu,
 				this.surfaces, this.paneSurface, workArea),

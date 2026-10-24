@@ -139,6 +139,8 @@ export type EditorCommandId =
 	| 'animation.openClip' | 'animation.duplicate' | 'animation.earlier' | 'animation.later' | 'animation.more'
 	| 'input.testActionString' | 'behaviorLens.testEffect'
 	| 'builds.start' | 'builds.jobs'
+	| 'buildLog.refresh' | 'buildLog.copyAll' | 'buildLog.output' | 'buildLog.error'
+	| 'text.find' | 'text.findNext' | 'text.findPrevious'
 	| 'server.connection'
 	| 'cartMap.source'
 	| 'cartMap.map' | 'cartMap.outline'

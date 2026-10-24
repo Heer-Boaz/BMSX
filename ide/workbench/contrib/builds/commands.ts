@@ -4,6 +4,7 @@ import { isBuildTerminal, type StudioBuildJob } from '../../../../hosts/common/s
 import type { WorkspaceBuilds } from '../../services/builds';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
+import { openBuildLog } from './editor_input';
 
 type BuildAction = QuickPickItem & { run(): Promise<void> };
 
@@ -60,12 +61,8 @@ function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, job: Stud
 		{ label: `${job.request.target}: ${job.state}`, description: job.phase, detail: `${job.request.debug ? 'Debug' : 'Release'} -O${job.request.optLevel}`,
 			run: () => inspectBuild(editor, builds, id) },
 		{ label: 'Refresh status', description: 'Read the original request', detail: '', run: () => inspectBuild(editor, builds, id) },
-		{ label: 'View build log', description: 'Bounded output; fetched only when requested', detail: job.error ?? '', run: async () => {
-			const text = [job.error, await builds.log(id)].filter(value => value !== undefined).join('\n');
-			// disable-next-line newline_normalization_pattern -- Producer output is displayed as searchable log lines.
-			const lines = text.split(/\r\n|\r|\n/).filter(line => line.length !== 0);
-			editor.quickInput.pick('Build log', 'Search output; select a line to copy it', () => new TextQuickPickProvider(
-				lines.map(line => ({ label: line, description: '', detail: '' }))), line => { void editor.clipboard.writeText(line.label).catch(reportBuildError); });
+		{ label: 'View build log', description: 'Read the captured output and failure diagnostic', detail: job.error ?? '', run: async () => {
+			openBuildLog(editor.editorPanes, builds, job);
 		} },
 		{ label: 'Copy request ID', description: id, detail: '', run: async () => { await editor.clipboard.writeText(id); } },
 	];

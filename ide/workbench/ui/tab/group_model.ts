@@ -1,4 +1,5 @@
 import type { HostErrorInput } from '../../contrib/host_error/editor_input';
+import type { BuildLogInput } from '../../contrib/builds/editor_input';
 import type { PlayEditorInput } from '../../contrib/play/editor_input';
 import type {
 	BehaviorLensTabId,
@@ -6,6 +7,7 @@ import type {
 	EditorTabId,
 	ResourceViewerTabId,
 	ScenarioLabTabId,
+	BuildLogTabId,
 } from './id';
 import type {
 	BehaviorLensInput,
@@ -161,6 +163,7 @@ export class EditorTabGroupModel {
 	}
 
 	public findById(tabId: 'host-error'): HostErrorInput | undefined;
+	public findById(tabId: BuildLogTabId): BuildLogInput | undefined;
 	public findById(tabId: 'play-session'): PlayEditorInput | undefined;
 	public findById(tabId: CodeEditorTabId): CodeEditorInput | undefined;
 	public findById(tabId: ResourceViewerTabId): ResourceViewerInput | undefined;

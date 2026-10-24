@@ -91,6 +91,7 @@ export function createTestEditorPanes(): EditorPanes {
 		play_session: () => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(activateViewInput),
 		animation: () => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(activateViewInput),
 		host_error: () => new TestEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(activateViewInput),
+		build_log: () => new TestEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(activateViewInput),
 		rom_inspector: () => new TestEditorPane<RomInspectorInput>(activateViewInput),
 		event_viewer: () => new TestEditorPane<EventViewerInput>(activateViewInput),
 		gte_debugger: () => new TestEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(activateViewInput),
