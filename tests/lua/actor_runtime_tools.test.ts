@@ -45,6 +45,8 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { RuntimeTimelineControl } from '../../ide/workbench/ui/runtime_timeline_control';
+import { updateFullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 
 /** Compiled guest representations, not JS table mocks. Actual cartlib construction is tested in the browser workflow. */
 const WORLD_SOURCE = `local fsm<const> = require('cartlib/fsm/fsm_component')
@@ -309,6 +311,7 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	const choices = readActorChoices(f.sources, f.guest, -1);
 	input.domain = -1;
 	pane.setInput(input, bounds); pane.update(); pane.focus();
+	const contentFocus = inputFocus.target;
 	const transport = new RuntimeTimelineControl(commands, () => pane.focus());
 	t.after(() => transport.dispose());
 	transport.attach(surfaces, owner, bounds);
@@ -317,17 +320,60 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	transport.focus();
 	assert.equal(inputFocus.target!.scope, transport.focusScope, 'the Workbench focus command can enter transport without a pointer');
 	inputFocus.moveFocus(false);
-	assert.equal(inputFocus.target, pane.runtimeControlContext, 'Tab leaves transport for its content when no history range is enabled');
+	assert.equal(inputFocus.target, contentFocus, 'Tab returns through the pane focus owner to its actual reading client');
 	transport.focus(); inputFocus.moveFocus(true);
-	assert.equal(inputFocus.target, pane.runtimeControlContext, 'Shift+Tab returns to the explicit owning content');
+	assert.equal(inputFocus.target, contentFocus, 'Shift+Tab returns to the actual reading client, not its command context');
 	transport.setContext(undefined, undefined); assert.equal(transport.visible, false);
 	assert.equal(controller.selected(input), undefined);
 	assert.equal(input.details!.subject, undefined);
 	assert.equal(commands.isEnabled('actorLab.details'), false, 'a brand-new empty Details inspection is not admitted');
 	input.actorHashId = choices[0].hashId; input.dirty = true;
 	pane.update(); input.outline.selectionIndex = 0; input.rememberSelection();
+	const originalTree = { ...input.outline.layout }, originalPreview = { ...input.previewBounds };
+	const selectedRow = input.outline.rows[input.outline.selectionIndex];
+	bounds.left += 115; bounds.right += 115; pane.layout(bounds); pane.update();
+	assert.equal(input.outline.layout.contentLeft, originalTree.contentLeft + 115, 'the Actor outline consumes its actual translated client');
+	assert.equal(input.outline.layout.contentRight, originalTree.contentRight + 115);
+	assert.equal(input.previewBounds.left, originalPreview.left + 115);
+	assert.equal(input.previewBounds.right, originalPreview.right + 115);
+	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selectedRow);
+	bounds.left -= 115; bounds.right -= 115; pane.layout(bounds); pane.update();
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	controller.openStateGraph(input, editorViewState.font.renderFont()); pane.update();
+	const graph = input.stateGraph!, graphModel = graph.viewport.model, graphSelection = graph.viewport.selection;
+	const graphCanvas = { ...graph.viewport.canvas };
+	const overlay = createHostOverlayFixture(512, 288);
+	for (const retired of [false, true]) {
+		if (retired) { graph.retire('heap-replaced'); pane.update(); }
+		const draws: { x: number; y: number; text: string }[][] = [];
+		for (const offset of [0, 115]) {
+			bounds.left = offset; bounds.right = 384 + offset; pane.layout(bounds); pane.update();
+			assert.equal(graph.viewport.canvas.left, graphCanvas.left + offset);
+			assert.equal(graph.viewport.canvas.right, graphCanvas.right + offset);
+			if (!retired) {
+				assert.strictEqual(graph.viewport.model, graphModel, 'client translation does not rebuild the physical FSM projection');
+				assert.strictEqual(graph.viewport.selection, graphSelection);
+			}
+			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); pane.draw(); overlay.renderer.endFrame();
+			const frame = overlay.queue.consumeOverlayFrame(), glyphs: { x: number; y: number; text: string }[] = [];
+			let transform = IDENTITY_HOST_OVERLAY_TRANSFORM;
+			for (let index = 0; index < frame.commandCount; index++) {
+				if (frame.commandKinds[index] === Host2DKind.Transform) transform = frame.commandRefs[index] as HostOverlayTransform;
+				else if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+					const run = frame.commandRefs[index] as GlyphRenderSubmission;
+					glyphs.push({ x: run.x * transform.scale + transform.offsetX, y: run.y * transform.scale + transform.offsetY,
+						text: (run.items as string).slice(run.item_start, run.item_end) });
+				}
+			}
+			draws.push(glyphs);
+		}
+		assert.ok(draws[0].length > 0);
+		assert.deepEqual(draws[1], draws[0].map(run => ({ ...run, x: run.x + 115 })),
+			'the graph header, content and retired-state feedback share the actual canvas origin');
+	}
+	controller.openOutline(input); input.outline.selectionIndex = 0; input.rememberSelection();
+	bounds.left = 0; bounds.right = 384; pane.layout(bounds); pane.update();
 	assert.equal(input.split.bounds.top, bounds.top + 2, 'preview geometry no longer reserves duplicate playback and GAME FRAME headers');
-	const overlay = createHostOverlayFixture(384, 288);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); pane.draw(); overlay.renderer.endFrame();
 	const frame = overlay.queue.consumeOverlayFrame(), chromeText: string[] = [];
 	for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
@@ -468,6 +514,30 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	assert.equal(input.detailsWindow.open, true); assert.equal(input.detailsWindow.collapsed, true);
 	assert.equal(details.subject, subject); assert.equal(details.locked, true); assert.equal(details.available, false);
 	assert.equal(formatting.mock.callCount(), beforeActivation, 'activation and reopening cannot format a collapsed property client');
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor timeline layout translates with its client and invalidates an inset-only change`, t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const input = f.controller.resolveInput(); t.after(() => input.dispose());
+	const previousFont = editorViewState.font, previousHeight = editorViewState.lineHeight, previousAdvance = editorViewState.charAdvance;
+	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	t.after(() => { editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; editorViewState.charAdvance = previousAdvance; });
+	const bounds = { left: 0, top: 20, right: 384, bottom: 270 };
+	updateFullWidthWorkbenchLayout(input.layout, bounds);
+	input.timeline.positionLabel = '0 MS'; input.timeline.durationLabel = '1000 MS';
+	input.timelineLayout.update(input.timeline, input.layout);
+	const original = { ...input.timeline.slider.bounds }, duration = input.timelineLayout.durationLeft;
+	const measure = t.mock.method(editorViewState.font, 'advance');
+	bounds.left += 115; bounds.right += 115;
+	updateFullWidthWorkbenchLayout(input.layout, bounds); input.timelineLayout.update(input.timeline, input.layout);
+	assert.equal(input.timeline.slider.bounds.left, original.left + 115);
+	assert.equal(input.timeline.slider.bounds.right, original.right + 115);
+	assert.equal(input.timelineLayout.durationLeft, duration + 115);
+	bounds.left += 20;
+	updateFullWidthWorkbenchLayout(input.layout, bounds); input.timelineLayout.update(input.timeline, input.layout);
+	assert.equal(input.timeline.slider.bounds.left, original.left + 135, 'left-only changes invalidate retained timeline geometry');
+	for (let frame = 0; frame < 1000; frame++) input.timelineLayout.update(input.timeline, input.layout);
+	assert.equal(measure.mock.callCount(), 0, 'translation and idle timeline geometry retain measured labels');
 });
 
 test('Actor Lab navigation keeps graph edge identity and retires bookmarks at heap replacement or history resume', t => {

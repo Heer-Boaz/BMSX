@@ -395,6 +395,22 @@ test('the view declares a retained focus order; controls without an order keep t
 	assert.equal(focus.moveFocus(true), false);
 });
 
+test('focus-order boundaries invoke the current content owner once and preserve its chosen concrete client', () => {
+	const focus = new InputFocusService(), actions = focus.createTarget(), first = focus.createTarget(), second = focus.createTarget(), redirected = focus.createTarget();
+	let current = first, returns = 0;
+	actions.next = () => { returns++; current.focus(); };
+	actions.previous = () => { returns++; focus.setTarget(null); };
+	actions.focus(); assert.equal(focus.moveFocus(false), true);
+	assert.equal(focus.target, first); assert.equal(returns, 1);
+	current = second;
+	second.onDidFocus(() => redirected.focus());
+	actions.focus(); assert.equal(focus.moveFocus(false), true);
+	assert.equal(focus.target, redirected, 'the boundary does not overwrite focus published by the view or its focus handlers');
+	assert.equal(returns, 2);
+	actions.focus(); assert.equal(focus.moveFocus(true), true);
+	assert.equal(focus.target, null); assert.equal(returns, 3);
+});
+
 test('text-field positions and Undo preserve CRLF bytes rather than indexing a lossy display split', () => {
 	const field = new TextField();
 	setFieldText(field, 'a\r\nb\r\n', true);

@@ -48,6 +48,7 @@ if (captureDirectory !== undefined) mkdirSync(captureDirectory, { recursive: tru
 /** Typed transcript publication, deliberately without a provider, connection factory or tool authority. */
 class TranscriptProducer extends ObservedConversation {
 	public message(text: string, images?: readonly string[]): AssistantEntry { return this.append('assistant', text, undefined, undefined, images); }
+	public user(text: string): AssistantEntry { return this.append('user', text); }
 	public proposal(proposal: WorkspaceEditProposal): AssistantEntry { return this.append('proposal', proposal.title, proposal); }
 	public reset(): void { this.resetTranscript(); }
 	public prepend(text: string, images?: readonly string[]): AssistantEntry {
@@ -85,12 +86,12 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	const unbind = inputFocus.bindScopeAdmission(scope => {
 		const surface = surfaces.findByScope(scope.surfaceScope); return surface !== undefined && surfaces.isAdmitted(surface);
 	});
-	const layout = (nextWidth = input.layout.right, nextVariant: 'tiny' | 'msx' = input.layout.font!.variant, bottom = input.layout.bottom) => {
+	const layout = (nextWidth = input.layout.right, nextVariant: 'tiny' | 'msx' = input.layout.font!.variant, bottom = input.layout.bottom, left = input.layout.left) => {
 		if (editorViewState.font.variant !== nextVariant) configureFontVariant(new VirtualHeadlessClock(), nextVariant, null);
-		const changed = input.layout.right !== nextWidth || input.layout.font !== editorViewState.font || input.layout.bottom !== bottom
+		const changed = input.layout.left !== left || input.layout.right !== nextWidth || input.layout.font !== editorViewState.font || input.layout.bottom !== bottom
 			|| input.layout.top !== 24 || input.layout.rowHeight !== editorViewState.lineHeight;
-		Object.assign(input.layout, { left: 0, top: 24, right: nextWidth, bottom, font: editorViewState.font, rowHeight: editorViewState.lineHeight });
-		input.transcript.update(conversation.entries, nextWidth - colors.SCROLLBAR_WIDTH - 16, measureStyledText, editorViewState.font);
+		Object.assign(input.layout, { left, top: 24, right: nextWidth, bottom, font: editorViewState.font, rowHeight: editorViewState.lineHeight });
+		input.transcript.update(conversation.entries, nextWidth - left - colors.SCROLLBAR_WIDTH - 16, measureStyledText, editorViewState.font);
 		control.layout(28, bottom - 4, false, changed); preview.layout(input.layout, input.layout.rowHeight);
 	};
 	Object.assign(input.layout, { right: width, bottom: 260, font: editorViewState.font }); layout(width, variant);
@@ -130,6 +131,29 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	return { input, conversation, control, preview, cache, decoded, reviews, parent, composer, surfaces, owner, overlay,
 		layout, key, press, paint, tile, pointer, capture, load: async () => { await Promise.allSettled(reads); } };
 }
+
+for (const variant of ['tiny', 'msx'] as const) test(`transcript layout translates its painted user accent with its client in ${variant}`, t => {
+	const f = fixture(t, variant, 272), entry = f.conversation.user('A real selected user message');
+	f.input.selection.select(entry); f.control.scroll.focusTarget.focus(); f.layout();
+	// Translation is the layout contract under test, not a screenshot or an incidental UI position.
+	const accent = () => {
+		const frame = f.paint();
+		for (let index = 0; index < frame.commandCount; index++) {
+			if (frame.commandKinds[index] !== Host2DKind.Rect) continue;
+			const rect = frame.commandRefs[index] as RectRenderSubmission;
+			if (rect.kind === RectRenderKind.Fill && rect.color === resolveThemeTokenColor(colors.COLOR_BODY_ACCENT)) return { ...rect.area };
+		}
+		assert.fail('the transcript user accent must remain painted inside its client');
+	};
+	const before = accent(), rows = f.input.transcript.rows.slice(), dx = 80;
+	f.layout(f.input.layout.right + dx, variant, f.input.layout.bottom, dx);
+	const after = accent();
+	assert.deepEqual(after, { ...before, left: before.left + dx, right: before.right + dx });
+	assert.equal(f.input.selection.entry, entry);
+	assert.equal(f.control.scroll.focusTarget.hasFocus, true);
+	assert.equal(f.input.transcript.rows.length, rows.length);
+	for (let index = 0; index < rows.length; index++) assert.equal(f.input.transcript.rows[index], rows[index]);
+});
 
 test('keyboard navigation reaches each real image slot; Enter/Space open only its image and return to transcript focus', async t => {
 	const f = fixture(t), entry = f.conversation.message('**Original** Markdown', [FIRST, FIRST]), next = f.conversation.message('', [SECOND]);

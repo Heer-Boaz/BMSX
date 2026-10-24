@@ -34,7 +34,9 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		this.actions.focusTarget.next = this.scroll.focusTarget;
 		this.scroll.focusTarget.previous = this.actions.focusTarget;
 		for (const command of ['workspaceEditReview.apply', 'workspaceEditReview.discard'] as const) {
-			this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
+			const implementation = { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) };
+			this.focusTarget.registerCommand(command, implementation);
+			this.scroll.focusTarget.registerCommand(command, implementation);
 		}
 	}
 	public override focus(): void { this.scroll.focusTarget.focus(); }
@@ -53,7 +55,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		this.actions.dispose(); this.scroll.dispose(); super.dispose();
 	}
 	public isEnabled(command: EditorCommandId): boolean {
-		return (command === 'workspaceEditReview.apply' || command === 'workspaceEditReview.discard') && this.input.proposal.state === 'pending';
+		return this.hasInput && (command === 'workspaceEditReview.apply' || command === 'workspaceEditReview.discard') && this.input.proposal.state === 'pending';
 	}
 	public execute(command: EditorCommandId): void {
 		if (!this.isEnabled(command)) return;
@@ -74,24 +76,26 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 	public override update(): void {
 		const { layout, actionBar, viewport } = this.input;
 		const changed = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
+		const width = layout.right - layout.left;
 		const proposal = this.input.proposal;
 		if (changed || this.input.renderedState !== proposal.state) {
 			this.input.renderedState = proposal.state;
 			this.input.status = truncateMeasuredText(`${proposal.files.length} ${proposal.files.length === 1 ? 'file' : 'files'} | ${proposal.state === 'pending' ? proposal.kind === 'create' ? 'Pending - Apply creates the source file' : 'Pending - Apply edits working copies; Save is separate'
 				: proposal.state === 'applied' ? proposal.kind === 'create' ? 'New source created and saved - not installed'
 					: 'Applied to working copies - Undo in either source view'
-				: proposal.state === 'stale' || proposal.state === 'failed' ? `${proposal.state}: ${proposal.reason}` : 'Discarded - no source changes'}`, layout.right - 8, measureTextRange);
+					: proposal.state === 'stale' || proposal.state === 'failed' ? `${proposal.state}: ${proposal.reason}` : 'Discarded - no source changes'}`, width - 8, measureTextRange);
 		}
 		if (changed) {
 			this.input.reading.capture(viewport, this.input.rows);
 			layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont(), layout.left + 4);
-			this.input.heading = truncateMeasuredText(this.input.proposal.title, actionBar.items[0].bounds.left - 8, measureTextRange);
-			if (this.input.projectedWidth !== layout.right || this.input.projectedFont !== layout.font) {
-				layoutEditReviewRows(this.input, layout.right - colors.SCROLLBAR_WIDTH - 8, measureTextRange);
-				this.input.projectedWidth = layout.right;
+			this.input.heading = truncateMeasuredText(this.input.proposal.title, actionBar.items[0].bounds.left - layout.left - 8, measureTextRange);
+			const textWidth = width - colors.SCROLLBAR_WIDTH - 8;
+			if (this.input.projectedWidth !== textWidth || this.input.projectedFont !== layout.font) {
+				layoutEditReviewRows(this.input, textWidth, measureTextRange);
+				this.input.projectedWidth = textWidth;
 				this.input.projectedFont = layout.font;
 			}
-			viewport.layout(4, layout.top + layout.rowHeight * 2 + 12, layout.right, layout.bottom, this.input.rows.length * layout.rowHeight);
+			viewport.layout(layout.left + 4, Math.min(layout.bottom, layout.top + layout.rowHeight * 2 + 12), layout.right, layout.bottom, this.input.rows.length * layout.rowHeight);
 			this.input.reading.restore(viewport, this.input.rows, layout.rowHeight);
 			this.scroll.lineStep = layout.rowHeight;
 		}
@@ -100,10 +104,11 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 	public draw(): void {
 		const { layout, actionBar, viewport, rows } = this.input;
 		const font = editorViewState.font.renderFont();
+		const textLeft = layout.left + 4;
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		renderWorkbenchActionBar(actionBar, font, colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
-		api.blit_text_inline_with_font(this.input.heading, 4, layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
-		api.blit_text_inline_with_font(this.input.status, 4, layout.top + layout.rowHeight + 6, 0,
+		api.blit_text_inline_with_font(this.input.heading, textLeft, layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+		api.blit_text_inline_with_font(this.input.status, textLeft, layout.top + layout.rowHeight + 6, 0,
 			this.input.proposal.state === 'stale' || this.input.proposal.state === 'failed' ? colors.COLOR_INSPECTOR_WARNING_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);
 		let index = Math.trunc(viewport.scrollTop / layout.rowHeight);
@@ -112,7 +117,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 			const row = rows[index];
 			if (row.kind !== 'header') api.fill_rect(viewport.bounds.left, top, viewport.bounds.right, top + layout.rowHeight, 0,
 				row.kind === 'before' ? colors.COLOR_DIFF_REMOVED_BACKGROUND : colors.COLOR_DIFF_INSERTED_BACKGROUND);
-			api.blit_text_inline_with_font(row.text, 4, top, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			api.blit_text_inline_with_font(row.text, textLeft, top, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		}
 		api.popClipRect();
 		viewport.scrollbar.draw(colors.COLOR_CODE_BACKGROUND, colors.COLOR_RESOURCE_VIEWER_TEXT);

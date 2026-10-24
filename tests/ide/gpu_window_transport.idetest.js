@@ -1,12 +1,32 @@
 // Real GPU observation/transport commands from client and collapsed-window scopes.
 // Run: npm run ide:test -- nemesis_s tests/ide/gpu_window_transport.idetest.js
 const capture = async label => { await t.frames(2); t.log(`VISUAL ${label}`); t.capture(label); };
+const press = async (...codes) => {
+	t.controlInput(codes.map(code => ({ type: 'key', code, down: true }))); await t.frames(2);
+	t.controlInput(codes.map(code => ({ type: 'key', code, down: false }))); await t.frames(2);
+};
 await t.waitForCart(); await t.frames(90); t.openLuaSource('cart.lua'); await t.frames(2);
 const authored = t.activeWorkbenchTab(), source = authored.context.model.buffer.getText();
 t.command('gpuDebugger'); await t.frames(2);
 const input = t.activeWorkbenchTab();
 t.assert(input.kind === 'gpu_debugger', 'the actual GPU contribution did not open');
 for (let frame = 0; frame < 3; frame++) { t.command('stepFrame'); await t.frames(8); }
+for (let font = 0; font < 2; font++) {
+	const sequence = input.selected.sequence, cycles = t.runtime().machine.scheduler.nowCycles;
+	t.command('runtime.focusTimeline'); await t.frames(2);
+	// Depending on history availability, the range is either one more Tab stop or absent.
+	// Both paths must return to the real list, whose next control is the GPU action bar.
+	for (let stop = 0; stop < 3 && !input.actions.hasFocus; stop++) await press('Tab');
+	t.assert(input.actions.hasFocus, 'Tab from the runtime timeline did not return through the real GPU content client');
+	await capture(`gpu-timeline-forward-return-font-${font}`);
+	t.command('runtime.focusTimeline'); await t.frames(2);
+	await press('ShiftLeft', 'Tab'); await press('Tab');
+	t.assert(input.actions.hasFocus, 'reverse Tab returned to a command root instead of the real GPU content client');
+	t.assert(input.selected.sequence === sequence && t.runtime().machine.scheduler.nowCycles === cycles,
+		'timeline focus traversal changed the inspected operation or executed the paused guest');
+	await press('Tab');
+	await press('ControlLeft', 'ShiftLeft', 'KeyT');
+}
 t.command('gpu.details'); await t.frames(3);
 const before = input.selected.sequence, cycles = t.runtime().machine.scheduler.nowCycles;
 t.command('gpu.follow'); t.command('pause'); await t.frames(12);

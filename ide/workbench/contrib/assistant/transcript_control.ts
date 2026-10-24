@@ -101,10 +101,10 @@ export class AssistantTranscriptControl {
 			const row = transcript.rowAt(index)!, entry = row.entry;
 			const selected = entry === selection.entry && selection.imageIndex === undefined;
 			if (entry.kind === 'user' && !row.heading && !row.image) {
-				api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
-				api.fill_rect(4, top, 5, top + layout.rowHeight, 0, colors.COLOR_BODY_ACCENT);
+				api.fill_rect(viewport.bounds.left, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
+				api.fill_rect(viewport.bounds.left, top, viewport.bounds.left + 1, top + layout.rowHeight, 0, colors.COLOR_BODY_ACCENT);
 			}
-			if (selected && !row.image) api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
+			if (selected && !row.image) api.fill_rect(viewport.bounds.left, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
 			if (row.image) {
 				if (row.image.line === 0 || index === Math.trunc(viewport.scrollTop / layout.rowHeight)) {
 					const bounds = this.layoutImage(index - row.image.line), preview = this.previews.use(row.image.url);
@@ -119,7 +119,7 @@ export class AssistantTranscriptControl {
 				}
 				continue;
 			}
-			drawMarkdownRow(row, viewport.bounds.left + 4, top, viewport.bounds.right - 12, selected ? colors.COLOR_SELECTION_TEXT
+			drawMarkdownRow(row, viewport.bounds.left + 4, top, viewport.bounds.right - viewport.bounds.left - 8, selected ? colors.COLOR_SELECTION_TEXT
 				: entry.kind === 'status' ? colors.COLOR_MARKDOWN_MUTED_TEXT : textColor, selected);
 		}
 		api.popClipRect(); viewport.scrollbar.draw(colors.COLOR_CODE_BACKGROUND, textColor);

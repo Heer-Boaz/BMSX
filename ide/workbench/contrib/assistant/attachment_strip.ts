@@ -23,7 +23,7 @@ export class AssistantAttachmentStrip {
 	private attachments: AssistantAttachments | undefined;
 	public constructor(private readonly previews: ImagePreviewCache, private readonly open: (url: string) => void) {
 		this.focusTarget.bindKeyboard(input => {
-			if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.focusTarget.next?.focus(); return; }
+			if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); inputFocus.moveFocus(false); return; }
 			if (isKeyJustPressed('Delete', input) || isKeyJustPressed('Backspace', input)) {
 				consumeIdeKey('Delete', input); consumeIdeKey('Backspace', input);
 				if (this.attachments!.images.length > 0) this.removeSelected();
@@ -104,7 +104,7 @@ export class AssistantAttachmentStrip {
 		this.attachments!.remove(this.selected);
 		this.selected = Math.max(0, Math.min(this.selected, this.attachments!.images.length - 1));
 		this.revealSelection();
-		if (this.attachments!.images.length === 0) this.focusTarget.next!.focus();
+		if (this.attachments!.images.length === 0) inputFocus.moveFocus(false);
 	}
 	private openSelected(): void {
 		const image = this.attachments!.images[this.selected];

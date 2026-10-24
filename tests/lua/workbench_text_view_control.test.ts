@@ -48,6 +48,22 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
+	test(`${variant} local Find splices into and out of a callback focus boundary without replacing the view owner`, t => {
+		const f = fixture(t, variant);
+		let returns = 0;
+		const returnToContent = () => { returns++; f.actions.focus(); };
+		f.control.focusTarget.next = returnToContent;
+		f.press('KeyF', KeyModifier.ctrl);
+		assert.equal(f.control.findField.focusTarget.next, returnToContent);
+		assert.equal(inputFocus.moveFocus(false), true); assert.equal(returns, 1);
+		assert.equal(inputFocus.target, f.actions);
+		f.control.closeFind();
+		assert.equal(f.control.focusTarget.next, returnToContent);
+		assert.equal(f.control.findField.focusTarget.next, null);
+		assert.equal(inputFocus.moveFocus(false), true); assert.equal(returns, 2);
+		assert.equal(inputFocus.target, f.actions);
+	});
+
 	test(`${variant} real local Find bindings select distinct raw occurrences and Escape returns exact document clipboard ownership`, t => {
 		const f = fixture(t, variant), clipboard = new HeadlessClipboard();
 		f.press('KeyF', KeyModifier.ctrl); assert.equal(f.control.findVisible, true);

@@ -92,9 +92,9 @@ test('document Find belongs to the document/query leaf and cannot mutate a resou
 	const leaf = inputFocus.target!;
 	const command = resolveEditorCommandKeybinding('KeyF', KeyModifier.ctrl, undefined, leaf);
 	assert.equal(command?.command, 'text.find');
-	const actions = leaf.next!;
+	assert.equal(inputFocus.moveFocus(false), true);
+	const actions = inputFocus.target!;
 	assert.equal(actions.parent === leaf.parent, true, 'Tab reaches the actual sibling title actions, not the pane itself');
-	actions.focus();
 	assert.equal(resolveEditorCommandKeybinding('KeyF', KeyModifier.ctrl, undefined)?.command, 'text.find', 'the title actions expose the same document command');
 	leaf.focus();
 	assert.equal(leaf.getCommand('undo'), undefined); assert.equal(leaf.getCommand('redo'), undefined);

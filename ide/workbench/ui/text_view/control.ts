@@ -10,7 +10,7 @@ import { TextField } from '../../../editor/ui/inline/text_field_model';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { resetBlink } from '../../../editor/render/caret';
-import { inputFocus, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyDown, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { pointerHover, type PointerHoverTarget } from '../../../input/pointer/hover';
@@ -113,10 +113,11 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 		if (arranged) {
 			const next = this.focusTarget.next;
 			field.previous = this.focusTarget; field.next = next; this.focusTarget.next = field;
-			if (next !== null) next.previous = field;
+			// Only concrete successors have a reverse edge; view-boundary callbacks do not.
+			if (next instanceof InputFocusTarget) next.previous = field;
 		} else {
 			this.focusTarget.next = field.next;
-			if (field.next !== null) field.next.previous = this.focusTarget;
+			if (field.next instanceof InputFocusTarget) field.next.previous = this.focusTarget;
 			field.next = field.previous = null; field.cancelInput(); field.release();
 			this.findField.nativeCaret.width = this.findField.nativeCaret.height = 0;
 		}

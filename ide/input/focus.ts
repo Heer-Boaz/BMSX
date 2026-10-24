@@ -47,8 +47,9 @@ export class InputFocusTarget {
 	public edit: InputEdit | undefined;
 	/** A focused embedded viewport routes physical input to the guest, not editor commands. */
 	public guestInput: GuestInputBinding | undefined;
-	public next: InputFocusTarget | null = null;
-	public previous: InputFocusTarget | null = null;
+	/** A view boundary delegates focus to its owner, which chooses the current concrete client. */
+	public next: InputFocusTarget | (() => void) | null = null;
+	public previous: InputFocusTarget | (() => void) | null = null;
 	private readonly commands = new Map<EditorCommandId, FocusCommand>();
 	private readonly blurListeners = new Set<(next: InputFocusTarget | null) => void>();
 	private readonly focusListeners = new Set<() => void>();
@@ -254,7 +255,8 @@ export class InputFocusService {
 		if (target === null) return false;
 		const destination = backward ? target.previous : target.next;
 		if (destination === null) return false;
-		this.setTarget(destination);
+		if (typeof destination === 'function') destination();
+		else this.setTarget(destination);
 		return true;
 	}
 }

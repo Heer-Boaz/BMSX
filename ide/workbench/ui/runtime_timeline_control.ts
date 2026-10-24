@@ -34,7 +34,7 @@ export class RuntimeTimelineControl {
 	private transport: RuntimeTransport | undefined;
 	private requestedCycles: number | undefined;
 	private seekOperation: FrameNavigationOperation | undefined;
-	public constructor(private readonly commands: EditorCommandRunner, focusContent: () => void) {
+	public constructor(private readonly commands: EditorCommandRunner, private readonly focusContent: () => void) {
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, null, focusContent);
 		this.focusScope = this.actions.focusTarget.scope;
 		this.slider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.actions.focusTarget,
@@ -56,9 +56,9 @@ export class RuntimeTimelineControl {
 		this.seekOperation = undefined; this.context = context; this.transport = transport;
 		if (context !== undefined) {
 			this.actions.setInput(this.actionState, context);
-			this.actions.focusTarget.previous = context;
+			this.actions.focusTarget.previous = this.focusContent;
 			this.slider.focusTarget.commandContext = context;
-			this.slider.focusTarget.next = context;
+			this.slider.focusTarget.next = this.focusContent;
 			this.slider.setInput(this.range);
 		} else { this.actions.focusTarget.previous = null; this.slider.focusTarget.next = null; }
 	}
@@ -97,7 +97,7 @@ export class RuntimeTimelineControl {
 		this.range.enabled = rewind.available && (navigation.available || navigation.active === this.seekOperation && this.seekOperation !== undefined);
 		if (this.requestedCycles === undefined && this.seekOperation === undefined) this.range.value = rewind.positionCycles;
 		this.slider.update();
-		this.actions.focusTarget.next = this.range.interactive ? this.slider.focusTarget : this.context;
+		this.actions.focusTarget.next = this.range.interactive ? this.slider.focusTarget : this.focusContent;
 		const tooltipItem = this.actions.tooltipItem;
 		if (tooltipItem !== undefined) this.tooltip.show(tooltipItem.tooltip, tooltipItem.bounds,
 			editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);

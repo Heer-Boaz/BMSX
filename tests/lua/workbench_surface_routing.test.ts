@@ -39,6 +39,15 @@ import { insertValue, selectAll, setFieldText } from '../../ide/editor/ui/inline
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { HostPauseReason } from '../../hosts/common/execution_control';
+import { ConversationObserverInput } from '../../ide/workbench/contrib/conversations/editor_input';
+import { ObservedConversation } from '../../ide/workbench/services/assistant/observed_conversation';
+import { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
+import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { openEditorTab } from '../../ide/workbench/ui/tabs';
+import { AssistantConversation } from '../../ide/workbench/services/assistant/conversation';
+import { EditorTextModelService } from '../../ide/editor/model/model_service';
+import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
+import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
 
 function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: LuaSourceRegistry }) {
 	const host = createHostFrameFixture(authored === undefined ? undefined : createTestRuntime(authored.image.romBytes));
@@ -71,8 +80,62 @@ function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: 
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	const extent = { left: 0, top: 0, right: 384, bottom: 288 };
-	return { editor, host, pointer, extent };
+	return { editor, host, pointer, extent, sources };
 }
+
+test('the real Assistant transcript owns only its selected-message actions for the attached input lifetime', async t => {
+	class TranscriptProducer extends AssistantConversation {
+		public message(text: string) { return this.append('assistant', text); }
+		public proposal(proposal: WorkspaceEditProposal) { return this.append('proposal', proposal.title, proposal); }
+	}
+	const source = 'return 42', path = 'transcript-actions.lua';
+	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, path), [],
+		{ entrySource: source, programDomain: 'system', optLevel: 0 }));
+	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: path,
+		projectRootPath: '', can_boot_from_source: true, revision: 0 };
+	registerLuaSourceRecord(registry, { resid: 'transcript-actions', type: 'lua', src: source, base_src: source,
+		source_path: path, normalized_source_path: path, module_path: 'transcript-actions', update_timestamp: 0,
+		base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
+	const { editor, sources } = fixture(t, { image, registry }), models = new EditorTextModelService();
+	const conversation = new TranscriptProducer(models, sources, editor.tools), input = new AssistantInput(conversation);
+	const model = models.retain(sources.luaResources[0], 'lua', source);
+	const proposal = new WorkspaceEditProposal('Proposed source', new WorkspaceSourceContext(models, sources), {
+		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 7, deleteLength: 2, text: '43' }] }]]),
+	});
+	t.after(() => { input.dispose(); conversation.dispose(); models.clear(); });
+	const message = conversation.message('Exact selected message\r\nwith retained bytes'), proposed = conversation.proposal(proposal);
+	assert.equal(conversation.available, false);
+	input.selection.select(undefined);
+	openEditorTab(editor.editorPanes, input); editor.update(0);
+	assert.ok(inputFocus.target === input.draft.focusTarget);
+	assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.moveFocus(false), true);
+	const client = inputFocus.target!;
+	assert.notEqual(client, input.draft.focusTarget);
+	for (const command of ['assistant.review', 'assistant.copy'] as const) {
+		assert.ok(client.getCommand(command), 'the transcript publishes its real selected-message action');
+		assert.equal(client.getCommand(command), client.parent!.getCommand(command));
+		assert.equal(editor.commands.isEnabled(command, client), false);
+	}
+	for (const command of ['assistant.send', 'assistant.queue', 'assistant.direct'] as const) assert.equal(client.getCommand(command), undefined);
+	input.selection.select(message);
+	assert.equal(editor.commands.isEnabled('assistant.copy', client), true);
+	assert.equal(editor.commands.isEnabled('assistant.review', client), false);
+	editor.commands.execute('assistant.copy', client);
+	assert.equal((await editor.clipboard.read()).text, message.text.getText());
+	input.selection.select(proposed);
+	assert.equal(editor.commands.isEnabled('assistant.review', client), true);
+	editor.editorPanes.clearEditor();
+	for (const command of ['assistant.review', 'assistant.copy'] as const) assert.equal(editor.commands.isEnabled(command, client), false);
+	editor.commands.execute('assistant.review', client); assert.equal(editor.editorPanes.activePane, null);
+	editor.editorPanes.openEditor(input); inputFocus.moveFocus(false); inputFocus.moveFocus(false);
+	assert.ok(inputFocus.target === client);
+	assert.equal(editor.commands.isEnabled('assistant.review', client), true);
+	editor.commands.execute('assistant.review', client);
+	const review = editor.editorPanes.activePane!.input;
+	assert.equal(review.kind, 'workspace_edit_review');
+	assert.ok(review.kind === 'workspace_edit_review' && review.proposal === proposal);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
+});
 
 test('generic command admission and execution use the exact target and disabled locals shadow other owners', t => {
 	const { editor } = fixture(t), parent = inputFocus.createTarget(), leaf = inputFocus.createTarget(parent);
@@ -94,6 +157,76 @@ test('generic command admission and execution use the exact target and disabled 
 	assert.equal(editor.commands.isEnabled('undo', absent), false);
 	editor.commands.execute('undo', absent);
 	assert.equal(ancestor, 0, 'an absent local capability does not inherit a document action');
+});
+
+test('Conversations publishes older-page admission on its real transcript client for the attached input lifetime', t => {
+	const { editor } = fixture(t), conversation = new ObservedConversation(), replacement = new ObservedConversation();
+	const input = new ConversationObserverInput(conversation), next = new ConversationObserverInput(replacement);
+	const older = t.mock.method(conversation, 'older', async () => {}), nextOlder = t.mock.method(replacement, 'older', async () => {});
+	t.after(() => { input.dispose(); next.dispose(); conversation.dispose(); replacement.dispose(); });
+	conversation.olderCursor = 'previous-page'; replacement.olderCursor = 'replacement-page';
+	editor.editorPanes.openEditor(input);
+	const client = inputFocus.target!;
+	assert.ok(client.getCommand('conversations.older'));
+	assert.equal(client.getCommand('conversations.older'), client.parent!.getCommand('conversations.older'));
+	assert.equal(editor.commands.isEnabled('conversations.older', client), true);
+	editor.commands.execute('conversations.older', client); assert.equal(older.mock.callCount(), 1);
+	conversation.pending = true;
+	assert.equal(editor.commands.isEnabled('conversations.older', client), false);
+	editor.commands.execute('conversations.older', client); assert.equal(older.mock.callCount(), 1);
+	conversation.pending = false; conversation.olderCursor = null;
+	assert.equal(editor.commands.isEnabled('conversations.older', client), false);
+	conversation.olderCursor = 'previous-page'; editor.editorPanes.clearEditor();
+	assert.notEqual(inputFocus.admittedTarget, client);
+	assert.equal(editor.commands.isEnabled('conversations.older', client), false);
+	editor.commands.execute('conversations.older', client); assert.equal(older.mock.callCount(), 1);
+	editor.editorPanes.openEditor(next);
+	assert.equal(inputFocus.target, client, 'the retained client reads its newly attached input, not the old conversation');
+	assert.equal(editor.commands.isEnabled('conversations.older', client), true);
+	editor.commands.execute('conversations.older', client);
+	assert.equal(older.mock.callCount(), 1); assert.equal(nextOlder.mock.callCount(), 1);
+});
+
+test('Conversations wrapping is invariant under translation of the editor client', t => {
+	class TranscriptProducer extends ObservedConversation {
+		public message(text: string): void { this.append('assistant', text); }
+	}
+	const { editor } = fixture(t), conversation = new TranscriptProducer(), input = new ConversationObserverInput(conversation);
+	t.after(() => { input.dispose(); conversation.dispose(); });
+	conversation.message('A conversation transcript wraps at its own client width, independently of the client origin. '.repeat(5));
+	conversation.configuration = { agent: 'codex', provider: null, model: 'a-model-with-a-long-name', effort: 'a-long-effort-description', serviceTier: 'a-long-service-tier' };
+	const bounds = { left: 0, top: 24, right: 180, bottom: 260 };
+	editor.editorPanes.layout(bounds); editor.editorPanes.openEditor(input);
+	const rows = input.transcript.rows.length, footer = input.footer.lines.slice(), height = input.viewport.contentHeight;
+	// This focused layout contract changes the origin only; neither producer text nor available width changes.
+	editor.editorPanes.layout({ ...bounds, left: bounds.left + 80, right: bounds.right + 80 });
+	editor.editorPanes.activePane!.update(0);
+	assert.equal(input.transcript.rows.length, rows); assert.equal(input.viewport.contentHeight, height);
+	assert.deepEqual(input.footer.lines, footer);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} Assistant client translation and real Files reflow preserve the draft owner and selection`, t => {
+	const { editor, host } = fixture(t), input = new AssistantInput(editor.assistant);
+	t.after(() => input.dispose());
+	configureFontVariant(host.clock, variant, null);
+	openEditorTab(editor.editorPanes, input); editor.update(0);
+	insertValue(input.draft, 'A retained assistant draft wraps at the actual client width without changing its text or selection. '.repeat(6));
+	input.draft.setSelection(7, 31); editor.editorPanes.activePane!.update(0);
+	const state = input.draft.readText(), rows = input.composer.rows.slice(), bounds = { ...input.layout }, composer = { ...input.composerBounds };
+	// Equal-width translation is the layout algorithm under test, not an incidental screen position.
+	editor.editorPanes.layout({ ...bounds, left: bounds.left + 40, right: bounds.right + 40 });
+	editor.editorPanes.activePane!.update(0);
+	assert.deepEqual(input.composer.rows, rows);
+	assert.deepEqual(input.composerBounds, { ...composer, left: composer.left + 40, right: composer.right + 40 });
+	assert.deepEqual(input.draft.readText(), state); assert.ok(inputFocus.target === input.draft.focusTarget);
+	editor.resourcePanel.show(); editor.editorPanes.activePane!.focus(); editor.update(0);
+	assert.equal(editor.resourcePanel.visible, true);
+	assert.ok(input.composer.rows.length > rows.length, 'the real Files client reduces the available composer width');
+	assert.deepEqual(input.draft.readText(), state); assert.ok(inputFocus.target === input.draft.focusTarget);
+	editor.resourcePanel.hide(); editor.update(0);
+	assert.deepEqual(input.composer.rows, rows); assert.deepEqual(input.draft.readText(), state);
+	assert.ok(inputFocus.target === input.draft.focusTarget);
+	input.draft.undo(); assert.equal(input.draft.text, '', 'reflow adds no draft edits or history entries');
 });
 
 test('source-consuming actions publish the actual focused draft before resolving the explicit action owner', t => {
@@ -149,6 +282,16 @@ for (const command of ['events', 'gpuDebugger', 'gteDebugger'] as const) test(`$
 	for (const action of ['pause', 'stepFrameBack', 'stepFrame', command === 'events' ? 'events.filter' : command === 'gpuDebugger' ? 'gpu.follow' : 'gte.follow'] as const)
 		assert.equal(inputFocus.target!.getCommand(action), owner.getCommand(action), 'the client publishes the actual complete command handler');
 	assert.equal(inputFocus.target!.getCommand('runtime.pause'), undefined, 'private capture state is not exposed as a partial public transport command');
+});
+
+for (const command of ['events', 'gpuDebugger', 'gteDebugger'] as const) test(`${command} timeline Tab boundaries return to its actual reading client`, t => {
+	const { editor } = fixture(t); editor.commands.execute(command); editor.update(0);
+	const client = inputFocus.target!;
+	assert.notEqual(client, editor.editorPanes.activePane!.runtimeControlContext);
+	editor.runtimeTimeline.focus(); assert.equal(inputFocus.moveFocus(true), true);
+	assert.ok(inputFocus.target === client, 'Shift+Tab restores the actual reading client');
+	editor.runtimeTimeline.focus(); assert.equal(inputFocus.moveFocus(false), true);
+	assert.ok(inputFocus.target === client, 'an unavailable history range leaves no intermediate slider stop');
 });
 
 test('context menu admission and execution belong to the explicit control, not its semantic command alias or current popup focus', t => {

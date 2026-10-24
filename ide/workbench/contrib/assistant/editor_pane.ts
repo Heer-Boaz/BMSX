@@ -20,7 +20,7 @@ import { writeClipboard } from '../../../input/clipboard';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { api } from '../../../runtime/overlay_api';
-import { updateFullWidthWorkbenchLayout, STATUS_BAR_CONNECTION_WIDTH } from '../../common/layout';
+import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import type { WorkbenchSurface } from '../../services/windows/model';
@@ -62,6 +62,8 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview, () => this.execute('assistant.review'));
 		this.attachments = new AssistantAttachmentStrip(this.previews, url => this.preview.open(url));
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
+		for (const command of ['assistant.review', 'assistant.copy'] as const)
+			this.transcriptView.scroll.focusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 	}
 	public override focus(): void { this.input.draft.focusTarget.focus(); }
 	protected override activate(): void {
@@ -99,6 +101,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	}
 	public override dispose(): void { this.clearInput(); this.preview.dispose(); this.turnToolbar.dispose(); this.transcriptView.dispose(); super.dispose(); }
 	public isEnabled(command: EditorCommandId): boolean {
+		if (!this.hasInput) return false;
 		const { conversation: model, selection } = this.input;
 		const hasContent = this.input.draftHasText || this.input.attachments.images.length > 0;
 		const ready = this.input.attachments.ready;
@@ -129,7 +132,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	public override update(): void {
 		const input = this.input, { layout, viewport, conversation: model } = input;
 		const changed = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
-		const row = layout.rowHeight;
+		const row = layout.rowHeight, width = layout.right - layout.left;
 		this.preview.layout(layout, row);
 		if (changed) {
 			this.composer.rowHeight = editorViewState.lineHeight;
@@ -141,7 +144,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		let footerChanged = false;
 		if (changed || model.revision !== input.projectedRevision) {
 			const count = input.footer.lines.length;
-			input.footer.update(model, layout.right - STATUS_BAR_CONNECTION_WIDTH - 8, measureTextRange, layout.font!);
+			input.footer.update(model, width - 8, measureTextRange, layout.font!);
 			footerChanged = count !== input.footer.lines.length;
 		}
 		const footerTop = input.footerTop = layout.bottom - (input.footer.lines.length > 1 ? (input.footer.lines.length - 1) * row + 2 : 0);
@@ -150,25 +153,25 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		// disable-next-line redundant_numeric_sanitization_pattern -- Layout constraint: reserve one editable row and at most a third of the pane, capped at six rows. This is the owning viewport boundary, not value sanitization.
 		const maxRows = Math.max(1, Math.min(6, Math.trunc((footerTop - layout.top) / (3 * editorViewState.lineHeight))));
 		input.draftMarkdown.update(input.draft.text, input.referenceStyles);
-		input.composer.update(input.draft, layout.right - 14 - editorViewState.spaceAdvance, maxRows, measureStyledText, layout.font!, input.draftMarkdown.styles);
+		input.composer.update(input.draft, width - 14 - editorViewState.spaceAdvance, maxRows, measureStyledText, layout.font!, input.draftMarkdown.styles);
 		const composerBottom = footerTop - row - 6;
 		const composerTop = composerBottom - Math.min(maxRows, input.composer.rows.length) * editorViewState.lineHeight - 4;
 		const composerChanged = changed || input.composerBounds.top !== composerTop || input.composerBounds.bottom !== composerBottom;
-		if (composerChanged) write_rect_bounds(input.composerBounds, 4, composerTop, layout.right - 4, composerBottom);
+		if (composerChanged) write_rect_bounds(input.composerBounds, layout.left + 4, composerTop, layout.right - 4, composerBottom);
 		const activityLabel = busy ? model.state === 'stopping' ? 'Stopping' : model.state === 'starting' ? 'Starting' : model.activity : '';
 		if (changed || activityLabel !== input.activityLabel || second !== input.activitySecond) {
 			input.activitySecond = second; input.activityLabel = activityLabel;
-			input.activityText = busy ? truncateMeasuredText(`${activityLabel}  ${second}s`, layout.right - 28, measureTextRange) : '';
+			input.activityText = busy ? truncateMeasuredText(`${activityLabel}  ${second}s`, width - 28, measureTextRange) : '';
 		}
 		const atEnd = viewport.scrollTop + viewport.height >= viewport.contentHeight;
 		if (changed || composerChanged || model.revision !== input.projectedRevision || editingQueue !== input.editingQueue) {
 			input.editingQueue = editingQueue;
 			input.projectedRevision = model.revision;
-			input.transcript.update(model.entries, layout.right - colors.SCROLLBAR_WIDTH - 16, measureStyledText, layout.font!);
+			input.transcript.update(model.entries, width - colors.SCROLLBAR_WIDTH - 16, measureStyledText, layout.font!);
 		}
 		const hasImages = input.attachments.images.length > 0;
 		this.contentTop = input.composerBounds.top - (hasImages ? row * 5 + 8 : 0);
-		if (hasImages) this.attachments.layout(4, this.contentTop, layout.right - 4, row);
+		if (hasImages) this.attachments.layout(layout.left + 4, this.contentTop, layout.right - 4, row);
 		if (hasImages !== this.imagesVisible) {
 			this.imagesVisible = hasImages;
 			const stripFocus = this.attachments.focusTarget;
@@ -192,17 +195,17 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		const textColor = colors.COLOR_RESOURCE_VIEWER_TEXT;
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 		const footerTop = input.footerTop;
-		api.fill_rect(0, footerTop, layout.right, layout.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
+		api.fill_rect(layout.left, footerTop, layout.right, layout.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
 		for (let index = 0; index + 1 < input.footer.lines.length; index++) {
-			api.blit_text_inline_with_font(input.footer.lines[index], STATUS_BAR_CONNECTION_WIDTH + 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
+			api.blit_text_inline_with_font(input.footer.lines[index], layout.left + 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
 		}
 		renderWorkbenchActionBar(input.turnActions, font, textColor, colors.COLOR_DESCRIPTION_TEXT);
 		if (input.busySince !== undefined) {
 			const y = this.contentTop - layout.rowHeight - 4;
-			api.blit_text_inline_with_font(SPINNER[Math.trunc((performance.now() - input.busySince) / 150) & 3], 4, y, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
-			api.blit_text_inline_with_font(input.activityText, 16, y, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
+			api.blit_text_inline_with_font(SPINNER[Math.trunc((performance.now() - input.busySince) / 150) & 3], layout.left + 4, y, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
+			api.blit_text_inline_with_font(input.activityText, layout.left + 16, y, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
 		} else if (input.editingQueuedId !== undefined) {
-			api.blit_text_inline_with_font('Editing queued message', 4, this.contentTop - layout.rowHeight - 4, 0, textColor, font);
+			api.blit_text_inline_with_font('Editing queued message', layout.left + 4, this.contentTop - layout.rowHeight - 4, 0, textColor, font);
 		}
 		this.transcriptView.draw();
 		const bounds = input.composerBounds;

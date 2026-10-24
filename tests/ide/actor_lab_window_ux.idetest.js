@@ -32,6 +32,8 @@ await t.waitForCart();
 await t.frames(90);
 t.openLuaSource('cart.lua');
 await t.frames(2);
+const sourceModel = t.activeEditorDocument().model;
+const sourceBytes = sourceModel.buffer.getText(), sourceVersion = sourceModel.version;
 t.command('actorLab');
 await t.frames(2);
 await capture('running-actor-picker');
@@ -43,6 +45,52 @@ t.log(JSON.stringify({ kind: input.kind, actorPresent: input.actorPresent, statu
 await capture('selected-actor');
 t.assert(input.kind === 'actor_lab' && input.actorPresent, 'the real Intro actor was not selected');
 t.assert(input.outline.rows[0].element.node.name === 'nemesis_s.intro', 'the actual running actor identity changed');
+// Files changes the real client origin. Retained tree/graph bounds drive ordinary
+// pointer input; identities and keyboard outcomes, not pixel positions, are the oracle.
+const insetCycles = t.runtime().machine.scheduler.nowCycles;
+for (let fontIndex = 0; fontIndex < 2; fontIndex++) {
+	const variant = input.layout.font.variant;
+	for (let theme = 0; theme < 2; theme++) {
+		await press('Home'); await press('ArrowDown'); await press('ArrowRight');
+		const timelineIndex = input.outline.selectionIndex;
+		const timeline = input.outline.rows[timelineIndex].element.node;
+		const nextTimeline = input.outline.rows[timelineIndex + 1].element.node;
+		t.assert(timeline.kind === 'timeline' && nextTimeline.kind === 'timeline', 'the shipped actor did not expose its actual adjacent timelines');
+		await press('ControlLeft', 'KeyB');
+		t.assert(t.activeWorkbenchTab() === input && input.outline.rows[input.outline.selectionIndex].element.node === timeline,
+			'opening Files replaced the Actor client or selected subject');
+		const tree = input.outline.layout;
+		await click(tree.contentRight - 4, tree.contentTop + (timelineIndex + 1 - (input.outline.scroll | 0) + 0.5) * tree.rowHeight);
+		t.assert(input.outline.rows[input.outline.selectionIndex].element.node === nextTimeline, 'the translated Actor tree did not receive the actual timeline pointer');
+		await press('ArrowUp');
+		t.assert(input.outline.rows[input.outline.selectionIndex].element.node === timeline
+			&& input.timeline.visible && input.timeline.entryHashId === timeline.hashId, 'pointer focus did not return keyboard navigation to the same live timeline');
+		await capture(`${variant}-theme-${theme}-timeline-with-files`);
+		const machineIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'machine');
+		t.assert(machineIndex >= 0, 'the real actor has no FSM machine to inspect');
+		await press('Home');
+		for (let index = 0; index < machineIndex; index++) await press('ArrowDown');
+		const machine = input.outline.rows[input.outline.selectionIndex].element.node;
+		t.command('actorLab.stateGraph'); await t.frames(2);
+		const graph = input.stateGraph, selected = graph.viewport.selection;
+		t.assert(input.presentation === 'graph' && selected.kind === 'node'
+			&& graph.selectedTarget.path.at(-1).hashId === machine.hashId, 'the translated client did not open the exact physical FSM graph');
+		await press('Home');
+		await click(graph.viewport.graphToViewportX(selected.bounds.left) + 4,
+			graph.viewport.graphToViewportY(selected.bounds.top) + selected.headerHeight / 2);
+		t.assert(graph.viewport.selection === selected, 'the translated graph pointer selected a different physical node');
+		await capture(`${variant}-theme-${theme}-graph-with-files`);
+		await press('Escape');
+		t.assert(input.presentation === 'outline' && input.outline.rows[input.outline.selectionIndex].element.node === machine,
+			'graph Escape did not return the actual selected machine to its outline');
+		await press('ControlLeft', 'KeyB'); await press('Home');
+		t.assert(t.activeWorkbenchTab() === input && sourceModel.buffer.getText() === sourceBytes
+			&& sourceModel.version === sourceVersion && !sourceModel.dirty, 'Files or Actor layout navigation changed the canonical source/input');
+		t.assert(t.runtime().machine.scheduler.nowCycles === insetCycles, 'Actor layout/pointer navigation executed the paused guest');
+		t.command('theme-toggle'); await t.frames(2);
+	}
+	await press('ControlLeft', 'ShiftLeft', 'KeyT');
+}
 await press('Enter');
 t.assert(input.detailsWindow.open && input.details.available, 'Details did not inspect the selected real instance');
 t.command('actorLab.lockDetails');

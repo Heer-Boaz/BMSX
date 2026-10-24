@@ -9,7 +9,7 @@ import { measureStyledText } from '../../../editor/render/markdown';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { api } from '../../../runtime/overlay_api';
-import { updateFullWidthWorkbenchLayout, STATUS_BAR_CONNECTION_WIDTH } from '../../common/layout';
+import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { ImagePreviewCache } from '../../ui/image_preview';
 import { ImagePreviewOverlay } from '../../ui/image_preview_overlay';
@@ -28,8 +28,9 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 		super(resources);
 		this.previews = new ImagePreviewCache(decodeImage); this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner, commands);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview);
-		this.focusTarget.registerCommand('conversations.older', { isEnabled: () => !this.input.conversation.pending && this.input.conversation.olderCursor !== null,
+		this.focusTarget.registerCommand('conversations.older', { isEnabled: () => this.hasInput && !this.input.conversation.pending && this.input.conversation.olderCursor !== null,
 			run: () => { void this.input.conversation.older(); } });
+		this.transcriptView.scroll.focusTarget.registerCommand('conversations.older', this.focusTarget.getCommand('conversations.older')!);
 	}
 	protected override activate(): void { super.activate(); this.transcriptView.setInput(this.input); this.update(); }
 	public override focus(): void { this.transcriptView.scroll.focusTarget.focus(); }
@@ -40,8 +41,9 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 		const layoutChanged = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
 		if (layoutChanged || input.projectedRevision !== conversation.revision) {
 			input.projectedRevision = conversation.revision;
-			input.transcript.update(conversation.entries, layout.right - colors.SCROLLBAR_WIDTH - 16, measureStyledText, layout.font!);
-			input.footer.update(conversation, layout.right - STATUS_BAR_CONNECTION_WIDTH - 8, measureTextRange, layout.font!);
+			const width = layout.right - layout.left;
+			input.transcript.update(conversation.entries, width - colors.SCROLLBAR_WIDTH - 16, measureStyledText, layout.font!);
+			input.footer.update(conversation, width - 8, measureTextRange, layout.font!);
 		}
 		const row = layout.rowHeight;
 		this.preview.layout(layout, row);
@@ -54,12 +56,12 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 		const { layout, conversation, footer, footerTop } = this.input;
 		const font = editorViewState.font.renderFont();
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
-		api.fill_rect(0, footerTop, layout.right, layout.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
-		for (let index = 0; index + 1 < footer.lines.length; index++) api.blit_text_inline_with_font(footer.lines[index], STATUS_BAR_CONNECTION_WIDTH + 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
+		api.fill_rect(layout.left, footerTop, layout.right, layout.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
+		for (let index = 0; index + 1 < footer.lines.length; index++) api.blit_text_inline_with_font(footer.lines[index], layout.left + 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
 		if (conversation.workStartedAt !== undefined) {
 			const elapsed = performance.now() - conversation.workStartedAt;
-			api.blit_text_inline_with_font('|/-\\'[Math.trunc(elapsed / 150) & 3], 4, footerTop - layout.rowHeight - 2, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
-			api.blit_text_inline_with_font(conversation.activity, 16, footerTop - layout.rowHeight - 2, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
+			api.blit_text_inline_with_font('|/-\\'[Math.trunc(elapsed / 150) & 3], layout.left + 4, footerTop - layout.rowHeight - 2, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
+			api.blit_text_inline_with_font(conversation.activity, layout.left + 16, footerTop - layout.rowHeight - 2, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
 		}
 		this.previews.beginFrame(); this.transcriptView.draw(); this.previews.endFrame();
 	}

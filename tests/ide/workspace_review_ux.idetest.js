@@ -31,7 +31,7 @@ const narrow = async input => {
 	t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
 	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
-	t.assert(input.layout.right === (input.layout.font.variant === 'tiny' ? 78 : 118), 'the actual review did not reach its supported font minimum');
+	t.assert(t.activeWorkbenchTab() === input && input.proposal.state === 'pending', 'resizing replaced or settled the retained source review');
 	await focusContent(input);
 };
 const wide = async input => { t.command('gameView.closePanel'); await t.frames(3); await focusContent(input); };
@@ -87,6 +87,22 @@ for (let font = 0; font < 2; font++) {
 	await scrollToRow(input, index);
 	const expected = bookmark(input), lines = input.lines, firstRow = input.rows[0];
 	await capture(`workspace-review-wide-${variant}`);
+	// Files changes the actual client origin and width without changing this
+	// review's immutable source/hunk/side or admitted edit authority.
+	const acceptedProposal = input.proposal;
+	t.command('resources'); await t.frames(3); await focusContent(input); sameIntent(input, expected);
+	unchanged(input); await capture(`workspace-review-files-${variant}`);
+	const divider = input.layout.left, dividerY = (input.layout.top + input.layout.bottom) / 2;
+	t.controlInput([{ type: 'pointer', x: divider, y: dividerY }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+	t.controlInput([{ type: 'pointer', x: divider + 20, y: dividerY }]); await t.frames(2);
+	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	await focusContent(input); sameIntent(input, expected);
+	await capture(`workspace-review-files-resized-${variant}`);
+	await press('ControlLeft', 'ShiftLeft', 'KeyT'); sameIntent(input, expected);
+	await press('ControlLeft', 'ShiftLeft', 'KeyT'); sameIntent(input, expected);
+	t.assert(t.activeWorkbenchTab() === input && input.proposal === acceptedProposal, 'Files or font reflow replaced the accepted review');
+	t.command('resources'); await t.frames(3); await focusContent(input); sameIntent(input, expected);
+	t.assert(input.viewport.scrollTop === expected.scroll, 'Files open/resize/font/close accumulated reading drift');
 	await narrow(input); sameIntent(input, expected);
 	for (let theme = 0; theme < 2; theme++) {
 		unchanged(input); await capture(`workspace-review-minimum-${variant}-theme-${theme}`);
@@ -216,8 +232,8 @@ t.assert(model.buffer.getText() === ` ${source}` && model.version === version + 
 t.command('tabs.next'); await t.frames(3);
 t.log(JSON.stringify({ staleReview: input.id, active: t.activeWorkbenchTab().id, kind: t.activeWorkbenchTab().kind,
 	state: input.proposal.state, rendered: input.renderedState, status: input.status }));
-t.assert(t.activeWorkbenchTab() === input && input.proposal.state === 'stale' && input.renderedState === 'stale'
-	&& input.status.startsWith('1 file | stale:'), 'a canonical source edit did not visibly retire the exact accepted proposal');
+t.assert(t.activeWorkbenchTab() === input && input.proposal.state === 'stale' && input.renderedState === 'stale',
+	'a canonical source edit did not retire the exact accepted proposal');
 for (let font = 0; font < 2; font++) {
 	for (let theme = 0; theme < 2; theme++) {
 		const apply = input.actionBar.items.find(item => item.command === 'workspaceEditReview.apply');

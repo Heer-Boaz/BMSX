@@ -21,14 +21,15 @@ export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graph
 	renderWorkbenchActionBar(graph === undefined ? input.actionBar : input.stateGraphActions, font, color, colors.COLOR_DESCRIPTION_TEXT);
 	const tree = outline.layout;
 	if (graph !== undefined) {
+		const left = graph.viewport.canvas.left;
 		api.pushClipRect(graph.viewport.canvas.left, tree.contentTop, graph.viewport.canvas.right, graph.viewport.canvas.bottom);
-		api.fill_rect(5, tree.contentTop + 3, 7, tree.contentTop + font.lineHeight, 0, colors.COLOR_GRAPH_ACTIVE_BODY);
-		api.blit_text_inline_with_font(graph.titleLabel, 12, tree.contentTop + 2, 0, color, font);
+		api.fill_rect(left + 1, tree.contentTop + 3, left + 3, tree.contentTop + font.lineHeight, 0, colors.COLOR_GRAPH_ACTIVE_BODY);
+		api.blit_text_inline_with_font(graph.titleLabel, left + 8, tree.contentTop + 2, 0, color, font);
 		drawWorkbenchGraph(graph.viewport, graphHover, graphFocused);
 		if (graph.status !== 'available') {
 			api.blit_text_inline_with_font(graph.status === 'missing' ? 'FSM NOT PRESENT AT THIS FRAME' : 'GUEST HEAP REPLACED',
-				8, graph.viewport.bounds.top + 8, 0, color, font);
-			if (graph.status === 'heap-replaced') api.blit_text_inline_with_font('SELECT AGAIN IN ACTOR TREE', 8, graph.viewport.bounds.top + 8 + font.lineHeight, 0, color, font);
+				left + 4, graph.viewport.bounds.top + 8, 0, color, font);
+			if (graph.status === 'heap-replaced') api.blit_text_inline_with_font('SELECT AGAIN IN ACTOR TREE', left + 4, graph.viewport.bounds.top + 8 + font.lineHeight, 0, color, font);
 		}
 		api.popClipRect();
 	} else {
@@ -46,7 +47,7 @@ export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graph
 			if (row.element.node.active) api.fill_rect(left + tree.indentWidth, activeTop, left + tree.indentWidth + 3, activeTop + 3, 0, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING);
 			api.blit_text_inline_with_font(row.element.displayLabel, left + tree.indentWidth * 2, top + 2, 0, color, font);
 		}
-		if (!input.actorPresent || outline.rows.length === 0) api.blit_text_inline_with_font(input.status, 4, tree.contentTop + 3, 0, color, font);
+		if (!input.actorPresent || outline.rows.length === 0) api.blit_text_inline_with_font(input.status, tree.contentLeft, tree.contentTop + 3, 0, color, font);
 		api.popClipRect();
 		outline.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
@@ -56,8 +57,8 @@ export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graph
 	const timeline = input.timeline;
 	if (timeline.visible) {
 		const { top, durationLeft, labelTop } = input.timelineLayout;
-		api.fill_rect(0, top, layout.right, top + 1, 0, colors.SCROLLBAR_THUMB_COLOR);
-		api.blit_text_inline_with_font(timeline.positionLabel, 4, labelTop, 0, color, font);
+		api.fill_rect(layout.left, top, layout.right, top + 1, 0, colors.SCROLLBAR_THUMB_COLOR);
+		api.blit_text_inline_with_font(timeline.positionLabel, layout.left + 4, labelTop, 0, color, font);
 		drawWorkbenchSlider(timeline.slider, sliderFocused);
 		api.blit_text_inline_with_font(timeline.durationLabel, durationLeft, labelTop, 0, color, font);
 	}

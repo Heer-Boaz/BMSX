@@ -331,7 +331,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			this.updateContentLayout();
 			layoutWorkbenchActionBar(input.presentation === 'outline' ? input.actionBar : input.stateGraphActions, input.split.position - 4,
 				layout.top + 2, layout.top + layout.rowHeight + 8, measureText, editorViewState.font.renderFont(), layout.left + 4);
-			if (input.presentation === 'graph') input.stateGraph!.titleLabel = truncateTextToWidth(input.stateGraph!.title, input.split.position - 16);
+			if (input.presentation === 'graph') input.stateGraph!.titleLabel = truncateTextToWidth(input.stateGraph!.title, input.split.position - layout.left - 16);
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
 		}
@@ -342,8 +342,9 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.actions.focusTarget.next = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : this.split.focusTarget;
 		this.timelineSlider.focusTarget.next = this.split.focusTarget;
 		this.split.focusTarget.previous = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : this.actions.focusTarget;
-		this.split.focusTarget.next = input.presentation === 'outline' ? this.gameInput.focusTarget : this.graph.focusTarget;
-		this.split.focusTarget.next.previous = this.split.focusTarget;
+		const next = input.presentation === 'outline' ? this.gameInput.focusTarget : this.graph.focusTarget;
+		this.split.focusTarget.next = next;
+		next.previous = this.split.focusTarget;
 		this.graph.focusTarget.next = this.gameInput.focusTarget;
 		this.gameInput.focusTarget.previous = input.presentation === 'outline' ? this.split.focusTarget : this.graph.focusTarget;
 		this.gameInput.focusTarget.next = this.focusTarget;
@@ -430,9 +431,9 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		const previewLeft = divider + 6;
 		layoutGameFrame(this.input.previewBounds, previewLeft, top, layout.right - 4, bottom - 4);
 		const treeTop = top + layout.rowHeight + 9;
-		this.input.outline.updateLayout(4, treeTop, divider, bottom,
+		this.input.outline.updateLayout(layout.left + 4, treeTop, divider, bottom,
 			layout.rowHeight + 4, Math.max(editorViewState.font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2));
-		this.boundGraph?.viewport.layout(4, treeTop + layout.rowHeight + 4, divider, bottom);
+		this.boundGraph?.viewport.layout(layout.left + 4, treeTop + layout.rowHeight + 4, divider, bottom);
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {
