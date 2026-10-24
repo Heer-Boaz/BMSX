@@ -1,14 +1,19 @@
 import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
-import { SCROLLBAR_WIDTH, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR, COLOR_CODE_BACKGROUND,
+import { SCROLLBAR_WIDTH, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR, COLOR_RESOURCE_VIEWER_BACKGROUND,
 	COLOR_RESOURCE_VIEWER_TEXT, COLOR_HEADER_BUTTON_BORDER, COLOR_FOCUS_BORDER,
 	COLOR_RESOURCE_PANEL_HIGHLIGHT, COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT } from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
 import { Scrollbar } from '../../ui/scrollbar';
+import type { EditorFont } from '../../../editor/ui/view/font';
 
 /** Display coordinates only; source bindings and move semantics belong to the cart projections. */
 export type MapGridMarker = { readonly x: number; readonly y: number; readonly glyph: string };
 export type MapGridContent = { readonly rows: readonly (readonly string[])[]; readonly width: number; readonly markers: readonly MapGridMarker[] };
+
+/** World-cell coordinates, including the fraction of the first visible cell. */
+export type CartMapGridPosition = { readonly x: number; readonly y: number };
+export type CartMapGridViewState = CartMapGridPosition & { readonly reveal?: CartMapGridPosition };
 
 /** Two-dimensional authored-cell viewport. Neither layout nor paint reads YAML or the guest. */
 export class CartMapGrid {
@@ -17,6 +22,13 @@ export class CartMapGrid {
 	public readonly vertical = new Scrollbar('vertical');
 	private readonly track = create_rect_bounds();
 	public cellSize = 0;
+	private measuredFont: EditorFont | undefined;
+	private measuredCellSize = 0;
+	private visible = false;
+	private positionX = 0;
+	private positionY = 0;
+	private restorePending = false;
+	private pendingReveal: CartMapGridPosition | undefined;
 	private contentValue: MapGridContent | undefined;
 	private minX = 0;
 	private minY = 0;
@@ -25,6 +37,7 @@ export class CartMapGrid {
 	public get content(): MapGridContent | undefined { return this.contentValue; }
 	public set content(content: MapGridContent | undefined) {
 		if (this.contentValue === content) return;
+		this.pendingReveal = undefined;
 		this.contentValue = content;
 		this.minX = 0; this.minY = 0;
 		this.endX = content === undefined ? 0 : content.width;
@@ -36,22 +49,75 @@ export class CartMapGrid {
 	}
 	public selected: MapGridMarker | undefined;
 
-	public layout(left: number, top: number, right: number, bottom: number): void {
-		this.cellSize = Math.max(editorViewState.font.advance('M') + 2, editorViewState.lineHeight + 2);
-		write_rect_bounds(this.bounds, left, top, Math.max(left, right - SCROLLBAR_WIDTH), Math.max(top, bottom - SCROLLBAR_WIDTH));
-		const bounds = this.bounds;
-		write_rect_bounds(this.track, bounds.left, bounds.bottom, bounds.right, bottom);
-		this.horizontal.layout(this.track, (this.endX - this.minX) * this.cellSize,
-			bounds.right - bounds.left, this.horizontal.getScroll(), this.minX * this.cellSize);
-		write_rect_bounds(this.track, bounds.right, bounds.top, right, bounds.bottom);
-		this.vertical.layout(this.track, (this.endY - this.minY) * this.cellSize,
-			bounds.bottom - bounds.top, this.vertical.getScroll(), this.minY * this.cellSize);
+	/** Eight complete authored cells plus the retained scrollbar lane. */
+	public get minimumWidth(): number { return this.measureCellSize() * 8 + SCROLLBAR_WIDTH; }
+
+	private measureCellSize(): number {
+		const font = editorViewState.font;
+		if (this.measuredFont !== font) {
+			this.measuredFont = font;
+			this.measuredCellSize = Math.max(font.advance('M') + 2, editorViewState.lineHeight + 2);
+		}
+		return this.measuredCellSize;
 	}
 
-	public reveal(marker: MapGridMarker): void {
+	public captureView(): CartMapGridViewState {
+		if (this.visible && !this.restorePending) this.capturePosition();
+		return this.pendingReveal === undefined ? { x: this.positionX, y: this.positionY }
+			: { x: this.positionX, y: this.positionY, reveal: { x: this.pendingReveal.x, y: this.pendingReveal.y } };
+	}
+
+	/** Bookmarks have no pixel range until the first visible measured arrangement. */
+	public restoreView(position: CartMapGridViewState): void {
+		this.positionX = position.x; this.positionY = position.y;
+		this.restorePending = true; this.pendingReveal = position.reveal;
+	}
+
+	public layout(left: number, top: number, right: number, bottom: number): void {
+		if (this.visible && !this.restorePending) this.capturePosition();
+		write_rect_bounds(this.bounds, left, top, Math.max(left, right - SCROLLBAR_WIDTH), Math.max(top, bottom - SCROLLBAR_WIDTH));
+		const bounds = this.bounds;
+		this.visible = bounds.right > bounds.left && bounds.bottom > bounds.top;
+		if (!this.visible) {
+			write_rect_bounds(this.track, left, top, left, top);
+			this.horizontal.layout(this.track, 0, 0, 0);
+			this.vertical.layout(this.track, 0, 0, 0);
+			return;
+		}
+		this.cellSize = this.measureCellSize();
+		write_rect_bounds(this.track, bounds.left, bounds.bottom, bounds.right, bottom);
+		this.horizontal.layout(this.track, (this.endX - this.minX) * this.cellSize,
+			bounds.right - bounds.left, this.positionX * this.cellSize, this.minX * this.cellSize);
+		write_rect_bounds(this.track, bounds.right, bounds.top, right, bounds.bottom);
+		this.vertical.layout(this.track, (this.endY - this.minY) * this.cellSize,
+			bounds.bottom - bounds.top, this.positionY * this.cellSize, this.minY * this.cellSize);
+		this.restorePending = false;
+		const reveal = this.pendingReveal;
+		this.pendingReveal = undefined;
+		if (reveal !== undefined) this.reveal(reveal);
+		else this.capturePosition();
+	}
+
+	public reveal(marker: CartMapGridPosition): void {
+		if (!this.visible || this.restorePending) { this.pendingReveal = marker; return; }
 		this.horizontal.reveal(marker.x * this.cellSize, (marker.x + 1) * this.cellSize, this.cellSize);
 		this.vertical.reveal(marker.y * this.cellSize, (marker.y + 1) * this.cellSize, this.cellSize);
+		this.capturePosition();
 	}
+
+	public scrollBy(dx: number, dy: number): void {
+		this.pendingReveal = undefined;
+		if (!this.visible || this.restorePending) { this.positionX += dx; this.positionY += dy; return; }
+		this.horizontal.setScroll(this.horizontal.getScroll() + dx * this.cellSize);
+		this.vertical.setScroll(this.vertical.getScroll() + dy * this.cellSize);
+		this.capturePosition();
+	}
+
+	private capturePosition(): void {
+		this.positionX = this.horizontal.getScroll() / this.cellSize;
+		this.positionY = this.vertical.getScroll() / this.cellSize;
+	}
+
 	public columnAt(x: number): number {
 		return this.minX + Math.trunc((x - this.bounds.left + this.horizontal.getScroll() - this.minX * this.cellSize) / this.cellSize);
 	}
@@ -60,8 +126,9 @@ export class CartMapGrid {
 	}
 
 	public draw(focused: boolean): void {
+		if (!this.visible) return;
 		const bounds = this.bounds, content = this.content, size = this.cellSize;
-		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, COLOR_CODE_BACKGROUND);
+		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, COLOR_RESOURCE_VIEWER_BACKGROUND);
 		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 		if (content !== undefined) {
 			const x0 = bounds.left - this.horizontal.getScroll(), y0 = bounds.top - this.vertical.getScroll();

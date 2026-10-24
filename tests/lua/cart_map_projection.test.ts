@@ -131,7 +131,8 @@ test('clearing map selection retains the sheet and its scroll in view recovery',
 	assert.equal(other.activeSheet, input.activeSheet);
 	assert.equal(other.selected, undefined);
 	assert.deepEqual(other.grid.content!.rows, content!.rows);
-	assert.deepEqual(other.restoredScroll, { x: snapshot.xScroll, y: snapshot.yScroll, tree: snapshot.treeScroll });
+	assert.equal(other.restoredTreeScroll, snapshot.treeScroll);
+	assert.deepEqual(other.grid.captureView(), snapshot.grid);
 	const firstRoom = new CartMapNavigationSelection(input);
 	selectCartMapRow(other, other.tree.rows.indexOf(other.tree.roots[1]));
 	selectCartMapRow(other, -1);

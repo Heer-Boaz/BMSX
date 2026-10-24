@@ -164,6 +164,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	scenarioLab: { category: 'Scenario Lab', title: 'Open', shortTitle: 'Scenario Lab' },
 	cartMap: { category: 'Map Editor', title: 'Open', shortTitle: 'Map Editor' },
 	'cartMap.source': { category: 'Map Editor', title: 'Open Source', shortTitle: 'Source' },
+	'cartMap.map': { category: 'Map Editor', title: 'Show Map', shortTitle: 'Map' },
+	'cartMap.outline': { category: 'Map Editor', title: 'Back to Outline', shortTitle: 'Outline' },
 	sceneEditor: { category: 'Scene Editor', title: 'Open', shortTitle: 'Scene Editor' },
 	actorLab: { category: 'Actor Lab', title: 'Open', shortTitle: 'Actor Lab' },
 	gameView: { category: 'View', title: 'Game' },

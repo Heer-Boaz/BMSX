@@ -24,7 +24,7 @@ import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { CartMapController } from './controller';
-import type { CartMapInput } from './editor_input';
+import type { CartMapInput, CartMapLayoutMode, CartMapSection } from './editor_input';
 import { projectCartMap, selectCartMapRow, createCartMapMove } from './source_projection';
 import { layoutCartMap } from './layout';
 import { drawCartMap } from './render';
@@ -43,26 +43,44 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly gridFocus = inputFocus.createTarget(this.focusTarget);
 	private readonly unbindGrid = this.gridFocus.bindKeyboard(input => this.handleGridKeyboard(input));
+	private readonly unbindClientFocus: readonly (() => void)[];
 	private boundRevision = -1;
 	private readonly tooltip = new WorkbenchTooltip();
 	private headerHovered: 'source' | 'selection' | undefined;
+	private readonly beforeModeChange = (mode: CartMapLayoutMode): void => {
+		this.scrollbar.cancelPointer();
+		if (mode === 'map') this.focusTarget.cancelInput();
+		else if (mode === 'outline') this.gridFocus.cancelInput();
+	};
+	private readonly beforeFieldHide = (axis: number): void => { this.controls[axis].field.focusTarget.cancelInput(); };
 	public constructor(resources: ResourcePanelController, controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
 		this.tooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'map';
+		this.gridFocus.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline';
 		this.gridFocus.commandContext = this.focusTarget;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
-		this.focusTarget.registerCommand('cartMap.source', { isEnabled: () => true, run: () => controller.openSource(this.input) });
-		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
-			isEnabled: () => !this.input.workingCopy.readOnly && (direction === 'undo' ? this.input.workingCopy.canUndo : this.input.workingCopy.canRedo),
-			run: () => {
-				if (!executeTextHistoryCommand(this.input.workingCopy, direction)) return;
-				this.update();
-				if (this.input.tree.selectionIndex >= 0) revealWorkbenchListSelection(this.input.tree);
-				if (this.input.selected !== undefined) this.input.grid.reveal(this.input.selected);
-			},
-		});
-		this.controls = [0, 1].map(axis => new ValueInput<CartMapCoordinateEdit>(this.focusTarget, {
+		const source = { isEnabled: () => this.hasInput, run: () => controller.openSource(this.input) };
+		const map = { isEnabled: () => this.hasInput && this.input.grid.content !== undefined, run: () => this.showSection('map') };
+		const outline = { isEnabled: () => this.hasInput, run: () => this.showSection('outline') };
+		this.focusTarget.registerCommand('cartMap.source', source);
+		this.focusTarget.registerCommand('cartMap.map', map);
+		this.focusTarget.registerCommand('cartMap.outline', outline);
+		for (const direction of ['undo', 'redo'] as const) {
+			const historyCommand = {
+				isEnabled: () => !this.input.workingCopy.readOnly && (direction === 'undo' ? this.input.workingCopy.canUndo : this.input.workingCopy.canRedo),
+				run: () => {
+					if (!executeTextHistoryCommand(this.input.workingCopy, direction)) return;
+					this.update();
+					if (this.input.layout.mode !== 'map' && this.input.tree.selectionIndex >= 0) revealWorkbenchListSelection(this.input.tree);
+					if (this.input.selected !== undefined) this.input.grid.reveal(this.input.selected);
+				},
+			};
+			this.focusTarget.registerCommand(direction, historyCommand);
+			this.gridFocus.registerCommand(direction, historyCommand);
+		}
+		this.controls = [0, 1].map(axis => new ValueInput<CartMapCoordinateEdit>(this.gridFocus, {
 			options: INTEGER_INPUT_FORMAT.options, invalidBlurMessage: 'Map edit cancelled; source unchanged.',
 			format: value => String(value.coordinate),
 			parse: text => {
@@ -74,6 +92,17 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 				catch (error) { return { error: String(error) }; }
 			},
 		}, value => this.applyMove(value.edit!), () => this.update()));
+		for (let axis = 0; axis < this.controls.length; axis++) {
+			const target = this.controls[axis].field.focusTarget;
+			target.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline' && !this.controls[axis].field.readOnly
+				&& this.input.fieldBounds[axis].bottom > this.input.fieldBounds[axis].top && this.input.fieldBounds[axis].right > this.input.fieldBounds[axis].left;
+			target.registerCommand('cartMap.source', source);
+			target.registerCommand('cartMap.map', map);
+			target.registerCommand('cartMap.outline', outline);
+		}
+		const focusMap = () => { this.input.section = 'map'; };
+		this.unbindClientFocus = [this.focusTarget.onDidFocus(() => { this.input.section = 'outline'; }), this.gridFocus.onDidFocus(focusMap),
+			...this.controls.map(control => control.field.focusTarget.onDidFocus(focusMap))];
 	}
 	public override getSelection(): CartMapNavigationSelection { return new CartMapNavigationSelection(this.input); }
 	protected override activate(): void {
@@ -91,41 +120,76 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		const changed = this.boundRevision !== this.input.viewRevision;
 		if (changed) {
 			const item = this.input.selected;
-			let previous = this.gridFocus;
-			this.focusTarget.next = this.gridFocus; this.gridFocus.previous = this.focusTarget;
 			for (let axis = 0; axis < this.controls.length; axis++) {
 				const control = this.controls[axis];
 				control.cancel();
 				control.field.readOnly = item === undefined || this.input.workingCopy.readOnly;
 				if (control.field.readOnly) {
-					control.field.focusTarget.release(); control.field.focusTarget.previous = null; control.field.focusTarget.next = null;
+					control.field.focusTarget.release();
 				} else {
 					control.setValue({ coordinate: axis === 0 ? item.x : item.y });
-					previous.next = control.field.focusTarget; control.field.focusTarget.previous = previous;
-					previous = control.field.focusTarget;
 				}
 			}
-			previous.next = this.actions.focusTarget; this.actions.focusTarget.previous = previous;
-			this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 			this.boundRevision = this.input.viewRevision;
 		}
-		layoutCartMap(this.input, this.contentBounds, changed);
+		const measured = layoutCartMap(this.input, this.contentBounds, changed, this.beforeModeChange, this.beforeFieldHide);
+		if (changed || measured) this.bindFocusOrder();
+		if (this.input.layout.mode === 'map' && this.focusTarget.hasFocus) this.gridFocus.focus();
+		else if (this.input.layout.mode === 'outline' && this.gridFocus.hasFocus) this.focusTarget.focus();
 		this.actions.update();
 		const hint = this.actions.tooltipItem, layout = this.input.layout;
 		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
 		else if (this.headerHovered !== undefined) this.tooltip.show(this.headerHovered === 'source' ? this.input.workingCopy.resource.path : layout.selectionLabel,
 			this.headerHovered === 'source' ? layout.sourceBounds : layout.selectionBounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
 		else this.tooltip.hide();
-		if (this.input.selected !== undefined) for (let axis = 0; axis < this.controls.length; axis++) {
+		if (this.input.layout.mode !== 'outline' && this.input.selected !== undefined) for (let axis = 0; axis < this.controls.length; axis++) {
 			const bounds = this.input.fieldBounds[axis];
 			this.controls[axis].layout(bounds.right - bounds.left);
 		}
+	}
+	public override focus(): void {
+		this.update();
+		if (this.input.layout.mode === 'map') this.gridFocus.focus();
+		else this.focusTarget.focus();
+	}
+	private showSection(section: CartMapSection): void {
+		if (inputFocus.target?.edit?.commit() === false) return;
+		this.input.section = section;
+		this.tooltip.hide(); this.headerHovered = undefined;
+		this.update();
+		if (section === 'map') {
+			if (this.input.selected !== undefined) this.input.grid.reveal(this.input.selected);
+			this.gridFocus.focus();
+		}
+		else {
+			revealWorkbenchListSelection(this.input.tree);
+			this.focusTarget.focus();
+		}
+	}
+	/** Reflow changes navigation membership, never the source value or local draft history. */
+	private bindFocusOrder(): void {
+		let previous = this.actions.focusTarget;
+		this.focusTarget.next = this.focusTarget.previous = null;
+		this.gridFocus.next = this.gridFocus.previous = null;
+		if (this.input.layout.mode !== 'map') {
+			previous.next = this.focusTarget; this.focusTarget.previous = previous; previous = this.focusTarget;
+		}
+		if (this.input.layout.mode !== 'outline') {
+			previous.next = this.gridFocus; this.gridFocus.previous = previous; previous = this.gridFocus;
+		}
+		for (const control of this.controls) {
+			const target = control.field.focusTarget;
+			target.next = target.previous = null;
+			if (this.input.layout.mode === 'outline' || control.field.readOnly) continue;
+			previous.next = target; target.previous = previous; previous = target;
+		}
+		previous.next = this.actions.focusTarget; this.actions.focusTarget.previous = previous;
 	}
 	private applyMove(edit: EditorModelEdit): void {
 		const input = this.input;
 		input.workingCopy.history.applyEdits(new Map([[input.workingCopy, edit]]));
 		this.update();
-		revealWorkbenchListSelection(input.tree);
+		if (input.layout.mode !== 'map') revealWorkbenchListSelection(input.tree);
 		if (input.selected !== undefined) input.grid.reveal(input.selected);
 	}
 	private select(index: number, grid = false): void {
@@ -133,7 +197,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		projectCartMap(this.input);
 		selectCartMapRow(this.input, index);
 		this.update();
-		if (index >= 0) revealWorkbenchListSelection(this.input.tree);
+		if (index >= 0 && this.input.layout.mode !== 'map') revealWorkbenchListSelection(this.input.tree);
 		if (this.input.selected !== undefined) this.input.grid.reveal(this.input.selected);
 	}
 	public handleKeyboard(input: KeyInputEvent): void {
@@ -142,10 +206,13 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 			if (navigateWorkbenchTree(this.input.tree, command) !== WorkbenchTreeNavigationResult.None) this.select(this.input.tree.selectionIndex);
 			return;
 		}
-		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.gridFocus.focus(); }
+		if (isKeyJustPressed('Enter', input)) {
+			consumeIdeKey('Enter', input);
+			if (this.input.grid.content !== undefined) this.showSection('map');
+		}
 	}
 	private handleGridKeyboard(input: KeyInputEvent): void {
-		if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.select(-1, true); return; }
+		if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.showSection('outline'); return; }
 		for (const [code, dx, dy] of MOVES) if (isKeyDown(code, input)) {
 			consumeIdeKey(code, input); projectCartMap(this.input);
 			const item = this.input.selected;
@@ -153,8 +220,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 				try { this.applyMove(createCartMapMove(item, item.x + dx, item.y + dy)); }
 				catch (error) { showEditorMessage(String(error), 'warning', 4); }
 			} else {
-				this.input.grid.horizontal.setScroll(this.input.grid.horizontal.getScroll() + dx * this.input.grid.cellSize);
-				this.input.grid.vertical.setScroll(this.input.grid.vertical.getScroll() + dy * this.input.grid.cellSize);
+				this.input.grid.scrollBy(dx, dy);
 			}
 			return;
 		}
@@ -166,7 +232,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 			: layout.selectionLabel !== '' && point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.selectionBounds) ? 'selection' : undefined;
 		if (this.headerHovered !== undefined) { pointerHover.visit(this); if (justPressed) this.focus(); return true; }
 		if (this.actions.handlePointer(snapshot)) return true;
-		for (let axis = 0; axis < this.controls.length; axis++) {
+		if (layout.mode !== 'outline') for (let axis = 0; axis < this.controls.length; axis++) {
 			const control = this.controls[axis], bounds = this.input.fieldBounds[axis];
 			if (!control.field.readOnly && ((snapshot.valid && snapshot.insideViewport
 				&& point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)) || control.field.pointerSelecting)) {
@@ -174,10 +240,10 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 			}
 		}
 		const grid = this.input.grid;
-		if (this.scrollbar.handlePointer(snapshot, this.input.tree.scrollbar)) return true;
-		if (this.scrollbar.handlePointer(snapshot, grid.horizontal) || this.scrollbar.handlePointer(snapshot, grid.vertical)) return true;
+		if (layout.mode !== 'map' && this.scrollbar.handlePointer(snapshot, this.input.tree.scrollbar)) return true;
+		if (layout.mode !== 'outline' && (this.scrollbar.handlePointer(snapshot, grid.horizontal) || this.scrollbar.handlePointer(snapshot, grid.vertical))) return true;
 		if (!snapshot.valid || !snapshot.insideViewport) return false;
-		if (point_in_rect(snapshot.viewportX, snapshot.viewportY, grid.bounds)) {
+		if (layout.mode !== 'outline' && point_in_rect(snapshot.viewportX, snapshot.viewportY, grid.bounds)) {
 			if (justPressed) {
 				this.gridFocus.focus(); this.update();
 				const x = grid.columnAt(snapshot.viewportX), y = grid.rowAt(snapshot.viewportY);
@@ -188,21 +254,21 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 			}
 			return true;
 		}
-		if (justPressed && workbenchListContainsPosition(this.input.tree, snapshot.viewportX, snapshot.viewportY)) { this.focus(); this.update(); }
+		if (layout.mode === 'map') return false;
+		if (justPressed && workbenchListContainsPosition(this.input.tree, snapshot.viewportX, snapshot.viewportY)) { this.focusTarget.focus(); this.update(); }
 		const index = workbenchListRowIndexAtPosition(this.input.tree, snapshot.viewportX, snapshot.viewportY);
 		if (justPressed && index >= 0) {
-			this.focus(); projectCartMap(this.input);
+			this.focusTarget.focus(); projectCartMap(this.input);
 			if (workbenchTreeTwistieContainsPosition(this.input.tree, index, snapshot.viewportX)) setWorkbenchTreeCollapsed(this.input.tree, index, !this.input.tree.rows[index].collapsed);
 			this.select(index);
 		}
 		return index >= 0;
 	}
 	public handleWheel(event: WheelInputSnapshot): void {
-		if (workbenchListContainsPosition(this.input.tree, event.viewportX, event.viewportY)) scrollWorkbenchList(this.input.tree, event.deltaY * 3);
-		else if (point_in_rect(event.viewportX, event.viewportY, this.input.grid.bounds)) {
-			const grid = this.input.grid, horizontal = isShiftDown(event) && event.deltaX === 0, step = grid.cellSize * 3;
-			grid.horizontal.setScroll(grid.horizontal.getScroll() + (event.deltaX + (horizontal ? event.deltaY : 0)) * step);
-			if (!horizontal) grid.vertical.setScroll(grid.vertical.getScroll() + event.deltaY * step);
+		if (this.input.layout.mode !== 'map' && workbenchListContainsPosition(this.input.tree, event.viewportX, event.viewportY)) scrollWorkbenchList(this.input.tree, event.deltaY * 3);
+		else if (this.input.layout.mode !== 'outline' && point_in_rect(event.viewportX, event.viewportY, this.input.grid.bounds)) {
+			const horizontal = isShiftDown(event) && event.deltaX === 0;
+			this.input.grid.scrollBy((event.deltaX + (horizontal ? event.deltaY : 0)) * 3, horizontal ? 0 : event.deltaY * 3);
 		}
 	}
 	public draw(): void { drawCartMap(this.input, this.controls, this.gridFocus.hasFocus, this.focusTarget.hasFocus); }
@@ -223,6 +289,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	public override dispose(): void {
 		this.tooltip.detach();
 		this.scrollbar.cancelPointer(); this.actions.dispose(); this.unbindGrid();
+		for (const unbind of this.unbindClientFocus) unbind();
 		for (const control of this.controls) control.dispose();
 		super.dispose();
 	}

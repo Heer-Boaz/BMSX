@@ -141,6 +141,7 @@ export type EditorCommandId =
 	| 'builds.start' | 'builds.jobs'
 	| 'server.connection'
 	| 'cartMap.source'
+	| 'cartMap.map' | 'cartMap.outline'
 	| 'contextMenu'
 	| 'menubar.focus'
 	| 'navigateBack'

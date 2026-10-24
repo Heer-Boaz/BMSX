@@ -52,7 +52,7 @@ export class TextField<T = unknown> implements ClipboardTarget, TextInputTarget 
 			isEnabled: () => this.canRedo,
 			run: () => this.redo(),
 		});
-		this.focusTarget.onDidBlur(() => { this.pointerSelecting = false; });
+		this.focusTarget.onDidCancelInput(() => { this.pointerSelecting = false; });
 	}
 
 	public readText(): TextInputState {

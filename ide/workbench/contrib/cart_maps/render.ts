@@ -16,30 +16,35 @@ export function drawCartMap(input: CartMapInput, controls: readonly ValueInput<C
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.blit_text_inline_with_font(layout.sourceTitle, layout.left + 4, layout.top + 2, 0, color, font);
 	renderWorkbenchActionBar(input.actionBar, font, color, colors.COLOR_DESCRIPTION_TEXT);
-	api.blit_text_inline_with_font(layout.outlineTitle, layout.left + 4, layout.top + rowHeight + 2, 0, color, font);
-	api.blit_text_inline_with_font(layout.selectionTitle, layout.gridLeft + 4, layout.top + rowHeight + 2, 0, color, font);
-	api.pushClipRect(tree.layout.contentLeft, tree.layout.contentTop, tree.layout.contentRight, tree.layout.contentBottom);
-	const firstRow = tree.scroll | 0;
-	const end = Math.min(tree.rows.length, firstRow + tree.layout.visibleRowCount);
-	for (let index = firstRow; index < end; index++) {
-		const node = tree.rows[index], y = tree.layout.contentTop + (index - firstRow) * rowHeight;
-		const x = tree.layout.contentLeft + node.depth * tree.layout.indentWidth;
-		const selected = index === tree.selectionIndex;
-		const textColor = selected ? outlineFocused ? colors.COLOR_SELECTION_TEXT : colors.COLOR_INACTIVE_SELECTION_TEXT : node.element.diagnostic === null ? color : colors.COLOR_CONTENT_WARNING_TEXT;
-		if (selected) api.fill_rect(tree.layout.contentLeft, y, tree.layout.contentRight, y + rowHeight, 0, outlineFocused ? colors.SELECTION_OVERLAY : colors.INACTIVE_SELECTION_OVERLAY);
-		if (node.expandable) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
-			x + ((tree.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), textColor);
-		api.blit_text_inline_with_font(node.element.displayLabel, x + tree.layout.twistieWidth, y + 2, 0,
-			textColor, font);
+	if (layout.mode !== 'map') {
+		api.blit_text_inline_with_font(layout.outlineTitle, layout.left + 4, layout.top + rowHeight + 2, 0, color, font);
+		api.pushClipRect(tree.layout.contentLeft, tree.layout.contentTop, tree.layout.contentRight, tree.layout.contentBottom);
+		const firstRow = tree.scroll | 0;
+		const end = Math.min(tree.rows.length, firstRow + tree.layout.visibleRowCount);
+		for (let index = firstRow; index < end; index++) {
+			const node = tree.rows[index], y = tree.layout.contentTop + (index - firstRow) * rowHeight;
+			const x = tree.layout.contentLeft + node.depth * tree.layout.indentWidth;
+			const selected = index === tree.selectionIndex;
+			const textColor = selected ? outlineFocused ? colors.COLOR_SELECTION_TEXT : colors.COLOR_INACTIVE_SELECTION_TEXT : node.element.diagnostic === null ? color : colors.COLOR_CONTENT_WARNING_TEXT;
+			if (selected) api.fill_rect(tree.layout.contentLeft, y, tree.layout.contentRight, y + rowHeight, 0, outlineFocused ? colors.SELECTION_OVERLAY : colors.INACTIVE_SELECTION_OVERLAY);
+			if (node.expandable) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
+				x + ((tree.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), textColor);
+			api.blit_text_inline_with_font(node.element.displayLabel, x + tree.layout.twistieWidth, y + 2, 0,
+				textColor, font);
+		}
+		api.popClipRect();
+		tree.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
-	api.popClipRect();
-	tree.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
-	api.fill_rect(layout.gridLeft - 1, layout.top + rowHeight, layout.gridLeft, layout.bottom, 0, colors.COLOR_HEADER_BUTTON_BORDER);
-	if (input.selected !== undefined) for (let axis = 0; axis < controls.length; axis++) {
-		const bounds = input.fieldBounds[axis];
-		api.blit_text_inline_with_font(axis === 0 ? 'X' : 'Y', bounds.left - 12, bounds.top + 2, 0, color, font);
-		drawValueInput(controls[axis], bounds);
+	if (layout.mode === 'split') api.fill_rect(layout.gridLeft - 1, layout.top + rowHeight, layout.gridLeft, layout.bottom, 0, colors.COLOR_HEADER_BUTTON_BORDER);
+	if (layout.mode !== 'outline') {
+		api.blit_text_inline_with_font(layout.selectionTitle, layout.gridLeft + 4, layout.top + rowHeight + 2, 0, color, font);
+		if (input.selected !== undefined) for (let axis = 0; axis < controls.length; axis++) {
+			const bounds = input.fieldBounds[axis];
+			if (bounds.bottom === bounds.top || bounds.right === bounds.left) continue;
+			api.blit_text_inline_with_font(axis === 0 ? 'X' : 'Y', bounds.left - layout.axisLabelWidth - 4, bounds.top + 2, 0, color, font);
+			drawValueInput(controls[axis], bounds);
+		}
+		input.grid.draw(gridFocused);
 	}
-	input.grid.draw(gridFocused);
 	api.popClipRect();
 }

@@ -1,6 +1,6 @@
 // Shipped Nemesis contributions; ordinary input only, no edited or injected models.
 // Run: npm run ide:test -- nemesis_s tests/ide/toolbar_surface_ink.idetest.js --ttl 120
-// Cart Map is label-only; Assistant/Conversations require separate connected fixtures.
+// Cart Map has dedicated responsive coverage; Assistant/Conversations require connected fixtures.
 const press = async (...codes) => {
 	t.controlInput(codes.map(code => ({ type: 'key', code, down: true }))); await t.frames(2);
 	t.controlInput(codes.map(code => ({ type: 'key', code, down: false }))); await t.frames(2);

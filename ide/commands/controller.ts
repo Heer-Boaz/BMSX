@@ -198,7 +198,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
 			case 'behaviorLens.inspectRegisteredDefinitions':
-			case 'cartMap.source':
+			case 'cartMap.source': case 'cartMap.map': case 'cartMap.outline':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
 			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove':
 			case 'animation.source': case 'animation.producerSource': case 'animation.more':
@@ -456,7 +456,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
 			case 'behaviorLens.inspectRegisteredDefinitions':
-			case 'cartMap.source':
+			case 'cartMap.source': case 'cartMap.map': case 'cartMap.outline':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
 			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove':
 			case 'animation.source': case 'animation.producerSource': case 'animation.more':

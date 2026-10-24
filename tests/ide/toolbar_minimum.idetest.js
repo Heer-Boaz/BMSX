@@ -87,12 +87,16 @@ for (const [command, kind, path] of [
 		await focusContent(input);
 		const bar = input.actionBar;
 		if (kind === 'cart_map') {
-			t.assert(bar.overflow === undefined && bar.items.length === 1, 'the one-command map toolbar invented an unnecessary More');
-			await click(bar.items[0].bounds); sourceOpened(input, source);
+			const visible = bar.items.filter(item => item.visible && !item.overflowed);
+			t.assert(bar.overflow === undefined && visible.length === 2
+				&& visible.some(item => item.command === 'cartMap.source')
+				&& visible.some(item => item.command === (input.layout.mode === 'outline' ? 'cartMap.map' : 'cartMap.outline')),
+				'the compact map toolbar must expose Source and exactly its other client, without More');
+			await click(visible.find(item => item.command === 'cartMap.source').bounds); sourceOpened(input, source);
 			input = await open(command, kind); await focusContent(input);
 			await press('ShiftLeft', 'Tab');
 			t.assert(input.actionBar.hasFocus, 'map Source is not keyboard reachable at the supported minimum');
-			await press('Enter'); sourceOpened(input, source);
+			await press('End'); await press('Enter'); sourceOpened(input, source);
 		} else {
 			t.assert(bar.overflow.button.visible, `${kind}: the supported minimum has no More affordance`);
 			t.assert(bar.overflow.items.some(item => item.type === 'command' && item.command === `${command}.source`), `${kind}: original Source is not reachable in More`);

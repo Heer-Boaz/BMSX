@@ -446,7 +446,11 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeEffect' },
 	],
-	'cartMap.title': [{ type: 'command', command: 'cartMap.source' }],
+	'cartMap.title': [
+		{ type: 'command', command: 'cartMap.map', icon: 'grid' },
+		{ type: 'command', command: 'cartMap.outline', icon: 'back' },
+		{ type: 'command', command: 'cartMap.source', icon: 'source' },
+	],
 	'sceneEditor.title': [
 		{ type: 'command', command: 'sceneEditor.details', icon: 'info' },
 		{ type: 'command', command: 'sceneEditor.outline', icon: 'back' },

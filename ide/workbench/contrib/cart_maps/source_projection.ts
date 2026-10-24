@@ -40,7 +40,7 @@ export function projectCartMap(input: CartMapInput): void {
 		const markers: CartMapItem[] = document.markers.map(marker => ({ ...marker, kind: 'marker', document, source: marker }));
 		const sheet: CartMapSheet = { key: 'stage', rows: document.rows.map(row => row.glyphs), width: document.width,
 			markers, range: { start: 0, end: source.length } };
-		const root = append(sheet, 'STAGE / MARKERS', document.diagnostic);
+		const root = append(sheet, 'STAGE', document.diagnostic);
 		for (const item of markers) appendWorkbenchTreeNode(tree, root, { sheet, item,
 			label: `${item.glyph} (${item.x}, ${item.y})`, displayLabel: '', range: item.source.range, diagnostic: null });
 	}
