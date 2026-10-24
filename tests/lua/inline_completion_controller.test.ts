@@ -153,7 +153,7 @@ test('an actual empty require-path candidate inserts at a zero-width range with 
 
 test('Undo updates completion only after the retained code view publishes its restored source cursor', t => {
 	const source = 'local other = 1', f = fixture(t, source, 0);
-	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 0, scrollRow: 0, scrollColumn: 0, selectionAnchor: null });
+	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 0, scrollRow: 0, scrollLeft: 0, selectionAnchor: null });
 	const after = codeEditorEditState.of({ ...before.value, cursorRow: 1, cursorColumn: 4 });
 	f.model.pushEditOperations([{ offset: source.length, deleteLength: 0, text: '\nretu' }], before, () => after);
 	assert.equal(f.view.cursorRow, 1); assert.equal(f.view.cursorColumn, 4);

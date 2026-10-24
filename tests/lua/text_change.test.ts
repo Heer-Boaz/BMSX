@@ -11,7 +11,7 @@ const resource: RuntimeResource = {
 	source: { resid: 'tracked.lua', type: 'lua', source_path: 'tracked.lua', generated: false },
 };
 const view: CodeEditorViewSnapshot = {
-	cursorRow: 0, cursorColumn: 0, scrollRow: 0, scrollColumn: 0, selectionAnchor: null,
+	cursorRow: 0, cursorColumn: 0, scrollRow: 0, scrollLeft: 0, selectionAnchor: null,
 };
 
 test('text positions map replacement boundaries and insertion affinity in UTF-16 application order', () => {

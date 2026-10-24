@@ -420,12 +420,12 @@ function payload(
 	};
 }
 
-function codeInputSnapshot(path: string, text: string, domain: ResourceDomain, cursor = 0, anchor: number | null = null, scrollColumn = 0): SerializedEditorInput {
+function codeInputSnapshot(path: string, text: string, domain: ResourceDomain, cursor = 0, anchor: number | null = null, scrollLeft = 0): SerializedEditorInput {
 	const model = new EditorTextModel(testResource(path, domain), 'lua', text);
 	const context: CodeTabContext = { id: buildCodeTabId(model.resource), title: path, model, view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null };
 	context.view.cursorColumn = cursor;
 	context.view.selectionAnchor = anchor === null ? null : { row: 0, column: anchor };
-	context.view.scrollColumn = scrollColumn;
+	context.view.scrollLeft = scrollLeft;
 	const input = createCodeEditorInput(context);
 	const value = new CodeEditorInputSerializer(null).serialize(input);
 	input.dispose(); model.dispose();
@@ -436,6 +436,46 @@ function codeInputState(input: SerializedEditorInput): SerializedCodeEditorInput
 	assert.equal(input.kind, 'code_editor');
 	return JSON.parse(input.value);
 }
+
+test('code-input version 1 persists fractional pixel scroll with the exact source and selection', async t => {
+	installBrowserWorkspace(t, new MockStorage());
+	const source = '-- original source\nreturn 1';
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry(source), null], TEST_DOMAIN);
+	const saved = codeInputState(codeInputSnapshot('entry.lua', source, TEST_DOMAIN, 7, 2, 19.75));
+	assert.equal(saved.version, 1); assert.equal(saved.view.scrollLeft, 19.75);
+	assert.equal('scrollColumn' in saved.view, false);
+	const serializer = new CodeEditorInputSerializer(sources);
+	const input = await serializer.deserialize(JSON.stringify({ ...saved, view: { ...saved.view, scrollRow: 1.25 } }));
+	assert.equal(input.workingCopy.buffer.getText(), source);
+	assert.equal(input.context.view.cursorColumn, 7); assert.deepEqual(input.context.view.selectionAnchor, { row: 0, column: 2 });
+	assert.equal(input.context.view.scrollRow, 1.25); assert.equal(input.context.view.scrollLeft, 19.75);
+	assert.deepEqual(JSON.parse(serializer.serialize(input)).view, { cursor: 7, anchor: 2, scrollRow: 1.25, scrollLeft: 19.75 });
+});
+
+for (const sameSource of [true, false]) test(`unversioned glyph-scroll migration preserves only matching source view state (${sameSource})`, async t => {
+	installBrowserWorkspace(t, new MockStorage());
+	const source = '-- original source\nreturn 1', current = sameSource ? source : source.replace('original', 'replaced');
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry(current), null], TEST_DOMAIN);
+	const saved = codeInputState(codeInputSnapshot('entry.lua', source, TEST_DOMAIN, 7, 2));
+	const legacy = JSON.stringify({ source: saved.source, view: { cursor: 7, anchor: 2, scrollRow: 1.25, scrollColumn: 91.75 } });
+	const serializer = new CodeEditorInputSerializer(sources), input = await serializer.deserialize(legacy);
+	assert.equal(input.workingCopy.buffer.getText(), current); assert.equal(input.workingCopy.dirty, false);
+	assert.equal(input.context.view.cursorColumn, sameSource ? 7 : 0);
+	assert.deepEqual(input.context.view.selectionAnchor, sameSource ? { row: 0, column: 2 } : null);
+	assert.equal(input.context.view.scrollRow, sameSource ? 1.25 : 0);
+	assert.equal(input.context.view.scrollLeft, 0, 'recognized old glyph units are not silently loaded as pixels');
+	const migrated: SerializedCodeEditorInput = JSON.parse(serializer.serialize(input));
+	assert.equal(migrated.version, 1); assert.equal(migrated.view.scrollLeft, 0); assert.equal('scrollColumn' in migrated.view, false);
+});
+
+test('a future code-input schema is rejected before source reconstruction, not treated as the glyph migration', async t => {
+	installBrowserWorkspace(t, new MockStorage());
+	const source = '-- original source', saved = codeInputState(codeInputSnapshot('entry.lua', source, TEST_DOMAIN));
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry(source), null], TEST_DOMAIN);
+	await assert.rejects(new CodeEditorInputSerializer(sources).deserialize(JSON.stringify({ ...saved, version: 2 })),
+		/Unsupported code editor view version '2'/);
+	assert.equal([...editorTextModelService.models].length, 0);
+});
 
 function editorStub(
 	sources: RuntimeSourceState,
@@ -567,7 +607,7 @@ test('workspace restore preserves explicit tab order and an active dirty system 
 	assert.equal(systemContext.model.dirty, true);
 	assert.equal(getTextSnapshot(systemContext.model.buffer), '-- dirty system source');
 	assert.equal(systemContext.view.cursorColumn, 7);
-	assert.equal(systemContext.view.scrollColumn, 3);
+	assert.equal(systemContext.view.scrollLeft, 3);
 	assert.deepEqual(systemContext.view.selectionAnchor, { row: 0, column: 2 });
 	assert.equal(editorTabGroup.tabs.some(tab => tab.id === systemContext.id), true);
 });

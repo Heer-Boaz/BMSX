@@ -29,8 +29,8 @@ export type EditorViewState = {
 	codeVerticalScrollbarVisible: boolean;
 	codeHorizontalScrollbarVisible: boolean;
 	cachedVisibleRowCount: number;
-	cachedVisibleColumnCount: number;
-	cachedMaxScrollColumn: number;
+	cachedContentWidth: number;
+	cachedMaxScrollLeft: number;
 	dimCrtInEditor: boolean;
 	wordWrapEnabled: boolean;
 };
@@ -58,8 +58,8 @@ export const editorViewState: EditorViewState = {
 	codeVerticalScrollbarVisible: false,
 	codeHorizontalScrollbarVisible: false,
 	cachedVisibleRowCount: 1,
-	cachedVisibleColumnCount: 1,
-	cachedMaxScrollColumn: 0,
+	cachedContentWidth: 1,
+	cachedMaxScrollLeft: 0,
 	dimCrtInEditor: true,
 	wordWrapEnabled: true,
 };

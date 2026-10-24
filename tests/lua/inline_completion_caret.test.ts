@@ -13,11 +13,16 @@ import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from '../../i
 import { setActiveDiagnostics } from '../../ide/editor/contrib/diagnostics/state';
 import { drawCodeAreaRows } from '../../ide/editor/render/code_area/rows';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { api } from '../../ide/runtime/overlay_api';
 import { invertThemeToken, resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { renderCodeArea } from '../../ide/editor/render/code_area/area';
+import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
+import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { create_rect_bounds } from '../../machine/ts/common/rect';
+import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
 	for (const [source, suffix, startColumn] of [['retur', 'n', 0], ['fun', 'ction', 1], ['\tretur', 'n', 1]] as const) {
@@ -40,7 +45,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 			const start = entry.hi.columnToDisplay[startColumn], end = entry.hi.text.length;
 			const cursorDisplay = entry.inline!.startDisplay;
 			const renderText = editorRuntimeState.uppercaseDisplay ? entry.hi.upperText : entry.hi.text;
-			const info = computeCursorScreenInfo(entry, renderText, left, top, start);
+			const info = computeCursorScreenInfo(entry, renderText, left - entry.advancePrefix[start], top);
 			const displayed = editorRuntimeState.uppercaseDisplay ? suffix.toUpperCase() : suffix;
 			assert.equal(info.baseChar, displayed.charAt(0)); assert.equal(info.baseColor, colors.COLOR_COMPLETION_PREVIEW_TEXT);
 			assert.equal(info.width, editorViewState.font.advance(displayed.charAt(0)));
@@ -74,7 +79,7 @@ test('a suggestion clipped left of the source slice does not become a phantom ca
 	const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
 	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
 	const model = new EditorTextModel({ domain: 0, path: 'clipped.lua', source: { type: 'lua', resid: 'clipped' } }, 'lua', 'retur + 2');
-	const view = createCodeEditorViewState(); view.cursorColumn = 5; view.scrollColumn = 7;
+	const view = createCodeEditorViewState(); view.cursorColumn = 5; view.scrollLeft = editorViewState.font.measure('retur +');
 	activeCodeEditor.attach(model, view);
 	activeCodeEditor.setInlineEdit(0, 5, 5, 'n');
 	t.after(() => {
@@ -86,9 +91,9 @@ test('a suggestion clipped left of the source slice does not become a phantom ca
 	const overlay = createHostOverlayFixture(128, 32);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 	const info = drawCodeAreaRows({ codeTop: 4, codeBottom: 20, codeLeft: 0, codeRight: 128,
-		gutterLeft: 0, gutterRight: 8, textLeft: 8, rows: 1, columns: 20, visualCount: 1,
-		contentRight: 128, contentBottom: 20, trackRight: 128, wrapEnabled: false, sliceWidth: 20, maxScrollColumn: 8 },
-		new Set(), null, 0, false, editorViewState.font.renderFont(), 0, [], -1, [], -1, false);
+		gutterLeft: 0, gutterRight: 8, textLeft: 8, rows: 1, contentWidth: 120, visualCount: 1,
+		contentRight: 128, contentBottom: 20, trackRight: 128, wrapEnabled: false, maxScrollLeft: 48 },
+		null, 0, false, editorViewState.font.renderFont(), [], -1, [], -1, false);
 	overlay.renderer.endFrame();
 	assert.equal(info, null, 'a source caret clipped left of the display slice is not painted at the viewport edge');
 	assert.equal(model.buffer.getText(), 'retur + 2');
@@ -138,7 +143,7 @@ test('horizontal scrolling past a short row does not pull its end caret back ont
 	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
 	const source = 'abc\n' + 'x'.repeat(30);
 	const model = new EditorTextModel({ domain: 0, path: 'short.lua', source: { type: 'lua', resid: 'short' } }, 'lua', source);
-	const view = createCodeEditorViewState(); view.cursorColumn = 3; view.scrollColumn = 7;
+	const view = createCodeEditorViewState(); view.cursorColumn = 3; view.scrollLeft = editorViewState.font.measure('xxxxxxx');
 	activeCodeEditor.attach(model, view); editorViewState.wordWrapEnabled = false;
 	t.after(() => {
 		activeCodeEditor.detach(); model.dispose();
@@ -148,9 +153,9 @@ test('horizontal scrolling past a short row does not pull its end caret back ont
 	const overlay = createHostOverlayFixture(128, 32);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 	const info = drawCodeAreaRows({ codeTop: 4, codeBottom: 20, codeLeft: 0, codeRight: 128,
-		gutterLeft: 0, gutterRight: 8, textLeft: 8, rows: 1, columns: 20, visualCount: 2,
-		contentRight: 128, contentBottom: 20, trackRight: 128, wrapEnabled: false, sliceWidth: 20, maxScrollColumn: 10 },
-		new Set(), null, 0, false, editorViewState.font.renderFont(), 0, [], -1, [], -1, false);
+		gutterLeft: 0, gutterRight: 8, textLeft: 8, rows: 1, contentWidth: 120, visualCount: 2,
+		contentRight: 128, contentBottom: 20, trackRight: 128, wrapEnabled: false, maxScrollLeft: 60 },
+		null, 0, false, editorViewState.font.renderFont(), [], -1, [], -1, false);
 	overlay.renderer.endFrame();
 	assert.equal(info, null, 'clipping the row text at EOF must not replace the actual horizontal viewport origin');
 	assert.equal(model.buffer.getText(), source);
@@ -167,8 +172,59 @@ test('an empty replacement of a source tab measures the surviving visible glyph 
 	});
 	const line = editorViewState.layout.getViewLine(model.buffer, 0);
 	assert.equal(line.viewText, 'a'); assert.equal(line.displayToColumn[0], 1);
-	const info = computeCursorScreenInfo(line, line.hi.text, 8, 4, 0);
+	const info = computeCursorScreenInfo(line, line.hi.text, 8, 4);
 	assert.equal(info.baseChar, 'a');
 	assert.equal(info.width, editorViewState.font.advance('a'), 'a deleted tab cannot supply the width of a different surviving glyph');
 	assert.equal(model.buffer.getText(), '\ta');
 });
+
+for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
+	test(`${variant}/${theme} the actual text pass clips partial glyphs with one pixel origin while gutter chrome stays outside it`, t => {
+		const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
+		const previousBars = editorViewState.scrollbars, previousTheme = colors.getActiveIdeThemeVariant();
+		const previousUppercase = editorRuntimeState.uppercaseDisplay, previousBlink = editorCaretState.cursorVisible;
+		configureFontVariant(new VirtualHeadlessClock(), variant, 'lua'); colors.setIdeThemeVariant(theme);
+		applyViewportSize({ width: 128, height: 96 }); refreshWorkbenchLayout();
+		editorViewState.scrollbars = {
+			codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
+			resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'), viewerVertical: new Scrollbar('vertical'),
+		};
+		editorViewState.wordWrapEnabled = false; editorRuntimeState.uppercaseDisplay = false; editorCaretState.cursorVisible = true;
+		const source = '\tretur_tail + call()' + ' + trailing'.repeat(8);
+		const model = new EditorTextModel({ domain: 0, path: 'pixels.lua', source: { type: 'lua', resid: 'pixels' } }, 'lua', source);
+		const view = createCodeEditorViewState(); view.cursorColumn = 6; activeCodeEditor.attach(model, view);
+		activeCodeEditor.setInlineEdit(0, 6, 11, 'n');
+		t.after(() => {
+			activeCodeEditor.detach(); model.dispose(); editorViewState.font = previousFont; editorViewState.layout = previousLayout;
+			editorViewState.wordWrapEnabled = previousWrap; editorViewState.scrollbars = previousBars;
+			colors.setIdeThemeVariant(previousTheme); editorRuntimeState.uppercaseDisplay = previousUppercase; editorCaretState.cursorVisible = previousBlink;
+		});
+		const line = editorViewState.layout.getViewLine(model.buffer, 0);
+		view.scrollLeft = line.advancePrefix[4] + 1.5;
+		const offset = view.scrollLeft, overlay = createHostOverlayFixture(128, 96);
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		const viewport = renderCodeArea({ session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, true,
+			new Set([1]), [], -1, [], -1, false);
+		overlay.renderer.endFrame();
+		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
+		const clips: Array<{ index: number; left: number; right: number; top: number; bottom: number }> = [];
+		for (let index = 0; index < frame.commandCount; index++) {
+			if (frame.commandKinds[index] === Host2DKind.Glyphs) glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
+			if (frame.commandKinds[index] === Host2DKind.Clip) {
+				const rect = frame.commandRefs[index] as ReturnType<typeof create_rect_bounds>;
+				clips.push({ index, ...rect });
+			}
+		}
+		const body = clips.find(clip => clip.left === viewport.textLeft && clip.right === viewport.contentRight
+			&& clip.top === viewport.codeTop && clip.bottom === viewport.contentBottom)!;
+		assert.ok(body, 'the actual renderer owns one clip for the complete text and caret pass');
+		const firstText = glyphs.find(run => run.items === line.hi.text)!;
+		assert.equal(firstText.item_start, 4); assert.equal(firstText.x, viewport.textLeft - 1.5, 'partial glyphs are not snapped to the viewport origin');
+		assert.ok(glyphs.some(run => run.items === '1' && run.x < viewport.textLeft), 'line-number chrome is painted before the text-only clip');
+		const caret = glyphs.find(run => run.items === 'n' && run.color === resolveThemeTokenColor(invertThemeToken(colors.CARET_COLOR)))!;
+		assert.ok(caret); assert.equal(caret.x, viewport.textLeft - offset + line.advancePrefix[line.inline!.startDisplay]);
+		assert.equal(view.scrollLeft, offset, 'painting and scrollbar layout retain the fractional pixel position');
+		assert.equal(clips.filter(clip => clip.left === viewport.textLeft && clip.right === viewport.contentRight).length, 1);
+		assert.equal(model.buffer.getText(), source);
+	});
+}

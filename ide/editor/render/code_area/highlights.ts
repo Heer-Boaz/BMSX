@@ -59,8 +59,8 @@ export function drawReferenceHighlightsForRow(
 			const visibleStart = Math.max(sliceStartDisplay, range.startDisplay);
 			const visibleEnd = Math.min(sliceEndDisplay, range.endDisplay);
 			if (visibleEnd <= visibleStart) continue;
-			const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
-			const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
+			const startX = originX + advancePrefix[visibleStart];
+			const endX = originX + advancePrefix[visibleEnd];
 			const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
 			api.fill_rect(startX, originY, endX, originY + editorViewState.lineHeight, 0, overlay);
 		}
@@ -93,8 +93,8 @@ export function drawSearchHighlightsForRow(
 			const visibleStart = Math.max(sliceStartDisplay, range.startDisplay);
 			const visibleEnd = Math.min(sliceEndDisplay, range.endDisplay);
 			if (visibleEnd <= visibleStart) continue;
-			const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
-			const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
+			const startX = originX + advancePrefix[visibleStart];
+			const endX = originX + advancePrefix[visibleEnd];
 			const overlay = i === activeIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
 			api.fill_rect(startX, originY, endX, originY + editorViewState.lineHeight, 0, overlay);
 		}

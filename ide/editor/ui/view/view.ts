@@ -7,6 +7,7 @@ import type { Viewport } from '../../../common/viewport';
 
 import * as constants from '../../../common/constants';
 import { CodeLayout } from '../code/layout';
+import { resolveCodeAreaViewport } from '../code/area_viewport';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { editorPointerState } from '../../../input/pointer/state';
 import { editorCaretState } from './caret/state';
@@ -52,15 +53,6 @@ export function updateGutterWidth(): number {
 	const digitCount = computedDigits > 2 ? computedDigits : 2;
 	editorViewState.gutterWidth = getBreakpointLaneWidth() + 4 + digitCount * editorViewState.font.advance('0');
 	return editorViewState.gutterWidth;
-}
-
-export function computeMaximumScrollColumn(): number {
-	ensureVisualLines();
-	const limit = editorViewState.layout.maxViewColumns(activeCodeEditor.model.buffer) - editorViewState.cachedVisibleColumnCount;
-	if (limit <= 0) {
-		return 0;
-	}
-	return limit;
 }
 
 export function applyViewportSize(viewport: Viewport): void {
@@ -154,19 +146,20 @@ export function resolvePointerTextPosition(viewportX: number, viewportY: number,
 	const row = resolvePointerRow(viewportY, bounds);
 	const layout = editorViewState.layout;
 	const entry = layout.getViewLine(activeCodeEditor.model.buffer, row);
-	let startDisplay = Math.min(activeCodeEditor.view.scrollColumn | 0, entry.hi.text.length);
+	let startDisplay = 0;
 	let endDisplay = entry.hi.text.length;
+	let pixelOffset = activeCodeEditor.view.scrollLeft;
 	const lastPointerRowResolution = editorPointerState.lastPointerRowResolution;
 	if (editorViewState.wordWrapEnabled && lastPointerRowResolution && lastPointerRowResolution.segment.row === row) {
 		const resolvedSegment = lastPointerRowResolution.segment;
 		startDisplay = resolvedSegment.startDisplay;
 		endDisplay = resolvedSegment.endDisplay;
+		pixelOffset = entry.advancePrefix[startDisplay];
 	}
-	const offset = viewportX - bounds.textLeft;
-	const pixel = entry.advancePrefix[startDisplay] + offset, inline = entry.inline;
+	const pixel = pixelOffset + viewportX - bounds.textLeft, inline = entry.inline;
 	pointerTextPosition.row = row;
-	pointerTextPosition.column = layout.hitTestColumn(entry, startDisplay, endDisplay, offset);
-	pointerTextPosition.injected = inline !== null && offset >= 0 && pixel < entry.advancePrefix[endDisplay]
+	pointerTextPosition.column = layout.hitTestColumn(entry, startDisplay, endDisplay, pixel - entry.advancePrefix[startDisplay]);
+	pointerTextPosition.injected = inline !== null && viewportX >= bounds.textLeft && pixel < entry.advancePrefix[endDisplay]
 		&& pixel >= entry.advancePrefix[inline.startDisplay] && pixel < entry.advancePrefix[inline.endDisplay];
 	return pointerTextPosition;
 }
@@ -179,18 +172,18 @@ export function resolveTextPositionBounds(row: number, column: number, out: Rect
 	const visual = layout.positionToVisualIndex(activeCodeEditor.model.buffer, row, column);
 	const segment = layout.visualIndexToSegment(visual)!;
 	const entry = layout.getViewLine(activeCodeEditor.model.buffer, row);
-	const start = editorViewState.wordWrapEnabled ? segment.startDisplay : Math.min(activeCodeEditor.view.scrollColumn | 0, entry.hi.text.length);
-	const x = bounds.textLeft + entry.advancePrefix[layout.columnToDisplay(entry.hi, column)]
-		- entry.advancePrefix[start];
+	const offset = editorViewState.wordWrapEnabled ? entry.advancePrefix[segment.startDisplay] : activeCodeEditor.view.scrollLeft;
+	const display = layout.columnToDisplay(entry.hi, column);
+	const x = bounds.textLeft + entry.advancePrefix[display] - offset;
 	const y = bounds.codeTop + (visual - (activeCodeEditor.view.scrollRow | 0)) * editorViewState.lineHeight;
-	write_rect_bounds(out, x, y, x + editorViewState.charAdvance, y + editorViewState.lineHeight);
+	write_rect_bounds(out, x, y, x + layout.cursorWidth(entry, display), y + editorViewState.lineHeight);
 }
 
 export function handlePointerAutoScroll(viewportX: number, viewportY: number, bounds: CodeAreaBounds = getCodeAreaBounds()): boolean {
 	if (!editorPointerState.pointerSelecting) {
 		return false;
 	}
-	const previousRow = activeCodeEditor.view.scrollRow, previousColumn = activeCodeEditor.view.scrollColumn;
+	const previousRow = activeCodeEditor.view.scrollRow, previousColumn = activeCodeEditor.view.scrollLeft;
 	ensureVisualLines();
 	let rowDelta = 0;
 	if (viewportY < bounds.codeTop) {
@@ -202,16 +195,16 @@ export function handlePointerAutoScroll(viewportX: number, viewportY: number, bo
 	activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(activeCodeEditor.view.scrollRow + rowDelta, editorViewState.layout.getVisualLineCount(), rows);
 	if (viewportX >= bounds.gutterLeft && !editorViewState.wordWrapEnabled) {
 		if (viewportX < bounds.textLeft) {
-			activeCodeEditor.view.scrollColumn -= 1;
+			activeCodeEditor.view.scrollLeft -= editorViewState.charAdvance;
 		} else if (viewportX >= bounds.codeRight) {
-			activeCodeEditor.view.scrollColumn += 1;
+			activeCodeEditor.view.scrollLeft += editorViewState.charAdvance;
 		}
-		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(activeCodeEditor.view.scrollColumn, editorViewState.cachedMaxScrollColumn);
+		activeCodeEditor.view.scrollLeft = editorViewState.layout.clampHorizontalScroll(activeCodeEditor.view.scrollLeft, editorViewState.cachedMaxScrollLeft);
 	}
 	if (editorViewState.wordWrapEnabled) {
-		activeCodeEditor.view.scrollColumn = 0;
+		activeCodeEditor.view.scrollLeft = 0;
 	}
-	return activeCodeEditor.view.scrollRow !== previousRow || activeCodeEditor.view.scrollColumn !== previousColumn;
+	return activeCodeEditor.view.scrollRow !== previousRow || activeCodeEditor.view.scrollLeft !== previousColumn;
 }
 
 export function scrollRows(deltaRows: number): void {
@@ -222,10 +215,10 @@ export function scrollRows(deltaRows: number): void {
 	activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(activeCodeEditor.view.scrollRow + deltaRows, editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
 }
 
-export function scrollColumns(deltaColumns: number): void {
-	if (deltaColumns === 0 || editorViewState.wordWrapEnabled) return;
-	activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(
-		activeCodeEditor.view.scrollColumn + deltaColumns, editorViewState.cachedMaxScrollColumn,
+export function scrollHorizontally(deltaPixels: number): void {
+	if (deltaPixels === 0 || editorViewState.wordWrapEnabled) return;
+	activeCodeEditor.view.scrollLeft = editorViewState.layout.clampHorizontalScroll(
+		activeCodeEditor.view.scrollLeft + deltaPixels, editorViewState.cachedMaxScrollLeft,
 	);
 }
 
@@ -281,7 +274,9 @@ export function toggleWordWrap(): void {
 	const previousTopIndex = editorViewState.layout.clampVisualIndex(previousVisualCount, activeCodeEditor.view.scrollRow);
 	const previousTopSegment = editorViewState.layout.visualIndexToSegment(previousTopIndex);
 	const anchorRow = previousTopSegment.row;
-	const anchorDisplay = previousWrap ? previousTopSegment.startDisplay : activeCodeEditor.view.scrollColumn | 0;
+	const anchorLine = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, anchorRow);
+	const anchorPixel = previousWrap ? anchorLine.advancePrefix[previousTopSegment.startDisplay] : activeCodeEditor.view.scrollLeft;
+	const anchorDisplay = previousWrap ? previousTopSegment.startDisplay : editorViewState.layout.displayAtPixel(anchorLine, anchorPixel);
 	const previousCursorRow = activeCodeEditor.view.cursorRow;
 	const previousCursorColumn = activeCodeEditor.view.cursorColumn;
 	const previousDesiredColumn = activeCodeEditor.view.desiredColumn;
@@ -299,11 +294,11 @@ export function toggleWordWrap(): void {
 	activeCodeEditor.view.desiredColumn = previousDesiredColumn;
 
 	if (editorViewState.wordWrapEnabled) {
-		activeCodeEditor.view.scrollColumn = 0;
+		activeCodeEditor.view.scrollLeft = 0;
 		activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.displayToVisualIndex(anchorRow, anchorDisplay), currentVisualCount, editorViewState.cachedVisibleRowCount);
 	} else {
-		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(anchorDisplay, computeMaximumScrollColumn());
-		activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.displayToVisualIndex(anchorRow, activeCodeEditor.view.scrollColumn), currentVisualCount, editorViewState.cachedVisibleRowCount);
+		activeCodeEditor.view.scrollLeft = editorViewState.layout.clampHorizontalScroll(anchorPixel, resolveCodeAreaViewport().maxScrollLeft);
+		activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.displayToVisualIndex(anchorRow, anchorDisplay), currentVisualCount, editorViewState.cachedVisibleRowCount);
 	}
 	editorPointerState.lastPointerRowResolution = null;
 	ensureCursorVisible();
@@ -323,6 +318,7 @@ export function getResourcePanelWidth(): number {
 export function computeWrapWidth(): number {
 	const bounds = getCodeAreaBounds();
 	const available = bounds.codeRight - bounds.textLeft;
-	const width = available - 2;
+	// Break before the scrollbar lane and leave room for the block caret at end of line.
+	const width = available - constants.SCROLLBAR_WIDTH - constants.CODE_AREA_RIGHT_MARGIN - editorViewState.charAdvance;
 	return width > editorViewState.charAdvance ? width : editorViewState.charAdvance;
 }

@@ -20,7 +20,7 @@ import { showEditorMessage } from '../../../common/feedback_state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { getCodeAreaBounds, scrollRows, scrollColumns, refreshViewportLayout, handlePointerAutoScroll } from '../../../editor/ui/view/view';
+import { getCodeAreaBounds, scrollRows, scrollHorizontally, refreshViewportLayout, handlePointerAutoScroll } from '../../../editor/ui/view/view';
 import { renderCodeArea } from '../../../editor/render/code_area/area';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
@@ -245,7 +245,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		const bounds = getCodeAreaBounds();
 		if (!event.valid || !event.insideViewport || event.viewportY < bounds.codeTop || event.viewportY >= bounds.codeBottom || event.viewportX < bounds.codeLeft || event.viewportX >= bounds.codeRight) return;
 		const horizontal = isShiftDown(event) && event.deltaX === 0;
-		scrollColumns(horizontal ? event.deltaY : event.deltaX);
+		scrollHorizontally((horizontal ? event.deltaY : event.deltaX) * editorViewState.charAdvance);
 		if (!horizontal) scrollRows(event.deltaY);
 		editorCaretState.cursorRevealSuspended = true;
 	}

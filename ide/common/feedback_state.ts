@@ -4,7 +4,6 @@ import type { MessageState } from './models';
 type EditorFeedbackState = {
 	message: MessageState;
 	deferredMessageDuration: number;
-	warnNonMonospace: boolean;
 	editorActive: boolean;
 };
 
@@ -16,7 +15,6 @@ export const editorFeedbackState: EditorFeedbackState = {
 		visible: false,
 	},
 	deferredMessageDuration: null,
-	warnNonMonospace: false,
 	editorActive: false,
 };
 

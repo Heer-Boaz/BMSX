@@ -187,16 +187,11 @@ export function resolveRuntimeErrorOverlayAnchor(
 	}
 	const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, segment.row);
 	const highlight = entry.hi;
-	const sliceStartDisplay = editorViewState.wordWrapEnabled ? segment.startDisplay
-		: Math.min(activeCodeEditor.view.scrollColumn | 0, highlight.text.length);
-	const sliceEndDisplay = editorViewState.wordWrapEnabled ? segment.endDisplay
-		: Math.min(sliceStartDisplay + Math.max(1, Math.trunc((contentRight - textLeft) / editorViewState.charAdvance)) + 4, highlight.text.length);
+	const slice = editorViewState.layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft,
+		contentRight - textLeft, editorViewState.wordWrapEnabled);
 	const anchorDisplay = editorViewState.layout.columnToDisplay(highlight, overlay.column);
-	const clampedAnchorDisplay = anchorDisplay < sliceStartDisplay
-		? sliceStartDisplay
-		: (anchorDisplay > sliceEndDisplay ? sliceEndDisplay : anchorDisplay);
 	const advancePrefix = entry.advancePrefix;
-	const anchorX = textLeft + advancePrefix[clampedAnchorDisplay] - advancePrefix[sliceStartDisplay];
+	const anchorX = Math.max(textLeft, Math.min(contentRight, textLeft - slice.pixelOffset + advancePrefix[anchorDisplay]));
 	const rowTop = codeTop + relativeRow * editorViewState.lineHeight;
 	return {
 		anchorX,

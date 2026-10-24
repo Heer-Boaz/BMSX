@@ -1,5 +1,4 @@
 import * as constants from '../../../common/constants';
-import { editorFeedbackState } from '../../../common/feedback_state';
 import { ensureVisualLines } from '../../common/text/layout';
 import { getCodeAreaBounds } from '../view/view';
 import { activeCodeEditor } from '../code_editor_state';
@@ -8,28 +7,26 @@ import type { CodeAreaBounds } from '../view/view';
 
 export type CodeAreaViewportMetrics = {
 	rows: number;
-	columns: number;
+	contentWidth: number;
 	visualCount: number;
 	contentRight: number;
 	contentBottom: number;
 	trackRight: number;
 	wrapEnabled: boolean;
-	sliceWidth: number;
-	maxScrollColumn: number;
+	maxScrollLeft: number;
 };
 
 export type CodeAreaViewport = CodeAreaBounds & CodeAreaViewportMetrics;
 
 const codeAreaViewportMetrics: CodeAreaViewportMetrics = {
 	rows: 1,
-	columns: 1,
+	contentWidth: 1,
 	visualCount: 0,
 	contentRight: 0,
 	contentBottom: 0,
 	trackRight: 0,
 	wrapEnabled: false,
-	sliceWidth: 3,
-	maxScrollColumn: 0,
+	maxScrollLeft: 0,
 };
 
 const codeAreaViewport: CodeAreaViewport = {
@@ -41,14 +38,13 @@ const codeAreaViewport: CodeAreaViewport = {
 	gutterRight: 0,
 	textLeft: 0,
 	rows: 1,
-	columns: 1,
+	contentWidth: 1,
 	visualCount: 0,
 	contentRight: 0,
 	contentBottom: 0,
 	trackRight: 0,
 	wrapEnabled: false,
-	sliceWidth: 3,
-	maxScrollColumn: 0,
+	maxScrollLeft: 0,
 };
 
 function cellCapacity(size: number, cellSize: number): number {
@@ -59,39 +55,38 @@ function cellCapacity(size: number, cellSize: number): number {
 export function resolveCodeAreaViewportMetrics(
 	bounds: CodeAreaBounds,
 	visualCount: number,
-	maximumColumns: number,
+	maximumWidth: number,
 ): CodeAreaViewportMetrics {
 	const wrapEnabled = editorViewState.wordWrapEnabled;
-	const advance = editorFeedbackState.warnNonMonospace ? editorViewState.spaceAdvance : editorViewState.charAdvance;
 	const scrollbarWidth = constants.SCROLLBAR_WIDTH;
 	let horizontalScrollbarWidth = !wrapEnabled && editorViewState.codeHorizontalScrollbarVisible ? scrollbarWidth : 0;
 	let verticalScrollbarWidth = editorViewState.codeVerticalScrollbarVisible ? scrollbarWidth : 0;
 	let rows = codeAreaViewportMetrics.rows;
-	let columns = codeAreaViewportMetrics.columns;
+	let contentWidth = codeAreaViewportMetrics.contentWidth;
 
 	for (let i = 0; i < 3; i += 1) {
 		rows = cellCapacity(bounds.codeBottom - bounds.codeTop - horizontalScrollbarWidth, editorViewState.lineHeight);
 		verticalScrollbarWidth = visualCount > rows ? scrollbarWidth : 0;
-		columns = cellCapacity(bounds.codeRight - bounds.textLeft - verticalScrollbarWidth - constants.CODE_AREA_RIGHT_MARGIN, advance);
-		horizontalScrollbarWidth = !wrapEnabled && maximumColumns > columns ? scrollbarWidth : 0;
+		const scrollbarInset = wrapEnabled ? scrollbarWidth : verticalScrollbarWidth;
+		contentWidth = Math.max(0, bounds.codeRight - bounds.textLeft - scrollbarInset - constants.CODE_AREA_RIGHT_MARGIN);
+		horizontalScrollbarWidth = !wrapEnabled && maximumWidth > contentWidth ? scrollbarWidth : 0;
 	}
 
 	editorViewState.codeVerticalScrollbarVisible = verticalScrollbarWidth !== 0;
 	editorViewState.codeHorizontalScrollbarVisible = horizontalScrollbarWidth !== 0;
 	editorViewState.cachedVisibleRowCount = rows;
-	editorViewState.cachedVisibleColumnCount = columns;
-	editorViewState.cachedMaxScrollColumn = wrapEnabled || maximumColumns <= columns ? 0 : maximumColumns - columns;
+	editorViewState.cachedContentWidth = contentWidth;
+	editorViewState.cachedMaxScrollLeft = wrapEnabled || maximumWidth <= contentWidth ? 0 : maximumWidth - contentWidth;
 
-	const contentRight = bounds.codeRight - verticalScrollbarWidth - constants.CODE_AREA_RIGHT_MARGIN;
+	const contentRight = bounds.textLeft + contentWidth;
 	codeAreaViewportMetrics.rows = rows;
-	codeAreaViewportMetrics.columns = columns;
+	codeAreaViewportMetrics.contentWidth = contentWidth;
 	codeAreaViewportMetrics.visualCount = visualCount;
-	codeAreaViewportMetrics.contentRight = contentRight > bounds.textLeft ? contentRight : bounds.textLeft;
+	codeAreaViewportMetrics.contentRight = contentRight;
 	codeAreaViewportMetrics.contentBottom = bounds.codeBottom - horizontalScrollbarWidth;
 	codeAreaViewportMetrics.trackRight = bounds.codeRight - verticalScrollbarWidth;
 	codeAreaViewportMetrics.wrapEnabled = wrapEnabled;
-	codeAreaViewportMetrics.sliceWidth = columns + 2;
-	codeAreaViewportMetrics.maxScrollColumn = editorViewState.cachedMaxScrollColumn;
+	codeAreaViewportMetrics.maxScrollLeft = editorViewState.cachedMaxScrollLeft;
 	return codeAreaViewportMetrics;
 }
 
@@ -101,7 +96,7 @@ export function resolveCodeAreaViewport(): CodeAreaViewport {
 	const metrics = resolveCodeAreaViewportMetrics(
 		bounds,
 		editorViewState.layout.getVisualLineCount(),
-		editorViewState.wordWrapEnabled ? 0 : editorViewState.layout.maxViewColumns(activeCodeEditor.model.buffer),
+		editorViewState.wordWrapEnabled ? 0 : editorViewState.layout.maxViewWidth(activeCodeEditor.model.buffer),
 	);
 
 	codeAreaViewport.codeTop = bounds.codeTop;
@@ -112,13 +107,12 @@ export function resolveCodeAreaViewport(): CodeAreaViewport {
 	codeAreaViewport.gutterRight = bounds.gutterRight;
 	codeAreaViewport.textLeft = bounds.textLeft;
 	codeAreaViewport.rows = metrics.rows;
-	codeAreaViewport.columns = metrics.columns;
+	codeAreaViewport.contentWidth = metrics.contentWidth;
 	codeAreaViewport.visualCount = metrics.visualCount;
 	codeAreaViewport.contentRight = metrics.contentRight;
 	codeAreaViewport.contentBottom = metrics.contentBottom;
 	codeAreaViewport.trackRight = metrics.trackRight;
 	codeAreaViewport.wrapEnabled = metrics.wrapEnabled;
-	codeAreaViewport.sliceWidth = metrics.sliceWidth;
-	codeAreaViewport.maxScrollColumn = metrics.maxScrollColumn;
+	codeAreaViewport.maxScrollLeft = metrics.maxScrollLeft;
 	return codeAreaViewport;
 }

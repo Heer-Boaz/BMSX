@@ -109,7 +109,7 @@ function viewSnapshot(view: CodeEditorViewState) {
 		cursorRow: view.cursorRow,
 		cursorColumn: view.cursorColumn,
 		scrollRow: view.scrollRow,
-		scrollColumn: view.scrollColumn,
+		scrollLeft: view.scrollLeft,
 		selectionAnchor: view.selectionAnchor,
 	});
 }
@@ -291,7 +291,7 @@ test('retained code inputs consume document edit state independently of the acti
 	const other = new EditorTextModel(luaResource('active-code.lua'), 'lua', 'other');
 	const otherView = createCodeEditorViewState();
 	activeCodeEditor.attach(other, otherView);
-	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 3, scrollRow: 0, scrollColumn: 0, selectionAnchor: { row: 0, column: 1 } });
+	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 3, scrollRow: 0, scrollLeft: 0, selectionAnchor: { row: 0, column: 1 } });
 	const after = codeEditorEditState.of({ ...before.value, cursorColumn: 4 });
 	model.pushEditOperations([{ offset: 3, deleteLength: 0, text: 'x' }], before, () => after);
 	assert.equal(view.cursorColumn, 4);
@@ -366,7 +366,7 @@ test('restoring a view does not lend mutable selection state from undo history',
 		cursorRow: 0,
 		cursorColumn: 2,
 		scrollRow: 0,
-		scrollColumn: 0,
+		scrollLeft: 0,
 		selectionAnchor: { row: 0, column: 1 },
 	};
 

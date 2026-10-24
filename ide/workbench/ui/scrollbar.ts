@@ -5,7 +5,7 @@ import { api } from '../../runtime/overlay_api';
 
 export type ScrollbarDragStart = { readonly pointer: number; readonly scroll: number; readonly scale: number };
 
-/** Retained thumb geometry. Content coordinates need not be pixels (code uses rows/columns). */
+/** Retained thumb geometry. Content coordinates need not be pixels (vertical code scrolling uses rows). */
 export class Scrollbar {
 	public revision = 0;
 	private readonly trackListeners = new Set<() => void>();

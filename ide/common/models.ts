@@ -72,7 +72,7 @@ export type CodeEditorViewSnapshot = {
 	cursorRow: number;
 	cursorColumn: number;
 	scrollRow: number;
-	scrollColumn: number;
+	scrollLeft: number;
 	selectionAnchor: Position;
 };
 

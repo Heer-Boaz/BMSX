@@ -24,6 +24,13 @@ import { CodeLineProjection } from './line_projection';
 
 type VisualLineSegmentTarget = VisualLineSegment[] | ScratchBuffer<VisualLineSegment>;
 
+export type CodeLineViewport = {
+	readonly startDisplay: number;
+	readonly endDisplay: number;
+	/** Full-line pixel coordinate displayed at the text viewport's left edge. */
+	readonly pixelOffset: number;
+};
+
 type BuiltinIdentifierSnapshot = { epoch: number; ids: Iterable<string> };
 
 type PendingSemanticUpdate = {
@@ -62,13 +69,15 @@ function ensureVisualLineSegment(target: VisualLineSegmentTarget, index: number,
 export class CodeLayout {
 	private readonly inlineEdit: Readonly<InlineEditState>;
 	private readonly inlineProjection: CodeLineProjection;
+	private readonly endCaretWidth: number;
+	private readonly lineViewport = { startDisplay: 0, endDisplay: 0, pixelOffset: 0 };
 	private inlineWrapVersion = -1;
 	private inlineWrapRow = -1;
-	private readonly sourceColumns: number[] = [];
-	private sourceColumnsReady = false;
-	private maxSourceColumns = 0;
+	private readonly sourceWidths: number[] = [];
+	private sourceWidthsReady = false;
+	private maxSourceWidth = 0;
 	private maxSourceRow = -1;
-	private secondSourceColumns = 0;
+	private secondSourceWidth = 0;
 	private secondSourceRow = -1;
 	private sourceMaxDirty = false;
 	private readonly rangeOne: DisplayRange = { startDisplay: 0, endDisplay: 0 };
@@ -120,6 +129,7 @@ export class CodeLayout {
 	) {
 		this.inlineEdit = options.inlineEdit;
 		this.inlineProjection = new CodeLineProjection(font);
+		this.endCaretWidth = font.advance(' ');
 		this.maxHighlightCache = options.maxHighlightCache;
 		this.semanticDebounceMs = options.semanticDebounceMs;
 		this.clock = options.clock;
@@ -184,7 +194,7 @@ export class CodeLayout {
 
 	/** Model events invalidate the projection regardless of which editor produced the edit. */
 	public onDidChangeContent(buffer: TextBuffer, event: EditorTextModelContentChangeEvent): void {
-		if (buffer.getLineCount() !== this.sourceColumns.length) this.sourceColumnsReady = false;
+		if (buffer.getLineCount() !== this.sourceWidths.length) this.sourceWidthsReady = false;
 		if (this.pendingSemantic?.buffer === buffer) this.pendingSemantic = null;
 		buffer.positionAt(textChangesEndOffset(event.changes), this.changedEndPosition);
 		this.invalidateHighlightsFromRow(event.startRow);
@@ -204,8 +214,8 @@ export class CodeLayout {
 	}
 
 	public invalidateAllHighlights(): void {
-		this.sourceColumnsReady = false;
-		this.sourceColumns.length = 0;
+		this.sourceWidthsReady = false;
+		this.sourceWidths.length = 0;
 		this.inlineWrapVersion = -1;
 		this.inlineWrapRow = -1;
 		this.highlightCache.clear();
@@ -363,7 +373,7 @@ export class CodeLayout {
 
 	public getViewLine(buffer: TextBuffer, row: number): CodeLineView {
 		const source = this.getCachedHighlight(buffer, row);
-		if (this.sourceColumnsReady) this.recordSourceColumns(row, source.hi.text.length);
+		if (this.sourceWidthsReady) this.recordSourceWidth(row, source.advancePrefix[source.hi.text.length]);
 		return this.inlineEdit.active && this.inlineEdit.row === row
 			? this.inlineProjection.update(source, this.inlineEdit) : source;
 	}
@@ -400,17 +410,44 @@ export class CodeLayout {
 		const advances = line.advancePrefix, target = advances[startDisplay] + offset;
 		if (target <= advances[startDisplay]) return this.sourceColumnAtDisplay(line, startDisplay, false);
 		if (target >= advances[endDisplay]) return this.sourceColumnAtDisplay(line, endDisplay, true);
-		let low = startDisplay + 1, high = endDisplay + 1;
-		while (low < high) {
-			const mid = (low + high) >>> 1;
-			if (advances[mid] <= target) low = mid + 1; else high = mid;
-		}
-		const display = low - 1, inline = line.inline;
+		const display = this.displayAtPixel(line, target, startDisplay, endDisplay), inline = line.inline;
 		if (inline !== null && display >= inline.startDisplay && display < inline.endDisplay) return inline.startColumn;
 		const column = line.displayToColumn[display];
 		const begin = inline !== null && column === inline.endColumn ? inline.endDisplay : this.columnToDisplay(line.hi, column);
 		const end = this.columnToDisplay(line.hi, column + 1);
 		return target >= (advances[begin] + advances[end]) * 0.5 ? column + 1 : column;
+	}
+
+	/** Expanded glyph containing a measured pixel; exact boundaries choose the following glyph. */
+	public displayAtPixel(line: CodeLineView, pixel: number, startDisplay = 0, endDisplay = line.hi.text.length): number {
+		let low = startDisplay, high = endDisplay + 1;
+		while (low < high) {
+			const mid = (low + high) >>> 1;
+			if (line.advancePrefix[mid] <= pixel) low = mid + 1; else high = mid;
+		}
+		return Math.max(startDisplay, low - 1);
+	}
+
+	/** Borrowed until the next call; partial edge glyphs retain the same unaligned pixel origin. */
+	public resolveLineViewport(line: CodeLineView, segment: VisualLineSegment, scrollLeft: number, width: number,
+		wrapEnabled: boolean): CodeLineViewport {
+		const result = this.lineViewport;
+		result.pixelOffset = wrapEnabled ? line.advancePrefix[segment.startDisplay] : scrollLeft;
+		result.startDisplay = wrapEnabled ? segment.startDisplay : this.displayAtPixel(line, scrollLeft);
+		if (wrapEnabled) result.endDisplay = segment.endDisplay;
+		else {
+			const right = scrollLeft + width, end = this.displayAtPixel(line, right, result.startDisplay);
+			result.endDisplay = end < line.hi.text.length && line.advancePrefix[end] < right ? end + 1 : end;
+		}
+		return result;
+	}
+
+	public cursorWidth(line: CodeLineView, display: number): number {
+		if (display === line.hi.text.length) return this.endCaretWidth;
+		const inline = line.inline, column = line.displayToColumn[display];
+		const ghost = inline !== null && display >= inline.startDisplay && display < inline.endDisplay;
+		const end = !ghost && line.src.charAt(column) === '\t' ? line.hi.columnToDisplay[column + 1] : display + 1;
+		return line.advancePrefix[end] - line.advancePrefix[display];
 	}
 
 	private sourceColumnAtDisplay(line: CodeLineView, display: number, right: boolean): number {
@@ -421,45 +458,46 @@ export class CodeLayout {
 		return line.displayToColumn[display];
 	}
 
-	private recordSourceColumns(row: number, columns: number): void {
-		if (this.sourceColumns[row] === columns) return;
-		this.sourceColumns[row] = columns;
+	private recordSourceWidth(row: number, width: number): void {
+		if (this.sourceWidths[row] === width) return;
+		this.sourceWidths[row] = width;
 		if (this.sourceMaxDirty) return;
 		if (row === this.maxSourceRow) {
-			if (columns < this.secondSourceColumns) this.sourceMaxDirty = true;
-			else this.maxSourceColumns = columns;
+			if (width < this.secondSourceWidth) this.sourceMaxDirty = true;
+			else this.maxSourceWidth = width;
 		} else if (row === this.secondSourceRow) {
-			if (columns < this.secondSourceColumns) this.sourceMaxDirty = true;
-			else if (columns > this.maxSourceColumns) {
-				this.secondSourceRow = this.maxSourceRow; this.secondSourceColumns = this.maxSourceColumns;
-				this.maxSourceRow = row; this.maxSourceColumns = columns;
-			} else this.secondSourceColumns = columns;
-		} else if (columns > this.maxSourceColumns) {
-			this.secondSourceRow = this.maxSourceRow; this.secondSourceColumns = this.maxSourceColumns;
-			this.maxSourceRow = row; this.maxSourceColumns = columns;
-		} else if (columns > this.secondSourceColumns) {
-			this.secondSourceRow = row; this.secondSourceColumns = columns;
+			if (width < this.secondSourceWidth) this.sourceMaxDirty = true;
+			else if (width > this.maxSourceWidth) {
+				this.secondSourceRow = this.maxSourceRow; this.secondSourceWidth = this.maxSourceWidth;
+				this.maxSourceRow = row; this.maxSourceWidth = width;
+			} else this.secondSourceWidth = width;
+		} else if (width > this.maxSourceWidth) {
+			this.secondSourceRow = this.maxSourceRow; this.secondSourceWidth = this.maxSourceWidth;
+			this.maxSourceRow = row; this.maxSourceWidth = width;
+		} else if (width > this.secondSourceWidth) {
+			this.secondSourceRow = row; this.secondSourceWidth = width;
 		}
 	}
 
-	/** Extents consume synchronized source widths and one projected row, not a rescan on suggestion changes. */
-	public maxViewColumns(buffer: TextBuffer): number {
+	/** Pixel extents include an EOL caret and consume synchronized source widths and one projected row, not a rescan on suggestion changes. */
+	public maxViewWidth(buffer: TextBuffer): number {
 		const edit = this.inlineEdit;
-		const projected = edit.active ? this.getViewLine(buffer, edit.row).hi.text.length : 0;
+		const line = edit.active ? this.getViewLine(buffer, edit.row) : null;
+		const projected = line === null ? 0 : line.advancePrefix[line.hi.text.length];
 		if (this.sourceMaxDirty) {
-			this.maxSourceColumns = 0; this.maxSourceRow = -1;
-			this.secondSourceColumns = 0; this.secondSourceRow = -1;
-			for (let row = 0; row < this.sourceColumns.length; row++) {
-				const columns = this.sourceColumns[row];
-				if (columns > this.maxSourceColumns) {
-					this.secondSourceColumns = this.maxSourceColumns; this.secondSourceRow = this.maxSourceRow;
-					this.maxSourceColumns = columns; this.maxSourceRow = row;
-				} else if (columns > this.secondSourceColumns) { this.secondSourceColumns = columns; this.secondSourceRow = row; }
+			this.maxSourceWidth = 0; this.maxSourceRow = -1;
+			this.secondSourceWidth = 0; this.secondSourceRow = -1;
+			for (let row = 0; row < this.sourceWidths.length; row++) {
+				const width = this.sourceWidths[row];
+				if (width > this.maxSourceWidth) {
+					this.secondSourceWidth = this.maxSourceWidth; this.secondSourceRow = this.maxSourceRow;
+					this.maxSourceWidth = width; this.maxSourceRow = row;
+				} else if (width > this.secondSourceWidth) { this.secondSourceWidth = width; this.secondSourceRow = row; }
 			}
 			this.sourceMaxDirty = false;
 		}
-		const authored = edit.active && edit.row === this.maxSourceRow ? this.secondSourceColumns : this.maxSourceColumns;
-		return Math.max(authored, projected);
+		const authored = edit.active && edit.row === this.maxSourceRow ? this.secondSourceWidth : this.maxSourceWidth;
+		return Math.max(authored, projected) + this.endCaretWidth;
 	}
 
 	public columnToDisplay(highlight: HighlightLine, column: number): number {
@@ -520,8 +558,8 @@ export class CodeLayout {
 		return clamp(scrollRow, 0, maxScrollRow);
 	}
 
-	public clampHorizontalScroll(scrollColumn: number, maxScrollColumn: number): number {
-		return clamp(scrollColumn, 0, Math.max(0, maxScrollColumn));
+	public clampHorizontalScroll(scrollLeft: number, maxScrollLeft: number): number {
+		return clamp(scrollLeft, 0, Math.max(0, maxScrollLeft));
 	}
 
 	public markVisualLinesDirtyForRows(startRow: number, endRow: number): void {
@@ -723,11 +761,11 @@ export class CodeLayout {
 		wrapWidth: number,
 	): void {
 		const lineCount = buffer.getLineCount();
-		this.sourceColumns.length = lineCount;
-		this.sourceColumns.fill(0);
-		this.sourceColumnsReady = true;
-		this.maxSourceColumns = 0; this.maxSourceRow = -1;
-		this.secondSourceColumns = 0; this.secondSourceRow = -1;
+		this.sourceWidths.length = lineCount;
+		this.sourceWidths.fill(0);
+		this.sourceWidthsReady = true;
+		this.maxSourceWidth = 0; this.maxSourceRow = -1;
+		this.secondSourceWidth = 0; this.secondSourceRow = -1;
 		this.sourceMaxDirty = false;
 		const segments = this.visualLines;
 		const counts = this.rowVisualLineCounts;

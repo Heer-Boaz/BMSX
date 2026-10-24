@@ -116,18 +116,43 @@ for (const variant of ['tiny', 'msx'] as const) {
 
 test('view extent excludes the replaced widest source row and selects the cached second source width', t => {
 	const source = `${'x'.repeat(80)}\n${'y'.repeat(48)}\n${'z'.repeat(20)}`;
-	const { model, widget, layout } = fixture(t, source);
-	layout.ensureVisualLines(model.buffer, false, 0, 20); assert.equal(layout.maxViewColumns(model.buffer), 80);
+	const { model, widget, font, layout } = fixture(t, source);
+	const advance = font.advance('x');
+	layout.ensureVisualLines(model.buffer, false, 0, 20); assert.equal(layout.maxViewWidth(model.buffer), 81 * advance);
 	const read = t.mock.method(model.buffer, 'getLineContent', model.buffer.getLineContent.bind(model.buffer));
 	widget.setInlineEdit(0, 0, 80, 'short'); layout.ensureVisualLines(model.buffer, false, 0, 20);
-	assert.equal(layout.maxViewColumns(model.buffer), 48);
+	assert.equal(layout.maxViewWidth(model.buffer), 49 * advance);
 	widget.setInlineEdit(1, 0, 48, 'q'); layout.ensureVisualLines(model.buffer, false, 0, 20);
-	assert.equal(layout.maxViewColumns(model.buffer), 80, 'changing the projected row restores the previous source width');
+	assert.equal(layout.maxViewWidth(model.buffer), 81 * advance, 'changing the projected row restores the previous source width');
 	widget.setInlineEdit(0, 0, 80, 'g'.repeat(90)); layout.ensureVisualLines(model.buffer, false, 0, 20);
-	assert.equal(layout.maxViewColumns(model.buffer), 90);
+	assert.equal(layout.maxViewWidth(model.buffer), 91 * advance);
 	widget.clearInlineEdit(); layout.ensureVisualLines(model.buffer, false, 0, 20);
-	assert.equal(layout.maxViewColumns(model.buffer), 80); assert.equal(read.mock.callCount(), 0);
+	assert.equal(layout.maxViewWidth(model.buffer), 81 * advance); assert.equal(read.mock.callCount(), 0);
 });
+
+for (const variant of ['tiny', 'msx'] as const) {
+	test(`${variant} measured extents rank unequal glyph advances and retain source maxima across projection and edits`, t => {
+		const rows = ['x'.repeat(40), '…'.repeat(30), 'z'.repeat(20)], source = rows.join('\n');
+		const { model, widget, font, layout } = fixture(t, source, variant, 80), caret = font.advance(' ');
+		const unbind = model.onDidChangeContent(event => layout.onDidChangeContent(model.buffer, event));
+		t.after(unbind); layout.ensureVisualLines(model.buffer, false, 0, 20);
+		const widths = rows.map(row => font.measure(row));
+		assert.equal(layout.maxViewWidth(model.buffer), Math.max(...widths) + caret);
+		widget.setInlineEdit(1, 0, rows[1].length, 'short'); layout.ensureVisualLines(model.buffer, false, 0, 20);
+		assert.equal(layout.maxViewWidth(model.buffer), Math.max(widths[0], widths[2], font.measure('short')) + caret);
+		widget.clearInlineEdit();
+		model.pushEditOperations([{ offset: 0, deleteLength: rows[0].length, text: 'm'.repeat(60) }]);
+		layout.ensureVisualLines(model.buffer, false, 0, 20);
+		assert.equal(layout.maxViewWidth(model.buffer), font.measure('m'.repeat(60)) + caret);
+		model.pushEditOperations([{ offset: 0, deleteLength: 60, text: 'q' }]);
+		layout.ensureVisualLines(model.buffer, false, 0, 20);
+		assert.equal(layout.maxViewWidth(model.buffer), Math.max(widths[1], widths[2]) + caret);
+		const read = t.mock.method(model.buffer, 'getLineContent', model.buffer.getLineContent.bind(model.buffer));
+		const advance = t.mock.method(font, 'advance', font.advance.bind(font));
+		for (let frame = 0; frame < 1000; frame++) assert.equal(layout.maxViewWidth(model.buffer), Math.max(widths[1], widths[2]) + caret);
+		assert.equal(read.mock.callCount(), 0); assert.equal(advance.mock.callCount(), 0);
+	});
+}
 
 test('one inline update in 50000 source lines reads at most its own cold row; 1000 idle layouts reuse every view map', t => {
 	const count = 50000, row = 25000, source = Array.from({ length: count }, (_, index) => `value_${index}()`).join('\n');
@@ -140,12 +165,12 @@ test('one inline update in 50000 source lines reads at most its own cold row; 10
 	const line = layout.getViewLine(buffer, row), segments = layout.getVisualLines();
 	const sourceMap = line.hi.columnToDisplay, displayMap = line.displayToColumn, viewMap = line.viewColumnToDisplay;
 	const advances = line.advancePrefix, colors = line.hi.colors, middle = segments[row], last = segments.at(-1);
-	const extent = layout.maxViewColumns(buffer), version = widget.inlineEdit.version;
+	const extent = layout.maxViewWidth(buffer), version = widget.inlineEdit.version;
 	read.mock.resetCalls();
 	const advance = t.mock.method(font, 'advance', font.advance.bind(font));
 	for (let frame = 0; frame < 1000; frame++) {
 		layout.ensureVisualLines(buffer, true, row, 20);
-		assert.equal(layout.maxViewColumns(buffer), extent);
+		assert.equal(layout.maxViewWidth(buffer), extent);
 		assert.equal(layout.getViewLine(buffer, row), line);
 		assert.equal(layout.getVisualLines(), segments);
 	}

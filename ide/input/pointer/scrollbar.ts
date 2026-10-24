@@ -31,10 +31,10 @@ export function applyScrollbarScroll(resourcePanel: ResourcePanelController, kin
 		}
 		case 'codeHorizontal': {
 			if (editorViewState.wordWrapEnabled) {
-				activeCodeEditor.view.scrollColumn = 0;
+				activeCodeEditor.view.scrollLeft = 0;
 				break;
 			}
-			activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(scroll, editorViewState.cachedMaxScrollColumn);
+			activeCodeEditor.view.scrollLeft = editorViewState.layout.clampHorizontalScroll(scroll, editorViewState.cachedMaxScrollLeft);
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}

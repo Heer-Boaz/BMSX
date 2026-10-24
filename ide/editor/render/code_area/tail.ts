@@ -4,9 +4,7 @@ import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from 
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { drawCompletionPopup, drawParameterHintOverlay, type CompletionPresentation, type CompletionRenderBounds } from '../completion';
-import { drawCursor } from '../caret';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import { editorCaretState } from '../../ui/view/caret/state';
 import { editorViewState } from '../../ui/view/state';
 import { activeCodeEditor } from '../../ui/code_editor_state';
 import type { CodeAreaViewport } from '../../ui/code/area_viewport';
@@ -57,7 +55,6 @@ export function finalizeCodeAreaRender(
 	viewport: CodeAreaViewport & CompletionRenderBounds,
 	cursorInfo: CursorScreenInfo,
 	completion: CompletionPresentation,
-	cursorActive: boolean,
 ): void {
 	const verticalTrackLeft = viewport.codeRight - constants.SCROLLBAR_WIDTH;
 	verticalTrackScratch.left = verticalTrackLeft;
@@ -74,12 +71,11 @@ export function finalizeCodeAreaRender(
 		horizontalTrackScratch.top = viewport.contentBottom;
 		horizontalTrackScratch.right = viewport.trackRight;
 		horizontalTrackScratch.bottom = viewport.contentBottom + constants.SCROLLBAR_WIDTH;
-		const maxColumns = viewport.columns + viewport.maxScrollColumn;
-		editorViewState.scrollbars.codeHorizontal.layout(horizontalTrackScratch, maxColumns, viewport.columns, activeCodeEditor.view.scrollColumn);
-		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), viewport.maxScrollColumn);
+		editorViewState.scrollbars.codeHorizontal.layout(horizontalTrackScratch, viewport.contentWidth + viewport.maxScrollLeft, viewport.contentWidth, activeCodeEditor.view.scrollLeft);
+		activeCodeEditor.view.scrollLeft = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), viewport.maxScrollLeft);
 		editorViewState.codeHorizontalScrollbarVisible = editorViewState.scrollbars.codeHorizontal.isVisible();
 	} else {
-		activeCodeEditor.view.scrollColumn = 0;
+		activeCodeEditor.view.scrollLeft = 0;
 		editorViewState.codeHorizontalScrollbarVisible = false;
 	}
 
@@ -89,9 +85,6 @@ export function finalizeCodeAreaRender(
 	}
 	drawHoverTooltip(viewport.codeTop, viewport.contentBottom, viewport.textLeft);
 
-	if (editorCaretState.cursorVisible && cursorInfo) {
-		drawCursor(cursorInfo, viewport.textLeft, cursorActive);
-	}
 	completion.popupBounds = drawCompletionPopup(completion.session, cursorInfo, editorViewState.lineHeight, viewport, completion.popupBoundsScratch);
 	drawParameterHintOverlay(completion.hint, cursorInfo, editorViewState.lineHeight, viewport, completion.popupBounds);
 	if (editorViewState.codeVerticalScrollbarVisible) {

@@ -3,6 +3,8 @@ import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../ui/view/state';
 import type { CodeAreaViewport } from '../../ui/code/area_viewport';
+import { activeCodeEditor } from '../../ui/code_editor_state';
+import { runtimeErrorState } from '../../contrib/runtime_error/state';
 
 export function drawCodeAreaBackground(viewport: CodeAreaViewport): void {
 	api.fill_rect(viewport.codeLeft, viewport.codeTop, viewport.codeRight, viewport.codeBottom, 0, constants.COLOR_CODE_BACKGROUND);
@@ -11,7 +13,19 @@ export function drawCodeAreaBackground(viewport: CodeAreaViewport): void {
 	}
 }
 
-export function drawCodeAreaRowChrome(
+/** Gutter and whole-row backgrounds precede the one clipped text-body pass. */
+export function drawCodeAreaChrome(viewport: CodeAreaViewport, breakpoints: ReadonlySet<number>, renderFont: Font, breakpointLaneWidth: number): void {
+	for (let index = 0; index < viewport.rows; index++) {
+		const visualIndex = (activeCodeEditor.view.scrollRow | 0) + index;
+		const y = viewport.codeTop + index * editorViewState.lineHeight;
+		if (y >= viewport.contentBottom || visualIndex >= viewport.visualCount) break;
+		const segment = editorViewState.layout.visualIndexToSegment(visualIndex)!;
+		drawCodeAreaRowChrome(renderFont, viewport, y, segment.row, segment.startDisplay === 0, breakpoints.has(segment.row + 1),
+			runtimeErrorState.executionStopRow === segment.row, activeCodeEditor.view.cursorRow === segment.row, breakpointLaneWidth);
+	}
+}
+
+function drawCodeAreaRowChrome(
 	renderFont: Font,
 	viewport: CodeAreaViewport,
 	rowY: number,

@@ -16,8 +16,8 @@ function drawUnderline(entry: CodeLineView, textLeft: number, rowY: number, cont
 	const visibleEnd = Math.min(endDisplay, sliceEndDisplay);
 	if (visibleEnd <= visibleStart) return;
 	const advancePrefix = entry.advancePrefix;
-	const drawLeft = textLeft + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
-	const drawRight = textLeft + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
+	const drawLeft = textLeft + advancePrefix[visibleStart];
+	const drawRight = textLeft + advancePrefix[visibleEnd];
 	const underlineY = Math.min(contentBottom - 1, rowY + editorViewState.lineHeight - 1);
 	if (underlineY < rowY) return;
 	api.fill_rect(drawLeft, underlineY, drawRight, underlineY + 1, 0, color);

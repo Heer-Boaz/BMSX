@@ -86,7 +86,7 @@ import type { OverlayRenderer } from './runtime/overlay_renderer';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
 import { editorRuntimeState } from './editor/common/runtime_state';
 import { invalidateLuaCommentContextFromRow } from './common/text';
-import { assertMonospace, measureText } from './editor/common/text/layout';
+import { measureText } from './editor/common/text/layout';
 import { applyRuntimeErrorOverlay } from './editor/render/error_overlay';
 import { drawEditorText, setEditorCaseInsensitivity } from './editor/render/text_renderer';
 import {
@@ -700,9 +700,9 @@ export class RuntimeCartEditor implements CartEditor {
 		editorRuntimeState.currentTimeMs = event.timestamp;
 		projectEditorWheelEvent(this.display, event, this.wheelSnapshot);
 		const view = activeCodeEditor.view;
-		const row = view?.scrollRow, column = view?.scrollColumn;
+		const row = view?.scrollRow, column = view?.scrollLeft;
 		const consumed = handleEditorWheelInput(this, this.wheelSnapshot, event);
-		if (view !== null && (row !== view.scrollRow || column !== view.scrollColumn)) {
+		if (view !== null && (row !== view.scrollRow || column !== view.scrollLeft)) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 		}
 		return consumed;
@@ -813,10 +813,10 @@ export class RuntimeCartEditor implements CartEditor {
 		editorRuntimeState.currentTimeMs = this.clock.now();
 		const codeView = activeCodeEditor.view;
 		const scrollRow = codeView?.scrollRow;
-		const scrollColumn = codeView?.scrollColumn;
+		const scrollLeft = codeView?.scrollLeft;
 		if (this.actionPrompt.visible) return;
 		inputFocus.handleGamepad(playerInput);
-		if (codeView !== null && (codeView.scrollRow !== scrollRow || codeView.scrollColumn !== scrollColumn)) {
+		if (codeView !== null && (codeView.scrollRow !== scrollRow || codeView.scrollLeft !== scrollLeft)) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 		}
 	}
@@ -1097,9 +1097,8 @@ export class RuntimeCartEditor implements CartEditor {
 		editorViewState.codeVerticalScrollbarVisible = false;
 		editorViewState.codeHorizontalScrollbarVisible = false;
 		editorViewState.cachedVisibleRowCount = 1;
-		editorViewState.cachedVisibleColumnCount = 1;
-		editorViewState.cachedMaxScrollColumn = 0;
-		assertMonospace();
+		editorViewState.cachedContentWidth = 1;
+		editorViewState.cachedMaxScrollLeft = 0;
 		return resourcePanel;
 	}
 

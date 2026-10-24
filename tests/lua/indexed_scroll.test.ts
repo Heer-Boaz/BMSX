@@ -17,7 +17,7 @@ import type { ResourceViewerState } from '../../ide/workbench/contrib/resources/
 import { drawResourceViewer } from '../../ide/workbench/render/resource_panel';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { configureFontVariant, resolvePointerTextPosition, resolveTextPositionBounds, scrollColumns, scrollRows } from '../../ide/editor/ui/view/view';
+import { configureFontVariant, getCodeAreaBounds, resolvePointerTextPosition, resolveTextPositionBounds, scrollHorizontally, scrollRows } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { ensureVisualLines } from '../../ide/editor/common/text/layout';
 import { measureTextRange } from '../../ide/editor/common/text/layout';
@@ -75,7 +75,7 @@ test('property and resource renderers project fractional positions without losin
 	assert.ok(overlay.queue.consumeOverlayFrame().commandCount > 0);
 });
 
-test('source scrolling retains fractions but source hit and caret geometry use integral rows and columns', t => {
+test('source scrolling retains fractional pixels while hit tests resolve source columns', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const model = new EditorTextModel({ domain: 0, path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
 	const view = createCodeEditorViewState();
@@ -83,27 +83,27 @@ test('source scrolling retains fractions but source hit and caret geometry use i
 	t.after(() => { activeCodeEditor.detach(); model.dispose(); });
 	editorViewState.wordWrapEnabled = false;
 	editorViewState.cachedVisibleRowCount = 4;
-	editorViewState.cachedMaxScrollColumn = 8;
+	editorViewState.cachedMaxScrollLeft = 8;
 	ensureVisualLines();
 	const bounds = { codeTop: 0, codeBottom: 100, codeLeft: 0, codeRight: 100, gutterLeft: 0, gutterRight: 0, textLeft: 0 };
 	for (let step = 1; step <= 6; step++) {
-		scrollRows(0.25); scrollColumns(0.25); ensureVisualLines();
+		scrollRows(0.25); scrollHorizontally(0.25); ensureVisualLines();
 		assert.equal(view.scrollRow, step * 0.25);
-		assert.equal(view.scrollColumn, step * 0.25);
+		assert.equal(view.scrollLeft, step * 0.25);
 		const position = resolvePointerTextPosition(0, 1, bounds);
 		assert.equal(position.row, step * 0.25 | 0);
-		assert.equal(position.column, step * 0.25 | 0);
+		assert.equal(position.column, Math.round(step * 0.25 / editorViewState.charAdvance));
 	}
 	const overlay = createHostOverlayFixture(240, 160);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 	renderCodeArea({ session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, false, new Set(), [], -1, [], -1, false);
 	overlay.renderer.endFrame();
 	assert.equal(view.scrollRow, 1.5);
-	assert.equal(view.scrollColumn, 1.5);
+	assert.equal(view.scrollLeft, 1.5);
 	const caret = create_rect_bounds();
 	resolveTextPositionBounds(1, 1, caret);
 	assert.ok(Number.isInteger(caret.top));
-	assert.ok(Number.isInteger(caret.left));
+	assert.equal(caret.left, getCodeAreaBounds().textLeft + editorViewState.charAdvance - view.scrollLeft);
 });
 
 test('Problems wheel integrates sub-row distances without changing selection or being undone by focused drawing', t => {

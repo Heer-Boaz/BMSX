@@ -7,7 +7,7 @@ export type CodeEditorLocation = {
 	cursor: number;
 	anchor: number | null;
 	readonly scrollRow: number;
-	readonly scrollColumn: number;
+	readonly scrollLeft: number;
 };
 
 export function captureCodeEditorView(input: CodeEditorInput): CodeEditorLocation {
@@ -15,7 +15,7 @@ export function captureCodeEditorView(input: CodeEditorInput): CodeEditorLocatio
 	return {
 		cursor: model.buffer.offsetAt(view.cursorRow, view.cursorColumn),
 		anchor: getSingleCursorSelectionRange(view) === null ? null : model.buffer.offsetAt(view.selectionAnchor.row, view.selectionAnchor.column),
-		scrollRow: view.scrollRow, scrollColumn: view.scrollColumn,
+		scrollRow: view.scrollRow, scrollLeft: view.scrollLeft,
 	};
 }
 
@@ -34,5 +34,5 @@ export function restoreCodeEditorView(input: CodeEditorInput, snapshot: CodeEdit
 		model.buffer.positionAt(snapshot.anchor, position);
 		setSingleCursorSelectionAnchor(view, position.row, position.column);
 	}
-	view.scrollRow = snapshot.scrollRow; view.scrollColumn = snapshot.scrollColumn;
+	view.scrollRow = snapshot.scrollRow; view.scrollLeft = snapshot.scrollLeft;
 }

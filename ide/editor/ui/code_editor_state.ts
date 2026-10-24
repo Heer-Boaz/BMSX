@@ -35,7 +35,8 @@ export type CodeEditorViewState = {
 	desiredDisplayOffset: number;
 	/** Continuous viewport position, projected to a visual row at layout/render boundaries. */
 	scrollRow: number;
-	scrollColumn: number;
+	/** Horizontal viewport origin in pixels, including subpixel scroll intent. */
+	scrollLeft: number;
 };
 
 export type CodeEditorContext = {
@@ -52,7 +53,7 @@ export function createCodeEditorViewState(): CodeEditorViewState {
 		desiredColumn: 0,
 		desiredDisplayOffset: 0,
 		scrollRow: 0,
-		scrollColumn: 0,
+		scrollLeft: 0,
 	};
 }
 
@@ -61,7 +62,7 @@ export function applyCodeEditorViewSnapshot(view: CodeEditorViewState, snapshot:
 	view.cursorRow = snapshot.cursorRow;
 	view.cursorColumn = snapshot.cursorColumn;
 	view.scrollRow = snapshot.scrollRow;
-	view.scrollColumn = snapshot.scrollColumn;
+	view.scrollLeft = snapshot.scrollLeft;
 	const anchor = snapshot.selectionAnchor;
 	if (anchor === null) clearSingleCursorSelection(view);
 	else setSingleCursorSelectionAnchor(view, anchor.row, anchor.column);

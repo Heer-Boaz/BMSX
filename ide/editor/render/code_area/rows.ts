@@ -4,11 +4,9 @@ import { drawEditorText } from '../text_renderer';
 import { api } from '../../../runtime/overlay_api';
 import { computeSelectionSlices } from '../../common/text/layout';
 import * as constants from '../../../common/constants';
-import { runtimeErrorState } from '../../contrib/runtime_error/state';
 import { drawHighlightSlice, drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './highlights';
 import { computeCursorScreenInfo } from './cursor';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './underlines';
-import { drawCodeAreaRowChrome } from './gutter';
 import { activeCodeEditor } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
 import type { CodeAreaViewport } from '../../ui/code/area_viewport';
@@ -22,12 +20,10 @@ type ActiveGotoHighlight = {
 
 export function drawCodeAreaRows(
 	viewport: CodeAreaViewport,
-	breakpointsForChunk: ReadonlySet<number>,
 	activeGotoHighlight: ActiveGotoHighlight,
 	cursorVisualIndex: number,
 	useUppercase: boolean,
 	renderFont: Font,
-	breakpointLaneWidth: number,
 	referenceMatches: readonly SearchMatch[],
 	referenceActiveIndex: number,
 	searchMatches: readonly SearchMatch[],
@@ -48,33 +44,17 @@ export function drawCodeAreaRows(
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex)!;
 		const lineIndex = segment.row;
 		const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, lineIndex);
-		const isPrimaryVisualSegment = segment.startDisplay === 0;
-		const hasBreakpointForRow = breakpointsForChunk.has(lineIndex + 1);
-		const isExecutionStopRow = runtimeErrorState.executionStopRow !== null && lineIndex === runtimeErrorState.executionStopRow;
-		const isCursorLine = lineIndex === activeCodeEditor.view.cursorRow;
-		drawCodeAreaRowChrome(
-			renderFont,
-			viewport,
-			rowY,
-			lineIndex,
-			isPrimaryVisualSegment,
-			hasBreakpointForRow,
-			isExecutionStopRow,
-			isCursorLine,
-			breakpointLaneWidth,
-		);
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
 		const advancePrefix = entry.advancePrefix;
-		const viewportStartDisplay = viewport.wrapEnabled ? segment.startDisplay : activeCodeEditor.view.scrollColumn | 0;
-		const sliceStartDisplay = Math.min(viewportStartDisplay, highlight.text.length);
-		const sliceEndDisplay = viewport.wrapEnabled ? segment.endDisplay
-			: Math.min(sliceStartDisplay + viewport.sliceWidth, highlight.text.length);
+		const slice = editorViewState.layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft, viewport.contentWidth, viewport.wrapEnabled);
+		const sliceStartDisplay = slice.startDisplay, sliceEndDisplay = slice.endDisplay;
+		const lineLeft = viewport.textLeft - slice.pixelOffset;
 		drawReferenceHighlightsForRow(
 			api,
 			lineIndex,
 			entry,
-			viewport.textLeft,
+			lineLeft,
 			rowY,
 			sliceStartDisplay,
 			sliceEndDisplay,
@@ -85,7 +65,7 @@ export function drawCodeAreaRows(
 			api,
 			lineIndex,
 			entry,
-			viewport.textLeft,
+			lineLeft,
 			rowY,
 			sliceStartDisplay,
 			sliceEndDisplay,
@@ -95,8 +75,8 @@ export function drawCodeAreaRows(
 		);
 		const selectionSlices = computeSelectionSlices(lineIndex, entry, sliceStartDisplay, sliceEndDisplay);
 		for (const selectionSlice of selectionSlices) {
-			const selectionStartX = viewport.textLeft + advancePrefix[selectionSlice.startDisplay] - advancePrefix[sliceStartDisplay];
-			const selectionEndX = viewport.textLeft + advancePrefix[selectionSlice.endDisplay] - advancePrefix[sliceStartDisplay];
+			const selectionStartX = lineLeft + advancePrefix[selectionSlice.startDisplay];
+			const selectionEndX = lineLeft + advancePrefix[selectionSlice.endDisplay];
 			const drawLeft = selectionStartX < viewport.textLeft ? viewport.textLeft : selectionStartX;
 			const drawRight = selectionEndX > viewport.contentRight ? viewport.contentRight : selectionEndX;
 			if (drawRight > drawLeft) {
@@ -104,11 +84,11 @@ export function drawCodeAreaRows(
 			}
 		}
 		drawHighlightSlice(renderFont, renderText, highlight.colors, advancePrefix,
-			sliceStartDisplay, sliceEndDisplay, viewport.textLeft, rowY, 0);
+			sliceStartDisplay, sliceEndDisplay, lineLeft + advancePrefix[sliceStartDisplay], rowY, 0);
 		drawDiagnosticUnderlinesForRow(
 			lineIndex,
 			entry,
-			viewport.textLeft,
+			lineLeft,
 			rowY,
 			viewport.contentBottom,
 			sliceStartDisplay,
@@ -117,7 +97,7 @@ export function drawCodeAreaRows(
 		drawGotoUnderlineForRow(
 			lineIndex,
 			entry,
-			viewport.textLeft,
+			lineLeft,
 			rowY,
 			viewport.contentBottom,
 			sliceStartDisplay,
@@ -126,8 +106,9 @@ export function drawCodeAreaRows(
 		);
 		if (visualIndex === cursorVisualIndex) {
 			const cursorDisplay = editorViewState.layout.columnToDisplay(highlight, activeCodeEditor.view.cursorColumn);
-			if (cursorDisplay >= viewportStartDisplay && cursorDisplay <= sliceEndDisplay) {
-				cursorInfo = computeCursorScreenInfo(entry, renderText, viewport.textLeft, rowY, sliceStartDisplay);
+			const cursorLeft = lineLeft + advancePrefix[cursorDisplay];
+			if (cursorLeft + editorViewState.layout.cursorWidth(entry, cursorDisplay) > viewport.textLeft && cursorLeft < viewport.contentRight) {
+				cursorInfo = computeCursorScreenInfo(entry, renderText, lineLeft, rowY);
 			}
 		}
 	}

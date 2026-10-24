@@ -28,17 +28,6 @@ export function truncateTextToWidth(text: string, maxWidth: number, placement: '
 	return truncateMeasuredText(text, maxWidth, measureTextRange, ELLIPSIS, placement);
 }
 
-export function assertMonospace(): void { // TODO: WTF IS THIS SHIT?!?!?!?!?!?!?!?!! WHY HAS THIS EVER BEEN IMPLEMENTED?!?!?!?!?!?!?!
-	const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/%<>=#(){}[]:,.;\'"`~!@^&|\\?_ ';
-	const reference = editorViewState.font.advance('M');
-	for (let i = 0; i < sample.length; i++) {
-		const candidate = editorViewState.font.advance(sample.charAt(i));
-		if (candidate !== reference) {
-			break;
-		}
-	}
-}
-
 const emptySelectionSlices: readonly DisplayRange[] = [];
 
 export function computeSelectionSlices(lineIndex: number, line: CodeLineView, sliceStart: number, sliceEnd: number): readonly DisplayRange[] {

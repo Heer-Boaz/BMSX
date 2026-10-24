@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { create_rect_bounds } from '../../machine/ts/common/rect';
 import test, { type TestContext } from 'node:test';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
@@ -9,7 +10,7 @@ import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 import { ensureCursorVisible, revealCursor, revealInlineEdit, resolveViewportCapacity } from '../../ide/editor/ui/view/caret/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { applyViewportSize, computeWrapWidth, configureFontVariant, getCodeAreaBounds, refreshViewportLayout,
-	resolvePointerTextPosition, setFontVariant } from '../../ide/editor/ui/view/view';
+	resolvePointerTextPosition, resolveTextPositionBounds, setFontVariant } from '../../ide/editor/ui/view/view';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 
@@ -129,10 +130,10 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const source = 'line()\n'.repeat(50) + 'retur_tail()';
 		const { model, view } = fixture(t, source, variant, minimumWidth);
 		view.cursorRow = 50; view.cursorColumn = 5; ensureCursorVisible();
-		view.scrollRow = 3.25; view.scrollColumn = 0; editorCaretState.cursorRevealSuspended = true;
+		view.scrollRow = 3.25; view.scrollLeft = 0; editorCaretState.cursorRevealSuspended = true;
 		activeCodeEditor.setInlineEdit(50, 5, 10, 'n_abcdefghijklmnopqrstuvwxyz');
 		revealInlineEdit();
-		assert.equal(view.scrollRow, 3.25); assert.equal(view.scrollColumn, 0);
+		assert.equal(view.scrollRow, 3.25); assert.equal(view.scrollLeft, 0);
 		assert.equal(editorCaretState.cursorRevealSuspended, true);
 		assert.equal(view.cursorRow, 50); assert.equal(view.cursorColumn, 5); assert.equal(model.buffer.getText(), source);
 		editorCaretState.cursorRevealSuspended = false; revealInlineEdit(); assertInlineVisible();
@@ -155,19 +156,44 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.equal(model.buffer.getText(), source); assert.equal(model.version, version);
 	});
 
-	test(`${variant} unwrapped reveal scrolls in projected display columns rather than source columns`, t => {
+	test(`${variant} a wrapped full-width source line retains a visible block caret at EOF`, t => {
+		const { model, view } = fixture(t, 'x'.repeat(200), variant, minimumWidth);
+		const viewport = resolveViewportCapacity(), source = 'x'.repeat(Math.trunc(viewport.contentWidth / editorViewState.charAdvance));
+		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
+		editorViewState.layout.invalidateAllHighlights(); view.cursorColumn = source.length;
+		ensureCursorVisible();
+		const box = create_rect_bounds(); resolveTextPositionBounds(0, source.length, box);
+		assert.ok(box.left >= viewport.textLeft && box.right <= viewport.contentRight,
+			'EOF block caret must remain in the clipped text viewport, not beneath its scrollbar lane');
+	});
+
+	test(`${variant} wrapped glyphs and the trailing block caret fit the reserved text viewport`, t => {
+		const source = ('--' + '…'.repeat(30) + '\n').repeat(50);
+		const { model } = fixture(t, source, variant, minimumWidth);
+		const viewport = resolveViewportCapacity(), layout = editorViewState.layout;
+		assert.equal(computeWrapWidth() + editorViewState.charAdvance, viewport.contentWidth);
+		assert.ok(editorViewState.codeVerticalScrollbarVisible);
+		for (const segment of layout.getVisualLines()) {
+			const line = layout.getViewLine(model.buffer, segment.row);
+			assert.ok(line.advancePrefix[segment.endDisplay] - line.advancePrefix[segment.startDisplay] + editorViewState.charAdvance <= viewport.contentWidth,
+				'wrapping must not hide its final glyph beneath the vertical scrollbar lane');
+		}
+	});
+
+	test(`${variant} unwrapped reveal scrolls in measured view pixels rather than source columns`, t => {
 		const leadingTabs = '\t'.repeat(16), source = `${leadingTabs}retur_tail()`;
 		const { model, view } = fixture(t, source, variant, minimumWidth), column = leadingTabs.length + 5;
 		editorViewState.wordWrapEnabled = false;
 		view.cursorColumn = column; activeCodeEditor.setInlineEdit(0, column, column + 5, 'n_abc');
 		const viewport = resolveViewportCapacity(), line = editorViewState.layout.getViewLine(model.buffer, 0), inline = line.inline!;
-		assert.equal(view.scrollColumn, 0);
+		assert.equal(view.scrollLeft, 0);
 		revealInlineEdit();
-		assert.ok(view.scrollColumn >= Math.min(viewport.maxScrollColumn, inline.endDisplay - viewport.columns));
-		assert.ok(view.scrollColumn > view.cursorColumn, 'expanded leading tabs make view offsets distinct from source columns');
-		assert.ok(inline.startDisplay >= view.scrollColumn); assert.ok(inline.endDisplay <= view.scrollColumn + viewport.columns);
-		assert.ok(view.scrollColumn <= viewport.maxScrollColumn);
-		assert.equal(viewport.maxScrollColumn, line.hi.text.length - viewport.columns);
+		assert.ok(view.scrollLeft >= Math.min(viewport.maxScrollLeft, line.advancePrefix[inline.endDisplay] - viewport.contentWidth));
+		assert.ok(view.scrollLeft > view.cursorColumn, 'expanded leading tabs make view offsets distinct from source columns');
+		assert.ok(line.advancePrefix[inline.startDisplay] >= view.scrollLeft);
+		assert.ok(line.advancePrefix[inline.endDisplay] <= view.scrollLeft + viewport.contentWidth);
+		assert.ok(view.scrollLeft <= viewport.maxScrollLeft);
+		assert.equal(viewport.maxScrollLeft, line.advancePrefix[line.hi.text.length] + editorViewState.charAdvance - viewport.contentWidth);
 		assert.equal(view.cursorColumn, column); assert.equal(model.buffer.getText(), source);
 	});
 }

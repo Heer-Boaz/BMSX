@@ -43,11 +43,9 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		return;
 	}
 	const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, segment.row);
-	const highlight = entry.hi;
-	const sliceStartDisplay = editorViewState.wordWrapEnabled ? segment.startDisplay
-		: Math.min(activeCodeEditor.view.scrollColumn | 0, highlight.text.length);
-	const sliceEndDisplay = editorViewState.wordWrapEnabled ? segment.endDisplay
-		: Math.min(sliceStartDisplay + editorViewState.cachedVisibleColumnCount + 8, highlight.text.length);
+	const slice = editorViewState.layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft,
+		editorViewState.cachedContentWidth, editorViewState.wordWrapEnabled);
+	const sliceStartDisplay = slice.startDisplay, sliceEndDisplay = slice.endDisplay, lineLeft = textLeft - slice.pixelOffset;
 	let clampedStartDisplay = sliceEndDisplay, clampedEndDisplay = sliceStartDisplay;
 	const fragments = editorViewState.layout.projectSourceRange(entry, tooltip.startColumn, tooltip.endColumn);
 	for (const fragment of fragments) {
@@ -61,8 +59,8 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		return;
 	}
 	const advancePrefix = entry.advancePrefix;
-	const expressionStartX = textLeft + advancePrefix[clampedStartDisplay] - advancePrefix[sliceStartDisplay];
-	const expressionEndX = textLeft + advancePrefix[clampedEndDisplay] - advancePrefix[sliceStartDisplay];
+	const expressionStartX = Math.max(textLeft, lineLeft + advancePrefix[clampedStartDisplay]);
+	const expressionEndX = Math.min(textLeft + editorViewState.cachedContentWidth, lineLeft + advancePrefix[clampedEndDisplay]);
 	const maxVisible = Math.max(1, Math.min(constants.HOVER_TOOLTIP_MAX_VISIBLE_LINES, content.length));
 	const maxOffset = Math.max(0, content.length - maxVisible);
 	tooltip.scrollOffset = clamp(tooltip.scrollOffset, 0, maxOffset);

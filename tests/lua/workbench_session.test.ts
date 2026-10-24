@@ -97,7 +97,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty 🐉\r\n' }]);
 	const code = resolveCodeEditorInput(retainModelCodeTabContext(f.model));
 	code.context.view.cursorRow = 2; code.context.view.cursorColumn = 8;
-	code.context.view.selectionAnchor = { row: 1, column: 3 }; code.context.view.scrollRow = 1;
+	code.context.view.selectionAnchor = { row: 1, column: 3 }; code.context.view.scrollRow = 1; code.context.view.scrollLeft = 17.25;
 	editorTabGroup.initialize(code);
 	const lenses = [0, 1].map(index => {
 		const input = f.behavior.createInput(f.model, 'graph');
@@ -126,6 +126,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const [newCode, first, second, newScene, newClean] = editorTabGroup.tabs;
 	assert.ok(newCode.kind === 'code_editor' && first.kind === 'behavior_lens' && second.kind === 'behavior_lens' && newScene.kind === 'scene_editor' && newClean.kind === 'code_editor');
 	assert.equal(editorTabGroup.activeTab, second); assert.equal(editorTabGroup.previewTab, newClean);
+	assert.equal(newCode.context.view.scrollLeft, 17.25, 'workspace recovery preserves the code view pixel origin without glyph conversion');
 	assert.notEqual(first.id, second.id); assert.notEqual(first.id, lenses[0].id);
 	assert.notEqual(first.workingCopy, f.model);
 	assert.equal(first.workingCopy, newCode.workingCopy); assert.equal(first.workingCopy, second.workingCopy); assert.equal(first.workingCopy, newScene.workingCopy);

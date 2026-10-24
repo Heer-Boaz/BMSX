@@ -38,7 +38,7 @@ export function ensureCursorVisible(): void {
 	const clampedLine = activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow);
 	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(clampedLine.length, activeCodeEditor.view.cursorColumn);
 
-	const { rows, columns, maxScrollColumn: docMaxScrollColumn } = resolveViewportCapacity();
+	const { rows, contentWidth, maxScrollLeft: docMaxScrollLeft } = resolveViewportCapacity();
 	const totalVisual = editorViewState.layout.getVisualLineCount();
 	const cursorVisual = resolveCursorVisualIndex();
 	const line = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
@@ -61,27 +61,29 @@ export function ensureCursorVisible(): void {
 	}
 
 	if (editorViewState.wordWrapEnabled) {
-		activeCodeEditor.view.scrollColumn = 0;
+		activeCodeEditor.view.scrollLeft = 0;
 		return;
 	}
 
 	const cursorDisplay = editorViewState.layout.columnToDisplay(line.hi, activeCodeEditor.view.cursorColumn);
-	const endDisplay = inline === null ? cursorDisplay + 1 : Math.max(cursorDisplay + 1, inline.endDisplay);
-	const spanColumns = Math.min(columns, endDisplay - cursorDisplay);
-	const revealRight = cursorDisplay + spanColumns - 1;
-	const lineLength = line.hi.text.length;
-	const lineMaxScrollColumn = Math.max(0, lineLength - columns);
-	const maxScrollColumn = Math.min(docMaxScrollColumn, lineMaxScrollColumn);
-	const horizontalMargin = Math.min(4, Math.trunc(columns / 6), Math.trunc((columns - spanColumns) / 2));
-	const leftGuard = activeCodeEditor.view.scrollColumn + horizontalMargin;
-	const rightGuard = activeCodeEditor.view.scrollColumn + columns - 1 - horizontalMargin;
+	const cursorLeft = line.advancePrefix[cursorDisplay];
+	const cursorRight = cursorLeft + editorViewState.layout.cursorWidth(line, cursorDisplay);
+	const end = inline === null ? cursorRight : Math.max(cursorRight, line.advancePrefix[inline.endDisplay]);
+	const spanWidth = Math.min(contentWidth, end - cursorLeft);
+	const revealRight = cursorLeft + spanWidth;
+	const lineWidth = line.advancePrefix[line.hi.text.length] + editorViewState.charAdvance;
+	const lineMaxScrollLeft = Math.max(0, lineWidth - contentWidth);
+	const maxScrollLeft = Math.min(docMaxScrollLeft, lineMaxScrollLeft);
+	const horizontalMargin = Math.min(4 * editorViewState.charAdvance, contentWidth / 6, (contentWidth - spanWidth) / 2);
+	const leftGuard = activeCodeEditor.view.scrollLeft + horizontalMargin;
+	const rightGuard = activeCodeEditor.view.scrollLeft + contentWidth - horizontalMargin;
 
-	if (cursorDisplay < leftGuard) {
-		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(cursorDisplay - horizontalMargin, maxScrollColumn);
+	if (cursorLeft < leftGuard) {
+		activeCodeEditor.view.scrollLeft = editorViewState.layout.clampHorizontalScroll(cursorLeft - horizontalMargin, maxScrollLeft);
 	} else if (revealRight > rightGuard) {
-		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(revealRight - columns + 1 + horizontalMargin, maxScrollColumn);
+		activeCodeEditor.view.scrollLeft = editorViewState.layout.clampHorizontalScroll(revealRight - contentWidth + horizontalMargin, maxScrollLeft);
 	} else {
-		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(activeCodeEditor.view.scrollColumn, maxScrollColumn);
+		activeCodeEditor.view.scrollLeft = editorViewState.layout.clampHorizontalScroll(activeCodeEditor.view.scrollLeft, maxScrollLeft);
 	}
 }
 

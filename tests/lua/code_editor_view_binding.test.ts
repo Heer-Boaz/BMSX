@@ -100,12 +100,15 @@ test('explicit code edit state owns the result and Undo; external changes subseq
 	const view = createCodeEditorViewState();
 	const binding = new CodeEditorViewBinding(model, view);
 	t.after(() => { binding.dispose(); model.dispose(); });
-	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 1, selectionAnchor: null, scrollRow: 0, scrollColumn: 0 });
-	const after = codeEditorEditState.of({ ...before.value, cursorRow: 1, cursorColumn: 3 });
+	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 1, selectionAnchor: null, scrollRow: 0, scrollLeft: 7.25 });
+	const after = codeEditorEditState.of({ ...before.value, cursorRow: 1, cursorColumn: 3, scrollLeft: 19.75 });
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '\n' }], before, () => after);
 	assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 3);
+	assert.equal(view.scrollLeft, 19.75);
 	model.undo(); assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, 1);
+	assert.equal(view.scrollLeft, 7.25);
 	model.redo(); assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 3);
+	assert.equal(view.scrollLeft, 19.75);
 	model.pushEditOperations([{ offset: 0, deleteLength: 1, text: '' }]);
 	assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, 3);
 });
@@ -113,11 +116,11 @@ test('explicit code edit state owns the result and Undo; external changes subseq
 test('history capture treats wrapped scroll rows as view coordinates, not text positions', t => {
 	const model = new EditorTextModel(resource, 'lua', 'local very_long_line = 123456789');
 	const view = createCodeEditorViewState();
-	view.cursorColumn = 6; view.scrollRow = 5;
+	view.cursorColumn = 6; view.scrollRow = 5; view.scrollLeft = 10.25;
 	const input = new CodeEditorInput({ id: 'code:0\0positions.lua', title: 'positions', model, view, runtimeErrorOverlay: null, executionStopRow: null });
 	const selection = new CodeEditorNavigationSelection(input);
 	t.after(() => { selection.dispose(); input.dispose(); model.dispose(); });
-	assert.equal(selection.snapshot.cursor, 6); assert.equal(selection.snapshot.scrollRow, 5);
+	assert.equal(selection.snapshot.cursor, 6); assert.equal(selection.snapshot.scrollRow, 5); assert.equal(selection.snapshot.scrollLeft, 10.25);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉\n' }]);
-	assert.equal(selection.snapshot.cursor, 12); assert.equal(selection.snapshot.scrollRow, 5);
+	assert.equal(selection.snapshot.cursor, 12); assert.equal(selection.snapshot.scrollRow, 5); assert.equal(selection.snapshot.scrollLeft, 10.25);
 });

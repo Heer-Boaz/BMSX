@@ -66,7 +66,7 @@ export function captureCodeEditorViewSnapshot(): CodeEditorViewSnapshot {
 		cursorRow: view.cursorRow,
 		cursorColumn: view.cursorColumn,
 		scrollRow: view.scrollRow,
-		scrollColumn: view.scrollColumn,
+		scrollLeft: view.scrollLeft,
 		selectionAnchor: selectionCopy,
 	};
 }
