@@ -18,7 +18,7 @@ const click = async (x, y) => {
 };
 let captures = 0;
 const capture = label => {
-	t.assert(++captures <= 16, 'the projection workflow exceeded its bounded capture budget');
+	t.assert(++captures <= 20, 'the projection workflow exceeded its bounded capture budget');
 	t.log(`VISUAL ${label}`); t.capture(label);
 };
 await t.waitForCart(); await t.frames(90);
@@ -47,10 +47,26 @@ const middle = async tail => {
 };
 // The same surviving '(' follows a replaced identifier, not the injected glyph's source column.
 for (const variant of ['tiny', 'msx']) {
-	const pending = await middle('_tail'); capture(`projection-${variant}-middle-pending-return-call`);
+	const pending = await middle('_tail'), issuingRow = code.context.view.cursorRow;
+	t.assert(code.context.view.cursorColumn === 5 && code.context.view.selectionAnchor === null,
+		'the issuing completion view must retain caret5 without a manufactured replacement selection');
+	capture(`projection-${variant}-middle-pending-return-call`);
 	await press('Tab'); unchanged(pending.slice(0, -12) + 'return()');
+	t.assert(code.context.view.cursorRow === issuingRow && code.context.view.cursorColumn === 6 && code.context.view.selectionAnchor === null,
+		'completion acceptance did not publish its final caret before the surviving call parentheses');
 	capture(`projection-${variant}-middle-accepted-return-call`);
-	await press('ControlLeft', 'KeyZ'); unchanged(pending); await restore();
+	await press('ControlLeft', 'KeyZ'); unchanged(pending);
+	capture(`projection-${variant}-middle-undo-issuing-view`);
+	t.assert(code.context.view.cursorRow === issuingRow && code.context.view.cursorColumn === 5 && code.context.view.selectionAnchor === null,
+		'completion Undo restored the internal replacement selection instead of the original issuing caret5/no-selection');
+	await press('ControlLeft', 'KeyY'); unchanged(pending.slice(0, -12) + 'return()');
+	t.assert(code.context.view.cursorRow === issuingRow && code.context.view.cursorColumn === 6 && code.context.view.selectionAnchor === null,
+		'completion Redo did not restore the completed caret6/no-selection');
+	capture(`projection-${variant}-middle-redo-completed-view`);
+	await press('ControlLeft', 'KeyZ'); unchanged(pending);
+	t.assert(code.context.view.cursorRow === issuingRow && code.context.view.cursorColumn === 5 && code.context.view.selectionAnchor === null,
+		'repeated completion Undo lost the original issuing view');
+	await restore();
 	for (const target of ['before', 'ghost-right', 'surviving-paren']) {
 		const source = await middle('_tail'), caret = { ...t.activeEditorDocument().nativeCaret };
 		const x = caret.x + (target === 'before' ? -caret.width + 1 : target === 'ghost-right' ? caret.width - 1 : caret.width + 1);

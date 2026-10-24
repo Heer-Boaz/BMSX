@@ -3,7 +3,6 @@ import type { RuntimeSourceState } from '../../../../runtime/sources';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
-import { editorViewState } from '../../../../editor/ui/view/state';
 import {
 	listGlobalLuaSymbols,
 	buildMemberCompletionItems,
@@ -34,13 +33,10 @@ import { assignRowColumn } from '../../../../common/state';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
 import { isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../ui/code_tab/contexts';
 import { prepareUndo } from '../../../../editor/editing/undo_controller';
-import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { revealInlineEdit } from '../../../../editor/ui/view/caret/view';
-import { resetBlink } from '../../../../editor/render/caret';
 import type { Decl, FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSemanticFrontendFile } from '../../../../../toolchain/ts/lua/semantic/frontend';
 import type { LuaSignatureHelp } from '../../../../../toolchain/ts/lua/semantic/signature_help';
-import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
@@ -68,7 +64,6 @@ export class CompletionController {
 	public get hint(): LuaSignatureHelp | null { return this.parameterHint; }
 
 	private readonly cursorPositionScratch = { row: 0, column: 0 };
-	private readonly clampPositionScratch = { row: 0, column: 0 };
 	private readonly lastCursorPositionScratch = { row: 0, column: 0 };
 	private maxVisibleItems = constants.COMPLETION_POPUP_MAX_VISIBLE;
 	public readonly popupBoundsScratch = create_rect_bounds();
@@ -122,50 +117,14 @@ export class CompletionController {
 		return TextEditing.charAt(row, column);
 	}
 
-	protected prepareUndoRecord(): void {
-		prepareUndo('completion', false);
-	}
-
-	protected replaceSelection(text: string): void {
-		TextEditing.replaceSelectionWith(text);
-	}
-
-	protected clampBufferPosition(row: number, column: number): { row: number; column: number } {
-		this.clampPositionScratch.row = row;
-		this.clampPositionScratch.column = column;
-		return editorViewState.layout.clampBufferPosition(activeCodeEditor.model.buffer, this.clampPositionScratch);
-	}
-
-	protected clearSelectionAnchor(): void {
-		clearSingleCursorSelection(activeCodeEditor.view);
-	}
-
 	protected getCursorPosition(): { row: number; column: number } {
 		this.cursorPositionScratch.row = activeCodeEditor.view.cursorRow;
 		this.cursorPositionScratch.column = activeCodeEditor.view.cursorColumn;
 		return this.cursorPositionScratch;
 	}
 
-	protected setCursorPosition(row: number, column: number): void {
-		const buffer = this.getBuffer();
-		const rowCount = buffer.getLineCount();
-		const clampedRow = clamp(row, 0, rowCount - 1);
-		const line = buffer.getLineContent(clampedRow);
-		setSingleCursorPosition(activeCodeEditor.view, clampedRow, clamp(column, 0, line.length));
-	}
-
-	protected setSelectionAnchor(row: number, column: number): void {
-		setSingleCursorSelectionAnchor(activeCodeEditor.view, row, column);
-	}
-
 	private setLastCursorPosition(row: number, column: number): void {
 		this.lastCursorPosition = assignRowColumn(this.lastCursorPosition, row, column, this.lastCursorPositionScratch);
-	}
-
-	protected afterCompletionApplied(): void {
-		updateDesiredColumn();
-		resetBlink();
-		revealCursor();
 	}
 
 	private completionSession: CompletionSession = null;
@@ -936,23 +895,14 @@ export class CompletionController {
 	}
 
 	private applyCompletionItemForContext(context: CompletionContext, item: LuaCompletionItem, addParentheses: boolean): void {
-		const row = context.row, replaceStart = context.replaceFromColumn, replaceEnd = context.replaceToColumn;
-		this.setCursorPosition(row, replaceEnd);
-		this.setSelectionAnchor(row, replaceStart);
-		this.prepareUndoRecord();
+		const buffer = this.getBuffer();
+		const startOffset = buffer.offsetAt(context.row, context.replaceFromColumn);
+		const endOffset = buffer.offsetAt(context.row, context.replaceToColumn);
+		prepareUndo('completion', false);
 		this.suppressNextAutoCompletion = true;
-		let insertion = item.insertText;
-		if (addParentheses) insertion = `${item.insertText}()`;
-		this.replaceSelection(insertion);
-		const targetColumn = addParentheses
-			? replaceStart + item.insertText.length + 1
-			: insertion.endsWith('[]')
-				? replaceStart + insertion.length - 1
-				: replaceStart + insertion.length;
-		const clamped = this.clampBufferPosition(row, targetColumn);
-		this.setCursorPosition(clamped.row, clamped.column);
-		this.clearSelectionAnchor();
-		this.afterCompletionApplied();
+		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
+		const cursorOffset = addParentheses || insertion.endsWith('[]') ? insertion.length - 1 : insertion.length;
+		TextEditing.replaceTextRange(startOffset, endOffset, insertion, cursorOffset);
 	}
 
 	private cancelPendingCompletion(): void {

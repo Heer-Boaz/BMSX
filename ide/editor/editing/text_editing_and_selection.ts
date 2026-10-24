@@ -251,28 +251,31 @@ export function deleteSelection(): void {
  * @param text The text to insert in place of the selection
  */
 export function replaceSelectionWith(text: string): void {
-	if (!editorAllowsMutation()) {
-		return;
-	}
 	const range = getSelectionRange();
 	if (!range) {
 		return;
 	}
-
 	const buffer = activeCodeEditor.model.buffer;
-	const start = range.start;
-	const end = range.end;
-	const startOffset = buffer.offsetAt(start.row, start.column);
-	const endOffset = buffer.offsetAt(end.row, end.column);
-	applyUndoableReplace(startOffset, endOffset - startOffset, text);
+	replaceTextRange(buffer.offsetAt(range.start.row, range.start.column), buffer.offsetAt(range.end.row, range.end.column), text);
+}
 
-	const newOffset = startOffset + text.length;
-	buffer.positionAt(newOffset, tmpPosition);
+/** Applies a prepared source-range edit and commits its insertion-relative UTF16 caret with the text. */
+export function replaceTextRange(startOffset: number, endOffset: number, text: string, cursorOffset = text.length): void {
+	if (!editorAllowsMutation()) {
+		return;
+	}
+	const buffer = activeCodeEditor.model.buffer;
+	buffer.positionAt(startOffset, tmpPosition);
+	const startRow = tmpPosition.row;
+	applyUndoableReplace(startOffset, endOffset - startOffset, text);
+	buffer.positionAt(startOffset + text.length, tmpPosition);
+	const endRow = tmpPosition.row;
+	buffer.positionAt(startOffset + cursorOffset, tmpPosition);
 	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
 
-	recordEditContext(text.length === 0 ? 'delete' : 'replace', text);
-	invalidateLineRange(start.row, tmpPosition.row);
-	editorViewState.layout.invalidateHighlightsFromRow(start.row);
+	recordEditContext(text.length === 0 ? 'delete' : startOffset === endOffset ? 'insert' : 'replace', text);
+	invalidateLineRange(startRow, endRow);
+	editorViewState.layout.invalidateHighlightsFromRow(startRow);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();

@@ -3,6 +3,7 @@ import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
+import { setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { activeCodeEditor, codeEditorEditState, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
@@ -89,6 +90,65 @@ test('a mid-identifier suffix retains the actual Tab replacement and one source 
 	assert.equal(f.model.buffer.getLineContent(1), 'sprite_direction');
 	assert.equal(activeCodeEditor.inlineEdit.active, false);
 	f.model.undo(); assert.equal(f.model.buffer.getText(), typed);
+	assert.equal(f.view.cursorRow, 1); assert.equal(f.view.cursorColumn, 'sprite_directio'.length);
+	assert.equal(f.view.selectionAnchor, null, 'Undo restores the real pre-Tab caret, not the replacement range');
+});
+
+test('explicit completion preserves an actual reversed user selection in Undo and its final caret in Redo', t => {
+	const source = 'retur_tail()', f = fixture(t, source, 2);
+	setSingleCursorSelectionAnchor(f.view, 0, 8);
+	const candidates = f.controller.listCompletionCandidates()!, item = candidates.filteredItems.find(item => item.label === 'return')!;
+	assert.ok(item);
+	f.controller.applyCompletionItem(candidates.context, item);
+	assert.equal(f.model.buffer.getText(), 'return()'); assert.equal(f.view.cursorColumn, 6); assert.equal(f.view.selectionAnchor, null);
+	f.model.undo();
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.view.cursorColumn, 2);
+	assert.deepEqual(f.view.selectionAnchor, { row: 0, column: 8 }, 'the original reverse orientation is history state');
+	f.model.redo();
+	assert.equal(f.model.buffer.getText(), 'return()'); assert.equal(f.view.cursorColumn, 6); assert.equal(f.view.selectionAnchor, null);
+});
+
+// These two admitted-item cases exercise the real command/TextEditing/model/history
+// contract, not provider discovery or live native-method availability.
+for (const [label, kind, insertion, expectedCaret] of [
+	['draw', 'native_method', 'draw()', 5], ['array[]', 'local', 'array[]', 6],
+] as const) {
+	test(`${kind} ${label} completion publishes its final internal caret to content observers and Redo`, t => {
+		const source = 'dra_tail', f = fixture(t, source, 3), context = f.controller.listCompletionCandidates()!.context;
+		const observed: Array<{ kind: string; row: number; column: number; anchor: { row: number; column: number } | null }> = [];
+		const unbind = f.model.onDidChangeContent(event => observed.push({ kind: event.kind, row: f.view.cursorRow,
+			column: f.view.cursorColumn, anchor: f.view.selectionAnchor === null ? null : { ...f.view.selectionAnchor } }));
+		t.after(unbind);
+		f.controller.applyCompletionItem(context, { label, kind, insertText: label, sortKey: `${kind}:${label}`, detail: '' });
+		assert.equal(f.model.buffer.getText(), insertion); assert.equal(f.view.cursorColumn, expectedCaret);
+		f.model.undo(); f.model.redo();
+		assert.deepEqual(observed, [
+			{ kind: 'edit', row: 0, column: expectedCaret, anchor: null },
+			{ kind: 'undo', row: 0, column: 3, anchor: null },
+			{ kind: 'redo', row: 0, column: expectedCaret, anchor: null },
+		]);
+		assert.equal(f.model.buffer.getText(), insertion); assert.equal(f.view.cursorColumn, expectedCaret); assert.equal(f.view.selectionAnchor, null);
+	});
+}
+
+test('an actual empty require-path candidate inserts at a zero-width range with one complete edit and exact history', t => {
+	const source = "local m = require('')", column = source.indexOf("')"), f = fixture(t, source, column);
+	editorTextModelService.retain({ domain: 0, path: 'module/real.lua',
+		source: { type: 'lua', resid: 'real-module', source_path: 'module/real.lua' } }, 'lua', 'return {}');
+	const candidates = f.controller.listCompletionCandidates()!, item = candidates.filteredItems.find(item => item.insertText === 'module/real')!;
+	assert.equal(candidates.context.kind, 'module'); assert.equal(candidates.context.replaceFromColumn, column);
+	assert.equal(candidates.context.replaceToColumn, column); assert.ok(item);
+	let changes = 0;
+	const unbind = f.model.onDidChangeContent(() => {
+		changes++;
+		if (changes === 1) assert.equal(f.view.cursorColumn, column + item.insertText.length);
+	});
+	t.after(unbind);
+	f.controller.applyCompletionItem(candidates.context, item);
+	assert.equal(f.model.buffer.getText(), "local m = require('module/real')"); assert.equal(changes, 1);
+	f.model.undo(); assert.equal(f.model.buffer.getText(), source); assert.equal(f.view.cursorColumn, column); assert.equal(f.view.selectionAnchor, null);
+	f.model.redo(); assert.equal(f.model.buffer.getText(), "local m = require('module/real')");
+	assert.equal(f.view.cursorColumn, column + item.insertText.length); assert.equal(f.view.selectionAnchor, null); assert.equal(changes, 3);
 });
 
 test('Undo updates completion only after the retained code view publishes its restored source cursor', t => {
