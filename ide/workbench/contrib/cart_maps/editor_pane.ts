@@ -1,5 +1,5 @@
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
-import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
+import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
 import { showEditorMessage } from '../../../common/feedback_state';
@@ -32,7 +32,8 @@ import { CartMapNavigationSelection, restoreCartMapView } from './view_snapshot'
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
-import { measureText, measureTextRange } from '../../../editor/common/text/layout';
+import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
+import type { EditorFont } from '../../../editor/ui/view/font';
 
 /** Display seeds carry coordinates; an accepted draft carries a versioned source proposal. */
 export type CartMapCoordinateEdit = { readonly coordinate: number; readonly edit?: EditorModelEdit };
@@ -47,6 +48,20 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	private boundRevision = -1;
 	private readonly tooltip = new WorkbenchTooltip();
 	private headerHovered: 'source' | 'selection' | undefined;
+	private gridHovered = false;
+	private gridPointerX = 0;
+	private gridPointerY = 0;
+	private statusText = '';
+	private statusMapWidth: number | undefined;
+	private statusMapHeight: number | undefined;
+	private statusDiagnostic: string | null | undefined;
+	private statusSource = '';
+	private statusFont: EditorFont | undefined;
+	private statusWidth = -1;
+	private readonly statusRange = create_rect_bounds();
+	private statusRangeVisible = false;
+	private statusColumn: number | undefined;
+	private statusRow: number | undefined;
 	private readonly beforeModeChange = (mode: CartMapLayoutMode): void => {
 		this.scrollbar.cancelPointer();
 		if (mode === 'map') this.focusTarget.cancelInput();
@@ -227,6 +242,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		const layout = this.input.layout;
+		this.gridHovered = false;
 		this.headerHovered = !snapshot.valid || !snapshot.insideViewport ? undefined
 			: point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.sourceBounds) ? 'source'
 			: layout.selectionLabel !== '' && point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.selectionBounds) ? 'selection' : undefined;
@@ -244,6 +260,8 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		if (layout.mode !== 'outline' && (this.scrollbar.handlePointer(snapshot, grid.horizontal) || this.scrollbar.handlePointer(snapshot, grid.vertical))) return true;
 		if (!snapshot.valid || !snapshot.insideViewport) return false;
 		if (layout.mode !== 'outline' && point_in_rect(snapshot.viewportX, snapshot.viewportY, grid.bounds)) {
+			this.gridHovered = true; this.gridPointerX = snapshot.viewportX; this.gridPointerY = snapshot.viewportY;
+			pointerHover.visit(this);
 			if (justPressed) {
 				this.gridFocus.focus(); this.update();
 				const x = grid.columnAt(snapshot.viewportX), y = grid.rowAt(snapshot.viewportY);
@@ -273,20 +291,46 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	}
 	public draw(): void { drawCartMap(this.input, this.controls, this.gridFocus.hasFocus, this.focusTarget.hasFocus); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		const input = this.input, selected = input.tree.rows[input.tree.selectionIndex]?.element;
-		const text = input.diagnostic ?? selected?.diagnostic ?? ASSET_STATUS[getTextFileRuntimeSourceStatus(this.sources, input.workingCopy)];
+		const input = this.input, grid = input.grid, selected = input.tree.rows[input.tree.selectionIndex]?.element;
+		const diagnostic = input.diagnostic ?? selected?.diagnostic;
+		const source = ASSET_STATUS[getTextFileRuntimeSourceStatus(this.sources, input.workingCopy)];
+		const content = grid.content, font = editorViewState.font, width = bounds.right - bounds.left - 8;
+		const mapWidth = content?.width, mapHeight = content?.rows.length;
+		const visible = input.layout.mode !== 'outline' && grid.bounds.right > grid.bounds.left && grid.bounds.bottom > grid.bounds.top;
+		const range = grid.visibleRange;
+		const hover = visible && this.gridHovered && pointerHover.has(this) && point_in_rect(this.gridPointerX, this.gridPointerY, grid.bounds);
+		const column = hover ? grid.columnAt(this.gridPointerX) : undefined, row = hover ? grid.rowAt(this.gridPointerY) : undefined;
+		if (mapWidth !== this.statusMapWidth || mapHeight !== this.statusMapHeight || diagnostic !== this.statusDiagnostic || source !== this.statusSource
+			|| font !== this.statusFont || width !== this.statusWidth || visible !== this.statusRangeVisible
+			|| range.left !== this.statusRange.left || range.top !== this.statusRange.top || range.right !== this.statusRange.right || range.bottom !== this.statusRange.bottom
+			|| column !== this.statusColumn || row !== this.statusRow) {
+			this.statusMapWidth = mapWidth; this.statusMapHeight = mapHeight; this.statusDiagnostic = diagnostic; this.statusSource = source;
+			this.statusFont = font; this.statusWidth = width; this.statusRangeVisible = visible;
+			write_rect_bounds(this.statusRange, range.left, range.top, range.right, range.bottom);
+			this.statusColumn = column; this.statusRow = row;
+			let text = source;
+			if (content !== undefined) {
+				text = `MAP ${content.width}x${content.rows.length}`;
+				if (visible) text = `X${range.left}-${range.right - 1} Y${range.top}-${range.bottom - 1} | ${text}`;
+				if (column !== undefined) text += ` @${column},${row}`;
+				text += ` | ${source}`;
+			}
+			this.statusText = truncateTextToWidth(diagnostic ?? text, width);
+		}
 		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-		api.blit_text_inline_with_font(text, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
+		api.blit_text_inline_with_font(this.statusText, bounds.left + 4, bounds.top + 2, 0, color, font.renderFont());
 		api.popClipRect();
 	}
 	public override clearInput(): void {
+		pointerHover.release(this);
 		this.tooltip.hide(); this.headerHovered = undefined;
 		this.scrollbar.cancelPointer(); this.actions.clearInput();
 		for (const control of this.controls) { control.cancel(); control.field.focusTarget.release(); }
 		super.clearInput();
 	}
-	public onPointerLeave(): void { this.headerHovered = undefined; }
+	public onPointerLeave(): void { this.headerHovered = undefined; this.gridHovered = false; }
 	public override dispose(): void {
+		pointerHover.release(this);
 		this.tooltip.detach();
 		this.scrollbar.cancelPointer(); this.actions.dispose(); this.unbindGrid();
 		for (const unbind of this.unbindClientFocus) unbind();

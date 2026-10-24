@@ -19,6 +19,12 @@ import type { ResourcePanelController } from '../../ide/workbench/contrib/resour
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { pointerHover } from '../../ide/input/pointer/hover';
+import { api } from '../../ide/runtime/overlay_api';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
+import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import * as colors from '../../ide/common/constants';
 
 const SOURCE = [
 	'2:', "  map: ['........................................................................................................................']",
@@ -246,5 +252,47 @@ for (const variant of ['tiny', 'msx'] as const) {
 		f.bounds.bottom = 277; f.layout(); field.focusTarget.focus();
 		assert.equal(inputFocus.admittedTarget, field.focusTarget); assert.equal(field.text, '321'); assert.equal(field.canUndo, true);
 		assert.equal(model.buffer.getText(), SOURCE); assert.equal(model.version, version); assert.equal(model.canUndo, false);
+	});
+}
+
+for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {
+	test(`Cart Map ${theme}/${variant} status owns real ranges, sheet dimensions and admitted hover without allocating a viewport snapshot`, t => {
+		const oldTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme); t.after(() => colors.setIdeThemeVariant(oldTheme));
+		const f = fixture(t, variant, variant === 'tiny' ? 78 : 118), overlay = createHostOverlayFixture(384, 288);
+		f.pane.focus(); f.press('Enter');
+		const statusBounds = { left: 0, top: 276, right: 384, bottom: 288 };
+		const draw = () => {
+			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+			f.pane.drawStatusBar(statusBounds, colors.COLOR_STATUS_TEXT); overlay.renderer.endFrame();
+			const frame = overlay.queue.consumeOverlayFrame();
+			for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
+				return (frame.commandRefs[index] as GlyphRenderSubmission).items as string;
+			assert.fail('the real status renderer did not queue its text');
+		};
+		assert.match(draw(), variant === 'tiny' ? /^X0-8 Y0-27 \| MAP 120x1/ : /^X0-10 Y0-21 \| MAP 120x1/);
+		assert.equal(f.input.selected, undefined, 'initial orientation must not choose a marker');
+		const grid = f.input.grid, x = grid.bounds.left + grid.cellSize * 2 + 1, y = grid.bounds.top + grid.cellSize * 3 + 1;
+		pointerHover.beginDispatch(); f.pointer(x, y); pointerHover.endDispatch();
+		assert.match(draw(), / @2,3 \| /);
+		grid.scrollBy(2.5, 0); assert.match(draw(), / @4,3 \| /, 'stationary pointer coordinates follow a real grid pan');
+		const capture = t.mock.method(grid, 'captureView'), read = t.mock.method(f.model.buffer, 'getText'), advance = t.mock.method(editorViewState.font, 'advance');
+		for (let frame = 0; frame < 1000; frame++) draw();
+		assert.equal(capture.mock.callCount(), 0); assert.equal(read.mock.callCount(), 0); assert.equal(advance.mock.callCount(), 0);
+		grid.content = { ...grid.content! }; draw();
+		assert.equal(advance.mock.callCount(), 0, 'a source generation with unchanged status values does not remeasure identical text');
+		f.layout(variant === 'tiny' ? 118 : 78, variant === 'tiny' ? 'msx' : 'tiny');
+		assert.match(draw(), variant === 'tiny' ? / @4,2 \| / : / @5,4 \| /, 'font reflow reprojects the stationary admitted pointer');
+		f.layout(variant === 'tiny' ? 78 : 118, variant);
+		assert.match(draw(), / @4,3 \| /);
+		f.bounds.top += 50; f.layout();
+		assert.doesNotMatch(draw(), / @/, 'layout moving the grid away revokes the old physical cell');
+		f.bounds.top -= 50; f.layout();
+		pointerHover.clear(); assert.doesNotMatch(draw(), / @/, 'surface occlusion retires the actual hover lease');
+		pointerHover.beginDispatch(); f.pointer(x, y); pointerHover.endDispatch();
+		assert.match(draw(), / @4,3 \| /);
+		f.input.section = 'outline'; f.layout(); assert.match(draw(), /^MAP 120x1/); assert.doesNotMatch(draw(), / @|^X/);
+		f.input.diagnostic = 'Authored row is source-only.'; assert.equal(draw(), f.input.diagnostic, 'diagnostics retain status priority');
+		f.input.diagnostic = ''; assert.equal(draw(), '', 'empty authored diagnostics are not replaced with orientation text');
+		f.input.diagnostic = null; f.pane.clearInput(); assert.equal(pointerHover.has(f.pane), false);
 	});
 }

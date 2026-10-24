@@ -92,6 +92,7 @@ type ThemeDefinition = {
 		position: number;
 	};
 	graph: { muted: number };
+	canvas: { gridMinor: number; gridMajor: number; boundary: number };
 	inspection: { label: number; changedValue: number; warningValue: number };
 	diff: { insertedBackground: number; removedBackground: number };
 	focusBorder: number;
@@ -229,6 +230,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			position: THEME_TOKEN_TERMINAL_DARK_BLUE,
 		},
 		graph: { muted: THEME_TOKEN_MUTED_GREY },
+		canvas: { gridMinor: THEME_TOKEN_DEEP_GREY, gridMajor: THEME_TOKEN_MUTED_GREY, boundary: THEME_TOKEN_HINT_GREY },
 		focusBorder: THEME_TOKEN_FOCUS_BLUE,
 		input: {
 			background: THEME_TOKEN_BLACK,
@@ -343,6 +345,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			position: THEME_TOKEN_ACCENT_BLUE,
 		},
 		graph: { muted: THEME_TOKEN_MUTED_GREY },
+		canvas: { gridMinor: THEME_TOKEN_BORDER_GREY, gridMajor: THEME_TOKEN_MID_GREY, boundary: THEME_TOKEN_MUTED_GREY },
 		focusBorder: THEME_TOKEN_ACCENT_BLUE,
 		input: {
 			background: THEME_TOKEN_GENTLE_WHITE,
@@ -519,6 +522,9 @@ export let COLOR_GRAPH_ACTIVE_BODY: number;
 export let COLOR_GRAPH_ACTIVE_CARD: number;
 export let COLOR_GRAPH_ACTIVE_HOVER: number;
 export let COLOR_GRAPH_MUTED: number;
+export let COLOR_CANVAS_GRID_MINOR: number;
+export let COLOR_CANVAS_GRID_MAJOR: number;
+export let COLOR_CANVAS_BOUNDARY: number;
 export let COLOR_INSPECTOR_LABEL: number;
 export let COLOR_DESCRIPTION_TEXT: number;
 export let COLOR_INSPECTOR_VALUE_CHANGED: number;
@@ -730,6 +736,9 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_GRAPH_ACTIVE_CARD = markers.graph.card;
 	COLOR_GRAPH_ACTIVE_HOVER = markers.graph.hover;
 	COLOR_GRAPH_MUTED = theme.graph.muted;
+	COLOR_CANVAS_GRID_MINOR = theme.canvas.gridMinor;
+	COLOR_CANVAS_GRID_MAJOR = theme.canvas.gridMajor;
+	COLOR_CANVAS_BOUNDARY = theme.canvas.boundary;
 	COLOR_INSPECTOR_LABEL = theme.inspection.label;
 	COLOR_DESCRIPTION_TEXT = theme.descriptionForeground;
 	COLOR_INSPECTOR_VALUE_CHANGED = theme.inspection.changedValue;

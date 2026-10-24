@@ -1,6 +1,7 @@
-import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
+import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { SCROLLBAR_WIDTH, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR, COLOR_RESOURCE_VIEWER_BACKGROUND,
 	COLOR_RESOURCE_VIEWER_TEXT, COLOR_HEADER_BUTTON_BORDER, COLOR_FOCUS_BORDER,
+	COLOR_CANVAS_GRID_MINOR, COLOR_CANVAS_GRID_MAJOR, COLOR_CANVAS_BOUNDARY,
 	COLOR_RESOURCE_PANEL_HIGHLIGHT, COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT } from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
@@ -34,6 +35,29 @@ export class CartMapGrid {
 	private minY = 0;
 	private endX = 0;
 	private endY = 0;
+	private readonly range = create_rect_bounds();
+	private rangeScrollX = 0;
+	private rangeScrollY = 0;
+	private rangeWidth = 0;
+	private rangeHeight = 0;
+	private rangeCellSize = 0;
+	private rangeVisible = false;
+	/** Intersecting world cells, with exclusive right/bottom edges; not the authored sheet extent. */
+	public get visibleRange(): Readonly<RectBounds> {
+		const x = this.horizontal.getScroll(), y = this.vertical.getScroll();
+		const width = this.bounds.right - this.bounds.left, height = this.bounds.bottom - this.bounds.top;
+		if (x !== this.rangeScrollX || y !== this.rangeScrollY || width !== this.rangeWidth || height !== this.rangeHeight
+			|| this.cellSize !== this.rangeCellSize || this.visible !== this.rangeVisible) {
+			this.rangeScrollX = x; this.rangeScrollY = y; this.rangeWidth = width; this.rangeHeight = height;
+			this.rangeCellSize = this.cellSize; this.rangeVisible = this.visible;
+			if (this.visible) {
+				write_rect_bounds(this.range, this.columnAt(this.bounds.left), this.rowAt(this.bounds.top),
+					this.columnAt(this.bounds.right) + ((x + width) % this.cellSize === 0 ? 0 : 1),
+					this.rowAt(this.bounds.bottom) + ((y + height) % this.cellSize === 0 ? 0 : 1));
+			} else write_rect_bounds(this.range, 0, 0, 0, 0);
+		}
+		return this.range;
+	}
 	public get content(): MapGridContent | undefined { return this.contentValue; }
 	public set content(content: MapGridContent | undefined) {
 		if (this.contentValue === content) return;
@@ -132,7 +156,17 @@ export class CartMapGrid {
 		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 		if (content !== undefined) {
 			const x0 = bounds.left - this.horizontal.getScroll(), y0 = bounds.top - this.vertical.getScroll();
-			const firstX = this.columnAt(bounds.left), firstY = this.rowAt(bounds.top);
+			const range = this.visibleRange;
+			for (let column = range.left; column < range.right; column++) {
+				const x = x0 + column * size;
+				api.fill_rect(x, bounds.top, x + 1, bounds.bottom, 0, column % 8 === 0 ? COLOR_CANVAS_GRID_MAJOR : COLOR_CANVAS_GRID_MINOR);
+			}
+			for (let row = range.top; row < range.bottom; row++) {
+				const y = y0 + row * size;
+				api.fill_rect(bounds.left, y, bounds.right, y + 1, 0, row % 8 === 0 ? COLOR_CANVAS_GRID_MAJOR : COLOR_CANVAS_GRID_MINOR);
+			}
+			api.blit_rect(x0, y0, x0 + content.width * size, y0 + content.rows.length * size, 0, COLOR_CANVAS_BOUNDARY);
+			const firstX = range.left, firstY = range.top;
 			const lastX = (bounds.right - x0) / size, lastY = (bounds.bottom - y0) / size;
 			const font = editorViewState.font.renderFont();
 			for (let row = Math.max(0, firstY); row < lastY && row < content.rows.length; row++) {
