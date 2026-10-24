@@ -7,6 +7,7 @@ import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/comm
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
+import { pointerCapture } from '../../ide/input/pointer/capture';
 import { handleEditorInput } from '../../ide/input/keyboard/dispatch';
 import { api } from '../../ide/runtime/overlay_api';
 import { ImagePreviewCache } from '../../ide/workbench/ui/image_preview';
@@ -20,6 +21,7 @@ import * as colors from '../../ide/common/constants';
 import { decodeImage, encodePngImage } from '../../hosts/node/headless/screenshot';
 import type { ImageDecoder } from '../../hosts/common/image';
 import type { HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
+import { ELLIPSIS } from '../../ide/common/text';
 
 const pixels = { width: 2, height: 1, pixels: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]) };
 const bounds = { left: 0, top: 10, right: 140, bottom: 100 };
@@ -28,6 +30,7 @@ const otherBounds = { left: 140, top: 10, right: 220, bottom: 100 };
 function fixture(t: TestContext, commands: EditorCommandRunner = { isEnabled: () => true, execute() {} }, variant: FontVariant = 'tiny',
 	decode: ImageDecoder = async () => pixels) {
 	let changes = 0, wheel = 0, selections = 0, decodes = 0;
+	let ownerBounds = bounds;
 	const previousFont = editorViewState.font;
 	editorViewState.font = new EditorFont(variant);
 	const previousCommands = inputFocus.workbenchScope.commands;
@@ -35,7 +38,7 @@ function fixture(t: TestContext, commands: EditorCommandRunner = { isEnabled: ()
 	const surfaces = new WorkbenchSurfaceService(() => { changes++; });
 	const owner = surfaces.attach({
 		role: 'content', captureScope: Symbol('image pane'), isVisible: () => true,
-		getBounds: () => bounds, getClip: () => bounds, draw() {},
+		getBounds: () => ownerBounds, getClip: () => ownerBounds, draw() {},
 		handlePointer() { selections++; }, handleWheel() { wheel++; return true; },
 	});
 	const other = surfaces.attach({
@@ -45,13 +48,15 @@ function fixture(t: TestContext, commands: EditorCommandRunner = { isEnabled: ()
 	const cache = new ImagePreviewCache((...args) => { decodes++; return decode(...args); });
 	const preview = new ImagePreviewOverlay(cache, surfaces, owner, commands);
 	const origin = inputFocus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
-	preview.layout(bounds, 6);
+	const layout = (area: typeof bounds, rowHeight: number) => { ownerBounds = area; preview.layout(area, rowHeight); };
+	layout(bounds, 6);
 	t.after(() => {
 		preview.dispose(); cache.dispose(); surfaces.dispose(); inputFocus.setTarget(null);
 		inputFocus.workbenchScope.commands = previousCommands;
 		editorViewState.font = previousFont;
+		pointerCapture.cancel();
 	});
-	return { preview, cache, surfaces, owner, other, origin,
+	return { preview, cache, surfaces, owner, other, origin, layout,
 		changes: () => changes, wheel: () => wheel, selections: () => selections, decodes: () => decodes };
 }
 
@@ -173,7 +178,7 @@ test('Escape and Enter dismiss from lightbox focus while replacement and retirem
 test('only changed lightbox geometry and visibility publish invalidation, and separate surface painting retains its decoded bitmap', async t => {
 	const f = fixture(t), renderer = createHostOverlayFixture(220, 110);
 	const changes = f.changes();
-	for (let frame = 0; frame < 100; frame++) f.preview.layout(bounds, 6);
+	for (let frame = 0; frame < 100; frame++) f.layout(bounds, 6);
 	assert.equal(f.changes(), changes, 'unchanged layout does not rebuild or publish surface state');
 	f.preview.open('image'); await Promise.resolve();
 	for (let frame = 0; frame < 4; frame++) {
@@ -186,7 +191,7 @@ test('only changed lightbox geometry and visibility publish invalidation, and se
 	}
 	assert.equal(f.decodes(), 1, 'drawing a root-owned overlay after its pane frame reuses the attached image');
 	const expanded = { ...bounds, right: 180 };
-	f.preview.layout(expanded, 6);
+	f.layout(expanded, 6);
 	assert.equal(f.changes(), changes + 2, 'opening and one geometry change each publish once');
 	assert.equal(f.preview.surface.getBounds().right, 180);
 	f.preview.close();
@@ -199,10 +204,11 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
 		t.after(() => colors.setIdeThemeVariant(previousTheme));
 		const f = fixture(t, undefined, variant), narrow = { ...bounds, right: variant === 'tiny' ? 78 : 118, bottom: 180 };
-		f.preview.layout(narrow, editorViewState.font.lineHeight); f.preview.open('image');
+		f.layout(narrow, editorViewState.font.lineHeight);
 		const overlay = createHostOverlayFixture(220, 180), font = editorViewState.font, advance = font.advance.bind(font);
 		let measurements = 0;
 		t.mock.method(font, 'advance', char => { measurements++; return advance(char); });
+		f.preview.open('image');
 		const paint = () => {
 			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
 			return overlay.queue.consumeOverlayFrame();
@@ -218,17 +224,122 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		assert.ok(labels.includes('Image preview')); assert.ok(labels.includes('Click/Esc close'));
 		assert.ok(measurements > 0, 'the newly exposed loading state is measured once');
 		const measured = measurements, changes = f.changes();
-		for (let frame = 0; frame < 50; frame++) { f.preview.layout(narrow, font.lineHeight); paint(); }
+		for (let frame = 0; frame < 50; frame++) { f.layout(narrow, font.lineHeight); paint(); }
 		assert.equal(measurements, measured); assert.equal(f.changes(), changes);
-		editorViewState.font = new EditorFont(variant); f.preview.layout(narrow, font.lineHeight);
+		editorViewState.font = new EditorFont(variant); f.layout(narrow, font.lineHeight);
 		assert.equal(f.changes(), changes + 1, 'font identity, not only line height, owns caption invalidation');
 	});
 }
 
+async function scrollableError(t: TestContext) {
+	const reason = 'Image header failed.\nToken_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 expected PNG signature.\nFinal decoder explanation suffix.';
+	const pending = Promise.reject(new Error(reason)), f = fixture(t, undefined, 'msx', () => pending);
+	const compact = { left: 0, top: 24, right: 118, bottom: 80 };
+	f.layout(compact, 8); f.preview.open('scrollable-error'); await pending.catch(() => {});
+	const overlay = createHostOverlayFixture(384, 288);
+	const paint = () => {
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		const frame = overlay.queue.consumeOverlayFrame(), lines: string[] = [], area = f.preview.surface.getBounds();
+		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+			const run = frame.commandRefs[index] as GlyphRenderSubmission;
+			if (run.y === area.top + 8 || run.y === area.bottom - editorViewState.font.lineHeight - 6) continue;
+			assert.equal(typeof run.items, 'string'); lines.push(run.items as string);
+		}
+		return lines;
+	};
+	const key = (code: string) => {
+		inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none));
+		inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false));
+	};
+	return { ...f, reason: `Error: ${reason}`, compact, paint, key };
+}
+
+test('the complete error remains keyboard-readable through newlines and long tokens in a two-line body', async t => {
+	const f = await scrollableError(t);
+	let previous = f.paint(), read = previous.join('');
+	assert.equal(previous.length, 2);
+	for (let step = 0; step < f.reason.length; step++) {
+		f.key('ArrowDown'); const current = f.paint();
+		if (current.join('') === previous.join('')) break;
+		read += current.at(-1)!; previous = current;
+	}
+	assert.equal(read.replace(/\s/g, ''), f.reason.replace(/\s/g, ''));
+	assert.ok(!read.includes(ELLIPSIS));
+	f.key('Home'); assert.ok(f.paint()[0].startsWith('Error:'));
+	f.key('PageDown'); assert.ok(!f.paint()[0].startsWith('Error:'));
+	f.key('End'); assert.ok(f.paint().join(' ').endsWith('suffix.'));
+	f.key('PageUp'); assert.ok(!f.paint().join(' ').endsWith('suffix.'));
+});
+
+test('End intent survives fitting content, height-only changes, font reflow and a temporarily hidden body', async t => {
+	const f = await scrollableError(t), font = editorViewState.font, advance = font.advance.bind(font);
+	let measures = 0; t.mock.method(font, 'advance', char => { measures++; return advance(char); });
+	f.paint(); const measured = measures;
+	f.layout({ ...f.compact, bottom: 274 }, 8); f.key('End');
+	f.layout(f.compact, 8); assert.ok(f.paint().join(' ').endsWith('suffix.'));
+	f.layout({ ...f.compact, bottom: f.compact.top }, 8); f.key('Home');
+	f.layout(f.compact, 8); assert.ok(f.paint()[0].startsWith('Error:'));
+	f.layout({ ...f.compact, top: 26, bottom: 82 }, 8); f.paint();
+	assert.equal(measures, measured, 'height and position only project the existing complete text document');
+	f.key('End'); editorViewState.font = new EditorFont('tiny');
+	f.layout(f.compact, 6); assert.ok(f.paint().join(' ').endsWith('suffix.'));
+});
+
+test('body wheel and its visible track scroll without dismissing, retain modal scope and cancel before close', async t => {
+	const f = await scrollableError(t); f.paint();
+	const event = { valid: true, insideViewport: true, viewportX: 20, viewportY: 48, deltaX: 0, deltaY: 1, modifiers: KeyModifier.none };
+	assert.equal(f.preview.surface.handleWheel!(event), true); assert.equal(f.preview.visible, true);
+	assert.ok(!f.paint()[0].startsWith('Error:')); f.key('Home');
+	const down = { ...event, viewportX: 108, viewportY: 45, spaceDown: false,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	const scope = f.preview.surface.captureScope;
+	pointerCapture.beginRoute(scope, down); f.preview.surface.handlePointer!(down, 1);
+	assert.equal(pointerCapture.active, true); assert.equal(f.preview.visible, true); assert.equal(inputFocus.target!.scope.surfaceScope, scope);
+	pointerCapture.dispatch({ ...down, viewportY: 59, justPressedButtons: 0 }, false, 2, scope);
+	assert.ok(f.paint().join(' ').endsWith('suffix.'));
+	f.preview.close(); assert.equal(pointerCapture.active, false); assert.equal(inputFocus.target, f.origin);
+	const up = { ...down, viewportY: 59, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary };
+	pointerCapture.dispatch(up, false, 3, scope); pointerCapture.endRoute(up);
+	assert.equal(f.preview.visible, false); assert.equal(inputFocus.target, f.origin);
+});
+
+test('new messages reset old End intent while geometry retirement cancels an actual body capture', async t => {
+	const f = await scrollableError(t); f.key('End'); assert.ok(f.paint().join(' ').endsWith('suffix.'));
+	f.preview.open('new-error-generation'); await Promise.resolve();
+	assert.ok(f.paint()[0].startsWith('Error:'));
+	const down = { valid: true, insideViewport: true, viewportX: 108, viewportY: 45, spaceDown: false, modifiers: KeyModifier.none,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	f.preview.surface.handlePointer!(down, 1); assert.equal(pointerCapture.active, true);
+	f.layout({ ...f.compact, bottom: 88 }, 8); assert.equal(pointerCapture.active, false); assert.equal(f.preview.visible, true);
+	f.key('Escape'); assert.equal(f.preview.visible, false); assert.equal(inputFocus.target, f.origin);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} a zero-height or compressed body produces no inverted bitmap quad or chrome overlap`, async t => {
+	const f = fixture(t, undefined, variant), overlay = createHostOverlayFixture(220, 110);
+	f.preview.open('bitmap'); await Promise.resolve();
+	for (const height of [0, 24]) {
+		f.layout({ left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 24 + height }, editorViewState.font.lineHeight);
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		const frame = overlay.queue.consumeOverlayFrame(); let bitmaps = 0, emptyClips = 0;
+		for (let index = 0; index < frame.commandCount; index++) {
+			if (frame.commandKinds[index] === Host2DKind.Bitmap) {
+				const { area } = frame.commandRefs[index] as HostBitmapRenderSubmission;
+				assert.equal(area.top, area.bottom); assert.equal(area.left, area.right); bitmaps++;
+			}
+			if (frame.commandKinds[index] === Host2DKind.Clip) {
+				const clip = frame.commandRefs[index] as typeof bounds;
+				assert.ok(clip.left <= clip.right && clip.top <= clip.bottom);
+				if (clip.top === clip.bottom) emptyClips++;
+			}
+		}
+		assert.equal(bitmaps, 1); assert.ok(emptyClips > 0, 'the bitmap remains in its genuinely empty body clip');
+	}
+});
+
 test('loading and an asynchronous decode error are each measured once, with status geometry invalidated by width or font', async t => {
 	const pending = Promise.withResolvers<Awaited<ReturnType<ImageDecoder>>>();
 	const f = fixture(t, undefined, 'tiny', () => pending.promise), narrow = { ...bounds, right: 78, bottom: 180 };
-	f.preview.layout(narrow, 6); f.preview.open('unavailable-image');
+	f.layout(narrow, 6); f.preview.open('unavailable-image');
 	const overlay = createHostOverlayFixture(220, 180), font = editorViewState.font, advance = font.advance.bind(font);
 	let measurements = 0;
 	t.mock.method(font, 'advance', char => { measurements++; return advance(char); });
@@ -249,7 +360,7 @@ test('loading and an asynchronous decode error are each measured once, with stat
 	assert.ok(paint().some(label => label.startsWith('Error:'))); const unavailable = measurements;
 	assert.ok(unavailable > loading);
 	for (let frame = 0; frame < 50; frame++) paint(); assert.equal(measurements, unavailable);
-	f.preview.layout(bounds, 6); paint(); assert.ok(measurements > unavailable);
+	f.layout(bounds, 6); paint(); assert.ok(measurements > unavailable);
 	const expanded = measurements; for (let frame = 0; frame < 50; frame++) paint(); assert.equal(measurements, expanded);
 });
 
@@ -271,3 +382,31 @@ test('a real Node PNG decode reaches the modal bitmap and remains leased while i
 	assert.equal(f.decodes(), 0, 'already decoded producer pixels are not decoded again for modal presentation');
 	f.preview.close(); f.cache.beginFrame(); f.cache.endFrame(); assert.equal(resource.retired, true); assert.equal(disposed, 1);
 });
+
+for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
+	test(`${variant}/${theme} minimum modal wraps the complete real PNG decode error within its body`, async t => {
+		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
+		t.after(() => colors.setIdeThemeVariant(previousTheme));
+		let decoding!: ReturnType<ImageDecoder>;
+		const f = fixture(t, undefined, variant, (...args) => { decoding = decodeImage(...args); return decoding; });
+		const narrow = { left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 260 };
+		const url = 'data:image/png;base64,aW52YWxpZA==';
+		f.layout(narrow, editorViewState.font.lineHeight); f.preview.open(url); await decoding.catch(() => {});
+		const reason = f.cache.use(url).error!;
+		assert.ok(reason.length >= 40, 'the real decoder supplies a reason longer than a narrow line');
+		const overlay = createHostOverlayFixture(384, 288), font = editorViewState.font.renderFont();
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
+		const frame = overlay.queue.consumeOverlayFrame(), lines: string[] = [];
+		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+			const run = frame.commandRefs[index] as GlyphRenderSubmission;
+			if (run.y === narrow.top + 8 || run.y === narrow.bottom - font.lineHeight - 6) continue;
+			assert.equal(typeof run.items, 'string'); const text = run.items as string; lines.push(text);
+			assert.ok(run.x >= narrow.left + 10 && run.x + font.measure(text) <= narrow.right - 10);
+			assert.ok(run.y >= narrow.top + font.lineHeight + 12 && run.y + font.lineHeight <= narrow.bottom - font.lineHeight - 12,
+				'error rows stay between the actual heading and close-hint regions');
+		}
+		assert.ok(lines.length > 1, 'the explanation uses the available body, not a one-line truncation');
+		assert.equal(lines.join('').replace(/\s/g, ''), reason.replace(/\s/g, ''));
+		assert.ok(lines.every(line => !line.includes(ELLIPSIS)), 'this common PNG reason fits without loss');
+	});
+}

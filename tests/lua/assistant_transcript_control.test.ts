@@ -312,8 +312,36 @@ test('loading and real decode failures stay on the exact selected slot and use t
 	frame = f.paint(); assert.equal(f.preview.visible, true); assert.equal(f.input.selection.imageIndex, 0);
 	assert.ok(frame.commandRefs.slice(0, frame.commandCount).some((ref, index) => frame.commandKinds[index] === Host2DKind.Glyphs
 		&& ((ref as GlyphRenderSubmission).items as string).startsWith('Image un')));
+	const body: string[] = [];
+	for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+		const run = frame.commandRefs[index] as GlyphRenderSubmission;
+		if (run.x === f.input.layout.left + 10) body.push((run.items as string).slice(run.item_start, run.item_end));
+	}
+	assert.ok(body.length > 1, 'a real decoder failure uses the available modal body rather than one truncated label');
+	assert.equal(body.join(' ').replace(/\s/g, ''), f.cache.use(url).error!.replace(/\s/g, ''), 'all actual decoder-reason characters remain readable');
 	f.capture('transcript-msx-minimum-unavailable');
 	f.press('Escape'); assert.equal(inputFocus.target, f.control.scroll.focusTarget); assert.equal(f.cache.use(url).retained, 0);
+});
+
+test('a real decode reason remains reachable by modal keyboard scrolling when the pane body is only two rows high', async t => {
+	const f = fixture(t, 'msx', 118), url = 'data:image/png;base64,bm90LWFuLWltYWdl';
+	f.conversation.message('', [url]); f.layout(118, 'msx', 80); f.control.scroll.focusTarget.focus(); f.press('ArrowDown'); f.press('Enter');
+	await f.load();
+	const body = () => {
+		const frame = f.paint(), text: string[] = [];
+		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+			const run = frame.commandRefs[index] as GlyphRenderSubmission;
+			if (run.x === f.input.layout.left + 10) text.push((run.items as string).slice(run.item_start, run.item_end));
+		}
+		return text;
+	};
+	const first = body(); assert.ok(f.cache.use(url).error!.trimStart().startsWith(first[0]));
+	f.capture('transcript-msx-short-unavailable-home'); f.press('End');
+	const last = body(); assert.notDeepEqual(last, first);
+	assert.ok(f.cache.use(url).error!.trimEnd().endsWith(last.at(-1)!), 'End reveals the actual source suffix, not an ellipsis');
+	assert.equal(f.preview.visible, true); f.capture('transcript-msx-short-unavailable-end');
+	f.press('Home'); assert.deepEqual(body(), first);
+	f.press('Escape'); assert.equal(inputFocus.target, f.control.scroll.focusTarget); assert.equal(f.preview.visible, false);
 });
 
 for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) for (const width of [384, variant === 'tiny' ? 78 : 118]) {
