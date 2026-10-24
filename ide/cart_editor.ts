@@ -989,7 +989,7 @@ export class RuntimeCartEditor implements CartEditor {
 		} else {
 			configureFontVariant(this.clock, variant, null);
 		}
-		this.resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
+		this.resourcePanel.setFontMetrics(editorViewState.font);
 		if (editorViewState.fontVariant !== previousVariant) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.Font);
 		}
@@ -1085,14 +1085,14 @@ export class RuntimeCartEditor implements CartEditor {
 		}, resourcePanelWidthRatio);
 		if (!this.isAvailable) {
 			configureFontVariant(this.clock, editorViewState.fontVariant, null);
-			resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
+			resourcePanel.setFontMetrics(editorViewState.font);
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
 		clearCodeEditorInputs();
 		editorTextModelService.clear();
 		configureFontVariant(this.clock, editorViewState.fontVariant, 'lua');
-		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
+		resourcePanel.setFontMetrics(editorViewState.font);
 		applySearchFieldText(editorSearchState.query, true);
 		applyLineJumpFieldText(lineJumpState.value, true);
 		this.completion.closeSession();

@@ -13,7 +13,10 @@ import {
 	type CallHierarchyModel,
 } from '../../../../editor/contrib/call_hierarchy/model';
 import { editorViewState } from '../../../../editor/ui/view/state';
+import type { EditorFont } from '../../../../editor/ui/view/font';
+import type { FontVariant } from '../../../../../machine/ts/render/shared/bmsx_font';
 import {
+	computeResourcePanelMaxLineWidth,
 	findResourcePanelIndexByIdentity,
 	findResourcePanelIndexByCallHierarchyNodeId,
 	type ResourcePanelFilterMode,
@@ -49,6 +52,7 @@ import { inputFocus } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 
 export type ResourcePanelItemMetrics = {
+	fontVariant: FontVariant | null;
 	item: ResourceBrowserItem;
 	line: string;
 	contentStartColumn: number;
@@ -67,6 +71,7 @@ export type ResourcePanelScrollbars = {
 
 function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
 	return {
+		fontVariant: null,
 		item: null,
 		line: null,
 		contentStartColumn: -1,
@@ -89,6 +94,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 	private mode: 'resources' | 'command' = 'resources';
 	public lineHeight: number;
 	private charAdvance: number;
+	private fontVariant: FontVariant | null = null;
 
 	// Browser state
 	public items: ResourceBrowserItem[] = ResourcePanelController.EMPTY_ITEMS;
@@ -121,10 +127,12 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
 	}
 
-	public setFontMetrics(lineHeight: number, charAdvance: number): void {
-		this.lineHeight = lineHeight;
-		this.charAdvance = charAdvance;
-		this.itemMetrics.clear();
+	public setFontMetrics(font: EditorFont): void {
+		if (this.fontVariant === font.variant) return;
+		this.fontVariant = font.variant;
+		this.lineHeight = font.lineHeight;
+		this.charAdvance = font.advance('M');
+		this.maxLineWidth = computeResourcePanelMaxLineWidth(this.items);
 	}
 
 	// === Panel lifecycle ===
@@ -447,16 +455,18 @@ export class ResourcePanelController implements PointerHoverTarget {
 			&& metrics.line === item.line
 			&& metrics.contentStartColumn === item.contentStartColumn
 		) {
-			return metrics;
+			if (metrics.fontVariant === this.fontVariant) return metrics;
+		} else {
+			metrics.item = item;
+			metrics.line = item.line;
+			metrics.contentStartColumn = item.contentStartColumn;
+			metrics.indentText = item.line.slice(0, item.contentStartColumn);
+			metrics.contentText = item.line.slice(item.contentStartColumn);
 		}
 		const line = item.line;
 		const contentStartColumn = item.contentStartColumn;
 		const markerStartColumn = item.callHierarchyExpandable ? contentStartColumn - 2 : contentStartColumn;
-		metrics.item = item;
-		metrics.line = line;
-		metrics.contentStartColumn = contentStartColumn;
-		metrics.indentText = line.slice(0, contentStartColumn);
-		metrics.contentText = line.slice(contentStartColumn);
+		metrics.fontVariant = this.fontVariant;
 		metrics.indentWidth = measureTextRange(line, 0, contentStartColumn);
 		metrics.contentWidth = measureTextRange(line, contentStartColumn, line.length);
 		metrics.markerStartWidth = measureTextRange(line, 0, markerStartColumn);
