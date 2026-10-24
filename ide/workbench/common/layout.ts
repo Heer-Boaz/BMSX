@@ -25,7 +25,7 @@ export type WorkbenchChromeLayout = {
 /** Content geometry belongs to the workbench; a text gutter is a code-pane detail. */
 export function getWorkbenchEditorBounds(): Readonly<RectBounds> { return editorBounds; }
 
-/** Floating root windows may cover panels, but never permanent header/status chrome. */
+/** Stable layout-owned work area: root windows may cover panels, never header/status chrome. */
 export function getWorkbenchWorkArea(): Readonly<RectBounds> { return workArea; }
 
 /** Permanent connection chrome has its own slot, independent of the active editor or feedback. */

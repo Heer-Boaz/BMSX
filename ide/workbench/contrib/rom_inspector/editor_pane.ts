@@ -75,10 +75,10 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		private readonly sources: RuntimeSourceState, private readonly navigation: EditorNavigationController,
 		private readonly quickInput: QuickInputController, private readonly contextMenu: ContextMenuController,
 		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface,
-		private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly workArea: Readonly<RectBounds>) {
 		super(resources);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
-		this.actionTooltip.attach(surfaces, owner, getWorkArea);
+		this.actionTooltip.attach(surfaces, owner, workArea);
 		this.actions.onDidOpenOverflow = () => this.actionTooltip.hide();
 		for (const target of [this.focusTarget, this.filter.focusTarget]) for (const command of COMMANDS)
 			target.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
@@ -99,12 +99,12 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		super.activate();
 		this.boundRevision = -1; this.freshLayout = true; this.presentation.reset();
 		this.lastClickRow = undefined; this.lastClickTime = 0;
-		this.key = new RomMapKeyWindow(this.input, this.commands, this.surfaces, this.owner, this.list.focusTarget, this.getWorkArea);
+		this.key = new RomMapKeyWindow(this.input, this.commands, this.surfaces, this.owner, this.list.focusTarget, this.workArea);
 		for (const target of [this.key.window.focusTarget, this.key.scroll.focusTarget]) for (const command of COMMANDS)
 			target.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.actions.setInput(this.input.actions, this.focusTarget);
 		this.reader = new RomEntryInspectorWindow(this.input, this.commands, this.sources, this.navigation,
-			this.quickInput, this.contextMenu, this.surfaces, this.owner, this.list.focusTarget, this.getWorkArea);
+			this.quickInput, this.contextMenu, this.surfaces, this.owner, this.list.focusTarget, this.workArea);
 		for (const target of [this.reader.window.focusTarget, this.reader.inspector.focusTarget, this.reader.image.focusTarget,
 			this.reader.bytes.focusTarget, this.reader.viewActions.focusTarget]) for (const command of COMMANDS)
 			if (command !== 'romInspector.source') target.registerCommand(command, this.focusTarget.getCommand(command)!);
@@ -171,7 +171,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		this.actions.update();
 		const hint = input.actions.pressedCommand !== null ? undefined : this.actions.tooltipItem;
 		if (hint === undefined) this.actionTooltip.hide();
-		else this.actionTooltip.show(hint.tooltip, hint.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		else this.actionTooltip.show(hint.tooltip, hint.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.workArea);
 		this.presentation.update(input, layoutChanged);
 		this.reader!.update();
 		this.key!.update();

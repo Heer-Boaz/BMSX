@@ -52,13 +52,13 @@ export class WorkbenchSourceEditReview implements PointerHoverTarget {
 
 	public constructor(focus: InputFocusService, capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget,
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
-		private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly workArea: Readonly<RectBounds>) {
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.visible;
 		this.pointer = new WorkbenchPropertyTreePointer(hover);
 		this.actionControl = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget, () => this.focusTarget.focus(), contextMenu);
 		this.actionControl.onDidOpenOverflow = () => this.feedback.hide();
-		this.feedback.attach(surfaces, owner, getWorkArea);
+		this.feedback.attach(surfaces, owner, workArea);
 		this.focusTarget.next = this.actionControl.focusTarget;
 		this.focusTarget.previous = this.actionControl.focusTarget;
 		this.actionControl.focusTarget.next = this.focusTarget;
@@ -113,10 +113,10 @@ export class WorkbenchSourceEditReview implements PointerHoverTarget {
 		if (!this.visible) return;
 		this.actionControl.update();
 		const item = this.actionControl.tooltipItem;
-		if (item !== undefined) this.feedback.show(item.tooltip, item.bounds, this.font!, this.measure!, this.measureText!, this.getWorkArea());
+		if (item !== undefined) this.feedback.show(item.tooltip, item.bounds, this.font!, this.measure!, this.measureText!, this.workArea);
 		else if (this.hoveredText !== undefined && this[this.hoveredText] !== this.input![this.hoveredText])
 			this.feedback.show(this.input![this.hoveredText], this.hoveredText === 'title' ? this.titleBounds : this.summaryBounds,
-				this.font!, this.measure!, this.measureText!, this.getWorkArea());
+				this.font!, this.measure!, this.measureText!, this.workArea);
 		else this.feedback.hide();
 	}
 

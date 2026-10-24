@@ -79,7 +79,7 @@ function feedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const surfaces = new WorkbenchSurfaceService();
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('Scene'), isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw() {} });
-	const feedback = new SceneOutlineFeedback(surfaces, owner, () => area, treeFocus);
+	const feedback = new SceneOutlineFeedback(surfaces, owner, area, treeFocus);
 	let measurements = 0;
 	const measure = (text: string, start: number, end: number) => { measurements++; return font.measure(text.slice(start, end)); };
 	const measureText = (text: string) => { measurements++; return font.measure(text); };

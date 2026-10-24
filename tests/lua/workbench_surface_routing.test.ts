@@ -202,7 +202,7 @@ test('retiring a real window with its property menu focused returns to an admitt
 	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
 		model: new WorkbenchWindowModel({ left: 20, top: 30, right: 250, bottom: 240 }, 100, 80),
 		actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.paneSurface,
-		focusReturn: tree, getWorkArea: () => extent, content: { draw() {} }, layoutContent() {},
+		focusReturn: tree, workArea: extent, content: { draw() {} }, layoutContent() {},
 		retireContentInput: () => inspector.hide(),
 		restoreContentInput: () => inspector.show({ title: 'DETAILS', items: [{ label: 'A', value: 'B', description: '', warning: false }],
 			focusReturn: tree, canOpenSource: () => false, openSource() {} }, false),
@@ -696,7 +696,7 @@ test('real window hide and root-modal admission cancel true producer guest holds
 	const model = new WorkbenchWindowModel({ left: 30, top: 40, right: 350, bottom: 260 }, 100, 80);
 	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
 		model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.paneSurface,
-		focusReturn: tree, getWorkArea: () => extent,
+		focusReturn: tree, workArea: extent,
 		content: { draw() {}, handlePointer: snapshot => { game.handlePointer(snapshot); } },
 		layoutContent: bounds => game.setInput(bounds), retireContentInput: () => game.clearInput(),
 		restoreContentInput: () => game.setInput(model.client), focusContent: () => game.focusTarget.focus(),

@@ -111,7 +111,7 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 			getBounds: () => menu.model.bounds, getClip: () => area, isVisible: () => menu.visible, draw() {},
 			onRetire: () => { if (!lifetime.isDisposed) { pointerCapture.cancelScope(menu.pointerScope); menu.hide(); } } }));
 	});
-	const toolbar = new AssistantTurnToolbar(commands, parent, () => input.draft.focusTarget.focus(), menu, surfaces, owner, () => area);
+	const toolbar = new AssistantTurnToolbar(commands, parent, () => input.draft.focusTarget.focus(), menu, surfaces, owner, area);
 	const overlay = createHostOverlayFixture(384, 288);
 	overlay.presenter.initialize(new RenderPassLibrary(overlay.backend, overlay.presenter));
 	const unbind = inputFocus.bindScopeAdmission(scope => {

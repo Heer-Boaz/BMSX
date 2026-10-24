@@ -231,7 +231,7 @@ function feedbackFixture(t: TestContext, property: Partial<WorkbenchPropertyElem
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('property tree'), isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw: () => drawWorkbenchPropertyTree(f.state) });
-	pointer.attachFeedback(surfaces, owner, () => area, target);
+	pointer.attachFeedback(surfaces, owner, area, target);
 	const child = f.group.children[0];
 	f.state.textDirty = true; f.layout(200); pointer.updateFeedback(f.state);
 	const texts: string[] = []; t.mock.method(api, 'blit_text_inline_with_font', text => texts.push(text));

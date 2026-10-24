@@ -54,7 +54,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private focusOrder: { previous: InputFocusTarget; next: InputFocusTarget } | undefined;
 	private feedback: WorkbenchTooltip | undefined;
 	private feedbackOwner: WorkbenchSurface | undefined;
-	private feedbackArea: (() => Readonly<RectBounds>) | undefined;
+	private feedbackArea: Readonly<RectBounds> | undefined;
 	private readonly feedbackAnchor = create_rect_bounds();
 	private feedbackItem: Element | undefined;
 	private feedbackLabel = '';
@@ -105,11 +105,11 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	public get visible(): boolean { return this.input !== undefined; }
 
 	/** The containing surface owns feedback lifetime; the inspector does not know its placement kind. */
-	public attachFeedback(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>): void {
+	public attachFeedback(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>): void {
 		if (this.feedbackOwner === owner) return;
 		const feedback = this.feedback ??= new WorkbenchTooltip();
-		feedback.detach(); this.feedbackOwner = owner; this.feedbackArea = getWorkArea;
-		feedback.attach(surfaces, owner, getWorkArea);
+		feedback.detach(); this.feedbackOwner = owner; this.feedbackArea = workArea;
+		feedback.attach(surfaces, owner, workArea);
 		this.feedbackScroll = this.model.viewport.scrollTop;
 	}
 
@@ -246,7 +246,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			this.feedbackText = `${item.label}\n${item.value}${item.description.length === 0 ? '' : `\n${item.description}`}`;
 		}
 		write_rect_bounds(this.feedbackAnchor, view.bounds.left, Math.max(top, view.bounds.top), view.bounds.right, Math.min(bottom, view.bounds.bottom));
-		this.feedback!.show(this.feedbackText, this.feedbackAnchor, font, measure, measureText, this.feedbackArea!());
+		this.feedback!.show(this.feedbackText, this.feedbackAnchor, font, measure, measureText, this.feedbackArea!);
 	}
 
 	public isEnabled(command: EditorCommandId): boolean {

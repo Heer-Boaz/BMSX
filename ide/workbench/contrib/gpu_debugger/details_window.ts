@@ -78,9 +78,9 @@ export class GpuDetailsWindow {
 	public constructor(private readonly input: GpuDebuggerInput, commands: EditorCommandRunner,
 		private readonly quickInput: QuickInputController, private readonly contextMenu: ContextMenuController,
 		private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
-		private readonly focusReturn: InputFocusTarget, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly focusReturn: InputFocusTarget, private readonly workArea: Readonly<RectBounds>) {
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
-			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: owner, focusReturn, getWorkArea,
+			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: owner, focusReturn, workArea,
 			getTitleTooltip: () => this.titleTooltip,
 			content: {
 				draw: () => this.draw(),
@@ -194,10 +194,10 @@ export class GpuDetailsWindow {
 				this.inspector.replaceItems(this.propertyItems);
 				this.inspector.model.restoreViewState(input.detailsView);
 			}
-			this.inspector.attachFeedback(this.surfaces, this.window.clientSurface!, this.getWorkArea);
+			this.inspector.attachFeedback(this.surfaces, this.window.clientSurface!, this.workArea);
 		}
 		this.contentActions.setInput(input.inspectorActions, this.window.focusTarget);
-		this.tooltip.attach(this.surfaces, this.window.clientSurface!, this.getWorkArea);
+		this.tooltip.attach(this.surfaces, this.window.clientSurface!, this.workArea);
 		if (pageChanged) {
 			const target = this.contentTarget();
 			this.window.actionFocusTarget.next = this.contentActions.focusTarget; this.contentActions.focusTarget.previous = this.window.actionFocusTarget;
@@ -260,7 +260,7 @@ export class GpuDetailsWindow {
 		const font = editorViewState.font;
 		model.setMinimumSize(editorViewState.charAdvance * 28 + 12, font.lineHeight * 12 + 44);
 		if (!input.detailsPlacementInitialized) {
-			const area = this.getWorkArea(), width = Math.max(model.minimumWidth, Math.round((area.right - area.left) * 0.70));
+			const area = this.workArea, width = Math.max(model.minimumWidth, Math.round((area.right - area.left) * 0.70));
 			const height = Math.max(model.minimumHeight, Math.round((area.bottom - area.top) * 0.72)), bottom = input.layout.bottom - 4;
 			model.setRequestedBounds({ left: area.right - width - 4, top: bottom - height, right: area.right - 4, bottom });
 			input.detailsPlacementInitialized = true;
@@ -278,7 +278,7 @@ export class GpuDetailsWindow {
 		if (!model.collapsed) {
 			this.layoutClient(model.client); this.contentActions.update(); if (this.activePage === 'properties') this.inspector.update();
 			const item = this.contentActions.tooltipItem;
-			if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+			if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, font.renderFont(), measureTextRange, measureText, this.workArea);
 			else this.tooltip.hide();
 		}
 		this.window.update();

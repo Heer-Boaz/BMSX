@@ -444,7 +444,7 @@ function feedbackFixture(t: TestContext, property: Partial<InspectedProperty> = 
 	const items: InspectedProperty[] = [item, ...Array.from({ length: 8 }, (_, index) => ({ label: `Scalar ${index}`, value: '0',
 		compact: true, depth: 0, description: '', warning: false }))];
 	f.inspector.show({ title: 'Runtime', items, dismissible: false, canOpenSource: () => false, openSource() {} }, false);
-	f.inspector.attachFeedback(surfaces, owner, () => area);
+	f.inspector.attachFeedback(surfaces, owner, area);
 	let font = new Font({ variant: 'msx' }), measurements = 0;
 	const measure = (text: string, start: number, end: number) => { measurements++; return font.measure(text.slice(start, end)); };
 	const measureText = (text: string) => { measurements++; return font.measure(text); };

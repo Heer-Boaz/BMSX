@@ -18,7 +18,7 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 	private hoveredTree: WorkbenchPropertyTree<WorkbenchPropertyElement> | undefined;
 	private feedback: WorkbenchTooltip | undefined;
 	private feedbackOwner: WorkbenchSurface | undefined;
-	private feedbackArea: (() => Readonly<RectBounds>) | undefined;
+	private feedbackArea: Readonly<RectBounds> | undefined;
 	private feedbackFocus: InputFocusTarget | undefined;
 	private unbindBlur: (() => void) | undefined;
 	private unbindFocus: (() => void) | undefined;
@@ -38,9 +38,9 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 	public constructor(private readonly hover: PointerHoverService) {}
 
 	/** Feedback belongs to the actual editor attachment, independent of source/edit commands. */
-	public attachFeedback(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>, focus: InputFocusTarget): void {
-		this.feedback = new WorkbenchTooltip(); this.feedbackOwner = owner; this.feedbackArea = getWorkArea; this.feedbackFocus = focus;
-		this.feedback.attach(surfaces, owner, getWorkArea);
+	public attachFeedback(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, focus: InputFocusTarget): void {
+		this.feedback = new WorkbenchTooltip(); this.feedbackOwner = owner; this.feedbackArea = workArea; this.feedbackFocus = focus;
+		this.feedback.attach(surfaces, owner, workArea);
 		this.unbindBlur = focus.onDidBlur(() => this.hideFeedback());
 		this.unbindFocus = focus.onDidFocus(() => { if (this.tree !== undefined) this.keyboardSelection(this.tree); });
 	}
@@ -85,7 +85,7 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 				+ (element.description.length === 0 ? '' : '\n' + element.description);
 		}
 		write_rect_bounds(this.feedbackAnchor, layout.contentLeft, top, layout.contentRight, top + layout.rowHeight);
-		this.feedback.show(this.feedbackText, this.feedbackAnchor, layout.font!, layout.measure!, this.measureFeedback, this.feedbackArea!());
+		this.feedback.show(this.feedbackText, this.feedbackAnchor, layout.font!, layout.measure!, this.measureFeedback, this.feedbackArea!);
 	}
 
 	public dispose(): void { this.clear(); this.feedback?.detach(); this.unbindBlur?.(); this.unbindFocus?.(); }

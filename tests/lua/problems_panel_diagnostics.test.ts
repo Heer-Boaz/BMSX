@@ -40,7 +40,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) 
 		getBounds: () => bounds, getClip: () => area, isVisible: () => controller.isVisible, draw: () => controller.draw(bounds) });
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
-	controller.attach(surfaces, owner, () => area, commands); controller.show();
+	controller.attach(surfaces, owner, area, commands); controller.show();
 	const feedback: WorkbenchSurface = attachments.mock.calls.at(-1)!.result;
 	const models = [new EditorTextModel({ domain: 0, path: 'scenes/intro.lua', source: { type: 'lua', resid: 'intro' } }, 'lua', source),
 		new EditorTextModel({ domain: 1, path: 'scenes/cart.lua', source: { type: 'lua', resid: 'cart' } }, 'lua', source)];

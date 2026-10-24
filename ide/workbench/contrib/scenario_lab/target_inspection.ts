@@ -51,10 +51,10 @@ export class ScenarioTargetInspection {
 
 	public constructor(private readonly parent: InputFocusTarget, private readonly commands: IdeCommandController,
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
-		private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly workArea: Readonly<RectBounds>) {
 		this.focus = inputFocus.createTarget(parent);
 		this.details = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focus);
-		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focus, () => this.focus.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = () => this.actionTooltip.hide();
 		this.focus.next = this.actions.focusTarget; this.focus.previous = this.actions.focusTarget;
@@ -101,7 +101,7 @@ export class ScenarioTargetInspection {
 		}
 		this.actions.update();
 		const hint = this.actions.tooltipItem;
-		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, renderFont, measureTextRange, measureText, this.getWorkArea());
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, renderFont, measureTextRange, measureText, this.workArea);
 		else this.actionTooltip.hide();
 		layoutWorkbenchPropertyTree(this.model.tree, renderFont, measureTextRange, bounds.left, top, bounds.right, bounds.bottom);
 	}

@@ -28,7 +28,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', width = 240) {
 		isEnabled: (command, target) => target!.commandContext.getCommand(command)!.isEnabled(),
 		execute: (command, target) => target!.getCommand(command)!.run(),
 	};
-	controller.header.attach(surfaces, owner, () => area, commands);
+	controller.header.attach(surfaces, owner, area, commands);
 	controller.show(); controller.prepareLayout(bounds);
 	const panes = createTestEditorPanes();
 	const unbindKeyboard = controller.focusTarget.bindKeyboard(event => controller.handleKeyboard(event, panes));

@@ -114,16 +114,16 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController,
 		private readonly frameNavigation: RuntimeFrameNavigation,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>,
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, workArea: Readonly<RectBounds>,
 	) {
 		super(resourcePanel);
 		this.sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, pointerHover, this.graph.focusTarget,
-			contextMenu, surfaces, paneSurface, getWorkArea);
+			contextMenu, surfaces, paneSurface, workArea);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionBar.onDidOpenOverflow = lifetime => {
 			lifetime.add({ dispose: this.input.view.source.onDidInvalidate(() => this.contextMenu.hide()) });
 		};
-		this.propertyEdit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, getWorkArea);
+		this.propertyEdit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, workArea);
 		for (const target of [this.focusTarget, this.inspector.focusTarget]) {
 			target.registerCommand('runtime.pause', { isEnabled: () => this.input.runtimeInspection !== undefined,
 				run: () => { this.input.runtimeInspection!.running = false; } });

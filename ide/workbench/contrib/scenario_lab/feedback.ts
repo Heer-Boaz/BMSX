@@ -26,11 +26,11 @@ export class ScenarioLabRowFeedback {
 	public constructor(
 		surfaces: WorkbenchSurfaceService,
 		private readonly owner: WorkbenchSurface,
-		private readonly getWorkArea: () => Readonly<RectBounds>,
+		private readonly workArea: Readonly<RectBounds>,
 		private readonly testsFocus: InputFocusTarget,
 		private readonly resultsFocus: InputFocusTarget,
 	) {
-		this.tooltip.attach(surfaces, owner, getWorkArea);
+		this.tooltip.attach(surfaces, owner, workArea);
 		this.unbindTestsBlur = testsFocus.onDidBlur(() => this.clear());
 		this.unbindResultsBlur = resultsFocus.onDidBlur(() => this.clear());
 	}
@@ -79,6 +79,6 @@ export class ScenarioLabRowFeedback {
 		const top = layout.contentTop + (index - (pane.scroll | 0)) * layout.rowHeight;
 		if (top < layout.contentTop || top + layout.rowHeight > layout.contentBottom) { this.clear(); return; }
 		write_rect_bounds(this.anchor, layout.contentLeft, top, layout.contentRight, top + layout.rowHeight);
-		this.tooltip.show(row.feedbackText, this.anchor, font, measure, measureText, this.getWorkArea());
+		this.tooltip.show(row.feedbackText, this.anchor, font, measure, measureText, this.workArea);
 	}
 }

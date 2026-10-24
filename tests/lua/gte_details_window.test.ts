@@ -74,7 +74,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', withSource = f
 	const details = new GteDetailsWindow(input, {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
-	}, surfaces, owner, origin, () => area, quickInput, contextMenu, source, () => { sourceOpens++; });
+	}, surfaces, owner, origin, area, quickInput, contextMenu, source, () => { sourceOpens++; });
 	const format = details.presentation.details.bind(details.presentation);
 	t.mock.method(details.presentation, 'details', (...args: Parameters<typeof format>) => { formats++; return format(...args); });
 	t.after(() => { details.dispose(); quickInput.dispose(); contextMenu.dispose(); source.clear(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); history.dispose(); models.clear(); });
@@ -337,7 +337,7 @@ return true`;
 	const reopened = new GteDetailsWindow(input, {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
-	}, f.surfaces, f.owner, f.origin, () => f.area, f.quickInput, f.contextMenu, f.source, () => assert.fail('reading-position restore is not Source navigation'));
+	}, f.surfaces, f.owner, f.origin, f.area, f.quickInput, f.contextMenu, f.source, () => assert.fail('reading-position restore is not Source navigation'));
 	t.after(() => reopened.dispose());
 	reopened.show();
 	assert.equal(input.diagram.scrollTop, reading.top, 'a fresh controller restores retained source coordinates, not the old font pixels');

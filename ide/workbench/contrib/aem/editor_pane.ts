@@ -49,16 +49,16 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 	private captionRevision = -1;
 	private caption = '';
 	public constructor(resources: ResourcePanelController, private readonly controller: AemEditorController, private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super(resources);
-		this.pointer.attachFeedback(surfaces, paneSurface, getWorkArea, this.focusTarget);
-		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
+		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = lifetime => {
 			this.pointer.hideFeedback(); this.actionTooltip.hide();
 			lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
 		};
-		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.text, surfaces, paneSurface, getWorkArea);
+		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.text, surfaces, paneSurface, workArea);
 		this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('aem.edit', { isEnabled: () => !this.input.workingCopy.readOnly && this.input.tree.rows[this.input.tree.selectionIndex]?.element.inlineEditable === true,
@@ -108,7 +108,7 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 		this.edit.update();
 		this.actions.update();
 		const hint = this.actions.tooltipItem;
-		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, font, measureTextRange, measureText, this.getWorkArea());
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, font, measureTextRange, measureText, this.workArea);
 		else this.actionTooltip.hide();
 	}
 	public draw(): void {

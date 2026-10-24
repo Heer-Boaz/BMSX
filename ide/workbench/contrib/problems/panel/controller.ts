@@ -57,7 +57,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	private fixedHeightPx: number = null;
 	private lastAvailableWidth = 1;
 	private readonly feedback = new WorkbenchTooltip();
-	private feedbackArea: (() => Readonly<RectBounds>) | undefined;
+	private feedbackArea: Readonly<RectBounds> | undefined;
 	private unbindFeedbackBlur: (() => void) | undefined;
 	public emptyMessage = 'No resources checked.';
 
@@ -65,9 +65,9 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		this.focusTarget.clipboard = { readOnly: true, copy: () => this.selectionIndex < 0 ? null : this.getItemLayout(this.selectionIndex).feedback };
 	}
 
-	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>, commands: EditorCommandRunner): void {
-		this.header.attach(surfaces, owner, getWorkArea, commands);
-		this.feedback.attach(surfaces, owner, getWorkArea); this.feedbackArea = getWorkArea;
+	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, commands: EditorCommandRunner): void {
+		this.header.attach(surfaces, owner, workArea, commands);
+		this.feedback.attach(surfaces, owner, workArea); this.feedbackArea = workArea;
 		this.unbindFeedbackBlur = this.focusTarget.onDidBlur(() => this.feedback.hide());
 	}
 
@@ -221,7 +221,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		if (top >= layout.contentBottom) { this.feedback.hide(); return; }
 		const item = this.getItemLayout(index);
 		// Disclose outside the part, not over a neighboring diagnostic card.
-		this.feedback.show(item.feedback, bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.feedbackArea());
+		this.feedback.show(item.feedback, bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.feedbackArea);
 	}
 
 	public handlePointer(

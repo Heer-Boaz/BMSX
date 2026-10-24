@@ -61,7 +61,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	inputFocus.workbenchScope.commands = commands; origin.focus();
-	let key = new RomMapKeyWindow(input, commands, surfaces, owner, origin, () => area);
+	let key = new RomMapKeyWindow(input, commands, surfaces, owner, origin, area);
 	const overlay = createHostOverlayFixture(384, 288), editor = { surfaces, clipboardTarget: undefined } as CartEditor;
 	const press = (code: string, modifiers = KeyModifier.none) => handleEditorInput(new KeyInputEvent(code, modifiers), editor);
 	const draw = () => {
@@ -84,7 +84,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 	t.after(() => { key.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); unbind(); surfaces.dispose(); input.dispose();
 		inputFocus.workbenchScope.commands = previousCommands; colors.setIdeThemeVariant(previousTheme); });
 	return { input, surfaces, owner, origin, unrelated, commands, press, draw, clickAction, get key() { return key; },
-		recreate() { key.dispose(); key = new RomMapKeyWindow(input, commands, surfaces, owner, origin, () => area); } };
+		recreate() { key.dispose(); key = new RomMapKeyWindow(input, commands, surfaces, owner, origin, area); } };
 }
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {

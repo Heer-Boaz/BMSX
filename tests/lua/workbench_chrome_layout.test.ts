@@ -7,7 +7,7 @@ import { editorFeedbackState, showEditorMessage, updateEditorMessage } from '../
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { api } from '../../ide/runtime/overlay_api';
-import { getWorkbenchEditorBounds, getStatusMessageLines, topMargin, refreshWorkbenchLayout, updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { getWorkbenchEditorBounds, getWorkbenchWorkArea, getStatusMessageLines, topMargin, refreshWorkbenchLayout, updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { renderTopBar } from '../../ide/workbench/render/top_bar';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { layoutTopBar } from '../../ide/workbench/ui/top_bar/layout';
@@ -189,6 +189,33 @@ test('feedback expiry and font wrapping publish parent bounds before full-width 
 	assert.equal(child.bottom, 288 - editorViewState.baseBottomMargin);
 	assert.deepEqual(getStatusMessageLines(), []);
 	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), false, 'unchanged parent layout has no child rebuild');
+});
+
+test('the root layout publishes viewport, font and status changes into one borrowed work-area rectangle', t => {
+	fixture(t); refreshWorkbenchLayout();
+	const area = getWorkbenchWorkArea(), tinyTop = area.top;
+	assert.equal(area.left, 0); assert.equal(area.right, 384);
+	assert.equal(area.bottom, 288 - editorViewState.baseBottomMargin);
+	editorViewState.viewportWidth = 128; editorViewState.viewportHeight = 240;
+	refreshWorkbenchLayout();
+	assert.equal(getWorkbenchWorkArea(), area);
+	assert.equal(area.right, 128); assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin);
+	showEditorMessage('This actual status message changes the available root work area when it wraps across lines.', 'info', 1);
+	refreshWorkbenchLayout();
+	assert.equal(getWorkbenchWorkArea(), area); assert.ok(getStatusMessageLines().length > 1);
+	assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin - getStatusMessageLines().length * editorViewState.lineHeight - 4);
+	const tinyBottom = area.bottom;
+	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); refreshWorkbenchLayout();
+	assert.equal(getWorkbenchWorkArea(), area);
+	assert.equal(area.top, topMargin()); assert.ok(area.top > tinyTop);
+	assert.ok(area.bottom < tinyBottom, 'the same borrowed object exposes the larger actual font/status budget');
+	assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin - getStatusMessageLines().length * editorViewState.lineHeight - 4);
+	updateEditorMessage(1); refreshWorkbenchLayout();
+	assert.equal(getWorkbenchWorkArea(), area); assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin);
+	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null); refreshWorkbenchLayout();
+	assert.equal(getWorkbenchWorkArea(), area);
+	assert.equal(area.top, tinyTop); assert.equal(area.right, 384); assert.equal(area.bottom, 288 - editorViewState.baseBottomMargin);
 });
 
 

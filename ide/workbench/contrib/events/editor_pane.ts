@@ -68,11 +68,11 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 	private filterSession: DisposableStore | undefined;
 	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
-		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super(resources);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = () => { this.tooltip.hide(); this.keyboardFeedback = false; };
-		this.tooltip.attach(surfaces, owner, getWorkArea);
+		this.tooltip.attach(surfaces, owner, workArea);
 		this.unbindListBlur = this.scroll.focusTarget.onDidBlur(() => { this.keyboardFeedback = false; this.tooltip.hide(); });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled,
 			run: () => { this.running = commands.transport.togglePlayback(); } });
@@ -155,7 +155,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 			}
 			case 'events.details': {
 				const record = input.projection.rows[input.selected];
-				this.inspector.attachFeedback(this.surfaces, this.owner, this.getWorkArea);
+				this.inspector.attachFeedback(this.surfaces, this.owner, this.workArea);
 				this.inspector.show({ title: `Event #${record.sequence}`, items: eventProperties(record), canOpenSource: () => false, openSource: () => {} }); break;
 			}
 			case 'events.more': this.actions.openOverflow(); break;
@@ -236,7 +236,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		const input = this.input, { layout, viewport } = input, font = layout.font!.renderFont();
 		const action = this.actions.tooltipItem;
 		if (action !== undefined) {
-			this.tooltip.show(action.tooltip, action.bounds, font, measureTextRange, measureText, this.getWorkArea()); return;
+			this.tooltip.show(action.tooltip, action.bounds, font, measureTextRange, measureText, this.workArea); return;
 		}
 		const pointer = this.hovered && pointerHover.has(this) && point_in_rect(this.pointerX, this.pointerY, viewport.bounds);
 		const index = this.keyboardFeedback && this.scroll.focusTarget.hasFocus ? input.selected
@@ -250,7 +250,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 				this.feedbackText = `${row.label.fullEvent}\n#${record.sequence} | T${record.timeline} | tick ${record.completedTick}`;
 			}
 			write_rect_bounds(this.feedbackBounds, layout.eventLeft, row.top, layout.eventLeft + layout.eventWidth, row.top + layout.rowHeight);
-			this.tooltip.show(this.feedbackText, this.feedbackBounds, font, measureTextRange, measureText, this.getWorkArea()); return;
+			this.tooltip.show(this.feedbackText, this.feedbackBounds, font, measureTextRange, measureText, this.workArea); return;
 		}
 		this.tooltip.hide();
 	}

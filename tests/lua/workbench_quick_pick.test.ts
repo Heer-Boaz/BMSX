@@ -56,7 +56,7 @@ test('popup origins and cancellation belong to the containing scope after an inl
 	const surfaces = new WorkbenchSurfaceService(), area = { left: 0, top: 24, right: 384, bottom: 274 };
 	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope, isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw() {} });
-	const edit = new WorkbenchPropertyEdit<string>(parent, value => value, surfaces, owner, () => area);
+	const edit = new WorkbenchPropertyEdit<string>(parent, value => value, surfaces, owner, area);
 	t.after(() => { menu.dispose(); edit.dispose(); surfaces.dispose(); model.dispose(); });
 	const tree = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
 	const row = appendWorkbenchTreeNode<WorkbenchPropertyElement>(tree, null, { kind: 'property', label: 'value', value: '20', description: '', warning: false,

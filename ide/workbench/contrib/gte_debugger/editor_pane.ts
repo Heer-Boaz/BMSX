@@ -68,7 +68,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
 		private readonly contextMenu: ContextMenuController, sources: RuntimeSourceState,
 		private readonly sourceNavigation: EditorNavigationController, private readonly surfaces: WorkbenchSurfaceService,
-		private readonly paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super(resources);
 		this.source = new CapturedLuaSourceBinding(editorTextModelService, sources);
 		this.unbindSource = this.source.onDidChange(() => this.retireContextMenu());
@@ -105,9 +105,9 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.labels.clear();
 		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.list);
 		this.unbindSelection = this.input.onWillChangeSelection(() => { this.retireContextMenu(); this.actions.cancelCommand('gte.details'); });
-		this.tooltip.attach(this.surfaces, this.paneSurface, this.getWorkArea);
+		this.tooltip.attach(this.surfaces, this.paneSurface, this.workArea);
 		const details = this.details = new GteDetailsWindow(this.input, this.commands, this.surfaces, this.paneSurface, this.scroll.focusTarget,
-			this.getWorkArea, this.quickInput, this.contextMenu, this.source, () => this.openSource());
+			this.workArea, this.quickInput, this.contextMenu, this.source, () => this.openSource());
 		for (const target of [details.window.focusTarget, details.inspector.focusTarget, details.diagramControl.focusTarget, details.viewActions.focusTarget])
 			for (const command of [...COMMANDS, 'pause', 'runtime.pause', 'runtime.resume', 'stepFrameBack', 'stepFrame'] as const)
 				if (command !== 'gte.source' && command !== 'gte.view') target.registerCommand(command, this.focusTarget.getCommand(command)!);
@@ -202,7 +202,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		this.source.update();
 		const hint = this.actions.tooltipItem;
 		if (hint === undefined) this.tooltip.hide();
-		else this.tooltip.show(hint.tooltip, hint.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		else this.tooltip.show(hint.tooltip, hint.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.workArea);
 		if (layoutChanged || this.emptyFiltered !== (input.filter !== '')) {
 			this.emptyFiltered = input.filter !== ''; this.emptyLines.length = 0;
 			writeWrappedMeasuredLine(this.emptyLines, this.emptyFiltered ? 'No matching GTE events.' : 'No GTE events observed. Play or step the existing runtime.', list.bounds.right - list.bounds.left - 8, measureTextRange);

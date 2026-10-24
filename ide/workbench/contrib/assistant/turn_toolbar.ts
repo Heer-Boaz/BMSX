@@ -22,7 +22,7 @@ export class AssistantTurnToolbar {
 
 	public constructor(commands: EditorCommandRunner, parent: InputFocusTarget, focusContent: () => void,
 		private readonly menu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
-		private readonly owner: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		this.control = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, parent, focusContent, menu);
 		this.control.onDidOpenOverflow = lifetime => {
 			this.tooltip.hide();
@@ -34,7 +34,7 @@ export class AssistantTurnToolbar {
 		this.clearInput();
 		this.input = input;
 		this.control.setInput(input.turnActions, context);
-		this.tooltip.attach(this.surfaces, this.owner, this.getWorkArea);
+		this.tooltip.attach(this.surfaces, this.owner, this.workArea);
 		this.unbindProposal = input.selection.onWillChangeProposal(() => {
 			this.control.cancelCommand('assistant.review');
 			this.control.cancelCommand(WORKBENCH_ACTION_BAR_OVERFLOW);
@@ -59,7 +59,7 @@ export class AssistantTurnToolbar {
 		this.control.update();
 		const item = this.control.tooltipItem;
 		if (item !== undefined && !this.menu.visible) this.tooltip.show(item.tooltip, item.bounds,
-			editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+			editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.tooltip.hide();
 	}
 

@@ -69,9 +69,9 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	};
 	private readonly beforeFieldHide = (axis: number): void => { this.controls[axis].field.focusTarget.cancelInput(); };
 	public constructor(resources: ResourcePanelController, controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super(resources);
-		this.tooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.tooltip.attach(surfaces, paneSurface, workArea);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'map';
 		this.gridFocus.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline';
 		this.gridFocus.commandContext = this.focusTarget;
@@ -153,9 +153,9 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		else if (this.input.layout.mode === 'outline' && this.gridFocus.hasFocus) this.focusTarget.focus();
 		this.actions.update();
 		const hint = this.actions.tooltipItem, layout = this.input.layout;
-		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else if (this.headerHovered !== undefined) this.tooltip.show(this.headerHovered === 'source' ? this.input.workingCopy.resource.path : layout.selectionLabel,
-			this.headerHovered === 'source' ? layout.sourceBounds : layout.selectionBounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+			this.headerHovered === 'source' ? layout.sourceBounds : layout.selectionBounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.tooltip.hide();
 		if (this.input.layout.mode !== 'outline' && this.input.selected !== undefined) for (let axis = 0; axis < this.controls.length; axis++) {
 			const bounds = this.input.fieldBounds[axis];

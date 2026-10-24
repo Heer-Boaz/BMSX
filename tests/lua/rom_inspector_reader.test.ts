@@ -80,7 +80,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('a.lua', 1), createScenarioTestSourceRecord('b.lua', 2)]);
 	const opened: { domain: number; path: string }[] = [];
 	const navigation = { openResource: async (resource: { domain: number; path: string }) => { opened.push(resource); return 1; } } as EditorNavigationController;
-	const createReader = () => new RomEntryInspectorWindow(input, commands, sources, navigation, quickInput, contextMenu, surfaces, owner, origin, () => area);
+	const createReader = () => new RomEntryInspectorWindow(input, commands, sources, navigation, quickInput, contextMenu, surfaces, owner, origin, area);
 	let reader = createReader();
 	const overlay = createHostOverlayFixture(384, 288);
 	const key = (code: string, down: boolean, modifiers = KeyModifier.none) => inputFocus.handleKeyboard(new KeyInputEvent(code, modifiers, false, down));

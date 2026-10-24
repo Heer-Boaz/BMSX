@@ -70,7 +70,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private boundGraph: ActorStateGraph | undefined;
 	public constructor(resourcePanel: ResourcePanelController, private readonly commands: EditorCommandRunner,
 		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
-		private readonly paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super(resourcePanel);
 		this.focusTarget.scope.surfaceScope = paneSurface.captureScope;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
@@ -150,7 +150,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		const input = this.input;
 		this.detailsWindow = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, this.surfaces, this.commands, {
 			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: this.paneSurface,
-			focusReturn: this.focusTarget, getWorkArea: this.getWorkArea,
+			focusReturn: this.focusTarget, workArea: this.workArea,
 			getTitleTooltip: () => input.details!.title,
 			content: {
 				draw: () => drawWorkbenchPropertyInspector(this.inspector),
@@ -161,7 +161,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			retireContentInput: () => this.inspector.hide(),
 			restoreContentInput: () => {
 				this.controller.inspect(input, this.inspector, false, this.focusTarget);
-				this.inspector.attachFeedback(this.surfaces, this.detailsWindow.clientSurface!, this.getWorkArea);
+				this.inspector.attachFeedback(this.surfaces, this.detailsWindow.clientSurface!, this.workArea);
 				this.restoreDetailsScroll = true;
 			},
 			focusContent: () => this.inspector.focusTarget.focus(),
@@ -210,7 +210,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		const minimumWidth = editorViewState.charAdvance * 32 + 12, minimumHeight = font.lineHeight * 7 + 16;
 		model.setMinimumSize(minimumWidth, minimumHeight);
 		if (input.detailsPlacementInitialized) return;
-		const area = this.getWorkArea(), preview = input.previewBounds;
+		const area = this.workArea, preview = input.previewBounds;
 		const width = Math.max(minimumWidth, (area.right - area.left) / 2);
 		const height = Math.max(minimumHeight, (area.bottom - area.top) / 2);
 		model.setRequestedBounds({ left: preview.right - 4 - width, top: preview.bottom - 4 - height,
@@ -260,7 +260,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		super.activate();
 		this.createDetailsWindow();
 		this.renderedTopology = -1;
-		this.actionTooltip.attach(this.surfaces, this.paneSurface, this.getWorkArea);
+		this.actionTooltip.attach(this.surfaces, this.paneSurface, this.workArea);
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.split.setInput(this.input.split);
 		this.timelineSlider.setInput(this.input.timeline.slider);
@@ -352,7 +352,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.actions.update();
 		const tooltipItem = this.actions.tooltipItem;
 		if (tooltipItem !== undefined) this.actionTooltip.show(tooltipItem.tooltip, tooltipItem.bounds,
-			editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+			editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.actionTooltip.hide();
 		this.inspector.update();
 		// The host publishes this pane's transport-aware bounds before update, not activation.

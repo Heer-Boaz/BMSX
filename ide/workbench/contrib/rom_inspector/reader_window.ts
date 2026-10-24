@@ -78,9 +78,9 @@ export class RomEntryInspectorWindow {
 		private readonly sources: RuntimeSourceState, private readonly navigation: EditorNavigationController,
 		private readonly quickInput: QuickInputController, private readonly contextMenu: ContextMenuController,
 		private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
-		private readonly focusReturn: InputFocusTarget, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly focusReturn: InputFocusTarget, private readonly workArea: Readonly<RectBounds>) {
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
-			model: input.readerWindow, actionBar: input.readerActions, lifetimeOwner: owner, focusReturn, getWorkArea,
+			model: input.readerWindow, actionBar: input.readerActions, lifetimeOwner: owner, focusReturn, workArea,
 			getTitleTooltip: () => this.titleTooltip,
 			content: {
 				draw: () => this.draw(),
@@ -260,10 +260,10 @@ export class RomEntryInspectorWindow {
 				this.inspector.model.restoreViewState(input.readerInfoView);
 				this.infoRevision = document.rangeRevision;
 			}
-			this.inspector.attachFeedback(this.surfaces, this.window.clientSurface!, this.getWorkArea);
+			this.inspector.attachFeedback(this.surfaces, this.window.clientSurface!, this.workArea);
 		}
 		this.viewActions.setInput(input.readerViewActions, this.window.focusTarget);
-		this.tooltip.attach(this.surfaces, this.window.clientSurface!, this.getWorkArea);
+		this.tooltip.attach(this.surfaces, this.window.clientSurface!, this.workArea);
 		if (viewChanged) this.bindFocusOrder();
 		if (viewChanged && (contentHadFocus || this.focusAfterClientChange)) this.focusContent();
 		this.focusAfterClientChange = false;
@@ -343,7 +343,7 @@ export class RomEntryInspectorWindow {
 			const width = editorViewState.charAdvance * 24 + 16;
 			model.setMinimumSize(width, font.lineHeight * 7 + 32);
 			if (!input.readerPlacementInitialized) {
-				const area = this.getWorkArea(), requestedWidth = Math.max(width, Math.round((area.right - area.left) * 0.65));
+				const area = this.workArea, requestedWidth = Math.max(width, Math.round((area.right - area.left) * 0.65));
 				const height = Math.max(model.minimumHeight, Math.round((area.bottom - area.top) * 0.75));
 				model.setRequestedBounds({ left: area.right - requestedWidth - 4, top: area.bottom - height - 4, right: area.right - 4, bottom: area.bottom - 4 });
 				input.readerPlacementInitialized = true;
@@ -357,7 +357,7 @@ export class RomEntryInspectorWindow {
 			this.viewActions.update();
 			if (this.attachedView === 'info') this.inspector.update();
 			const item = this.viewActions.tooltipItem;
-			if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+			if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, font.renderFont(), measureTextRange, measureText, this.workArea);
 			else this.tooltip.hide();
 		}
 		this.window.update();

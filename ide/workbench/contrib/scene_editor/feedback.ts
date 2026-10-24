@@ -23,8 +23,8 @@ export class SceneOutlineFeedback {
 	private pointerY = -1;
 
 	public constructor(surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface,
-		private readonly getWorkArea: () => Readonly<RectBounds>, private readonly focus: InputFocusTarget) {
-		this.tooltip.attach(surfaces, owner, getWorkArea);
+		private readonly workArea: Readonly<RectBounds>, private readonly focus: InputFocusTarget) {
+		this.tooltip.attach(surfaces, owner, workArea);
 		this.unbindBlur = focus.onDidBlur(() => this.clear());
 	}
 
@@ -63,6 +63,6 @@ export class SceneOutlineFeedback {
 		const layout = outline.layout, top = layout.contentTop + (index - (outline.scroll | 0)) * layout.rowHeight;
 		if (top < layout.contentTop || top + layout.rowHeight > layout.contentBottom) { this.clear(); return; }
 		write_rect_bounds(this.anchor, layout.contentLeft, top, layout.contentRight, top + layout.rowHeight);
-		this.tooltip.show(row.element.identity, this.anchor, font, measure, measureText, this.getWorkArea());
+		this.tooltip.show(row.element.identity, this.anchor, font, measure, measureText, this.workArea);
 	}
 }

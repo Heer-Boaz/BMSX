@@ -81,12 +81,12 @@ export class GteDetailsWindow {
 
 	public constructor(private readonly input: GteDebuggerInput, commands: EditorCommandRunner,
 		private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
-		private readonly focusReturn: InputFocusTarget, private readonly getWorkArea: () => Readonly<RectBounds>,
+		private readonly focusReturn: InputFocusTarget, private readonly workArea: Readonly<RectBounds>,
 		private readonly quickInput: QuickInputController, private readonly contextMenu: ContextMenuController,
 		private readonly source: CapturedLuaSourceBinding, private readonly openSource: () => void) {
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
 			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: owner,
-			focusReturn, getWorkArea, getTitleTooltip: () => this.titleTooltip,
+			focusReturn, workArea, getTitleTooltip: () => this.titleTooltip,
 			content: {
 				draw: () => this.draw(),
 				handlePointer: snapshot => {
@@ -175,7 +175,7 @@ export class GteDetailsWindow {
 		if (input.inspectorPage === 'properties') this.refreshDocument();
 		else this.presentation.update(input.selected, input.selectionRevision, input.view, input.plane);
 		this.viewActions.setInput(input.inspectorActions, this.window.focusTarget);
-		this.tooltip.attach(this.surfaces, this.window.clientSurface!, this.getWorkArea);
+		this.tooltip.attach(this.surfaces, this.window.clientSurface!, this.workArea);
 		const target = input.inspectorPage === 'properties' ? this.inspector.focusTarget : this.diagramControl.focusTarget;
 		this.window.actionFocusTarget.next = this.viewActions.focusTarget;
 		this.viewActions.focusTarget.previous = this.window.actionFocusTarget; this.viewActions.focusTarget.next = target;
@@ -190,7 +190,7 @@ export class GteDetailsWindow {
 		const minimumWidth = editorViewState.charAdvance * 32 + 12, minimumHeight = font.lineHeight * 12 + 48;
 		model.setMinimumSize(minimumWidth, minimumHeight);
 		if (input.detailsPlacementInitialized) return;
-		const area = this.getWorkArea(), width = Math.max(minimumWidth, Math.round((area.right - area.left) * 0.80));
+		const area = this.workArea, width = Math.max(minimumWidth, Math.round((area.right - area.left) * 0.80));
 		const height = Math.max(minimumHeight, Math.round((area.bottom - area.top) * 0.60));
 		const bottom = this.input.layout.bottom - 4, right = area.right - 4;
 		model.setRequestedBounds({ left: right - width, top: bottom - height, right, bottom });
@@ -264,7 +264,7 @@ export class GteDetailsWindow {
 			this.inspector.show({ title: 'GTE Details', items: this.items, dismissible: false, focusReturn: this.focusReturn,
 				canOpenSource: item => item === this.sourceRow && this.documentRevision === input.selectionRevision && this.canOpenSource(),
 				openSource: () => this.openSource() }, false);
-			this.inspector.attachFeedback(this.surfaces, this.window.clientSurface!, this.getWorkArea);
+			this.inspector.attachFeedback(this.surfaces, this.window.clientSurface!, this.workArea);
 			this.inspector.model.restoreViewState(input.detailsView);
 		} else if (changed) { this.inspector.replaceItems(this.items); this.inspector.model.restoreViewState(input.detailsView); }
 		else if (sourceChanged) this.inspector.updateItems(this.items, Object.is);
@@ -313,7 +313,7 @@ export class GteDetailsWindow {
 			this.diagramControl.lineStep = editorViewState.lineHeight;
 			const item = this.viewActions.tooltipItem;
 			if (item === undefined) this.tooltip.hide();
-			else this.tooltip.show(item.tooltip, item.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+			else this.tooltip.show(item.tooltip, item.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		}
 		this.window.update();
 	}

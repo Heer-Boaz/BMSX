@@ -86,12 +86,12 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService,
 		paneSurface: WorkbenchSurface,
-		private readonly getWorkArea: () => Readonly<RectBounds>,
+		private readonly workArea: Readonly<RectBounds>,
 	) {
 		super(resourcePanel);
-		this.targetInspection = new ScenarioTargetInspection(this.resultsFocus, commands, contextMenu, surfaces, paneSurface, getWorkArea);
-		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
-		this.rowFeedback = new ScenarioLabRowFeedback(surfaces, paneSurface, getWorkArea, this.focusTarget, this.resultsFocus);
+		this.targetInspection = new ScenarioTargetInspection(this.resultsFocus, commands, contextMenu, surfaces, paneSurface, workArea);
+		this.actionTooltip.attach(surfaces, paneSurface, workArea);
+		this.rowFeedback = new ScenarioLabRowFeedback(surfaces, paneSurface, workArea, this.focusTarget, this.resultsFocus);
 		const inspectStop = {
 			isEnabled: () => this.controller.runs.debugger?.stopped === true && this.targetInspection.model === undefined,
 			run: () => { this.inspector.hide(); this.targetInspection.show(this.controller.runs.debugger!.inspect()); },
@@ -175,7 +175,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.actionBar.update();
 		const hint = this.actionBar.tooltipItem;
 		if (hint !== undefined && !this.inspector.visible && this.targetInspection.model === undefined)
-			this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+			this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.actionTooltip.hide();
 		if (hint !== undefined || this.inspector.visible || this.targetInspection.model !== undefined) this.rowFeedback.clear();
 		else this.rowFeedback.update(editorViewState.font.renderFont(), measureTextRange, measureText);

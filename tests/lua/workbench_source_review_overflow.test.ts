@@ -35,7 +35,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny') {
 			getBounds: () => menu.model.bounds, getClip: () => area, isVisible: () => menu.visible, draw() {},
 			onRetire: () => { if (!lifetime.isDisposed) { capture.cancelScope(menu.pointerScope); menu.hide(); } } }));
 	});
-	const review = new WorkbenchSourceEditReview(focus, capture, hover, parent, menu, surfaces, owner, () => area);
+	const review = new WorkbenchSourceEditReview(focus, capture, hover, parent, menu, surfaces, owner, area);
 	const models = new EditorTextModelService();
 	const model = models.retain({ domain: 0, path: 'shared_review.lua', source: { type: 'lua', resid: 'shared_review' } }, 'lua', "return 'before'");
 	let font = new Font({ variant }), measurements = 0, applied = 0, opened = -1, time = 0;

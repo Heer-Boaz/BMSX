@@ -52,17 +52,17 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 	public constructor(resources: ResourcePanelController, private readonly controller: LuaProgramController,
 		private readonly commands: IdeCommandController, private readonly tester: ActionStringTester,
 		private readonly frameNavigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super(resources);
-		this.pointer.attachFeedback(surfaces, paneSurface, getWorkArea, this.focusTarget);
-		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
+		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = lifetime => {
 			const input = this.input;
 			input.running = false; this.pointer.hideFeedback(); this.actionTooltip.hide();
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => contextMenu.hide()) });
 		};
-		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, getWorkArea);
+		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, workArea);
 		this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('luaProgram.edit', { isEnabled: () => {
@@ -159,7 +159,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		this.edit.update();
 		this.actions.update();
 		const hint = this.actions.tooltipItem;
-		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.actionTooltip.hide();
 	}
 	public draw(): void {

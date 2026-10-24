@@ -24,7 +24,7 @@ function fixture(t: TestContext, count = 36) {
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope,
 		getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });
-	const review = new WorkbenchSourceEditReview(focus, capture, hover, parent, menu, surfaces, owner, () => area);
+	const review = new WorkbenchSourceEditReview(focus, capture, hover, parent, menu, surfaces, owner, area);
 	const font = new Font({ variant: 'tiny' });
 	let measurements = 0;
 	const measure = (text: string, start: number, end: number) => { measurements += 1; return font.measure(text.slice(start, end)); };

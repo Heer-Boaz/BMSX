@@ -190,7 +190,7 @@ test('accepted map moves and focused history reveal the restored member in both 
 	const bounds = { left: 0, top: 0, right: 320, bottom: 200 }, surfaces = new WorkbenchSurfaceService();
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('map fixture'), getBounds: () => bounds, getClip: () => bounds, isVisible: () => true, draw() {} });
 	const pane = new CartMapPane({ hide() {} } as ResourcePanelController, null!,
-		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, () => bounds);
+		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, bounds);
 	t.after(() => {
 		inputFocus.setTarget(null);
 		pane.clearInput(); pane.dispose(); input.dispose(); model.dispose();

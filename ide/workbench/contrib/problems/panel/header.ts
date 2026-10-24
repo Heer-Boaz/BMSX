@@ -26,7 +26,7 @@ export class ProblemsPanelHeader {
 	private readonly bounds = create_rect_bounds();
 	private readonly feedback = new WorkbenchTooltip();
 	private controls: WorkbenchActionBarControl | undefined;
-	private getWorkArea: (() => Readonly<RectBounds>) | undefined;
+	private workArea: Readonly<RectBounds> | undefined;
 	private unbindBlur: (() => void) | undefined;
 	private unbindActionBlur: (() => void) | undefined;
 	private visible = false;
@@ -51,9 +51,9 @@ export class ProblemsPanelHeader {
 
 	public get hasFocus(): boolean { return this.controls?.focusTarget.hasFocus === true; }
 
-	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>, commands: EditorCommandRunner): void {
-		this.getWorkArea = getWorkArea;
-		this.feedback.attach(surfaces, owner, getWorkArea);
+	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, commands: EditorCommandRunner): void {
+		this.workArea = workArea;
+		this.feedback.attach(surfaces, owner, workArea);
 		const controls = this.controls = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands,
 			this.parent, () => this.parent.focus());
 		controls.focusTarget.clipboard = { readOnly: true, copy: () => this.coverageText };
@@ -66,7 +66,7 @@ export class ProblemsPanelHeader {
 
 	public detach(): void {
 		this.controls?.dispose(); this.controls = undefined;
-		this.feedback.detach(); this.getWorkArea = undefined;
+		this.feedback.detach(); this.workArea = undefined;
 		this.unbindBlur?.(); this.unbindActionBlur?.();
 		this.unbindBlur = this.unbindActionBlur = undefined;
 		this.parent.next = this.parent.previous = null;
@@ -108,9 +108,9 @@ export class ProblemsPanelHeader {
 	}
 
 	public updateFeedback(): void {
-		if (!this.visible || this.getWorkArea === undefined) return;
+		if (!this.visible || this.workArea === undefined) return;
 		if (this.controls!.tooltipItem !== undefined)
-			this.feedback.show(this.coverageText, this.actions.bounds, this.font!, measureTextRange, measureText, this.getWorkArea());
+			this.feedback.show(this.coverageText, this.actions.bounds, this.font!, measureTextRange, measureText, this.workArea);
 		else this.feedback.hide();
 	}
 

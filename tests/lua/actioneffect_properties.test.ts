@@ -65,7 +65,7 @@ function propertyEditFixture(t: TestContext, f: ReturnType<typeof fixture>, pane
 	const surfaces = new WorkbenchSurfaceService();
 	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope, isVisible: () => true,
 		getBounds: () => pane, getClip: () => pane, draw() {} });
-	const edit = new WorkbenchPropertyEdit<LuaFieldValueEdit>(parent, value => value.edit.text, surfaces, owner, () => root);
+	const edit = new WorkbenchPropertyEdit<LuaFieldValueEdit>(parent, value => value.edit.text, surfaces, owner, root);
 	const openProperty = (write: EffectPropertyWrite) => {
 		const model = f.models.get(write.file.file)!, locations = write.file.chunk.locations, field = write.field;
 		const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));

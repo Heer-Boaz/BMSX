@@ -64,7 +64,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
 		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
-		private readonly paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super(resources);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = lifetime => { this.input.following = false; this.ownMenu(lifetime); };
@@ -90,9 +90,9 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	protected override activate(): void {
 		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.selectedRevision = -1;
 		this.actions.setInput(this.input.actions, this.focusTarget); this.list.setInput(this.input.list);
-		this.tooltip.attach(this.surfaces, this.paneSurface, this.getWorkArea);
+		this.tooltip.attach(this.surfaces, this.paneSurface, this.workArea);
 		const details = this.details = new GpuDetailsWindow(this.input, this.commands, this.quickInput, this.contextMenu,
-			this.surfaces, this.paneSurface, this.list.focusTarget, this.getWorkArea);
+			this.surfaces, this.paneSurface, this.list.focusTarget, this.workArea);
 		for (const target of [details.window.focusTarget, details.inspector.focusTarget, details.diagram.focusTarget, details.words.focusTarget])
 			for (const command of [...COMMANDS, 'pause', 'runtime.pause', 'runtime.resume', 'stepFrameBack', 'stepFrame'] as const)
 				if (command !== 'gpu.view') target.registerCommand(command, this.focusTarget.getCommand(command)!);
@@ -189,7 +189,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		}
 		this.details!.update();
 		const item = this.actions.tooltipItem;
-		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.getWorkArea()); else this.tooltip.hide();
+		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.workArea); else this.tooltip.hide();
 	}
 	public draw(): void { drawGpuDebugger(this.input, this.rows, this.emptyLines); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }

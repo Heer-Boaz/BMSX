@@ -28,11 +28,11 @@ export class RomMapKeyWindow {
 
 	public constructor(private readonly input: RomInspectorInput, commands: EditorCommandRunner,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, focusReturn: InputFocusTarget,
-		getWorkArea: () => Readonly<RectBounds>) {
+		workArea: Readonly<RectBounds>) {
 		this.total = formatByteSize(input.snapshot.rom.byteLength);
 		input.keyWindow.title = `Map key: ${input.snapshot.label}`;
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
-			model: input.keyWindow, actionBar: input.keyActions, lifetimeOwner: owner, focusReturn, getWorkArea,
+			model: input.keyWindow, actionBar: input.keyActions, lifetimeOwner: owner, focusReturn, workArea,
 			content: {
 				draw: () => this.draw(),
 				handlePointer: snapshot => { this.scroll.handlePointer(snapshot); },

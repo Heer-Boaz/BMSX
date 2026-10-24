@@ -60,11 +60,11 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		commands: IdeCommandController,
 		private readonly sources: RuntimeSourceState,
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
-		private readonly getWorkArea: () => Readonly<RectBounds>,
+		private readonly workArea: Readonly<RectBounds>,
 	) {
 		super(resourcePanel);
-		this.identityFeedback = new SceneOutlineFeedback(surfaces, paneSurface, getWorkArea, this.focusTarget);
-		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.identityFeedback = new SceneOutlineFeedback(surfaces, paneSurface, workArea, this.focusTarget);
+		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionBar.onDidOpenOverflow = lifetime => {
 			this.actionTooltip.hide(); this.sourceHovered = false;
@@ -147,8 +147,8 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		}
 		this.actionBar.update();
 		const hint = this.actionBar.tooltipItem;
-		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
-		else if (this.sourceHovered) this.actionTooltip.show(this.input.workingCopy.resource.path, this.input.layout.sourceBounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
+		else if (this.sourceHovered) this.actionTooltip.show(this.input.workingCopy.resource.path, this.input.layout.sourceBounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.actionTooltip.hide();
 		this.identityFeedback.update(editorViewState.font.renderFont(), measureTextRange, measureText);
 		for (let index = 0; index < this.controls.length; index++) {

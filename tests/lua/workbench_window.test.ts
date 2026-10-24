@@ -44,7 +44,7 @@ function fixture() {
 		const actions = createWorkbenchActionBar('window.title');
 		let input = false, layouts = 0, restores = 0, retires = 0, painted = 0, clicked = 0, hidden = 0;
 		const control = new WorkbenchFloatingWindow(focus, capture, hover, surfaces, commands, {
-			model, actionBar: actions, lifetimeOwner: owner, focusReturn: parent, getWorkArea: () => workArea,
+			model, actionBar: actions, lifetimeOwner: owner, focusReturn: parent, workArea,
 			getTitleTooltip,
 			content: { draw() { painted += 1; }, handlePointer() { clicked += 1; } },
 			layoutContent() { layouts += 1; }, retireContentInput() { input = false; retires += 1; onRetireContent?.(); },
@@ -77,6 +77,38 @@ test('requested placement survives narrow work areas and collapse preserves expa
 	assert.deepEqual(model.requestedBounds, requested);
 	model.setCollapsed(false); model.arrange(area, 16); assert.deepEqual(model.bounds, requested);
 	assert.equal(model.arrange(area, 16), false);
+});
+
+test('attached window and client borrow the retained root work area through in-place shrink and restoration', t => {
+	const f = fixture(), a = f.window('RETAINED AREA', 170, 90); a.show();
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const area = f.workArea, surface = a.control.surface!, client = a.control.clientSurface!;
+	const clientBounds = a.model.client, requestedBounds = a.model.requestedBounds;
+	const requested = { ...requestedBounds };
+	assert.equal(surface.getClip(), area, 'the window borrows its layout owner, not a copied work-area snapshot');
+	assert.equal(surface.getBounds(), a.model.bounds);
+	assert.equal(client.getBounds(), clientBounds); assert.equal(client.getClip(), clientBounds);
+	assert.equal(f.surfaces.hitTest(200, 120), client);
+	area.left = 10; area.top = 30; area.right = 110; area.bottom = 110;
+	assert.equal(surface.getClip(), area);
+	assert.equal(surface.getClip().right, 110, 'an attached surface observes current clipping before its next arrange');
+	assert.equal(f.surfaces.hitTest(200, 120), null, 'the old visible placement cannot hit through the new root clip');
+	a.layout();
+	assert.equal(a.control.surface, surface); assert.equal(a.control.clientSurface, client);
+	assert.equal(surface.retired, false); assert.equal(client.retired, false);
+	assert.deepEqual(a.model.bounds, { left: 10, top: 30, right: 110, bottom: 110 });
+	assert.equal(a.model.requestedBounds, requestedBounds); assert.deepEqual(requestedBounds, requested);
+	assert.equal(client.getBounds(), clientBounds); assert.equal(client.getClip(), clientBounds);
+	assert.ok(clientBounds.left >= area.left && clientBounds.top >= area.top
+		&& clientBounds.right <= area.right && clientBounds.bottom <= area.bottom);
+	assert.equal(f.surfaces.hitTest(50, 70), client);
+	area.left = 0; area.top = 20; area.right = 500; area.bottom = 380;
+	a.layout();
+	assert.equal(a.control.surface, surface); assert.equal(a.control.clientSurface, client);
+	assert.equal(surface.getClip(), area); assert.equal(client.getBounds(), clientBounds);
+	assert.deepEqual(a.model.bounds, requested); assert.deepEqual(a.model.requestedBounds, requested);
+	assert.equal(f.surfaces.hitTest(200, 120), client);
+	assert.equal(a.retires(), 0); assert.equal(a.restores(), 1, 'work-area changes arrange the existing client, never reattach it');
 });
 
 test('two real overlapping windows share paint/hit order but retain independent subjects and lifetimes', t => {
@@ -341,7 +373,7 @@ test('long title tooltips wrap every path glyph instead of moving caption trunca
 	const f = fixture(), tooltip = new WorkbenchTooltip();
 	t.after(() => { tooltip.detach(); f.surfaces.dispose(); });
 	const area = { left: 0, top: 20, right: 120, bottom: 180 };
-	tooltip.attach(f.surfaces, f.owner, () => area);
+	tooltip.attach(f.surfaces, f.owner, area);
 	const title = 'World/ActorWithALongName/ComponentWithALongName/FinalSubjectSuffix';
 	const labels: string[] = [];
 	t.mock.method(api, 'blit_text_inline_with_font', label => { labels.push(label); });

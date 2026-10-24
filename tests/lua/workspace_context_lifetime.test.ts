@@ -49,7 +49,7 @@ test('source review retires synchronously with its document, without transferrin
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope,
 		getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });
-	const review = new WorkbenchSourceEditReview(focus, capture, new PointerHoverService(), parent, menu, surfaces, owner, () => area);
+	const review = new WorkbenchSourceEditReview(focus, capture, new PointerHoverService(), parent, menu, surfaces, owner, area);
 	t.after(() => { review.dispose(); menu.dispose(); surfaces.dispose(); models.clear(); });
 	let applied = 0;
 	let lifetime!: DisposableStore;

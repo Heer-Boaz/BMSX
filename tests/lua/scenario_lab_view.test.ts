@@ -132,7 +132,7 @@ function scenarioFeedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const area = { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('Scenario'), isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw() {} });
-	const feedback = new ScenarioLabRowFeedback(surfaces, owner, () => area, testsFocus, resultsFocus);
+	const feedback = new ScenarioLabRowFeedback(surfaces, owner, area, testsFocus, resultsFocus);
 	let measurements = 0;
 	const measure = (text: string, from: number, to: number) => { measurements++; return font.measure(text.slice(from, to)); };
 	const measureText = (text: string) => { measurements++; return font.measure(text); };

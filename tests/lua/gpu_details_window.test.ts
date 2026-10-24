@@ -53,7 +53,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx') {
 		const window = new GpuDetailsWindow(input, {
 			isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 			execute: (command, target) => inputFocus.executeCommand(command, target),
-		}, picker, menu, surfaces, owner, origin, () => area);
+		}, picker, menu, surfaces, owner, origin, area);
 		const format = window.presentation.details.bind(window.presentation);
 		t.mock.method(window.presentation, 'details', record => { formats++; return format(record); });
 		return window;

@@ -42,7 +42,7 @@ export class WorkbenchPropertyEdit<T> {
 	private readonly unbindBlur: () => void;
 	public constructor(parent: InputFocusTarget, format: (value: T) => string,
 		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface,
-		private readonly getWorkArea: () => Readonly<RectBounds>) {
+		private readonly workArea: Readonly<RectBounds>) {
 		this.scope = new InputFocusScope(Symbol('property edit'), parent.scope);
 		const context = inputFocus.createTarget(parent, this.scope);
 		context.canFocus = () => false;
@@ -67,7 +67,7 @@ export class WorkbenchPropertyEdit<T> {
 		this.layout();
 		this.surface = this.surfaces.attach({ role: 'transient', outsidePress: 'owner', lifetimeOwner: this.owner,
 			presentationParent: this.surfaces.popupContext(this.owner), captureScope: this.scope.surfaceScope,
-			getBounds: () => this.bounds, getClip: this.getWorkArea, isVisible: () => this.active,
+			getBounds: () => this.bounds, getClip: () => this.workArea, isVisible: () => this.active,
 			draw: () => drawWorkbenchPropertyEdit(this.control, this.bounds, this.fieldBounds, this.caption),
 			handlePointer: snapshot => { this.handlePointer(snapshot); }, handleWheel: () => true,
 			onRetire: () => {
@@ -94,7 +94,7 @@ export class WorkbenchPropertyEdit<T> {
 	private layout(): void {
 		const { tree, row } = this.binding!;
 		revealWorkbenchListSelection(tree);
-		const font = editorViewState.font, area = this.getWorkArea();
+		const font = editorViewState.font, area = this.workArea;
 		const width = Math.min(area.right - area.left, Math.max(editorViewState.charAdvance * 24 + 12,
 			tree.layout.contentRight - row.element.displayValueLeft + 1));
 		const headerHeight = font.lineHeight + 6, fieldHeight = font.lineHeight + 6, height = headerHeight + fieldHeight + 3;

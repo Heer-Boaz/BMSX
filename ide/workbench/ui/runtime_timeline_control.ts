@@ -29,7 +29,7 @@ export class RuntimeTimelineControl {
 	private readonly range = new WorkbenchSlider();
 	private readonly slider: WorkbenchSliderControl;
 	private readonly tooltip = new WorkbenchTooltip();
-	private getWorkArea!: () => Readonly<RectBounds>;
+	private workArea!: Readonly<RectBounds>;
 	private context: InputFocusTarget | undefined;
 	private transport: RuntimeTransport | undefined;
 	private requestedCycles: number | undefined;
@@ -45,9 +45,9 @@ export class RuntimeTimelineControl {
 	public get height(): number { return this.context === undefined ? 0 : RuntimeTimelineLayout.height(editorViewState.font.renderFont()); }
 	public get visible(): boolean { return this.context !== undefined; }
 	public focus(): void { this.actions.focusTarget.focus(); }
-	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>): void {
-		this.getWorkArea = getWorkArea;
-		this.tooltip.attach(surfaces, owner, getWorkArea);
+	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>): void {
+		this.workArea = workArea;
+		this.tooltip.attach(surfaces, owner, workArea);
 	}
 	public setContext(context: InputFocusTarget | undefined, transport: RuntimeTransport | undefined): void {
 		if (context === this.context && transport === this.transport) return;
@@ -100,7 +100,7 @@ export class RuntimeTimelineControl {
 		this.actions.focusTarget.next = this.range.interactive ? this.slider.focusTarget : this.context;
 		const tooltipItem = this.actions.tooltipItem;
 		if (tooltipItem !== undefined) this.tooltip.show(tooltipItem.tooltip, tooltipItem.bounds,
-			editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+			editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.tooltip.hide();
 	}
 	public handlePointer(snapshot: PointerSnapshot): boolean {

@@ -50,7 +50,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 		const area = { left: 0, top: 0, right: 384, bottom: 288 };
 		const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope,
 			getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });
-		const review = new WorkbenchSourceEditReview(focus, capture, new PointerHoverService(), parent, menu, surfaces, owner, () => area);
+		const review = new WorkbenchSourceEditReview(focus, capture, new PointerHoverService(), parent, menu, surfaces, owner, area);
 		try {
 			input.updatePresentation(font); await input.graphLayout.settled; input.updatePresentation(font);
 			const viewport = graph.viewport;

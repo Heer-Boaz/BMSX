@@ -29,7 +29,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 	rebuildWorkbenchTreeRows(tree, row);
 	layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), (text, a, b) => editorViewState.font.measure(text.slice(a, b)), 4, 60, pane.right - 4, 250);
 	const model = new EditorTextModel({ domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 17');
-	const edit = new WorkbenchPropertyEdit<string>(parent, text => text, surfaces, owner, () => root);
+	const edit = new WorkbenchPropertyEdit<string>(parent, text => text, surfaces, owner, root);
 	let applied = 0;
 	const open = () => edit.open({ model, tree, row,
 		parse: text => text === '-' ? { error: 'Incomplete expression' } : { value: text },

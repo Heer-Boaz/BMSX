@@ -57,13 +57,13 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	private left = 0; private top = 0; private right = 0; private bottom = 0;
 	public constructor(resources: ResourcePanelController, private readonly controller: AnimationEditorController,
 		private readonly commands: IdeCommandController, contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly getWorkArea: () => Readonly<RectBounds>) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super(resources);
-		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, getWorkArea);
-		this.propertyPointer.attachFeedback(surfaces, paneSurface, getWorkArea, this.detailsFocus);
+		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, workArea);
+		this.propertyPointer.attachFeedback(surfaces, paneSurface, workArea, this.detailsFocus);
 		this.keys = new AnimationKeyControl(this.focusTarget, controller, controller.authoring);
 		this.lanes = new AnimationLaneControl(this.focusTarget, controller);
-		this.actionTooltip.attach(surfaces, paneSurface, getWorkArea);
+		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = lifetime => {
 			this.keys.cancelPointer(); this.lanes.cancelPointer(); this.propertyPointer.hideFeedback(); this.actionTooltip.hide();
@@ -171,7 +171,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		this.propertyPointer.updateFeedback(this.input.details);
 		this.edit.update(); this.actions.update();
 		const hint = this.actions.tooltipItem;
-		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.getWorkArea());
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.actionTooltip.hide();
 	}
 	public draw(): void { drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus); }

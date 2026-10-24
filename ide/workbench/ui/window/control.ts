@@ -24,7 +24,8 @@ export type WorkbenchWindowOptions = {
 	readonly lifetimeOwner: WorkbenchSurface;
 	readonly presentationParent?: WorkbenchSurface;
 	readonly focusReturn: InputFocusTarget;
-	getWorkArea(): Readonly<RectBounds>;
+	/** Borrowed layout extent; its owner updates this same rectangle in place. */
+	readonly workArea: Readonly<RectBounds>;
 	getTitleTooltip?(): string;
 	readonly content: WorkbenchSurfaceCallbacks;
 	layoutContent(bounds: Readonly<RectBounds>): void;
@@ -98,7 +99,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.surface = this.surfaces.attach({
 			role: 'window', lifetimeOwner: options.lifetimeOwner, presentationParent: options.presentationParent,
 			captureScope: this.scope.surfaceScope,
-			getBounds: () => options.model.bounds, getClip: () => options.getWorkArea(),
+			getBounds: () => options.model.bounds, getClip: () => options.workArea,
 			isVisible: () => options.model.open,
 			draw: () => drawWorkbenchWindow(this.model, options.actionBar, this.hasFocus),
 			handlePointer: snapshot => this.handlePointer(snapshot), handleWheel: () => true,
@@ -113,7 +114,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			},
 		});
 		this.actions.setInput(options.actionBar, this.focusTarget);
-		this.tooltip.attach(this.surfaces, this.surface, options.getWorkArea);
+		this.tooltip.attach(this.surfaces, this.surface, options.workArea);
 		if (!this.model.collapsed) this.attachClient();
 	}
 
@@ -162,7 +163,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public layout(font: BFont, measure: TextRangeMeasure, measureText: (text: string) => number): void {
 		if (!this.visible) return;
 		const model = this.model;
-		const arranged = model.arrange(this.options.getWorkArea(), font.lineHeight + 8);
+		const arranged = model.arrange(this.options.workArea, font.lineHeight + 8);
 		const fontChanged = this.measuredFont !== font;
 		const dirty = arranged || this.measuredRevision !== model.revision || fontChanged
 			|| this.measure !== measure || this.measureText !== measureText;
@@ -193,10 +194,10 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	private updateTooltip(): void {
 		if (this.moving || this.resizing !== WindowResizeEdge.None) { this.tooltip.hide(); return; }
 		const item = this.actions.tooltipItem;
-		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, this.measuredFont!, this.measure!, this.measureText!, this.options.getWorkArea());
+		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, this.measuredFont!, this.measure!, this.measureText!, this.options.workArea);
 		else if (this.headerHovered && (this.options.getTitleTooltip !== undefined || this.model.displayTitle !== this.model.title)) {
 			this.tooltip.show(this.options.getTitleTooltip?.() ?? this.model.title, this.model.header,
-				this.measuredFont!, this.measure!, this.measureText!, this.options.getWorkArea());
+				this.measuredFont!, this.measure!, this.measureText!, this.options.workArea);
 		} else this.tooltip.hide();
 	}
 
@@ -256,7 +257,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	public handleCapturedPointer(snapshot: PointerSnapshot): void {
 		const start = this.startBounds, requested = this.startRequested, next = this.nextRequested;
-		const workArea = this.options.getWorkArea();
+		const workArea = this.options.workArea;
 		const dx = snapshot.viewportX - this.startX, dy = snapshot.viewportY - this.startY;
 		copy_rect_bounds(next, requested);
 		if (this.moving) {

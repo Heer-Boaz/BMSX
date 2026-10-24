@@ -54,9 +54,9 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	private unbindAttachmentClipboard: (() => void) | undefined;
 	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner,
-		contextMenu: ContextMenuController, getWorkArea: () => Readonly<RectBounds>) {
+		contextMenu: ContextMenuController, workArea: Readonly<RectBounds>) {
 		super(resources);
-		this.turnToolbar = new AssistantTurnToolbar(this, this.focusTarget, () => this.focus(), contextMenu, surfaces, owner, getWorkArea);
+		this.turnToolbar = new AssistantTurnToolbar(this, this.focusTarget, () => this.focus(), contextMenu, surfaces, owner, workArea);
 		this.previews = new ImagePreviewCache(decodeImage);
 		this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner, commands);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview, () => this.execute('assistant.review'));

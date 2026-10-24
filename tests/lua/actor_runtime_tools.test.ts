@@ -300,7 +300,7 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'), viewerVertical: new Scrollbar('vertical'),
 		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'),
 	}, () => {}, pointerCapture);
-	const pane = new ActorLabEditorPane({ hide() {} } as ResourcePanelController, commands, contextMenu, surfaces, owner, () => bounds);
+	const pane = new ActorLabEditorPane({ hide() {} } as ResourcePanelController, commands, contextMenu, surfaces, owner, bounds);
 	t.after(() => {
 		inputFocus.setTarget(null); pane.dispose(); surfaces.dispose(); input.dispose();
 		editorViewState.font = previousFont; editorViewState.lineHeight = previousLineHeight;
@@ -311,7 +311,7 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	pane.setInput(input, bounds); pane.update(); pane.focus();
 	const transport = new RuntimeTimelineControl(commands, () => pane.focus());
 	t.after(() => transport.dispose());
-	transport.attach(surfaces, owner, () => bounds);
+	transport.attach(surfaces, owner, bounds);
 	transport.setContext(pane.runtimeControlContext, pane.runtimeTransport); transport.update();
 	assert.equal(transport.visible, true);
 	transport.focus();

@@ -22,10 +22,10 @@ export class WorkbenchTooltip {
 	private measure: TextRangeMeasure | undefined;
 	private measureText: ((text: string) => number) | undefined;
 
-	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>): void {
+	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>): void {
 		if (this.surface !== undefined) return;
 		this.surface = surfaces.attach({ role: 'feedback', lifetimeOwner: owner, captureScope: this.scope,
-			getBounds: () => this.bounds, getClip: getWorkArea,
+			getBounds: () => this.bounds, getClip: () => workArea,
 			isVisible: () => this.showing && surfaces.isAdmitted(owner),
 			draw: () => drawWorkbenchTooltip(this.lines, this.visibleLines, this.bounds, this.font!),
 			onRetire: () => { this.surface = undefined; this.showing = false; } });
