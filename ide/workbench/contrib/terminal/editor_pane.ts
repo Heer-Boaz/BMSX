@@ -32,7 +32,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	public override dispose(): void { this.gameInput.dispose(); super.dispose(); }
 	public override update(): void {
 		const { layout, frameBounds } = this.input;
-		if (updateFullWidthWorkbenchLayout(layout, this.contentBounds)) layoutGameFrame(frameBounds, 4, layout.top + 4, layout.right - 4, layout.bottom - 4);
+		if (updateFullWidthWorkbenchLayout(layout, this.contentBounds)) layoutGameFrame(frameBounds, layout.left + 4, layout.top + 4, layout.right - 4, layout.bottom - 4);
 		if (this.terminal.active) this.gameInput.setInput(frameBounds);
 		else this.gameInput.clearInput();
 	}
