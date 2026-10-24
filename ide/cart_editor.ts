@@ -905,7 +905,12 @@ export class RuntimeCartEditor implements CartEditor {
 		this.gamePanel.draw();
 		this.runtimeTimeline.draw();
 		drawProblemsPanel();
-		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane, this.luaEvaluation, this.serverConnectionState);
+		let contextTarget = inputFocus.target;
+		if (contextTarget === this.contextMenu.focusTarget) contextTarget = this.contextMenu.invocationOrigin;
+		if (contextTarget === this.quickInput.field.focusTarget) contextTarget = this.quickInput.invocationOrigin;
+		if (contextTarget === this.actionPrompt.focusTarget) contextTarget = this.actionPrompt.invocationOrigin;
+		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane, this.luaEvaluation, this.serverConnectionState,
+			contextTarget === null ? null : contextTarget.commandContext);
 	}
 
 	public async shutdown(): Promise<void> {

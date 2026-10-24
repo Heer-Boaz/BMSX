@@ -52,6 +52,7 @@ function fixture(t: TestContext, variant: FontVariant, width = 384) {
 	});
 	const resourceState = { visible: false, mode: 'resources' as 'resources' | 'command', filter: 'all' as 'all' | 'lua_only' };
 	const resources: Parameters<typeof renderStatusBar>[0] = {
+		focusTarget: inputFocus.createTarget(parent),
 		isVisible: () => resourceState.visible, getMode: () => resourceState.mode, getFilterMode: () => resourceState.filter,
 	};
 	const glyphs: Array<{ text: string; x: number; y: number; color: number }> = [], clips: RectBounds[] = [];
@@ -72,7 +73,8 @@ function fixture(t: TestContext, variant: FontVariant, width = 384) {
 	const paint = (connection: StudioServerConnectionState = 'connected') => {
 		glyphs.length = clips.length = markers.length = fills.length = 0; refreshWorkbenchLayout();
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		renderStatusBar(resources, fault, null, evaluation, connection);
+		const target = inputFocus.target;
+		renderStatusBar(resources, fault, null, evaluation, connection, target === null ? null : target.commandContext);
 		overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	};
 	parent.focus(); refreshWorkbenchLayout();
@@ -186,8 +188,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.ok(prefix); assert.equal(prefix.x, layout.hostFault.left + 4); assert.equal(prefix.y, layout.hostFault.top + 2);
 		assert.equal(prefix.color, colors.STATUS_MESSAGE_TEXT_COLORS.error);
 		assert.ok(f.glyphs.some(item => item.text === layout.guestHintText));
-		assert.ok(f.glyphs.some(item => item.text === 'FILES ALL (ALL)' && item.color === colors.STATUS_MESSAGE_TEXT_COLORS.error));
-			assert.ok(!f.glyphs.some(item => item.text === 'LUA CALL RUNNING'), 'a host fault supersedes the evaluation caption');
+		assert.ok(!f.glyphs.some(item => item.text === 'LUA CALL RUNNING'), 'a host fault supersedes the evaluation caption');
 		assert.ok(!f.glyphs.some(item => item.text === 'CTRL+SHIFT+L TOGGLE FILTER'), 'Files cannot overlap the reserved guest guidance');
 		assert.ok(f.clips.some(bounds => bounds.left === layout.context.left && bounds.right === layout.context.right));
 		assert.ok(f.clips.some(bounds => bounds.left === layout.guestHint.left && bounds.top === layout.guestHint.top));

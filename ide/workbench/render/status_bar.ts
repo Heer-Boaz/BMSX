@@ -10,18 +10,18 @@ import { problemsPanel } from '../contrib/problems/panel/controller';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
 import type { EditorPane } from '../services/editor/editor_pane';
 import type { EditorInput } from '../ui/tab/model';
-import { buildStatusLeftInfo } from './status_bar_info';
 import type { RuntimeLuaEvaluation } from '../../runtime/lua_evaluation';
 import type { StudioServerConnectionState } from '../common/server_connection';
 import { renderServerConnection } from './server_connection';
-import { inputFocus } from '../../input/focus';
+import { inputFocus, type InputFocusTarget } from '../../input/focus';
 
 export function renderStatusBar(
-	resourcePanel: Pick<ResourcePanelController, 'isVisible' | 'getMode' | 'getFilterMode'>,
+	resourcePanel: Pick<ResourcePanelController, 'focusTarget' | 'isVisible' | 'getMode' | 'getFilterMode'>,
 	fault: RuntimeFaultState,
-	editorPane: EditorPane<EditorInput> | null,
+	editorPane: Pick<EditorPane<EditorInput>, 'drawStatusBar'> | null,
 	evaluation: RuntimeLuaEvaluation,
 	connection: StudioServerConnectionState,
+	contextTarget: InputFocusTarget | null,
 ): void {
 	const hostFailed = fault.hostFrameFailure !== undefined;
 	const runtimeFaulted = hostFailed || fault.faultSnapshot !== null;
@@ -60,20 +60,20 @@ export function renderStatusBar(
 	api.pushClipRect(context.left, context.top, context.right, context.bottom);
 	if (!runtimeFaulted && evaluation.active !== undefined) {
 		drawEditorText(editorViewState.font, evaluation.paused ? 'LUA CALL PAUSED' : 'LUA CALL RUNNING', context.left + 4, context.top + 2, 0, statusTextColor);
-	} else if (problemsPanel.isVisible && problemsPanel.isFocused) {
-		const statusLeftInfo = buildStatusLeftInfo();
-		if (statusLeftInfo.length > 0) {
-			drawEditorText(editorViewState.font, statusLeftInfo, context.left + 4, context.top + 2, 0, statusTextColor);
+	} else if (problemsPanel.isVisible && contextTarget === problemsPanel.focusTarget) {
+		const diagnostic = problemsPanel.selectedDiagnostic;
+		if (diagnostic !== null) {
+			const info = `Ln ${diagnostic.row + 1}, Col ${diagnostic.startColumn + 1} • ${diagnostic.model.identity.path}`;
+			drawEditorText(editorViewState.font, info, context.left + 4, context.top + 2, 0, statusTextColor);
 		}
-	} else if (resourcePanel.isVisible()) {
+	} else if (resourcePanel.isVisible() && contextTarget === resourcePanel.focusTarget) {
 		if (resourcePanel.getMode() === 'command') {
 			const info = 'CALL HIERARCHY';
 			const hint = 'ENTER toggle/open • LEFT/RIGHT collapse/expand';
 			drawEditorText(editorViewState.font, info, context.left + 4, context.top + 2, 0, statusTextColor);
 			if (!guestInput) drawEditorText(editorViewState.font, hint, context.right - measureText(hint) - 4, context.top + 2, 0, statusTextColor);
 		} else {
-			const filterLabel = resourcePanel.getFilterMode() === 'lua_only' ? 'LUA' : 'ALL';
-			const fileInfo = `FILES ${resourcePanel.getFilterMode()} (${filterLabel})`;
+			const fileInfo = resourcePanel.getFilterMode() === 'lua_only' ? 'FILES (LUA)' : 'FILES (ALL)';
 			const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
 			drawEditorText(editorViewState.font, fileInfo, context.left + 4, context.top + 2, 0, statusTextColor);
 			if (!guestInput) drawEditorText(editorViewState.font, hint, context.right - measureText(hint) - 4, context.top + 2, 0, statusTextColor);
