@@ -223,6 +223,47 @@ test('retiring an admitted but unpublished typing request prevents it from appea
 	assert.equal(f.model.buffer.getText(), 'retur');
 });
 
+test('source blur retires automatic completion before the incoming control gains focus', t => {
+	const f = fixture(t, 'retu'); f.type('r'); f.settle();
+	assert.equal(activeCodeEditor.inlineEdit.active, true);
+	const destination = inputFocus.createTarget(), source = f.model.buffer.getText(), version = f.model.version;
+	const unbind = destination.onDidFocus(() => {
+		assert.equal(f.controller.session, null);
+		assert.equal(activeCodeEditor.inlineEdit.active, false);
+	});
+	t.after(unbind);
+	destination.focus();
+	activeCodeEditor.focusTarget.focus(); f.settle();
+	assert.equal(f.controller.session, null, 'returning source focus is not a fresh typing trigger');
+	assert.equal(activeCodeEditor.inlineEdit.active, false);
+	const tab = new KeyInputEvent('Tab', KeyModifier.none);
+	assert.equal(f.controller.handleKeybindings(tab), false); assert.equal(tab.consumed, false);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
+});
+
+test('source blur cancels an unpublished request even when source focus returns before the next frame', t => {
+	const f = fixture(t, 'ret'); f.type('u');
+	assert.equal(f.controller.session, null);
+	inputFocus.createTarget().focus(); activeCodeEditor.focusTarget.focus(); f.settle();
+	assert.equal(f.controller.session, null); assert.equal(activeCodeEditor.inlineEdit.active, false);
+	assert.equal(f.model.buffer.getText(), 'retu');
+	f.type('r'); f.settle();
+	assert.equal(activeCodeEditor.inlineEdit.active, true, 'fresh typing after focus return still admits an automatic suggestion');
+	assert.equal(activeCodeEditor.inlineEdit.text, 'n');
+});
+
+test('explicit completion popup survives source focus transfer without becoming an automatic ghost', t => {
+	const f = fixture(t, 'retu'); f.type('r'); f.settle();
+	assert.equal(f.controller.handleKeybindings(new KeyInputEvent('Space', KeyModifier.ctrl)), true);
+	const session = f.controller.session!;
+	assert.equal(session.trigger, 'manual'); assert.equal(activeCodeEditor.inlineEdit.active, false);
+	inputFocus.createTarget().focus(); f.settle();
+	assert.equal(f.controller.session, session); assert.equal(activeCodeEditor.inlineEdit.active, false);
+	activeCodeEditor.focusTarget.focus();
+	assert.equal(f.controller.handleKeybindings(new KeyInputEvent('Tab', KeyModifier.none)), true);
+	assert.equal(f.model.buffer.getText(), 'return'); assert.equal(f.controller.session, null);
+});
+
 test('input retirement owns signature-hint lifetime, while closing suggestions alone preserves it', t => {
 	const f = fixture(t, 'local function paint(value)\nend\npaint'); f.type('(');
 	assert.notEqual(f.controller.hint, null);

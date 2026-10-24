@@ -165,7 +165,7 @@ export class CompletionController {
 		this.cancelPendingCompletion();
 	}
 
-	/** Retire the complete attached-input presentation before the source view leaves focus. */
+	/** Retire the complete attached-input presentation before the source input detaches. */
 	public clearInput(): void {
 		this.closeSession();
 		this.parameterHint = null;
@@ -982,14 +982,19 @@ export class CompletionController {
 
 export class EditorCompletionController extends CompletionController {
 	private readonly unsubscribeCursorMoved: () => void;
+	private readonly unsubscribeBlur: () => void;
 
 	public constructor(sources: RuntimeSourceState, guest: SuspendedGuestSession, fault: RuntimeFaultState, runtime: Runtime) {
 		super(sources, guest, fault, runtime);
 		this.unsubscribeCursorMoved = activeCodeEditor.onDidMoveCursor(() => this.onCursorMoved());
+		this.unsubscribeBlur = activeCodeEditor.focusTarget.onDidBlur(() => {
+			if (this.session?.trigger !== 'manual') this.closeSession();
+		});
 	}
 
 	public dispose(): void {
 		this.unsubscribeCursorMoved();
+		this.unsubscribeBlur();
 		this.clearInput();
 	}
 }
