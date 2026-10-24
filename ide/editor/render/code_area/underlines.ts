@@ -1,8 +1,11 @@
-import type { CodeLineView } from '../../../common/models';
+import { CodeTextDecoration, type CodeLineView } from '../../../common/models';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { getDiagnosticsForRow } from '../../contrib/diagnostics/state';
 import { editorViewState } from '../../ui/view/state';
+import type { CodeRowDecorations } from './decorations';
+
+type UnderlineKind = 'errorUnderline' | 'warningUnderline' | 'gotoUnderline';
 
 type GotoHighlight = {
 	row: number;
@@ -11,16 +14,23 @@ type GotoHighlight = {
 };
 
 function drawUnderline(entry: CodeLineView, textLeft: number, rowY: number, contentBottom: number, sliceStartDisplay: number,
-	sliceEndDisplay: number, startDisplay: number, endDisplay: number, color: number): void {
-	const visibleStart = Math.max(startDisplay, sliceStartDisplay);
+	sliceEndDisplay: number, startDisplay: number, endDisplay: number, kind: UnderlineKind, decorations: CodeRowDecorations): void {
+	let start = Math.max(startDisplay, sliceStartDisplay);
 	const visibleEnd = Math.min(endDisplay, sliceEndDisplay);
-	if (visibleEnd <= visibleStart) return;
-	const advancePrefix = entry.advancePrefix;
-	const drawLeft = textLeft + advancePrefix[visibleStart];
-	const drawRight = textLeft + advancePrefix[visibleEnd];
 	const underlineY = Math.min(contentBottom - 1, rowY + editorViewState.lineHeight - 1);
 	if (underlineY < rowY) return;
-	api.fill_rect(drawLeft, underlineY, drawRight, underlineY + 1, 0, color);
+	const advancePrefix = entry.advancePrefix;
+	while (start < visibleEnd) {
+		const role = decorations.hasDecorations ? decorations.roles[start - decorations.startDisplay] : CodeTextDecoration.None;
+		let end = visibleEnd;
+		if (decorations.hasDecorations) {
+			end = start + 1;
+			while (end < visibleEnd && decorations.roles[end - decorations.startDisplay] === role) end++;
+		}
+		const color = constants.CODE_TEXT_DECORATION_STYLES[role][kind];
+		api.fill_rect(textLeft + advancePrefix[start], underlineY, textLeft + advancePrefix[end], underlineY + 1, 0, color);
+		start = end;
+	}
 }
 
 export function drawDiagnosticUnderlinesForRow(
@@ -31,14 +41,15 @@ export function drawDiagnosticUnderlinesForRow(
 	contentBottom: number,
 	sliceStartDisplay: number,
 	sliceEndDisplay: number,
+	decorations: CodeRowDecorations,
 ): void {
 	const rowDiagnostics = getDiagnosticsForRow(lineIndex);
 	for (const diagnostic of rowDiagnostics) {
 		const endColumn = diagnostic.endColumn === diagnostic.startColumn ? diagnostic.startColumn + 1 : diagnostic.endColumn;
 		const ranges = editorViewState.layout.projectSourceRange(entry, diagnostic.startColumn, endColumn);
-		const underlineColor = diagnostic.severity === 'warning' ? constants.COLOR_DIAGNOSTIC_WARNING : constants.COLOR_DIAGNOSTIC_ERROR;
+		const kind = diagnostic.severity === 'warning' ? 'warningUnderline' : 'errorUnderline';
 		for (const range of ranges) drawUnderline(entry, textLeft, rowY, contentBottom, sliceStartDisplay, sliceEndDisplay,
-			range.startDisplay, range.endDisplay, underlineColor);
+			range.startDisplay, range.endDisplay, kind, decorations);
 	}
 }
 
@@ -51,9 +62,10 @@ export function drawGotoUnderlineForRow(
 	sliceStartDisplay: number,
 	sliceEndDisplay: number,
 	activeGotoHighlight: GotoHighlight,
+	decorations: CodeRowDecorations,
 ): void {
 	if (!activeGotoHighlight || activeGotoHighlight.row !== lineIndex) return;
 	const ranges = editorViewState.layout.projectSourceRange(entry, activeGotoHighlight.startColumn, activeGotoHighlight.endColumn);
 	for (const range of ranges) drawUnderline(entry, textLeft, rowY, contentBottom, sliceStartDisplay, sliceEndDisplay,
-		range.startDisplay, range.endDisplay, constants.COLOR_GOTO_UNDERLINE);
+		range.startDisplay, range.endDisplay, 'gotoUnderline', decorations);
 }

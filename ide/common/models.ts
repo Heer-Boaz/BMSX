@@ -11,6 +11,25 @@ export type { RuntimeResource } from './resource';
 
 export type Position = { row: number; column: number };
 
+/** Ordered presentation priority; authored decorations never change source syntax tokens. */
+export enum CodeTextDecoration {
+	None,
+	InactiveSelection,
+	Reference,
+	ActiveReference,
+	Search,
+	ActiveSearch,
+	Selection,
+}
+
+export type CodeTextDecorationStyle = {
+	background: number;
+	foreground: number;
+	errorUnderline: number;
+	warningUnderline: number;
+	gotoUnderline: number;
+};
+
 export type MessageState = {
 	text: string;
 	color: number;

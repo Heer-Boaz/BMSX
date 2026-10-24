@@ -37,18 +37,17 @@ function drawCodeAreaRowChrome(
 	breakpointLaneWidth: number,
 ): void {
 	if (isExecutionStopRow) {
-		api.fill_rect(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, 0, constants.EXECUTION_STOP_OVERLAY);
+		api.fill_rect(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, 0, constants.COLOR_GUTTER_EXECUTION_BACKGROUND);
 		api.fill_rect(viewport.gutterRight, rowY, viewport.contentRight, rowY + editorViewState.lineHeight, 0, constants.EXECUTION_STOP_OVERLAY);
 	} else if (isCursorLine) {
-		api.fill_rect(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, 0, constants.HIGHLIGHT_OVERLAY);
+		api.fill_rect(viewport.gutterLeft, rowY, viewport.gutterRight, rowY + editorViewState.lineHeight, 0, constants.COLOR_GUTTER_ACTIVE_BACKGROUND);
 		api.fill_rect(viewport.gutterRight, rowY, viewport.contentRight, rowY + editorViewState.lineHeight, 0, constants.HIGHLIGHT_OVERLAY);
 	}
 	if (viewport.gutterRight > viewport.gutterLeft && isPrimaryVisualSegment) {
 		const lineNumberText = `${lineIndex + 1}`;
 		const lineNumberX = viewport.gutterRight - 1 - editorViewState.font.measure(lineNumberText);
-		const lineNumberColor = isExecutionStopRow || isCursorLine
-			? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT
-			: constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+		const lineNumberColor = isExecutionStopRow ? constants.COLOR_GUTTER_EXECUTION_TEXT
+			: isCursorLine ? constants.COLOR_GUTTER_ACTIVE_TEXT : constants.COLOR_GUTTER_TEXT;
 		api.blit_text_inline_with_font(lineNumberText, lineNumberX, rowY, 0, lineNumberColor, renderFont);
 	}
 	if (hasBreakpointForRow && viewport.gutterRight > viewport.gutterLeft && isPrimaryVisualSegment) {

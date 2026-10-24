@@ -1,14 +1,14 @@
+import { CodeTextDecoration, type CodeTextDecorationStyle } from './models';
+import { EDITOR_THEME_COLORS, type EditorTheme } from '../theme/editor_colors';
 import {
 	THEME_TOKEN_ACCENT_BLUE,
 	THEME_TOKEN_ACCENT_RED,
 	THEME_TOKEN_ACTION_OVERLAY,
 	THEME_TOKEN_BLACK,
 	THEME_TOKEN_BORDER_GREY,
-	THEME_TOKEN_BROWN,
 	THEME_TOKEN_COMMENT_GREY,
 	THEME_TOKEN_PROBLEM_ERROR_TEXT,
 	THEME_TOKEN_PROBLEM_WARNING_TEXT,
-	THEME_TOKEN_CYAN_BLUE,
 	THEME_TOKEN_DARK_NAVY,
 	THEME_TOKEN_DARK_PURPLE,
 	THEME_TOKEN_DARK_TEAL,
@@ -22,36 +22,24 @@ import {
 	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND,
 	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND_HOVER,
 	THEME_TOKEN_ERROR_OVERLAY_LINE_HOVER,
-	THEME_TOKEN_EXECUTION_STOP_OVERLAY,
-	THEME_TOKEN_FUNCTION_BLUE,
 	THEME_TOKEN_GENTLE_WHITE,
 	THEME_TOKEN_HINT_GREY,
-	THEME_TOKEN_KEYWORD_MAGENTA,
 	THEME_TOKEN_LIGHT_PURPLE,
 	THEME_TOKEN_LIGHT_TEAL,
 	THEME_TOKEN_LINE_HIGHLIGHT_OVERLAY,
 	THEME_TOKEN_MID_GREY,
 	THEME_TOKEN_MUTED_GREY,
 	THEME_TOKEN_NEAR_BLACK,
-	THEME_TOKEN_NUMBER_BROWN,
 	THEME_TOKEN_PALE_TEAL,
 	THEME_TOKEN_PANEL_GREY,
-	THEME_TOKEN_REFERENCES_MATCH_ACTIVE_OVERLAY,
-	THEME_TOKEN_REFERENCES_MATCH_OVERLAY,
 	THEME_TOKEN_SCROLLBAR_BASE,
-	THEME_TOKEN_SEARCH_MATCH_ACTIVE_OVERLAY,
-	THEME_TOKEN_SEARCH_MATCH_OVERLAY,
 	THEME_TOKEN_SELECTION_OVERLAY,
 	THEME_TOKEN_SOFT_WHITE,
 	THEME_TOKEN_STATUS_TEXT_GREY,
-	THEME_TOKEN_STRING_GREEN,
 	THEME_TOKEN_SUCCESS_GREEN,
 	THEME_TOKEN_TERMINAL_BLUE,
 	THEME_TOKEN_TERMINAL_CYAN,
 	THEME_TOKEN_TERMINAL_DARK_BLUE,
-	THEME_TOKEN_TERMINAL_DARK_GREEN,
-	THEME_TOKEN_TERMINAL_DARK_RED,
-	THEME_TOKEN_TERMINAL_DARK_YELLOW,
 	THEME_TOKEN_TERMINAL_GREY,
 	THEME_TOKEN_TERMINAL_LIGHT_GREEN,
 	THEME_TOKEN_TERMINAL_LIGHT_RED,
@@ -71,12 +59,13 @@ export const DOUBLE_CLICK_MAX_INTERVAL_MS = 320;
 export const DEFAULT_THEME = 'light';
 
 type ThemeDefinition = {
+	editor: EditorTheme;
+	resourceMatch: { background: number; text: number };
 	disabledForeground: number;
 	descriptionForeground: number;
 	surfaces: {
 		frame: number;
 		topBar: number;
-		editor: number;
 		gutter: number;
 		resourcePanel: number;
 		resourcePanelHighlight: number;
@@ -89,20 +78,6 @@ type ThemeDefinition = {
 		primary: number;
 		strong: number;
 		secondary: number;
-		keyword: number;
-		string: number;
-		number: number;
-		comment: number;
-		operator: number;
-		dim: number;
-		builtin: number;
-		functionName: number;
-		parameter: number;
-		globalVar: number;
-		label: number;
-		localTop: number;
-		localFunction: number;
-		functionHandle: number;
 		selection: number;
 		selectionText: number;
 		inactiveSelection: number;
@@ -162,7 +137,6 @@ type ThemeDefinition = {
 	highlightOverlay: number;
 	scrollbarThumb?: number;
 	caret: {
-		editor: number;
 		inline: number;
 	};
 	overlays: ThemeOverlays;
@@ -186,7 +160,6 @@ type ThemeOverlays = {
 		border: number;
 		text: number;
 		detail: number;
-		previewText: number;
 		highlight: number;
 		highlightText: number;
 	};
@@ -216,6 +189,8 @@ type ThemeOverlays = {
 
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
+		editor: EDITOR_THEME_COLORS.dark,
+		resourceMatch: { background: THEME_TOKEN_DEEP_TEAL, text: THEME_TOKEN_WHITE },
 		disabledForeground: THEME_TOKEN_MUTED_GREY,
 		descriptionForeground: THEME_TOKEN_HINT_GREY,
 		window: { background: THEME_TOKEN_BLACK, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
@@ -232,7 +207,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		surfaces: {
 			frame: THEME_TOKEN_WHITE,
 			topBar: THEME_TOKEN_TERMINAL_GREY,
-			editor: THEME_TOKEN_DARK_NAVY,
 			gutter: THEME_TOKEN_TERMINAL_GREY,
 			resourcePanel: THEME_TOKEN_TERMINAL_GREY,
 			resourcePanelHighlight: THEME_TOKEN_BLACK,
@@ -245,20 +219,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			primary: THEME_TOKEN_TERMINAL_GREY,
 			strong: THEME_TOKEN_WHITE,
 			secondary: THEME_TOKEN_TEXT_GREY,
-			keyword: THEME_TOKEN_BROWN,
-			string: THEME_TOKEN_TERMINAL_LIGHT_RED,
-			number: THEME_TOKEN_TERMINAL_CYAN,
-			comment: THEME_TOKEN_TERMINAL_DARK_GREEN,
-			operator: THEME_TOKEN_TERMINAL_GREY,
-			dim: THEME_TOKEN_TERMINAL_LIGHT_RED,
-			builtin: THEME_TOKEN_TERMINAL_DARK_YELLOW,
-			functionName: THEME_TOKEN_TERMINAL_GREY,
-			parameter: THEME_TOKEN_TERMINAL_RED,
-			globalVar: THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
-			label: THEME_TOKEN_TERMINAL_DARK_RED,
-			localTop: THEME_TOKEN_CYAN_BLUE,
-			localFunction: THEME_TOKEN_FUNCTION_BLUE,
-			functionHandle: THEME_TOKEN_TERMINAL_LIGHT_GREEN,
 			selection: THEME_TOKEN_TERMINAL_DARK_BLUE,
 			selectionText: THEME_TOKEN_WHITE,
 			inactiveSelection: THEME_TOKEN_BLACK,
@@ -299,7 +259,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		searchBackground: THEME_TOKEN_TERMINAL_CYAN,
 		highlightOverlay: THEME_TOKEN_DARK_NAVY,
 		caret: {
-			editor: THEME_TOKEN_WHITE,
 			inline: THEME_TOKEN_BLACK,
 		},
 		overlays: {
@@ -320,7 +279,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				border: THEME_TOKEN_BLACK,
 				text: THEME_TOKEN_TEXT_GREY,
 				detail: THEME_TOKEN_TERMINAL_MAGENTA,
-				previewText: THEME_TOKEN_COMMENT_GREY,
 				highlight: THEME_TOKEN_BLACK,
 				highlightText: THEME_TOKEN_TERMINAL_GREY,
 			},
@@ -349,6 +307,8 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		},
 	},
 	light: {
+		editor: EDITOR_THEME_COLORS.light,
+		resourceMatch: { background: THEME_TOKEN_PALE_TEAL, text: THEME_TOKEN_TEXT_GREY },
 		disabledForeground: THEME_TOKEN_MUTED_GREY,
 		descriptionForeground: THEME_TOKEN_MUTED_GREY,
 		window: { background: THEME_TOKEN_GENTLE_WHITE, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
@@ -365,7 +325,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		surfaces: {
 			frame: THEME_TOKEN_SOFT_WHITE,
 			topBar: THEME_TOKEN_PANEL_GREY,
-			editor: THEME_TOKEN_SOFT_WHITE,
 			gutter: THEME_TOKEN_PANEL_GREY,
 			resourcePanel: THEME_TOKEN_PANEL_GREY,
 			resourcePanelHighlight: THEME_TOKEN_BORDER_GREY,
@@ -378,20 +337,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			primary: THEME_TOKEN_TEXT_GREY,
 			strong: THEME_TOKEN_NEAR_BLACK,
 			secondary: THEME_TOKEN_TEXT_GREY,
-			keyword: THEME_TOKEN_KEYWORD_MAGENTA,
-			string: THEME_TOKEN_STRING_GREEN,
-			number: THEME_TOKEN_NUMBER_BROWN,
-			comment: THEME_TOKEN_COMMENT_GREY,
-			operator: THEME_TOKEN_TEXT_GREY,
-			dim: THEME_TOKEN_COMMENT_GREY,
-			builtin: THEME_TOKEN_CYAN_BLUE,
-			functionName: THEME_TOKEN_FUNCTION_BLUE,
-			parameter: THEME_TOKEN_TEXT_GREY,
-			globalVar: THEME_TOKEN_NUMBER_BROWN,
-			label: THEME_TOKEN_ACCENT_RED,
-			localTop: THEME_TOKEN_CYAN_BLUE,
-			localFunction: THEME_TOKEN_FUNCTION_BLUE,
-			functionHandle: THEME_TOKEN_FUNCTION_BLUE,
 			selection: THEME_TOKEN_SELECTION_OVERLAY,
 			selectionText: THEME_TOKEN_GENTLE_WHITE,
 			inactiveSelection: THEME_TOKEN_BORDER_GREY,
@@ -433,7 +378,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		highlightOverlay: THEME_TOKEN_LINE_HIGHLIGHT_OVERLAY,
 		scrollbarThumb: THEME_TOKEN_SCROLLBAR_BASE,
 		caret: {
-			editor: THEME_TOKEN_ACCENT_BLUE,
 			inline: THEME_TOKEN_DEEP_GREY,
 		},
 		overlays: {
@@ -454,7 +398,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				border: THEME_TOKEN_BLACK,
 				text: THEME_TOKEN_TEXT_GREY,
 				detail: THEME_TOKEN_TERMINAL_MAGENTA,
-				previewText: THEME_TOKEN_COMMENT_GREY,
 				highlight: THEME_TOKEN_BLACK,
 				highlightText: THEME_TOKEN_TERMINAL_GREY,
 			},
@@ -543,6 +486,12 @@ export let COLOR_TOP_BAR: number;
 export let COLOR_TOP_BAR_TEXT: number;
 export let COLOR_CODE_BACKGROUND: number;
 export let COLOR_GUTTER_BACKGROUND: number;
+export let COLOR_GUTTER_TEXT: number;
+export let COLOR_GUTTER_ACTIVE_BACKGROUND: number;
+export let COLOR_GUTTER_ACTIVE_TEXT: number;
+export let COLOR_GUTTER_EXECUTION_BACKGROUND: number;
+export let COLOR_GUTTER_EXECUTION_TEXT: number;
+export const CODE_TEXT_DECORATION_STYLES: readonly CodeTextDecorationStyle[] = Array.from({ length: CodeTextDecoration.Selection + 1 }, (_, role) => ({ ...EDITOR_THEME_COLORS.light.decorations[role] }));
 export let COLOR_TEXT_STRONG: number;
 export let COLOR_MARKDOWN_CODE_BACKGROUND: number;
 export let COLOR_MARKDOWN_CODE_TEXT: number;
@@ -615,6 +564,8 @@ export let COLOR_RESOURCE_PANEL_BACKGROUND: number;
 export let COLOR_RESOURCE_PANEL_TEXT: number;
 export let COLOR_RESOURCE_PANEL_HIGHLIGHT: number;
 export let COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT: number;
+export let COLOR_RESOURCE_MATCH_BACKGROUND: number;
+export let COLOR_RESOURCE_MATCH_TEXT: number;
 export let COLOR_RESOURCE_VIEWER_BACKGROUND: number;
 export let COLOR_RESOURCE_VIEWER_TEXT: number;
 export let COLOR_SEARCH_SECONDARY_TEXT: number;
@@ -622,10 +573,6 @@ export let COLOR_SEARCH_TEXT: number;
 export let COLOR_SEARCH_PLACEHOLDER: number;
 export let COLOR_SEARCH_OUTLINE: number;
 export let COLOR_SEARCH_BACKGROUND: number;
-export const SEARCH_MATCH_OVERLAY = THEME_TOKEN_SEARCH_MATCH_OVERLAY;
-export const SEARCH_MATCH_ACTIVE_OVERLAY = THEME_TOKEN_SEARCH_MATCH_ACTIVE_OVERLAY;
-export const REFERENCES_MATCH_OVERLAY = THEME_TOKEN_REFERENCES_MATCH_OVERLAY;
-export const REFERENCES_MATCH_ACTIVE_OVERLAY = THEME_TOKEN_REFERENCES_MATCH_ACTIVE_OVERLAY;
 export const SEARCH_BAR_MARGIN_Y = 2;
 export let COLOR_LINE_JUMP_BACKGROUND: number;
 export let COLOR_LINE_JUMP_TEXT: number;
@@ -638,7 +585,7 @@ export const ERROR_OVERLAY_PADDING_X = 4;
 export const ERROR_OVERLAY_PADDING_Y = 2;
 export const ERROR_OVERLAY_CONNECTOR_OFFSET = 6;
 export let ERROR_OVERLAY_TEXT_COLOR: number;
-export const EXECUTION_STOP_OVERLAY = THEME_TOKEN_EXECUTION_STOP_OVERLAY;
+export let EXECUTION_STOP_OVERLAY: number;
 export const HOVER_TOOLTIP_PADDING_X = 4;
 export const HOVER_TOOLTIP_PADDING_Y = 2;
 export let HOVER_TOOLTIP_BACKGROUND: number;
@@ -729,41 +676,53 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_FRAME = theme.surfaces.frame;
 	COLOR_TOP_BAR = theme.surfaces.topBar;
 	COLOR_TOP_BAR_TEXT = theme.text.topBar;
-	COLOR_CODE_BACKGROUND = theme.surfaces.editor;
-	COLOR_GUTTER_BACKGROUND = theme.surfaces.gutter;
+	COLOR_CODE_BACKGROUND = theme.editor.background;
+	COLOR_GUTTER_BACKGROUND = theme.editor.gutter.background;
+	COLOR_GUTTER_TEXT = theme.editor.gutter.foreground;
+	COLOR_GUTTER_ACTIVE_BACKGROUND = theme.editor.gutter.activeBackground;
+	COLOR_GUTTER_ACTIVE_TEXT = theme.editor.gutter.activeForeground;
+	COLOR_GUTTER_EXECUTION_BACKGROUND = theme.editor.gutter.executionBackground;
+	COLOR_GUTTER_EXECUTION_TEXT = theme.editor.gutter.executionForeground;
+	EXECUTION_STOP_OVERLAY = theme.editor.executionBackground;
+	for (let role = CodeTextDecoration.None; role <= CodeTextDecoration.Selection; role++) {
+		const source = theme.editor.decorations[role], target = CODE_TEXT_DECORATION_STYLES[role];
+		target.background = source.background; target.foreground = source.foreground;
+		target.errorUnderline = source.errorUnderline; target.warningUnderline = source.warningUnderline;
+		target.gotoUnderline = source.gotoUnderline;
+	}
 	COLOR_TEXT_STRONG = theme.text.strong;
 	COLOR_MARKDOWN_CODE_BACKGROUND = theme.markdown.codeBackground;
 	COLOR_MARKDOWN_CODE_TEXT = theme.markdown.codeText;
 	COLOR_MARKDOWN_EMPHASIS_TEXT = theme.markdown.emphasisText;
 	COLOR_MARKDOWN_LINK_TEXT = theme.markdown.linkText;
 	COLOR_MARKDOWN_MUTED_TEXT = theme.markdown.mutedText;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT = theme.text.primary;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD = theme.text.keyword;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING = theme.text.string;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_NUMBER = theme.text.number;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT = theme.text.comment;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR = theme.text.operator;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM = theme.text.dim;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT = theme.editor.foreground;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD = theme.editor.syntax.keyword;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING = theme.editor.syntax.string;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_NUMBER = theme.editor.syntax.number;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT = theme.editor.syntax.comment;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR = theme.editor.syntax.operator;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM = theme.editor.dim;
 	COLOR_BREAKPOINT_BORDER = theme.text.topBar;
 	COLOR_BREAKPOINT_FILL = theme.status.alert;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN = theme.text.builtin;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME = theme.text.functionName;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER = theme.text.parameter;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_GLOBAL_VARIABLE = theme.text.globalVar;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TABLE_FIELD = theme.text.primary;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_MODULE = theme.text.primary;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_TYPE = theme.text.primary;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LABEL = theme.text.label;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TOP = theme.text.localTop;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_FUNCTION = theme.text.localFunction;
-	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_HANDLE = theme.text.functionHandle;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN = theme.editor.syntax.builtin;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME = theme.editor.syntax.functionName;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER = theme.editor.syntax.parameter;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_GLOBAL_VARIABLE = theme.editor.syntax.globalVar;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TABLE_FIELD = theme.editor.foreground;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_MODULE = theme.editor.foreground;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_TYPE = theme.editor.foreground;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LABEL = theme.editor.syntax.label;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TOP = theme.editor.syntax.localTop;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_FUNCTION = theme.editor.syntax.localFunction;
+	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_HANDLE = theme.editor.syntax.functionHandle;
 	HIGHLIGHT_OVERLAY = theme.highlightOverlay;
 	SELECTION_OVERLAY = theme.text.selection;
 	COLOR_SELECTION_TEXT = theme.text.selectionText;
 	COLOR_FOCUS_BORDER = theme.focusBorder;
 	INACTIVE_SELECTION_OVERLAY = theme.text.inactiveSelection;
 	COLOR_INACTIVE_SELECTION_TEXT = theme.text.inactiveSelectionText;
-	CARET_COLOR = theme.caret.editor;
+	CARET_COLOR = theme.editor.caret;
 	INLINE_CARET_COLOR = theme.caret.inline;
 	SEARCH_RESULT_SELECTION_OVERLAY = theme.text.selection;
 	SEARCH_RESULT_HOVER_OVERLAY = theme.highlightOverlay;
@@ -785,7 +744,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_SERVER_CONNECTED = theme.connection.connected;
 	COLOR_SERVER_DISCONNECTED = theme.connection.disconnected;
 	COLOR_SERVER_CONNECTING = theme.connection.connecting;
-	COLOR_DIAGNOSTIC_WARNING = theme.status.warning;
+	COLOR_DIAGNOSTIC_ERROR = CODE_TEXT_DECORATION_STYLES[CodeTextDecoration.None].errorUnderline;
+	COLOR_DIAGNOSTIC_WARNING = CODE_TEXT_DECORATION_STYLES[CodeTextDecoration.None].warningUnderline;
 	COLOR_PROBLEMS_PANEL_BACKGROUND = panel.problems.background;
 	COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND = panel.problems.headerBackground;
 	COLOR_PROBLEMS_PANEL_HEADER_TEXT = panel.problems.headerText;
@@ -801,6 +761,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_RESOURCE_PANEL_HIGHLIGHT = panel.resource.highlight;
 	COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT = panel.resource.highlightText;
 	COLOR_RESOURCE_VIEWER_BACKGROUND = panel.resource.viewerBackground;
+	COLOR_RESOURCE_MATCH_BACKGROUND = theme.resourceMatch.background;
+	COLOR_RESOURCE_MATCH_TEXT = theme.resourceMatch.text;
 	COLOR_RESOURCE_VIEWER_TEXT = panel.resource.viewerText;
 	COLOR_SEARCH_SECONDARY_TEXT = search.secondaryText;
 	COLOR_SEARCH_TEXT = search.text;
@@ -836,7 +798,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TAB_INACTIVE_TEXT = tab.inactiveText;
 	COLOR_TAB_ACTIVE_TEXT = tab.activeText;
 	COLOR_TAB_DIRTY_MARKER = tab.dirtyMarker;
-	COLOR_GOTO_UNDERLINE = tab.border;
+	COLOR_GOTO_UNDERLINE = CODE_TEXT_DECORATION_STYLES[CodeTextDecoration.None].gotoUnderline;
 	RESOURCE_PANEL_DIVIDER_COLOR = tab.border;
 	SCROLLBAR_TRACK_COLOR = theme.status.background;
 	SCROLLBAR_THUMB_COLOR = theme.scrollbarThumb ?? theme.status.text;
@@ -867,7 +829,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_COMPLETION_BORDER = completion.border;
 	COLOR_COMPLETION_TEXT = completion.text;
 	COLOR_COMPLETION_DETAIL = completion.detail;
-	COLOR_COMPLETION_PREVIEW_TEXT = completion.previewText;
+	COLOR_COMPLETION_PREVIEW_TEXT = theme.editor.ghost;
 	COLOR_COMPLETION_HIGHLIGHT = completion.highlight;
 	COLOR_COMPLETION_HIGHLIGHT_TEXT = completion.highlightText;
 	COLOR_PARAMETER_HINT_BACKGROUND = parameterHint.background;

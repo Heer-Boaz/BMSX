@@ -42,6 +42,7 @@ export function renderCodeArea(
 		searchMatches,
 		searchActiveIndex,
 		searchHighlightsVisible,
+		cursorActive,
 	);
 	if (editorCaretState.cursorVisible && cursorInfo) drawCursor(cursorInfo, viewport.textLeft, cursorActive);
 	api.popClipRect();

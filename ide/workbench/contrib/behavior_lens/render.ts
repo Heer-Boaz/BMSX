@@ -48,7 +48,7 @@ export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchG
 				: outline.kind === 'state-graph' && outline.layoutState.kind === 'failed' ? 'LAYOUT FAILED - SOURCE REMAINS AVAILABLE'
 					: 'DEFINITION REMOVED - CHOOSE A BEHAVIOR';
 			api.blit_text_inline_with_font(message, layout.left + 4, layout.headerBottom + 8,
-				0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM, renderFont);
+				0, constants.COLOR_DESCRIPTION_TEXT, renderFont);
 		}
 		return;
 	}
@@ -61,7 +61,7 @@ export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchG
 			listLayout.contentLeft,
 			listLayout.contentTop,
 			0,
-			constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM,
+			constants.COLOR_DESCRIPTION_TEXT,
 			renderFont,
 		);
 		return;
@@ -73,8 +73,9 @@ export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchG
 	for (let rowIndex = firstRow; rowIndex < end; rowIndex += 1) {
 		const row = outline.rows[rowIndex];
 		const y = listLayout.contentTop + (rowIndex - firstRow) * listLayout.rowHeight;
-		if (state.sourceMatchRowKeys.has(row.node.rowKey)) {
-			api.fill_rect(layout.left, y, layout.right, y + listLayout.rowHeight, 0, constants.REFERENCES_MATCH_OVERLAY);
+		const sourceMatched = state.sourceMatchRowKeys.has(row.node.rowKey);
+		if (sourceMatched) {
+			api.fill_rect(layout.left, y, layout.right, y + listLayout.rowHeight, 0, constants.COLOR_RESOURCE_MATCH_BACKGROUND);
 		}
 		if (rowIndex === outline.hoverIndex) {
 			api.fill_rect(layout.left, y, layout.right, y + listLayout.rowHeight, 0, constants.HIGHLIGHT_OVERLAY);
@@ -84,9 +85,8 @@ export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchG
 		}
 		const textColor = rowIndex === outline.selectionIndex
 			? constants.COLOR_SELECTION_TEXT
-			: (row.node.resolution !== 'complete'
-				? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM
-				: constants.COLOR_RESOURCE_VIEWER_TEXT);
+			: sourceMatched ? constants.COLOR_RESOURCE_MATCH_TEXT
+				: row.node.resolution !== 'complete' ? constants.COLOR_DESCRIPTION_TEXT : constants.COLOR_RESOURCE_VIEWER_TEXT;
 		api.blit_text_inline_span_with_font(
 			row.text,
 			0,

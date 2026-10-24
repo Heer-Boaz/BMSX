@@ -91,6 +91,16 @@ export const THEME_TOKEN_DIFF_INSERTED_LIGHT = 87;
 export const THEME_TOKEN_DIFF_REMOVED_LIGHT = 88;
 export const THEME_TOKEN_DIFF_INSERTED_DARK = 89;
 export const THEME_TOKEN_DIFF_REMOVED_DARK = 90;
+export const THEME_TOKEN_EDITOR_STRING_LIGHT = 91;
+export const THEME_TOKEN_EDITOR_BUILTIN_LIGHT = 92;
+export const THEME_TOKEN_EDITOR_FUNCTION_LIGHT = 93;
+export const THEME_TOKEN_EDITOR_LABEL_LIGHT = 94;
+export const THEME_TOKEN_EDITOR_NUMBER_LIGHT = 95;
+export const THEME_TOKEN_EDITOR_EXECUTION_LIGHT = 96;
+export const THEME_TOKEN_EDITOR_REFERENCE_ACTIVE_LIGHT = 97;
+export const THEME_TOKEN_EDITOR_REFERENCE_ACTIVE_DARK = 98;
+export const THEME_TOKEN_EDITOR_SEARCH_DARK = 99;
+export const THEME_TOKEN_EDITOR_ERROR_ON_DARK = 100;
 
 export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x00000000,
@@ -184,6 +194,16 @@ export const THEME_TOKEN_COLORS: readonly number[] = [
 	0xfff7e7e7,
 	0xff163822,
 	0xff3b2029,
+	0xff2f6b37,
+	0xff006b8f,
+	0xff205dc0,
+	0xffb33930,
+	0xff805700,
+	0xfffff4cc,
+	0xffc5dcf5,
+	0xff1e4670,
+	0xff3d3120,
+	0xffffd5cc,
 ];
 
 export function resolveThemeTokenColor(token: number): number {
@@ -191,8 +211,18 @@ export function resolveThemeTokenColor(token: number): number {
 }
 
 
+function linearChannel(channel: number): number {
+	const value = channel / 255;
+	return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+}
+
+// Palette-owned contrast decisions are computed once, not during caret painting.
+const inverseThemeTokens = THEME_TOKEN_COLORS.map(color => {
+	const luminance = 0.2126 * linearChannel(color >>> 16 & 255)
+		+ 0.7152 * linearChannel(color >>> 8 & 255) + 0.0722 * linearChannel(color & 255);
+	return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? THEME_TOKEN_BLACK : THEME_TOKEN_WHITE;
+});
+
 export function invertThemeToken(token: number): number {
-	const color = THEME_TOKEN_COLORS[token];
-	const luminance = 0.2126 * ((color >> 16) & 0xff) / 255 + 0.7152 * ((color >> 8) & 0xff) / 255 + 0.0722 * (color & 0xff) / 255;
-	return luminance > 0.5 ? THEME_TOKEN_BLACK : THEME_TOKEN_WHITE;
+	return inverseThemeTokens[token];
 }

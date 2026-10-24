@@ -6,7 +6,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { api } from '../../ide/runtime/overlay_api';
-import { THEME_TOKEN_COMMENT_GREY, THEME_TOKEN_MID_GREY, THEME_TOKEN_MUTED_GREY, THEME_TOKEN_TERMINAL_LIGHT_RED, resolveThemeTokenColor } from '../../ide/theme/tokens';
+import { THEME_TOKEN_COMMENT_GREY, THEME_TOKEN_MID_GREY, THEME_TOKEN_MUTED_GREY, resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { renderWorkbenchActionBar } from '../../ide/workbench/render/action_bar';
 import { drawWorkbenchWindow } from '../../ide/workbench/render/window';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
@@ -65,7 +65,7 @@ for (const theme of ['dark', 'light']) {
 		for (const role of [colors.COLOR_HEADER_BUTTON_TEXT, colors.COLOR_MENU_TEXT, colors.COLOR_MENU_SELECTION_TEXT,
 			colors.COLOR_STATUS_ERROR, colors.COLOR_STATUS_WARNING])
 			assert.notEqual(resolveThemeTokenColor(colors.COLOR_MENU_DISABLED_TEXT), resolveThemeTokenColor(role));
-		const syntaxDim = theme === 'dark' ? THEME_TOKEN_TERMINAL_LIGHT_RED : THEME_TOKEN_COMMENT_GREY;
+		const syntaxDim = theme === 'dark' ? THEME_TOKEN_COMMENT_GREY : THEME_TOKEN_MUTED_GREY;
 		assert.equal(colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM, syntaxDim);
 		assert.equal(colors.COLOR_PROBLEMS_PANEL_LOCATION, colors.COLOR_PROBLEMS_PANEL_TEXT);
 		assert.notEqual(colors.COLOR_PROBLEMS_PANEL_LOCATION, syntaxDim);

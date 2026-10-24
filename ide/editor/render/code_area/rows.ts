@@ -1,10 +1,9 @@
 import type { CursorScreenInfo, SearchMatch } from '../../../common/models';
 import type { Font } from '../../../../machine/ts/render/shared/bmsx_font';
 import { drawEditorText } from '../text_renderer';
-import { api } from '../../../runtime/overlay_api';
-import { computeSelectionSlices } from '../../common/text/layout';
 import * as constants from '../../../common/constants';
-import { drawHighlightSlice, drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './highlights';
+import { drawHighlightSlice } from './highlights';
+import { CodeRowDecorations } from './decorations';
 import { computeCursorScreenInfo } from './cursor';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './underlines';
 import { activeCodeEditor } from '../../ui/code_editor_state';
@@ -18,6 +17,8 @@ type ActiveGotoHighlight = {
 	expression: string;
 };
 
+const decorations = new CodeRowDecorations();
+
 export function drawCodeAreaRows(
 	viewport: CodeAreaViewport,
 	activeGotoHighlight: ActiveGotoHighlight,
@@ -29,6 +30,7 @@ export function drawCodeAreaRows(
 	searchMatches: readonly SearchMatch[],
 	searchActiveIndex: number,
 	searchHighlightsVisible: boolean,
+	cursorActive: boolean,
 ): CursorScreenInfo {
 	let cursorInfo: CursorScreenInfo = null;
 	for (let i = 0; i < viewport.rows; i += 1) {
@@ -50,41 +52,10 @@ export function drawCodeAreaRows(
 		const slice = editorViewState.layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft, viewport.contentWidth, viewport.wrapEnabled);
 		const sliceStartDisplay = slice.startDisplay, sliceEndDisplay = slice.endDisplay;
 		const lineLeft = viewport.textLeft - slice.pixelOffset;
-		drawReferenceHighlightsForRow(
-			api,
-			lineIndex,
-			entry,
-			lineLeft,
-			rowY,
-			sliceStartDisplay,
-			sliceEndDisplay,
-			referenceMatches,
-			referenceActiveIndex,
-		);
-		drawSearchHighlightsForRow(
-			api,
-			lineIndex,
-			entry,
-			lineLeft,
-			rowY,
-			sliceStartDisplay,
-			sliceEndDisplay,
-			searchMatches,
-			searchActiveIndex,
-			searchHighlightsVisible,
-		);
-		const selectionSlices = computeSelectionSlices(lineIndex, entry, sliceStartDisplay, sliceEndDisplay);
-		for (const selectionSlice of selectionSlices) {
-			const selectionStartX = lineLeft + advancePrefix[selectionSlice.startDisplay];
-			const selectionEndX = lineLeft + advancePrefix[selectionSlice.endDisplay];
-			const drawLeft = selectionStartX < viewport.textLeft ? viewport.textLeft : selectionStartX;
-			const drawRight = selectionEndX > viewport.contentRight ? viewport.contentRight : selectionEndX;
-			if (drawRight > drawLeft) {
-				api.fill_rect(drawLeft, rowY, drawRight, rowY + editorViewState.lineHeight, 0, constants.SELECTION_OVERLAY);
-			}
-		}
+		decorations.prepare(lineIndex, entry, sliceStartDisplay, sliceEndDisplay, referenceMatches, referenceActiveIndex,
+			searchMatches, searchActiveIndex, searchHighlightsVisible, cursorActive);
 		drawHighlightSlice(renderFont, renderText, highlight.colors, advancePrefix,
-			sliceStartDisplay, sliceEndDisplay, lineLeft + advancePrefix[sliceStartDisplay], rowY, 0);
+			sliceStartDisplay, sliceEndDisplay, lineLeft + advancePrefix[sliceStartDisplay], rowY, 0, decorations);
 		drawDiagnosticUnderlinesForRow(
 			lineIndex,
 			entry,
@@ -93,6 +64,7 @@ export function drawCodeAreaRows(
 			viewport.contentBottom,
 			sliceStartDisplay,
 			sliceEndDisplay,
+			decorations,
 		);
 		drawGotoUnderlineForRow(
 			lineIndex,
@@ -103,6 +75,7 @@ export function drawCodeAreaRows(
 			sliceStartDisplay,
 			sliceEndDisplay,
 			activeGotoHighlight,
+			decorations,
 		);
 		if (visualIndex === cursorVisualIndex) {
 			const cursorDisplay = editorViewState.layout.columnToDisplay(highlight, activeCodeEditor.view.cursorColumn);
