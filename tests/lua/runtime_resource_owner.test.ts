@@ -22,7 +22,7 @@ import {
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { RawRomSource } from '../../toolchain/ts/rompack/source';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
-import { buildResourcePanelItems } from '../../ide/workbench/contrib/resources/panel/items';
+import { ResourceFilesModel } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { buildResourceQuickPickItems } from '../../ide/workbench/contrib/resources/quick_access';
 import {
 	createLuaCodeTabContext,
@@ -140,17 +140,28 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 	);
 	const retained = resolveRuntimeResource(sources, { domain: 0, path: 'src/main.lua' })!;
 
-	const panelItem = buildResourcePanelItems(sources, 'all')
-		.find(item => item.resource?.path === retained.path && item.resource.domain === retained.domain)!;
-	assert.strictEqual(panelItem.resource, retained);
+	const files = new ResourceFilesModel();
+	assert.equal(files.sync(sources, 'all'), true);
+	assert.equal(files.reveal(retained), true);
+	const panelNode = files.selectedNode!;
+	assert.ok(panelNode.element.kind === 'file');
+	assert.strictEqual(panelNode.element.resource, retained);
 
 	const searchEntry = buildResourceQuickPickItems(sources.resources)
 		.find(entry => entry.resource.path === retained.path && entry.resource.domain === retained.domain)!;
 	assert.strictEqual(searchEntry.resource, retained);
-	assert.equal(searchEntry.label, retained.path);
 
 	const context = createLuaCodeTabContext(sources, retained);
 	assert.strictEqual(context.model.resource, retained);
+
+	const replacement = luaSource(retained.path, 'cart-main', 'return 3');
+	registerLuaSourceRecord(cartridgeRegistry, replacement);
+	registerRuntimeLuaResource(sources, 0, replacement);
+	files.sync(sources, 'all');
+	assert.strictEqual(files.selectedNode, panelNode);
+	assert.strictEqual(panelNode.element.resource, retained);
+	assert.strictEqual(panelNode.element.resource.source, replacement);
+	assert.strictEqual(context.model.resource.source, replacement);
 });
 
 test('workspace entry tab opens the development cartridge instead of the booting BIOS', (t) => {
@@ -239,10 +250,14 @@ test('authoring catalog keeps loaded data accessible while the BIOS or either ca
 	assert.notEqual(otherData, cartridgeData);
 	const catalog = [cartridgeData, otherData, cartridgeAem, systemData, systemAem];
 	assert.deepEqual(dataResources(sources), catalog);
-	const panelResources = buildResourcePanelItems(sources, 'all').map(item => item.resource);
+	const files = new ResourceFilesModel();
+	files.sync(sources, 'all');
 	const fileResources = buildResourceQuickPickItems(sources.resources).map(item => item.resource);
 	for (const resource of catalog) {
-		assert.ok(panelResources.includes(resource));
+		assert.equal(files.reveal(resource), true);
+		const selected = files.selectedNode!;
+		assert.ok(selected.element.kind === 'file');
+		assert.strictEqual(selected.element.resource, resource);
 		assert.ok(fileResources.includes(resource));
 	}
 

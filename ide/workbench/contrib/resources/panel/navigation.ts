@@ -1,5 +1,5 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import type { ResourceBrowserItem } from '../../../../common/models';
+import type { CallHierarchyPanelItem } from './items';
 
 export function resourcePanelIndexAtRelativeY(scroll: number, relativeY: number, lineHeight: number, itemCount: number): number {
 	const index = (scroll | 0) + ((relativeY / lineHeight) | 0);
@@ -36,23 +36,19 @@ export function ensureResourcePanelSelectionScroll(selectionIndex: number, scrol
 	return requestedScroll < maxScroll ? requestedScroll : maxScroll;
 }
 
-export function scrollResourcePanelHorizontalOffset(hscroll: number, amount: number, maxScroll: number): number {
-	if (maxScroll <= 0) {
-		return 0;
-	}
-	return clamp(hscroll + amount, 0, maxScroll);
-}
-
 export function expandSelectedCallHierarchyNode(
-	items: readonly ResourceBrowserItem[],
+	items: readonly CallHierarchyPanelItem[],
 	selectionIndex: number,
 	expandedNodeIds: Set<string>,
 ): string {
-	const item = items[selectionIndex];
-	const nodeId = item?.callHierarchyNodeId;
-	if (!item?.callHierarchyExpandable || !nodeId) {
+	if (selectionIndex < 0) {
 		return null;
 	}
+	const item = items[selectionIndex];
+	if (!item.callHierarchyExpandable) {
+		return null;
+	}
+	const nodeId = item.callHierarchyNodeId;
 	if (expandedNodeIds.has(nodeId)) {
 		return null;
 	}
@@ -61,15 +57,18 @@ export function expandSelectedCallHierarchyNode(
 }
 
 export function collapseSelectedCallHierarchyNode(
-	items: readonly ResourceBrowserItem[],
+	items: readonly CallHierarchyPanelItem[],
 	selectionIndex: number,
 	expandedNodeIds: Set<string>,
 ): string {
-	const item = items[selectionIndex];
-	const nodeId = item?.callHierarchyNodeId;
-	if (!item?.callHierarchyExpandable || !nodeId) {
+	if (selectionIndex < 0) {
 		return null;
 	}
+	const item = items[selectionIndex];
+	if (!item.callHierarchyExpandable) {
+		return null;
+	}
+	const nodeId = item.callHierarchyNodeId;
 	if (!expandedNodeIds.has(nodeId)) {
 		return null;
 	}

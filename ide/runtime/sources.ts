@@ -96,6 +96,7 @@ export type RuntimeSourceState = {
 	systemRomSource: RawRomSource;
 	activeRomSource: RawRomSource;
 	resourceByIdentity: Map<string, RuntimeResource>;
+	resourceCatalogRevision: number;
 	luaResources: RuntimeResource[];
 	/** Loaded authoring resources, independent of the executing source domain. */
 	resources: RuntimeResource[];
@@ -223,6 +224,7 @@ export function createRuntimeSourceState(
 		systemRomSource: systemSource,
 		activeRomSource: systemSource,
 		resourceByIdentity: new Map(),
+		resourceCatalogRevision: 0,
 		luaResources: [],
 		resources: [],
 		workspaceTextSources: new Map(),
@@ -469,7 +471,13 @@ export function registerRuntimeLuaResource(
 	const key = resourceIdentityKeyFromParts(domain, source.source_path);
 	const previous = state.resourceByIdentity.get(key);
 	if (previous) {
+		const becameLua = previous.source.type !== 'lua';
 		previous.source = source;
+		if (becameLua) {
+			state.luaResources.push(previous);
+			sortRuntimeResources(state.luaResources);
+			state.resourceCatalogRevision++;
+		}
 		return previous;
 	}
 	const resource = retainRuntimeResource(
@@ -483,6 +491,7 @@ export function registerRuntimeLuaResource(
 	sortRuntimeResources(state.luaResources);
 	state.resources.push(resource);
 	sortRuntimeResources(state.resources);
+	state.resourceCatalogRevision++;
 	return resource;
 }
 
@@ -527,6 +536,7 @@ export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
 	state.resources.length = 0;
 	for (const resource of resources.values()) state.resources.push(resource);
 	sortRuntimeResources(state.resources);
+	state.resourceCatalogRevision++;
 }
 
 export function registerWorkspaceTextSources(

@@ -1,6 +1,5 @@
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import type { ResourcePanelController } from '../contrib/resources/panel/controller';
-import { clamp } from '../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../machine/ts/common/rect';
 import { getWorkbenchEditorBounds } from '../common/layout';
 import { applyResourceViewerScroll, resolveResourceViewerLayout } from '../contrib/resources/viewer';
@@ -11,40 +10,21 @@ import * as constants from '../../common/constants';
 import { resolveThemeTokenColor } from '../../theme/tokens';
 import { drawRectOutlineColor } from '../../editor/render/caret';
 import { editorViewState } from '../../editor/ui/view/state';
+import { drawWorkbenchIcon } from './icon';
+import { WORKBENCH_ICON_SIZE } from '../ui/icon';
 
 const resourceViewerVerticalTrack: RectBounds = create_rect_bounds();
 export function renderResourcePanel(controller: ResourcePanelController): void {
 	if (!controller.visible) {
 		return;
 	}
-	const layout = controller.prepareLayout();
-	if (!layout) {
-		return;
-	}
+	const layout = controller.layout;
 	const bounds = layout.bounds;
 	const contentLeft = layout.contentLeft;
 	const dividerLeft = layout.dividerLeft;
 	const capacity = layout.capacity;
-	const itemCount = controller.items.length;
-
-	controller.scroll = clamp(controller.scroll, 0, layout.maxVerticalScroll);
-	controller.clampHScroll();
-
-	const verticalScrollbar = controller.resourceVertical;
-	verticalScrollbar.layout(layout.verticalTrack, itemCount, capacity, controller.scroll);
-	controller.scroll = verticalScrollbar.getScroll();
-
-	const horizontalScrollbar = controller.resourceHorizontal;
-	const horizontalContentWidth = controller.maxLineWidth > layout.availableWidth
-		? controller.maxLineWidth
-		: layout.availableWidth;
-	horizontalScrollbar.layout(
-		layout.horizontalTrack,
-		horizontalContentWidth,
-		layout.availableWidth,
-		controller.hscroll,
-	);
-	controller.hscroll = horizontalScrollbar.getScroll();
+	const itemCount = controller.itemCount;
+	const verticalScrollbar = controller.resourceVertical, horizontalScrollbar = controller.resourceHorizontal;
 
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
 
@@ -52,50 +32,38 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	const scrollStart = controller.scroll | 0;
 	const scrollEndCandidate = scrollStart + capacity;
 	const scrollEnd = scrollEndCandidate < itemCount ? scrollEndCandidate : itemCount;
-	const highlightIndex = controller.hoverIndex >= 0 ? controller.hoverIndex : controller.selectionIndex;
 	const panelActive = controller.isFocused();
 	const scrollX = controller.hscroll;
 	const highlightColor = resolveThemeTokenColor(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT);
 
+	api.pushClipRect(contentLeft, contentTop, layout.contentRight, layout.effectiveBottom);
 	for (let itemIndex = scrollStart, drawIndex = 0; itemIndex < scrollEnd; itemIndex += 1, drawIndex += 1) {
 		const y = contentTop + drawIndex * controller.lineHeight;
 		if (y >= layout.effectiveBottom) {
 			break;
 		}
 		const metrics = controller.getItemMetrics(itemIndex);
-		const indentText = metrics.indentText;
-		const contentText = metrics.contentText;
-		const indentX = contentLeft - scrollX;
-		if (indentText.length > 0) {
-			drawEditorText(editorViewState.font, indentText, indentX, y, 0, constants.COLOR_RESOURCE_PANEL_TEXT);
-		}
-		const contentX = indentX + metrics.indentWidth;
-		const isHighlighted = itemIndex === highlightIndex;
-		if (isHighlighted) {
-			const highlightWidth = metrics.contentWidth;
-			const caretLeft = contentX;
-			const highlightedRight = contentX + highlightWidth;
-			const caretRight = highlightedRight > caretLeft ? highlightedRight : caretLeft + 1;
-			const visibleLeft = clamp(caretLeft, contentLeft, layout.contentRight);
-			const visibleRight = clamp(caretRight, visibleLeft, layout.contentRight);
-			const caretTop = y;
-			const caretBottom = caretTop + controller.lineHeight;
+		const selected = itemIndex === controller.selectionIndex, hovered = itemIndex === controller.hoverIndex;
+		let color = constants.COLOR_RESOURCE_PANEL_TEXT;
+		if (selected) {
 			if (panelActive) {
-				if (visibleRight > visibleLeft) {
-					api.fill_rect_color(visibleLeft, caretTop, visibleRight, caretBottom, 0, highlightColor);
-				}
-				if (contentText.length > 0) {
-					drawEditorText(editorViewState.font, contentText, contentX, y, 0, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
-				}
-			} else if (visibleRight > visibleLeft) {
-				drawRectOutlineColor(visibleLeft, caretTop, visibleRight, caretBottom, 0, highlightColor);
-			}
+				api.fill_rect_color(contentLeft, y, layout.contentRight, y + controller.lineHeight, 0, highlightColor);
+				color = constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT;
+			} else drawRectOutlineColor(contentLeft, y, layout.contentRight, y + controller.lineHeight, 0, highlightColor);
+		} else if (hovered) api.fill_rect(contentLeft, y, layout.contentRight, y + controller.lineHeight, 0, constants.HIGHLIGHT_OVERLAY);
+		const indentX = contentLeft - scrollX;
+		const textY = y + ((controller.lineHeight - editorViewState.font.lineHeight) >> 1);
+		if (metrics.indentText.length !== 0) drawEditorText(editorViewState.font, metrics.indentText, indentX, textY, 0, color);
+		if (controller.getMode() === 'resources') {
+			const node = controller.files.tree.rows[itemIndex];
+			if (node.expandable) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
+				indentX + metrics.markerStartWidth + ((metrics.indentWidth - metrics.markerStartWidth - WORKBENCH_ICON_SIZE) >> 1),
+				y + ((controller.lineHeight - WORKBENCH_ICON_SIZE) >> 1), color);
 		}
-		if (!isHighlighted || contentText.length === 0 || !panelActive) {
-			drawEditorText(editorViewState.font, contentText, contentX, y, 0, constants.COLOR_RESOURCE_PANEL_TEXT);
-		}
+		drawEditorText(editorViewState.font, metrics.contentText, indentX + metrics.indentWidth, textY, 0, color);
 	}
 
+	api.popClipRect();
 	if (verticalScrollbar.isVisible()) {
 		verticalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}

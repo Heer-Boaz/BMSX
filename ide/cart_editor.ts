@@ -81,7 +81,7 @@ import type { EditorDisplay, Viewport } from './common/viewport';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
-import type { ResourceIdentity } from './common/resource';
+import { SYSTEM_RESOURCE_DOMAIN, type ResourceIdentity } from './common/resource';
 import { type RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
@@ -835,6 +835,7 @@ export class RuntimeCartEditor implements CartEditor {
 		editorChromeState.runtimeTimelineHeight = this.runtimeTimeline.height;
 		let layoutChanged = refreshWorkbenchLayout();
 		if (this.gamePanel.update()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
+		this.resourcePanel.refresh();
 		if (layoutChanged) this.surfaces.changed();
 		this.editorPanes.layout(getWorkbenchEditorBounds());
 		this.editorPanes.activePane?.update(deltaSeconds);
@@ -852,8 +853,8 @@ export class RuntimeCartEditor implements CartEditor {
 		applyViewportSize(viewport);
 		layoutTabBar(this.chromeRenderContext);
 		refreshWorkbenchLayout();
-		this.syncResourcePanelViewport();
 		if (this.gamePanel.update()) refreshWorkbenchLayout();
+		this.resourcePanel.refresh();
 		this.editorPanes.layout(getWorkbenchEditorBounds());
 		this.surfaces.changed();
 	}
@@ -1110,27 +1111,13 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.isAvailable) {
 			return;
 		}
-		initializeTabs(retainEntryTabContext(this.sources), this.editorPanes);
-		this.resourcePanel.queuePendingSelection(null);
+		const entry = retainEntryTabContext(this.sources);
+		initializeTabs(entry, this.editorPanes);
+		this.resourcePanel.queuePendingSelection(entry.model.resource.domain === SYSTEM_RESOURCE_DOMAIN ? null : entry.model.resource);
 		editorChromeState.resourcePanelResizing = false;
 		activeCodeEditor.view.desiredColumn = activeCodeEditor.view.cursorColumn;
 		initializeNavigationState(this.editorPanes);
 		editorRuntimeState.initialized = true;
-	}
-
-	private syncResourcePanelViewport(): void {
-		const resourcePanel = this.resourcePanel;
-		if (!resourcePanel.visible) {
-			return;
-		}
-		const bounds = resourcePanel.getBounds();
-		if (!bounds) {
-			resourcePanel.hide();
-			editorChromeState.resourcePanelResizing = false;
-			return;
-		}
-		resourcePanel.clampHScroll();
-		resourcePanel.ensureSelectionVisible();
 	}
 
 	private disableCrtPostprocessingForEditor(): void {

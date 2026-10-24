@@ -4,7 +4,6 @@ import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import type { Scrollbar } from '../../../ui/scrollbar';
 import { renderResourcePanel } from '../../../render/resource_panel';
-import type { ResourceBrowserItem } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { measureTextRange } from '../../../../editor/common/text/layout';
@@ -17,9 +16,8 @@ import type { EditorFont } from '../../../../editor/ui/view/font';
 import type { FontVariant } from '../../../../../machine/ts/render/shared/bmsx_font';
 import {
 	computeResourcePanelMaxLineWidth,
-	findResourcePanelIndexByIdentity,
 	findResourcePanelIndexByCallHierarchyNodeId,
-	type ResourcePanelFilterMode,
+	type CallHierarchyPanelItem,
 } from './items';
 import {
 	clampResourcePanelRatio,
@@ -35,25 +33,25 @@ import {
 	expandSelectedCallHierarchyNode,
 	moveResourcePanelSelectionIndex,
 	resourcePanelIndexAtRelativeY,
-	scrollResourcePanelHorizontalOffset,
 } from './navigation';
 import {
 	openSelectedResourcePanelCallHierarchyLocation,
-	openSelectedResourcePanelItem,
 } from './open_actions';
 import {
 	refreshResourcePanelCallHierarchyState,
-	refreshResourcePanelResourceState,
 } from './refresh';
 import type { ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import { inputFocus } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
+import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
+import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
+import { editorChromeState } from '../../../ui/chrome_state';
+import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation } from '../../../ui/tree_view';
 
 export type ResourcePanelItemMetrics = {
 	fontVariant: FontVariant | null;
-	item: ResourceBrowserItem;
 	line: string;
 	contentStartColumn: number;
 	indentText: string;
@@ -72,7 +70,6 @@ export type ResourcePanelScrollbars = {
 function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
 	return {
 		fontVariant: null,
-		item: null,
 		line: null,
 		contentStartColumn: -1,
 		indentText: '',
@@ -86,30 +83,45 @@ function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
 
 export class ResourcePanelController implements PointerHoverTarget {
 	public onPointerLeave(): void { this.hoverIndex = -1; }
-	private static readonly EMPTY_ITEMS: ResourceBrowserItem[] = [];
+	private static readonly EMPTY_ITEMS: CallHierarchyPanelItem[] = [];
 	public visible = false;
 	public readonly focusTarget = inputFocus.createTarget();
 	private widthRatio: number;
 	private filterMode: ResourcePanelFilterMode = 'lua_only';
 	private mode: 'resources' | 'command' = 'resources';
-	public lineHeight: number;
-	private charAdvance: number;
+	private fontLineHeight: number;
+	public get lineHeight(): number { return this.mode === 'resources' ? Math.max(this.fontLineHeight, WORKBENCH_ICON_SIZE) + 2 : this.fontLineHeight; }
 	private fontVariant: FontVariant | null = null;
 
-	// Browser state
-	public items: ResourceBrowserItem[] = ResourcePanelController.EMPTY_ITEMS;
-	public scroll = 0;
-	public hscroll = 0;
-	public selectionIndex = -1;
-	public hoverIndex = -1;
-	public maxLineWidth = 0;
+	public readonly files = new ResourceFilesModel();
+	private callHierarchyItems: CallHierarchyPanelItem[] = ResourcePanelController.EMPTY_ITEMS;
+	private callScroll = 0;
+	private callHScroll = 0;
+	private callSelection = -1;
+	private callHover = -1;
+	private callMaxWidth = 0;
+	private filesMaxWidth = 0;
+	private filesWidthRevision = -1;
+	private filesWidthFont: FontVariant | null = null;
+	public get itemCount(): number { return this.mode === 'resources' ? this.files.tree.rows.length : this.callHierarchyItems.length; }
+	public get scroll(): number { return this.mode === 'resources' ? this.files.tree.scroll : this.callScroll; }
+	public set scroll(value: number) { if (this.mode === 'resources') this.files.tree.scroll = value; else this.callScroll = value; }
+	public get hscroll(): number { return this.mode === 'resources' ? this.files.horizontalScroll : this.callHScroll; }
+	public set hscroll(value: number) { if (this.mode === 'resources') this.files.horizontalScroll = value; else this.callHScroll = value; }
+	public get selectionIndex(): number { return this.mode === 'resources' ? this.files.tree.selectionIndex : this.callSelection; }
+	public set selectionIndex(value: number) { if (this.mode === 'resources') this.files.tree.selectionIndex = value; else this.callSelection = value; }
+	public get hoverIndex(): number { return this.mode === 'resources' ? this.files.tree.hoverIndex : this.callHover; }
+	public set hoverIndex(value: number) { if (this.mode === 'resources') this.files.tree.hoverIndex = value; else this.callHover = value; }
+	public get maxLineWidth(): number { return this.mode === 'resources' ? this.filesMaxWidth : this.callMaxWidth; }
 	private callHierarchyModel: CallHierarchyModel = null;
 	private callHierarchyDirection = CallHierarchyDirection.CallsTo;
 	private pendingSelectionIdentity: ResourceIdentity = null;
+	private selectionRevealRevision = -1;
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
 	private readonly bounds: RectBounds = create_rect_bounds();
-	private readonly layout: ResourcePanelLayout = createResourcePanelLayout(this.bounds);
-	private readonly itemMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
+	public readonly layout: ResourcePanelLayout = createResourcePanelLayout(this.bounds);
+	private readonly filesMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
+	private readonly callMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
 	public readonly resourceVertical: Scrollbar;
 	public readonly resourceHorizontal: Scrollbar;
 
@@ -119,8 +131,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		scrollbars: ResourcePanelScrollbars,
 		initialWidthRatio: number,
 	) {
-		this.lineHeight = editorViewState.lineHeight;
-		this.charAdvance = editorViewState.charAdvance;
+		this.fontLineHeight = editorViewState.lineHeight;
 		this.widthRatio = initialWidthRatio;
 		this.resourceVertical = scrollbars.resourceVertical;
 		this.resourceHorizontal = scrollbars.resourceHorizontal;
@@ -129,10 +140,11 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	public setFontMetrics(font: EditorFont): void {
 		if (this.fontVariant === font.variant) return;
+		pointerHover.release(this);
 		this.fontVariant = font.variant;
-		this.lineHeight = font.lineHeight;
-		this.charAdvance = font.advance('M');
-		this.maxLineWidth = computeResourcePanelMaxLineWidth(this.items);
+		this.fontLineHeight = font.lineHeight;
+		if (this.mode === 'resources') this.updateFilesMetrics();
+		else this.callMaxWidth = computeResourcePanelMaxLineWidth(this.callHierarchyItems);
 	}
 
 	// === Panel lifecycle ===
@@ -159,6 +171,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 			showEditorMessage('Viewport too small for resource panel.', 'warning', 3.0);
 			return;
 		}
+		pointerHover.release(this);
+		this.files.tree.hoverIndex = -1;
 		this.widthRatio = clamped;
 		this.mode = 'resources';
 		this.visible = true;
@@ -173,12 +187,15 @@ export class ResourcePanelController implements PointerHoverTarget {
 			showEditorMessage('Viewport too small for call hierarchy panel.', 'warning', 3.0);
 			return;
 		}
+		pointerHover.release(this);
 		this.widthRatio = clamped;
 		this.mode = 'command';
 		this.visible = true;
 		this.focusTarget.focus();
 		this.callHierarchyModel = model;
 		this.callHierarchyDirection = CallHierarchyDirection.CallsTo;
+		this.callScroll = this.callHScroll = 0;
+		this.callSelection = this.callHover = -1;
 		this.callHierarchyExpandedNodeIds.clear();
 		if (model.roots.length === 1) {
 			const root = model.roots[0];
@@ -208,8 +225,9 @@ export class ResourcePanelController implements PointerHoverTarget {
 	hide(): void {
 		pointerHover.release(this);
 		this.visible = false;
+		editorChromeState.resourcePanelResizing = false;
 		this.setFocused(false);
-		this.resetState();
+		this.resetCallHierarchyState();
 		this.mode = 'resources';
 		this.callHierarchyModel = null;
 		this.callHierarchyExpandedNodeIds.clear();
@@ -240,11 +258,11 @@ export class ResourcePanelController implements PointerHoverTarget {
 			return -1;
 		}
 		if (x < layout.contentLeft || x >= layout.contentRight || y < layout.contentTop || y >= layout.effectiveBottom) return -1;
-		return resourcePanelIndexAtRelativeY(this.scroll, y - layout.contentTop, this.lineHeight, this.items.length);
+		return resourcePanelIndexAtRelativeY(this.scroll, y - layout.contentTop, this.lineHeight, this.itemCount);
 	}
 
 	setSelectionIndex(index: number): void {
-		const next = clampResourcePanelSelectionIndex(index, this.items.length);
+		const next = clampResourcePanelSelectionIndex(index, this.itemCount);
 		if (next === this.selectionIndex) return;
 		this.selectionIndex = next;
 		this.hoverIndex = -1;
@@ -252,7 +270,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	isCallHierarchyMarkerHit(index: number, viewportX: number): boolean {
-		const item = this.items[index];
+		const item = this.callHierarchyItems[index];
 		if (!item || !item.callHierarchyExpandable) {
 			return false;
 		}
@@ -279,7 +297,6 @@ export class ResourcePanelController implements PointerHoverTarget {
 	scrollBy(amount: number): void {
 		const layout = this.prepareLayout();
 		this.scroll = clamp(this.scroll + amount, 0, layout ? layout.maxVerticalScroll : 0);
-		this.ensureSelectionVisible();
 		this.clampHScroll();
 	}
 
@@ -288,7 +305,10 @@ export class ResourcePanelController implements PointerHoverTarget {
 			this.activateSelectedCallHierarchy();
 			return;
 		}
-		openSelectedResourcePanelItem(this.editor, this.items, this.selectionIndex);
+		const selected = this.files.selectedNode;
+		if (selected === null) return;
+		if (selected.element.kind === 'file') void this.editor.navigation.openResource(selected.element.resource);
+		else if (this.files.toggle(this.selectionIndex)) { this.updateFilesMetrics(); this.ensureSelectionVisible(); }
 	}
 
 	openSelectedCallHierarchyLocation(): void {
@@ -297,13 +317,9 @@ export class ResourcePanelController implements PointerHoverTarget {
 		}
 		openSelectedResourcePanelCallHierarchyLocation(
 			this.editor,
-			this.items,
+			this.callHierarchyItems,
 			this.selectionIndex,
 		);
-	}
-
-	getHorizontalScrollStep(): number {
-		return this.charAdvance * 4;
 	}
 
 	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
@@ -318,47 +334,52 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.focusTarget.focus();
 		this.publishCodeAreaLeft();
 		this.clampHScroll();
-		this.ensureSelectionVisible();
+		this.setScroll(this.scroll);
 		return true;
 	}
 
 	// === Internals ===
-	private resetState(): void {
-		this.items = ResourcePanelController.EMPTY_ITEMS;
-		this.scroll = 0;
-		this.selectionIndex = -1;
-		this.hoverIndex = -1;
-		this.hscroll = 0;
-		this.maxLineWidth = 0;
-		this.pendingSelectionIdentity = null;
+	private resetCallHierarchyState(): void {
+		this.callHierarchyItems = ResourcePanelController.EMPTY_ITEMS;
+		this.callScroll = this.callHScroll = this.callMaxWidth = 0;
+		this.callSelection = this.callHover = -1;
 	}
 
+	/** Publish the active view and its layout; Call Hierarchy changes only on explicit tree commands. */
 	public refresh(): void {
-		const bounds = this.getBounds();
-		if (!bounds) {
-			return;
+		if (!this.visible) return;
+		let reveal = false;
+		if (this.mode === 'resources') {
+			const changed = this.files.sync(this.sources, this.filterMode);
+			if (this.pendingSelectionIdentity !== null && this.selectionRevealRevision !== this.files.revision) {
+				this.selectionRevealRevision = this.files.revision;
+				reveal = this.files.reveal(this.pendingSelectionIdentity);
+				if (reveal) this.pendingSelectionIdentity = null;
+			}
+			this.updateFilesMetrics();
+			if (changed || reveal) pointerHover.release(this);
 		}
-		this.hoverIndex = -1;
-		if (this.mode === 'command') {
-			this.refreshCallHierarchyContents();
-			return;
+		if (this.prepareLayout() === null) this.hide();
+		else if (reveal) this.ensureSelectionVisible();
+	}
+
+	public navigateFiles(command: WorkbenchTreeNavigation): void {
+		this.prepareLayout();
+		const result = this.files.navigate(command);
+		if (result === WorkbenchTreeNavigationResult.Collapse) this.updateFilesMetrics();
+		if (result !== WorkbenchTreeNavigationResult.None) this.ensureSelectionVisible();
+	}
+
+	private updateFilesMetrics(): void {
+		if (this.filesWidthRevision === this.files.revision && this.filesWidthFont === this.fontVariant) return;
+		this.filesWidthRevision = this.files.revision; this.filesWidthFont = this.fontVariant;
+		let maximum = 0;
+		for (let index = 0; index < this.files.tree.rows.length; index++) {
+			const metrics = this.getItemMetrics(index);
+			const width = metrics.indentWidth + metrics.contentWidth;
+			if (width > maximum) maximum = width;
 		}
-		const previousResource = this.pendingSelectionIdentity
-			? null
-			: (this.selectionIndex >= 0 && this.selectionIndex < this.items.length)
-				? this.items[this.selectionIndex].resource
-				: null;
-		this.applyRefreshResult(refreshResourcePanelResourceState({
-			sources: this.sources,
-			filterMode: this.filterMode,
-			bounds,
-			lineHeight: this.lineHeight,
-			previousResource,
-			targetIdentity: this.pendingSelectionIdentity,
-			previousIndex: this.selectionIndex,
-			previousScroll: this.scroll,
-		}));
-		this.pendingSelectionIdentity = null;
+		this.filesMaxWidth = maximum;
 	}
 
 	private refreshCallHierarchyContents(): void {
@@ -367,8 +388,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 			return;
 		}
 		this.hoverIndex = -1;
-		const previousNodeId = this.selectionIndex >= 0 && this.selectionIndex < this.items.length
-			? this.items[this.selectionIndex].callHierarchyNodeId
+		const previousNodeId = this.selectionIndex >= 0 && this.selectionIndex < this.itemCount
+			? this.callHierarchyItems[this.selectionIndex].callHierarchyNodeId
 			: null;
 		this.applyRefreshResult(refreshResourcePanelCallHierarchyState({
 			model: this.callHierarchyModel,
@@ -383,41 +404,28 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	queuePendingSelection(identity: ResourceIdentity): void {
 		this.pendingSelectionIdentity = identity;
+		this.selectionRevealRevision = -1;
 	}
 
 	applyPendingSelection(): void {
-		if (!this.visible || !this.pendingSelectionIdentity) {
-			return;
-		}
-		const index = findResourcePanelIndexByIdentity(this.items, this.pendingSelectionIdentity);
-		if (index === -1) {
-			return;
-		}
-		this.selectionIndex = index;
-		this.ensureSelectionVisible();
+		if (!this.visible || this.mode !== 'resources' || this.pendingSelectionIdentity === null) return;
+		this.selectionRevealRevision = this.files.revision;
+		if (!this.files.reveal(this.pendingSelectionIdentity)) return;
 		this.pendingSelectionIdentity = null;
+		this.updateFilesMetrics(); this.ensureSelectionVisible();
 	}
 
 	public moveSelectionBy(delta: number): void {
-		const next = moveResourcePanelSelectionIndex(this.selectionIndex, this.items.length, delta);
+		const next = moveResourcePanelSelectionIndex(this.selectionIndex, this.itemCount, delta);
 		if (next === this.selectionIndex) return;
 		this.selectionIndex = next;
 		this.hoverIndex = -1;
 		this.ensureSelectionVisible();
 	}
-
-	public scrollHorizontalBy(amount: number): void {
-		const maxScroll = this.computeMaxHScroll();
-		const next = scrollResourcePanelHorizontalOffset(this.hscroll, amount, maxScroll);
-		if (next === this.hscroll) return;
-		this.hscroll = next;
-		this.clampHScroll();
-	}
-
 	public ensureSelectionVisible(): void {
 		const layout = this.prepareLayout();
 		const capacity = layout ? layout.capacity : 1;
-		this.scroll = ensureResourcePanelSelectionScroll(this.selectionIndex, this.scroll, capacity, this.items.length);
+		this.scroll = ensureResourcePanelSelectionScroll(this.selectionIndex, this.scroll, capacity, this.itemCount);
 		this.clampHScroll();
 	}
 
@@ -441,35 +449,43 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	public prepareLayout(): ResourcePanelLayout {
 		const bounds = this.getBounds();
-		if (!bounds) {
-			return null;
+		if (!bounds) return null;
+		const layout = writeResourcePanelLayout(this.layout, this.itemCount, this.maxLineWidth, this.lineHeight);
+		this.resourceVertical.layout(layout.verticalTrack, this.itemCount, layout.capacity, this.scroll);
+		this.scroll = this.resourceVertical.getScroll();
+		this.resourceHorizontal.layout(layout.horizontalTrack, Math.max(this.maxLineWidth, layout.availableWidth), layout.availableWidth, this.hscroll);
+		this.hscroll = this.resourceHorizontal.getScroll();
+		if (this.mode === 'resources') {
+			const tree = this.files.tree.layout;
+			tree.contentLeft = layout.contentLeft; tree.contentTop = layout.contentTop;
+			tree.contentRight = layout.contentRight; tree.contentBottom = layout.effectiveBottom;
+			tree.rowHeight = this.lineHeight; tree.visibleRowCount = layout.capacity;
+			tree.indentWidth = tree.twistieWidth = editorViewState.spaceAdvance * 2;
 		}
-		return writeResourcePanelLayout(this.layout, this.items.length, this.maxLineWidth, this.lineHeight);
+		return layout;
 	}
 
 	public getItemMetrics(index: number): ResourcePanelItemMetrics {
-		const item = this.items[index];
-		const metrics = this.itemMetrics.get(index);
+		const item = this.mode === 'resources' ? this.files.tree.rows[index].element : this.callHierarchyItems[index];
+		const metrics = (this.mode === 'resources' ? this.filesMetrics : this.callMetrics).get(index);
 		if (
-			metrics.item === item
-			&& metrics.line === item.line
+			metrics.line === item.line
 			&& metrics.contentStartColumn === item.contentStartColumn
 		) {
 			if (metrics.fontVariant === this.fontVariant) return metrics;
 		} else {
-			metrics.item = item;
 			metrics.line = item.line;
 			metrics.contentStartColumn = item.contentStartColumn;
-			metrics.indentText = item.line.slice(0, item.contentStartColumn);
-			metrics.contentText = item.line.slice(item.contentStartColumn);
+			metrics.indentText = this.mode === 'resources' ? '' : item.line.slice(0, item.contentStartColumn);
+			metrics.contentText = this.mode === 'resources' ? this.files.tree.rows[index].element.label : item.line.slice(item.contentStartColumn);
 		}
 		const line = item.line;
 		const contentStartColumn = item.contentStartColumn;
-		const markerStartColumn = item.callHierarchyExpandable ? contentStartColumn - 2 : contentStartColumn;
+		const markerStartColumn = this.mode === 'command' && this.callHierarchyItems[index].callHierarchyExpandable ? contentStartColumn - 2 : contentStartColumn;
 		metrics.fontVariant = this.fontVariant;
-		metrics.indentWidth = measureTextRange(line, 0, contentStartColumn);
-		metrics.contentWidth = measureTextRange(line, contentStartColumn, line.length);
-		metrics.markerStartWidth = measureTextRange(line, 0, markerStartColumn);
+		metrics.indentWidth = this.mode === 'resources' ? contentStartColumn * editorViewState.spaceAdvance : measureTextRange(line, 0, contentStartColumn);
+		metrics.contentWidth = measureTextRange(metrics.contentText, 0, metrics.contentText.length);
+		metrics.markerStartWidth = this.mode === 'resources' ? metrics.indentWidth - editorViewState.spaceAdvance * 2 : measureTextRange(line, 0, markerStartColumn);
 		metrics.markerEndWidth = metrics.indentWidth;
 		return metrics;
 	}
@@ -487,7 +503,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	public expandSelectedCallHierarchyNode(): void {
 		const expandedNodeId = expandSelectedCallHierarchyNode(
-			this.items,
+			this.callHierarchyItems,
 			this.selectionIndex,
 			this.callHierarchyExpandedNodeIds,
 		);
@@ -498,7 +514,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	public collapseSelectedCallHierarchyNode(): void {
 		const collapsedNodeId = collapseSelectedCallHierarchyNode(
-			this.items,
+			this.callHierarchyItems,
 			this.selectionIndex,
 			this.callHierarchyExpandedNodeIds,
 		);
@@ -508,11 +524,11 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	private activateSelectedCallHierarchy(): void {
-		const selected = this.items[this.selectionIndex];
+		const selected = this.callHierarchyItems[this.selectionIndex];
 		if (!selected?.callHierarchyExpandable) {
 			openSelectedResourcePanelCallHierarchyLocation(
 				this.editor,
-				this.items,
+				this.callHierarchyItems,
 				this.selectionIndex,
 			);
 			return;
@@ -528,19 +544,19 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	private restoreCallHierarchySelection(nodeId: string): void {
-		const index = findResourcePanelIndexByCallHierarchyNodeId(this.items, nodeId);
+		const index = findResourcePanelIndexByCallHierarchyNodeId(this.callHierarchyItems, nodeId);
 		if (index >= 0) this.selectionIndex = index;
 	}
 
 	private applyRefreshResult(refreshed: {
-		items: ResourceBrowserItem[];
+		items: CallHierarchyPanelItem[];
 		maxLineWidth: number;
 		selectionIndex: number;
 		scroll: number;
 	}): void {
-		this.items = refreshed.items;
-		this.itemMetrics.clear();
-		this.maxLineWidth = refreshed.maxLineWidth;
+		this.callHierarchyItems = refreshed.items;
+		this.callMetrics.clear();
+		this.callMaxWidth = refreshed.maxLineWidth;
 		this.selectionIndex = refreshed.selectionIndex;
 		this.scroll = refreshed.scroll;
 		this.clampHScroll();

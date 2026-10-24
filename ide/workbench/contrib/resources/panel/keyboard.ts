@@ -8,6 +8,10 @@ export function handleResourcePanelKeyboardInput(playerInput: KeyInputEvent, con
 	const ctrlDown = isCtrlDown(playerInput);
 	const metaDown = isMetaDown(playerInput);
 	const shiftDown = isShiftDown(playerInput);
+	if (controller.getMode() === 'resources') for (const [key, command] of FILE_NAVIGATION) {
+		if (!isKeyJustPressed(key, playerInput)) continue;
+		consumeIdeKey(key, playerInput); controller.navigateFiles(command); return;
+	}
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR', playerInput)) {
 		consumeIdeKey('KeyR', playerInput);
 		showEditorMessage('Resolution toggle not handled by panel controller.', 'info', 1.2);
@@ -43,20 +47,6 @@ export function handleResourcePanelKeyboardInput(playerInput: KeyInputEvent, con
 		if (isKeyJustPressed('ArrowRight', playerInput)) {
 			consumeIdeKey('ArrowRight', playerInput);
 			controller.expandSelectedCallHierarchyNode();
-			return;
-		}
-	} else {
-		const horizontalStep = controller.getHorizontalScrollStep();
-		if (isKeyJustPressed('ArrowLeft', playerInput)) {
-			consumeIdeKey('ArrowLeft', playerInput);
-			controller.scrollHorizontalBy(-horizontalStep);
-			controller.ensureSelectionVisible();
-			return;
-		}
-		if (isKeyJustPressed('ArrowRight', playerInput)) {
-			consumeIdeKey('ArrowRight', playerInput);
-			controller.scrollHorizontalBy(horizontalStep);
-			controller.ensureSelectionVisible();
 			return;
 		}
 	}
@@ -104,3 +94,6 @@ export function handleResourcePanelKeyboardInput(playerInput: KeyInputEvent, con
 		controller.moveSelectionBy(Number.POSITIVE_INFINITY);
 	}
 }
+
+const FILE_NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['ArrowLeft', 'left'], ['ArrowRight', 'right'],
+	['PageUp', 'page-up'], ['PageDown', 'page-down'], ['Home', 'home'], ['End', 'end']] as const;

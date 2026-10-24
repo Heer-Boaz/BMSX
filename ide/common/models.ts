@@ -1,8 +1,5 @@
 import type { PointerButtons } from '../../hosts/common/input/pointer_event';
 import type { KeyModifier } from '../../hosts/common/input/text';
-import type {
-	LuaDefinitionLocation,
-} from '../../toolchain/ts/lua/semantic_contracts';
 import type { RuntimeResource } from './resource';
 import type { LuaMemberCompletionContext } from '../../toolchain/ts/lua/semantic/completion';
 import type { TextField } from '../editor/ui/inline/text_field_model';
@@ -207,16 +204,6 @@ export type CrtOptionsSnapshot = {
 	colorBleed: [number, number, number];
 	blurIntensity: number;
 	glowColor: [number, number, number];
-};
-
-export type ResourceBrowserItem = {
-	line: string;
-	contentStartColumn: number;
-	resource: RuntimeResource;
-	location?: LuaDefinitionLocation;
-	callHierarchyNodeId?: string;
-	callHierarchyExpandable?: boolean;
-	callHierarchyExpanded?: boolean;
 };
 
 export type SearchState = {
