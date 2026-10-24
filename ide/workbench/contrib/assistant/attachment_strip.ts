@@ -109,6 +109,6 @@ export class AssistantAttachmentStrip {
 	private openSelected(): void {
 		const image = this.attachments!.images[this.selected];
 		if (image.state === 'ready') this.open(image.url!);
-		else if (image.state === 'error') showEditorMessage(image.error!, colors.COLOR_STATUS_ERROR, 5);
+		else if (image.state === 'error') showEditorMessage(image.error!, 'error', 5);
 	}
 }

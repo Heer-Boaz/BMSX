@@ -999,7 +999,7 @@ export class RuntimeCartEditor implements CartEditor {
 			.then(generation => {
 				if (generation === this.editorPanes.openGeneration) this.showRuntimeError(line, column, message, details, resource.path);
 			})
-			.catch(error => showEditorMessage(`Failed to open runtime source: ${String(error)}`, constants.COLOR_STATUS_ERROR, 4.0));
+			.catch(error => showEditorMessage(`Failed to open runtime source: ${String(error)}`, 'error', 4.0));
 	}
 
 	public showRuntimeError(line: number, column: number, message: string, details?: RuntimeErrorDetails, path: string = ''): void {
@@ -1009,7 +1009,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const applied = applyRuntimeErrorOverlay(line, column, message, details, path);
 		setActiveRuntimeErrorOverlayForCurrentContext(applied.overlay);
 		setExecutionStopHighlightForCurrentContext(applied.targetRow);
-		showEditorMessage(applied.statusLine, constants.COLOR_STATUS_ERROR, 2.0);
+		showEditorMessage(applied.statusLine, 'error', 2.0);
 	}
 
 	public renderFaultOverlay(): void {
@@ -1051,7 +1051,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const errormsg = error instanceof Error ? error.message : String(error);
 		this.activate();
 		const message = `${fallbackMessage}: ${errormsg}`;
-		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
+		showEditorMessage(message, 'error', 2.0);
 	}
 
 	private initialize(

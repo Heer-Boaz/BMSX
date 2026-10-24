@@ -166,7 +166,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, this.input.workingCopy)];
 	}
 
-	public draw(): void { drawSceneEditor(this.input, this.controls, this.options.controls, this.details.focusTarget.hasFocus); }
+	public draw(): void { drawSceneEditor(this.input, this.controls, this.options.controls, this.focusTarget.hasFocus, this.details.focusTarget.hasFocus); }
 
 	public override focus(): void {
 		if (this.input.layout.mode === 'details') this.details.focusTarget.focus();

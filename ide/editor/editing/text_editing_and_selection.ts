@@ -18,7 +18,6 @@ import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import { currentLine } from '../common/text/layout';
 import { invalidateLineRange, markTextMutated } from '../common/text/runtime';
 import { resetBlink } from '../render/caret';
-import * as constants from '../../common/constants';
 import { formatLuaDocument } from '../../language/lua/formatter';
 import { extractErrorMessage } from '../../common/errors';
 import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
@@ -861,11 +860,11 @@ export function cutClipboardText(): void {
  */
 export function pasteText(text: string): void {
 	if (text.length === 0) {
-		showEditorMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Editor clipboard is empty', 'warning', 1.5);
 		return;
 	}
 	if (!editorAllowsMutation()) {
-		showEditorMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Tab is read-only', 'warning', 1.5);
 		return;
 	}
 	prepareUndo('paste', false);
@@ -874,7 +873,7 @@ export function pasteText(text: string): void {
 	} else {
 		insertClipboardText(text);
 	}
-	showEditorMessage('Pasted text', constants.COLOR_STATUS_SUCCESS, 1.5);
+	showEditorMessage('Pasted text', 'success', 1.5);
 }
 
 export function applyDocumentFormatting(): void {
@@ -885,7 +884,7 @@ export function applyDocumentFormatting(): void {
 		let formatted: string;
 		switch (activeCodeEditor.model.mode) {
 			case 'yaml':
-				showEditorMessage('YAML formatting is not available', constants.COLOR_STATUS_TEXT, 2.0);
+				showEditorMessage('YAML formatting is not available', 'info', 2.0);
 				return;
 			case 'lua':
 				formatted = formatLuaDocument(originalSource, originalLines);
@@ -899,7 +898,7 @@ export function applyDocumentFormatting(): void {
 				break;
 		}
 		if (formatted === originalSource) {
-			showEditorMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
+			showEditorMessage('Document already formatted', 'info', 1.5);
 			return;
 		}
 		const cursorOffset = buffer.offsetAt(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
@@ -915,10 +914,10 @@ export function applyDocumentFormatting(): void {
 		resetBlink();
 		revealCursor();
 		markTextMutated();
-		showEditorMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
+		showEditorMessage('Document formatted', 'success', 1.6);
 	} catch (error) {
 		const message = extractErrorMessage(error);
-		showEditorMessage(`Formatting failed: ${message}`, constants.COLOR_STATUS_ERROR, 3.2);
+		showEditorMessage(`Formatting failed: ${message}`, 'error', 3.2);
 	}
 }
 export function computeEditContextFromSources(previous: string, next: string): EditContext {

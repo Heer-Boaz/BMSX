@@ -1,5 +1,4 @@
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
-import { COLOR_STATUS_ERROR } from '../../../ide/common/constants';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { workspaceRecords } from '../../../ide/workspace/records';
 import { resolveWorkspacePath } from '../../../ide/workspace/path';
@@ -39,7 +38,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	await until(() => ide.textFileSaves.latestOperation(model)?.result?.status === 'failed', 'source saves: rejected HTTP PUT reports failed save');
 	check(model.dirty && model.lastSavedSource === firstSaved, 'source saves: failed write retains dirty identity and previous canonical baseline');
 	check((await files.read(path))!.contents === firstSaved, 'source saves: failed HTTP write did not update the project file');
-	check(editorFeedbackState.message.color === COLOR_STATUS_ERROR, 'source saves: failed write is a visible error');
+	check(editorFeedbackState.message.kind === 'error', 'source saves: failed write is a visible error');
 	await frame();
 	await test.capture?.('lua-save-failed');
 	harness.replaceActiveCodeSource(model.buffer.getText() + '-- later unsaved typing\n');

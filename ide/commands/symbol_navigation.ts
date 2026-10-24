@@ -3,7 +3,6 @@ import { resolveCallHierarchyAt } from '../editor/contrib/call_hierarchy/query';
 import { openDefinitionSearch } from '../workbench/contrib/code_editor/definitions/quick_access';
 import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import { showEditorMessage } from '../common/feedback_state';
-import * as constants from '../common/constants';
 import type { EditorCommandId, EditorSymbolNavigationCommandId } from '../common/commands';
 import type { CartEditor } from '../cart_editor';
 
@@ -34,11 +33,11 @@ export function executeEditorSymbolNavigationCommand(
 			);
 			switch (result.kind) {
 				case 'missing_definition':
-					showEditorMessage('Definition not found at cursor', constants.COLOR_STATUS_WARNING, 1.8);
+					showEditorMessage('Definition not found at cursor', 'warning', 1.8);
 					return;
 				case 'success':
 					editor.resourcePanel.showCallHierarchy(result.model);
-					showEditorMessage(result.model.title, constants.COLOR_STATUS_SUCCESS, 1.6);
+					showEditorMessage(result.model.title, 'success', 1.6);
 					return;
 			}
 	}

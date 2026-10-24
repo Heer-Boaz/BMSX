@@ -1,5 +1,4 @@
 import type { CartEditor } from '../../../cart_editor';
-import { COLOR_STATUS_ERROR, COLOR_STATUS_SUCCESS } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { isBuildTerminal, type StudioBuildJob } from '../../../../hosts/common/studio_builds';
 import type { WorkspaceBuilds } from '../../services/builds';
@@ -20,7 +19,7 @@ export async function chooseBuild(editor: CartEditor): Promise<void> {
 				})));
 				editor.quickInput.pick('Build recipe', 'Choose effective compiler options', () => new TextQuickPickProvider(recipes), recipe => {
 					void builds.submit(choice.target, recipe.debug, recipe.optLevel).then(job => {
-						showEditorMessage(`Build accepted: ${job.request.target}. See Studio: Build Jobs.`, COLOR_STATUS_SUCCESS, 5);
+						showEditorMessage(`Build accepted: ${job.request.target}. See Studio: Build Jobs.`, 'success', 5);
 					}).catch(reportBuildError);
 				});
 			});
@@ -95,4 +94,4 @@ function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, job: Stud
 	editor.quickInput.pick('Build details', 'Publication and runtime installation are separate',
 		() => new TextQuickPickProvider(choices), choice => { void choice.run().catch(reportBuildError); });
 }
-function reportBuildError(error: unknown): void { showEditorMessage(String(error), COLOR_STATUS_ERROR, 8); }
+function reportBuildError(error: unknown): void { showEditorMessage(String(error), 'error', 8); }

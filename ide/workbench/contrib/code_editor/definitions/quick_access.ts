@@ -2,7 +2,6 @@ import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { CartEditor } from '../../../../cart_editor';
 import { queryDefinitionsAt, type LuaDefinitionTarget } from '../../../../editor/contrib/definitions/query';
 import { showEditorMessage } from '../../../../common/feedback_state';
-import { COLOR_STATUS_WARNING } from '../../../../common/constants';
 import { semanticSymbolKindToLuaSymbolKind } from '../../../../../toolchain/ts/lua/semantic/common';
 import { symbolKindLabel } from '../../../../../toolchain/ts/lua/semantic/model';
 import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
@@ -27,7 +26,7 @@ export function openDefinitionSearch(sources: RuntimeSourceState, editor: CartEd
 	const resource = context.model.resource;
 	const query = queryDefinitionsAt(sources, context, row, column);
 	if (!query) {
-		showEditorMessage('Definition not found', COLOR_STATUS_WARNING, 1.6);
+		showEditorMessage('Definition not found', 'warning', 1.6);
 		return false;
 	}
 	if (query.definitions.length === 1) {

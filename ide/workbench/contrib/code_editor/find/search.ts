@@ -413,7 +413,7 @@ export function stepSearchSelection(delta: number, options?: { wrap?: boolean; p
 	const total = activeSearchMatchCount();
 	if (total === 0) {
 		if (!options?.preview) {
-			showEditorMessage('No matches found', constants.COLOR_STATUS_WARNING, 1.5);
+			showEditorMessage('No matches found', 'warning', 1.5);
 		}
 		return;
 	}

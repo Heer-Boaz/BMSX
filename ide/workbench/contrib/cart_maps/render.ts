@@ -9,11 +9,11 @@ import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { CartMapInput } from './editor_input';
 import type { CartMapCoordinateEdit } from './editor_pane';
 
-export function drawCartMap(input: CartMapInput, controls: readonly ValueInput<CartMapCoordinateEdit>[], gridFocused: boolean): void {
+export function drawCartMap(input: CartMapInput, controls: readonly ValueInput<CartMapCoordinateEdit>[], gridFocused: boolean, outlineFocused: boolean): void {
 	const { layout, tree } = input, font = editorViewState.font.renderFont(), color = colors.COLOR_RESOURCE_VIEWER_TEXT;
 	const rowHeight = layout.rowHeight + 4;
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
-	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
+	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.blit_text_inline_with_font(layout.sourceTitle, layout.left + 4, layout.top + 2, 0, color, font);
 	renderWorkbenchActionBar(input.actionBar, font, color, colors.COLOR_DESCRIPTION_TEXT);
 	api.blit_text_inline_with_font(layout.outlineTitle, layout.left + 4, layout.top + rowHeight + 2, 0, color, font);
@@ -25,8 +25,8 @@ export function drawCartMap(input: CartMapInput, controls: readonly ValueInput<C
 		const node = tree.rows[index], y = tree.layout.contentTop + (index - firstRow) * rowHeight;
 		const x = tree.layout.contentLeft + node.depth * tree.layout.indentWidth;
 		const selected = index === tree.selectionIndex;
-		const textColor = selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT : node.element.diagnostic === null ? color : colors.COLOR_STATUS_WARNING;
-		if (selected) api.fill_rect(tree.layout.contentLeft, y, tree.layout.contentRight, y + rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
+		const textColor = selected ? outlineFocused ? colors.COLOR_SELECTION_TEXT : colors.COLOR_INACTIVE_SELECTION_TEXT : node.element.diagnostic === null ? color : colors.COLOR_CONTENT_WARNING_TEXT;
+		if (selected) api.fill_rect(tree.layout.contentLeft, y, tree.layout.contentRight, y + rowHeight, 0, outlineFocused ? colors.SELECTION_OVERLAY : colors.INACTIVE_SELECTION_OVERLAY);
 		if (node.expandable) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
 			x + ((tree.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), textColor);
 		api.blit_text_inline_with_font(node.element.displayLabel, x + tree.layout.twistieWidth, y + 2, 0,

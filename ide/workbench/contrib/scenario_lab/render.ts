@@ -25,34 +25,34 @@ function stateTextColor(state: ScenarioResultState | null): number {
 		case 'queued':
 		case 'preparing':
 		case 'running':
-			return constants.COLOR_STATUS_WARNING;
+			return constants.COLOR_CONTENT_PROGRESS_TEXT;
 		case 'passed':
-			return constants.COLOR_STATUS_SUCCESS;
+			return constants.COLOR_CONTENT_SUCCESS_TEXT;
 		case 'failed':
-			return constants.COLOR_STATUS_ERROR;
+			return constants.COLOR_CONTENT_ERROR_TEXT;
 		case 'cancelled':
 		case 'skipped':
 		case null:
-			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+			return constants.COLOR_DESCRIPTION_TEXT;
 	}
 }
 
 function resultTextColor(row: ScenarioLabResultRow): number {
 	if (row.kind === 'failure') {
-		return constants.COLOR_STATUS_ERROR;
+		return constants.COLOR_CONTENT_ERROR_TEXT;
 	}
 	if (row.kind === 'fsm_transition') {
 		return row.transition.outcome === 'committed'
-			? constants.COLOR_STATUS_SUCCESS
-			: constants.COLOR_STATUS_WARNING;
+			? constants.COLOR_CONTENT_SUCCESS_TEXT
+			: constants.COLOR_CONTENT_WARNING_TEXT;
 	}
 	if (row.kind === 'actioneffect_fact') {
 		if (row.fact.kind !== 'trigger') {
 			return constants.COLOR_RESOURCE_VIEWER_TEXT;
 		}
 		return row.fact.outcome === 'accepted'
-			? constants.COLOR_STATUS_SUCCESS
-			: constants.COLOR_STATUS_WARNING;
+			? constants.COLOR_CONTENT_SUCCESS_TEXT
+			: constants.COLOR_CONTENT_WARNING_TEXT;
 	}
 	if (row.kind === 'log' || row.kind === 'capture') {
 		return constants.COLOR_RESOURCE_VIEWER_TEXT;
@@ -90,7 +90,6 @@ function drawPaneHeaders(state: ScenarioLabViewState, renderFont: BFont): void {
 	const layout = state.layout;
 	const testPaneLayout = state.testPane.layout;
 	const resultPaneLayout = state.resultPane.layout;
-	const inactiveTextColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
 	api.fill_rect(
 		layout.left,
 		testPaneLayout.headerTop,
@@ -106,9 +105,7 @@ function drawPaneHeaders(state: ScenarioLabViewState, renderFont: BFont): void {
 		testPaneLayout.contentLeft + TEXT_PADDING_X,
 		testPaneLayout.headerTop + TEXT_PADDING_Y,
 		0,
-		state.focus === 'tests'
-			? constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT
-			: inactiveTextColor,
+		constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT,
 		renderFont,
 	);
 	api.blit_text_inline_span_with_font(
@@ -118,11 +115,12 @@ function drawPaneHeaders(state: ScenarioLabViewState, renderFont: BFont): void {
 		resultPaneLayout.contentLeft + TEXT_PADDING_X,
 		resultPaneLayout.headerTop + TEXT_PADDING_Y,
 		0,
-		state.focus === 'results'
-			? constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT
-			: inactiveTextColor,
+		constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT,
 		renderFont,
 	);
+	const focused = state.focus === 'tests' ? testPaneLayout : resultPaneLayout;
+	api.fill_rect(focused.contentLeft, focused.headerBottom - 1, focused.contentRight, focused.headerBottom,
+		0, constants.COLOR_FOCUS_BORDER);
 }
 
 function drawTestRows(state: ScenarioLabViewState, renderFont: BFont): void {
@@ -137,7 +135,7 @@ function drawTestRows(state: ScenarioLabViewState, renderFont: BFont): void {
 			layout.contentLeft + TEXT_PADDING_X,
 			layout.contentTop,
 			0,
-			constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM,
+			constants.COLOR_DESCRIPTION_TEXT,
 			renderFont,
 		);
 		api.popClipRect();
@@ -187,7 +185,7 @@ function drawResultRows(state: ScenarioLabViewState, renderFont: BFont): void {
 			layout.contentLeft + TEXT_PADDING_X,
 			layout.contentTop,
 			0,
-			constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM,
+			constants.COLOR_DESCRIPTION_TEXT,
 			renderFont,
 		);
 		api.popClipRect();

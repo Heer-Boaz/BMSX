@@ -40,7 +40,7 @@ export class ValueInput<Value> implements InputEdit {
 		this.field.onDidChangeText(() => { this.error = ''; resetBlink(); });
 		this.field.focusTarget.onDidBlur(() => {
 			if (!this.commit()) {
-				showEditorMessage(this.format.invalidBlurMessage, constants.COLOR_STATUS_WARNING, 4);
+				showEditorMessage(this.format.invalidBlurMessage, 'warning', 4);
 				this.cancel();
 			}
 		});
@@ -63,7 +63,7 @@ export class ValueInput<Value> implements InputEdit {
 		const result = this.format.parse(this.field.text);
 		if ('error' in result) {
 			this.error = result.error;
-			showEditorMessage(this.error, constants.COLOR_STATUS_WARNING, 4);
+			showEditorMessage(this.error, 'warning', 4);
 			return false;
 		}
 		// Acceptance may invalidate/detach the control. Its resulting blur must

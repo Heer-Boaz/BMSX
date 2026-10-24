@@ -269,7 +269,7 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 	const overlay = createHostOverlayFixture(384, 288); const stream = new HostOverlayQuadStream();
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		drawSceneEditor(input, controls, options.controls, true); overlay.renderer.endFrame();
+		drawSceneEditor(input, controls, options.controls, false, true); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(); stream.reset(384, 288);
 		for (let index = 0; index < frame.commandCount; index += 1) stream.appendEntry(frame.commandKinds[index], frame.commandRefs[index]);
 		return frame;
@@ -295,7 +295,7 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 			const glyphs = frame.commandRefs[index] as GlyphRenderSubmission;
 			if (glyphs.items === 'DEFINITION ONLY') {
 				warning = true;
-				assert.equal(glyphs.color, resolveThemeTokenColor(colors.COLOR_STATUS_WARNING));
+				assert.equal(glyphs.color, resolveThemeTokenColor(colors.COLOR_CONTENT_WARNING_TEXT));
 			}
 		}
 		assert.equal(warning, true);

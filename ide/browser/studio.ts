@@ -3,7 +3,6 @@ import { HttpWorkspaceProjects } from './projects';
 import { importWorkspaceFiles } from './file_import';
 import { loadPublishedMedia, openPublishedBuild } from './published_media';
 import { showEditorMessage } from '../common/feedback_state';
-import { COLOR_STATUS_SUCCESS, COLOR_STATUS_ERROR } from '../common/constants';
 import { HttpConversationObserver } from './conversation_observer';
 import { decodeImage, encodePngImage } from '../../hosts/browser/image';
 import { AssistantHttpConnection } from './assistant_connection';
@@ -209,7 +208,7 @@ async function startBrowserStudio(): Promise<void> {
 		if (server !== undefined) {
 			if (server.projects) ide.editor.projects = new HttpWorkspaceProjects(httpSession(server.baseUrl));
 			const builds = server.builds ? new HttpWorkspaceBuilds(httpSession(server.baseUrl), job => {
-				showEditorMessage(`${job.request.target}: ${job.phase}. Studio: Build Jobs`, job.state === 'completed' ? COLOR_STATUS_SUCCESS : COLOR_STATUS_ERROR, 6);
+				showEditorMessage(`${job.request.target}: ${job.phase}. Studio: Build Jobs`, job.state === 'completed' ? 'success' : 'error', 6);
 			}) : undefined;
 			ide.editor.builds = builds;
 			if (builds !== undefined) {

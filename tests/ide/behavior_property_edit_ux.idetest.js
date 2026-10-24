@@ -123,6 +123,13 @@ for (let font = 0; font < 2; font++) {
 	await editPeriod(input); await press('ShiftLeft', 'Digit9'); await press('ControlLeft', 'KeyS');
 	t.assert(model.buffer.getText() === accepted123 && model.dirty, 'Save accepted an invalid expression or saved past the invalid active draft');
 	await capture(`effect-${variant}-invalid-draft-blocked-save`);
+	t.command('theme-toggle'); await t.frames(2);
+	t.assert(model.buffer.getText() === accepted123 && model.dirty, 'theme change published or saved the invalid property draft');
+	await capture(`effect-${variant}-retained-invalid-feedback-dark-theme`);
+	await press('ControlLeft', 'KeyS');
+	t.assert(model.buffer.getText() === accepted123 && model.dirty, 'fresh dark-theme Save accepted or lost the retained invalid draft');
+	await capture(`effect-${variant}-fresh-invalid-feedback-dark-theme`);
+	t.command('theme-toggle'); await t.frames(2);
 	await press('Escape'); t.command('undo'); await t.frames(3);
 	t.assert(model.buffer.getText() === original, 'invalid-draft cancellation did not preserve the prior canonical undo step');
 	// A popup opened by a pending draft belongs to the OLD generation and must retire.

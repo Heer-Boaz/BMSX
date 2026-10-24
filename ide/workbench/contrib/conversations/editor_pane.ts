@@ -53,13 +53,13 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 	public draw(): void {
 		const { layout, conversation, footer, footerTop } = this.input;
 		const font = editorViewState.font.renderFont();
-		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
+		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 		api.fill_rect(0, footerTop, layout.right, layout.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
 		for (let index = 0; index + 1 < footer.lines.length; index++) api.blit_text_inline_with_font(footer.lines[index], STATUS_BAR_CONNECTION_WIDTH + 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
 		if (conversation.workStartedAt !== undefined) {
 			const elapsed = performance.now() - conversation.workStartedAt;
-			api.blit_text_inline_with_font('|/-\\'[Math.trunc(elapsed / 150) & 3], 4, footerTop - layout.rowHeight - 2, 0, colors.COLOR_STATUS_SUCCESS, font);
-			api.blit_text_inline_with_font(conversation.activity, 16, footerTop - layout.rowHeight - 2, 0, colors.COLOR_STATUS_SUCCESS, font);
+			api.blit_text_inline_with_font('|/-\\'[Math.trunc(elapsed / 150) & 3], 4, footerTop - layout.rowHeight - 2, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
+			api.blit_text_inline_with_font(conversation.activity, 16, footerTop - layout.rowHeight - 2, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
 		}
 		this.previews.beginFrame(); this.transcriptView.draw(); this.previews.endFrame();
 	}

@@ -30,9 +30,11 @@ export type CodeTextDecorationStyle = {
 	gotoUnderline: number;
 };
 
+export type EditorMessageKind = 'info' | 'success' | 'warning' | 'error';
+
 export type MessageState = {
 	text: string;
-	color: number;
+	kind: EditorMessageKind;
 	timer: number;
 	visible: boolean;
 };

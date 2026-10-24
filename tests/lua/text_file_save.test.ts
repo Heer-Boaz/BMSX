@@ -17,7 +17,6 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 import { saveTextFileFromCommand } from '../../ide/commands/source_save';
 import type { CartEditor } from '../../ide/cart_editor';
 import { editorFeedbackState } from '../../ide/common/feedback_state';
-import { COLOR_STATUS_ERROR, COLOR_STATUS_SUCCESS, COLOR_STATUS_WARNING } from '../../ide/common/constants';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 
 class SaveStorage extends MemoryStorage {
@@ -234,7 +233,7 @@ test('Save command reports a write failure as an error, with the unsaved source 
 	f.files.failure = new Error('project filesystem unavailable');
 	const result = await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
 	assert.equal(result.status, 'failed'); assert.equal(model.dirty, true);
-	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_ERROR);
+	assert.equal(editorFeedbackState.message.kind, 'error');
 });
 
 test('YAML Save feedback distinguishes installed equality, a pending asset build and unavailable source provenance', async t => {
@@ -242,17 +241,17 @@ test('YAML Save feedback distinguishes installed equality, a pending asset build
 	const original = model.buffer.getText(), media = f.sources.currentBlua32Media;
 	model.resource.source.sourcemeta = { text: original };
 	assert.equal((await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources)).status, 'saved');
-	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_SUCCESS);
+	assert.equal(editorFeedbackState.message.kind, 'success');
 	setSource(model, 'value: 2\n');
 	await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
-	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
+	assert.equal(editorFeedbackState.message.kind, 'warning');
 	assert.equal(model.dirty, false);
 	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'pending');
 	assert.equal(model.resource.source.sourcemeta.text, original);
 	assert.equal(f.sources.currentBlua32Media, media, 'Save and its presentation cannot install data');
 	model.resource.source = { type: 'data', resid: model.resource.source.resid };
 	await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
-	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
+	assert.equal(editorFeedbackState.message.kind, 'warning');
 	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'untracked');
 });
 
@@ -268,7 +267,7 @@ test('YAML Save retains the captured write and current source status when typing
 	assert.equal(result.snapshot.source, 'value: 2\n');
 	assert.equal(model.buffer.getText(), original); assert.equal(model.dirty, true);
 	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'applied');
-	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_SUCCESS);
+	assert.equal(editorFeedbackState.message.kind, 'success');
 	assert.equal(f.files.records.get(`${f.root}/${model.resource.path}`)!.contents, 'value: 2\n');
 });
 

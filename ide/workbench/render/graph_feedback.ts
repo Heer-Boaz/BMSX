@@ -13,13 +13,13 @@ export function drawWorkbenchGraphNodeDrag(drag: WorkbenchGraphNodeDragFeedback,
 	// Keep the payload above a valid insertion sector, so its marker cannot obscure the label.
 	const top = (drag.accepted ? drag.marker.top : source.bounds.top + drag.offsetY) - source.headerHeight - 6;
 	const right = left + source.bounds.right - source.bounds.left;
-	const color = drag.accepted ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+	const color = drag.accepted ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_GRAPH_MUTED;
 	api.pushTransform(view.transform);
 	api.fill_rect(left, top, right, top + source.headerHeight, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 	api.blit_rect(left, top, right, top + source.headerHeight, 0, color);
 	let y = top + GRAPH_NODE_PADDING;
 	for (const line of source.lines) {
-		api.blit_text_inline_with_font(line, left + GRAPH_NODE_PADDING, y, 0, color, font);
+		api.blit_text_inline_with_font(line, left + GRAPH_NODE_PADDING, y, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT, font);
 		y += font.lineHeight;
 	}
 	api.popTransform();
@@ -51,7 +51,7 @@ export function drawWorkbenchGraphConnectionHandles(points: readonly number[], e
 }
 
 export function drawWorkbenchGraphConnectionTarget(drag: WorkbenchGraphConnectionPreview, view: WorkbenchGraphViewport): void {
-	const color = drag.accepted ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+	const color = drag.accepted ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_GRAPH_MUTED;
 	if (drag.target !== undefined) {
 		const target = drag.target;
 		api.blit_rect(view.graphToViewportX(target.bounds.left), view.graphToViewportY(target.bounds.top),

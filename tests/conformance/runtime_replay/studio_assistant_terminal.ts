@@ -2,7 +2,6 @@ import { AssistantHttpConnection } from '../../../ide/browser/assistant_connecti
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { showEditorMessage } from '../../../ide/common/feedback_state';
-import { COLOR_STATUS_TEXT } from '../../../ide/common/constants';
 import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
@@ -58,10 +57,10 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	const stop = view.turnActions.items.find(item => item.command === 'assistant.stop')!;
 	// Deterministically expire a real status row during hover, before mouse-down.
 	// The canvas itself stays the same size; actionability must track the target.
-	showEditorMessage('Terminal running', COLOR_STATUS_TEXT, 1);
+	showEditorMessage('Terminal running', 'info', 1);
 	await frame(); await frame();
 	const topBeforeExpiry = stop.bounds.top;
-	showEditorMessage('Terminal running', COLOR_STATUS_TEXT, runtime.timing.frameDurationMs * 0.5 / 1000);
+	showEditorMessage('Terminal running', 'info', runtime.timing.frameDurationMs * 0.5 / 1000);
 	await test.click(stop.bounds);
 	check(stop.bounds.top !== topBeforeExpiry, 'Stop remains reachable when the transient status row disappears');
 	check(terminal.paused && (conversation.state === 'stopping' || conversation.state === 'ready'),

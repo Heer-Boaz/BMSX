@@ -63,7 +63,7 @@ for (const theme of ['dark', 'light']) {
 		assert.equal(colors.COLOR_HEADER_BUTTON_TEXT_DISABLED, THEME_TOKEN_MUTED_GREY);
 		assert.equal(colors.COLOR_MENU_DISABLED_TEXT, THEME_TOKEN_MUTED_GREY);
 		for (const role of [colors.COLOR_HEADER_BUTTON_TEXT, colors.COLOR_MENU_TEXT, colors.COLOR_MENU_SELECTION_TEXT,
-			colors.COLOR_STATUS_ERROR, colors.COLOR_STATUS_WARNING])
+			colors.COLOR_CONTENT_ERROR_TEXT, colors.COLOR_CONTENT_WARNING_TEXT])
 			assert.notEqual(resolveThemeTokenColor(colors.COLOR_MENU_DISABLED_TEXT), resolveThemeTokenColor(role));
 		const syntaxDim = theme === 'dark' ? THEME_TOKEN_COMMENT_GREY : THEME_TOKEN_MUTED_GREY;
 		assert.equal(colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM, syntaxDim);
@@ -88,7 +88,7 @@ for (const theme of ['dark', 'light']) {
 			const background = fillsWithin(frame, bounds).find(rect => rect.area.left === bounds.left && rect.area.top === bounds.top
 				&& rect.area.right === bounds.right && rect.area.bottom === bounds.bottom);
 			assert.ok(background, 'the root frame is not the editor body surface');
-			assert.equal(background.color, resolveThemeTokenColor(colors.COLOR_CODE_BACKGROUND));
+			assert.equal(background.color, resolveThemeTokenColor(colors.COLOR_RESOURCE_VIEWER_BACKGROUND));
 		});
 		test(`${theme}/${variant} bare action icons inherit their owning surface while painted labels retain button ink`, t => {
 			const f = fixture(t, theme, variant), state = createWorkbenchActionBar('romInspector.title');

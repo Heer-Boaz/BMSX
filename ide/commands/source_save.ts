@@ -1,5 +1,4 @@
 import type { CartEditor } from '../cart_editor';
-import * as constants from '../common/constants';
 import { showEditorMessage, showEditorWarningBanner } from '../common/feedback_state';
 import type { EditorTextModel } from '../editor/model/text_model';
 import { extractErrorMessage } from '../common/errors';
@@ -20,7 +19,7 @@ export async function saveTextFileFromCommand(
 	const title = computeSourceLabel(model.resource.path);
 	if (result.status === 'failed') {
 		if (model.mode !== 'lua' || !showLuaErrorOverlay(editor, model.resource, result.error)) {
-			showEditorMessage(extractErrorMessage(result.error), constants.COLOR_STATUS_ERROR, 4.0);
+			showEditorMessage(extractErrorMessage(result.error), 'error', 4.0);
 		}
 		return result;
 	}
@@ -28,18 +27,18 @@ export async function saveTextFileFromCommand(
 	if (result.application.status === 'failed') {
 		showEditorWarningBanner(`${saved}; runtime apply failed: ${extractErrorMessage(result.application.error)}`, 5.0);
 	} else if (result.application.status === 'not-applied') {
-		showEditorMessage(`${saved}; apply pending`, constants.COLOR_STATUS_WARNING, 4.0);
+		showEditorMessage(`${saved}; apply pending`, 'warning', 4.0);
 	} else if (model.mode === 'yaml') {
 		const status = getTextFileRuntimeSourceStatus(sources, model);
 		if (status === 'applied') {
-			showEditorMessage(saved, constants.COLOR_STATUS_SUCCESS, 2.5);
+			showEditorMessage(saved, 'success', 2.5);
 		} else {
-			showEditorMessage(`${saved}; ${status === 'pending' ? 'rebuild needed' : 'asset source unknown'}`, constants.COLOR_STATUS_WARNING, 4.0);
+			showEditorMessage(`${saved}; ${status === 'pending' ? 'rebuild needed' : 'asset source unknown'}`, 'warning', 4.0);
 		}
 	} else if (model.mode === 'lua' && getTextFileRuntimeSourceStatus(sources, model) === 'pending') {
-		showEditorMessage(`${saved}; update pending`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		showEditorMessage(`${saved}; update pending`, 'success', 2.5);
 	} else {
-		showEditorMessage(saved, constants.COLOR_STATUS_SUCCESS, 2.5);
+		showEditorMessage(saved, 'success', 2.5);
 	}
 	return result;
 }

@@ -102,6 +102,13 @@ for (let font = 0; font < 2; font++) {
 		await focusX(); await press('Digit9'); unchanged();
 		await press('Escape'); detailsOnly(); unchanged();
 		await capture(`scene-responsive-${variant}-theme-${theme}-draft-cancelled-in-details`);
+		await press('End'); unchanged();
+		const caution = input.detailsText.find(line => line.warning && line.text === 'DEFINITION ONLY');
+		t.assert(caution !== undefined && caution.top + input.details.offsetTop >= input.details.bounds.top
+			&& caution.top + input.details.offsetTop + input.layout.font.lineHeight <= input.details.bounds.bottom,
+			'the actual Scene definition warning is not visible after ordinary Details End');
+		await capture(`scene-definition-warning-${variant}-theme-${theme}`);
+		await press('Home'); unchanged();
 		await press('Escape'); outlineOnly();
 		// A hidden numeric target would accept 9 and publish on the next Tab/Source blur.
 		for (let step = 0; step < 4; step++) { await press('Tab'); await press('Digit9'); unchanged(); }

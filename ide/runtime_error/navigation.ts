@@ -11,7 +11,6 @@ import type { RuntimeErrorOverlay } from '../editor/contrib/runtime_error/model'
 import type { CodeTabContext } from '../workbench/ui/code_tab/model';
 import { resetBlink } from '../editor/render/caret';
 import { rebuildRuntimeErrorOverlayView } from '../editor/contrib/runtime_error/overlay';
-import * as constants from '../common/constants';
 import { editorPointerState } from '../input/pointer/state';
 import { editorCaretState } from '../editor/ui/view/caret/state';
 import { runtimeErrorState } from '../editor/contrib/runtime_error/state';
@@ -163,7 +162,7 @@ export function showLuaErrorOverlay(
 		return false;
 	}
 	if (error.line <= 0 && error.column <= 0) {
-		showEditorMessage(error.message, constants.COLOR_STATUS_ERROR, 4.0);
+		showEditorMessage(error.message, 'error', 4.0);
 		return true;
 	}
 	editor.showRuntimeErrorInChunk(
@@ -185,7 +184,7 @@ export async function navigateToRuntimeErrorFrameTarget(
 	} catch (error) {
 		showEditorMessage(
 			`Failed to open runtime path: ${extractErrorMessage(error)}`,
-			constants.COLOR_STATUS_ERROR,
+			'error',
 			1.6,
 		);
 		return;

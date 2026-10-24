@@ -9,13 +9,13 @@ import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { SceneEditorInput } from './editor_input';
 import type { LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 
-export function drawSceneEditor(input: SceneEditorInput, controls: readonly ValueInput<number>[], optionControls: readonly ValueInput<LuaFieldValueEdit>[], detailsFocused: boolean): void {
+export function drawSceneEditor(input: SceneEditorInput, controls: readonly ValueInput<number>[], optionControls: readonly ValueInput<LuaFieldValueEdit>[], outlineFocused: boolean, detailsFocused: boolean): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
-	const color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
+	const color = constants.COLOR_RESOURCE_VIEWER_TEXT;
 	const rowHeight = outline.layout.rowHeight;
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
-	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_CODE_BACKGROUND);
+	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.blit_text_inline_with_font(input.sourceText, layout.left + 4, layout.top + 2, 0, color, font);
 	renderWorkbenchActionBar(input.actionBar, font, color, constants.COLOR_DESCRIPTION_TEXT);
 	if (layout.mode !== 'details') api.blit_text_inline_with_font(layout.outlineTitle, layout.left + 4, layout.top + rowHeight + 2, 0, color, font);
@@ -30,11 +30,13 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 			const node = outline.rows[index];
 			const y = outline.layout.contentTop + (index - firstRow) * rowHeight;
 			const x = outline.layout.contentLeft + node.depth * outline.layout.indentWidth;
-			if (index === outline.selectionIndex) api.fill_rect(outline.layout.contentLeft, y,
-				outline.layout.contentRight, y + rowHeight, 0, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT);
+			const selected = index === outline.selectionIndex;
+			const rowColor = selected ? outlineFocused ? constants.COLOR_SELECTION_TEXT : constants.COLOR_INACTIVE_SELECTION_TEXT : color;
+			if (selected) api.fill_rect(outline.layout.contentLeft, y, outline.layout.contentRight, y + rowHeight, 0,
+				outlineFocused ? constants.SELECTION_OVERLAY : constants.INACTIVE_SELECTION_OVERLAY);
 			if (node.children.length > 0) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
-				x + ((outline.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), color);
-			api.blit_text_inline_with_font(node.element.displayLabel, x + outline.layout.twistieWidth, y + 2, 0, color, font);
+				x + ((outline.layout.twistieWidth - WORKBENCH_ICON_SIZE) >> 1), y + ((rowHeight - WORKBENCH_ICON_SIZE) >> 1), rowColor);
+			api.blit_text_inline_with_font(node.element.displayLabel, x + outline.layout.twistieWidth, y + 2, 0, rowColor, font);
 		}
 		api.popClipRect();
 	}
@@ -45,7 +47,7 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 		for (const line of input.detailsText) {
 			const top = details.offsetTop + line.top;
 			if (top + font.lineHeight <= bounds.top || top >= bounds.bottom) continue;
-			api.blit_text_inline_with_font(line.text, bounds.left + 4, top, 0, line.warning ? constants.COLOR_STATUS_WARNING : color, font);
+			api.blit_text_inline_with_font(line.text, bounds.left + 4, top, 0, line.warning ? constants.COLOR_CONTENT_WARNING_TEXT : color, font);
 		}
 		if (outline.rows[outline.selectionIndex]?.element.kind === 'member') {
 			for (let index = 0; index < controls.length; index += 1) {
@@ -53,13 +55,13 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 				if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
 				api.blit_text_inline_with_font(property.label, bounds.left + 4, property.bounds.top + 2, 0, color, font);
 				if (property.value !== null && !input.workingCopy.readOnly) drawValueInput(controls[index], property.bounds);
-				else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_STATUS_TEXT, font);
+				else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_DESCRIPTION_TEXT, font);
 			}
 			for (let index = 0; index < optionControls.length; index += 1) {
 				const property = input.optionProperties[index];
 				if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
 				if (!optionControls[index].field.readOnly) drawValueInput(optionControls[index], property.bounds);
-				else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_STATUS_TEXT, font);
+				else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_DESCRIPTION_TEXT, font);
 			}
 		}
 		api.popClipRect();

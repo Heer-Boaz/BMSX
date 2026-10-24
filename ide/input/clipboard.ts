@@ -1,13 +1,12 @@
 import { clipboardAction, ClipboardAccessError, type Clipboard, type ClipboardAction, type ClipboardTarget } from '../../hosts/common/clipboard';
 import type { KeyInputEvent } from '../../hosts/common/input/text';
-import * as constants from '../common/constants';
 import { showEditorMessage } from '../common/feedback_state';
 import { inputFocus } from './focus';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './keyboard/key_input';
 
 export function reportClipboardFailure(error: ClipboardAccessError): void {
 	const operation = error.action === 'cut' ? 'Cut blocked; text was not removed.' : error.action === 'paste' ? 'Paste blocked; text was not changed.' : 'Copy blocked; clipboard was not updated.';
-	showEditorMessage(`${operation} Use the browser's Copy/Cut/Paste action or keyboard shortcut.`, constants.COLOR_STATUS_WARNING, 5);
+	showEditorMessage(`${operation} Use the browser's Copy/Cut/Paste action or keyboard shortcut.`, 'warning', 5);
 }
 
 /** Non-destructive commands only. Rejection is an explicit failure, not a cached success. */
@@ -19,7 +18,7 @@ export async function writeClipboard(clipboard: Clipboard, text: string, success
 		reportClipboardFailure(error);
 		return false;
 	}
-	showEditorMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
+	showEditorMessage(successMessage, 'success', 1.5);
 	return true;
 }
 

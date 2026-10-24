@@ -68,7 +68,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 			// Creating a file is an explicit filesystem edit; editing an existing file is not.
 			if (input.proposal.kind === 'create') this.reveal(models);
 		} catch (error) {
-			showEditorMessage(error instanceof Error ? error.message : String(error), colors.COLOR_STATUS_WARNING, 4);
+			showEditorMessage(error instanceof Error ? error.message : String(error), 'warning', 4);
 		}
 	}
 	public override update(): void {

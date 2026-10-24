@@ -4,7 +4,6 @@ import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../.
 import { deleteSelection, pasteFieldText, selectedText, getCursorOffset, selectionAnchorOffset,
 	setCursorFromOffset, setSelectionAnchorFromOffset, clearSelection } from './text_field';
 import { showEditorMessage } from '../../../common/feedback_state';
-import { COLOR_STATUS_WARNING } from '../../../common/constants';
 import type { TextInputTarget, TextInputState } from '../../../../hosts/common/input/text';
 
 export type TextFieldAnnotation<T = unknown> = { from: number; to: number; data: T };
@@ -84,7 +83,7 @@ export class TextField<T = unknown> implements ClipboardTarget, TextInputTarget 
 		if (this.readOnly) return;
 		if (contents.images.length > 0 && this.pasteImages !== undefined) this.pasteImages(contents.images);
 		else if (contents.text.length > 0) pasteFieldText(this, contents.text);
-		else if (contents.images.length > 0) showEditorMessage('This field accepts text, not images.', COLOR_STATUS_WARNING, 4);
+		else if (contents.images.length > 0) showEditorMessage('This field accepts text, not images.', 'warning', 4);
 	}
 
 	public get canUndo(): boolean {

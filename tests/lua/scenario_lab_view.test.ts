@@ -4,6 +4,9 @@ import { test, type TestContext } from 'node:test';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { api } from '../../ide/runtime/overlay_api';
+import * as colors from '../../ide/common/constants';
+import { resolveThemeTokenColor } from '../../ide/theme/tokens';
+import { contrastRatio } from '../helpers/contrast.mjs';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import {
 	executeScenarioLabNavigation,
@@ -645,3 +648,49 @@ test('explicit run reveal expands ancestors; later results do not steal the sele
 	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(view.testPane.selectedNodeId, selection);
 });
+
+for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {
+	test(`Scenario ${theme}/${variant} state ink and header focus consume their actual surfaces`, t => {
+		const originalTheme = colors.getActiveIdeThemeVariant();
+		t.after(() => colors.setIdeThemeVariant(originalTheme)); colors.setIdeThemeVariant(theme);
+		const overlay = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+		for (const state of ['queued', 'preparing', 'running', 'passed', 'failed', 'cancelled', 'skipped'] as const) {
+			const { collection, results, view } = createViewFixture(t, variant);
+			const module = collection.roots[0].children[0], item = module.children[0];
+			const run = results.beginRun(item.id, [{ test: item, source: module.source, sourceRevision: 1 }]);
+			if (state === 'skipped') results.cancelRun(run);
+			else if (state !== 'queued') {
+				const result = results.startItem(run, 0, 0);
+				if (state !== 'preparing') results.markRunning(result);
+				if (state === 'passed') results.complete(result, 1);
+				else if (state === 'failed') results.fail(result, 1, { message: 'expected failure' }, null);
+				else if (state === 'cancelled') results.cancel(result, 1);
+			}
+			prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM });
+			const rowIndex = view.testPane.rows.findIndex(row => row.kind === 'test' && row.test.id === item.id);
+			const row = view.testPane.rows[rowIndex];
+			assert.ok(row.kind === 'test');
+			assert.equal(row.latestState, state);
+			const top = view.testPane.layout.contentTop + rowIndex * view.testPane.layout.rowHeight;
+			const expected = state === 'passed' ? colors.COLOR_CONTENT_SUCCESS_TEXT : state === 'failed' ? colors.COLOR_CONTENT_ERROR_TEXT
+				: state === 'cancelled' || state === 'skipped' ? colors.COLOR_DESCRIPTION_TEXT : colors.COLOR_CONTENT_PROGRESS_TEXT;
+			for (const focus of ['results', 'tests'] as const) {
+				view.focus = focus; view.testPane.selectionIndex = rowIndex;
+				overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawScenarioLab(view); overlay.renderer.endFrame();
+				const frame = overlay.queue.consumeOverlayFrame();
+				const glyphs: GlyphRenderSubmission[] = [], rectangles: RectRenderSubmission[] = [];
+				for (let index = 0; index < frame.commandCount; index++) {
+					if (frame.commandKinds[index] === Host2DKind.Glyphs) glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
+					else if (frame.commandKinds[index] === Host2DKind.Rect) rectangles.push(frame.commandRefs[index] as RectRenderSubmission);
+				}
+				const text = glyphs.find(glyph => glyph.x === row.textLeft && glyph.y === top + ((view.testPane.layout.rowHeight - editorViewState.lineHeight) >> 1))!;
+				assert.equal(text.color, resolveThemeTokenColor(focus === 'tests' ? colors.COLOR_SELECTION_TEXT : expected));
+				assert.ok(contrastRatio(text.color, resolveThemeTokenColor(focus === 'tests' ? colors.SELECTION_OVERLAY : colors.COLOR_RESOURCE_VIEWER_BACKGROUND)) >= 4.5);
+				for (const title of ['TESTS', 'RESULTS']) assert.equal(glyphs.find(glyph => glyph.items === title)!.color, resolveThemeTokenColor(colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT));
+				const active = focus === 'tests' ? view.testPane.layout : view.resultPane.layout;
+				assert.ok(rectangles.some(rect => rect.area.left === active.contentLeft && rect.area.right === active.contentRight
+					&& rect.area.top === active.headerBottom - 1 && rect.area.bottom === active.headerBottom && rect.color === resolveThemeTokenColor(colors.COLOR_FOCUS_BORDER)));
+			}
+		}
+	});
+}

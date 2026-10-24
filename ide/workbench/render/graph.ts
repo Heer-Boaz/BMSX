@@ -30,12 +30,12 @@ export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: Workbenc
 		if (!rects_intersect(edge.bounds, visible, strokeMargin) || edge === replacedEdge) continue;
 		const selected = view.selection === edge;
 		const color = selected ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER
-			: edge === hover ? colors.COLOR_RESOURCE_VIEWER_TEXT : colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+			: edge === hover ? colors.COLOR_RESOURCE_VIEWER_TEXT : colors.COLOR_GRAPH_MUTED;
 		api.polyline(edge.points, 0, 0, 0, selected ? 2 : 1, color);
 		if (edge.arrow.length > 0) api.polyline(edge.arrow, 0, 0, 0, selected ? 2 : 1, color);
 	}
 	if (connection !== undefined) {
-		const color = connection.accepted ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+		const color = connection.accepted ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_GRAPH_MUTED;
 		api.polyline(connection.points, 0, 0, 0, 2, color);
 		if (connection.hasArrow) api.polyline(connection.arrow, 0, 0, 0, 2, color);
 	}

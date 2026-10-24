@@ -1,12 +1,12 @@
-import { CodeTextDecoration, type CodeTextDecorationStyle } from './models';
+import { CodeTextDecoration, type CodeTextDecorationStyle, type EditorMessageKind } from './models';
 import { EDITOR_THEME_COLORS, type EditorTheme } from '../theme/editor_colors';
+import { WORKBENCH_TEXT_COLORS, type WorkbenchTextTheme } from '../theme/workbench_text_colors';
 import {
 	THEME_TOKEN_ACCENT_BLUE,
 	THEME_TOKEN_ACCENT_RED,
 	THEME_TOKEN_ACTION_OVERLAY,
 	THEME_TOKEN_BLACK,
 	THEME_TOKEN_BORDER_GREY,
-	THEME_TOKEN_COMMENT_GREY,
 	THEME_TOKEN_PROBLEM_ERROR_TEXT,
 	THEME_TOKEN_PROBLEM_WARNING_TEXT,
 	THEME_TOKEN_DARK_NAVY,
@@ -15,6 +15,7 @@ import {
 	THEME_TOKEN_DEEP_GREY,
 	THEME_TOKEN_DEEP_TEAL,
 	THEME_TOKEN_DROP_SHADOW,
+	THEME_TOKEN_FOCUS_BLUE,
 	THEME_TOKEN_DIFF_INSERTED_LIGHT,
 	THEME_TOKEN_DIFF_REMOVED_LIGHT,
 	THEME_TOKEN_DIFF_INSERTED_DARK,
@@ -37,13 +38,11 @@ import {
 	THEME_TOKEN_SOFT_WHITE,
 	THEME_TOKEN_STATUS_TEXT_GREY,
 	THEME_TOKEN_SUCCESS_GREEN,
-	THEME_TOKEN_TERMINAL_BLUE,
 	THEME_TOKEN_TERMINAL_CYAN,
 	THEME_TOKEN_TERMINAL_DARK_BLUE,
 	THEME_TOKEN_TERMINAL_GREY,
 	THEME_TOKEN_TERMINAL_LIGHT_GREEN,
 	THEME_TOKEN_TERMINAL_LIGHT_RED,
-	THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
 	THEME_TOKEN_TERMINAL_MAGENTA,
 	THEME_TOKEN_TERMINAL_RED,
 	THEME_TOKEN_TEXT_GREY,
@@ -60,6 +59,7 @@ export const DEFAULT_THEME = 'light';
 
 type ThemeDefinition = {
 	editor: EditorTheme;
+	workbenchText: WorkbenchTextTheme;
 	resourceMatch: { background: number; text: number };
 	disabledForeground: number;
 	descriptionForeground: number;
@@ -90,14 +90,13 @@ type ThemeDefinition = {
 		text: number;
 		warning: number;
 		success: number;
-		error: number;
 		alert: number;
 	};
 	timeline: {
 		track: number;
 		position: number;
 	};
-	graph: { active: number };
+	graph: { active: number; muted: number };
 	inspection: { label: number; changedValue: number; warningValue: number };
 	diff: { insertedBackground: number; removedBackground: number };
 	focusBorder: number;
@@ -114,8 +113,8 @@ type ThemeDefinition = {
 		mutedText: number;
 	};
 	input: {
+		background: number;
 		text: number;
-		secondaryText: number;
 		placeholder: number;
 		outline: number;
 	};
@@ -183,7 +182,6 @@ type ThemeOverlays = {
 	quickOpen: {
 		background: number;
 		text: number;
-		placeholder: number;
 		outline: number;
 		kind: number;
 		match: number;
@@ -194,6 +192,7 @@ type ThemeOverlays = {
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
 		editor: EDITOR_THEME_COLORS.dark,
+		workbenchText: WORKBENCH_TEXT_COLORS.dark,
 		resourceMatch: { background: THEME_TOKEN_DEEP_TEAL, text: THEME_TOKEN_WHITE },
 		disabledForeground: THEME_TOKEN_MUTED_GREY,
 		descriptionForeground: THEME_TOKEN_HINT_GREY,
@@ -225,9 +224,9 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			secondary: THEME_TOKEN_TEXT_GREY,
 			selection: THEME_TOKEN_TERMINAL_DARK_BLUE,
 			selectionText: THEME_TOKEN_WHITE,
-			inactiveSelection: THEME_TOKEN_BLACK,
+			inactiveSelection: THEME_TOKEN_DEEP_GREY,
 			inactiveSelectionText: THEME_TOKEN_WHITE,
-			selectionBorder: THEME_TOKEN_TERMINAL_BLUE,
+			selectionBorder: THEME_TOKEN_FOCUS_BLUE,
 			errorOverlayText: THEME_TOKEN_WHITE,
 		},
 		status: {
@@ -235,25 +234,24 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			text: THEME_TOKEN_TEXT_GREY,
 			warning: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			success: THEME_TOKEN_TERMINAL_DARK_BLUE,
-			error: THEME_TOKEN_WHITE,
 			alert: THEME_TOKEN_TERMINAL_RED,
 		},
 		timeline: {
 			track: THEME_TOKEN_MID_GREY,
 			position: THEME_TOKEN_TERMINAL_DARK_BLUE,
 		},
-		graph: { active: THEME_TOKEN_TERMINAL_LIGHT_GREEN },
-		focusBorder: THEME_TOKEN_TERMINAL_BLUE,
+		graph: { active: THEME_TOKEN_TERMINAL_LIGHT_GREEN, muted: THEME_TOKEN_MUTED_GREY },
+		focusBorder: THEME_TOKEN_FOCUS_BLUE,
 		connection: {
 			connected: THEME_TOKEN_SUCCESS_GREEN,
 			disconnected: THEME_TOKEN_ACCENT_RED,
 			connecting: THEME_TOKEN_WARNING_AMBER,
 		},
 		input: {
-			text: THEME_TOKEN_TEXT_GREY,
-			secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
-			placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
-			outline: THEME_TOKEN_BLACK,
+			background: THEME_TOKEN_BLACK,
+			text: THEME_TOKEN_TERMINAL_GREY,
+			placeholder: THEME_TOKEN_HINT_GREY,
+			outline: THEME_TOKEN_MUTED_GREY,
 		},
 		tab: {
 			border: THEME_TOKEN_TERMINAL_DARK_BLUE,
@@ -306,16 +304,16 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			quickOpen: {
 				background: THEME_TOKEN_DARK_NAVY,
 				text: THEME_TOKEN_TERMINAL_GREY,
-				placeholder: THEME_TOKEN_HINT_GREY,
 				outline: THEME_TOKEN_MID_GREY,
-				kind: THEME_TOKEN_GENTLE_WHITE,
+				kind: THEME_TOKEN_HINT_GREY,
 				match: THEME_TOKEN_TERMINAL_CYAN,
-				selectionMatch: THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
+				selectionMatch: THEME_TOKEN_WHITE,
 			},
 		},
 	},
 	light: {
 		editor: EDITOR_THEME_COLORS.light,
+		workbenchText: WORKBENCH_TEXT_COLORS.light,
 		resourceMatch: { background: THEME_TOKEN_PALE_TEAL, text: THEME_TOKEN_TEXT_GREY },
 		disabledForeground: THEME_TOKEN_MUTED_GREY,
 		descriptionForeground: THEME_TOKEN_MUTED_GREY,
@@ -349,7 +347,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			selectionText: THEME_TOKEN_GENTLE_WHITE,
 			inactiveSelection: THEME_TOKEN_BORDER_GREY,
 			inactiveSelectionText: THEME_TOKEN_TEXT_GREY,
-			selectionBorder: THEME_TOKEN_MID_GREY,
+			selectionBorder: THEME_TOKEN_ACCENT_BLUE,
 			errorOverlayText: THEME_TOKEN_WHITE,
 		},
 		status: {
@@ -357,14 +355,13 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			text: THEME_TOKEN_TEXT_GREY,
 			warning: THEME_TOKEN_WARNING_AMBER,
 			success: THEME_TOKEN_SUCCESS_GREEN,
-			error: THEME_TOKEN_ACCENT_RED,
 			alert: THEME_TOKEN_ACCENT_RED,
 		},
 		timeline: {
 			track: THEME_TOKEN_MID_GREY,
 			position: THEME_TOKEN_ACCENT_BLUE,
 		},
-		graph: { active: THEME_TOKEN_SUCCESS_GREEN },
+		graph: { active: THEME_TOKEN_SUCCESS_GREEN, muted: THEME_TOKEN_MUTED_GREY },
 		focusBorder: THEME_TOKEN_ACCENT_BLUE,
 		connection: {
 			connected: THEME_TOKEN_SUCCESS_GREEN,
@@ -372,10 +369,10 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			connecting: THEME_TOKEN_WARNING_AMBER,
 		},
 		input: {
+			background: THEME_TOKEN_GENTLE_WHITE,
 			text: THEME_TOKEN_TEXT_GREY,
-			secondaryText: THEME_TOKEN_COMMENT_GREY,
-			placeholder: THEME_TOKEN_COMMENT_GREY,
-			outline: THEME_TOKEN_BORDER_GREY,
+			placeholder: THEME_TOKEN_MUTED_GREY,
+			outline: THEME_TOKEN_MUTED_GREY,
 		},
 		tab: {
 			border: THEME_TOKEN_BORDER_GREY,
@@ -429,11 +426,10 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			quickOpen: {
 				background: THEME_TOKEN_PANEL_GREY,
 				text: THEME_TOKEN_TEXT_GREY,
-				placeholder: THEME_TOKEN_STATUS_TEXT_GREY,
 				outline: THEME_TOKEN_MID_GREY,
-				kind: THEME_TOKEN_STATUS_TEXT_GREY,
-				match: THEME_TOKEN_ACCENT_BLUE,
-				selectionMatch: THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
+				kind: THEME_TOKEN_DEEP_GREY,
+				match: THEME_TOKEN_DARK_TEAL,
+				selectionMatch: THEME_TOKEN_WHITE,
 			},
 		},
 	},
@@ -546,11 +542,19 @@ export let COLOR_STATUS_BACKGROUND: number;
 export let COLOR_STATUS_TEXT: number;
 export let COLOR_STATUS_WARNING: number;
 export let COLOR_STATUS_SUCCESS: number;
-export let COLOR_STATUS_ERROR: number;
-export let COLOR_STATUS_ALERT: number;
+export let COLOR_INPUT_BACKGROUND: number;
+export let COLOR_INPUT_TEXT: number;
+export let COLOR_INPUT_PLACEHOLDER: number;
+export let COLOR_INPUT_OUTLINE: number;
+export let COLOR_CONTENT_PROGRESS_TEXT: number;
+export let COLOR_CONTENT_SUCCESS_TEXT: number;
+export let COLOR_CONTENT_WARNING_TEXT: number;
+export let COLOR_CONTENT_ERROR_TEXT: number;
+export const STATUS_MESSAGE_TEXT_COLORS: Record<EditorMessageKind, number> = { info: 0, success: 0, warning: 0, error: 0 };
 export let COLOR_TIMELINE_TRACK: number;
 export let COLOR_TIMELINE_POSITION: number;
 export let COLOR_GRAPH_ACTIVE: number;
+export let COLOR_GRAPH_MUTED: number;
 export let COLOR_INSPECTOR_LABEL: number;
 export let COLOR_DESCRIPTION_TEXT: number;
 export let COLOR_INSPECTOR_VALUE_CHANGED: number;
@@ -634,7 +638,6 @@ export let SCROLLBAR_TRACK_COLOR: number;
 export let SCROLLBAR_THUMB_COLOR: number;
 export let COLOR_QUICK_OPEN_BACKGROUND: number;
 export let COLOR_QUICK_OPEN_TEXT: number;
-export let COLOR_QUICK_OPEN_PLACEHOLDER: number;
 export let COLOR_QUICK_OPEN_OUTLINE: number;
 export let COLOR_QUICK_OPEN_KIND: number;
 export let COLOR_QUICK_OPEN_MATCH: number;
@@ -744,11 +747,22 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_STATUS_TEXT = theme.status.text;
 	COLOR_STATUS_WARNING = theme.status.warning;
 	COLOR_STATUS_SUCCESS = theme.status.success;
-	COLOR_STATUS_ERROR = theme.status.error;
-	COLOR_STATUS_ALERT = theme.status.alert;
+	COLOR_INPUT_BACKGROUND = theme.input.background;
+	COLOR_INPUT_TEXT = theme.input.text;
+	COLOR_INPUT_PLACEHOLDER = theme.input.placeholder;
+	COLOR_INPUT_OUTLINE = theme.input.outline;
+	COLOR_CONTENT_PROGRESS_TEXT = theme.workbenchText.content.progress;
+	COLOR_CONTENT_SUCCESS_TEXT = theme.workbenchText.content.success;
+	COLOR_CONTENT_WARNING_TEXT = theme.workbenchText.content.warning;
+	COLOR_CONTENT_ERROR_TEXT = theme.workbenchText.content.error;
+	STATUS_MESSAGE_TEXT_COLORS.info = theme.workbenchText.status.info;
+	STATUS_MESSAGE_TEXT_COLORS.success = theme.workbenchText.status.success;
+	STATUS_MESSAGE_TEXT_COLORS.warning = theme.workbenchText.status.warning;
+	STATUS_MESSAGE_TEXT_COLORS.error = theme.workbenchText.status.error;
 	COLOR_TIMELINE_TRACK = theme.timeline.track;
 	COLOR_TIMELINE_POSITION = theme.timeline.position;
 	COLOR_GRAPH_ACTIVE = theme.graph.active;
+	COLOR_GRAPH_MUTED = theme.graph.muted;
 	COLOR_INSPECTOR_LABEL = theme.inspection.label;
 	COLOR_DESCRIPTION_TEXT = theme.descriptionForeground;
 	COLOR_INSPECTOR_VALUE_CHANGED = theme.inspection.changedValue;
@@ -820,7 +834,6 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	SCROLLBAR_THUMB_COLOR = theme.scrollbarThumb ?? theme.status.text;
 	COLOR_QUICK_OPEN_BACKGROUND = quickOpen.background;
 	COLOR_QUICK_OPEN_TEXT = quickOpen.text;
-	COLOR_QUICK_OPEN_PLACEHOLDER = quickOpen.placeholder;
 	COLOR_QUICK_OPEN_OUTLINE = quickOpen.outline;
 	COLOR_QUICK_OPEN_KIND = quickOpen.kind;
 	COLOR_QUICK_OPEN_MATCH = quickOpen.match;

@@ -40,7 +40,7 @@ export function drawQuickPickRows(model: QuickPickModel, layout: QuickPickRows):
 	const font = editorViewState.font.renderFont(), color = constants.COLOR_QUICK_OPEN_TEXT;
 	api.pushClipRect(content.left, content.top, content.right, content.bottom);
 	if (list.rows.length === 0) api.blit_text_inline_with_font('NO MATCHING ITEMS', content.left + 3,
-		content.top + 2, 0, constants.COLOR_STATUS_WARNING, font);
+		content.top + 2, 0, constants.COLOR_QUICK_OPEN_TEXT, font);
 	const end = model.endVisibleIndex;
 	for (let index = model.firstVisibleIndex; index < end; index += 1) {
 		const row = layout.renderRows[index - layout.preparedStart];

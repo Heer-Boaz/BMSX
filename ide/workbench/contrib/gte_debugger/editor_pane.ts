@@ -4,7 +4,6 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { EditorCommandId } from '../../../common/commands';
-import * as colors from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { DisposableStore } from '../../../common/lifecycle';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -178,7 +177,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 			case 'gte.goToFrame': {
 				input.running = false; const sequence = input.selected.sequence;
 				void this.navigation.seek(input.selected.cycles).completion.then(result => showEditorMessage(
-					result.status === 'completed' ? `Frame ${result.after.videoTick} at/before #${sequence}` : `GTE: ${result.status}`, colors.COLOR_STATUS_TEXT, 4)); break;
+					result.status === 'completed' ? `Frame ${result.after.videoTick} at/before #${sequence}` : `GTE: ${result.status}`, 'info', 4)); break;
 			}
 			case 'gte.details': {
 				input.following = false;

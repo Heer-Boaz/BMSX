@@ -1,5 +1,4 @@
 import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
-import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../../input/keyboard/key_input';
 import { resetBlink } from '../../../../editor/render/caret';
@@ -11,7 +10,7 @@ export function handleResourcePanelKeyboardInput(playerInput: KeyInputEvent, con
 	const shiftDown = isShiftDown(playerInput);
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyR', playerInput)) {
 		consumeIdeKey('KeyR', playerInput);
-		showEditorMessage('Resolution toggle not handled by panel controller.', constants.COLOR_STATUS_TEXT, 1.2);
+		showEditorMessage('Resolution toggle not handled by panel controller.', 'info', 1.2);
 		return;
 	}
 	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyB', playerInput)) {

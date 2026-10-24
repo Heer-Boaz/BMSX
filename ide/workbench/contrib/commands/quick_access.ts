@@ -1,4 +1,3 @@
-import { COLOR_STATUS_WARNING } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { IdeCommandController } from '../../../commands/controller';
 import { EDITOR_COMMAND_IDS, EDITOR_COMMAND_PRESENTATION, editorCommandTitle } from '../../../commands/catalog';
@@ -30,7 +29,7 @@ export function showCommandPalette(picker: QuickInputController, commands: IdeCo
 		// Selection is new user input. An asynchronous operation may have ended
 		// since the available actions were enumerated; never execute a stale Cancel.
 		if (!commands.isEnabled(item.command)) {
-			showEditorMessage(`${item.label} is no longer available.`, COLOR_STATUS_WARNING, 2);
+			showEditorMessage(`${item.label} is no longer available.`, 'warning', 2);
 			return;
 		}
 		commands.execute(item.command);

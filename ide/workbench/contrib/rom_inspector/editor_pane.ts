@@ -242,7 +242,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		this.list.handleWheel(event, event.deltaY * this.input.layout.rowHeight * 3);
 	}
 	public draw(): void {
-		drawRomInspector(this.input, this.presentation, this.filter, this.filterViewport);
+		drawRomInspector(this.input, this.presentation, this.filter, this.filterViewport, this.list.focusTarget.hasFocus);
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);

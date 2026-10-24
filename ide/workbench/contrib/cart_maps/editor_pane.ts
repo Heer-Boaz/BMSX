@@ -2,7 +2,6 @@ import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
-import { COLOR_STATUS_WARNING } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import type { EditorModelEdit } from '../../../editor/model/text_model';
@@ -152,7 +151,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 			const item = this.input.selected;
 			if (item !== undefined && !this.input.workingCopy.readOnly) {
 				try { this.applyMove(createCartMapMove(item, item.x + dx, item.y + dy)); }
-				catch (error) { showEditorMessage(String(error), COLOR_STATUS_WARNING, 4); }
+				catch (error) { showEditorMessage(String(error), 'warning', 4); }
 			} else {
 				this.input.grid.horizontal.setScroll(this.input.grid.horizontal.getScroll() + dx * this.input.grid.cellSize);
 				this.input.grid.vertical.setScroll(this.input.grid.vertical.getScroll() + dy * this.input.grid.cellSize);
@@ -206,7 +205,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 			if (!horizontal) grid.vertical.setScroll(grid.vertical.getScroll() + event.deltaY * step);
 		}
 	}
-	public draw(): void { drawCartMap(this.input, this.controls, this.gridFocus.hasFocus); }
+	public draw(): void { drawCartMap(this.input, this.controls, this.gridFocus.hasFocus, this.focusTarget.hasFocus); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		const input = this.input, selected = input.tree.rows[input.tree.selectionIndex]?.element;
 		const text = input.diagnostic ?? selected?.diagnostic ?? ASSET_STATUS[getTextFileRuntimeSourceStatus(this.sources, input.workingCopy)];

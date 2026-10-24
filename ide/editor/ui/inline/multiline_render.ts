@@ -31,7 +31,7 @@ export function drawMultilineField(field: TextField, view: MultilineFieldViewpor
 				else if (selected) to = Math.min(to, end);
 			}
 			drawStyledTextSpan(row.text, from, to, left + row.advances[from], top, row.advances[to] - row.advances[from],
-				style, selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT, selected);
+				style, selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_INPUT_TEXT, selected);
 			from = to;
 			if (from === styleEnd) styleIndex++;
 		}

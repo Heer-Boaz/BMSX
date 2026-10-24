@@ -1,4 +1,3 @@
-import * as constants from '../../../../common/constants';
 import { renameController } from '../rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
@@ -46,13 +45,13 @@ export function focusEditorFromLineJump(): void {
 
 export function applyLineJump(): void {
 	if (lineJumpState.value.length === 0) {
-		showEditorMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
+		showEditorMessage('Enter a line number', 'warning', 1.5);
 		return;
 	}
 	const target = Number.parseInt(lineJumpState.value, 10);
 	const lineCount = activeCodeEditor.model.buffer.getLineCount();
 	if (!Number.isFinite(target) || target < 1 || target > lineCount) {
-		showEditorMessage(`Line must be between 1 and ${lineCount}`, constants.COLOR_STATUS_WARNING, 1.8);
+		showEditorMessage(`Line must be between 1 and ${lineCount}`, 'warning', 1.8);
 		return;
 	}
 	const navigationCheckpoint = beginNavigationCapture();
@@ -60,7 +59,7 @@ export function applyLineJump(): void {
 	TextEditing.clearSelection();
 	breakUndoSequence();
 	closeLineJump(true);
-	showEditorMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
+	showEditorMessage(`Jumped to line ${target}`, 'success', 1.5);
 	completeNavigation(navigationCheckpoint);
 }
 

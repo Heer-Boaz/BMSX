@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { EditorCommandId } from '../../ide/common/commands';
-import { COLOR_STATUS_TEXT, HEADER_BUTTON_PADDING_X } from '../../ide/common/constants';
+import { HEADER_BUTTON_PADDING_X } from '../../ide/common/constants';
 import { editorFeedbackState, showEditorMessage, updateEditorMessage } from '../../ide/common/feedback_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -173,7 +173,7 @@ test('feedback expiry and font wrapping publish parent bounds before full-width 
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
 	};
 	editorViewState.viewportWidth = 128;
-	showEditorMessage('This authored status message must wrap differently when the font changes', COLOR_STATUS_TEXT, 1);
+	showEditorMessage('This authored status message must wrap differently when the font changes', 'info', 1);
 	refreshWorkbenchLayout();
 	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), true);
 	const tinyLines = [...getStatusMessageLines()];

@@ -10,7 +10,7 @@ import type { AnimationEditorInput } from './editor_input';
 export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonly<RectBounds>, keysFocused: boolean): void {
 	const { font } = editorViewState;
 	const text = colors.COLOR_RESOURCE_VIEWER_TEXT;
-	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_CODE_BACKGROUND);
+	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	drawEditorText(font, input.caption, bounds.left + 4, bounds.top + 2, 0, text);
 	renderWorkbenchActionBar(input.actionBar, font.renderFont(), text, colors.COLOR_DESCRIPTION_TEXT);
 	const list = input.tracks;
@@ -37,14 +37,14 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 			const start = preview === undefined ? row.clip.start === undefined ? 0 : row.clip.start.value : preview.start;
 			const duration = preview === undefined ? row.clip.duration?.value : preview.duration;
 			if (viewport.unit !== 'time_ms' || start === null || duration === undefined || duration === null) {
-				drawEditorText(font, 'ms / Source', overview.left + 4, top + 2, 0, colors.COLOR_STATUS_TEXT);
+				drawEditorText(font, 'ms / Source', overview.left + 4, top + 2, 0, text);
 			} else {
 				const left = viewport.xAt(start), right = viewport.xAt(start + duration);
 				api.fill_rect(Math.min(left, right), top + 3, Math.max(left, right), top + layout.rowHeight - 3, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
 				api.blit_rect(Math.min(left, right), top + 3, Math.max(left, right), top + layout.rowHeight - 3, 0, colors.COLOR_FOCUS_BORDER);
 			}
 		}
-		if (geometry.label !== '') drawEditorText(font, geometry.label, overview.left + 4, top + 2, 0, colors.COLOR_STATUS_TEXT);
+		if (geometry.label !== '') drawEditorText(font, geometry.label, overview.left + 4, top + 2, 0, text);
 		const middle = top + (layout.rowHeight >> 1);
 		for (let cell = 0; cell < geometry.cells.length; cell += 2) {
 			if (row.track?.kind === 'tag') api.fill_rect(geometry.cells[cell], middle, geometry.cells[cell + 1], middle + 1, 0, text);
@@ -65,7 +65,7 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 	drawEditorText(font, viewport.caption, keyBounds.left, keyBounds.top - layout.rowHeight, 0, text);
 	if (viewport.unit !== undefined) {
 		const middle = Math.round((keyBounds.top + keyBounds.bottom) / 2);
-		api.fill_rect(keyBounds.left + 3, middle, keyBounds.right - 3, middle + 1, 0, colors.COLOR_STATUS_TEXT);
+		api.fill_rect(keyBounds.left + 3, middle, keyBounds.right - 3, middle + 1, 0, text);
 		api.pushClipRect(keyBounds.left, keyBounds.top, keyBounds.right, keyBounds.bottom);
 		const cursorX = viewport.xAt(viewport.cursor);
 		api.fill_rect(cursorX, keyBounds.top, cursorX + 1, keyBounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
@@ -90,8 +90,8 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 	if (curve.available) {
 		const area = curve.bounds;
 		api.pushClipRect(area.left, area.top, area.right, area.bottom);
-		drawEditorText(font, curve.maximumLabel, area.left + 4, area.top + 2, 0, colors.COLOR_STATUS_TEXT);
-		drawEditorText(font, curve.minimumLabel, area.left + 4, area.bottom - font.lineHeight - 2, 0, colors.COLOR_STATUS_TEXT);
+		drawEditorText(font, curve.maximumLabel, area.left + 4, area.top + 2, 0, text);
+		drawEditorText(font, curve.minimumLabel, area.left + 4, area.bottom - font.lineHeight - 2, 0, text);
 		const zero = curve.yAt(0);
 		api.fill_rect(area.left, zero, area.right, zero + 1, 0, colors.COLOR_TAB_BORDER);
 		api.fill_rect(head, area.top, head + 1, area.bottom, 0, colors.COLOR_FOCUS_BORDER);
@@ -99,7 +99,7 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 		for (let side = 0; side < 2; side++) {
 			const handle = side === 0 ? curve.arriveHandle : curve.leaveHandle;
 			if (!handle.length) continue;
-			api.polyline(handle, 0, 0, 0, 1, colors.COLOR_STATUS_TEXT);
+			api.polyline(handle, 0, 0, 0, 1, text);
 			api.blit_rect(handle[2] - 3, handle[3] - 3, handle[2] + 4, handle[3] + 4, 0, colors.COLOR_FOCUS_BORDER);
 		}
 		let selectedMarker = -1;

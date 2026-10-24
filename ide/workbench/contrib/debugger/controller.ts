@@ -5,7 +5,6 @@ import {
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { CartEditor } from '../../../cart_editor';
 import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
-import * as constants from '../../../common/constants';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import {
 	blua32SourceRangeAtPc,
@@ -27,7 +26,7 @@ export class BreakpointController {
 		}
 		const resource = context.model.resource;
 		if (!resource.path) {
-			showEditorMessage('No active path available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
+			showEditorMessage('No active path available for breakpoints.', 'warning', 1.6);
 			return false;
 		}
 		const lineNumber = row + 1;
@@ -35,7 +34,7 @@ export class BreakpointController {
 		const binding = added ? this.state.breakpoints.read(resource).find(point => point.line === lineNumber)! : undefined;
 		const pending = binding !== undefined && binding.status !== 'bound';
 		const verb = added ? pending ? `unbound (${binding!.status})` : 'set' : 'cleared';
-		showEditorMessage(`Breakpoint ${verb} at ${resource.path}:${lineNumber}`, pending ? constants.COLOR_STATUS_WARNING : constants.COLOR_STATUS_TEXT, 1.4);
+		showEditorMessage(`Breakpoint ${verb} at ${resource.path}:${lineNumber}`, pending ? 'warning' : 'info', 1.4);
 		return true;
 	}
 }
@@ -67,7 +66,7 @@ export async function presentRuntimeDebuggerStop(
 		state.source.stop!.reason === RuntimeDebuggerStopReason.Breakpoint
 			? 'Paused on breakpoint'
 			: 'Paused after step',
-		constants.COLOR_STATUS_TEXT,
+		'info',
 		1.4,
 	);
 }

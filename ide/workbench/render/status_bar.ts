@@ -39,11 +39,11 @@ export function renderStatusBar(
 		const accentBottom = accentBottomCandidate < statusBottom ? accentBottomCandidate : statusBottom;
 		api.fill_rect(0, statusTop, editorViewState.viewportWidth, accentBottom, 0, constants.COLOR_STATUS_WARNING);
 	}
-	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
+	const statusTextColor = runtimeFaulted ? constants.STATUS_MESSAGE_TEXT_COLORS.error : constants.COLOR_STATUS_TEXT;
 	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 	let editorStatusBounds = bounds;
 	if (hostFailed) {
-		drawEditorText(editorViewState.font, HOST_FAILURE_STATUS, bounds.left + 4, statusTop + 2, 0, constants.COLOR_STATUS_ERROR);
+		drawEditorText(editorViewState.font, HOST_FAILURE_STATUS, bounds.left + 4, statusTop + 2, 0, constants.STATUS_MESSAGE_TEXT_COLORS.error);
 		write_rect_bounds(contextBounds, bounds.left + measureText(HOST_FAILURE_STATUS) + 4, bounds.top, bounds.right, bounds.bottom);
 		editorStatusBounds = contextBounds;
 		api.popClipRect();
@@ -56,7 +56,7 @@ export function renderStatusBar(
 		let textY = statusTop + 2;
 		const textX = editorStatusBounds.left + 4;
 		for (let i = 0; i < lines.length; i += 1) {
-			drawEditorText(editorViewState.font, lines[i], textX, textY, 0, editorFeedbackState.message.color);
+			drawEditorText(editorViewState.font, lines[i], textX, textY, 0, constants.STATUS_MESSAGE_TEXT_COLORS[editorFeedbackState.message.kind]);
 			textY += editorViewState.lineHeight;
 		}
 	} else if (problemsPanel.isVisible && problemsPanel.isFocused) {

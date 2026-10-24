@@ -137,7 +137,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 				const operation = this.navigation.seek(record.cycles);
 				void operation.completion.then(result => showEditorMessage(result.status === 'completed'
 					? `Frame ${result.after.videoTick} at/before event #${record.sequence} (timeline ${record.timeline}).`
-					: `Event #${record.sequence}: ${result.status}${result.reason === undefined ? '' : ` (${result.reason})`}.`, colors.COLOR_STATUS_TEXT, 4));
+					: `Event #${record.sequence}: ${result.status}${result.reason === undefined ? '' : ` (${result.reason})`}.`, 'info', 4));
 				break;
 			}
 		}
@@ -198,10 +198,10 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 	public draw(): void {
 		if (this.inspector.visible) { drawWorkbenchPropertyInspector(this.inspector); return; }
 		const input = this.input, { layout, viewport } = input, font = layout.font!.renderFont();
-		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
+		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 		renderWorkbenchActionBar(input.actions, font, colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		const timelineLeft = viewport.bounds.left, tickLeft = timelineLeft + this.timelineWidth, eventLeft = tickLeft + this.tickWidth;
-		const headerTop = layout.top + layout.rowHeight + 10, headerColor = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+		const headerTop = layout.top + layout.rowHeight + 10, headerColor = colors.COLOR_DESCRIPTION_TEXT;
 		api.blit_text_inline_with_font('Timeline', timelineLeft, headerTop, 0, headerColor, font);
 		api.blit_text_inline_with_font('Tick', tickLeft, headerTop, 0, headerColor, font);
 		api.blit_text_inline_with_font('Event / Emitter', eventLeft, headerTop, 0, headerColor, font);

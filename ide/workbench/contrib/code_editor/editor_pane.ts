@@ -78,7 +78,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		cut: cutClipboardText,
 		paste: contents => {
 			if (contents.text.length > 0) pasteText(contents.text);
-			else if (contents.images.length > 0) showEditorMessage('Source files accept text, not images.', constants.COLOR_STATUS_WARNING, 4);
+			else if (contents.images.length > 0) showEditorMessage('Source files accept text, not images.', 'warning', 4);
 		},
 	});
 	private readonly unbindBlur = activeCodeEditor.focusTarget.onDidBlur(() => {
@@ -193,7 +193,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		} else pointerHover.release(codeAreaHover);
 		const semanticError = editorViewState.layout.getLastSemanticError();
 		if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
-			showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
+			showEditorMessage(semanticError, 'error', 2.0);
 			editorRuntimeState.lastReportedSemanticError = semanticError;
 		} else if (!semanticError && editorRuntimeState.lastReportedSemanticError) {
 			editorRuntimeState.lastReportedSemanticError = null;
@@ -313,7 +313,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 				break;
 			case 'failed':
 				detail = 'ASSET APPLY FAILED';
-				detailColor = constants.COLOR_STATUS_WARNING;
+				detailColor = constants.STATUS_MESSAGE_TEXT_COLORS.error;
 				break;
 			case 'untracked':
 				detail = 'SOURCE NOT CHECKED';

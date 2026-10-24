@@ -303,11 +303,11 @@ export function toggleWordWrap(): void {
 	editorPointerState.lastPointerRowResolution = null;
 	ensureCursorVisible();
 	updateDesiredColumn();
-	showEditorMessage(editorViewState.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', constants.COLOR_STATUS_TEXT, 2.5);
+	showEditorMessage(editorViewState.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', 'info', 2.5);
 }
 
 export function notifyReadOnlyEdit(): void {
-	showEditorMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
+	showEditorMessage('Tab is read-only', 'warning', 1.5);
 }
 
 export function getResourcePanelWidth(): number {

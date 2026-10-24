@@ -411,7 +411,7 @@ export function setFieldText<T>(field: TextField<T>, value: string, moveCursorTo
 export function pasteFieldText(field: TextField, text: string): boolean {
 	const { singleLine, characterFilter, maxLength, allowSpace } = field.options;
 	if (singleLine && /[\r\n]/.test(text)) {
-		showEditorMessage('This input accepts one line; multiline paste was not applied.', constants.COLOR_STATUS_WARNING, 4);
+		showEditorMessage('This input accepts one line; multiline paste was not applied.', 'warning', 4);
 		return false;
 	}
 	let insertion = text;

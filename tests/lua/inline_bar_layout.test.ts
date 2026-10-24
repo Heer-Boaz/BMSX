@@ -96,7 +96,7 @@ test('inline bars shift only their child text viewport, not the sibling Resource
 test('search results and keyboard paging consume the same status, Problems and timeline height budget', t => {
 	fixture(t); manyResults();
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(83); editorChromeState.runtimeTimelineHeight = 24;
-	showEditorMessage('A real multiline status message\nwith a second authored line', constants.COLOR_STATUS_TEXT, 1);
+	showEditorMessage('A real multiline status message\nwith a second authored line', 'info', 1);
 	refreshWorkbenchLayout();
 	const capacity = capacityForBody(), bounds = getSearchBarBounds()!;
 	assert.equal(searchVisibleResultCount(), capacity);

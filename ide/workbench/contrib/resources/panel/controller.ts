@@ -1,5 +1,4 @@
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
-import * as constants from '../../../../common/constants';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
@@ -149,7 +148,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		const desiredRatio = this.widthRatio;
 		const clamped = clampResourcePanelRatio(desiredRatio);
 		if (!writeResourcePanelBounds(this.bounds, clamped)) {
-			showEditorMessage('Viewport too small for resource panel.', constants.COLOR_STATUS_WARNING, 3.0);
+			showEditorMessage('Viewport too small for resource panel.', 'warning', 3.0);
 			return;
 		}
 		this.widthRatio = clamped;
@@ -163,7 +162,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		const desiredRatio = this.widthRatio;
 		const clamped = clampResourcePanelRatio(desiredRatio);
 		if (!writeResourcePanelBounds(this.bounds, clamped)) {
-			showEditorMessage('Viewport too small for call hierarchy panel.', constants.COLOR_STATUS_WARNING, 3.0);
+			showEditorMessage('Viewport too small for call hierarchy panel.', 'warning', 3.0);
 			return;
 		}
 		this.widthRatio = clamped;
@@ -193,7 +192,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.refreshCallHierarchyContents();
 		showEditorMessage(
 			this.callHierarchyDirection === CallHierarchyDirection.CallsTo ? 'Incoming calls' : 'Outgoing calls',
-			constants.COLOR_STATUS_TEXT,
+			'info',
 			1.8,
 		);
 	}
@@ -211,13 +210,13 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	toggleFilterMode(): void {
 		if (this.mode !== 'resources') {
-			showEditorMessage('Filter is unavailable in call hierarchy view.', constants.COLOR_STATUS_WARNING, 2.4);
+			showEditorMessage('Filter is unavailable in call hierarchy view.', 'warning', 2.4);
 			return;
 		}
 		this.filterMode = this.filterMode === 'lua_only' ? 'all' : 'lua_only';
 		if (this.visible) this.refresh();
 		const modeLabel = this.filterMode === 'lua_only' ? 'Lua resources' : 'all resources';
-		showEditorMessage(`Files panel: showing ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
+		showEditorMessage(`Files panel: showing ${modeLabel}`, 'info', 2.5);
 	}
 
 	// === Rendering ===

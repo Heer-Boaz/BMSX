@@ -101,6 +101,10 @@ export const THEME_TOKEN_EDITOR_REFERENCE_ACTIVE_LIGHT = 97;
 export const THEME_TOKEN_EDITOR_REFERENCE_ACTIVE_DARK = 98;
 export const THEME_TOKEN_EDITOR_SEARCH_DARK = 99;
 export const THEME_TOKEN_EDITOR_ERROR_ON_DARK = 100;
+export const THEME_TOKEN_TEXT_SUCCESS = 101;
+export const THEME_TOKEN_TEXT_WARNING = 102;
+export const THEME_TOKEN_TEXT_ERROR = 103;
+export const THEME_TOKEN_FOCUS_BLUE = 104;
 
 export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x00000000,
@@ -204,6 +208,10 @@ export const THEME_TOKEN_COLORS: readonly number[] = [
 	0xff1e4670,
 	0xff3d3120,
 	0xffffd5cc,
+	0xff245d30,
+	0xff714b00,
+	0xff9f2721,
+	0xff3564b6,
 ];
 
 export function resolveThemeTokenColor(token: number): number {

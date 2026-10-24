@@ -1,7 +1,6 @@
 import { readActionEffectInstances } from '../behavior_lens/action_effect_runtime';
 import type { ResourceDomain } from '../../../common/resource';
 import type { InputFocusTarget } from '../../../input/focus';
-import { COLOR_STATUS_TEXT } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { CPU } from '../../../../machine/ts/machine/cpu/cpu';
 import type { HostRewind } from '../../../../hosts/common/rewind';
@@ -123,7 +122,7 @@ export class ActorLabController {
 			this.refresh(input);
 			const effect = input.runtime.roots[0]?.children.find(node => node.hashId === componentHashId)?.children
 				.find(node => node.hashId === effectHashId && this.guest.matchesIdentity(node.key, key));
-			if (effect === undefined) { showEditorMessage('Effect owner is not a mounted world actor.', COLOR_STATUS_TEXT, 4); return; }
+			if (effect === undefined) { showEditorMessage('Effect owner is not a mounted world actor.', 'info', 4); return; }
 			this.projection.reveal(effect);
 			this.actions(input);
 		});
@@ -240,7 +239,7 @@ export class ActorLabController {
 		void operation.completion.then(result => {
 			if (observer !== undefined) observer(result);
 			else showEditorMessage(result.status === 'completed' ? result.values.length === 0 ? 'Actor call completed.'
-				: `Result: ${result.values.join(', ')}` : result.reason!, COLOR_STATUS_TEXT, 4);
+				: `Result: ${result.values.join(', ')}` : result.reason!, 'info', 4);
 		});
 	}
 	public scrub(input: ActorLabInput, node: ActorNode, time: number, programHashId: number, current: () => boolean, finished: (completed: boolean) => void): void {

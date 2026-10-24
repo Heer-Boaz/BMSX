@@ -190,7 +190,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.previews.beginFrame();
 		const font = editorViewState.font.renderFont();
 		const textColor = colors.COLOR_RESOURCE_VIEWER_TEXT;
-		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
+		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 		const footerTop = input.footerTop;
 		api.fill_rect(0, footerTop, layout.right, layout.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
 		for (let index = 0; index + 1 < input.footer.lines.length; index++) {
@@ -199,18 +199,20 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		renderWorkbenchActionBar(input.turnActions, font, textColor, colors.COLOR_DESCRIPTION_TEXT);
 		if (input.busySince !== undefined) {
 			const y = this.contentTop - layout.rowHeight - 4;
-			api.blit_text_inline_with_font(SPINNER[Math.trunc((performance.now() - input.busySince) / 150) & 3], 4, y, 0, colors.COLOR_STATUS_SUCCESS, font);
-			api.blit_text_inline_with_font(input.activityText, 16, y, 0, textColor, font);
+			api.blit_text_inline_with_font(SPINNER[Math.trunc((performance.now() - input.busySince) / 150) & 3], 4, y, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
+			api.blit_text_inline_with_font(input.activityText, 16, y, 0, colors.COLOR_CONTENT_PROGRESS_TEXT, font);
 		} else if (input.editingQueuedId !== undefined) {
 			api.blit_text_inline_with_font('Editing queued message', 4, this.contentTop - layout.rowHeight - 4, 0, textColor, font);
 		}
 		this.transcriptView.draw();
 		const bounds = input.composerBounds;
-		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_QUICK_OPEN_OUTLINE);
+		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_INPUT_BACKGROUND);
+		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0,
+			input.draft.focusTarget.hasFocus ? colors.COLOR_FOCUS_BORDER : colors.COLOR_INPUT_OUTLINE);
 		if (input.draft.text.length === 0) {
 			const placeholder = input.conversation.state === 'running' ? 'Queue a message…' : 'Message your assistant…';
 			api.pushClipRect(bounds.left + 3, bounds.top + 1, bounds.right - 3, bounds.bottom - 1);
-			api.blit_text_inline_with_font(placeholder, bounds.left + 3, bounds.top + 2, 0, colors.COLOR_QUICK_OPEN_PLACEHOLDER, font);
+			api.blit_text_inline_with_font(placeholder, bounds.left + 3, bounds.top + 2, 0, colors.COLOR_INPUT_PLACEHOLDER, font);
 			api.popClipRect();
 		}
 		drawMultilineField(input.draft, input.composer, bounds);

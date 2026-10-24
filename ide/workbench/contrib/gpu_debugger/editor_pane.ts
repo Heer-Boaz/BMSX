@@ -6,7 +6,6 @@ import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/re
 import type { IdeCommandController } from '../../../commands/controller';
 import type { EditorCommandId } from '../../../common/commands';
 import type { DisposableStore } from '../../../common/lifecycle';
-import * as colors from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
@@ -140,7 +139,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 			case 'gpu.goToFrame': {
 				input.running = false; const sequence = input.selected.sequence;
 				void this.navigation.seek(input.selected.cycles).completion.then(result => showEditorMessage(result.status === 'completed'
-					? `Frame ${result.after.videoTick} at/before observation #${sequence}` : `GPU: ${result.status}`, colors.COLOR_STATUS_TEXT, 4)); break;
+					? `Frame ${result.after.videoTick} at/before observation #${sequence}` : `GPU: ${result.status}`, 'info', 4)); break;
 			}
 		}
 	}

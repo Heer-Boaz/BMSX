@@ -1,6 +1,5 @@
 import type { CartEditor } from '../../../cart_editor';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../../../common/resource';
-import { COLOR_STATUS_SUCCESS } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { joinWorkspacePaths, normalizeRelativeWorkspacePath } from '../../../workspace/path';
@@ -14,7 +13,7 @@ export function importCartridgeFiles(editor: CartEditor, sources: RuntimeSourceS
 		const disposables = editor.quickInput.input(`IMPORT FILES - ${project.label}`, 'Destination folder; then choose files. Existing files are not replaced.', 'res',
 			async directory => editor.importFiles!(joinWorkspacePaths(project.label, normalizeRelativeWorkspacePath(directory, 'directory')), lifetime.signal),
 			paths => {
-				if (paths.length !== 0) showEditorMessage(`Imported ${paths.length} file(s). Build the cartridge and open its published result to use new assets.`, COLOR_STATUS_SUCCESS, 12);
+				if (paths.length !== 0) showEditorMessage(`Imported ${paths.length} file(s). Build the cartridge and open its published result to use new assets.`, 'success', 12);
 			});
 		disposables.add({ dispose: () => lifetime.abort() });
 	});

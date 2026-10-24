@@ -73,7 +73,7 @@ function fixture(t: TestContext) {
 	};
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		drawRomInspector(input, presentation, filter, filterViewport); overlay.renderer.endFrame();
+		drawRomInspector(input, presentation, filter, filterViewport, true); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), rects: RectRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Rect) {
 			const rect = frame.commandRefs[index] as RectRenderSubmission;

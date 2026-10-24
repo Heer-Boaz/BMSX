@@ -6,9 +6,9 @@ import type { ValueInput } from './value_input';
 
 export function drawValueInput<Value>(input: ValueInput<Value>, bounds: RectBounds): void {
 	const invalid = input.error.length > 0;
-	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_CODE_BACKGROUND);
+	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_INPUT_BACKGROUND);
 	api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0,
-		invalid ? constants.COLOR_STATUS_ERROR : input.field.focusTarget.hasFocus
-			? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_BORDER);
-	drawSingleLineField(input.field, input.viewport, bounds, invalid ? constants.COLOR_STATUS_ERROR : constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+		invalid ? constants.COLOR_CONTENT_ERROR_TEXT : input.field.focusTarget.hasFocus
+			? constants.COLOR_FOCUS_BORDER : constants.COLOR_INPUT_OUTLINE);
+	drawSingleLineField(input.field, input.viewport, bounds, invalid ? constants.COLOR_CONTENT_ERROR_TEXT : constants.COLOR_INPUT_TEXT);
 }

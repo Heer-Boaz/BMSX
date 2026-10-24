@@ -5,7 +5,6 @@ import { type ReferenceMatchInfo } from '../../../../editor/contrib/references/s
 import type { SearchMatch } from '../../../../common/models';
 import { TextField } from '../../../../editor/ui/inline/text_field_model';
 import { applyInlineFieldEditing, setFieldText } from '../../../../editor/ui/inline/text_field';
-import * as constants from '../../../../common/constants';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { LuaLexer } from '../../../../../toolchain/ts/lua/syntax/lexer';
 import { focusEditorFromRename } from './prompt';
@@ -54,19 +53,19 @@ export class RenameController {
 	public begin(sources: RuntimeSourceState, options: RenameStartOptions, reviewPanes?: EditorPanes): boolean {
 		const lookup = resolveReferenceLookup(sources, options);
 		if (lookup.kind === 'error') {
-			showEditorMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
+			showEditorMessage(lookup.message, 'warning', lookup.duration);
 			return false;
 		}
 		const { info, initialIndex } = lookup;
 		if (info.matches.length === 0) {
-			showEditorMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
+			showEditorMessage('No references found', 'warning', 1.6);
 			return false;
 		}
 		const firstMatch = info.matches[clamp(initialIndex, 0, info.matches.length - 1)];
 		const activeLine = options.buffer.getLineContent(firstMatch.row);
 		const currentName = activeLine.slice(firstMatch.start, firstMatch.end);
 		if (currentName.length === 0) {
-			showEditorMessage('Unable to determine identifier name', constants.COLOR_STATUS_WARNING, 1.6);
+			showEditorMessage('Unable to determine identifier name', 'warning', 1.6);
 			return false;
 		}
 		this.matches = info.matches;
@@ -138,13 +137,13 @@ export class RenameController {
 		const nextName = this.field.text.trim();
 		switch (validateRenameIdentifier(nextName, this.originalName)) {
 			case 'empty':
-				showEditorMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
+				showEditorMessage('Identifier cannot be empty', 'warning', 1.6);
 				return;
 			case 'invalid_start':
-				showEditorMessage('Identifier must start with a letter or underscore', constants.COLOR_STATUS_WARNING, 1.8);
+				showEditorMessage('Identifier must start with a letter or underscore', 'warning', 1.8);
 				return;
 			case 'invalid_characters':
-				showEditorMessage('Identifier contains invalid characters', constants.COLOR_STATUS_WARNING, 1.8);
+				showEditorMessage('Identifier contains invalid characters', 'warning', 1.8);
 				return;
 			case 'unchanged':
 				this.field.focusTarget.release();
@@ -163,11 +162,11 @@ export class RenameController {
 			updatedMatches = commitRename(crossFileRename, this.matches, nextName, this.activeIndex, this.info);
 		} catch (error) {
 			if (!(error instanceof EditorWorkspaceEditConflict || error instanceof WorkspaceSourceContextConflict)) throw error;
-			showEditorMessage(error.message, constants.COLOR_STATUS_WARNING, 4);
+			showEditorMessage(error.message, 'warning', 4);
 			this.field.focusTarget.release();
 			return;
 		}
-		showEditorMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+		showEditorMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, 'success', 1.6);
 		this.field.focusTarget.release();
 	}
 

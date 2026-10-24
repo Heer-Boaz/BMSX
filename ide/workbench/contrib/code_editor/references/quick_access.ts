@@ -1,7 +1,6 @@
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { CartEditor } from '../../../../cart_editor';
 import { showEditorMessage } from '../../../../common/feedback_state';
-import { COLOR_STATUS_WARNING } from '../../../../common/constants';
 import { referenceState } from '../../../../editor/contrib/references/state';
 import { resolveReferenceLookup } from '../../../../editor/contrib/references/lookup';
 import { buildReferenceSources, type ReferenceSource } from '../../../../editor/contrib/references/sources';
@@ -36,12 +35,12 @@ export function openReferenceSearch(editor: CartEditor, sources: RuntimeSourceSt
 	const row = view.cursorRow, column = view.cursorColumn;
 	const result = resolveReferenceLookup(sources, { buffer: model.buffer, cursorRow: row, cursorColumn: column, identity: resource });
 	if (result.kind === 'error') {
-		showEditorMessage(result.message, COLOR_STATUS_WARNING, result.duration);
+		showEditorMessage(result.message, 'warning', result.duration);
 		return;
 	}
 	const references = buildReferenceSources(result.info);
 	if (references.length === 0) {
-		showEditorMessage('No references found', COLOR_STATUS_WARNING, 1.6);
+		showEditorMessage('No references found', 'warning', 1.6);
 		return;
 	}
 	clearReferenceHighlights();

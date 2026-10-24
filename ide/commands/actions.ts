@@ -57,7 +57,7 @@ export function performHotResume(
 ): HotResumeOperation {
 	persistWorkspaceSessionLocally();
 	const operation = hotResumes.resume();
-	showEditorMessage('Hot Resume: pending', constants.COLOR_STATUS_TEXT, 2.0);
+	showEditorMessage('Hot Resume: pending', 'info', 2.0);
 	void operation.admission.then(admission => {
 		if (hotResumes.latestOperation !== operation || admission.status !== 'accepted'
 			|| operation.result !== null && operation.result.status !== 'completed') return;
@@ -68,7 +68,7 @@ export function performHotResume(
 		if (hotResumes.latestOperation !== operation) return;
 		switch (result.status) {
 			case 'completed':
-				showEditorMessage('Hot Resume: code applied', constants.COLOR_STATUS_TEXT, 2.0);
+				showEditorMessage('Hot Resume: code applied', 'info', 2.0);
 				return;
 			case 'rejected':
 			case 'failed':
@@ -77,10 +77,10 @@ export function performHotResume(
 				return;
 			case 'faulted':
 				// The stack/overlay remains owned by the supervisor observation.
-				showEditorMessage('Hot Resume: guest fault', constants.COLOR_STATUS_ERROR, 2.0);
+				showEditorMessage('Hot Resume: guest fault', 'error', 2.0);
 				return;
 			case 'cancelled':
-				showEditorMessage('Hot Resume: cancelled', constants.COLOR_STATUS_TEXT, 2.0);
+				showEditorMessage('Hot Resume: cancelled', 'info', 2.0);
 				return;
 		}
 	});
@@ -98,14 +98,14 @@ export function performReboot(
 ): BootOperation {
 	persistWorkspaceSessionLocally();
 	const operation = boots.reboot(entry);
-	showEditorMessage('Reboot: pending', constants.COLOR_STATUS_TEXT, 2.0);
+	showEditorMessage('Reboot: pending', 'info', 2.0);
 	void operation.completion.then(result => {
 		if (boots.latestOperation !== operation) return;
 		switch (result.status) {
 			case 'reset':
 				execution.requestExecution(true);
 				deactivateEditor(editor, overlayRenderer, audioOutput);
-				showEditorMessage('Reboot: reset complete', constants.COLOR_STATUS_TEXT, 2.0);
+				showEditorMessage('Reboot: reset complete', 'info', 2.0);
 				return;
 			case 'rejected':
 			case 'failed':

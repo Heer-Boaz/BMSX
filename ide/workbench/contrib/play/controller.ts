@@ -2,7 +2,6 @@ import type { CartEditor } from '../../../cart_editor';
 import type { EditorPlayCommandId } from '../../../common/commands';
 import type { ScenarioTestModule } from '../../../testing/scenario/test_collection';
 import { showEditorMessage } from '../../../common/feedback_state';
-import { COLOR_STATUS_TEXT } from '../../../common/constants';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import type { PlayEvent, PlayService, PlayHandle } from '../../services/play/service';
@@ -67,7 +66,7 @@ export class PlayController {
 			case 'play.breakpoints':
 				openCompiledDebugSources(this.editor.quickInput, handle.session!.debugSources,
 					listener => this.service.onDidChange(event => { if (event.handle === handle && handle.session?.ready !== true) listener(); }),
-					text => showEditorMessage(text, COLOR_STATUS_TEXT, 2.5));
+					text => showEditorMessage(text, 'info', 2.5));
 				return;
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				handle.session!.debuggerExecution.resume(command === 'play.continue' ? 'continue' : command === 'play.stepInto' ? 'into'

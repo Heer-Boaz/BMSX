@@ -62,18 +62,18 @@ export function drawQuickInput(input: QuickInputController): void {
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_QUICK_OPEN_BACKGROUND);
 	api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_QUICK_OPEN_OUTLINE);
 	api.blit_text_inline_with_font(input.titleText, bounds.left + 4, bounds.top + 3, 0, color, font);
-	api.fill_rect(field.left, field.top, field.right, field.bottom, 0, constants.COLOR_CODE_BACKGROUND);
+	api.fill_rect(field.left, field.top, field.right, field.bottom, 0, constants.COLOR_INPUT_BACKGROUND);
 	api.blit_rect(field.left, field.top, field.right, field.bottom, 0, constants.COLOR_QUICK_OPEN_OUTLINE);
 	if (input.field.text.length === 0) {
-		api.blit_text_inline_with_font(input.placeholderText, field.left + 3, field.top + 2, 0, constants.COLOR_QUICK_OPEN_PLACEHOLDER, font);
+		api.blit_text_inline_with_font(input.placeholderText, field.left + 3, field.top + 2, 0, constants.COLOR_INPUT_PLACEHOLDER, font);
 	}
-	drawSingleLineField(input.field, input.textViewport, field, color);
+	drawSingleLineField(input.field, input.textViewport, field, constants.COLOR_INPUT_TEXT);
 	if (input.inputBox) {
 		api.pushClipRect(bounds.left + 4, field.bottom + 4, bounds.right - 4, bounds.bottom - 4);
 		for (let index = 0; index < input.layout.messageLines.length; index += 1) {
 			api.blit_text_inline_with_font(input.layout.messageLines[index], field.left + 3,
 				field.bottom + 4 + index * editorViewState.lineHeight, 0,
-				input.field.readOnly ? constants.COLOR_STATUS_TEXT : constants.COLOR_STATUS_ERROR, font);
+				input.field.readOnly ? constants.COLOR_QUICK_OPEN_TEXT : constants.COLOR_CONTENT_ERROR_TEXT, font);
 		}
 		api.popClipRect();
 		return;
