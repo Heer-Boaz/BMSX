@@ -143,6 +143,7 @@ export type EditorCommandId =
 	| 'cartMap.source'
 	| 'cartMap.map' | 'cartMap.outline'
 	| 'contextMenu'
+	| 'list.find'
 	| 'menubar.focus'
 	| 'navigateBack'
 	| 'navigateForward'

@@ -62,6 +62,7 @@ const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
 	{ code: 'ArrowLeft', command: 'navigateBack', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift } },
 	{ code: 'ArrowRight', command: 'navigateForward', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift } },
 	{ code: 'KeyP', command: 'commandPalette', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
+	{ code: 'KeyF', command: 'list.find', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('list.find') !== undefined },
 	{ code: 'KeyF', command: 'actorLab.find', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('actorLab.find') !== undefined },
 	{ code: 'KeyD', command: 'behaviorLens.duplicateChild', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('behaviorLens.duplicateChild') !== undefined },
 	{ code: 'Delete', command: 'behaviorLens.removeChild', modifiers: NO_MODIFIERS, when: target => target?.getCommand('behaviorLens.removeChild') !== undefined },

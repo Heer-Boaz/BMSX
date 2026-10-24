@@ -1,12 +1,25 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { FrameBitmap } from '../../hosts/common/frame_bitmap';
+import { Input } from '../../hosts/common/input/manager';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
+import { activeCodeEditor } from '../../ide/editor/ui/code_editor_state';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { insertValue, setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { InputFocusScope, inputFocus, type InputFocusTarget } from '../../ide/input/focus';
 import { handleEditorCommandBindings } from '../../ide/input/keyboard/global_bindings';
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { pointerHover } from '../../ide/input/pointer/hover';
+import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/view';
+import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
+import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
+import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
 
 function fixture(t: TestContext, scope = new InputFocusScope(Symbol('control')), focusReturn: InputFocusTarget | null = null) {
 	const parent = inputFocus.createTarget(focusReturn, scope);
@@ -192,4 +205,151 @@ test('key releases and consumed events do not repeat a control command', t => {
 	const consumed = new KeyInputEvent('KeyZ', KeyModifier.ctrl); consumed.consumed = true;
 	assert.equal(handleEditorCommandBindings(consumed, inputFocus.commandRunner, target), false);
 	assert.equal(f.control.field.text, '1234567'); assert.deepEqual(f.executed, []);
+});
+
+for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
+	test(`${primary === KeyModifier.ctrl ? 'Ctrl' : 'Cmd'} F invokes only the actual focused list Find capability`, t => {
+		const f = fixture(t, inputFocus.workbenchScope), target = inputFocus.createTarget(f.parent);
+		let finds = 0, checks = 0;
+		const command = { isEnabled: () => { checks++; return true; }, run: () => { assert.equal(inputFocus.target, target); finds++; } };
+		target.registerCommand('list.find', command);
+		target.commandContext = f.control.field.focusTarget;
+		target.focus();
+		assert.equal(inputFocus.commandRunner, f.commands);
+		assert.equal(target.getCommand('list.find'), command);
+		assert.equal(target.commandContext.getCommand('list.find'), undefined);
+		const event = new KeyInputEvent('KeyF', primary);
+		assert.equal(handleEditorCommandBindings(event, inputFocus.commandRunner), true);
+		assert.equal(event.consumed, true); assert.equal(finds, 1); assert.equal(checks, 1);
+		for (const ignored of [new KeyInputEvent('KeyF', primary, true), new KeyInputEvent('KeyF', primary, false, false)]) {
+			assert.equal(handleEditorCommandBindings(ignored, inputFocus.commandRunner), false);
+			assert.equal(ignored.consumed, false);
+		}
+		const consumed = new KeyInputEvent('KeyF', primary); consumed.consumed = true;
+		assert.equal(handleEditorCommandBindings(consumed, inputFocus.commandRunner), false);
+		assert.equal(finds, 1); assert.equal(checks, 1);
+		assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
+	});
+
+	test(`disabled own list Find consumes ${primary === KeyModifier.ctrl ? 'Ctrl' : 'Cmd'} F without borrowing its alias or application`, t => {
+		const f = fixture(t, inputFocus.workbenchScope), target = inputFocus.createTarget(f.parent);
+		let aliasFinds = 0, checks = 0;
+		f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { aliasFinds++; } });
+		target.registerCommand('list.find', { isEnabled: () => { checks++; return false; }, run: () => assert.fail('disabled Find ran') });
+		target.commandContext = f.parent; target.focus();
+		const event = new KeyInputEvent('KeyF', primary);
+		assert.equal(handleEditorCommandBindings(event, inputFocus.commandRunner), true);
+		assert.equal(event.consumed, true); assert.equal(aliasFinds, 0); assert.equal(checks, 1);
+		assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
+	});
+}
+
+test('a parent or commandContext cannot lend list Find to a field, menu or toolbar, even with an application runner', t => {
+	const f = fixture(t, inputFocus.workbenchScope);
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
+	let finds = 0;
+	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
+	const child = inputFocus.createTarget(f.parent), alias = inputFocus.createTarget(); alias.commandContext = f.parent;
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const toolbar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, f.commands, f.parent, () => f.parent.focus());
+	toolbar.setInput(createWorkbenchActionBar('events.title'), f.parent);
+	t.after(() => { toolbar.dispose(); menu.dispose(); });
+	f.control.field.focusTarget.commandContext = f.parent;
+	for (const target of [child, alias, f.control.field.focusTarget, toolbar.focusTarget]) {
+		target.focus();
+		assert.equal(target.getCommand('list.find'), undefined);
+		assert.equal(inputFocus.commandRunner, f.commands);
+		f.checked.length = 0;
+		for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
+			const event = new KeyInputEvent('KeyF', primary);
+			assert.equal(handleEditorCommandBindings(event, inputFocus.commandRunner), false);
+			assert.equal(event.consumed, false);
+		}
+		assert.deepEqual(f.checked, []);
+	}
+	f.parent.focus(); menu.show(8, 24, [{ type: 'command', command: 'list.find' }], f.commands, { selectFirst: true });
+	assert.equal(inputFocus.target, menu.focusTarget); assert.equal(menu.focusTarget.commandContext, f.parent);
+	assert.equal(menu.focusTarget.getCommand('list.find'), undefined);
+	f.checked.length = 0;
+	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
+		const event = new KeyInputEvent('KeyF', primary);
+		// Explicit runner availability must still not turn the popup's semantic
+		// action alias into ownership of a physical keyboard binding.
+		assert.equal(handleEditorCommandBindings(event, f.commands), false);
+		assert.equal(event.consumed, false);
+	}
+	assert.equal(finds, 0); assert.equal(f.control.field.text, '123456');
+	assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
+});
+
+test('a real QuickInput query cannot borrow its invoking list Find while retaining its local text input', t => {
+	const f = fixture(t, inputFocus.workbenchScope);
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
+	let finds = 0;
+	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
+	t.after(() => { picker.dispose(); menu.dispose(); });
+	f.parent.focus();
+	picker.input('Filter events', 'Query', 'probe', async text => text, () => assert.fail('Ctrl/Cmd F submitted the query'));
+	const target = picker.field.focusTarget; target.commandContext = f.parent;
+	assert.equal(inputFocus.target, target); assert.equal(target.getCommand('list.find'), undefined);
+	f.checked.length = 0;
+	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
+		const event = new KeyInputEvent('KeyF', primary);
+		assert.equal(handleEditorCommandBindings(event, f.commands), false);
+		assert.equal(event.consumed, false); target.handleKeyboard(event);
+		assert.equal(picker.field.text, 'probe'); assert.equal(picker.visible, true);
+	}
+	assert.equal(finds, 0); assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
+});
+
+test('a genuine guest input target does not acquire list Find from an application or underlying list', t => {
+	const f = fixture(t, inputFocus.workbenchScope), clock = new VirtualHeadlessClock();
+	const input = new Input(clock, new HeadlessInputHub(), -1), frames = new FrameBitmap();
+	frames.publish(new Uint8Array(4), 1, 1, { presentationSequence: 0, cycles: 0, videoTick: 0 });
+	let finds = 0;
+	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
+	const guest = inputFocus.createTarget(f.parent); guest.commandContext = f.parent;
+	guest.guestInput = { bounds: { left: 80, top: 24, right: 384, bottom: 274 }, recipient: input,
+		presentation: { kind: 'offscreen', frames } };
+	guest.focus(); t.after(() => { frames.dispose(); input.dispose(); });
+	assert.equal(inputFocus.commandRunner, f.commands); assert.equal(guest.getCommand('list.find'), undefined);
+	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
+		const event = new KeyInputEvent('KeyF', primary);
+		assert.equal(handleEditorCommandBindings(event, inputFocus.commandRunner), false);
+		assert.equal(event.consumed, false);
+	}
+	assert.equal(finds, 0); assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
+});
+
+test('list Find does not claim Shift/Alt variants or change Actor Lab and source-local Find routes', t => {
+	const f = fixture(t, inputFocus.workbenchScope);
+	let finds = 0, actorFinds = 0;
+	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
+	f.parent.focus();
+	for (const modifiers of [KeyModifier.none, KeyModifier.alt, KeyModifier.ctrl | KeyModifier.shift,
+		KeyModifier.meta | KeyModifier.shift, KeyModifier.ctrl | KeyModifier.alt, KeyModifier.meta | KeyModifier.alt]) {
+		const event = new KeyInputEvent('KeyF', modifiers);
+		assert.equal(handleEditorCommandBindings(event, inputFocus.commandRunner), false);
+		assert.equal(event.consumed, false);
+	}
+	const actor = inputFocus.createTarget(f.parent); actor.commandContext = f.parent;
+	actor.registerCommand('actorLab.find', { isEnabled: () => true, run: () => { actorFinds++; } }); actor.focus();
+	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
+		const event = new KeyInputEvent('KeyF', primary);
+		assert.equal(handleEditorCommandBindings(event, inputFocus.commandRunner), true);
+		assert.equal(event.consumed, true);
+	}
+	assert.equal(actorFinds, 2); assert.equal(finds, 0);
+	activeCodeEditor.focusTarget.focus();
+	assert.equal(activeCodeEditor.focusTarget.getCommand('list.find'), undefined);
+	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
+		const event = new KeyInputEvent('KeyF', primary);
+		assert.equal(handleEditorCommandBindings(event, inputFocus.commandRunner), false,
+			'the source owner retains its existing local Find handling after central bindings decline');
+		assert.equal(event.consumed, false);
+	}
+	assert.equal(finds, 0); assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
 });

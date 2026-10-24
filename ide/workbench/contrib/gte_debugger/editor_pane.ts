@@ -91,6 +91,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		} });
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		this.scroll.focusTarget.registerCommand('contextMenu', this.focusTarget.getCommand('contextMenu')!);
+		this.scroll.focusTarget.registerCommand('list.find', this.focusTarget.getCommand('gte.filter')!);
 		// The full-width history and its actions are the main pane's reading controls.
 		this.actions.focusTarget.next = this.scroll.focusTarget; this.actions.focusTarget.previous = this.scroll.focusTarget;
 		this.scroll.focusTarget.next = this.actions.focusTarget; this.scroll.focusTarget.previous = this.actions.focusTarget;

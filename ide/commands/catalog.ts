@@ -25,6 +25,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	navigateBack: { category: 'Go', title: 'Back' },
 	navigateForward: { category: 'Go', title: 'Forward' },
 	contextMenu: { category: 'View', title: 'Show Context Menu' },
+	'list.find': { category: 'List', title: 'Find' },
 	'menubar.focus': { category: 'View', title: 'Focus Menu Bar' },
 	commandPalette: { category: 'View', title: 'Command Palette' },
 	undo: { category: 'Edit', title: 'Undo' },

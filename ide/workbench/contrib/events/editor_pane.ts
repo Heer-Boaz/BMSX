@@ -86,6 +86,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		}
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
+		this.scroll.focusTarget.registerCommand('list.find', this.focusTarget.getCommand('events.filter')!);
 		const context = { isEnabled: () => !this.inspector.visible, run: () => {
 			const input = this.input, viewport = input.viewport;
 			const top = viewport.offsetTop + input.selected * input.layout.rowHeight;

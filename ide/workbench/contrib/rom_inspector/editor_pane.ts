@@ -4,7 +4,7 @@ import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../../common/constants';
 import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
-import { applyInlineFieldEditing, applyInlineFieldPointer, setFieldText } from '../../../editor/ui/inline/text_field';
+import { applyInlineFieldEditing, applyInlineFieldPointer, selectAll, setFieldText } from '../../../editor/ui/inline/text_field';
 import { TextField } from '../../../editor/ui/inline/text_field_model';
 import { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_viewport';
 import { resetBlink } from '../../../editor/render/caret';
@@ -83,6 +83,10 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		for (const target of [this.focusTarget, this.filter.focusTarget]) for (const command of COMMANDS)
 			target.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.list.focusTarget.commandContext = this.focusTarget;
+		this.list.focusTarget.registerCommand('list.find', {
+			isEnabled: () => this.hasInput,
+			run: () => { this.filter.focusTarget.focus(); selectAll(this.filter); resetBlink(); },
+		});
 		this.actions.focusTarget.next = this.filter.focusTarget;
 		this.filter.focusTarget.previous = this.actions.focusTarget;
 		this.filter.focusTarget.next = this.list.focusTarget;

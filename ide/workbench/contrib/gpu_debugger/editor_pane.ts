@@ -70,6 +70,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		this.actions.onDidOpenOverflow = lifetime => { this.input.following = false; this.ownMenu(lifetime); };
 		this.list.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
+		this.list.focusTarget.registerCommand('list.find', this.focusTarget.getCommand('gpu.filter')!);
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { this.input.running = commands.transport.togglePlayback(); } });
 		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
 		this.focusTarget.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.input.running = true; } });

@@ -114,6 +114,11 @@ export class IdeCommandController {
 		const edit = inputFocus.target?.commandContext.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
+			case 'list.find': {
+				const implementation = target?.getCommand(command);
+				if (implementation !== undefined && implementation.isEnabled()) implementation.run();
+				return;
+			}
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				this.editor.play.execute(command); return;
@@ -379,6 +384,7 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
+			case 'list.find': return focus?.getCommand(command)?.isEnabled() === true;
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				return this.editor.play.isCommandEnabled(command);
