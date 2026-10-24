@@ -4,15 +4,38 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
-import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
+import { insertValue, selectAll, getCursorOffset, selectedText } from '../../ide/editor/ui/inline/text_field';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { inputFocus } from '../../ide/input/focus';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { applySearchFieldText, EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
 import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
 import { RenameController } from '../../ide/workbench/contrib/code_editor/rename/controller';
+import { handleSearchInput } from '../../ide/input/quick_input/search/input';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import type { CartEditor } from '../../ide/cart_editor';
 
 const clock = new VirtualHeadlessClock();
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} query Home and Shift-End retain text editing even with results`, t => {
+	const sources = {} as RuntimeSourceState;
+	const search = new EditorSearchController(sources, new RenameController());
+	const source = 'local needle = 1\nreturn needle';
+	const model = new EditorTextModel({ domain: 0, path: 'query.lua', source: { resid: 'query', type: 'lua' } }, 'lua', source);
+	activeCodeEditor.attach(model, createCodeEditorViewState());
+	configureFontVariant(clock, variant, 'lua');
+	t.after(() => { search.closeSearch(true); inputFocus.setTarget(null); activeCodeEditor.detach(); model.dispose(); clearBackgroundTasks(); });
+	applySearchFieldText('needle', true); search.openSearch(false); runBackgroundTasks(clock);
+	assert.equal(editorSearchState.matches.length, 2);
+	const editor = { search } as CartEditor, field = editorSearchState.field;
+	const index = editorSearchState.currentIndex;
+	handleSearchInput(new KeyInputEvent('Home', KeyModifier.none), editor, sources);
+	assert.equal(getCursorOffset(field), 0);
+	assert.equal(editorSearchState.currentIndex, index);
+	handleSearchInput(new KeyInputEvent('End', KeyModifier.shift), editor, sources);
+	assert.equal(getCursorOffset(field), field.text.length); assert.equal(selectedText(field), 'needle');
+	assert.equal(editorSearchState.currentIndex, index); assert.equal(model.buffer.getText(), source);
+});
 
 for (const scope of ['local', 'global'] as const) {
 	test(`${scope} Find cancels before detach; clearing its retained field cannot access the old editor`, t => {

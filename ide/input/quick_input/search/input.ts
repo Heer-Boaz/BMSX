@@ -1,4 +1,4 @@
-import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, searchPageSize, stepSearchSelection } from '../../../workbench/contrib/code_editor/find/search';
+import { activeSearchMatchCount, jumpToNextMatch, jumpToPreviousMatch, searchPageSize, stepSearchSelection } from '../../../workbench/contrib/code_editor/find/search';
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, isKeyDown } from '../../keyboard/key_input';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
@@ -24,16 +24,6 @@ function openSelectedGlobalMatch(
 	if (match) {
 		openGlobalSearchMatch(editor.editorPanes, sources, match);
 	}
-}
-
-function applySearchSelectionFromInput(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	index: number,
-	options?: SearchSelectionOptions,
-): void {
-	applySearchSelection(index, options);
-	openSelectedGlobalMatch(editor, sources, options);
 }
 
 function stepSearchSelectionFromInput(
@@ -109,16 +99,7 @@ export function handleSearchInput(
 			stepSearchSelectionFromInput(editor, sources, searchPageSize(), { preview: previewLocal });
 			return;
 		}
-		if (isKeyJustPressed('Home', playerInput)) {
-			consumeIdeKey('Home', playerInput);
-			applySearchSelectionFromInput(editor, sources, 0, { preview: true, keepSearchActive: true });
-			return;
-		}
-		if (isKeyJustPressed('End', playerInput)) {
-			consumeIdeKey('End', playerInput);
-			applySearchSelectionFromInput(editor, sources, activeSearchMatchCount() - 1, { preview: true, keepSearchActive: true });
-			return;
-		}
+
 	}
 	applyInlineFieldEditing(playerInput, editorSearchState.field);
 }

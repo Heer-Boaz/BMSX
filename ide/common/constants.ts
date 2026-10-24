@@ -154,6 +154,10 @@ type ThemeOverlays = {
 		secondaryText: number;
 		placeholder: number;
 		outline: number;
+		selectionBackground: number;
+		selectionText: number;
+		hoverBackground: number;
+		hoverText: number;
 	};
 	completion: {
 		background: number;
@@ -268,11 +272,15 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				text: THEME_TOKEN_TERMINAL_GREY,
 			},
 			search: {
-				background: THEME_TOKEN_TERMINAL_CYAN,
-				text: THEME_TOKEN_TEXT_GREY,
-				secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
-				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
-				outline: THEME_TOKEN_BLACK,
+				background: THEME_TOKEN_NEAR_BLACK,
+				text: THEME_TOKEN_TERMINAL_GREY,
+				secondaryText: THEME_TOKEN_HINT_GREY,
+				placeholder: THEME_TOKEN_HINT_GREY,
+				outline: THEME_TOKEN_MID_GREY,
+				selectionBackground: THEME_TOKEN_DARK_NAVY,
+				selectionText: THEME_TOKEN_WHITE,
+				hoverBackground: THEME_TOKEN_DEEP_GREY,
+				hoverText: THEME_TOKEN_TERMINAL_GREY,
 			},
 			completion: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
@@ -387,11 +395,15 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				text: THEME_TOKEN_TEXT_GREY,
 			},
 			search: {
-				background: THEME_TOKEN_TERMINAL_CYAN,
+				background: THEME_TOKEN_GENTLE_WHITE,
 				text: THEME_TOKEN_TEXT_GREY,
-				secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
-				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
-				outline: THEME_TOKEN_BLACK,
+				secondaryText: THEME_TOKEN_MUTED_GREY,
+				placeholder: THEME_TOKEN_MUTED_GREY,
+				outline: THEME_TOKEN_MID_GREY,
+				selectionBackground: THEME_TOKEN_DARK_NAVY,
+				selectionText: THEME_TOKEN_WHITE,
+				hoverBackground: THEME_TOKEN_PANEL_GREY,
+				hoverText: THEME_TOKEN_TEXT_GREY,
 			},
 			completion: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
@@ -570,6 +582,8 @@ export let COLOR_RESOURCE_VIEWER_BACKGROUND: number;
 export let COLOR_RESOURCE_VIEWER_TEXT: number;
 export let COLOR_SEARCH_SECONDARY_TEXT: number;
 export let COLOR_SEARCH_TEXT: number;
+export let COLOR_SEARCH_SELECTION_TEXT: number;
+export let COLOR_SEARCH_HOVER_TEXT: number;
 export let COLOR_SEARCH_PLACEHOLDER: number;
 export let COLOR_SEARCH_OUTLINE: number;
 export let COLOR_SEARCH_BACKGROUND: number;
@@ -724,8 +738,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_INACTIVE_SELECTION_TEXT = theme.text.inactiveSelectionText;
 	CARET_COLOR = theme.editor.caret;
 	INLINE_CARET_COLOR = theme.caret.inline;
-	SEARCH_RESULT_SELECTION_OVERLAY = theme.text.selection;
-	SEARCH_RESULT_HOVER_OVERLAY = theme.highlightOverlay;
+	SEARCH_RESULT_SELECTION_OVERLAY = search.selectionBackground;
+	SEARCH_RESULT_HOVER_OVERLAY = search.hoverBackground;
 	COLOR_STATUS_BACKGROUND = theme.status.background;
 	COLOR_STATUS_TEXT = theme.status.text;
 	COLOR_STATUS_WARNING = theme.status.warning;
@@ -766,6 +780,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_RESOURCE_VIEWER_TEXT = panel.resource.viewerText;
 	COLOR_SEARCH_SECONDARY_TEXT = search.secondaryText;
 	COLOR_SEARCH_TEXT = search.text;
+	COLOR_SEARCH_SELECTION_TEXT = search.selectionText;
+	COLOR_SEARCH_HOVER_TEXT = search.hoverText;
 	COLOR_SEARCH_PLACEHOLDER = search.placeholder;
 	COLOR_SEARCH_OUTLINE = search.outline;
 	COLOR_SEARCH_BACKGROUND = search.background;

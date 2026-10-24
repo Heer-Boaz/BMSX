@@ -5,7 +5,6 @@ import { editorFeedbackState } from '../../common/feedback_state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
 import { editorChromeState } from '../ui/chrome_state';
 import * as constants from '../../common/constants';
-import { computeSearchPageStats } from '../contrib/code_editor/find/search';
 import { editorSearchState, lineJumpState } from '../contrib/code_editor/find/widget_state';
 import { renameController } from '../contrib/code_editor/rename/controller';
 import type { EditorFont } from '../../editor/ui/view/font';
@@ -147,7 +146,8 @@ export function bottomMargin(): number {
 }
 
 export function searchVisibleResultCount(): number {
-	return computeSearchPageStats().visible;
+	refreshWorkbenchLayout();
+	return inlineBarLayout.visibleResults;
 }
 
 export function searchResultEntryHeight(): number {
@@ -155,129 +155,120 @@ export function searchResultEntryHeight(): number {
 }
 
 export function getSearchBarHeight(): number {
-	if (!editorSearchState.visible) {
-		return 0;
-	}
-	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-	const visible = searchVisibleResultCount();
-	if (visible <= 0) {
-		return baseHeight;
-	}
-	return baseHeight + constants.SEARCH_RESULT_SPACING + visible * searchResultEntryHeight();
+	refreshWorkbenchLayout();
+	return inlineBarLayout.barHeight[0];
 }
 
 export function getRenameBarHeight(): number {
-	if (!renameController.isVisible()) {
-		return 0;
-	}
-	return editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	refreshWorkbenchLayout();
+	return inlineBarLayout.barHeight[1];
 }
 
 export function getLineJumpBarHeight(): number {
-	if (!lineJumpState.visible) {
-		return 0;
-	}
-	return editorViewState.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
+	refreshWorkbenchLayout();
+	return inlineBarLayout.barHeight[2];
+}
+
+/** Physical result rows share the same pane budget as the bars and source viewport. */
+export function getSearchResultCapacity(): number {
+	refreshWorkbenchLayout();
+	return inlineBarLayout.resultCapacity;
 }
 
 export type BarBounds = { top: number; bottom: number; left: number; right: number };
 
 type InlineBarLayout = {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+	lineHeight: number;
+	searchVisible: boolean;
+	renameVisible: boolean;
+	lineJumpVisible: boolean;
+	resultCount: number;
+	resultCapacity: number;
+	visibleResults: number;
 	codeViewportTop: number;
 	barHeight: number[];
 	barBounds: BarBounds[];
 };
 
-function createBarBounds(): BarBounds {
-	return { top: 0, bottom: 0, left: 0, right: 0 };
-}
-
-const barHeightGetters = [
-	getSearchBarHeight,
-	getRenameBarHeight,
-	getLineJumpBarHeight,
-] as const;
-
 const inlineBarLayout: InlineBarLayout = {
+	left: 0, top: 0, right: 0, bottom: 0, lineHeight: 0,
+	searchVisible: false, renameVisible: false, lineJumpVisible: false,
+	resultCount: 0, resultCapacity: 0, visibleResults: 0,
 	codeViewportTop: 0,
 	barHeight: [0, 0, 0],
 	barBounds: [
-		createBarBounds(),
-		createBarBounds(),
-		createBarBounds(),
+		create_rect_bounds(),
+		create_rect_bounds(),
+		create_rect_bounds(),
 	],
 };
 
-let inlineBarLayoutStamp = 0;
 let inlineBarLayoutValid = false;
 
-function addLayoutStamp(stamp: number, value: number): number {
-	return ((stamp * 33) ^ value) | 0;
-}
-
-function computeInlineBarLayoutStamp(): number {
-	let stamp = 5381;
-	stamp = addLayoutStamp(stamp, editorViewState.viewportWidth);
-	stamp = addLayoutStamp(stamp, editorChromeState.editorRightInset);
-	stamp = addLayoutStamp(stamp, editorViewState.viewportHeight);
-	stamp = addLayoutStamp(stamp, editorViewState.headerHeight);
-	stamp = addLayoutStamp(stamp, editorViewState.tabBarHeight);
-	stamp = addLayoutStamp(stamp, editorViewState.tabBarTotalHeight);
-	stamp = addLayoutStamp(stamp, editorViewState.lineHeight);
-	stamp = addLayoutStamp(stamp, editorSearchState.visible ? 1 : 0);
-	stamp = addLayoutStamp(stamp, editorSearchState.scope === 'global' ? 2 : 1);
-	stamp = addLayoutStamp(stamp, editorSearchState.matches.length);
-	stamp = addLayoutStamp(stamp, editorSearchState.globalMatches.length);
-	stamp = addLayoutStamp(stamp, editorSearchState.displayOffset);
-	stamp = addLayoutStamp(stamp, renameController.isVisible() ? 1 : 0);
-	stamp = addLayoutStamp(stamp, lineJumpState.visible ? 1 : 0);
-	return stamp;
-}
-
-function writeInlineBarLayout(): void {
-	const stamp = computeInlineBarLayoutStamp();
-	if (inlineBarLayoutValid && stamp === inlineBarLayoutStamp) {
-		return;
+function writeInlineBarLayout(left: number, top: number, right: number, bottom: number): boolean {
+	const lineHeight = editorViewState.lineHeight;
+	const searchVisible = editorSearchState.visible, renameVisible = renameController.isVisible(), lineJumpVisible = lineJumpState.visible;
+	const resultCount = searchVisible
+		? (editorSearchState.scope === 'global' ? editorSearchState.globalMatches.length : editorSearchState.matches.length)
+		: 0;
+	if (inlineBarLayoutValid && inlineBarLayout.left === left && inlineBarLayout.top === top
+		&& inlineBarLayout.right === right && inlineBarLayout.bottom === bottom && inlineBarLayout.lineHeight === lineHeight
+		&& inlineBarLayout.searchVisible === searchVisible && inlineBarLayout.renameVisible === renameVisible
+		&& inlineBarLayout.lineJumpVisible === lineJumpVisible && inlineBarLayout.resultCount === resultCount) {
+		return false;
 	}
 	inlineBarLayoutValid = true;
-	inlineBarLayoutStamp = stamp;
-	let top = topMargin();
-	for (let index = 0; index < barHeightGetters.length; index += 1) {
-		const height = barHeightGetters[index]();
+	inlineBarLayout.left = left; inlineBarLayout.top = top; inlineBarLayout.right = right; inlineBarLayout.bottom = bottom;
+	inlineBarLayout.lineHeight = lineHeight;
+	inlineBarLayout.searchVisible = searchVisible; inlineBarLayout.renameVisible = renameVisible; inlineBarLayout.lineJumpVisible = lineJumpVisible;
+	inlineBarLayout.resultCount = resultCount;
+	const searchFieldHeight = searchVisible ? lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2 : 0;
+	const renameHeight = renameVisible ? lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2 : 0;
+	const lineJumpHeight = lineJumpVisible ? lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2 : 0;
+	const resultSpace = bottom - top - searchFieldHeight - renameHeight - lineJumpHeight
+		- constants.SEARCH_RESULT_SPACING - lineHeight * 6;
+	inlineBarLayout.resultCapacity = searchVisible
+		? Math.max(0, Math.min(constants.GLOBAL_SEARCH_RESULT_LIMIT, Math.trunc(resultSpace / searchResultEntryHeight())))
+		: 0;
+	const visibleResults = Math.min(resultCount, inlineBarLayout.resultCapacity);
+	inlineBarLayout.visibleResults = visibleResults;
+	const searchHeight = searchFieldHeight + (visibleResults > 0 ? constants.SEARCH_RESULT_SPACING + visibleResults * searchResultEntryHeight() : 0);
+	let changed = false;
+	for (let index = 0; index < inlineBarLayout.barBounds.length; index += 1) {
+		const desiredHeight = index === 0 ? searchHeight : index === 1 ? renameHeight : lineJumpHeight;
+		const height = Math.min(desiredHeight, bottom - top);
 		const bounds = inlineBarLayout.barBounds[index];
+		changed ||= bounds.left !== left || bounds.top !== top || bounds.right !== right || bounds.bottom !== top + height;
 		inlineBarLayout.barHeight[index] = height;
-		if (height <= 0) {
-			bounds.left = 0;
-			bounds.top = top;
-			bounds.right = 0;
-			bounds.bottom = top;
-			continue;
-		}
-		bounds.left = 0;
-		bounds.top = top;
-		bounds.right = editorViewState.viewportWidth - editorChromeState.editorRightInset;
-		bounds.bottom = top + height;
+		write_rect_bounds(bounds, left, top, right, top + height);
 		top = bounds.bottom;
 	}
 	inlineBarLayout.codeViewportTop = top;
+	return changed;
 }
 
 export function refreshWorkbenchLayout(): boolean {
-	writeInlineBarLayout();
-	editorViewState.codeAreaTop = inlineBarLayout.codeViewportTop;
-	editorViewState.codeAreaBottom = editorViewState.viewportHeight - bottomMargin();
 	const left = editorViewState.codeAreaLeft, top = topMargin();
-	const right = editorViewState.viewportWidth - editorChromeState.editorRightInset, bottom = editorViewState.codeAreaBottom;
-	const workBottom = editorViewState.viewportHeight - statusAreaHeight();
+	const right = Math.max(left, editorViewState.viewportWidth - editorChromeState.editorRightInset);
+	const bottom = Math.max(top, editorViewState.viewportHeight - bottomMargin());
+	const barsChanged = writeInlineBarLayout(left, top, right, bottom);
+	editorViewState.codeAreaTop = inlineBarLayout.codeViewportTop;
+	editorViewState.codeAreaBottom = bottom;
+	const workBottom = Math.max(top, editorViewState.viewportHeight - statusAreaHeight());
 	const workChanged = workArea.top !== top || workArea.right !== editorViewState.viewportWidth || workArea.bottom !== workBottom;
 	write_rect_bounds(workArea, 0, top, editorViewState.viewportWidth, workBottom);
-	const changed = workChanged || editorBounds.left !== left || editorBounds.top !== top || editorBounds.right !== right || editorBounds.bottom !== bottom;
+	const changed = barsChanged || workChanged || editorBounds.left !== left || editorBounds.top !== top || editorBounds.right !== right || editorBounds.bottom !== bottom;
 	write_rect_bounds(editorBounds, left, top, right, bottom);
 	return changed;
 }
 
 function getInlineBarBounds(barIndex: number): BarBounds | null {
-	if (inlineBarLayout.barHeight[barIndex] <= 0) {
+	refreshWorkbenchLayout();
+	if (inlineBarLayout.barHeight[barIndex] === 0 || inlineBarLayout.left === inlineBarLayout.right) {
 		return null;
 	}
 	return inlineBarLayout.barBounds[barIndex];

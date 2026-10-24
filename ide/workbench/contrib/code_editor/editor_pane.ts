@@ -1,3 +1,4 @@
+import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { handleCodeAreaSelectionPointer } from '../../../input/pointer/code/selection';
 import { inputFocus } from '../../../input/focus';
@@ -15,7 +16,7 @@ import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import * as constants from '../../../common/constants';
-import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
@@ -27,7 +28,7 @@ import { measureText } from '../../../editor/common/text/layout';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { handleEditorEditingBindings, handleCodeFormattingKeybinding, handleSearchNavigationKeybinding } from '../../../input/keyboard/edit_bindings';
 import { handleEditorPromptBindings } from '../../input/keyboard/prompt_bindings';
-import { renderInlineWidgets } from '../../../quick_input/inline_widget';
+import { layoutInlineWidgets, renderInlineWidgets } from '../../../quick_input/inline_widget';
 import { handleQuickInputPointer } from '../../../input/quick_input/pointer/dispatch';
 import { handleCodeAreaPointerInput } from '../../../input/pointer/code/index';
 import { editorPointerState } from '../../../input/pointer/state';
@@ -55,11 +56,16 @@ import { clearReferenceHighlights, requestSemanticRefresh } from '../../../edito
 import { CodeEditorNavigationSelection } from './navigation_selection';
 import { closeLineJump } from './find/line_jump';
 import { setActiveDiagnostics } from '../../../editor/contrib/diagnostics/state';
+import { ensureCursorVisible } from '../../../editor/ui/view/caret/view';
 
 const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
-export class CodeEditorPane extends EditorPane<CodeEditorInput> {
+export class CodeEditorPane extends EditorPane<CodeEditorInput> implements PointerCaptureTarget {
 	private readonly nativeText = new CodeEditorTextInput();
+	private textTop = -1;
+	private textBottom = -1;
+	private selectionPointerX = 0;
+	private selectionPointerY = 0;
 	public override getSelection(): CodeEditorNavigationSelection {
 		return new CodeEditorNavigationSelection(this.input);
 	}
@@ -75,7 +81,9 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 			else if (contents.images.length > 0) showEditorMessage('Source files accept text, not images.', constants.COLOR_STATUS_WARNING, 4);
 		},
 	});
-	private readonly unbindBlur = activeCodeEditor.focusTarget.onDidBlur(() => activeCodeEditor.model.breakUndoSequence());
+	private readonly unbindBlur = activeCodeEditor.focusTarget.onDidBlur(() => {
+		this.cancelPointer(); activeCodeEditor.model.breakUndoSequence();
+	});
 	public constructor(
 		private readonly editor: CartEditor,
 		private readonly clipboard: Clipboard,
@@ -105,6 +113,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public dispose(): void {
+		this.cancelPointer();
 		this.unbindKeyboard(); this.unbindClipboard();
 		this.unbindBlur();
 	}
@@ -116,6 +125,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		activeCodeEditor.focusTarget.textInput = this.nativeText;
 		setActiveDiagnostics(this.input.context.model, this.editor.diagnostics.diagnostics);
 		this.unsubscribeBeforeContentChange = this.input.context.model.onWillChangeContent(() => {
+			this.cancelPointer();
 			activeCodeEditor.clearInlineEdit(); activeCodeEditor.clearVisualCursor();
 		});
 		this.unsubscribeContentChange = this.input.context.model.onDidChangeContent(event => {
@@ -134,6 +144,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public override clearInput(): void {
+		this.cancelPointer();
 		this.editor.completion.clearInput();
 		activeCodeEditor.focusTarget.release();
 		activeCodeEditor.focusTarget.textInput = undefined;
@@ -152,11 +163,20 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 
 	public override layout(bounds: Readonly<RectBounds>): void {
 		super.layout(bounds);
+		this.textTop = editorViewState.codeAreaTop; this.textBottom = editorViewState.codeAreaBottom;
 		refreshViewportLayout();
+		layoutInlineWidgets();
+		if (bounds.left === bounds.right || this.textTop === this.textBottom) this.cancelPointer();
 		this.editor.completion.layoutPopup(bounds.bottom - bounds.top, editorViewState.lineHeight);
 	}
 
 	public override update(deltaSeconds: number): void {
+		if (this.textTop !== editorViewState.codeAreaTop || this.textBottom !== editorViewState.codeAreaBottom) {
+			this.textTop = editorViewState.codeAreaTop; this.textBottom = editorViewState.codeAreaBottom;
+			if (this.textTop === this.textBottom) this.cancelPointer();
+			else if (!editorCaretState.cursorRevealSuspended) ensureCursorVisible();
+		}
+		layoutInlineWidgets();
 		this.editor.completion.processPending(deltaSeconds);
 		const pointer = editorPointerState.lastPointerSnapshot;
 		const blocked = this.editor.actionPrompt.visible || this.editor.quickInput.visible || this.editor.contextMenu.visible;
@@ -237,7 +257,31 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 			pointerSecondaryJustPressed,
 			now,
 			this.clipboard,
+			this,
 		);
+	}
+
+	public beginPointerSelection(snapshot: PointerSnapshot): void {
+		this.selectionPointerX = snapshot.viewportX; this.selectionPointerY = snapshot.viewportY;
+		editorPointerState.pointerSelecting = true;
+		pointerCapture.capture(this);
+	}
+
+	public handleCapturedPointer(snapshot: PointerSnapshot): void {
+		if (snapshot.viewportX === this.selectionPointerX && snapshot.viewportY === this.selectionPointerY) return;
+		this.selectionPointerX = snapshot.viewportX; this.selectionPointerY = snapshot.viewportY;
+		handleCodeAreaSelectionPointer(snapshot, getCodeAreaBounds());
+	}
+
+	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
+		this.handleCapturedPointer(snapshot); this.cancelPointer();
+	}
+
+	public cancelPointer(): void {
+		pointerCapture.cancelTarget(this);
+		if (editorPointerState.pointerSelecting) editorPointerState.lastPointerSnapshot = null;
+		editorPointerState.pointerSelecting = false;
+		editorPointerState.lastPointerRowResolution = null;
 	}
 
 	public handleWheel(event: WheelInputSnapshot): void {

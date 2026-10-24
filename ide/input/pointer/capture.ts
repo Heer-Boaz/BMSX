@@ -57,6 +57,11 @@ export class PointerCaptureService {
 		if (this.target === target) this.target = null;
 	}
 
+	/** Retiring a control drains its hold without disturbing a sibling's capture. */
+	public cancelTarget(target: PointerCaptureTarget): void {
+		if (this.target === target) this.cancel();
+	}
+
 	public cancel(): void {
 		const target = this.target;
 		this.target = null;

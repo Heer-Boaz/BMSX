@@ -4,7 +4,7 @@ import type { Position } from '../../../common/models';
 import type { TextField, TextFieldAnnotation } from './text_field_model';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
-import { advanceToggleBlink } from '../view/caret/blink';
+import { advanceToggleBlink, resetBlinkState } from '../view/caret/blink';
 import { editorCaretState } from '../view/caret/state';
 import {
 	clearSingleCursorSelection,
@@ -441,14 +441,17 @@ export function applyInlineFieldEditing(
 	const shiftDown = isShiftDown(playerInput);
 	const useCtrl = ctrlDown || metaDown;
 	let textChanged = false;
+	let handled = false;
 
 	if (useCtrl && isKeyJustPressed('KeyA', playerInput)) {
 		consumeIdeKey('KeyA', playerInput);
+		handled = true;
 		selectAll(field);
 	}
 
 	if (isKeyDown('Backspace', playerInput)) {
 		consumeIdeKey('Backspace', playerInput);
+		handled = true;
 		if (useCtrl) {
 			textChanged = deleteWordBackward(field) || textChanged;
 		} else {
@@ -458,6 +461,7 @@ export function applyInlineFieldEditing(
 
 	if (isKeyDown('Delete', playerInput)) {
 		consumeIdeKey('Delete', playerInput);
+		handled = true;
 		if (useCtrl) {
 			textChanged = deleteWordForward(field) || textChanged;
 		} else {
@@ -467,6 +471,7 @@ export function applyInlineFieldEditing(
 
 	if (isKeyDown('ArrowLeft', playerInput)) {
 		consumeIdeKey('ArrowLeft', playerInput);
+		handled = true;
 		if (useCtrl) {
 			moveWordLeft(field, shiftDown);
 		} else {
@@ -476,6 +481,7 @@ export function applyInlineFieldEditing(
 
 	if (isKeyDown('ArrowRight', playerInput)) {
 		consumeIdeKey('ArrowRight', playerInput);
+		handled = true;
 		if (useCtrl) {
 			moveWordRight(field, shiftDown);
 		} else {
@@ -485,14 +491,17 @@ export function applyInlineFieldEditing(
 
 	if (isKeyDown('Home', playerInput)) {
 		consumeIdeKey('Home', playerInput);
+		handled = true;
 		moveToStart(field, shiftDown);
 	}
 
 	if (isKeyDown('End', playerInput)) {
 		consumeIdeKey('End', playerInput);
+		handled = true;
 		moveToEnd(field, shiftDown);
 	}
 
+	if (handled) resetBlinkState(editorCaretState);
 	return textChanged;
 }
 

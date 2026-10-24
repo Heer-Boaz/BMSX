@@ -8,7 +8,7 @@ import { handleCodeAreaPrimaryPressPointer } from './primary_press';
 import { handleCodeAreaGutterPointer, handleCodeAreaSecondaryPointer } from './secondary_actions';
 import { codeAreaHover } from './feedback';
 import { pointerHover } from '../hover';
-import { handleCodeAreaSelectionPointer } from './selection';
+import type { CodeAreaSelectionTarget } from './selection';
 import type { CartEditor } from '../../../cart_editor';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 
@@ -21,6 +21,7 @@ export function handleCodeAreaPointerInput(
 	pointerSecondaryJustPressed: boolean,
 	now: number,
 	clipboard: Clipboard,
+	selection: CodeAreaSelectionTarget,
 ): void {
 	const bounds = getCodeAreaBounds();
 	const contentBottom = editorViewState.codeHorizontalScrollbarVisible
@@ -62,8 +63,8 @@ export function handleCodeAreaPointerInput(
 		gotoModifierActive,
 		bounds,
 		now,
+		selection,
 	)) {
 		return;
 	}
-	handleCodeAreaSelectionPointer(snapshot, bounds);
 }

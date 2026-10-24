@@ -1,25 +1,7 @@
-import * as constants from '../../../../../common/constants';
-import type { TextField } from '../../../../../editor/ui/inline/text_field_model';
-import { measureInlineFieldDecoration } from '../../../../../editor/ui/inline/field_view';
+import type { InlineBarFieldLayout } from '../../inline_bar/field';
+import { drawSingleLineField } from '../../../../../editor/ui/inline/single_line_render';
 import { api } from '../../../../../runtime/overlay_api';
-import { drawEditorText } from '../../../../../editor/render/text_renderer';
-import { drawInlineCaret } from '../../../../../editor/render/caret';
-import { measureText } from '../../../../../editor/common/text/layout';
 import { editorViewState } from '../../../../../editor/ui/view/state';
-
-export type InlineBarFieldRenderState = {
-	fieldText: string;
-	displayText: string;
-	textX: number;
-	displayWidth: number;
-};
-
-const scratchInlineBarFieldRenderState: InlineBarFieldRenderState = {
-	fieldText: '',
-	displayText: '',
-	textX: 0,
-	displayWidth: 0,
-};
 
 export function renderInlineBarFrame(
 	left: number,
@@ -34,43 +16,15 @@ export function renderInlineBarFrame(
 	api.fill_rect(left, bottom - 1, right, bottom, 0, outlineColor);
 }
 
-export function renderInlineBarField(
-	field: TextField,
-	label: string,
-	labelX: number,
-	labelY: number,
-	caretActive: boolean,
-	placeholderActive: boolean,
-	textColor: number,
-	placeholderText: string,
-	placeholderColor: number,
-	caretAdvance: number,
-	out: InlineBarFieldRenderState = scratchInlineBarFieldRenderState,
-): InlineBarFieldRenderState {
-	drawEditorText(editorViewState.font, label, labelX, labelY, 0, textColor);
-
-	const fieldText = field.text;
-	const displayText = fieldText.length === 0 && !placeholderActive
-		? placeholderText
-		: fieldText;
-	const displayColor = fieldText.length === 0 && !placeholderActive
-		? placeholderColor
-		: textColor;
-	const textX = labelX + measureText(label) + editorViewState.spaceAdvance;
-	const decoration = measureInlineFieldDecoration(field, editorViewState.inlineFieldMetricsRef, textX);
-	if (fieldText.length > 0 && decoration.hasSelection && decoration.selectionWidth > 0) {
-		api.fill_rect(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + editorViewState.lineHeight, 0, constants.SELECTION_OVERLAY);
+export function renderInlineBarField(layout: InlineBarFieldLayout, textColor: number, placeholder: string, placeholderColor: number): void {
+	const { field, bounds } = layout;
+	const y = bounds.top + 2, font = editorViewState.font.renderFont();
+	if (layout.label.length > 0) api.blit_text_inline_with_font(layout.label, layout.labelX, y, 0, textColor, font);
+	if (layout.detail.length > 0) api.blit_text_inline_with_font(layout.detail, layout.detailX, y, 0, textColor, font);
+	api.pushClipRect(bounds.left + 3, bounds.top, bounds.right - 3, bounds.bottom);
+	if (layout.label.length === 0 && field.text.length === 0) {
+		api.blit_text_inline_with_font(placeholder, bounds.left + 3, y, 0, placeholderColor, font);
 	}
-
-	drawEditorText(editorViewState.font, displayText, textX, labelY, 0, displayColor);
-
-	const caretLeft = decoration.caretBaseX;
-	const caretRight = Math.max(caretLeft + 1, decoration.caretBaseX + caretAdvance);
-	drawInlineCaret(api, field, caretLeft, labelY, caretRight, labelY + editorViewState.lineHeight, decoration.caretBaseX, caretActive, constants.INLINE_CARET_COLOR);
-
-	out.fieldText = fieldText;
-	out.displayText = displayText;
-	out.textX = textX;
-	out.displayWidth = measureText(displayText);
-	return out;
+	drawSingleLineField(field, layout.viewport, bounds, textColor);
+	api.popClipRect();
 }

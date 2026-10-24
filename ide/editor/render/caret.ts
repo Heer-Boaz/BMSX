@@ -11,7 +11,6 @@ import { resetBlinkState } from '../ui/view/caret/blink';
 import { editorCaretState } from '../ui/view/caret/state';
 import { editorViewState } from '../ui/view/state';
 import { activeCodeEditor } from '../ui/code_editor_state';
-import { editorRuntimeState } from '../common/runtime_state';
 
 export function drawInlineCaret(
 	api: Api,
@@ -29,8 +28,7 @@ export function drawInlineCaret(
 	if (!editorCaretState.cursorVisible) return;
 	const text = field.text;
 	const cursorIndex = getCursorOffset(field);
-	const rawGlyph = cursorIndex < text.length ? text.charAt(cursorIndex) : ' ';
-	const caretGlyph = getCaretGlyphForDisplay(rawGlyph);
+	const caretGlyph = cursorIndex < text.length ? text.charAt(cursorIndex) : ' ';
 	const caretValue = resolveThemeTokenColor(caretColor);
 	const inverseColorIndex = invertThemeToken(caretColor);
 	if (active) {
@@ -39,16 +37,6 @@ export function drawInlineCaret(
 		return;
 	}
 	drawRectOutlineColor(left, top, right, bottom, 0, caretValue);
-}
-
-export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): string {
-	if (!editorRuntimeState.uppercaseDisplay) {
-		return baseChar;
-	}
-	if (baseColor === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING) {
-		return baseChar;
-	}
-	return baseChar.toUpperCase();
 }
 
 export function drawCursor(info: CursorScreenInfo, textX: number, active: boolean): void {

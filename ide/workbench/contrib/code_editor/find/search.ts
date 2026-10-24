@@ -5,7 +5,6 @@ import * as constants from '../../../../common/constants';
 import { clamp, clamp_wrap } from '../../../../../machine/ts/common/clamp';
 import { getSelectionRange, getSelectionText } from '../../../../editor/editing/text_editing_and_selection';
 import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch } from '../../../../common/models';
-import type { TextField } from '../../../../editor/ui/inline/text_field_model';
 import * as luaPipeline from '../../../../runtime/lua_pipeline';
 import { enqueueBackgroundTask } from '../../../../common/background_tasks';
 import { beginNavigationCapture, completeNavigation } from '../../../../navigation/navigation_history';
@@ -14,15 +13,15 @@ import { closeLineJump } from './line_jump';
 import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
 import { revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
-import { applyInlineFieldPointer, setFieldText } from '../../../../editor/ui/inline/text_field';
+import { setFieldText } from '../../../../editor/ui/inline/text_field';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import { splitText } from '../../../../../machine/ts/common/text_lines';
-import { editorViewState } from '../../../../editor/ui/view/state';
 import type { RenameController } from '../rename/controller';
 import { editorSearchState } from './widget_state';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { EditorTextModel } from '../../../../editor/model/text_model';
+import { getSearchResultCapacity, refreshWorkbenchLayout } from '../../../common/layout';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -97,6 +96,7 @@ export class EditorSearchController {
 		applySearchFieldText(query, true);
 		editorSearchState.scope = scope;
 		editorSearchState.visible = true;
+		refreshWorkbenchLayout();
 		this.unbindQueryChange = editorSearchState.field.onDidChangeText(() => {
 			editorSearchState.query = editorSearchState.field.text;
 			this.onSearchQueryChanged();
@@ -379,6 +379,7 @@ export function cancelGlobalSearchJob(): void {
 
 function focusLocalMatch(index: number, recordNavigation: boolean): void {
 	const match = editorSearchState.matches[index];
+	refreshWorkbenchLayout();
 	const navigationCheckpoint = recordNavigation ? beginNavigationCapture() : null;
 	setSingleCursorPosition(activeCodeEditor.view, match.row, match.start);
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, match.row, match.end);
@@ -453,16 +454,7 @@ export function searchPageSize(): number {
 	if (!editorSearchState.visible) {
 		return constants.SEARCH_MAX_RESULTS;
 	}
-	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-	const rowHeight = editorViewState.lineHeight * 2;
-	const reservedHeight = editorViewState.lineHeight * 6;
-	const available = editorViewState.viewportHeight
-		- editorViewState.headerHeight
-		- editorViewState.tabBarTotalHeight
-		- baseHeight
-		- reservedHeight;
-	const fit = Math.floor(available / rowHeight);
-	return clamp(fit, 1, constants.GLOBAL_SEARCH_RESULT_LIMIT);
+	return Math.max(1, getSearchResultCapacity());
 }
 
 export function ensureSearchSelectionVisible(): void {
@@ -471,14 +463,18 @@ export function ensureSearchSelectionVisible(): void {
 		editorSearchState.displayOffset = 0;
 		return;
 	}
-	const pageSize = searchPageSize();
 	editorSearchState.currentIndex = clamp(editorSearchState.currentIndex, 0, total - 1);
+	const pageSize = getSearchResultCapacity();
+	if (pageSize === 0) {
+		editorSearchState.displayOffset = editorSearchState.currentIndex;
+		return;
+	}
 	if (editorSearchState.currentIndex < editorSearchState.displayOffset) {
 		editorSearchState.displayOffset = editorSearchState.currentIndex;
 	} else if (editorSearchState.currentIndex >= editorSearchState.displayOffset + pageSize) {
 		editorSearchState.displayOffset = editorSearchState.currentIndex - pageSize + 1;
 	}
-	const maxOffset = total - pageSize;
+	const maxOffset = Math.max(0, total - pageSize);
 	editorSearchState.displayOffset = clamp(editorSearchState.displayOffset, 0, maxOffset);
 }
 
@@ -489,8 +485,8 @@ export function computeSearchPageStats(): { total: number; offset: number; visib
 		return { total: 0, offset: 0, visible: 0 };
 	}
 
-	const pageSize = searchPageSize();
-	const maxOffset = total - pageSize;
+	const pageSize = getSearchResultCapacity();
+	const maxOffset = Math.max(0, total - Math.max(1, pageSize));
 	editorSearchState.displayOffset = clamp(editorSearchState.displayOffset, 0, maxOffset);
 
 	const remaining = total - editorSearchState.displayOffset;
@@ -528,18 +524,4 @@ function buildSearchResultEntry(index: number): { primary: string; secondary?: s
 export function applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
 	editorSearchState.query = value;
 	setFieldText(editorSearchState.field, value, moveCursorToEnd);
-}
-
-export function processInlineFieldPointer(field: TextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
-	const result = applyInlineFieldPointer(field, {
-		metrics: editorViewState.inlineFieldMetricsRef,
-		textLeft,
-		pointerX,
-		justPressed,
-		pointerPressed,
-		doubleClickInterval: constants.DOUBLE_CLICK_MAX_INTERVAL_MS,
-	});
-	if (result.requestBlinkReset) {
-		resetBlink();
-	}
 }

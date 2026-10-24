@@ -3,6 +3,7 @@ import { clamp } from '../../../../../machine/ts/common/clamp';
 import { copy_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
 import * as constants from '../../../../common/constants';
 import { editorViewState } from '../../../../editor/ui/view/state';
+import { getWorkbenchEditorBounds } from '../../../common/layout';
 
 export function defaultResourcePanelRatio(screenRelativeWidth: number): number {
 	const relative = screenRelativeWidth < 1 ? screenRelativeWidth : 1;
@@ -75,8 +76,9 @@ export function writeResourcePanelBounds(out: RectBounds, widthRatio: number): b
 	if (width <= 0) {
 		return false;
 	}
-	const top = editorViewState.codeAreaTop;
-	const bottom = editorViewState.codeAreaBottom;
+	const root = getWorkbenchEditorBounds();
+	const top = root.top;
+	const bottom = root.bottom;
 	if (bottom <= top) {
 		return false;
 	}

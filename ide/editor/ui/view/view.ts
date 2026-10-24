@@ -104,7 +104,7 @@ export function getCodeAreaBounds(): CodeAreaBounds {
 	const bounds = getWorkbenchEditorBounds();
 	const gutterLeft = bounds.left;
 	const gutterRight = gutterLeft + updateGutterWidth();
-	codeAreaBounds.codeTop = bounds.top;
+	codeAreaBounds.codeTop = editorViewState.codeAreaTop;
 	codeAreaBounds.codeBottom = bounds.bottom;
 	codeAreaBounds.codeLeft = bounds.left;
 	codeAreaBounds.codeRight = bounds.right;

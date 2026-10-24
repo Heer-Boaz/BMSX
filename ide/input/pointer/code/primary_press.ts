@@ -1,5 +1,5 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { PointerButton } from '../../../../hosts/common/input/pointer_event';
+import type { CodeAreaSelectionTarget } from './selection';
 import { setCursorPosition } from '../../../editor/ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import { focusPrimaryEditorSurface } from '../../../workbench/ui/focus';
@@ -22,6 +22,7 @@ export function handleCodeAreaPrimaryPressPointer(
 	gotoModifierActive: boolean,
 	bounds: CodeAreaBounds,
 	now: number,
+	selection: CodeAreaSelectionTarget,
 ): boolean {
 	if (!justPressed || !insideCodeArea) {
 		return false;
@@ -47,7 +48,7 @@ export function handleCodeAreaPrimaryPressPointer(
 	}
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, targetRow, targetColumn);
 	setCursorPosition(targetRow, targetColumn);
-	editorPointerState.pointerSelecting = ((snapshot.pressedButtons & PointerButton.Primary) !== 0);
+	selection.beginPointerSelection(snapshot);
 	return true;
 }
 

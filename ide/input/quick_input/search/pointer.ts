@@ -1,18 +1,21 @@
+import { getSearchFieldLayout } from '../../../workbench/contrib/code_editor/inline_bar/layout';
+import { InlineBarFieldPointer } from '../pointer/field';
 import { pointerHover } from '../../pointer/hover';
-import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
-import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer, searchHover } from '../../../workbench/contrib/code_editor/find/search';
+import { applySearchSelection, ensureSearchSelectionVisible, searchHover } from '../../../workbench/contrib/code_editor/find/search';
 import { closeLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
 import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../../workbench/common/layout';
 import type { PointerSnapshot } from '../../../common/models';
-import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
+import { activateQuickInputField } from '../pointer/common';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { editorSearchState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { EditorPanes } from '../../../workbench/services/editor/editor_panes';
+
+const fieldPointer = new InlineBarFieldPointer(editorSearchState.field, getSearchFieldLayout);
 
 function applySearchPointerSelection(
 	editorPanes: EditorPanes,
@@ -53,9 +56,7 @@ export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSo
 			editorSearchState.field.focusTarget.focus();
 			activateQuickInputField(resourcePanel);
 		}
-		const label = editorSearchState.scope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
-		processInlineFieldPointer(editorSearchState.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, ((snapshot.pressedButtons & PointerButton.Primary) !== 0));
-		finishQuickInputPointer();
+		fieldPointer.handlePointer(snapshot, justPressed);
 		return true;
 	}
 	pointerHover.visit(searchHover);
@@ -70,10 +71,8 @@ export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSo
 			}
 		}
 		applySearchPointerSelection(editorPanes, sources, hoverIndex);
-		finishQuickInputPointer();
 		return true;
 	}
-	finishQuickInputPointer();
 	return true;
 }
 
