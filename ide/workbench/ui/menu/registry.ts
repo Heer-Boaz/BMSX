@@ -287,9 +287,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'gte.clear' },
 	],
 	'events.title': [
-		{ type: 'command', command: 'events.filter' },
-		{ type: 'command', command: 'events.goToFrame' },
-		{ type: 'command', command: 'events.more' },
+		{ type: 'command', command: 'events.filter', icon: 'filter' },
+		{ type: 'command', command: 'events.details', icon: 'info' },
 	],
 	'events.context': [
 		{ type: 'command', command: 'events.details' },

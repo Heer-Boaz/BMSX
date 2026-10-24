@@ -1,6 +1,10 @@
 import type { HistoricalEvent, EventHistoryStatus, RuntimeEventHistory } from '../../../runtime/event_history';
 import { formatValueSnapshot, type ValueSnapshot } from '../../../runtime/value_snapshot';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
+import type { EditorFont } from '../../../editor/ui/view/font';
+import { measureTextRange } from '../../../editor/common/text/layout';
+import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
+import type { EventViewerInput } from './editor_input';
 
 export const EVENT_HISTORY_LABEL: Record<EventHistoryStatus, string> = {
 	live: 'Live', replay: 'History review',
@@ -47,6 +51,66 @@ export class EventProjection {
 		}
 		return changed;
 	}
+}
+
+type EventLabel = { timeline: string; tick: string; event: string; fullEvent: string };
+export type EventViewerRow = { index: number; top: number; label: EventLabel };
+
+/** Visible prepared rows share cached immutable snapshot labels; paint never formats history. */
+export class EventViewerPresentation {
+	public readonly rows: EventViewerRow[] = [];
+	public readonly emptyLines: string[] = [];
+	private readonly labels = new Map<number, EventLabel>();
+	private generation = -1;
+	private firstSequence = -1;
+	private width = -1;
+	private font: EditorFont | null = null;
+	private offset = 0;
+	private height = 0;
+	private firstRow = -1;
+	private emptyText = '';
+
+	public update(input: EventViewerInput, layoutChanged: boolean, projected: boolean): void {
+		const { layout, viewport, history } = input;
+		const firstRow = Math.trunc(viewport.scrollTop / layout.rowHeight);
+		const labelsChanged = this.generation !== history.generation || this.width !== layout.eventWidth || this.font !== layout.font;
+		if (labelsChanged) this.labels.clear();
+		if (this.firstSequence !== history.firstSequence) {
+			for (const sequence of this.labels.keys()) if (sequence < history.firstSequence) this.labels.delete(sequence);
+		}
+		if (labelsChanged || projected || layoutChanged || this.offset !== viewport.offsetTop || this.height !== viewport.height || firstRow !== this.firstRow) {
+			const records = input.projection.rows;
+			let count = 0;
+			for (let index = firstRow, top = viewport.offsetTop + index * layout.rowHeight;
+				index < records.length && top < viewport.bounds.bottom; index++, top += layout.rowHeight) {
+				const record = records[index];
+				let label = this.labels.get(record.sequence);
+				if (label === undefined) {
+					const fullEvent = `${formatValueSnapshot(record.event)} / ${formatValueSnapshot(record.emitter)}`;
+					label = { timeline: `T${record.timeline}`, tick: String(record.completedTick),
+						event: truncateMeasuredText(fullEvent, layout.eventWidth - 4, measureTextRange), fullEvent };
+					this.labels.set(record.sequence, label);
+				}
+				const row = this.rows[count];
+				if (row === undefined) this.rows.push({ index, top, label });
+				else { row.index = index; row.top = top; row.label = label; }
+				count++;
+			}
+			this.rows.length = count;
+		}
+		const emptyText = input.filter !== '' ? 'No matching events.\nChange or clear the filter.'
+			: history.status === 'live' ? 'No events yet.\nPlay or step the runtime.' : EVENT_HISTORY_LABEL[history.status];
+		if (emptyText !== this.emptyText || labelsChanged || layoutChanged) {
+			this.emptyLines.length = 0;
+			for (const line of emptyText.split('\n')) writeWrappedMeasuredLine(this.emptyLines, line, layout.eventWidth - 4, measureTextRange);
+			this.emptyText = emptyText;
+		}
+		this.generation = history.generation; this.firstSequence = history.firstSequence;
+		this.width = layout.eventWidth; this.font = layout.font;
+		this.offset = viewport.offsetTop; this.height = viewport.height;
+		this.firstRow = firstRow;
+	}
+	public reset(): void { this.labels.clear(); this.rows.length = 0; this.generation = -1; }
 }
 
 /** Full wrapped snapshot properties use the existing inspector, including complex payloads. */
