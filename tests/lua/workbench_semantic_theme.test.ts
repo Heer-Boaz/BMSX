@@ -20,6 +20,12 @@ import { drawValueInput } from '../../ide/editor/ui/inline/value_input_render';
 import { applyInlineFieldEditing, setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 
+const hiddenResources: Parameters<typeof renderStatusBar>[0] = {
+	isVisible: () => false,
+	getMode: () => 'resources',
+	getFilterMode: () => 'all',
+};
+
 for (const variant of ['tiny', 'msx'] as const) for (const kind of ['info', 'success', 'warning', 'error'] as const) {
 	test(`${variant} retained ${kind} feedback resolves its actual status-surface ink after a theme change`, t => {
 		configureFontVariant(new VirtualHeadlessClock(), variant, null);
@@ -36,7 +42,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const kind of ['info', 'suc
 		for (const theme of ['light', 'dark']) {
 			colors.setIdeThemeVariant(theme);
 			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-			renderStatusBar(null, fault, null, evaluation, 'standalone');
+			renderStatusBar(hiddenResources, fault, null, evaluation, 'standalone');
 			overlay.renderer.endFrame(); const frame = overlay.queue.consumeOverlayFrame();
 			let glyph: GlyphRenderSubmission | undefined;
 			for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {

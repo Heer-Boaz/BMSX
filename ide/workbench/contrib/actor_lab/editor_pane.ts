@@ -362,7 +362,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		drawEditorText(editorViewState.font, this.detailsWindow.hasFocus ? this.input.details!.title
 			: this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET'
-			: this.viewportHit !== undefined ? this.gameInput.focusTarget.hasFocus ? 'SHIFT+F1: INSPECT' : this.viewportHit.label
+			: this.viewportHit !== undefined ? this.viewportHit.label
 			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
 	}
 	public draw(): void {

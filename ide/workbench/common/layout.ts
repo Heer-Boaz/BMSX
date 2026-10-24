@@ -1,5 +1,5 @@
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
-import { writeWrappedOverlayLine } from '../../editor/common/text/layout';
+import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
@@ -12,7 +12,33 @@ import type { EditorFont } from '../../editor/ui/view/font';
 const editorBounds = create_rect_bounds();
 const workArea = create_rect_bounds();
 const statusBounds = create_rect_bounds();
+const connectionBounds = create_rect_bounds();
 export const STATUS_BAR_CONNECTION_WIDTH = 14;
+export const HOST_FAILURE_STATUS = 'HOST ERROR |';
+const GUEST_FOCUS_HINTS = ['SHIFT+F1: RELEASE INPUT', 'SHIFT+F1: STUDIO', 'SHIFT+F1'] as const;
+const guestFocusHintWidths = [0, 0, 0];
+const statusLayout = {
+	bounds: statusBounds,
+	connection: connectionBounds,
+	message: create_rect_bounds(),
+	context: create_rect_bounds(),
+	hostFault: create_rect_bounds(),
+	guestHint: create_rect_bounds(),
+	guestHintText: '',
+};
+let statusLayoutFont: EditorFont | undefined;
+let statusLayoutGuestInput = false, statusLayoutHostFailed = false;
+let hostFailureWidth = 0;
+
+export type WorkbenchStatusLayout = {
+	readonly bounds: Readonly<RectBounds>;
+	readonly connection: Readonly<RectBounds>;
+	readonly message: Readonly<RectBounds>;
+	readonly context: Readonly<RectBounds>;
+	readonly hostFault: Readonly<RectBounds>;
+	readonly guestHint: Readonly<RectBounds>;
+	readonly guestHintText: string;
+};
 
 export type WorkbenchChromeLayout = {
 	readonly viewportWidth: number;
@@ -33,6 +59,47 @@ export function getWorkbenchStatusBounds(): RectBounds {
 	write_rect_bounds(statusBounds, STATUS_BAR_CONNECTION_WIDTH, editorViewState.viewportHeight - statusAreaHeight(),
 		editorViewState.viewportWidth, editorViewState.viewportHeight);
 	return statusBounds;
+}
+
+/** The permanent connection control stays on the context row, below any feedback. */
+export function getWorkbenchConnectionBounds(): Readonly<RectBounds> {
+	write_rect_bounds(connectionBounds, 0, editorViewState.viewportHeight - editorViewState.baseBottomMargin,
+		STATUS_BAR_CONNECTION_WIDTH, editorViewState.viewportHeight);
+	return connectionBounds;
+}
+
+/** Feedback keeps its full-width rows; context and release guidance share the existing bottom row. */
+export function getWorkbenchStatusLayout(guestInput: boolean, hostFailed: boolean): WorkbenchStatusLayout {
+	const bounds = getWorkbenchStatusBounds(), rowTop = getWorkbenchConnectionBounds().top;
+	const font = editorViewState.font;
+	if (statusLayoutFont === font && statusLayoutGuestInput === guestInput && statusLayoutHostFailed === hostFailed
+		&& statusLayout.message.left === bounds.left && statusLayout.message.right === bounds.right
+		&& statusLayout.message.top === bounds.top && statusLayout.context.top === rowTop
+		&& statusLayout.context.bottom === bounds.bottom) return statusLayout;
+	if (statusLayoutFont !== font) {
+		for (let index = 0; index < GUEST_FOCUS_HINTS.length; index++) guestFocusHintWidths[index] = measureText(GUEST_FOCUS_HINTS[index]) + 8;
+		hostFailureWidth = measureText(HOST_FAILURE_STATUS) + 8;
+		statusLayoutFont = font;
+	}
+	statusLayoutGuestInput = guestInput; statusLayoutHostFailed = hostFailed;
+	const contextLeft = hostFailed ? Math.min(bounds.right, bounds.left + hostFailureWidth) : bounds.left;
+	let hintWidth = 0;
+	statusLayout.guestHintText = '';
+	if (guestInput) {
+		const available = bounds.right - contextLeft, minimumContext = editorViewState.charAdvance * 8 + 8;
+		for (let index = 0; index < GUEST_FOCUS_HINTS.length; index++) {
+			const width = guestFocusHintWidths[index];
+			if (width + minimumContext <= available || index === GUEST_FOCUS_HINTS.length - 1 && width <= available) {
+				hintWidth = width; statusLayout.guestHintText = GUEST_FOCUS_HINTS[index];
+				break;
+			}
+		}
+	}
+	write_rect_bounds(statusLayout.message, bounds.left, bounds.top, bounds.right, rowTop);
+	write_rect_bounds(statusLayout.hostFault, bounds.left, rowTop, contextLeft, bounds.bottom);
+	write_rect_bounds(statusLayout.context, contextLeft, rowTop, bounds.right - hintWidth, bounds.bottom);
+	write_rect_bounds(statusLayout.guestHint, bounds.right - hintWidth, rowTop, bounds.right, bounds.bottom);
+	return statusLayout;
 }
 
 export type FullWidthWorkbenchLayout = {

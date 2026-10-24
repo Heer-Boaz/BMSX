@@ -1,4 +1,4 @@
-import { getWorkbenchStatusBounds } from '../../workbench/common/layout';
+import { getWorkbenchConnectionBounds } from '../../workbench/common/layout';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { handleEditorScrollbarPointer } from './scrollbar';
 import type { CartEditor } from '../../cart_editor';
@@ -28,8 +28,7 @@ export function handleEditorChromePointerDispatch(
 		return true;
 	}
 	if (!snapshot.valid) return true;
-	const status = getWorkbenchStatusBounds();
-	if (snapshot.viewportX >= 0 && snapshot.viewportX < status.left && snapshot.viewportY >= status.top && snapshot.viewportY < status.bottom) {
+	if (point_in_rect(snapshot.viewportX, snapshot.viewportY, getWorkbenchConnectionBounds())) {
 		if (justPressed) editor.commands.execute('server.connection');
 		return true;
 	}
