@@ -95,10 +95,16 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 			return range.start.line === range.end.line && !this.controller.modelFor(this.input, property.source.file).readOnly;
 		}, run: () => this.editProperty() });
 		this.focusTarget.registerCommand('animation.more', { isEnabled: () => this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
-		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
-			isEnabled: () => { const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction); return model !== undefined && !model.readOnly; },
-			run: () => executeTextHistoryCommand(this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!, direction),
-		});
+		for (const direction of ['undo', 'redo'] as const) {
+			const historyCommand = {
+				isEnabled: () => { const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction); return model !== undefined && !model.readOnly; },
+				run: () => executeTextHistoryCommand(this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!, direction),
+			};
+			this.focusTarget.registerCommand(direction, historyCommand);
+			this.detailsFocus.registerCommand(direction, historyCommand);
+			this.keys.focusTarget.registerCommand(direction, historyCommand);
+			this.image.focusTarget.registerCommand(direction, historyCommand);
+		}
 		this.focusTarget.next = this.keys.focusTarget; this.keys.focusTarget.previous = this.focusTarget;
 		this.keys.focusTarget.next = this.image.focusTarget; this.image.focusTarget.previous = this.keys.focusTarget;
 		this.image.focusTarget.next = this.detailsFocus; this.detailsFocus.previous = this.image.focusTarget;

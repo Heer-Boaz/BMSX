@@ -104,14 +104,14 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 			...this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index))),
 		];
 		this.options = new SceneOptionEditor(this.details.focusTarget, () => this.update(), property => this.revealOption(property), sectionCommands);
-		this.focusTarget.registerCommand('undo', {
-			isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
-			run: () => { executeTextHistoryCommand(this.input.workingCopy, 'undo'); },
-		});
-		this.focusTarget.registerCommand('redo', {
-			isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canRedo,
-			run: () => { executeTextHistoryCommand(this.input.workingCopy, 'redo'); },
-		});
+		for (const direction of ['undo', 'redo'] as const) {
+			const historyCommand = {
+				isEnabled: () => !this.input.workingCopy.readOnly && (direction === 'undo' ? this.input.workingCopy.canUndo : this.input.workingCopy.canRedo),
+				run: () => { executeTextHistoryCommand(this.input.workingCopy, direction); },
+			};
+			this.focusTarget.registerCommand(direction, historyCommand);
+			this.details.focusTarget.registerCommand(direction, historyCommand);
+		}
 	}
 
 	protected override activate(): void {

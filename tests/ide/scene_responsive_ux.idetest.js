@@ -146,13 +146,28 @@ for (let font = 0; font < 2; font++) {
 	t.assert(model.buffer.getText() === edited && input.properties[0].value === 1234 && selected()?.label === "'curtain'",
 		'resize/font change lost the concrete field, draft history, source generation or numeric suffix');
 	await capture(`scene-responsive-${variant}-accepted-original-field`);
-	t.command('undo'); await t.frames(3); detailsOnly(); unchanged();
+	const acceptedSelection = { ...input.selectionRange };
+	t.log(JSON.stringify({ historyKeyboard: 'scene-details-after-field', variant, toolbarFocused: input.actionBar.hasFocus, section: input.section }));
+	t.assert(!input.actionBar.hasFocus, 'accepted field input did not return to its actual Details parent');
+	await press('ControlLeft', 'KeyZ'); detailsOnly(); unchanged();
+	const issuingSelection = { ...input.selectionRange };
+	await press('ControlLeft', 'KeyY'); detailsOnly();
+	t.assert(model.buffer.getText() === edited && input.properties[0].value === 1234
+		&& input.selectionRange.start === acceptedSelection.start && input.selectionRange.end === acceptedSelection.end,
+		'Details keyboard Redo did not restore the exact source edit and selected member');
+	await press('ControlLeft', 'KeyZ'); detailsOnly(); unchanged();
+	t.assert(input.selectionRange.start === issuingSelection.start && input.selectionRange.end === issuingSelection.end,
+		'Details keyboard Undo changed the issuing source selection');
 	await focusX(); await press('Digit5');
 	t.command('sceneEditor.outline'); await t.frames(3); outlineOnly();
 	t.assert(model.buffer.getText() === source.slice(0, start) + '5' + source.slice(end),
 		'the focused field lost its concrete section command or failed to accept its own draft before navigation');
 	await capture(`scene-responsive-${variant}-field-command-accepted-outline`);
-	t.command('undo'); await t.frames(3); outlineOnly(); unchanged();
+	await press('ControlLeft', 'KeyZ'); outlineOnly(); unchanged();
+	await press('ControlLeft', 'KeyY'); outlineOnly();
+	t.assert(model.buffer.getText() === source.slice(0, start) + '5' + source.slice(end) && selected()?.label === "'curtain'",
+		'Outline keyboard Redo did not restore the accepted source field and actual selected member');
+	await press('ControlLeft', 'KeyZ'); outlineOnly(); unchanged();
 	await press('Enter'); detailsOnly();
 	await sourceReturn(); detailsOnly(); unchanged();
 	await capture(`scene-responsive-${variant}-details-source-return`);
@@ -169,9 +184,9 @@ for (let font = 0; font < 2; font++) {
 		'removing the actual member did not retire Details or selected a same-index replacement');
 	t.assert(input.document !== undefined && model.buffer.getText() !== source, 'removal did not publish a valid canonical source change');
 	await capture(`scene-responsive-${variant}-removed-member`);
-	t.command('undo'); await t.frames(3);
+	await press('ControlLeft', 'KeyZ');
 	t.assert(model.buffer.getText() === source.slice(0, start) + '789' + source.slice(end), 'Undo did not separate removal from the accepted longer field draft');
-	t.command('undo'); await t.frames(3); unchanged();
+	await press('ControlLeft', 'KeyZ'); unchanged();
 	t.assert(input.section === 'outline' && selected()?.kind !== 'member', 'Undo silently replaced a retired Details subject by a restored namesake');
 	await capture(`scene-responsive-${variant}-undo-restored-source-outline`);
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
