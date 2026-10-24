@@ -24,7 +24,8 @@ export function start() {
 	};
 	const clock = new BrowserHostClock();
 	const hub = new BrowserInputHub(canvas, canvas, clock, undefined, 'ScrollLock');
-	hub.subscribe({ inputButton() {}, inputAxis1() {}, inputAxis2() {}, setSupervisorRequestLine() {}, resetInput() {}, cancelPointerButtons() {} });
+	hub.subscribe({ inputButton() {}, inputAxis1() {}, inputAxis2() {}, capturePhysicalKeyHold() {},
+		setSupervisorRequestLine() {}, resetInput() {}, cancelPointerButtons() {} });
 	const text = new BrowserTextInput(canvas, host);
 	hub.setNativeKeyHandler(text.handleKey);
 	const events = [];

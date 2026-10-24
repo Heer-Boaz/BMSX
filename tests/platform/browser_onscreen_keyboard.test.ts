@@ -209,7 +209,7 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 			const errors: string[] = [];
 			page.on('pageerror', error => errors.push(error.message));
 			await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>
-<body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div></body>`);
+<body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas><div id="capture-other"></div></div></body>`);
 			await page.addScriptTag({ content: bundle.outputFiles[0].text });
 			await page.evaluate(withTrace => {
 				const api = (globalThis as any).keyboardFixture;
@@ -220,10 +220,10 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				const canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 				const video = new api.BrowserVideoOutput(canvas, gamepadView, 'overscan');
 				video.refreshLayout();
-				const native: Array<{ type: string; id: number; trusted: boolean; code: string | null }> = [];
-				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) window.addEventListener(type, event => {
+				const native: Array<{ type: string; id: number; target: string; trusted: boolean; code: string | null }> = [];
+				for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture']) window.addEventListener(type, event => {
 					const pointer = event as PointerEvent;
-					if (pointer.pointerType === 'touch') native.push({ type, id: pointer.pointerId, trusted: pointer.isTrusted, code: (pointer.target as Element).getAttribute('data-code') });
+					if (pointer.pointerType === 'touch') native.push({ type, id: pointer.pointerId, target: (pointer.target as Element).id, trusted: pointer.isTrusted, code: (pointer.target as Element).getAttribute('data-code') });
 				}, true);
 				const hub = new api.BrowserInputHub(canvas, document.getElementById('player-surface'), clock, gamepad, 'F2');
 				const input = new api.Input(clock, hub, gamepad.gamepadIndex);
@@ -445,6 +445,44 @@ export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';`, resolveDir
 				await page.evaluate(() => (globalThis as any).keyboardProbe.hostFrame());
 				await settle();
 				assert.deepEqual((await poll()).codes, []);
+			});
+
+			await p.test('native capture transfer preserves an unused modifier until its real up or cancellation', async () => {
+				for (const end of ['touchEnd', 'touchCancel'] as const) {
+					const shift = await point('ShiftLeft', 1);
+					const firstEvent = await page.evaluate(() => (globalThis as any).keyboardProbe.native.length);
+					let held = false;
+					try {
+						await touch('touchStart', [shift]);
+						held = true;
+						await touch('touchMove', [{ ...shift, x: shift.x + 0.1 }]);
+						await page.evaluate(first => {
+							const events = (globalThis as any).keyboardProbe.native.slice(first);
+							const id = events.find((event: { type: string }) => event.type === 'pointerdown').id;
+							document.getElementById('capture-other')!.setPointerCapture(id);
+						}, firstEvent);
+						await touch('touchMove', [{ ...shift, x: shift.x + 0.2 }]);
+						await page.waitForFunction(first => (globalThis as any).keyboardProbe.native.slice(first).some((event: { type: string; target: string; trusted: boolean }) =>
+							event.type === 'gotpointercapture' && event.target === 'capture-other' && event.trusted), firstEvent);
+						const events = await page.evaluate(first => (globalThis as any).keyboardProbe.native.slice(first), firstEvent);
+						assert.ok(events.some((event: { type: string; target: string; trusted: boolean }) => event.type === 'lostpointercapture'
+							&& event.target === 'player-surface' && event.trusted));
+						assert.equal(events.some((event: { type: string }) => event.type === 'pointercancel'), false);
+						assert.deepEqual((await poll()).codes, ['ShiftLeft'], 'DOM capture transfer must retain the actual modifier contact');
+						await touch(end, []);
+						held = false;
+						assert.deepEqual((await poll()).codes, end === 'touchEnd' ? ['ShiftLeft'] : [], 'only actual native UP may complete a sticky modifier tap');
+						if (end === 'touchEnd') {
+							const q = await point('KeyQ', 2);
+							await touch('touchStart', [q]);
+							held = true;
+							assert.deepEqual((await poll()).codes, ['KeyQ', 'ShiftLeft']);
+							await touch('touchEnd', []);
+							held = false;
+							assert.deepEqual((await poll()).codes, []);
+						}
+					} finally { if (held) { await touch('touchEnd', []); await poll(); } }
+				}
 			});
 
 			await p.test('two fingers and controller source retain independent key leases', async () => {

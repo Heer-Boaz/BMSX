@@ -137,6 +137,45 @@ export { Input } from './hosts/common/input/manager';`,
 	});
 	assert.deepEqual(cancellations, [[3, 2, 3, 2, true], [2, 0, 2, 0, true]]);
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [a] });
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...a, x: a.x + 1 }] });
+	const held = await page.evaluate(() => {
+		const { pad, input, trace } = (globalThis as any).traceFixture;
+		const downs = [];
+		for (let index = 0; index < trace.buffer.count; index += 1) {
+			const row = trace.buffer.get(index);
+			if (row.kind === 'pointerdown' && row.phase === 'route') downs.push(row.pointerId);
+		}
+		return { id: downs.at(-1), sequence: trace.buffer.total, model: pad.buttons,
+			common: input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord() };
+	});
+	assert.deepEqual([held.model, held.common], [1, 1]);
+	await page.evaluate(id => document.getElementById('a').setPointerCapture(id), held.id);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...a, x: a.x + 2 }] });
+	const transfer = await page.evaluate(sequence => {
+		const { pad, input, trace } = (globalThis as any).traceFixture, rows = [];
+		for (let index = 0; index < trace.buffer.count; index += 1) {
+			const row = trace.buffer.get(index);
+			if (row.sequence > sequence) rows.push({ kind: row.kind, phase: row.phase, id: row.pointerId, target: row.target,
+				trusted: row.trusted, before: row.before, after: row.after, commonBefore: row.commonBefore,
+				commonAfter: row.commonAfter, completed: row.completed });
+		}
+		return { model: pad.buttons, common: input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord(), rows };
+	}, held.sequence);
+	assert.deepEqual([transfer.model, transfer.common], [1, 1], 'traced DOM capture transfer does not cancel the physical controller contact');
+	assert.deepEqual(transfer.rows.filter(row => row.phase === 'native' && ['lostpointercapture', 'gotpointercapture'].includes(row.kind))
+		.map(row => [row.kind, row.id, row.target, row.trusted]), [
+		['lostpointercapture', held.id, 'player-surface', true], ['gotpointercapture', held.id, 'a', true],
+	]);
+	assert.deepEqual(transfer.rows.filter(row => row.phase === 'route' && row.kind === 'lostpointercapture')
+		.map(row => [row.id, row.target, row.before, row.after, row.commonBefore, row.commonAfter, row.completed]),
+	[[held.id, 'player-surface', 1, 1, 1, 1, true]], 'the actual capture-lost trace branch completes without changing retained source words');
+	assert.ok(transfer.rows.every(row => row.kind !== 'pointercancel'), 'capture transfer is not a fabricated physical cancellation');
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	assert.deepEqual(await page.evaluate(() => {
+		const { pad, input } = (globalThis as any).traceFixture;
+		return [pad.buttons, input.getPlayerInput(1).inputHandlers.gamepad.physicalGamepadButtonsWord()];
+	}), [0, 0], 'the real physical UP, not capture loss, ends the controller contact');
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [a] });
 	await page.evaluate(() => window.dispatchEvent(new Event('blur')));
 	const reset = await page.evaluate(() => {
 		const { trace } = (globalThis as any).traceFixture;

@@ -261,6 +261,7 @@ export class BrowserInputHub implements InputSource {
 		const pointerMove = trace ? this.observePointerRouting(trace, this.onPointerMove) : this.onPointerMove;
 		const pointerUp = trace ? this.observePointerRouting(trace, this.onPointerUp) : this.onPointerUp;
 		const pointerCancel = trace ? this.observePointerRouting(trace, this.onPointerCancel) : this.onPointerCancel;
+		const captureLost = trace ? this.observePointerRouting(trace, this.onCanvasCaptureLost) : this.onCanvasCaptureLost;
 		const blur = trace ? () => this.observeInputReset(trace, 'blur') : this.cancelInput;
 		const pagehide = trace ? () => this.observeInputReset(trace, 'pagehide') : this.cancelInput;
 		const visibility = trace ? () => {
@@ -275,7 +276,7 @@ export class BrowserInputHub implements InputSource {
 		ownerWindow.addEventListener('pointermove', pointerMove, { passive: false, capture: true });
 		ownerWindow.addEventListener('pointerup', pointerUp, { passive: false, capture: true });
 		ownerWindow.addEventListener('pointercancel', pointerCancel, { passive: false, capture: true });
-		ownerWindow.addEventListener('lostpointercapture', pointerCancel, { passive: false, capture: true });
+		ownerWindow.addEventListener('lostpointercapture', captureLost, { passive: false, capture: true });
 		surface.addEventListener('pointerleave', this.onPointerLeave, { passive: true });
 		surface.addEventListener('wheel', this.onWheel, { passive: false });
 		gestureSurface.addEventListener('contextmenu', this.onContextMenu, { passive: false });
@@ -294,7 +295,7 @@ export class BrowserInputHub implements InputSource {
 			ownerWindow.removeEventListener('pointermove', pointerMove, true);
 			ownerWindow.removeEventListener('pointerup', pointerUp, true);
 			ownerWindow.removeEventListener('pointercancel', pointerCancel, true);
-			ownerWindow.removeEventListener('lostpointercapture', pointerCancel, true);
+			ownerWindow.removeEventListener('lostpointercapture', captureLost, true);
 			surface.removeEventListener('pointerleave', this.onPointerLeave);
 			surface.removeEventListener('wheel', this.onWheel);
 			gestureSurface.removeEventListener('contextmenu', this.onContextMenu);
@@ -583,6 +584,11 @@ export class BrowserInputHub implements InputSource {
 			event.stopImmediatePropagation();
 			return;
 		}
+		this.endCanvasPointer(event, true);
+	};
+
+	/** DOM capture loss ends canvas continuations, not native device contact leases. */
+	private readonly onCanvasCaptureLost = (event: PointerEvent): void => {
 		this.endCanvasPointer(event, true);
 	};
 

@@ -10,6 +10,7 @@ export async function exerciseGraphPointer(page) {
 		f.view.selection = f.view.model.nodes[1];
 		f.nativePointer.chords.length = 0;
 		f.nativePointer.captureLosses = 0;
+		f.nativePointer.events.length = 0;
 	});
 	for (const firstRelease of ['left', 'middle']) {
 		await page.mouse.move(150, 110); await step();
@@ -17,11 +18,21 @@ export async function exerciseGraphPointer(page) {
 		await page.mouse.down({ button: 'left' }); await step();
 		await page.mouse.move(170, 120); await step();
 		assert.deepEqual(await position(), [-20, -10]);
+		const lossesBeforeRelease = await page.evaluate(() => window.fixture.nativePointer.captureLosses);
+		const eventsBeforeRelease = await page.evaluate(() => window.fixture.nativePointer.events.length);
 		await page.mouse.up({ button: firstRelease }); await step();
 		await page.mouse.move(180, 130); await step();
-		// Capture-target changes do not end the still-held middle-button lease.
-		if (firstRelease === 'left') assert.deepEqual(await position(), [-30, -20]);
-		else assert.deepEqual(await position(), [-20, -10]);
+		const nativeLoss = await page.evaluate(before => window.fixture.nativePointer.captureLosses > before, lossesBeforeRelease);
+		if (nativeLoss) {
+			assert.deepEqual(await position(), [-20, -10], 'actual native capture loss freezes the admitted pan');
+			const remainingButton = firstRelease === 'left' ? 4 : 1;
+			assert.equal(await page.evaluate(({ button, start }) => window.fixture.nativePointer.events.slice(start).some(event =>
+				(event.cancelledButtons & button) !== 0 && (event.releasedButtons & button) === 0),
+			{ button: remainingButton, start: eventsBeforeRelease }), true,
+			'the observed capture loss cancels the remaining physical button instead of reporting a successful release');
+		} else if (firstRelease === 'left') {
+			assert.deepEqual(await position(), [-30, -20], 'a non-initiating release without native loss continues the pan');
+		} else assert.deepEqual(await position(), [-20, -10], 'the initiating middle release ends the pan');
 		await page.mouse.up({ button: firstRelease === 'left' ? 'middle' : 'left' }); await step();
 		assert.equal(await page.evaluate(() => {
 			const f = window.fixture;
@@ -42,23 +53,38 @@ export async function exerciseGraphPointer(page) {
 	assert.deepEqual(await position(), [-28, -15], 'Space release cannot turn a pan into a node edit');
 	await page.mouse.up({ button: 'left' }); await step();
 	await page.evaluate(() => { window.fixture.view.scrollX = window.fixture.view.scrollY = 0; });
-	// Actual lostpointercapture does not end native contact ownership or forge a release edge.
+	// Actual lostpointercapture cancels the canvas gesture, never a successful release/drop.
 	await page.mouse.move(150, 110); await step();
 	await page.keyboard.down('q'); await step();
 	await page.mouse.down({ button: 'middle' }); await step();
 	await page.mouse.move(151, 111); await step(); // Activate the browser's pending capture before releasing it.
 	const lossesBefore = await page.evaluate(() => window.fixture.nativePointer.captureLosses);
+	const keyPressBefore = await page.evaluate(() => window.fixture.player.getRawButtonState('KeyQ', 'keyboard').pressId);
+	const lastAdmittedPosition = await position();
+	await page.evaluate(() => { window.fixture.nativePointer.events.length = 0; });
 	await page.evaluate(() => document.querySelector('canvas').releasePointerCapture(window.fixture.nativePointer.id));
 	await page.mouse.move(175, 130); await step();
 	assert.ok(await page.evaluate(() => window.fixture.nativePointer.captureLosses) > lossesBefore, 'native capture loss was delivered');
-	assert.deepEqual(await position(), [-25, -20]);
-	assert.equal(await page.evaluate(() => {
+	assert.deepEqual(await position(), lastAdmittedPosition);
+	assert.equal(await page.evaluate(pressId => {
 		const player = window.fixture.player;
 		const middle = player.getRawButtonState('pointer_aux', 'pointer');
-		return middle.pressed && !middle.justreleased && player.getRawButtonState('KeyQ', 'keyboard').pressed;
-	}), true, 'capture loss preserves the held pointer and keyboard without reporting release');
+		const key = player.getRawButtonState('KeyQ', 'keyboard');
+		return !middle.pressed && !middle.justreleased && key.pressed && !key.justreleased && key.pressId === pressId;
+	}, keyPressBefore), true, 'capture loss cancels the canvas pointer, leaves the same raw keyboard hold, and never reports release');
+	assert.equal(await page.evaluate(() => window.fixture.nativePointer.events.filter(event => event.cancelledButtons === 4).length), 1);
+	await page.mouse.move(184, 138); await step();
+	assert.deepEqual(await position(), lastAdmittedPosition, 'motion during the old physical hold cannot start another pan');
 	await page.mouse.up({ button: 'middle' }); await step();
+	assert.equal(await page.evaluate(() => window.fixture.nativePointer.events.every(event =>
+		event.releasedButtons === 0 && event.pressedButtons === 0)), true, 'the eventual physical UP cannot finish or retarget the cancelled gesture');
 	await page.keyboard.up('q'); await step();
+	await page.evaluate(() => { window.fixture.view.scrollX = window.fixture.view.scrollY = 0; });
+	await page.mouse.move(150, 110); await step();
+	await page.mouse.down({ button: 'middle' }); await step();
+	await page.mouse.move(160, 116); await step();
+	assert.deepEqual(await position(), [-10, -6], 'a fresh physical gesture after UP is admitted normally');
+	await page.mouse.up({ button: 'middle' }); await step();
 	await page.evaluate(() => { window.fixture.view.scrollX = window.fixture.view.scrollY = 0; });
 	for (const axis of ['horizontal', 'vertical']) {
 		const start = await page.evaluate(axis => {
@@ -91,7 +117,22 @@ export async function exerciseGraphPointer(page) {
 	await page.mouse.down(); await step();
 	await page.mouse.move(256, 170); await step();
 	assert.equal(await page.evaluate(() => window.fixture.connection.interaction.feedback.accepted), true, 'real endpoint drag is admitted before cancellation');
-	// Mouse cancellation has no Playwright gesture; inject the explicit native-protocol end, not lost capture.
+	// Real native capture loss must retire an already admitted source preview without dropping it.
+	const connectionLossesBefore = await page.evaluate(() => window.fixture.nativePointer.captureLosses);
+	await page.evaluate(() => { window.fixture.nativePointer.events.length = 0;
+		document.querySelector('canvas').releasePointerCapture(window.fixture.nativePointer.id); });
+	await page.mouse.move(258, 171); await step();
+	assert.ok(await page.evaluate(() => window.fixture.nativePointer.captureLosses) > connectionLossesBefore);
+	await page.mouse.up(); await step();
+	assert.equal(await page.evaluate(() => window.fixture.connection.interaction.drops.length), 0,
+		'an admitted source target never drops on actual lostpointercapture or its later physical UP');
+	assert.equal(await page.evaluate(() => window.fixture.nativePointer.events.some(event => event.cancelledButtons === 1)), true);
+	assert.equal(await page.evaluate(() => window.fixture.nativePointer.events.every(event => event.releasedButtons === 0)), true);
+	await page.mouse.move(...grip); await step(); await page.mouse.down(); await step();
+	await page.mouse.move(256, 170); await step();
+	assert.equal(await page.evaluate(() => window.fixture.connection.interaction.feedback.accepted), true,
+		'a fresh source drag still admits the actual target after the cancelled gesture');
+	// Mouse cancellation has no Playwright gesture; inject the explicit native-protocol end separately.
 	await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointercancel', {
 		pointerId: window.fixture.nativePointer.id, pointerType: 'mouse', bubbles: true,
 	})));

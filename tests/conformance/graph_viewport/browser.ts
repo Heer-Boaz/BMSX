@@ -80,13 +80,14 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		}
 	}
 	backend.resizePresentationTarget(WIDTH, HEIGHT);
-	const nativePointer = { id: 0, chords: [] as number[][], captureLosses: 0 };
+	const nativePointer = { id: 0, chords: [] as number[][], captureLosses: 0,
+		events: [] as Array<Pick<PointerInputEvent, 'buttons' | 'pressedButtons' | 'releasedButtons' | 'cancelledButtons'>> };
 	// Observe the native protocol before the source's fixed capture-phase consumer.
 	window.addEventListener('pointerdown', event => { nativePointer.id = event.pointerId; }, true);
 	window.addEventListener('pointermove', event => {
 		if (event.button !== -1) nativePointer.chords.push([event.button, event.buttons]);
 	}, true);
-	canvas.addEventListener('lostpointercapture', () => { nativePointer.captureLosses += 1; }, true);
+	window.addEventListener('lostpointercapture', () => { nativePointer.captureLosses += 1; }, true);
 	const clock = new VirtualHeadlessClock();
 	const hub = new BrowserInputHub(canvas, canvas, clock, null, 'F12');
 	const input = new Input(clock, hub, -1);
@@ -131,6 +132,8 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	const pointer: PointerInputSnapshot = { viewportX: 0, viewportY: 0, valid: false, insideViewport: false,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
 	const dispatchPointer = (event: PointerInputEvent) => {
+		nativePointer.events.push({ buttons: event.buttons, pressedButtons: event.pressedButtons,
+			releasedButtons: event.releasedButtons, cancelledButtons: event.cancelledButtons });
 		projectEditorPointerEvent(display, event, pointer);
 		if (!pointerCapture.dispatch(pointer, false, clock.now())) {
 			panes.activePane.handlePointer(pointer, (pointer.justPressedButtons & PointerButton.Primary) !== 0, false, clock.now(), false);
@@ -152,6 +155,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	};
 	const step = () => {
 		clock.advance(20);
+		hub.poll(clock.now());
 		input.pollInput();
 		panes.activePane.update(0.02);
 		draw();

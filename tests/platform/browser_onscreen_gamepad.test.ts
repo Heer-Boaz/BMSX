@@ -75,16 +75,19 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 		(globalThis as any).touchTest = {
 			pad, view, video, hub, edges, pointerEvents, nativeTouches,
 			poll() {
+				hub.poll(clock.now());
 				input.pollInput();
 				input.sampleInputControllerSnapshot(snapshot, 0);
 				memory.writeMappedWord(api.IO_INP_CTRL, api.INP_CTRL_ARM);
 				controller.onVblankEdge(++cycle);
-				const primary = input.getPlayerInput(1).inputHandlers.pointer.getButtonState('pointer_primary');
+				const pointer = input.getPlayerInput(1).inputHandlers.pointer;
+				const primary = pointer.getButtonState('pointer_primary');
 				return {
 					buttons: pad.buttons, snapshot: snapshot.pads[0].buttons,
 					mmio: memory.readIoU32(api.IO_INP_PADS + api.IO_INP_PAD_BUTTONS_OFFSET),
 					pointer: snapshot.pointerButtons, pointerMmio: memory.readIoU32(api.IO_INP_POINTER_BUTTONS),
 					position: [snapshot.pointerXQ16, snapshot.pointerYQ16],
+					clientPosition: pointer.getButtonState('pointer_position').value2d,
 					pointerState: { pressed: primary.pressed, justreleased: primary.justreleased, wasreleased: primary.wasreleased },
 					padDirections: ['u', 'r', 'd', 'l'].map(direction => document.getElementById(`d-pad-${direction}`)!.getAttribute('data-touched')),
 					visuals: ['a_knop', 'b_knop', 'x_knop', 'y_knop'].map(id => document.getElementById(id)!.getAttribute('data-touched')),
@@ -313,9 +316,17 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 			document.getElementById('capture-other')!.setPointerCapture(id);
 		});
 		await touch('touchMove', [{ ...points.a, x: points.a.x + 0.2 }]);
+		const transferred = await page.evaluate(() => {
+			const events = (globalThis as any).touchTest.pointerEvents;
+			const id = events.find((event: any) => event.type === 'pointerdown').id;
+			return events.filter((event: any) => event.id === id);
+		});
+		assert.equal(transferred.filter((event: any) => event.type === 'lostpointercapture'
+			&& event.target === 'player-surface' && event.trusted).length, 1, 'the browser released the original DOM capture');
+		assert.equal(transferred.filter((event: any) => event.type === 'gotpointercapture'
+			&& event.target === 'capture-other' && event.trusted).length, 1, 'the same native contact acquired another DOM capture');
+		assert.ok(transferred.every((event: any) => event.type !== 'pointercancel'), 'capture transfer did not cancel the native contact');
 		await assertWord(1);
-		const lost = await page.evaluate(() => (globalThis as any).touchTest.pointerEvents.filter((event: any) => event.type === 'lostpointercapture'));
-		assert.ok(lost.some((event: any) => event.target === 'player-surface' && event.trusted));
 		await page.evaluate(() => {
 			const id = (globalThis as any).touchTest.pointerEvents.find((event: any) => event.type === 'pointerdown').id;
 			window.dispatchEvent(new PointerEvent('pointerleave', { pointerId: id, pointerType: 'touch' }));
@@ -353,9 +364,14 @@ test('native browser contacts reach the real common input and ICU without DOM-ta
 		await assertWord(1, 0);
 		await touch('touchEnd', []);
 		await assertWord(0);
-		await page.mouse.move(400, 100);
+		const client = await page.evaluate(() => {
+			const bounds = document.getElementById('gamescreen')!.getBoundingClientRect();
+			return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+		});
+		await page.mouse.move(client.x, client.y);
 		const hover = await assertWord(0);
-		assert.deepEqual(hover.position, [400 * 65536, 100 * 65536]);
+		assert.deepEqual(hover.clientPosition, [client.x, client.y], 'UI pointer coordinates remain native client pixels');
+		assert.deepEqual(hover.position, [160 * 65536, 120 * 65536], 'ICU pointer coordinates belong to the declared 320 by 240 canvas');
 	});
 
 	await t.test('per-ID canvas cancellation preserves other owners and never produces a graph-drop release', async () => {

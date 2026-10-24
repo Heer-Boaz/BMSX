@@ -36,7 +36,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 	const page = await browser.newPage({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
-	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas></div></body>`);
+	await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${await readFile('gamebase.css', 'utf8')}</style><body class="game-started"><div id="player-surface">${controls}<canvas id="gamescreen" width="320" height="240" style="display:block"></canvas><div id="capture-other"></div></div></body>`);
 	await page.addScriptTag({ content: bundle.outputFiles[0].text });
 	await page.evaluate(() => {
 		const api = (globalThis as any).hostFixture;
@@ -50,7 +50,7 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		const actions = { keyboard: 0, menu: 0 };
 		let host = new api.BrowserHostControls(document, () => { actions.keyboard += 1; }, () => { actions.menu += 1; });
 		hub.setHostControls(host);
-		const native: Array<{ type: string; id: number; trusted: boolean }> = [];
+		const native: Array<{ type: string; id: number; target: string; trusted: boolean }> = [];
 		const routed: Array<{ type: string; route: string; before: number; after: number; completed: boolean; trusted: boolean }> = [];
 		const trace = { commonGamepad: null,
 			pointerRouted(event: PointerEvent, route: string, before: number, after: number, _commonBefore: number, _commonAfter: number, completed: boolean) {
@@ -58,9 +58,9 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 			}, inputReset() {} };
 		hub.setTraceObserver(trace);
 		// Observe before the owning hub can stop propagation.
-		for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) window.addEventListener(type, event => {
+		for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture']) window.addEventListener(type, event => {
 			const pointer = event as PointerEvent;
-			native.push({ type, id: pointer.pointerId, trusted: pointer.isTrusted });
+			native.push({ type, id: pointer.pointerId, target: (pointer.target as Element).id, trusted: pointer.isTrusted });
 		}, { capture: true, passive: true });
 		let input = new api.Input(clock, hub, pad.gamepadIndex);
 		trace.commonGamepad = input.getPlayerInput(1).inputHandlers.gamepad;
@@ -194,6 +194,36 @@ export { INP_CTRL_ARM, IO_INP_CTRL, IO_INP_PADS, IO_INP_PAD_BUTTONS_OFFSET, IO_I
 		assert.equal((await assertGuest()).pressed[0], 'true');
 		await touch('touchEnd', []);
 		assert.equal((await assertGuest()).actions.keyboard, before.actions.keyboard + 1, 'rolling back into the original target remains a valid release');
+	});
+
+	await t.test('native capture transfer retains the host lease until actual up or cancellation', async () => {
+		for (const end of ['touchEnd', 'touchCancel'] as const) {
+			const before = await assertGuest(), contact = { id: 1, ...points.menu };
+			const firstEvent = await page.evaluate(() => (globalThis as any).hostProbe.native.length);
+			await touch('touchStart', [contact]);
+			await touch('touchMove', [{ ...contact, x: contact.x + 0.1 }]);
+			await page.evaluate(first => {
+				const events = (globalThis as any).hostProbe.native.slice(first);
+				const id = events.find((event: { type: string }) => event.type === 'pointerdown').id;
+				document.getElementById('capture-other')!.setPointerCapture(id);
+			}, firstEvent);
+			await touch('touchMove', [{ ...contact, x: contact.x + 0.2 }]);
+			await page.waitForFunction(first => (globalThis as any).hostProbe.native.slice(first).some((event: { type: string; target: string; trusted: boolean }) =>
+				event.type === 'gotpointercapture' && event.target === 'capture-other' && event.trusted), firstEvent);
+			const events = await page.evaluate(first => (globalThis as any).hostProbe.native.slice(first), firstEvent);
+			assert.ok(events.some((event: { type: string; target: string; trusted: boolean }) => event.type === 'lostpointercapture'
+				&& event.target === 'player-surface' && event.trusted));
+			assert.equal(events.some((event: { type: string }) => event.type === 'pointercancel'), false, 'native retargeting is not contact cancellation');
+			const held = await assertGuest();
+			assert.equal(held.pressed[1], 'true', 'DOM capture transfer must not discard the real host contact');
+			assert.deepEqual(held.actions, before.actions);
+			await touch(end, []);
+			if (end === 'touchCancel') await page.waitForFunction(first => (globalThis as any).hostProbe.native.slice(first)
+				.some((event: { type: string; trusted: boolean }) => event.type === 'pointercancel' && event.trusted), firstEvent);
+			const released = await assertGuest();
+			assert.equal(released.actions.menu, before.actions.menu + (end === 'touchEnd' ? 1 : 0));
+			assert.deepEqual(released.pressed, ['false', 'false']);
+		}
 	});
 
 	await t.test('native cancel, focus loss, pagehide and teardown clear feedback without invoking actions', async () => {
