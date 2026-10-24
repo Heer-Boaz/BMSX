@@ -24,7 +24,7 @@ const first = input.history.at(input.history.firstSequence), firstBytes = JSON.s
 t.assert(first.event.kind === 'string' && first.event.value === 'intro' && !first.event.omitted
 	&& first.emitter.kind === 'string' && first.emitter.value === 'nemesis_s.director' && !first.emitter.omitted && first.payload.kind === 'nil',
 	'the shipped first event is no longer the authored intro emission');
-const expectedClipboard = `Emission: #${first.sequence} | timeline ${first.timeline} | slot ${first.domain} | tick ${first.completedTick} | cycle ${first.cycles}\nEvent: "intro"\nEmitter: "nemesis_s.director"\nPayload: nil`;
+const expectedClipboard = `Event: "intro"\nEmitter: "nemesis_s.director"\nPayload: nil\nEmission: #${first.sequence} | timeline ${first.timeline} | slot ${first.domain} | tick ${first.completedTick} | cycle ${first.cycles}`;
 const history = { count: input.history.count, generation: input.history.generation, revision: input.history.revision,
 	first: input.history.firstSequence, end: input.history.endSequence };
 const cycles = t.runtime().machine.scheduler.nowCycles, media = t.sourceState().currentBlua32Media;

@@ -10,7 +10,10 @@ import { RuntimeEventHistory } from '../../ide/runtime/event_history';
 import { api } from '../../ide/runtime/overlay_api';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import { layoutEventViewer } from '../../ide/workbench/contrib/events/layout';
-import { EventViewerPresentation } from '../../ide/workbench/contrib/events/presentation';
+import { EventViewerPresentation, eventClipboardText, eventProperties } from '../../ide/workbench/contrib/events/presentation';
+import { WorkbenchPropertyInspectorModel } from '../../ide/workbench/ui/property_inspector/model';
+import { GuestValueSnapshot, VALUE_SNAPSHOT_CHARACTERS, VALUE_SNAPSHOT_ENTRIES } from '../../ide/runtime/value_snapshot';
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { drawEventViewer } from '../../ide/workbench/contrib/events/render';
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -267,4 +270,93 @@ test('compact empty-event guidance wraps individual lines to the actual subject 
 		assert.deepEqual(text.mock.calls.map(call => call.arguments[0]), view.emptyLines);
 		text.mock.restore();
 	}
+});
+
+for (const variant of ['tiny', 'msx'] as const) {
+	test(`${variant}: Event Details leads with captured values and explicitly discloses scalar provenance help`, t => {
+		const { history } = fixture(t, variant, 1), record = history.at(history.firstSequence), captured = JSON.stringify(record);
+		const properties = eventProperties(record), emission = properties[properties.length - 1];
+		assert.deepEqual(properties.slice(0, 3).map(property => property.label), ['Event', 'Emitter', 'Payload']);
+		assert.equal(emission.label, 'Emission'); assert.equal(properties.every(property => property.compact === true), true);
+		assert.equal(emission.descriptionDisplay, 'disclosure'); assert.equal(emission.warning, false);
+		assert.equal(emission.value, `#${record.sequence} | timeline ${record.timeline} | slot ${record.domain} | tick ${record.completedTick} | cycle ${record.cycles}`);
+		assert.equal(emission.description, 'Tick is the last completed tick at emission. Go to Frame reviews the boundary at or before emission; values were captured before listener dispatch.');
+		for (const width of [384, variant === 'tiny' ? 78 : 118]) {
+			const model = new WorkbenchPropertyInspectorModel(), font = editorViewState.font.renderFont();
+			const measure = (text: string, start: number, end: number) => font.measure(text.slice(start, end));
+			const bounds = { left: 17, top: 41, right: 17 + width, bottom: 257 };
+			model.setItems(properties); model.layout(font, measure, bounds);
+			assert.equal(model.rows[0].bottom - model.rows[0].top, variant === 'tiny' ? 11 : 12);
+			assert.equal(model.rows[properties.length - 1].description.length, 0, 'the help paragraph must not tax the initial scalar overview');
+			assert.equal(model.setValueExpanded(properties.length - 1, true), true); model.layout(font, measure, bounds);
+			assert.equal(model.rows[properties.length - 1].description.join(' '), emission.description);
+			assert.equal(model.setValueExpanded(properties.length - 1, false), true); model.layout(font, measure, bounds);
+			assert.equal(model.rows[properties.length - 1].description.length, 0);
+		}
+		const copied = eventClipboardText(record).split('\n');
+		assert.equal(copied[0], 'Event: "probe"'); assert.equal(copied[1], 'Emitter: "fixture"');
+		assert.equal(copied[copied.length - 1], `Emission: ${emission.value}`);
+		assert.equal(JSON.stringify(record), captured, 'UI hierarchy must not modify the captured snapshot or its timing');
+	});
+}
+
+test('Event Details keeps actual snapshot-budget warnings inline rather than hiding them with scalar help', t => {
+	const { history, cpu } = fixture(t, 'tiny', 1), slots = new ValueSlots(1), reader = new GuestValueSnapshot(cpu.stringPool);
+	slots.setStringId(0, cpu.stringPool.intern('x'.repeat(VALUE_SNAPSHOT_CHARACTERS + 1))); reader.begin();
+	const payload = reader.read(slots, 0); assert.ok(payload.kind === 'string'); assert.equal(payload.omitted, true);
+	const record = { ...history.at(history.firstSequence), payload }, properties = eventProperties(record);
+	const warning = properties.find(property => property.label === 'Payload')!;
+	assert.equal(warning.compact, true); assert.equal(warning.warning, true);
+	assert.equal(warning.description, 'Snapshot budget reached; contents may be incomplete.');
+	assert.notEqual(warning.descriptionDisplay, 'disclosure', 'omission is a current interpretation caveat, not optional background help');
+	const model = new WorkbenchPropertyInspectorModel(), font = editorViewState.font.renderFont();
+	model.setItems(properties); model.layout(font, (text, start, end) => font.measure(text.slice(start, end)), { left: 0, top: 0, right: 78, bottom: 216 });
+	assert.equal(model.rows.find(row => row.element === warning)!.description.join(' '), warning.description);
+	assert.ok(eventClipboardText(record).includes(' [truncated]'), 'copy must preserve the captured snapshot omission marker');
+});
+
+test('compact Event Details keeps an omitted stored key visible even when its captured value is complete', t => {
+	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool), slots = new ValueSlots(1);
+	const payload = cpu.createTable(0, 1);
+	payload.setStringKey(cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), 7);
+	slots.set(0, payload); reader.begin();
+	const snapshot = reader.read(slots, 0); assert.ok(snapshot.kind === 'table');
+	assert.equal(snapshot.omitted, false); assert.equal(snapshot.entries.length, 1);
+	assert.ok(snapshot.entries[0].key.kind === 'string'); assert.equal(snapshot.entries[0].key.omitted, true);
+	assert.deepEqual(snapshot.entries[0].value, { kind: 'number', value: 7 });
+	const properties = eventProperties({ ...history.at(history.firstSequence), payload: snapshot });
+	const child = properties.find(property => property.label.includes('[truncated key]'))!;
+	assert.equal(child.warning, true, 'a clipped compact key label must not erase captured key-omission provenance');
+	assert.ok(child.description.length > 0); assert.notEqual(child.descriptionDisplay, 'disclosure');
+	const model = new WorkbenchPropertyInspectorModel(), font = editorViewState.font.renderFont();
+	model.setItems(properties); model.layout(font, (text, start, end) => font.measure(text.slice(start, end)), { left: 0, top: 0, right: 78, bottom: 216 });
+	assert.notEqual(model.rows.find(row => row.element === child)!.label[0], child.label, 'the compact label really clips its omitted-key suffix');
+	assert.ok(model.rows.find(row => row.element === child)!.description.length > 0, 'the current omission warning remains inline while the full key is collapsed');
+});
+
+test('Event Details carries actual omitted-key identity into descendants without blaming retained sibling values', t => {
+	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool), slots = new ValueSlots(1);
+	const payload = cpu.createTable(0, 1), nested = cpu.createTable(1, 0); nested.set(1, 7);
+	payload.setStringKey(cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), nested);
+	slots.set(0, payload); reader.begin();
+	const snapshot = reader.read(slots, 0); assert.ok(snapshot.kind === 'table');
+	assert.equal(snapshot.omitted, false); assert.ok(snapshot.entries[0].key.kind === 'string'); assert.equal(snapshot.entries[0].key.omitted, true);
+	const child = snapshot.entries[0].value; assert.ok(child.kind === 'table'); assert.equal(child.omitted, false);
+	assert.deepEqual(child.entries[0], { key: { kind: 'number', value: 1 }, value: { kind: 'number', value: 7 } });
+	const properties = eventProperties({ ...history.at(history.firstSequence), payload: snapshot });
+	const partialPath = properties.filter(property => property.label.startsWith('Payload['));
+	assert.equal(partialPath.length, 2);
+	for (const row of partialPath) {
+		assert.equal(row.warning, true); assert.equal(row.description, 'Snapshot budget reached; key path may be incomplete.');
+		assert.notEqual(row.descriptionDisplay, 'disclosure');
+	}
+	const completeChildren = cpu.createTable(VALUE_SNAPSHOT_ENTRIES + 1, 0);
+	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES + 1; index++) completeChildren.set(index, index);
+	slots.set(0, completeChildren); reader.begin();
+	const omittedTable = reader.read(slots, 0); assert.ok(omittedTable.kind === 'table'); assert.equal(omittedTable.omitted, true);
+	const retained = eventProperties({ ...history.at(history.firstSequence), payload: omittedTable });
+	assert.equal(retained.find(row => row.label === 'Payload')!.warning, true);
+	const firstRetained = retained.find(row => row.label === 'Payload[1]')!;
+	assert.equal(firstRetained.value, '1'); assert.equal(firstRetained.warning, false); assert.equal(firstRetained.description, '',
+		'a table missing other entries does not make a complete retained key/value uncertain');
 });

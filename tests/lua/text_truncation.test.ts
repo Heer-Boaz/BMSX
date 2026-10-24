@@ -4,6 +4,27 @@ import { appendMeasuredTruncationMarker, ELLIPSIS, truncateMeasuredText, writeWr
 
 const measure = (text: string, start: number, end: number) => Array.from(text.slice(start, end)).length;
 
+test('cached natural widths preserve measured truncation without repeating a full-text measurement', () => {
+	const value = 'namespace.😀.distinguishing_suffix', naturalWidth = measure(value, 0, value.length);
+	for (const placement of ['end', 'middle'] as const) for (let width = 0; width <= naturalWidth + 2; width++) {
+		let fullMeasurements = 0;
+		const measured = (text: string, start: number, end: number) => {
+			if (text === value && start === 0 && end === value.length) fullMeasurements++;
+			return measure(text, start, end);
+		};
+		assert.equal(truncateMeasuredText(value, width, measured, ELLIPSIS, placement, naturalWidth),
+			truncateMeasuredText(value, width, measure, ELLIPSIS, placement));
+		assert.equal(fullMeasurements, 0);
+	}
+});
+
+test('complete cached previews and empty cell budgets require no text measurement', () => {
+	const measured = () => { assert.fail('the retained owner already measured this complete preview'); };
+	assert.equal(truncateMeasuredText('Payload', 7, measured, ELLIPSIS, 'end', 7), 'Payload');
+	assert.equal(truncateMeasuredText('', 10, measured, ELLIPSIS, 'end', 0), '');
+	assert.equal(truncateMeasuredText('Payload', 0, measured, ELLIPSIS, 'end', 7), '');
+});
+
 test('shared labels and wrapped previews use one measured ellipsis glyph', () => {
 	assert.equal(ELLIPSIS.length, 1);
 	assert.equal(truncateMeasuredText('abcdef', 4, measure), 'abc…');

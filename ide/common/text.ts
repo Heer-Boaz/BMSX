@@ -174,11 +174,12 @@ export function findMeasuredPrefixEnd(text: string, maxWidth: number, measureRan
 	return best;
 }
 
-export function truncateMeasuredText(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = ELLIPSIS, placement: 'end' | 'middle' = 'end'): string {
+/** Retained text owners can supply the natural width instead of measuring the same text twice. */
+export function truncateMeasuredText(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = ELLIPSIS, placement: 'end' | 'middle' = 'end', textWidth?: number): string {
 	if (maxWidth <= 0) {
 		return '';
 	}
-	if (measureRange(text, 0, text.length) <= maxWidth) {
+	if ((textWidth === undefined ? measureRange(text, 0, text.length) : textWidth) <= maxWidth) {
 		return text;
 	}
 	const markerWidth = measureRange(marker, 0, marker.length);

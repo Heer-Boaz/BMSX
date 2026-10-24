@@ -35,7 +35,8 @@ export type InspectedPropertyRow<Element> = {
 	textExpandable: boolean;
 	textExpanded: boolean;
 	headerHeight: number;
-	measured: { label: string; value: string; description: string; depth: number; compact: boolean; group: boolean; descriptionDisplay: InspectedProperty['descriptionDisplay'] };
+	measured: { label: string; value: string; description: string; labelPreview: string; valuePreview: string; labelWidth: number; valueWidth: number;
+		depth: number; compact: boolean; group: boolean; descriptionDisplay: InspectedProperty['descriptionDisplay'] };
 };
 /** A document-relative reading position survives client detachment and changed row metrics. */
 export type PropertyInspectorViewState = {
@@ -46,6 +47,7 @@ export type PropertyInspectorViewState = {
 };
 export const INSPECTOR_PADDING = 4;
 export const INSPECTOR_COMPACT_PADDING = 2;
+const COMPACT_LABEL_SHARE = 0.46;
 
 /** One compact row fits the active typeface and its font-independent disclosure icon. */
 export function compactPropertyRowHeight(font: BFont): number {
@@ -129,15 +131,17 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 	private createRow(element: Element): InspectedPropertyRow<Element> {
 		return { element, label: [], value: [], description: [], top: 0, bottom: 0, labelLeft: 0, valueLeft: 0, disclosureLeft: 0,
 			textExpandable: false, textExpanded: false, headerHeight: 0,
-			measured: { label: '', value: '', description: '', depth: -1, compact: false, group: false, descriptionDisplay: undefined } };
+			measured: { label: '', value: '', description: '', labelPreview: '', valuePreview: '', labelWidth: 0, valueWidth: 0,
+				depth: -1, compact: false, group: false, descriptionDisplay: undefined } };
 	}
 
 	public layout(font: BFont, measure: TextRangeMeasure, bounds: RectBounds): void {
 		const width = bounds.right - bounds.left - SCROLLBAR_WIDTH;
+		const fontChanged = this.font !== font;
+		const remeasure = this.width !== width || fontChanged;
 		let height = this.viewport.contentHeight;
-		if (this.dirty || this.width !== width || this.font !== font) {
+		if (this.dirty || remeasure) {
 			this.captureScrollAnchor();
-			const remeasure = this.width !== width || this.font !== font;
 			this.width = width;
 			this.font = font;
 			const compactHeight = compactPropertyRowHeight(font), indentWidth = font.advance(' ') * 2;
@@ -145,6 +149,8 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 			for (const row of this.rows) {
 				row.top = height;
 				const compact = row.element.compact === true, depth = row.element.depth ?? 0, group = row.element.group === true;
+				const compactChanged = row.measured.compact !== compact, groupChanged = row.measured.group !== group;
+				const labelChanged = row.measured.label !== row.element.label, valueChanged = row.measured.value !== row.element.value;
 				const padding = compact ? INSPECTOR_COMPACT_PADDING : INSPECTOR_PADDING;
 				const rowChanged = remeasure || row.measured.depth !== depth || row.measured.compact !== compact || row.measured.group !== group
 					|| row.measured.descriptionDisplay !== row.element.descriptionDisplay;
@@ -156,22 +162,47 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 				if (compact) {
 					row.disclosureLeft = padding + depth * indentWidth;
 					row.labelLeft = row.disclosureLeft + 10;
-					row.valueLeft = group || row.element.label.length === 0 ? row.labelLeft : Math.max(row.labelLeft + 8, width * 0.46 | 0);
+					if (compactChanged || labelChanged) {
+						const label = row.element.label, end = label.indexOf('\n');
+						row.measured.labelPreview = end === -1 ? label : label.slice(0, end) + ELLIPSIS;
+					}
+					if (fontChanged || compactChanged || labelChanged) {
+						const label = row.measured.labelPreview;
+						row.measured.labelWidth = label.length === 0 ? 0 : measure(label, 0, label.length);
+					}
+					if (compactChanged || valueChanged) {
+						const value = row.element.value, end = value.indexOf('\n');
+						row.measured.valuePreview = end === -1 ? value : value.slice(0, end) + ELLIPSIS;
+					}
+					if (!group && (fontChanged || compactChanged || groupChanged || valueChanged)) {
+						const value = row.measured.valuePreview;
+						row.measured.valueWidth = value.length === 0 ? 0 : measure(value, 0, value.length);
+					}
 					row.headerHeight = compactHeight;
 				} else row.textExpandable = false;
 				if (compact && !textExpanded) {
-					if (rowChanged || textExpansionChanged || row.measured.label !== row.element.label) {
+					if (rowChanged || textExpansionChanged || labelChanged || valueChanged) {
+						const textWidth = Math.max(0, width - row.labelLeft - padding);
+						const label = row.measured.labelPreview, value = row.measured.valuePreview;
+						const labelWidth = row.measured.labelWidth, valueWidth = row.measured.valueWidth;
+						const gap = !group && label.length !== 0 && value.length !== 0 ? Math.min(4, textWidth) : 0;
+						const pairWidth = textWidth - gap;
+						let labelBudget = textWidth;
+						if (!group && value.length !== 0) {
+							if (label.length === 0) labelBudget = 0;
+							else if (labelWidth + valueWidth <= pairWidth) {
+								// Align ordinary rows without sacrificing either measured cell.
+								labelBudget = clamp((width * COMPACT_LABEL_SHARE | 0) - row.labelLeft - gap, labelWidth, pairWidth - valueWidth);
+							} else {
+								labelBudget = Math.min(labelWidth, Math.max(pairWidth * COMPACT_LABEL_SHARE | 0, pairWidth - valueWidth));
+							}
+						}
+						row.valueLeft = group ? row.labelLeft : row.labelLeft + labelBudget + gap;
 						row.label.length = 1;
-						const end = row.element.label.indexOf('\n');
-						const label = end === -1 ? row.element.label : row.element.label.slice(0, end) + ELLIPSIS;
-						row.label[0] = truncateMeasuredText(label, (group ? width - padding : row.valueLeft - 4) - row.labelLeft, measure);
+						row.label[0] = truncateMeasuredText(label, labelBudget, measure, ELLIPSIS, 'end', labelWidth);
 						row.measured.label = row.element.label;
-					}
-					if (rowChanged || textExpansionChanged || row.measured.value !== row.element.value) {
 						row.value.length = 1;
-						const end = row.element.value.indexOf('\n');
-						const value = end === -1 ? row.element.value : row.element.value.slice(0, end) + ELLIPSIS;
-						row.value[0] = group ? '' : truncateMeasuredText(value, width - row.valueLeft - padding, measure);
+						row.value[0] = group ? '' : truncateMeasuredText(value, width - row.valueLeft - padding, measure, ELLIPSIS, 'end', valueWidth);
 						row.measured.value = row.element.value;
 					}
 					row.textExpandable = row.label[0] !== row.element.label || !group && row.value[0] !== row.element.value

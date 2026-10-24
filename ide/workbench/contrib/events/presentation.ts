@@ -113,26 +113,30 @@ export class EventViewerPresentation {
 	public reset(): void { this.labels.clear(); this.rows.length = 0; this.generation = -1; }
 }
 
-/** Full wrapped snapshot properties use the existing inspector, including complex payloads. */
+/** Captured values lead; provenance help is disclosed without hiding current snapshot warnings. */
 export function eventProperties(event: HistoricalEvent): InspectedProperty[] {
-	const properties: InspectedProperty[] = [{ label: 'Emission',
+	const properties: InspectedProperty[] = [];
+	appendSnapshot(properties, 'Event', event.event, false);
+	appendSnapshot(properties, 'Emitter', event.emitter, false);
+	appendSnapshot(properties, 'Payload', event.payload, false);
+	properties.push({ compact: true, descriptionDisplay: 'disclosure', label: 'Emission',
 		value: `#${event.sequence} | timeline ${event.timeline} | slot ${event.domain} | tick ${event.completedTick} | cycle ${event.cycles}`,
-		description: 'Tick is the last completed tick at emission. Go to Frame reviews the boundary at or before emission; values were captured before listener dispatch.', warning: false }];
-	appendSnapshot(properties, 'Event', event.event);
-	appendSnapshot(properties, 'Emitter', event.emitter);
-	appendSnapshot(properties, 'Payload', event.payload);
+		description: 'Tick is the last completed tick at emission. Go to Frame reviews the boundary at or before emission; values were captured before listener dispatch.', warning: false });
 	return properties;
 }
 
-function appendSnapshot(properties: InspectedProperty[], path: string, value: ValueSnapshot): void {
+function appendSnapshot(properties: InspectedProperty[], path: string, value: ValueSnapshot, pathOmitted: boolean): void {
 	const omitted = (value.kind === 'string' || value.kind === 'table') && value.omitted;
-	properties.push({ label: path, value: formatValueSnapshot(value) + (value.kind === 'table' ? ` (${value.entries.length} stored entries)` : ''),
-		description: omitted ? 'Snapshot budget reached; contents may be incomplete.' : '', warning: omitted });
+	const description = pathOmitted
+		? omitted ? 'Snapshot budget reached; key path and contents may be incomplete.' : 'Snapshot budget reached; key path may be incomplete.'
+		: omitted ? 'Snapshot budget reached; contents may be incomplete.' : '';
+	properties.push({ compact: true, label: path, value: formatValueSnapshot(value) + (value.kind === 'table' ? ` (${value.entries.length} stored entries)` : ''),
+		description, warning: omitted || pathOmitted });
 	if (value.kind !== 'table') return;
 	for (const entry of value.entries) {
 		const omittedKey = (entry.key.kind === 'string' || entry.key.kind === 'table') && entry.key.omitted;
 		const key = formatValueSnapshot(entry.key) + (omittedKey ? ' [truncated key]' : '');
-		appendSnapshot(properties, `${path}[${key}]`, entry.value);
+		appendSnapshot(properties, `${path}[${key}]`, entry.value, pathOmitted || omittedKey);
 	}
 }
 

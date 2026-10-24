@@ -11,7 +11,7 @@ import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { WorkbenchPropertyInspector } from '../../ide/workbench/ui/property_inspector/control';
-import { WorkbenchPropertyInspectorModel, compactPropertyRowHeight, INSPECTOR_PADDING, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
+import { WorkbenchPropertyInspectorModel, compactPropertyRowHeight, INSPECTOR_PADDING, INSPECTOR_COMPACT_PADDING, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
 import { drawWorkbenchPropertyInspector } from '../../ide/workbench/render/property_inspector';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -384,6 +384,134 @@ test('compact runtime fields use measured columns and expose complete clipped te
 	for (let n = 0; n < 1000; n++) f.layout();
 	assert.equal(f.measured(), measured, 'clean compact cells do not remeasure or reformat');
 });
+
+for (const variant of ['tiny', 'msx'] as const) {
+	const minimumWidth = variant === 'tiny' ? 78 : 118;
+
+	test(`${variant} compact inspector keeps measured-fit Event labels and short values whole at its minimum`, () => {
+		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+		const items = ['Event', 'Payload', 'Emitter', 'Emission'].flatMap(label => ['nil', '0', 'intro'].map(value =>
+			({ label, value, description: '', warning: false, compact: true })));
+		model.setItems(items);
+		model.layout(font, (text, start, end) => font.measure(text.slice(start, end)),
+			{ left: 19, top: 31, right: 19 + minimumWidth, bottom: 251 });
+		for (const row of model.rows) {
+			const width = model.viewport.bounds.right - model.viewport.bounds.left;
+			const available = width - row.labelLeft - INSPECTOR_COMPACT_PADDING;
+			assert.ok(font.measure(row.element.label) + 4 + font.measure(row.element.value) <= available, 'the actual pair fits');
+			assert.equal(row.label[0], row.element.label, `${row.element.label}/${row.element.value}: do not invent a clipped label`);
+			assert.equal(row.value[0], row.element.value, `${row.element.label}/${row.element.value}: short value remains whole`);
+			assert.ok(row.valueLeft >= row.labelLeft + font.measure(row.label[0]) + 4);
+			assert.ok(row.valueLeft + font.measure(row.value[0]) <= width - INSPECTOR_COMPACT_PADDING);
+			assert.equal(row.textExpandable, false, 'a complete scalar pair does not need a disclosure');
+		}
+	});
+
+	test(`${variant} compact inspector gives unused value width to a measured-fit long label`, () => {
+		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+		const item = { label: 'Payload bytes', value: '0', description: '', warning: false, compact: true };
+		model.setItems([item]);
+		model.layout(font, (text, start, end) => font.measure(text.slice(start, end)),
+			{ left: 0, top: 0, right: minimumWidth, bottom: 100 });
+		const row = model.rows[0], width = model.viewport.bounds.right - model.viewport.bounds.left;
+		assert.ok(row.labelLeft + font.measure(item.label) + 4 + font.measure(item.value)
+			<= width - INSPECTOR_COMPACT_PADDING, 'the complete pair fits the real padded width');
+		assert.equal(row.label[0], item.label);
+		assert.equal(row.value[0], item.value);
+		assert.ok(row.valueLeft > width / 2, 'the value is not forced to an absolute half-column');
+	});
+
+	test(`${variant} two long compact cells stay bounded while disclosure and copy retain exact text`, t => {
+		const f = fixture(t), font = new Font({ variant });
+		const item = { label: 'An_extremely_long_property_label', value: 'a_complete_value_that_exceeds_the_entire_client_width',
+			description: '', warning: false, compact: true };
+		f.bounds.right = minimumWidth;
+		f.inspector.show({ title: 'Properties', items: [item], dismissible: false, canOpenSource: () => false, openSource() {} });
+		const layout = () => f.inspector.layout(font, (text, start, end) => font.measure(text.slice(start, end)), text => font.measure(text), f.bounds);
+		layout();
+		const row = f.inspector.model.rows[0], view = f.inspector.model.viewport;
+		assert.ok(row.label[0].length > 0 && row.value[0].length > 0, 'both real cells remain represented');
+		assert.ok(row.labelLeft + font.measure(row.label[0]) + 4 <= row.valueLeft, 'text does not overlap');
+		assert.ok(row.valueLeft + font.measure(row.value[0]) <= view.bounds.right - view.bounds.left - INSPECTOR_COMPACT_PADDING,
+			'value stays inside the client');
+		assert.equal(row.textExpandable, true);
+		assert.equal(f.inspector.focusTarget.clipboard!.copy!(), item.value);
+		f.press('ArrowRight'); layout();
+		assert.equal(row.textExpanded, true);
+		assert.equal(row.label.join(''), item.label);
+		assert.equal(row.value.join(''), item.value);
+		assert.equal(f.inspector.focusTarget.clipboard!.copy!(), item.value);
+		f.press('ArrowLeft'); layout();
+		assert.equal(row.textExpanded, false);
+		assert.ok(row.labelLeft + font.measure(row.label[0]) + 4 <= row.valueLeft);
+	});
+
+	test(`${variant} indented, empty-label, group and multiline cells use their actual text budget`, () => {
+		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+		const items: InspectedProperty[] = [
+			{ label: 'Payload', value: 'nil', depth: 1, compact: true, description: '', warning: false },
+			{ label: '', value: 'value only', depth: 1, compact: true, description: '', warning: false },
+			{ label: 'Section', value: 'not a group value', depth: 1, group: true, compact: true, description: '', warning: false },
+			{ label: 'Payload\nbytes', value: 'nil\nnext', compact: true, description: '', warning: false },
+		];
+		model.setItems(items);
+		const layout = () => model.layout(font, (text, start, end) => font.measure(text.slice(start, end)),
+			{ left: 23, top: 17, right: 23 + minimumWidth, bottom: 233 });
+		layout();
+		const [indented, empty, group, multiline] = model.rows;
+		assert.equal(indented.label[0], 'Payload'); assert.equal(indented.value[0], 'nil');
+		assert.equal(indented.labelLeft, 12 + font.advance(' ') * 2);
+		assert.equal(empty.label[0], ''); assert.equal(empty.value[0], 'value only');
+		assert.equal(empty.valueLeft, empty.labelLeft, 'an absent label does not reserve an unused column');
+		assert.equal(group.label[0], 'Section'); assert.equal(group.value[0], '');
+		assert.equal(multiline.label[0], 'Payload…'); assert.equal(multiline.value[0], 'nil…');
+		assert.equal(multiline.textExpandable, true);
+		assert.equal(model.setValueExpanded(3, true), true); layout();
+		assert.deepEqual(multiline.label, ['Payload', 'bytes']);
+		assert.deepEqual(multiline.value, ['nil', 'next']);
+	});
+
+	test(`${variant} value-only and label-only changes rebalance both cached compact cells`, () => {
+		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+		let item = { label: 'Payload bytes', value: '0', compact: true, description: '', warning: false };
+		const layout = () => model.layout(font, (text, start, end) => font.measure(text.slice(start, end)),
+			{ left: 0, top: 0, right: minimumWidth, bottom: 100 });
+		model.setItems([item]); layout();
+		const row = model.rows[0];
+		assert.equal(row.label[0], item.label);
+		const shortValueLeft = row.valueLeft;
+		item = { ...item, value: '123456789' }; model.updateItems([item], () => true); layout();
+		assert.equal(model.rows[0], row, 'text changes do not replace row storage');
+		assert.notEqual(row.label[0], item.label, 'the newly long value reclaims part of the label budget');
+		assert.ok(row.valueLeft < shortValueLeft);
+		assert.ok(row.labelLeft + font.measure(row.label[0]) + 4 <= row.valueLeft);
+		item = { ...item, value: '0' }; model.updateItems([item], () => true); layout();
+		assert.equal(row.label[0], item.label, 'shortening only the value restores the unmodified complete label');
+		assert.equal(row.valueLeft, shortValueLeft);
+		item = { ...item, value: '123456789' }; model.updateItems([item], () => true); layout();
+		item = { ...item, label: 'X' }; model.updateItems([item], () => true); layout();
+		assert.equal(row.label[0], 'X');
+		assert.equal(row.value[0], item.value, 'shortening only the label restores the unmodified complete value');
+	});
+
+	test(`${variant} measured compact columns retain rows and perform zero work on 1000 idle layouts`, t => {
+		const font = new Font({ variant }), model = new WorkbenchPropertyInspectorModel<InspectedProperty>();
+		const items = [
+			{ label: 'Payload bytes', value: '0', compact: true, description: '', warning: false },
+			{ label: 'Emitter', value: 'nemesis_s.director', compact: true, description: '', warning: false },
+		];
+		let measurements = 0;
+		const measure = (text: string, start: number, end: number) => { measurements++; return font.measure(text.slice(start, end)); };
+		const bounds = { left: 29, top: 31, right: 29 + minimumWidth, bottom: 231 };
+		model.setItems(items); model.layout(font, measure, bounds);
+		const first = model.rows[0], second = model.rows[1], label = first.label, value = first.value;
+		const measured = measurements, advance = t.mock.method(font, 'advance');
+		for (let frame = 0; frame < 1000; frame++) model.layout(font, measure, bounds);
+		assert.equal(measurements, measured); assert.equal(advance.mock.callCount(), 0);
+		assert.equal(model.rows[0], first); assert.equal(model.rows[1], second);
+		assert.equal(first.label, label); assert.equal(first.value, value);
+	});
+}
 
 test('runtime disclosure keyboard, pointer and activation call the owner while source activation remains separate', t => {
 	const f = fixture(t), inspector = f.inspector;
