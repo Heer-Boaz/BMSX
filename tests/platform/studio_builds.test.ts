@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,9 @@ import test from 'node:test';
 import { StudioBuildJobs } from '../../hosts/node/builds/jobs';
 import { compareBuildVersions, isBuildTerminal, type StudioBuildRequest, type StudioBuildJob } from '../../hosts/common/studio_builds';
 import { BuildLedger } from '../../hosts/node/builds/ledger';
+import { parseCartridgePackage, parseSystemRomImage } from '../../machine/ts/rompack/image';
+import { loadBlua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 
 test('real worker builds, idempotent admission, cancellation and restart reconciliation', { timeout: 120000 }, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-jobs-'));
@@ -36,9 +39,27 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	assert.ok(running > 0);
 	for (let index = 1; index < versions.length; index++) assert.ok(compareBuildVersions(versions[index], versions[index - 1]) > 0);
 	const artifact = await jobs.artifacts.read(result.artifact!);
+	assert.equal(artifact.id, result.artifact);
+	assert.equal(artifact.target, request.target);
+	assert.equal(artifact.system.name, 'bmsx-bios');
 	assert.equal(artifact.cart!.name, request.target);
-	assert.ok(artifact.system.outputs.length > 1);
-	for (const unit of [artifact.system, artifact.cart!]) for (const output of unit.outputs) assert.ok((await readFile(join(jobs.artifacts.directory(artifact.id), output.file))).length > 0);
+	assert.deepEqual(artifact.system.outputs.map(output => output.file), ['system/bmsx-bios.debug.rom']);
+	assert.deepEqual(artifact.cart!.outputs.map(output => output.file), ['cpu_soak.debug.rom']);
+	for (const unit of [artifact.system, artifact.cart!]) {
+		assert.equal(unit.recipe.domain, unit === artifact.system ? 'system' : 'cart');
+		assert.equal(unit.recipe.debug, request.debug); assert.equal(unit.recipe.optLevel, request.optLevel);
+		for (const output of unit.outputs) {
+			const bytes = await readFile(join(jobs.artifacts.directory(artifact.id), output.file));
+			assert.equal(createHash('sha256').update(bytes).digest('hex'), output.digest);
+			const image = unit === artifact.system ? parseSystemRomImage(bytes) : parseCartridgePackage(bytes);
+			assert.ok(image.header.blua32ImageByteCount > 0);
+			assert.ok(image.header.blua32DiagnosticDirectoryOffset > 0, 'debug diagnostics are embedded, not standalone output files');
+			assert.notEqual(loadBlua32ToolingImage(image, unit === artifact.system ? SYSTEM_ROM_BASE : CART_ROM_BASE)!.symbols, null,
+				'debug symbols are embedded in the published ROM');
+		}
+	}
+	const cartridge = parseCartridgePackage(await readFile(join(jobs.artifacts.directory(artifact.id), artifact.cart!.outputs[0].file)));
+	assert.deepEqual(cartridge.manifest, { title: 'CPU Soak', hardware: [{ type: 'rom' }] });
 	assert.equal((await jobs.admit(reordered)).artifact, result.artifact);
 	const interrupted = { ...request, requestId: randomUUID(), target: 'nemesis_s' };
 	await jobs.admit(interrupted);
