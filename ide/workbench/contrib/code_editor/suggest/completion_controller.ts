@@ -3,7 +3,6 @@ import type { RuntimeSourceState } from '../../../../runtime/sources';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
-import { editorTextModelService } from '../../../../editor/model/model_service';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import {
 	listGlobalLuaSymbols,
@@ -29,13 +28,14 @@ import { getLuaTextContext, LuaTextContext } from '../../../../common/text';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
 import { LuaLexer } from '../../../../../toolchain/ts/lua/syntax/lexer';
 import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletionWordRange, resolveModuleCompletionRange,
-	type CompletionMatchMode, type InlineCompletionPreview } from '../../../../editor/contrib/suggest/completion_model';
+	type CompletionMatchMode } from '../../../../editor/contrib/suggest/completion_model';
 import { buildEditorSemanticFrontend } from '../../../../editor/contrib/intellisense/frontend';
 import { assignRowColumn } from '../../../../common/state';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
 import { isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../ui/code_tab/contexts';
 import { prepareUndo } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/caret/caret';
+import { revealInlineEdit } from '../../../../editor/ui/view/caret/view';
 import { resetBlink } from '../../../../editor/render/caret';
 import type { Decl, FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSemanticFrontendFile } from '../../../../../toolchain/ts/lua/semantic/frontend';
@@ -69,8 +69,6 @@ export class CompletionController {
 
 	private readonly cursorPositionScratch = { row: 0, column: 0 };
 	private readonly clampPositionScratch = { row: 0, column: 0 };
-	private readonly inlineCompletionPreviewScratch = { row: 0, column: 0, suffix: '' };
-	private inlineCompletionPreview: InlineCompletionPreview | null = null;
 	private readonly lastCursorPositionScratch = { row: 0, column: 0 };
 	private maxVisibleItems = constants.COMPLETION_POPUP_MAX_VISIBLE;
 	public readonly popupBoundsScratch = create_rect_bounds();
@@ -203,7 +201,7 @@ export class CompletionController {
 
 	public closeSession(): void {
 		this.completionSession = null;
-		this.inlineCompletionPreview = null;
+		activeCodeEditor.clearInlineEdit();
 		this.popupBounds = null;
 		this.cancelPendingCompletion();
 	}
@@ -234,8 +232,8 @@ export class CompletionController {
 
 	public applyCompletionItem(context: CompletionContext, item: LuaCompletionItem): void {
 		const addParentheses = item.kind === 'native_method';
-		this.applyCompletionItemForContext(context, item, addParentheses);
 		this.closeSession();
+		this.applyCompletionItemForContext(context, item, addParentheses);
 	}
 
 	public acceptSelectedCompletion(): boolean {
@@ -246,23 +244,18 @@ export class CompletionController {
 		return true;
 	}
 
-	public getInlineCompletionPreview(): InlineCompletionPreview | null { return this.inlineCompletionPreview; }
-
-	private updateInlineCompletionPreview(): void {
-		this.inlineCompletionPreview = null;
+	private publishInlineEdit(): boolean {
 		const session = this.completionSession;
 		if (!session || session.trigger === 'manual') {
-			return;
+			activeCodeEditor.clearInlineEdit();
+			return false;
 		}
 		const item = session.filteredItems[session.selectionIndex];
 		const addParentheses = item.kind === 'native_method';
 		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
 		const prefix = session.context.prefix;
-		const preview = this.inlineCompletionPreviewScratch;
-		preview.row = session.context.row;
-		preview.column = session.context.replaceFromColumn + prefix.length;
-		preview.suffix = insertion.slice(prefix.length);
-		this.inlineCompletionPreview = preview;
+		return activeCodeEditor.setInlineEdit(session.context.row, session.context.replaceFromColumn + prefix.length,
+			session.context.replaceToColumn, insertion.slice(prefix.length), session.context.kind === 'module');
 	}
 
 	public handlePointerWheel(event: WheelInputSnapshot): boolean {
@@ -398,6 +391,11 @@ export class CompletionController {
 					this.applySelectedCompletion();
 				}
 				return true;
+			}
+			switch (playerInput.code) {
+				case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown':
+				case 'Home': case 'End': case 'PageUp': case 'PageDown':
+					if (isKeyDown(playerInput.code, playerInput)) this.closeSession();
 			}
 			return false;
 		}
@@ -803,7 +801,7 @@ export class CompletionController {
 			navigationCaptured: trigger === 'manual',
 		};
 		this.completionSession = session;
-		this.applyCompletionFilter(session);
+		if (this.applyCompletionFilter(session)) revealInlineEdit();
 	}
 
 	private refreshCompletionSessionFromContext(context: CompletionContext): void {
@@ -823,7 +821,7 @@ export class CompletionController {
 		this.applyCompletionFilter(session);
 	}
 
-	private applyCompletionFilter(session: CompletionSession): void {
+	private applyCompletionFilter(session: CompletionSession): boolean {
 		const prefix = session.context.prefix;
 		const cacheKey = prefix;
 		let filtered = session.filterCache.get(cacheKey);
@@ -836,12 +834,12 @@ export class CompletionController {
 			session.selectionIndex = -1;
 			session.displayOffset = 0;
 			this.closeSession();
-			return;
+			return false;
 		}
 		session.filteredItems = filtered;
 		if (session.selectionIndex < 0 || session.selectionIndex >= session.filteredItems.length) session.selectionIndex = 0;
 		this.ensureCompletionSelectionVisible(session);
-		this.updateInlineCompletionPreview();
+		return this.publishInlineEdit();
 	}
 
 	private moveCompletionSelection(delta: number): void {
@@ -854,7 +852,7 @@ export class CompletionController {
 		if (index < 0) index = delta > 0 ? 0 : total - 1; else { index += delta; index = ((index % total) + total) % total; }
 		session.selectionIndex = index;
 		this.ensureCompletionSelectionVisible(session);
-		this.updateInlineCompletionPreview();
+		if (this.publishInlineEdit()) revealInlineEdit();
 	}
 
 	private handleNavigationKeys(playerInput: KeyInputEvent, session: CompletionSession, allowHomeEnd: boolean): boolean {
@@ -930,26 +928,15 @@ export class CompletionController {
 	}
 
 	private applySelectedCompletion(): void {
-		const session = this.completionSession;
-		if (!session) return;
-		if (session.filteredItems.length === 0) { this.closeSession(); return; }
-		let index = session.selectionIndex;
-		if (index < 0 || index >= session.filteredItems.length) index = 0;
-		const item = session.filteredItems[index];
+		const session = this.completionSession!, context = session.context;
+		const item = session.filteredItems[session.selectionIndex];
 		const addParentheses = item.kind === 'native_method';
-		const freshContext = this.analyzeCompletionContext();
-		const effectiveContext = freshContext && this.completionContextsCompatible(session.context, freshContext) ? freshContext : session.context;
-		this.applyCompletionItemForContext(effectiveContext, item, addParentheses);
 		this.closeSession();
+		this.applyCompletionItemForContext(context, item, addParentheses);
 	}
 
 	private applyCompletionItemForContext(context: CompletionContext, item: LuaCompletionItem, addParentheses: boolean): void {
-		const buffer = this.getBuffer();
-		const lineCount = buffer.getLineCount();
-		const row = clamp(context.row, 0, lineCount - 1);
-		const line = buffer.getLineContent(row);
-		const replaceStart = clamp(context.replaceFromColumn, 0, line.length);
-		const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
+		const row = context.row, replaceStart = context.replaceFromColumn, replaceEnd = context.replaceToColumn;
 		this.setCursorPosition(row, replaceEnd);
 		this.setSelectionAnchor(row, replaceStart);
 		this.prepareUndoRecord();
@@ -1045,21 +1032,14 @@ export class CompletionController {
 
 export class EditorCompletionController extends CompletionController {
 	private readonly unsubscribeCursorMoved: () => void;
-	private readonly unsubscribeTextMutated: () => void;
 
 	public constructor(sources: RuntimeSourceState, guest: SuspendedGuestSession, fault: RuntimeFaultState, runtime: Runtime) {
 		super(sources, guest, fault, runtime);
 		this.unsubscribeCursorMoved = activeCodeEditor.onDidMoveCursor(() => this.onCursorMoved());
-		this.unsubscribeTextMutated = editorTextModelService.onDidChangeContent((model, event) => {
-			if (model === activeCodeEditor.model) {
-				this.updateAfterEdit(event.editContext);
-			}
-		});
 	}
 
 	public dispose(): void {
 		this.unsubscribeCursorMoved();
-		this.unsubscribeTextMutated();
 		this.clearInput();
 	}
 }

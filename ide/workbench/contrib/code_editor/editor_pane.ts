@@ -64,6 +64,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		return new CodeEditorNavigationSelection(this.input);
 	}
 	private unsubscribeContentChange: () => void;
+	private unsubscribeBeforeContentChange: () => void;
 	private readonly unbindKeyboard = activeCodeEditor.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	private readonly unbindClipboard = activeCodeEditor.focusTarget.bindClipboard({
 		get readOnly() { return activeCodeEditor.model.readOnly; },
@@ -114,9 +115,12 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		activateCodeEditorTab(this.input);
 		activeCodeEditor.focusTarget.textInput = this.nativeText;
 		setActiveDiagnostics(this.input.context.model, this.editor.diagnostics.diagnostics);
+		this.unsubscribeBeforeContentChange = this.input.context.model.onWillChangeContent(() => {
+			activeCodeEditor.clearInlineEdit(); activeCodeEditor.clearVisualCursor();
+		});
 		this.unsubscribeContentChange = this.input.context.model.onDidChangeContent(event => {
 			editorViewState.layout.onDidChangeContent(this.input.context.model.buffer, event);
-			editorViewState.maxLineLengthDirty = true;
+			this.editor.completion.updateAfterEdit(event.editContext);
 			clearReferenceHighlights();
 			requestSemanticRefresh();
 		});
@@ -138,6 +142,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		pointerHover.release(codeAreaHover);
 		pointerHover.release(runtimeErrorOverlayPointer);
 		editorViewState.scrollbarController.cancel();
+		this.unsubscribeBeforeContentChange();
 		this.unsubscribeContentChange();
 		storeCodeTabContext(this.input.context);
 		activeCodeEditor.detach();
@@ -160,8 +165,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 			if (editorPointerState.pointerSelecting && (pointer.pressedButtons & PointerButton.Primary) !== 0) {
 				const view = activeCodeEditor.view;
 				const row = view.cursorRow, column = view.cursorColumn;
-				handlePointerAutoScroll(pointer.viewportX, pointer.viewportY, bounds);
-				handleCodeAreaSelectionPointer(pointer, bounds);
+				if (handlePointerAutoScroll(pointer.viewportX, pointer.viewportY, bounds)) handleCodeAreaSelectionPointer(pointer, bounds);
 				if (view.cursorRow !== row || view.cursorColumn !== column) inputFocus.notifyTargetChanged();
 			}
 			if (pointerHover.has(codeAreaHover)) updateCodeAreaPointerFeedback(this.sources, this.guest, this.fault, this.runtime, pointer,
@@ -182,7 +186,6 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		const renameActive = renameController.isActive();
 		renderCodeArea(
 			this.editor.completion,
-			this.editor.completion.getInlineCompletionPreview(),
 			activeCodeEditor.focusTarget.hasFocus,
 			this.debuggerState.breakpoints.get(
 				this.input.context.model.resource,

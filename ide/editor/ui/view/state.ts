@@ -28,9 +28,6 @@ export type EditorViewState = {
 	layout: CodeLayout;
 	codeVerticalScrollbarVisible: boolean;
 	codeHorizontalScrollbarVisible: boolean;
-	maxLineLength: number;
-	maxLineLengthRow: number;
-	maxLineLengthDirty: boolean;
 	cachedVisibleRowCount: number;
 	cachedVisibleColumnCount: number;
 	cachedMaxScrollColumn: number;
@@ -60,9 +57,6 @@ export const editorViewState: EditorViewState = {
 	layout: undefined!,
 	codeVerticalScrollbarVisible: false,
 	codeHorizontalScrollbarVisible: false,
-	maxLineLength: 0,
-	maxLineLengthRow: 0,
-	maxLineLengthDirty: true,
 	cachedVisibleRowCount: 1,
 	cachedVisibleColumnCount: 1,
 	cachedMaxScrollColumn: 0,

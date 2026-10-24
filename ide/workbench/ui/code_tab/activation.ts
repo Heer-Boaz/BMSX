@@ -21,18 +21,18 @@ export function storeCodeTabContext(context: CodeTabContext): void {
 }
 
 export function applyActiveCodeTabSelection(selection: EditorTextSelection): void {
+	activeCodeEditor.clearVisualCursor();
 	setSingleCursorPosition(activeCodeEditor.view, selection.row, selection.startColumn);
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, selection.row, selection.endColumn);
 	clearEditorPointerSelectionState();
+	activeCodeEditor.emitCursorMoved();
 	ensureCursorVisible();
 	resetBlink();
-	activeCodeEditor.emitCursorMoved();
 }
 
 export function activateCodeEditorTab(tab: CodeEditorInput): void {
 	const context = tab.context;
 	activeCodeEditor.attach(context.model, context.view);
-	editorViewState.maxLineLengthDirty = true;
 	editorViewState.layout.setDocumentMode(context.model.mode);
 	editorViewState.layout.markVisualLinesDirty();
 	editorViewState.layout.invalidateAllHighlights();

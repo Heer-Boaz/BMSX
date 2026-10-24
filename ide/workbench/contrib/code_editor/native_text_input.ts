@@ -28,6 +28,7 @@ export class CodeEditorTextInput implements TextInputTarget {
 		const buffer = activeCodeEditor.model.buffer, view = activeCodeEditor.view;
 		const cursor = buffer.offsetAt(view.cursorRow, view.cursorColumn), anchor = view.selectionAnchor;
 		if (cursor === to && (anchor === null ? cursor : buffer.offsetAt(anchor.row, anchor.column)) === from) return;
+		activeCodeEditor.clearVisualCursor();
 		clearSelection();
 		buffer.positionAt(to, this.position);
 		setSingleCursorPosition(view, this.position.row, this.position.column);
@@ -35,8 +36,8 @@ export class CodeEditorTextInput implements TextInputTarget {
 			buffer.positionAt(from, this.position);
 			setSingleCursorSelectionAnchor(view, this.position.row, this.position.column);
 		}
-		updateDesiredColumn(); resetBlink(); revealCursor();
 		activeCodeEditor.emitCursorMoved();
+		updateDesiredColumn(); resetBlink(); revealCursor();
 	}
 
 	public replaceText(from: number, to: number, text: string): boolean {

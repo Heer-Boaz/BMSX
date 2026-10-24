@@ -2,12 +2,11 @@ import type { CursorScreenInfo, SearchMatch } from '../../../common/models';
 import type { Font } from '../../../../machine/ts/render/shared/bmsx_font';
 import { drawEditorText } from '../text_renderer';
 import { api } from '../../../runtime/overlay_api';
-import { computeSelectionSlice } from '../../common/text/layout';
+import { computeSelectionSlices } from '../../common/text/layout';
 import * as constants from '../../../common/constants';
 import { runtimeErrorState } from '../../contrib/runtime_error/state';
-import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './highlights';
-import { computeCursorScreenInfo, drawCodeRowText } from './cursor';
-import type { InlineCompletionPreview } from '../../contrib/suggest/completion_model';
+import { drawHighlightSlice, drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './highlights';
+import { computeCursorScreenInfo } from './cursor';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './underlines';
 import { drawCodeAreaRowChrome } from './gutter';
 import { activeCodeEditor } from '../../ui/code_editor_state';
@@ -26,8 +25,6 @@ export function drawCodeAreaRows(
 	breakpointsForChunk: ReadonlySet<number>,
 	activeGotoHighlight: ActiveGotoHighlight,
 	cursorVisualIndex: number,
-	inlineCompletionPreview: InlineCompletionPreview,
-	shouldRenderInlinePreview: boolean,
 	useUppercase: boolean,
 	renderFont: Font,
 	breakpointLaneWidth: number,
@@ -48,14 +45,10 @@ export function drawCodeAreaRows(
 			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, 0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
-		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
-		if (!segment) {
-			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, 0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
-			continue;
-		}
+		const segment = editorViewState.layout.visualIndexToSegment(visualIndex)!;
 		const lineIndex = segment.row;
-		const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, lineIndex);
-		const isPrimaryVisualSegment = segment.startColumn === 0;
+		const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, lineIndex);
+		const isPrimaryVisualSegment = segment.startDisplay === 0;
 		const hasBreakpointForRow = breakpointsForChunk.has(lineIndex + 1);
 		const isExecutionStopRow = runtimeErrorState.executionStopRow !== null && lineIndex === runtimeErrorState.executionStopRow;
 		const isCursorLine = lineIndex === activeCodeEditor.view.cursorRow;
@@ -73,19 +66,10 @@ export function drawCodeAreaRows(
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
 		const advancePrefix = entry.advancePrefix;
-		let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn | 0;
-		if (editorViewState.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
-			columnStart = segment.startColumn;
-		}
-		const columnToDisplay = highlight.columnToDisplay;
-		const maxColumn = editorViewState.wordWrapEnabled
-			? segment.endColumn
-			: (activeCodeEditor.model.buffer.getLineEndOffset(lineIndex) - activeCodeEditor.model.buffer.getLineStartOffset(lineIndex));
-		const columnCount = editorViewState.wordWrapEnabled ? Math.max(0, maxColumn - columnStart) : viewport.sliceWidth;
-		const clampedStartColumn = Math.min(columnStart, columnToDisplay.length - 1);
-		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);
-		const sliceStartDisplay = columnToDisplay[clampedStartColumn];
-		const sliceEndDisplay = columnToDisplay[clampedEndColumn];
+		const viewportStartDisplay = viewport.wrapEnabled ? segment.startDisplay : activeCodeEditor.view.scrollColumn | 0;
+		const sliceStartDisplay = Math.min(viewportStartDisplay, highlight.text.length);
+		const sliceEndDisplay = viewport.wrapEnabled ? segment.endDisplay
+			: Math.min(sliceStartDisplay + viewport.sliceWidth, highlight.text.length);
 		drawReferenceHighlightsForRow(
 			api,
 			lineIndex,
@@ -109,8 +93,8 @@ export function drawCodeAreaRows(
 			searchActiveIndex,
 			searchHighlightsVisible,
 		);
-		const selectionSlice = computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
-		if (selectionSlice) {
+		const selectionSlices = computeSelectionSlices(lineIndex, entry, sliceStartDisplay, sliceEndDisplay);
+		for (const selectionSlice of selectionSlices) {
 			const selectionStartX = viewport.textLeft + advancePrefix[selectionSlice.startDisplay] - advancePrefix[sliceStartDisplay];
 			const selectionEndX = viewport.textLeft + advancePrefix[selectionSlice.endDisplay] - advancePrefix[sliceStartDisplay];
 			const drawLeft = selectionStartX < viewport.textLeft ? viewport.textLeft : selectionStartX;
@@ -119,35 +103,19 @@ export function drawCodeAreaRows(
 				api.fill_rect(drawLeft, rowY, drawRight, rowY + editorViewState.lineHeight, 0, constants.SELECTION_OVERLAY);
 			}
 		}
-		const inlinePreview = shouldRenderInlinePreview && visualIndex === cursorVisualIndex && lineIndex === inlineCompletionPreview.row
-			&& inlineCompletionPreview.column >= clampedStartColumn && inlineCompletionPreview.column <= clampedEndColumn
-			? inlineCompletionPreview : null;
-		drawCodeRowText(
-			renderFont,
-			renderText,
-			entry,
-			sliceStartDisplay,
-			sliceEndDisplay,
-			viewport.textLeft,
-			rowY,
-			useUppercase,
-			inlinePreview !== null,
-			inlinePreview,
-		);
+		drawHighlightSlice(renderFont, renderText, highlight.colors, advancePrefix,
+			sliceStartDisplay, sliceEndDisplay, viewport.textLeft, rowY, 0);
 		drawDiagnosticUnderlinesForRow(
 			lineIndex,
 			entry,
 			viewport.textLeft,
 			rowY,
 			viewport.contentBottom,
-			columnStart,
-			maxColumn,
 			sliceStartDisplay,
 			sliceEndDisplay,
 		);
 		drawGotoUnderlineForRow(
 			lineIndex,
-			visualIndex,
 			entry,
 			viewport.textLeft,
 			rowY,
@@ -157,7 +125,10 @@ export function drawCodeAreaRows(
 			activeGotoHighlight,
 		);
 		if (visualIndex === cursorVisualIndex) {
-			cursorInfo = computeCursorScreenInfo(entry, viewport.textLeft, rowY, sliceStartDisplay, inlinePreview);
+			const cursorDisplay = editorViewState.layout.columnToDisplay(highlight, activeCodeEditor.view.cursorColumn);
+			if (cursorDisplay >= viewportStartDisplay && cursorDisplay <= sliceEndDisplay) {
+				cursorInfo = computeCursorScreenInfo(entry, renderText, viewport.textLeft, rowY, sliceStartDisplay);
+			}
 		}
 	}
 	return cursorInfo;

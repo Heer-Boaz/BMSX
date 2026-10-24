@@ -9,6 +9,23 @@ export const codeEditorEditState = new EditorEditStateType<CodeEditorViewSnapsho
 
 type CursorMovedListener = () => void;
 
+/** Ephemeral presentation intent for the attached source widget, never an Undo/view snapshot. */
+export type InlineEditState = {
+	readonly version: number;
+	readonly active: boolean;
+	readonly row: number;
+	readonly startColumn: number;
+	readonly endColumn: number;
+	readonly text: string;
+	readonly preserveCase: boolean;
+};
+
+export type VisualCursor = {
+	readonly row: number;
+	readonly column: number;
+	readonly visualIndex: number;
+};
+
 export type CodeEditorViewState = {
 	cursorRow: number;
 	cursorColumn: number;
@@ -54,11 +71,49 @@ export function applyCodeEditorViewSnapshot(view: CodeEditorViewState, snapshot:
 export class ActiveCodeEditorState {
 	public readonly focusTarget = inputFocus.createTarget();
 	public readonly nativeCaret = { x: 0, y: 0, width: 0, height: 0 };
+	private readonly inlineEditValue = { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: false };
+	public get inlineEdit(): InlineEditState { return this.inlineEditValue; }
+	private readonly visualCursorValue = { row: 0, column: 0, visualIndex: 0 };
+	private visualCursorOverride: VisualCursor | null = null;
+	public get visualCursor(): VisualCursor | null {
+		const value = this.visualCursorOverride;
+		return value !== null && value.row === this.view.cursorRow && value.column === this.view.cursorColumn ? value : null;
+	}
 	public model: EditorTextModel | null = null;
 	public view: CodeEditorViewState | null = null;
 	private readonly cursorMovedListeners = new Set<CursorMovedListener>();
 
+	public setInlineEdit(row: number, startColumn: number, endColumn: number, text: string, preserveCase = false): boolean {
+		const value = this.inlineEditValue;
+		if (value.active && value.row === row && value.startColumn === startColumn && value.endColumn === endColumn
+			&& value.text === text && value.preserveCase === preserveCase) return false;
+		this.clearVisualCursor();
+		value.row = row; value.startColumn = startColumn; value.endColumn = endColumn;
+		value.text = text; value.preserveCase = preserveCase; value.active = true;
+		value.version++;
+		return true;
+	}
+
+	public clearInlineEdit(): void {
+		const value = this.inlineEditValue;
+		if (!value.active) return;
+		value.active = false;
+		value.version++;
+	}
+
+	public clearVisualCursor(): void {
+		this.visualCursorOverride = null;
+	}
+
+	public captureVisualCursor(row: number, column: number, visualIndex: number): void {
+		const value = this.visualCursorValue;
+		value.row = row; value.column = column; value.visualIndex = visualIndex;
+		this.visualCursorOverride = value;
+	}
+
 	public attach(model: EditorTextModel, view: CodeEditorViewState): void {
+		this.clearInlineEdit();
+		this.clearVisualCursor();
 		const buffer = model.buffer;
 		const lastRow = buffer.getLineCount() - 1;
 		view.cursorRow = clamp(view.cursorRow, 0, lastRow);
@@ -76,6 +131,8 @@ export class ActiveCodeEditorState {
 	}
 
 	public detach(): void {
+		this.clearInlineEdit();
+		this.clearVisualCursor();
 		this.model = null;
 		this.view = null;
 	}
@@ -86,6 +143,7 @@ export class ActiveCodeEditorState {
 	}
 
 	public emitCursorMoved(): void {
+		this.clearInlineEdit();
 		for (const listener of this.cursorMovedListeners) {
 			listener();
 		}

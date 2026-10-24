@@ -31,5 +31,6 @@ export function resetPointerClickTracking(): void {
 
 export function clearEditorPointerSelectionState(): void {
 	editorPointerState.pointerSelecting = false;
+	editorPointerState.lastPointerRowResolution = null;
 	resetPointerClickTracking();
 }

@@ -24,10 +24,11 @@ export class CodeEditorNavigationSelection extends EditorPaneSelection {
 
 	public restore(input: CodeEditorInput): void {
 		restoreCodeEditorView(input, this.snapshot);
+		activeCodeEditor.clearVisualCursor();
+		activeCodeEditor.emitCursorMoved();
 		ensureVisualLines();
 		clearEditorPointerSelectionState();
 		updateDesiredColumn();
 		resetBlink();
-		activeCodeEditor.emitCursorMoved();
 	}
 }

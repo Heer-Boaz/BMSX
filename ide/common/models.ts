@@ -25,11 +25,27 @@ export type HighlightLine = {
 	columnToDisplay: number[];
 };
 
-export type CachedHighlight = {
+export type InlineLineRange = {
+	readonly startColumn: number;
+	readonly endColumn: number;
+	readonly startDisplay: number;
+	readonly endDisplay: number;
+};
+
+export type DisplayRange = { startDisplay: number; endDisplay: number };
+
+/** Source UTF-16 positions, projected UTF-16 text and tab-expanded glyph offsets remain distinct. */
+export type CodeLineView = {
 	src: string;
+	viewText: string;
+	viewColumnToDisplay: number[];
 	hi: HighlightLine;
 	displayToColumn: number[];
 	advancePrefix: number[];
+	inline: InlineLineRange | null;
+};
+
+export type CachedHighlight = CodeLineView & {
 	textVersion: number;
 	lineSignature: number;
 	builtinEpoch: number;
@@ -159,6 +175,8 @@ export type VisualLineSegment = {
 	row: number;
 	startColumn: number;
 	endColumn: number;
+	startDisplay: number;
+	endDisplay: number;
 };
 
 export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';

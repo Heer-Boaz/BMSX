@@ -1,5 +1,4 @@
-import type { CachedHighlight } from '../../../common/models';
-import { clamp } from '../../../../machine/ts/common/clamp';
+import type { CodeLineView } from '../../../common/models';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { getDiagnosticsForRow } from '../../contrib/diagnostics/state';
@@ -11,84 +10,41 @@ type GotoHighlight = {
 	endColumn: number;
 };
 
-function drawUnderline(entry: CachedHighlight, textLeft: number, rowY: number, contentBottom: number, sliceStartDisplay: number, sliceEndDisplay: number, startDisplay: number, endDisplay: number, color: number): void {
-	const clampedStartDisplay = clamp(startDisplay, sliceStartDisplay, sliceEndDisplay);
-	const clampedEndDisplay = clamp(endDisplay, clampedStartDisplay, sliceEndDisplay);
-	if (clampedEndDisplay <= clampedStartDisplay) {
-		return;
-	}
+function drawUnderline(entry: CodeLineView, textLeft: number, rowY: number, contentBottom: number, sliceStartDisplay: number,
+	sliceEndDisplay: number, startDisplay: number, endDisplay: number, color: number): void {
+	const visibleStart = Math.max(startDisplay, sliceStartDisplay);
+	const visibleEnd = Math.min(endDisplay, sliceEndDisplay);
+	if (visibleEnd <= visibleStart) return;
 	const advancePrefix = entry.advancePrefix;
-	const drawLeft = textLeft + advancePrefix[clampedStartDisplay] - advancePrefix[sliceStartDisplay];
-	let drawRight = textLeft + advancePrefix[clampedEndDisplay] - advancePrefix[sliceStartDisplay];
-	if (drawRight <= drawLeft) {
-		drawRight = drawLeft + Math.max(1, editorViewState.charAdvance);
-		if (drawRight <= drawLeft) {
-			return;
-		}
-	}
+	const drawLeft = textLeft + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
+	const drawRight = textLeft + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
 	const underlineY = Math.min(contentBottom - 1, rowY + editorViewState.lineHeight - 1);
-	if (underlineY < rowY || underlineY >= contentBottom) {
-		return;
-	}
+	if (underlineY < rowY) return;
 	api.fill_rect(drawLeft, underlineY, drawRight, underlineY + 1, 0, color);
 }
 
 export function drawDiagnosticUnderlinesForRow(
 	lineIndex: number,
-	entry: CachedHighlight,
+	entry: CodeLineView,
 	textLeft: number,
 	rowY: number,
 	contentBottom: number,
-	columnStart: number,
-	maxColumn: number,
 	sliceStartDisplay: number,
 	sliceEndDisplay: number,
 ): void {
 	const rowDiagnostics = getDiagnosticsForRow(lineIndex);
-	if (rowDiagnostics.length === 0) {
-		return;
-	}
-	const highlight = entry.hi;
-	for (let i = 0; i < rowDiagnostics.length; i += 1) {
-		const diagnostic = rowDiagnostics[i];
-		let diagStartColumn = diagnostic.startColumn;
-		let diagEndColumn = diagnostic.endColumn;
-		if (diagEndColumn <= diagStartColumn) {
-			diagEndColumn = diagStartColumn + 1;
-		}
-		if (diagEndColumn <= columnStart || diagStartColumn >= maxColumn) {
-			continue;
-		}
-		if (diagStartColumn < columnStart) {
-			diagStartColumn = columnStart;
-		}
-		if (diagEndColumn > maxColumn) {
-			diagEndColumn = maxColumn;
-		}
-		if (diagEndColumn <= diagStartColumn) {
-			continue;
-		}
-		const underlineColor = diagnostic.severity === 'warning'
-			? constants.COLOR_DIAGNOSTIC_WARNING
-			: constants.COLOR_DIAGNOSTIC_ERROR;
-		drawUnderline(
-			entry,
-			textLeft,
-			rowY,
-			contentBottom,
-			sliceStartDisplay,
-			sliceEndDisplay,
-			editorViewState.layout.columnToDisplay(highlight, diagStartColumn),
-			editorViewState.layout.columnToDisplay(highlight, diagEndColumn),
-			underlineColor,
-		);
+	for (const diagnostic of rowDiagnostics) {
+		const endColumn = diagnostic.endColumn === diagnostic.startColumn ? diagnostic.startColumn + 1 : diagnostic.endColumn;
+		const ranges = editorViewState.layout.projectSourceRange(entry, diagnostic.startColumn, endColumn);
+		const underlineColor = diagnostic.severity === 'warning' ? constants.COLOR_DIAGNOSTIC_WARNING : constants.COLOR_DIAGNOSTIC_ERROR;
+		for (const range of ranges) drawUnderline(entry, textLeft, rowY, contentBottom, sliceStartDisplay, sliceEndDisplay,
+			range.startDisplay, range.endDisplay, underlineColor);
 	}
 }
 
 export function drawGotoUnderlineForRow(
 	lineIndex: number,
-	visualIndex: number,
-	entry: CachedHighlight,
+	entry: CodeLineView,
 	textLeft: number,
 	rowY: number,
 	contentBottom: number,
@@ -96,23 +52,8 @@ export function drawGotoUnderlineForRow(
 	sliceEndDisplay: number,
 	activeGotoHighlight: GotoHighlight,
 ): void {
-	if (!activeGotoHighlight || activeGotoHighlight.row !== lineIndex) {
-		return;
-	}
-	const gotoVisualIndex = editorViewState.layout.positionToVisualIndex(activeGotoHighlight.row, activeGotoHighlight.startColumn);
-	if (visualIndex !== gotoVisualIndex) {
-		return;
-	}
-	const highlight = entry.hi;
-	drawUnderline(
-		entry,
-		textLeft,
-		rowY,
-		contentBottom,
-		sliceStartDisplay,
-		sliceEndDisplay,
-		editorViewState.layout.columnToDisplay(highlight, activeGotoHighlight.startColumn),
-		editorViewState.layout.columnToDisplay(highlight, activeGotoHighlight.endColumn),
-		constants.COLOR_GOTO_UNDERLINE,
-	);
+	if (!activeGotoHighlight || activeGotoHighlight.row !== lineIndex) return;
+	const ranges = editorViewState.layout.projectSourceRange(entry, activeGotoHighlight.startColumn, activeGotoHighlight.endColumn);
+	for (const range of ranges) drawUnderline(entry, textLeft, rowY, contentBottom, sliceStartDisplay, sliceEndDisplay,
+		range.startDisplay, range.endDisplay, constants.COLOR_GOTO_UNDERLINE);
 }

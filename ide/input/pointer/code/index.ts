@@ -51,6 +51,8 @@ export function handleCodeAreaPointerInput(
 	if (handleCodeAreaGutterPointer(editor.breakpoints, snapshot, justPressed, inGutter, bounds)) {
 		return;
 	}
+	if (snapshot.valid && snapshot.insideViewport && insideCodeArea) pointerHover.visit(codeAreaHover);
+	else pointerHover.release(codeAreaHover);
 	if (handleCodeAreaPrimaryPressPointer(
 		editor,
 		sources,
@@ -64,6 +66,4 @@ export function handleCodeAreaPointerInput(
 		return;
 	}
 	handleCodeAreaSelectionPointer(snapshot, bounds);
-	if (snapshot.valid && snapshot.insideViewport && insideCodeArea) pointerHover.visit(codeAreaHover);
-	else pointerHover.release(codeAreaHover);
 }

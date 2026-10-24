@@ -26,11 +26,12 @@ export function handleCodeAreaPrimaryPressPointer(
 	if (!justPressed || !insideCodeArea) {
 		return false;
 	}
-	focusPrimaryEditorSurface(editor);
 	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 	const targetRow = target.row;
 	const targetColumn = target.column;
-	if (gotoModifierActive && openDefinitionSearch(
+	const injected = target.injected;
+	focusPrimaryEditorSurface(editor);
+	if (gotoModifierActive && !injected && openDefinitionSearch(
 		sources,
 		editor,
 		targetRow,
@@ -42,12 +43,12 @@ export function handleCodeAreaPrimaryPressPointer(
 	if (registerCodePointerClick(targetRow, targetColumn, now)) {
 		TextEditing.selectWordAtPosition(targetRow, targetColumn);
 		editorPointerState.pointerSelecting = false;
-		return false;
+		return true;
 	}
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, targetRow, targetColumn);
 	setCursorPosition(targetRow, targetColumn);
 	editorPointerState.pointerSelecting = ((snapshot.pressedButtons & PointerButton.Primary) !== 0);
-	return false;
+	return true;
 }
 
 function registerCodePointerClick(row: number, column: number, now: number): boolean {

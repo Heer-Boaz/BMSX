@@ -111,10 +111,10 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
 	if (!collapseSingleCursorSelection(activeCodeEditor.view, target)) {
 		return;
 	}
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	activeCodeEditor.emitCursorMoved();
 }
 
 /**
@@ -136,19 +136,19 @@ export function selectWordAtPosition(row: number, column: number): void {
 	if (line.length === 0) {
 		clearSingleCursorSelection(activeCodeEditor.view);
 		setSingleCursorPosition(activeCodeEditor.view, targetRow, 0);
+		activeCodeEditor.emitCursorMoved();
 		updateDesiredColumn();
 		resetBlink();
 		revealCursor();
-		activeCodeEditor.emitCursorMoved();
 		return;
 	}
 	const bounds = findWordBoundsInLine(line, column);
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, targetRow, bounds.start);
 	setSingleCursorPosition(activeCodeEditor.view, targetRow, bounds.end);
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	activeCodeEditor.emitCursorMoved();
 }
 
 /**

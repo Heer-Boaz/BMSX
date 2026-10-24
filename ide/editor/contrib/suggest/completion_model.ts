@@ -3,13 +3,6 @@ import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import type { SourceRange } from '../../../../toolchain/ts/lua/source_range';
 import type { LuaCompletionItem, LuaCompletionKind } from '../../../common/models';
 
-/** An automatic completion presents a nonempty suffix after the typed source prefix. */
-export type InlineCompletionPreview = {
-	readonly row: number;
-	readonly column: number;
-	readonly suffix: string;
-};
-
 export type CompletionMatchMode = 'prefix' | 'substring';
 
 const COMPLETION_KIND_PRIORITY: Record<LuaCompletionKind, number> = {

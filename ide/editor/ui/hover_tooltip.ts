@@ -4,7 +4,7 @@ import * as constants from '../../common/constants';
 import { drawEditorText } from '../render/text_renderer';
 import type { PointerPosition } from '../../common/models';
 import { ensureVisualLines, measureText } from '../common/text/layout';
-import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './view/view';
+import { getCodeAreaBounds, resolvePointerTextPosition } from './view/view';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { hoverState, type CodeHoverTooltip } from '../contrib/hover/state';
 import { activeCodeEditor } from './code_editor_state';
@@ -30,7 +30,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	}
 	ensureVisualLines();
 	const visibleRows = editorViewState.cachedVisibleRowCount;
-	const visualIndex = editorViewState.layout.positionToVisualIndex(tooltip.row, tooltip.startColumn);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, tooltip.row, tooltip.startColumn);
 	const relativeRow = visualIndex - (activeCodeEditor.view.scrollRow | 0);
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		tooltip.bubbleBounds = null;
@@ -42,25 +42,24 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, segment.row);
+	const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, segment.row);
 	const highlight = entry.hi;
-	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn | 0;
-	if (editorViewState.wordWrapEnabled) {
-		if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
-			columnStart = segment.startColumn;
-		}
+	const sliceStartDisplay = editorViewState.wordWrapEnabled ? segment.startDisplay
+		: Math.min(activeCodeEditor.view.scrollColumn | 0, highlight.text.length);
+	const sliceEndDisplay = editorViewState.wordWrapEnabled ? segment.endDisplay
+		: Math.min(sliceStartDisplay + editorViewState.cachedVisibleColumnCount + 8, highlight.text.length);
+	let clampedStartDisplay = sliceEndDisplay, clampedEndDisplay = sliceStartDisplay;
+	const fragments = editorViewState.layout.projectSourceRange(entry, tooltip.startColumn, tooltip.endColumn);
+	for (const fragment of fragments) {
+		const start = Math.max(sliceStartDisplay, fragment.startDisplay), end = Math.min(sliceEndDisplay, fragment.endDisplay);
+		if (end <= start) continue;
+		clampedStartDisplay = Math.min(clampedStartDisplay, start);
+		clampedEndDisplay = Math.max(clampedEndDisplay, end);
 	}
-	const columnCount = editorViewState.wordWrapEnabled
-		? segment.endColumn - columnStart
-		: editorViewState.cachedVisibleColumnCount + 8;
-	const slice = editorViewState.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
-	const sliceStartDisplay = slice.startDisplay;
-	const sliceEndLimit = editorViewState.wordWrapEnabled ? editorViewState.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-	const sliceEndDisplay = editorViewState.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-	const startDisplay = editorViewState.layout.columnToDisplay(highlight, tooltip.startColumn);
-	const endDisplay = editorViewState.layout.columnToDisplay(highlight, tooltip.endColumn);
-	const clampedStartDisplay = clamp(startDisplay, sliceStartDisplay, sliceEndDisplay);
-	const clampedEndDisplay = clamp(endDisplay, clampedStartDisplay, sliceEndDisplay);
+	if (clampedEndDisplay <= clampedStartDisplay) {
+		tooltip.bubbleBounds = null;
+		return;
+	}
 	const advancePrefix = entry.advancePrefix;
 	const expressionStartX = textLeft + advancePrefix[clampedStartDisplay] - advancePrefix[sliceStartDisplay];
 	const expressionEndX = textLeft + advancePrefix[clampedEndDisplay] - advancePrefix[sliceStartDisplay];
@@ -157,10 +156,6 @@ export function pointerHitsHoverTarget(snapshot: PointerPosition, tooltip: CodeH
 	if (snapshot.viewportY < bounds.codeTop || snapshot.viewportY >= bounds.codeBottom) {
 		return false;
 	}
-	const row = resolvePointerRow(snapshot.viewportY, bounds);
-	if (row !== tooltip.row) {
-		return false;
-	}
-	const column = resolvePointerColumn(row, snapshot.viewportX, bounds);
-	return column >= tooltip.startColumn && column <= tooltip.endColumn;
+	const point = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
+	return !point.injected && point.row === tooltip.row && point.column >= tooltip.startColumn && point.column <= tooltip.endColumn;
 }

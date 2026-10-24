@@ -60,7 +60,7 @@ export function drawCursor(info: CursorScreenInfo, textX: number, active: boolea
 	const caretRight = Math.max(caretLeft + 1, cursorX + info.width);
 	const caretTop = cursorY;
 	const caretBottom = caretTop + info.height;
-	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
+	const caretGlyph = info.baseChar;
 	const caretValue = resolveThemeTokenColor(constants.CARET_COLOR);
 	if (active) {
 		api.fill_rect_color(caretLeft, caretTop, caretRight, caretBottom, 0, caretValue);

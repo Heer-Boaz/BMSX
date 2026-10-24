@@ -96,7 +96,7 @@ test('source scrolling retains fractions but source hit and caret geometry use i
 	}
 	const overlay = createHostOverlayFixture(240, 160);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-	renderCodeArea({ session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, null, false, new Set(), [], -1, [], -1, false);
+	renderCodeArea({ session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, false, new Set(), [], -1, [], -1, false);
 	overlay.renderer.endFrame();
 	assert.equal(view.scrollRow, 1.5);
 	assert.equal(view.scrollColumn, 1.5);

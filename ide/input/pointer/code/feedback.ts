@@ -31,7 +31,8 @@ export function updateCodeAreaPointerFeedback(
 ): void {
 	if (isCodeTabActive() && (snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && gotoModifierActive) {
 		const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
-			refreshGotoHoverHighlight(sources, hover.row, hover.column, activeContext);
+		if (hover.injected) clearGotoHoverHighlight();
+		else refreshGotoHoverHighlight(sources, hover.row, hover.column, activeContext);
 	} else if (!gotoModifierActive || !insideCodeArea || ((snapshot.pressedButtons & PointerButton.Primary) !== 0) || pointerSelecting || !isCodeTabActive()) {
 		clearGotoHoverHighlight();
 	}
@@ -39,7 +40,8 @@ export function updateCodeAreaPointerFeedback(
 		const altDown = isAltDown(snapshot);
 		if ((snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && altDown) {
 			const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
-			updateHoverTooltip(sources, guest, fault, runtime, activeContext, hover.row, hover.column);
+			if (hover.injected) clearHoverTooltip();
+			else updateHoverTooltip(sources, guest, fault, runtime, activeContext, hover.row, hover.column);
 		} else {
 			clearHoverTooltip();
 		}

@@ -174,7 +174,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	contentRight: number,
 	availableBottom: number): RuntimeErrorOverlayAnchor {
 	ensureVisualLines();
-	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, overlay.row, overlay.column);
 	const visibleRowsCandidate = ((availableBottom - codeTop) / editorViewState.lineHeight) | 0;
 	const visibleRows = visibleRowsCandidate > 1 ? visibleRowsCandidate : 1;
 	const relativeRow = visualIndex - (activeCodeEditor.view.scrollRow | 0);
@@ -185,29 +185,12 @@ export function resolveRuntimeErrorOverlayAnchor(
 	if (!segment) {
 		return null;
 	}
-	const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, segment.row);
+	const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, segment.row);
 	const highlight = entry.hi;
-	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn | 0;
-	if (editorViewState.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
-		columnStart = segment.startColumn;
-	}
-	let columnCount: number;
-	if (editorViewState.wordWrapEnabled) {
-		const columnCountCandidate = segment.endColumn - columnStart;
-		columnCount = columnCountCandidate > 0 ? columnCountCandidate : 0;
-	} else {
-		const availableWidthCandidate = contentRight - textLeft;
-		const availableWidth = availableWidthCandidate > 0 ? availableWidthCandidate : 0;
-		const visibleColumnsCandidate = (availableWidth / editorViewState.charAdvance) | 0;
-		const visibleColumns = visibleColumnsCandidate > 1 ? visibleColumnsCandidate : 1;
-		columnCount = visibleColumns + 4;
-	}
-	const slice = editorViewState.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
-	const sliceStartDisplay = slice.startDisplay;
-	const sliceEndLimit = editorViewState.wordWrapEnabled ? editorViewState.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-	const sliceEndDisplay = editorViewState.wordWrapEnabled
-		? (slice.endDisplay < sliceEndLimit ? slice.endDisplay : sliceEndLimit)
-		: slice.endDisplay;
+	const sliceStartDisplay = editorViewState.wordWrapEnabled ? segment.startDisplay
+		: Math.min(activeCodeEditor.view.scrollColumn | 0, highlight.text.length);
+	const sliceEndDisplay = editorViewState.wordWrapEnabled ? segment.endDisplay
+		: Math.min(sliceStartDisplay + Math.max(1, Math.trunc((contentRight - textLeft) / editorViewState.charAdvance)) + 4, highlight.text.length);
 	const anchorDisplay = editorViewState.layout.columnToDisplay(highlight, overlay.column);
 	const clampedAnchorDisplay = anchorDisplay < sliceStartDisplay
 		? sliceStartDisplay
@@ -229,7 +212,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		return 'absent';
 	}
 	ensureVisualLines();
-	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, overlay.row, overlay.column);
 	const visibleRows = editorViewState.cachedVisibleRowCount > 1 ? editorViewState.cachedVisibleRowCount : 1;
 	const visibleStart = activeCodeEditor.view.scrollRow | 0;
 	const visibleEnd = visibleStart + visibleRows - 1;
@@ -494,17 +477,18 @@ export function applyRuntimeErrorOverlay(
 	const targetRow = editorViewState.layout.clampBufferRow(buffer, line - 1);
 	const currentLine = buffer.getLineContent(targetRow);
 	const targetColumn = editorViewState.layout.clampLineLength(currentLine.length, column - 1);
+	activeCodeEditor.clearVisualCursor();
 	activeCodeEditor.view.cursorRow = targetRow;
 	activeCodeEditor.view.cursorColumn = targetColumn;
 	activeCodeEditor.view.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorViewState.scrollbarController.cancel();
 	editorCaretState.cursorRevealSuspended = false;
+	activeCodeEditor.emitCursorMoved();
 	centerCursorVertically();
 	updateDesiredColumn();
 	revealCursor();
 	resetBlink();
-	activeCodeEditor.emitCursorMoved();
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
 	const locationLabel = formatRuntimeErrorLocation(path, line, column);
 	const overlayMessage = locationLabel ? `${locationLabel}: ${normalizedMessage}` : normalizedMessage;

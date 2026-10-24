@@ -43,11 +43,11 @@ export function commitRename(
 	} });
 	editorTextModelService.history.applyEdits(edits);
 	clearForwardNavigationHistory();
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
-	activeCodeEditor.emitCursorMoved();
 	let updatedTotal = 0;
 	for (const edit of edits.values()) updatedTotal += edit.edits.length;
 	return updatedTotal;

@@ -79,10 +79,11 @@ export function restoreCodeEditorViewSnapshot(
 	snapshot: CodeEditorViewSnapshot,
 	options?: RestoreCodeEditorViewSnapshotOptions,
 ): void {
-	editorViewState.maxLineLengthDirty = true;
 	editorViewState.layout.markVisualLinesDirty();
 	editorViewState.layout.invalidateHighlightsFromRow(0);
 	applyCodeEditorViewSnapshot(activeCodeEditor.view, snapshot);
+	activeCodeEditor.clearVisualCursor();
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	editorCaretState.cursorRevealSuspended = false;

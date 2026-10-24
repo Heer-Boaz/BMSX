@@ -711,6 +711,7 @@ export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlyS
 }
 
 export function applyDefinitionSelection(range: LuaDefinitionLocation['range']): void {
+	activeCodeEditor.clearVisualCursor();
 	const lastRowIndex = activeCodeEditor.model.buffer.getLineCount() - 1;
 	const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
 	const startLine = activeCodeEditor.model.buffer.getLineContent(startRow);
@@ -719,9 +720,9 @@ export function applyDefinitionSelection(range: LuaDefinitionLocation['range']):
 	activeCodeEditor.view.cursorColumn = startColumn;
 	clearSingleCursorSelection(activeCodeEditor.view);
 	clearEditorPointerSelectionState();
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
-	activeCodeEditor.emitCursorMoved();
 }

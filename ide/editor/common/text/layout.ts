@@ -2,7 +2,7 @@
 // start required-state activeCodeEditor,editorViewState -- editor model/view and layout roots are owned singletons in their modules.
 import { getCodeAreaBounds } from '../../ui/view/view';
 import * as TextEditing from '../../editing/text_editing_and_selection';
-import type { HighlightLine } from '../../../common/models';
+import type { CodeLineView, DisplayRange } from '../../../common/models';
 import { ELLIPSIS, truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
 import { editorViewState } from '../../ui/view/state';
 import { activeCodeEditor } from '../../ui/code_editor_state';
@@ -39,32 +39,32 @@ export function assertMonospace(): void { // TODO: WTF IS THIS SHIT?!?!?!?!?!?!?
 	}
 }
 
-export function computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number; } {
+const emptySelectionSlices: readonly DisplayRange[] = [];
+
+export function computeSelectionSlices(lineIndex: number, line: CodeLineView, sliceStart: number, sliceEnd: number): readonly DisplayRange[] {
 	const range = TextEditing.getSelectionRange();
 	if (!range) {
-		return null;
+		return emptySelectionSlices;
 	}
 	const { start, end } = range;
 	if (lineIndex < start.row || lineIndex > end.row) {
-		return null;
+		return emptySelectionSlices;
 	}
 	const selectionStartColumn = lineIndex === start.row ? start.column : 0;
-	const lineLength = activeCodeEditor.model.buffer.getLineEndOffset(lineIndex) - activeCodeEditor.model.buffer.getLineStartOffset(lineIndex);
+	const lineLength = line.src.length;
 	let selectionEndColumn = lineIndex === end.row ? end.column : lineLength;
 	if (lineIndex === end.row && end.column === 0 && end.row > start.row) {
 		selectionEndColumn = 0;
 	}
 	if (selectionStartColumn === selectionEndColumn) {
-		return null;
+		return emptySelectionSlices;
 	}
-	const startDisplay = editorViewState.layout.columnToDisplay(highlight, selectionStartColumn);
-	const endDisplay = editorViewState.layout.columnToDisplay(highlight, selectionEndColumn);
-	const visibleStart = sliceStart > startDisplay ? sliceStart : startDisplay;
-	const visibleEnd = sliceEnd < endDisplay ? sliceEnd : endDisplay;
-	if (visibleEnd <= visibleStart) {
-		return null;
+	const ranges = editorViewState.layout.projectSourceRange(line, selectionStartColumn, selectionEndColumn);
+	for (const range of ranges) {
+		range.startDisplay = Math.max(sliceStart, range.startDisplay);
+		range.endDisplay = Math.max(range.startDisplay, Math.min(sliceEnd, range.endDisplay));
 	}
-	return { startDisplay: visibleStart, endDisplay: visibleEnd };
+	return ranges;
 }
 
 export function ensureVisualLines(): void {

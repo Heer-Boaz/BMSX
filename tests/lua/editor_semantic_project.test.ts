@@ -529,6 +529,7 @@ test('scheduled syntax highlighting consumes current model deltas and invalidate
 	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
 	const clock = new VirtualHeadlessClock();
 	const layout = new CodeLayout(new EditorFont('tiny'), { maxHighlightCache: 64, semanticDebounceMs: 0,
+		inlineEdit: { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: false },
 		clock, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }), computeWrapWidth: () => 320 });
 	model.onDidChangeContent(event => layout.onDidChangeContent(model.buffer, event));
 	t.after(() => { layout.invalidateAllHighlights(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });

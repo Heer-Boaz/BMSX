@@ -382,10 +382,10 @@ function focusLocalMatch(index: number, recordNavigation: boolean): void {
 	const navigationCheckpoint = recordNavigation ? beginNavigationCapture() : null;
 	setSingleCursorPosition(activeCodeEditor.view, match.row, match.start);
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, match.row, match.end);
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	activeCodeEditor.emitCursorMoved();
 	if (recordNavigation) {
 		completeNavigation(navigationCheckpoint);
 	}

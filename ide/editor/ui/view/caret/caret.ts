@@ -8,7 +8,6 @@ import type { VisualLineSegment } from '../../../../common/models';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './view';
 import { activeCodeEditor } from '../../code_editor_state';
 import { editorViewState } from '../state';
-import { caretNavigation } from './state';
 import { resolveCursorVisualIndex } from './visual_index';
 import type { ModifierState } from '../../../../../hosts/common/input/text';
 
@@ -48,29 +47,29 @@ export function findFirstNonWhitespace(line: string, startColumn: number, endCol
  * Set cursor to a specific row and column position
  */
 export function setCursorPosition(row: number, column: number): void {
-	caretNavigation.clear();
+	activeCodeEditor.clearVisualCursor();
 	const buffer = activeCodeEditor.model.buffer;
 	const targetRow = editorViewState.layout.clampBufferRow(buffer, row);
 	const targetColumn = editorViewState.layout.clampBufferColumn(buffer, targetRow, column);
 	activeCodeEditor.view.cursorRow = targetRow;
 	activeCodeEditor.view.cursorColumn = targetColumn;
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	activeCodeEditor.emitCursorMoved();
 }
 
 /**
  * Move cursor vertically by delta lines (supports word wrap)
  */
 export function moveCursorVertical(delta: number): void {
-	caretNavigation.clear();
+	activeCodeEditor.clearVisualCursor();
 	ensureVisualLines();
 	const visualCount = editorViewState.layout.getVisualLineCount();
 	if (visualCount === 0) {
 		return;
 	}
-	const currentIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	const currentIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	const targetIndex = editorViewState.layout.clampVisualIndex(visualCount, currentIndex + delta);
 	const desired = activeCodeEditor.view.desiredColumn;
 	const desiredDisplay = activeCodeEditor.view.desiredDisplayOffset;
@@ -86,13 +85,13 @@ export function moveCursorHorizontal(delta: number): void {
 	if (delta === 0) {
 		return;
 	}
-	caretNavigation.clear();
+	activeCodeEditor.clearVisualCursor();
 	ensureVisualLines();
 	const visualCount = editorViewState.layout.getVisualLineCount();
 	if (visualCount === 0) {
 		return;
 	}
-	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		return;
@@ -146,38 +145,38 @@ export function moveCursorHorizontal(delta: number): void {
 	}
 	const cursorLength = buffer.getLineEndOffset(activeCodeEditor.view.cursorRow) - buffer.getLineStartOffset(activeCodeEditor.view.cursorRow);
 	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(cursorLength, activeCodeEditor.view.cursorColumn);
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	activeCodeEditor.emitCursorMoved();
 }
 
 /**
  * Move cursor one word to the left
  */
 export function moveWordLeft(): void {
-	caretNavigation.clear();
+	activeCodeEditor.clearVisualCursor();
 	const destination = findWordLeft(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	activeCodeEditor.view.cursorRow = destination.row;
 	activeCodeEditor.view.cursorColumn = destination.column;
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	activeCodeEditor.emitCursorMoved();
 }
 
 /**
  * Move cursor one word to the right
  */
 export function moveWordRight(): void {
-	caretNavigation.clear();
+	activeCodeEditor.clearVisualCursor();
 	const destination = findWordRight(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	activeCodeEditor.view.cursorRow = destination.row;
 	activeCodeEditor.view.cursorColumn = destination.column;
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	activeCodeEditor.emitCursorMoved();
 }
 
 /**
@@ -275,8 +274,8 @@ export function moveCursorDown(playerInput: ModifierState): void {
  * Move cursor to start of line or document
  */
 export function moveCursorHome(playerInput: ModifierState): void {
-	const previousOverride = caretNavigation.lookup(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-	caretNavigation.clear();
+	const previousOverride = activeCodeEditor.visualCursor;
+	activeCodeEditor.clearVisualCursor();
 	const buffer = activeCodeEditor.model.buffer;
 	const select = isShiftDown(playerInput);
 	if (select) {
@@ -290,30 +289,30 @@ export function moveCursorHome(playerInput: ModifierState): void {
 		activeCodeEditor.view.cursorColumn = 0;
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
 			activeCodeEditor.view.cursorRow = segment.row;
 			const line = buffer.getLineContent(segment.row);
 			activeCodeEditor.view.cursorColumn = resolveIndentAwareHome(line, segment, activeCodeEditor.view.cursorColumn);
-			caretNavigation.capture(segment.row, activeCodeEditor.view.cursorColumn, visualIndex, segment.startColumn);
+			activeCodeEditor.captureVisualCursor(segment.row, activeCodeEditor.view.cursorColumn, visualIndex);
 		} else {
 			activeCodeEditor.view.cursorColumn = 0;
 		}
 	}
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
-	activeCodeEditor.emitCursorMoved();
 }
 
 /**
  * Move cursor to end of line or document
  */
 export function moveCursorEnd(playerInput: ModifierState): void {
-	const previousOverride = caretNavigation.lookup(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-	caretNavigation.clear();
+	const previousOverride = activeCodeEditor.visualCursor;
+	activeCodeEditor.clearVisualCursor();
 	const buffer = activeCodeEditor.model.buffer;
 	const select = isShiftDown(playerInput);
 	if (select) {
@@ -328,22 +327,22 @@ export function moveCursorEnd(playerInput: ModifierState): void {
 		activeCodeEditor.view.cursorColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
 			activeCodeEditor.view.cursorRow = segment.row;
 			const line = buffer.getLineContent(segment.row);
 			activeCodeEditor.view.cursorColumn = resolveSegmentEnd(line, segment);
-			caretNavigation.capture(segment.row, activeCodeEditor.view.cursorColumn, visualIndex, segment.startColumn);
+			activeCodeEditor.captureVisualCursor(segment.row, activeCodeEditor.view.cursorColumn, visualIndex);
 		} else {
 			activeCodeEditor.view.cursorColumn = currentLine().length;
 		}
 	}
+	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
-	activeCodeEditor.emitCursorMoved();
 }
 
 /**
