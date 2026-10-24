@@ -14,7 +14,7 @@ const click = async bounds => {
 const type = async text => { for (const character of text) await press(`Key${character.toUpperCase()}`); };
 let captures = 0, panelOpen = false;
 const capture = async label => {
-	t.assert(++captures <= 40, 'the bounded toolbar workflow exceeded its capture budget');
+	t.assert(++captures <= 44, 'the bounded toolbar workflow exceeded its capture budget');
 	await t.frames(2); t.log(`VISUAL ${label}`); t.capture(label);
 };
 const full = async () => {
@@ -78,6 +78,17 @@ const matrix = async (label, input, bar, fullCaptures, groups = false) => {
 			}
 			metadata(label, 'full-idle', variant, theme, [['body', bar]]);
 			if (fullCaptures) await capture(`${label}-${variant}-${theme}-full-idle`);
+			if (input.kind === 'aem_editor') {
+				const add = bar.items.find(item => item.command === 'aem.add');
+				t.assert(add !== undefined && add.visible && !add.overflowed && add.enabled && add.icon === undefined,
+					'the actual AEM Add action is not an enabled painted label');
+				await point((add.bounds.left + add.bounds.right) / 2, (add.bounds.top + add.bounds.bottom) / 2);
+				t.assert(bar.hoveredCommand === add.command, 'the physical pointer did not hover the actual AEM Add label');
+				metadata(label, 'full-add-hover', variant, theme, [['body', bar]]);
+				await capture(`${label}-${variant}-${theme}-full-add-hover`);
+				t.assert(model.buffer.getText() === source && model.version === version, 'AEM label hover changed canonical source');
+				t.assert(t.runtime().machine.scheduler.nowCycles === cycles, 'AEM label hover advanced the paused guest');
+			}
 			if (groups) {
 				const tree = input.tree, layout = tree.layout;
 				await point(layout.contentLeft + layout.twistieWidth + 8,
@@ -167,6 +178,6 @@ for (let font = 0; font < 2; font++) {
 }
 await full();
 t.assert(canonical.buffer.getText() === original && canonical.version === originalVersion, 'toolbar presentation changed the original cart source');
-t.assert(captures === 40, 'the bounded matrix did not capture every declared toolbar/group state');
+t.assert(captures === 44, 'the bounded matrix did not capture every declared toolbar/group state');
 for (let index = 0; index < t.logMessageCount(); index++)
 	t.assert(t.logMessage(index).level !== 3, `Toolbar surface workflow logged an error: ${t.logMessage(index).message}`);

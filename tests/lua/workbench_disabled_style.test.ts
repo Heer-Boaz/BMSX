@@ -16,7 +16,7 @@ import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../ide/wo
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
-import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -24,6 +24,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { drawAnimationEditor } from '../../ide/workbench/contrib/animation/render';
 import { layoutWorkbenchPropertyTree } from '../../ide/workbench/ui/property_tree';
+import { contrastRatio } from '../helpers/contrast.mjs';
 
 function fixture(t: TestContext, theme: string, variant: FontVariant) {
 	const previousTheme = colors.getActiveIdeThemeVariant();
@@ -71,6 +72,22 @@ for (const theme of ['dark', 'light']) {
 		assert.notEqual(colors.COLOR_PROBLEMS_PANEL_LOCATION, syntaxDim);
 	});
 	for (const variant of ['tiny', 'msx'] as const) {
+		test(`${theme}/${variant} painted action labels remain readable in every enabled interaction state`, t => {
+			const f = fixture(t, theme, variant), state = createWorkbenchActionBar('sourceEditReview.title');
+			for (const item of state.items) item.enabled = true;
+			const item = state.items.find(action => action.icon === undefined)!;
+			layoutWorkbenchActionBar(state, 360, 10, 10 + f.font.lineHeight + 6, text => f.font.measure(text), f.font.renderFont(), 4);
+			for (const intent of ['idle', 'hovered', 'focused', 'pressed', 'checked']) {
+				state.hoveredCommand = intent === 'hovered' ? item.command : null;
+				state.pressedCommand = intent === 'pressed' ? item.command : null;
+				state.hasFocus = intent === 'focused'; state.focusedIndex = state.items.indexOf(item);
+				item.checked = intent === 'checked';
+				const frame = f.draw(() => renderWorkbenchActionBar(state, f.font.renderFont(), colors.COLOR_HEADER_BUTTON_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED));
+				const label = glyphs(frame).find(command => command.items === item.label)!;
+				const background = fillsWithin(frame, item.bounds).find(rect => rect.kind === RectRenderKind.Fill)!;
+				assert.ok(contrastRatio(label.color, background.color) >= 4.5, `${intent}: label ink must contrast with its actual button fill`);
+			}
+		});
 		test(`${theme}/${variant} the animation pane paints its own body beneath captions and bare actions`, t => {
 			const f = fixture(t, theme, variant), bounds = { left: 4, top: 26, right: 380, bottom: 268 };
 			const model = new EditorTextModel({ domain: 0, path: 'empty.lua', source: { resid: 'empty', type: 'lua' } }, 'lua', 'return { tracks = {} }');

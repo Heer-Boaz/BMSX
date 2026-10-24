@@ -73,8 +73,7 @@ export function drawRomInspector(input: RomInspectorInput, view: RomInspectorPre
 		filter.focusTarget.hasFocus ? colors.COLOR_FOCUS_BORDER : colors.COLOR_INPUT_OUTLINE);
 	drawSingleLineField(filter, filterViewport, input.filterBounds, colors.COLOR_INPUT_TEXT);
 	for (const segment of view.map) api.fill_rect(segment.left, input.mapBounds.top, segment.right, input.mapBounds.bottom, 0, segment.color);
-	for (const span of view.selectedSpans) api.blit_rect(span.left, input.mapBounds.top - 1,
-		Math.max(span.left + 2, span.right), input.mapBounds.bottom + 1, 0, colors.COLOR_STATUS_WARNING);
+	for (const span of view.selectedSpans) api.outlinedRect(span.left, input.mapBounds.top, span.right, input.mapBounds.bottom, 0);
 	const rowHeight = layout.rowHeight * 2 + 4;
 	api.pushClipRect(list.bounds.left, list.bounds.top, list.bounds.right, list.bounds.bottom);
 	for (const label of view.labels) {

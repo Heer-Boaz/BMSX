@@ -1,9 +1,9 @@
 import { CodeTextDecoration, type CodeTextDecorationStyle, type EditorMessageKind } from './models';
 import { EDITOR_THEME_COLORS, type EditorTheme } from '../theme/editor_colors';
 import { WORKBENCH_TEXT_COLORS, type WorkbenchTextTheme } from '../theme/workbench_text_colors';
+import { WORKBENCH_CONTROL_COLORS, type WorkbenchControlTheme } from '../theme/workbench_control_colors';
 import {
 	THEME_TOKEN_ACCENT_BLUE,
-	THEME_TOKEN_ACCENT_RED,
 	THEME_TOKEN_ACTION_OVERLAY,
 	THEME_TOKEN_BLACK,
 	THEME_TOKEN_BORDER_GREY,
@@ -37,14 +37,11 @@ import {
 	THEME_TOKEN_SELECTION_OVERLAY,
 	THEME_TOKEN_SOFT_WHITE,
 	THEME_TOKEN_STATUS_TEXT_GREY,
-	THEME_TOKEN_SUCCESS_GREEN,
 	THEME_TOKEN_TERMINAL_CYAN,
 	THEME_TOKEN_TERMINAL_DARK_BLUE,
 	THEME_TOKEN_TERMINAL_GREY,
-	THEME_TOKEN_TERMINAL_LIGHT_GREEN,
 	THEME_TOKEN_TERMINAL_LIGHT_RED,
 	THEME_TOKEN_TERMINAL_MAGENTA,
-	THEME_TOKEN_TERMINAL_RED,
 	THEME_TOKEN_TEXT_GREY,
 	THEME_TOKEN_WARNING_AMBER,
 	THEME_TOKEN_WHITE,
@@ -60,6 +57,7 @@ export const DEFAULT_THEME = 'light';
 type ThemeDefinition = {
 	editor: EditorTheme;
 	workbenchText: WorkbenchTextTheme;
+	controls: WorkbenchControlTheme;
 	resourceMatch: { background: number; text: number };
 	disabledForeground: number;
 	descriptionForeground: number;
@@ -88,23 +86,15 @@ type ThemeDefinition = {
 	status: {
 		background: number;
 		text: number;
-		warning: number;
-		success: number;
-		alert: number;
 	};
 	timeline: {
 		track: number;
 		position: number;
 	};
-	graph: { active: number; muted: number };
+	graph: { muted: number };
 	inspection: { label: number; changedValue: number; warningValue: number };
 	diff: { insertedBackground: number; removedBackground: number };
 	focusBorder: number;
-	connection: {
-		connected: number;
-		disconnected: number;
-		connecting: number;
-	};
 	markdown: {
 		codeBackground: number;
 		codeText: number;
@@ -193,6 +183,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
 		editor: EDITOR_THEME_COLORS.dark,
 		workbenchText: WORKBENCH_TEXT_COLORS.dark,
+		controls: WORKBENCH_CONTROL_COLORS.dark,
 		resourceMatch: { background: THEME_TOKEN_DEEP_TEAL, text: THEME_TOKEN_WHITE },
 		disabledForeground: THEME_TOKEN_MUTED_GREY,
 		descriptionForeground: THEME_TOKEN_HINT_GREY,
@@ -232,21 +223,13 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		status: {
 			background: THEME_TOKEN_TERMINAL_GREY,
 			text: THEME_TOKEN_TEXT_GREY,
-			warning: THEME_TOKEN_TERMINAL_LIGHT_RED,
-			success: THEME_TOKEN_TERMINAL_DARK_BLUE,
-			alert: THEME_TOKEN_TERMINAL_RED,
 		},
 		timeline: {
 			track: THEME_TOKEN_MID_GREY,
 			position: THEME_TOKEN_TERMINAL_DARK_BLUE,
 		},
-		graph: { active: THEME_TOKEN_TERMINAL_LIGHT_GREEN, muted: THEME_TOKEN_MUTED_GREY },
+		graph: { muted: THEME_TOKEN_MUTED_GREY },
 		focusBorder: THEME_TOKEN_FOCUS_BLUE,
-		connection: {
-			connected: THEME_TOKEN_SUCCESS_GREEN,
-			disconnected: THEME_TOKEN_ACCENT_RED,
-			connecting: THEME_TOKEN_WARNING_AMBER,
-		},
 		input: {
 			background: THEME_TOKEN_BLACK,
 			text: THEME_TOKEN_TERMINAL_GREY,
@@ -314,6 +297,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	light: {
 		editor: EDITOR_THEME_COLORS.light,
 		workbenchText: WORKBENCH_TEXT_COLORS.light,
+		controls: WORKBENCH_CONTROL_COLORS.light,
 		resourceMatch: { background: THEME_TOKEN_PALE_TEAL, text: THEME_TOKEN_TEXT_GREY },
 		disabledForeground: THEME_TOKEN_MUTED_GREY,
 		descriptionForeground: THEME_TOKEN_MUTED_GREY,
@@ -353,21 +337,13 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		status: {
 			background: THEME_TOKEN_PANEL_GREY,
 			text: THEME_TOKEN_TEXT_GREY,
-			warning: THEME_TOKEN_WARNING_AMBER,
-			success: THEME_TOKEN_SUCCESS_GREEN,
-			alert: THEME_TOKEN_ACCENT_RED,
 		},
 		timeline: {
 			track: THEME_TOKEN_MID_GREY,
 			position: THEME_TOKEN_ACCENT_BLUE,
 		},
-		graph: { active: THEME_TOKEN_SUCCESS_GREEN, muted: THEME_TOKEN_MUTED_GREY },
+		graph: { muted: THEME_TOKEN_MUTED_GREY },
 		focusBorder: THEME_TOKEN_ACCENT_BLUE,
-		connection: {
-			connected: THEME_TOKEN_SUCCESS_GREEN,
-			disconnected: THEME_TOKEN_ACCENT_RED,
-			connecting: THEME_TOKEN_WARNING_AMBER,
-		},
 		input: {
 			background: THEME_TOKEN_GENTLE_WHITE,
 			text: THEME_TOKEN_TEXT_GREY,
@@ -468,21 +444,7 @@ function buildTabBase(theme: ThemeDefinition) {
 		activeBackground: theme.surfaces.tabActive,
 		inactiveText: theme.tab.inactiveText,
 		activeText: theme.tab.activeText,
-		dirtyMarker: theme.status.warning,
-	};
-}
-
-function buildHeaderButtonBase(theme: ThemeDefinition) {
-	return {
-		background: theme.status.background,
-		border: theme.text.topBar,
-		disabledBackground: theme.surfaces.gutter,
-		text: theme.text.topBar,
-		disabledText: theme.disabledForeground,
-		activeBackground: theme.status.warning,
-		activeText: theme.text.topBar,
-		pressedBackground: theme.text.selection,
-		pressedText: theme.text.selectionText,
+		dirtyMarker: theme.controls.markers.dirtyTab,
 	};
 }
 
@@ -540,8 +502,8 @@ export let SEARCH_RESULT_SELECTION_OVERLAY = 0;
 export let SEARCH_RESULT_HOVER_OVERLAY = 0;
 export let COLOR_STATUS_BACKGROUND: number;
 export let COLOR_STATUS_TEXT: number;
-export let COLOR_STATUS_WARNING: number;
-export let COLOR_STATUS_SUCCESS: number;
+export let COLOR_STATUS_FAULT_MARKER: number;
+export let COLOR_BODY_ACCENT: number;
 export let COLOR_INPUT_BACKGROUND: number;
 export let COLOR_INPUT_TEXT: number;
 export let COLOR_INPUT_PLACEHOLDER: number;
@@ -553,7 +515,9 @@ export let COLOR_CONTENT_ERROR_TEXT: number;
 export const STATUS_MESSAGE_TEXT_COLORS: Record<EditorMessageKind, number> = { info: 0, success: 0, warning: 0, error: 0 };
 export let COLOR_TIMELINE_TRACK: number;
 export let COLOR_TIMELINE_POSITION: number;
-export let COLOR_GRAPH_ACTIVE: number;
+export let COLOR_GRAPH_ACTIVE_BODY: number;
+export let COLOR_GRAPH_ACTIVE_CARD: number;
+export let COLOR_GRAPH_ACTIVE_HOVER: number;
 export let COLOR_GRAPH_MUTED: number;
 export let COLOR_INSPECTOR_LABEL: number;
 export let COLOR_DESCRIPTION_TEXT: number;
@@ -683,7 +647,8 @@ export function getActiveIdeThemeVariant(): string {
 function applyThemeDefinition(theme: ThemeDefinition): void {
 	const panel = buildPanelBase(theme);
 	const tab = buildTabBase(theme);
-	const headerButtons = buildHeaderButtonBase(theme);
+	const headerButtons = theme.controls.button;
+	const markers = theme.controls.markers;
 	const search = theme.overlays.search;
 	const completion = theme.overlays.completion;
 	const action = theme.overlays.action;
@@ -720,8 +685,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT = theme.editor.syntax.comment;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR = theme.editor.syntax.operator;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM = theme.editor.dim;
-	COLOR_BREAKPOINT_BORDER = theme.text.topBar;
-	COLOR_BREAKPOINT_FILL = theme.status.alert;
+	COLOR_BREAKPOINT_BORDER = theme.editor.gutter.breakpointBorder;
+	COLOR_BREAKPOINT_FILL = theme.editor.gutter.breakpointFill;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN = theme.editor.syntax.builtin;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME = theme.editor.syntax.functionName;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER = theme.editor.syntax.parameter;
@@ -745,8 +710,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	SEARCH_RESULT_HOVER_OVERLAY = search.hoverBackground;
 	COLOR_STATUS_BACKGROUND = theme.status.background;
 	COLOR_STATUS_TEXT = theme.status.text;
-	COLOR_STATUS_WARNING = theme.status.warning;
-	COLOR_STATUS_SUCCESS = theme.status.success;
+	COLOR_STATUS_FAULT_MARKER = markers.chrome.error;
+	COLOR_BODY_ACCENT = markers.bodyAccent;
 	COLOR_INPUT_BACKGROUND = theme.input.background;
 	COLOR_INPUT_TEXT = theme.input.text;
 	COLOR_INPUT_PLACEHOLDER = theme.input.placeholder;
@@ -761,7 +726,9 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	STATUS_MESSAGE_TEXT_COLORS.error = theme.workbenchText.status.error;
 	COLOR_TIMELINE_TRACK = theme.timeline.track;
 	COLOR_TIMELINE_POSITION = theme.timeline.position;
-	COLOR_GRAPH_ACTIVE = theme.graph.active;
+	COLOR_GRAPH_ACTIVE_BODY = markers.graph.body;
+	COLOR_GRAPH_ACTIVE_CARD = markers.graph.card;
+	COLOR_GRAPH_ACTIVE_HOVER = markers.graph.hover;
 	COLOR_GRAPH_MUTED = theme.graph.muted;
 	COLOR_INSPECTOR_LABEL = theme.inspection.label;
 	COLOR_DESCRIPTION_TEXT = theme.descriptionForeground;
@@ -769,9 +736,9 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_INSPECTOR_WARNING_TEXT = theme.inspection.warningValue;
 	COLOR_DIFF_INSERTED_BACKGROUND = theme.diff.insertedBackground;
 	COLOR_DIFF_REMOVED_BACKGROUND = theme.diff.removedBackground;
-	COLOR_SERVER_CONNECTED = theme.connection.connected;
-	COLOR_SERVER_DISCONNECTED = theme.connection.disconnected;
-	COLOR_SERVER_CONNECTING = theme.connection.connecting;
+	COLOR_SERVER_CONNECTED = markers.chrome.success;
+	COLOR_SERVER_DISCONNECTED = markers.chrome.error;
+	COLOR_SERVER_CONNECTING = markers.chrome.warning;
 	COLOR_DIAGNOSTIC_ERROR = CODE_TEXT_DECORATION_STYLES[CodeTextDecoration.None].errorUnderline;
 	COLOR_DIAGNOSTIC_WARNING = CODE_TEXT_DECORATION_STYLES[CodeTextDecoration.None].warningUnderline;
 	COLOR_PROBLEMS_PANEL_BACKGROUND = panel.problems.background;
@@ -807,15 +774,15 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	HOVER_TOOLTIP_BACKGROUND = theme.overlays.hover.background;
 	HOVER_TOOLTIP_BORDER = theme.overlays.hover.border;
 	HOVER_TOOLTIP_TEXT = theme.overlays.hover.text;
-	COLOR_HEADER_BUTTON_BACKGROUND = headerButtons.background;
+	COLOR_HEADER_BUTTON_BACKGROUND = headerButtons.normal.background;
 	COLOR_HEADER_BUTTON_BORDER = headerButtons.border;
-	COLOR_HEADER_BUTTON_DISABLED_BACKGROUND = headerButtons.disabledBackground;
-	COLOR_HEADER_BUTTON_TEXT = headerButtons.text;
-	COLOR_HEADER_BUTTON_TEXT_DISABLED = headerButtons.disabledText;
-	COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND = headerButtons.activeBackground;
-	COLOR_HEADER_BUTTON_ACTIVE_TEXT = headerButtons.activeText;
-	COLOR_HEADER_BUTTON_PRESSED_BACKGROUND = headerButtons.pressedBackground;
-	COLOR_HEADER_BUTTON_PRESSED_TEXT = headerButtons.pressedText;
+	COLOR_HEADER_BUTTON_DISABLED_BACKGROUND = headerButtons.disabled.background;
+	COLOR_HEADER_BUTTON_TEXT = headerButtons.normal.foreground;
+	COLOR_HEADER_BUTTON_TEXT_DISABLED = headerButtons.disabled.foreground;
+	COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND = headerButtons.highlighted.background;
+	COLOR_HEADER_BUTTON_ACTIVE_TEXT = headerButtons.highlighted.foreground;
+	COLOR_HEADER_BUTTON_PRESSED_BACKGROUND = headerButtons.pressed.background;
+	COLOR_HEADER_BUTTON_PRESSED_TEXT = headerButtons.pressed.foreground;
 	ACTION_DIALOG_BACKGROUND_COLOR = action.dialogBackground;
 	ACTION_DIALOG_BORDER_COLOR = action.dialogBorder;
 	ACTION_DIALOG_TEXT_COLOR = action.dialogText;

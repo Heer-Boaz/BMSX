@@ -183,8 +183,8 @@ const filterCatalog = async (text, mode) => {
 	t.assert(rom.model.filter.toLowerCase() === text.toLowerCase() && rom.model.rows.length > 0, 'the actual catalog filter did not select its authored fixture');
 	fullCatalog();
 };
-const readerAction = async command => {
-	const action = rom.readerActions.items.find(item => item.command === command);
+const readerAction = async (command, bar = rom.readerActions) => {
+	const action = bar.items.find(item => item.command === command);
 	t.assert(action.visible && !action.overflowed && action.enabled, `${command} is not reachable in the real reader chrome`);
 	await click((action.bounds.left + action.bounds.right) / 2, (action.bounds.top + action.bounds.bottom) / 2);
 };
@@ -234,6 +234,34 @@ const readerImage = async (variant, theme) => {
 	if (theme === 0) await capture(`rom-reader-collision-${variant}`);
 	await chooseReaderView('preview');
 	t.assert(rom.reader.preview === bitmap, 'view switching decoded another host bitmap');
+	const viewport = rom.reader.imageView, collision = rom.reader.collision, paths = rom.reader.collisionPaths;
+	t.assert(viewport.mode === 'fit' && !rom.reader.showCollision, 'the shape fixture did not start from its actual Fit preview');
+	await readerAction('romInspector.collision', rom.readerViewActions);
+	// This shipped image stores one AABB, not polygon or compound piece paths.
+	t.assert(rom.reader.showCollision && collision !== undefined && collision.pieces === undefined && paths.length === 0
+		&& collision.bounds.left === 0 && collision.bounds.top === 0
+		&& collision.bounds.right === bitmap.image.width - 1 && collision.bounds.bottom === bitmap.image.height - 1
+		&& rom.reader.preview === bitmap,
+		'the actual Shape action did not expose the stored full-image AABB');
+	await capture(`rom-reader-shape-fit-${variant}-theme-${theme}`);
+	await readerAction('romInspector.zoom', rom.readerViewActions); await t.frames(2); await press('ControlLeft', 'Home');
+	// Fit, 12.5%, 25%, 50%, 100%, 200%: select the actual authored zoom option.
+	for (let index = 0; index < 5; index++) await press('ArrowDown');
+	await press('Enter');
+	await click((viewport.bounds.left + viewport.bounds.right) / 2, (viewport.bounds.top + viewport.bounds.bottom) / 2);
+	await press('Home'); await press('ArrowRight'); await press('PageDown');
+	t.assert(viewport.mode === 2 && viewport.scale === 2 && viewport.horizontal.getScroll() > 0
+		&& bitmap.image.width * viewport.scale > viewport.bounds.right - viewport.bounds.left
+		&& viewport.transform.offsetX < viewport.bounds.left
+		&& viewport.transform.offsetX + bitmap.image.width * viewport.scale > viewport.bounds.right,
+		'the real 200% image view did not exercise panned viewport clipping');
+	t.assert(rom.reader.preview === bitmap && rom.reader.collision === collision && rom.reader.collisionPaths === paths && rom.reader.showCollision,
+		'zoom or image navigation changed the retained bitmap or its collision geometry');
+	await capture(`rom-reader-shape-zoom-${variant}-theme-${theme}`);
+	await readerAction('romInspector.zoom', rom.readerViewActions); await t.frames(2); await press('ControlLeft', 'Home'); await press('Enter');
+	await readerAction('romInspector.collision', rom.readerViewActions);
+	t.assert(viewport.mode === 'fit' && !rom.reader.showCollision && rom.reader.preview === bitmap,
+		'the real Fit and Shape controls did not restore the original preview before Hold');
 	await readerAction('romInspector.hold');
 	t.assert(rom.readerHeld, 'Hold did not retain the actual reader subject');
 	const range = rom.reader.selectedRange;

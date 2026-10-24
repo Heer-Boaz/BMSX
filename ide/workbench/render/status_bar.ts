@@ -37,7 +37,7 @@ export function renderStatusBar(
 		const accentHeight = accentHeightCandidate > 2 ? accentHeightCandidate : 2;
 		const accentBottomCandidate = statusTop + accentHeight;
 		const accentBottom = accentBottomCandidate < statusBottom ? accentBottomCandidate : statusBottom;
-		api.fill_rect(0, statusTop, editorViewState.viewportWidth, accentBottom, 0, constants.COLOR_STATUS_WARNING);
+		api.fill_rect(0, statusTop, editorViewState.viewportWidth, accentBottom, 0, constants.COLOR_STATUS_FAULT_MARKER);
 	}
 	const statusTextColor = runtimeFaulted ? constants.STATUS_MESSAGE_TEXT_COLORS.error : constants.COLOR_STATUS_TEXT;
 	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);

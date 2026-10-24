@@ -83,8 +83,8 @@ export function drawRomInspectorContent(input: RomInspectorInput, presentation: 
 		api.drawBitmap(bitmap, 0, 0, bitmap.image.width, bitmap.image.height);
 		if (document.showCollision && document.collision !== undefined) {
 			const box = document.collision.bounds;
-			api.blit_rect(box.left, box.top, box.right, box.bottom, 0, colors.COLOR_INSPECTOR_VALUE_CHANGED);
-			for (const path of document.collisionPaths) api.polyline(path, 0, 0, 0, 1, colors.COLOR_STATUS_WARNING);
+			api.outlinedRect(box.left, box.top, box.right, box.bottom, 0);
+			for (const path of document.collisionPaths) api.outlinedPolyline(path, 0, 0, 0);
 		}
 		api.popTransform(); api.popClipRect();
 		view.vertical.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);

@@ -37,11 +37,12 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { renderWorkbenchActionBar } from '../../ide/workbench/render/action_bar';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
+import { contrastRatio } from '../helpers/contrast.mjs';
 
 const captureDirectory = process.env.BMSX_UI_CAPTURE_DIR;
 if (captureDirectory !== undefined) mkdirSync(captureDirectory, { recursive: true });
@@ -135,10 +136,12 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 	};
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
-		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
-		for (let index = 0; index < frame.commandCount; index++)
+		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], rects: RectRenderSubmission[] = [];
+		for (let index = 0; index < frame.commandCount; index++) {
 			if (frame.commandKinds[index] === Host2DKind.Glyphs) glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
-		return glyphs;
+			else if (frame.commandKinds[index] === Host2DKind.Rect) rects.push(frame.commandRefs[index] as RectRenderSubmission);
+		}
+		return { glyphs, rects };
 	};
 	toolbar.setInput(input, parent); parent.focus(); layout();
 	t.after(() => { toolbar.dispose(); menu.dispose(); unbind(); surfaces.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null);
@@ -159,9 +162,23 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 				assert.ok(item.bounds.left >= f.input.layout.left + 4 && item.bounds.right <= width - 4, `${item.label} remains in the pane`);
 			const painted = f.draw();
 			for (const item of primary) {
-				const label = painted.find(run => run.items === item.label)!;
+				const label = painted.glyphs.find(run => run.items === item.label)!;
 				assert.ok(label, 'the real action renderer paints each fitted semantic label');
-				assert.equal(label.color, resolveThemeTokenColor(item.enabled ? colors.COLOR_HEADER_BUTTON_TEXT : colors.COLOR_HEADER_BUTTON_TEXT_DISABLED));
+				const pressed = bar.pressedCommand === item.command || item.checked;
+				const highlighted = bar.hoveredCommand === item.command || bar.hasFocus && bar.focusedIndex === bar.items.indexOf(item);
+				const foreground = !item.enabled ? colors.COLOR_HEADER_BUTTON_TEXT_DISABLED
+					: pressed ? colors.COLOR_HEADER_BUTTON_PRESSED_TEXT : highlighted ? colors.COLOR_HEADER_BUTTON_ACTIVE_TEXT : colors.COLOR_HEADER_BUTTON_TEXT;
+				const background = painted.rects.find(rect => rect.kind === RectRenderKind.Fill
+					&& rect.area.left === item.bounds.left && rect.area.top === item.bounds.top
+					&& rect.area.right === item.bounds.right && rect.area.bottom === item.bounds.bottom);
+				assert.ok(background, 'each semantic label paints its actual button surface');
+				const backgroundColor = !item.enabled ? colors.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND
+					: pressed ? colors.COLOR_HEADER_BUTTON_PRESSED_BACKGROUND
+						: highlighted ? colors.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : colors.COLOR_HEADER_BUTTON_BACKGROUND;
+				assert.equal(label.color, resolveThemeTokenColor(foreground));
+				assert.equal(background.color, resolveThemeTokenColor(backgroundColor));
+				if (item.enabled) assert.ok(contrastRatio(label.color, background.color) >= 4.5,
+					'the actual enabled action label remains readable on its painted state surface');
 			}
 			if (captureDirectory !== undefined) {
 				const { renderer, presenter, backend } = f.overlay;
@@ -286,15 +303,15 @@ test('owned full-title feedback is retained, modal-admitted and retired with the
 	const f = toolbarFixture(t); f.conversation.proposal(f.proposal('Review')); f.toolbar.update(false);
 	const review = f.input.turnActions.items.find(item => item.command === 'assistant.review')!;
 	f.pointer(review.bounds); f.toolbar.update(false);
-	const first = f.draw().find(run => run.items === review.tooltip); assert.ok(first);
+	const first = f.draw().glyphs.find(run => run.items === review.tooltip); assert.ok(first);
 	const advance = t.mock.method(editorViewState.font, 'advance');
 	for (let index = 0; index < 1000; index++) f.toolbar.update(false);
 	assert.equal(advance.mock.callCount(), 0, 'clean toolbar updates do not remeasure retained labels or feedback');
-	assert.equal(f.draw().find(run => run.items === review.tooltip)!.items, first.items);
+	assert.equal(f.draw().glyphs.find(run => run.items === review.tooltip)!.items, first.items);
 	f.conversation.running(); f.layout(78); f.open(); f.toolbar.update(false);
-	assert.equal(f.draw().some(run => run.items === review.tooltip), false, 'no tooltip over an owned menu');
-	f.press('Escape'); f.layout(384); f.pointer(review.bounds); f.toolbar.update(false); assert.ok(f.draw().some(run => run.items === review.tooltip));
-	f.toolbar.clearInput(); assert.equal(f.draw().some(run => run.items === review.tooltip), false);
+	assert.equal(f.draw().glyphs.some(run => run.items === review.tooltip), false, 'no tooltip over an owned menu');
+	f.press('Escape'); f.layout(384); f.pointer(review.bounds); f.toolbar.update(false); assert.ok(f.draw().glyphs.some(run => run.items === review.tooltip));
+	f.toolbar.clearInput(); assert.equal(f.draw().glyphs.some(run => run.items === review.tooltip), false);
 	assert.equal(pointerHover.has(f.toolbar.control), false);
 });
 

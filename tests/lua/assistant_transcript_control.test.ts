@@ -37,6 +37,7 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 import { createTestRuntime } from '../helpers/runtime_sources';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from './cpu_test_harness';
+import { contrastRatio } from '../helpers/contrast.mjs';
 
 const FIRST = `data:image/png;base64,${readFileSync(join(__dirname, '../../carts/nemesis_s/res/img/title_screen_1@atlas=title.png')).toString('base64')}`;
 const SECOND = `data:image/png;base64,${readFileSync(join(__dirname, '../../carts/nemesis_s/res/img/intro_konami@atlas=intro.png')).toString('base64')}`;
@@ -349,12 +350,17 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 		const f = fixture(t, variant, width, theme), entry = f.conversation.message('**Screenshots**', [FIRST, SECOND]); f.layout();
 		f.control.scroll.focusTarget.focus(); f.press('ArrowDown'); f.press('ArrowDown'); f.paint(); await f.load();
 		const bounds = f.tile(entry, 0), frame = f.paint();
-		let focus = false, bitmap = false;
+		let focus: RectRenderSubmission | undefined, tile: RectRenderSubmission | undefined, body: RectRenderSubmission | undefined, bitmap = false;
 		for (let index = 0; index < frame.commandCount; index++) {
 			if (frame.commandKinds[index] === Host2DKind.Rect) {
 				const rect = frame.commandRefs[index] as RectRenderSubmission;
-				if (rect.kind === RectRenderKind.Rect && rect.color === resolveThemeTokenColor(colors.COLOR_FOCUS_BORDER)) {
-					assert.deepEqual(rect.area, bounds); focus = true;
+				if (rect.kind === RectRenderKind.Rect && rect.color === resolveThemeTokenColor(colors.COLOR_BODY_ACCENT)) {
+					assert.deepEqual(rect.area, bounds); focus = rect;
+				} else if (rect.kind === RectRenderKind.Fill) {
+					if (rect.area.left === bounds.left && rect.area.top === bounds.top
+						&& rect.area.right === bounds.right && rect.area.bottom === bounds.bottom) tile = rect;
+					else if (rect.area.left === f.input.layout.left && rect.area.top === f.input.layout.top
+						&& rect.area.right === f.input.layout.right && rect.area.bottom === f.input.layout.bottom) body = rect;
 				}
 			} else if (frame.commandKinds[index] === Host2DKind.Bitmap) {
 				const image = frame.commandRefs[index] as HostBitmapRenderSubmission;
@@ -362,7 +368,11 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 				bitmap = true;
 			}
 		}
-		assert.ok(focus && bitmap, 'the selected actual decoded image has a visible owned focus border');
+		assert.ok(focus && bitmap && tile && body, 'the selected actual decoded image has a focus frame on its real tile and body surfaces');
+		assert.equal(tile.color, resolveThemeTokenColor(colors.COLOR_MARKDOWN_CODE_BACKGROUND));
+		assert.equal(body.color, resolveThemeTokenColor(colors.COLOR_CODE_BACKGROUND));
+		assert.ok(contrastRatio(focus.color, tile.color) >= 3, 'the image focus frame contrasts with its inset tile, not arbitrary image pixels');
+		assert.ok(contrastRatio(focus.color, body.color) >= 3, 'the image focus frame also contrasts with its actual outer body');
 		f.capture(`transcript-${theme}-${variant}-${width}-selected`);
 		const rows = [...f.input.transcript.rows], advance = t.mock.method(editorViewState.font, 'advance');
 		for (let index = 0; index < 100; index++) { f.layout(); f.paint(); }

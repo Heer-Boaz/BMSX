@@ -102,7 +102,7 @@ export class AssistantTranscriptControl {
 			const selected = entry === selection.entry && selection.imageIndex === undefined;
 			if (entry.kind === 'user' && !row.heading && !row.image) {
 				api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
-				api.fill_rect(4, top, 5, top + layout.rowHeight, 0, colors.COLOR_STATUS_SUCCESS);
+				api.fill_rect(4, top, 5, top + layout.rowHeight, 0, colors.COLOR_BODY_ACCENT);
 			}
 			if (selected && !row.image) api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
 			if (row.image) {
@@ -115,7 +115,7 @@ export class AssistantTranscriptControl {
 					api.blit_text_inline_with_font(row.image.label, bounds.left + 4, bounds.bottom - layout.rowHeight, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
 					api.popClipRect();
 					if (entry === selection.entry && row.image.index === selection.imageIndex) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0,
-						this.scroll.focusTarget.hasFocus ? colors.COLOR_FOCUS_BORDER : colors.COLOR_QUICK_OPEN_OUTLINE);
+						this.scroll.focusTarget.hasFocus ? colors.COLOR_BODY_ACCENT : colors.COLOR_QUICK_OPEN_OUTLINE);
 				}
 				continue;
 			}

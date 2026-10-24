@@ -8,7 +8,7 @@ export type EditorTheme = {
 	ghost: number;
 	caret: number;
 	gutter: { background: number; foreground: number; activeBackground: number; activeForeground: number;
-		executionBackground: number; executionForeground: number };
+		executionBackground: number; executionForeground: number; breakpointBorder: number; breakpointFill: number };
 	executionBackground: number;
 	syntax: { keyword: number; string: number; number: number; comment: number; operator: number;
 		builtin: number; functionName: number; parameter: number; globalVar: number; label: number;
@@ -23,7 +23,8 @@ export const EDITOR_THEME_COLORS: Record<'light' | 'dark', EditorTheme> = {
 		dim: token.THEME_TOKEN_MUTED_GREY, ghost: token.THEME_TOKEN_MUTED_GREY, caret: token.THEME_TOKEN_EDITOR_FUNCTION_LIGHT,
 		gutter: { background: token.THEME_TOKEN_PANEL_GREY, foreground: token.THEME_TOKEN_TEXT_GREY,
 			activeBackground: token.THEME_TOKEN_BORDER_GREY, activeForeground: token.THEME_TOKEN_NEAR_BLACK,
-			executionBackground: token.THEME_TOKEN_EDITOR_EXECUTION_LIGHT, executionForeground: token.THEME_TOKEN_NEAR_BLACK },
+			executionBackground: token.THEME_TOKEN_EDITOR_EXECUTION_LIGHT, executionForeground: token.THEME_TOKEN_NEAR_BLACK,
+			breakpointBorder: token.THEME_TOKEN_TEXT_GREY, breakpointFill: token.THEME_TOKEN_ACCENT_RED },
 		executionBackground: token.THEME_TOKEN_EDITOR_EXECUTION_LIGHT,
 		syntax: { keyword: token.THEME_TOKEN_KEYWORD_MAGENTA, string: token.THEME_TOKEN_EDITOR_STRING_LIGHT,
 			number: token.THEME_TOKEN_EDITOR_NUMBER_LIGHT, comment: token.THEME_TOKEN_MUTED_GREY, operator: token.THEME_TOKEN_TEXT_GREY,
@@ -53,7 +54,8 @@ export const EDITOR_THEME_COLORS: Record<'light' | 'dark', EditorTheme> = {
 		dim: token.THEME_TOKEN_COMMENT_GREY, ghost: token.THEME_TOKEN_COMMENT_GREY, caret: token.THEME_TOKEN_WHITE,
 		gutter: { background: token.THEME_TOKEN_TERMINAL_GREY, foreground: token.THEME_TOKEN_TEXT_GREY,
 			activeBackground: token.THEME_TOKEN_BORDER_GREY, activeForeground: token.THEME_TOKEN_NEAR_BLACK,
-			executionBackground: token.THEME_TOKEN_EDITOR_EXECUTION_LIGHT, executionForeground: token.THEME_TOKEN_NEAR_BLACK },
+			executionBackground: token.THEME_TOKEN_EDITOR_EXECUTION_LIGHT, executionForeground: token.THEME_TOKEN_NEAR_BLACK,
+			breakpointBorder: token.THEME_TOKEN_TEXT_GREY, breakpointFill: token.THEME_TOKEN_TERMINAL_RED },
 		executionBackground: token.THEME_TOKEN_BLACK,
 		syntax: { keyword: token.THEME_TOKEN_BROWN, string: token.THEME_TOKEN_TERMINAL_LIGHT_RED,
 			number: token.THEME_TOKEN_TERMINAL_CYAN, comment: token.THEME_TOKEN_TERMINAL_DARK_GREEN, operator: token.THEME_TOKEN_TERMINAL_GREY,

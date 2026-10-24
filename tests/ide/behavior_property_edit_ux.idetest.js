@@ -182,9 +182,13 @@ for (let font = 0; font < 2; font++) {
 for (const [path, query, kind] of [['enemies/moon_tree.lua', 'bt moon', 'graph'], ['player/player.lua', 'fsm player', 'state-graph']]) {
 	const lens = await choose(path, query), source = lens.workingCopy.buffer.getText();
 	t.assert(lens.view.presentation.kind === kind, 'the real chooser selected a different behavior presentation');
-	if (kind === 'state-graph') await lens.graphLayout.settled;
 	for (let font = 0; font < 2; font++) {
 		await minimum(lens); bounded(lens);
+		if (kind === 'state-graph') {
+			await lens.graphLayout.settled; await t.frames(2);
+			t.assert(lens.graphLayout.state.kind === 'ready' && lens.view.presentation.viewport.model === lens.graphLayout.state.model,
+				'the current font layout has not reached the visible graph before capture');
+		}
 		for (let theme = 0; theme < 2; theme++) {
 			await click(more(lens).bounds); await capture(`behavior-${kind}-${lens.view.layout.font.variant}-theme-${theme}-minimum-more`); await press('Escape');
 			t.command('theme-toggle'); await t.frames(2);

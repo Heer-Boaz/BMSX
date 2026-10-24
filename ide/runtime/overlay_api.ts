@@ -33,6 +33,14 @@ export class OverlayApi {
 		this.renderer.polyline(points, x, y, z, thickness, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
 	}
 
+	public outlinedPolyline(points: readonly number[], x: number, y: number, z: number): void {
+		this.renderer.outlinedPolyline(points, x, y, z, LAYER_2D_IDE);
+	}
+
+	public outlinedRect(left: number, top: number, right: number, bottom: number, z: number): void {
+		this.renderer.outlinedRect(left, top, right, bottom, z, LAYER_2D_IDE);
+	}
+
 	public fill_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
 		this.renderer.fillRect(x0, y0, x1, y1, z, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
 	}

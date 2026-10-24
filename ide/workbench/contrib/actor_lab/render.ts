@@ -22,7 +22,7 @@ export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graph
 	const tree = outline.layout;
 	if (graph !== undefined) {
 		api.pushClipRect(graph.viewport.canvas.left, tree.contentTop, graph.viewport.canvas.right, graph.viewport.canvas.bottom);
-		api.fill_rect(5, tree.contentTop + 3, 7, tree.contentTop + font.lineHeight, 0, colors.COLOR_GRAPH_ACTIVE);
+		api.fill_rect(5, tree.contentTop + 3, 7, tree.contentTop + font.lineHeight, 0, colors.COLOR_GRAPH_ACTIVE_BODY);
 		api.blit_text_inline_with_font(graph.titleLabel, 12, tree.contentTop + 2, 0, color, font);
 		drawWorkbenchGraph(graph.viewport, graphHover, graphFocused);
 		if (graph.status !== 'available') {

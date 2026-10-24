@@ -29,6 +29,8 @@ type OverlayCommandBuffer = {
 	bitmapCount: number;
 	itemPool: GlyphRenderSubmission[];
 	polyPool: PolyRenderSubmission[];
+	polyPointPool: number[][];
+	polyPointCount: number;
 	clipPool: HostOverlayClipRect[];
 	clipStack: HostOverlayClipRect[];
 	fullClip: HostOverlayClipRect;
@@ -105,6 +107,8 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 		bitmapCount: 0,
 		itemPool: [],
 		polyPool: [],
+		polyPointPool: [],
+		polyPointCount: 0,
 		clipPool: [],
 		clipStack: [fullClip],
 		fullClip,
@@ -131,6 +135,8 @@ export class OverlayRenderer {
 	private frameLogicalWidth = 0;
 	private frameLogicalHeight = 0;
 	private overrideSize: Viewport = null;
+
+	private readonly rectanglePoints = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 	public constructor(private readonly queue: HostOverlayQueue) {
 	}
@@ -167,6 +173,7 @@ export class OverlayRenderer {
 		buffer.bitmapCount = 0;
 		buffer.itemCount = 0;
 		buffer.polyCount = 0;
+		buffer.polyPointCount = 0;
 		buffer.clipCount = 0;
 		buffer.clipDepth = 1;
 		buffer.transformCount = 0;
@@ -258,23 +265,47 @@ export class OverlayRenderer {
 
 	/** Translates a retained route into the published buffer, never mutating the source geometry. */
 	public polyline(points: readonly number[], x: number, y: number, z: number, thickness: number, color: color, layer: Layer2D): void {
+		this.submitPolyline(this.snapshotPolyline(points, x, y), z, thickness, color, layer);
+	}
+
+	/** Screen-space casing stays legible over arbitrary artifact pixels, independently of zoom and theme. */
+	public outlinedPolyline(points: readonly number[], x: number, y: number, z: number, layer: Layer2D): void {
+		const published = this.snapshotPolyline(points, x, y);
+		this.submitPolyline(published, z, 3, 0xff000000, layer);
+		this.submitPolyline(published, z, 1, 0xffffffff, layer);
+	}
+
+	public outlinedRect(left: number, top: number, right: number, bottom: number, z: number, layer: Layer2D): void {
+		const points = this.rectanglePoints;
+		points[0] = left; points[1] = top; points[2] = right; points[3] = top;
+		points[4] = right; points[5] = bottom; points[6] = left; points[7] = bottom;
+		points[8] = left; points[9] = top;
+		this.outlinedPolyline(points, 0, 0, z, layer);
+	}
+
+	private snapshotPolyline(points: readonly number[], x: number, y: number): number[] {
 		const buffer = this.activeBuffer;
-		let submission = buffer.polyPool[buffer.polyCount];
-		if (submission === undefined) {
-			submission = { points: [], z: 0, thickness: 1, color: 0, layer };
-			buffer.polyPool.push(submission);
-		}
-		buffer.polyCount += 1;
-		const target = submission.points;
+		let target = buffer.polyPointPool[buffer.polyPointCount];
+		if (target === undefined) { target = []; buffer.polyPointPool.push(target); }
+		buffer.polyPointCount++;
 		target.length = points.length;
 		for (let index = 0; index < points.length; index += 2) {
 			target[index] = points[index] + x;
 			target[index + 1] = points[index + 1] + y;
 		}
-		submission.z = z;
-		submission.thickness = thickness;
-		submission.color = color;
-		submission.layer = layer;
+		return target;
+	}
+
+	private submitPolyline(points: number[], z: number, thickness: number, color: color, layer: Layer2D): void {
+		const buffer = this.activeBuffer;
+		let submission = buffer.polyPool[buffer.polyCount];
+		if (submission === undefined) {
+			submission = { points, z, thickness, color, layer };
+			buffer.polyPool.push(submission);
+		}
+		buffer.polyCount++;
+		submission.points = points; submission.z = z; submission.thickness = thickness;
+		submission.color = color; submission.layer = layer;
 		this.queueCommand(Host2DKind.Poly, submission);
 	}
 

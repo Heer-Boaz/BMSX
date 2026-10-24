@@ -68,7 +68,7 @@ export class AssistantAttachmentStrip {
 			const x = left + (index - this.first) * this.tileWidth, right = x + this.tileWidth - 4;
 			const selected = index === this.selected && this.focusTarget.hasFocus;
 			api.fill_rect(x, top, right, bottom, 0, colors.COLOR_MARKDOWN_CODE_BACKGROUND);
-			api.blit_rect(x, top, right, bottom, 0, selected ? colors.COLOR_STATUS_SUCCESS : colors.COLOR_QUICK_OPEN_OUTLINE);
+			api.blit_rect(x, top, right, bottom, 0, selected ? colors.COLOR_BODY_ACCENT : colors.COLOR_QUICK_OPEN_OUTLINE);
 			const image = images[index], preview = image.state === 'ready' ? this.previews.use(image.url!, image.preview) : undefined;
 			if (preview?.bitmap) drawImagePreview(preview.bitmap, x + 3, top + 3, right - 3, bottom - this.rowHeight - 3);
 			else api.blit_text_inline_with_font(image.state === 'error' || preview?.error ? 'Unreadable' : 'Loading…', x + 4, top + this.rowHeight * 2, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
