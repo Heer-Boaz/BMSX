@@ -27,6 +27,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 	public constructor(resourcePanel: ResourcePanelController, private readonly reveal: (models: readonly EditorTextModel[]) => void) {
 		super(resourcePanel);
+		this.scroll.onWillScroll = () => { this.input.reading.projectedScroll = undefined; };
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		this.scroll.focusTarget.next = this.actions.focusTarget;
 		this.actions.focusTarget.previous = this.scroll.focusTarget;
@@ -43,8 +44,14 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		this.scroll.setInput(this.input.viewport);
 		this.update();
 	}
-	public override clearInput(): void { this.actions.clearInput(); this.scroll.clearInput(); super.clearInput(); }
-	public override dispose(): void { this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
+	public override clearInput(): void {
+		if (this.hasInput) this.input.reading.capture(this.input.viewport, this.input.rows);
+		this.actions.clearInput(); this.scroll.clearInput(); super.clearInput();
+	}
+	public override dispose(): void {
+		if (this.hasInput) this.input.reading.capture(this.input.viewport, this.input.rows);
+		this.actions.dispose(); this.scroll.dispose(); super.dispose();
+	}
 	public isEnabled(command: EditorCommandId): boolean {
 		return (command === 'workspaceEditReview.apply' || command === 'workspaceEditReview.discard') && this.input.proposal.state === 'pending';
 	}
@@ -76,6 +83,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 				: proposal.state === 'stale' || proposal.state === 'failed' ? `${proposal.state}: ${proposal.reason}` : 'Discarded - no source changes'}`, layout.right - 8, measureTextRange);
 		}
 		if (changed) {
+			this.input.reading.capture(viewport, this.input.rows);
 			layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont(), layout.left + 4);
 			this.input.heading = truncateMeasuredText(this.input.proposal.title, actionBar.items[0].bounds.left - 8, measureTextRange);
 			if (this.input.projectedWidth !== layout.right || this.input.projectedFont !== layout.font) {
@@ -84,6 +92,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 				this.input.projectedFont = layout.font;
 			}
 			viewport.layout(4, layout.top + layout.rowHeight * 2 + 12, layout.right, layout.bottom, this.input.rows.length * layout.rowHeight);
+			this.input.reading.restore(viewport, this.input.rows, layout.rowHeight);
 			this.scroll.lineStep = layout.rowHeight;
 		}
 		this.actions.update();
@@ -95,14 +104,15 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		renderWorkbenchActionBar(actionBar, font, colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		api.blit_text_inline_with_font(this.input.heading, 4, layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		api.blit_text_inline_with_font(this.input.status, 4, layout.top + layout.rowHeight + 6, 0,
-			this.input.proposal.state === 'stale' || this.input.proposal.state === 'failed' ? colors.COLOR_STATUS_WARNING : colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			this.input.proposal.state === 'stale' || this.input.proposal.state === 'failed' ? colors.COLOR_INSPECTOR_WARNING_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);
 		let index = Math.trunc(viewport.scrollTop / layout.rowHeight);
 		let top = viewport.offsetTop + index * layout.rowHeight;
 		for (; index < rows.length && top < viewport.bounds.bottom; index++, top += layout.rowHeight) {
 			const row = rows[index];
-			api.blit_text_inline_with_font(row.text, 4, top, 0, row.kind === 'before' ? colors.COLOR_STATUS_WARNING
-				: row.kind === 'after' ? colors.COLOR_STATUS_SUCCESS : colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			if (row.kind !== 'header') api.fill_rect(viewport.bounds.left, top, viewport.bounds.right, top + layout.rowHeight, 0,
+				row.kind === 'before' ? colors.COLOR_DIFF_REMOVED_BACKGROUND : colors.COLOR_DIFF_INSERTED_BACKGROUND);
+			api.blit_text_inline_with_font(row.text, 4, top, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		}
 		api.popClipRect();
 		viewport.scrollbar.draw(colors.COLOR_CODE_BACKGROUND, colors.COLOR_RESOURCE_VIEWER_TEXT);

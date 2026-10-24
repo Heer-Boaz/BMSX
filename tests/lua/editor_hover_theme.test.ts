@@ -17,6 +17,9 @@ test('hover and Markdown text retain readable contrast on their actual surfaces 
 			['inspector property label', constants.COLOR_INSPECTOR_LABEL, constants.COLOR_RESOURCE_VIEWER_BACKGROUND, 4.5],
 			['inspector description', constants.COLOR_DESCRIPTION_TEXT, constants.COLOR_RESOURCE_VIEWER_BACKGROUND, 4.5],
 			['empty-group description', constants.COLOR_DESCRIPTION_TEXT, constants.COLOR_CODE_BACKGROUND, 4.5],
+			['inserted diff source', constants.COLOR_RESOURCE_VIEWER_TEXT, constants.COLOR_DIFF_INSERTED_BACKGROUND, 7],
+			['removed diff source', constants.COLOR_RESOURCE_VIEWER_TEXT, constants.COLOR_DIFF_REMOVED_BACKGROUND, 7],
+			['stale review status', constants.COLOR_INSPECTOR_WARNING_TEXT, constants.COLOR_CODE_BACKGROUND, 4.5],
 			['diagnostic resource location', constants.COLOR_PROBLEMS_PANEL_LOCATION, constants.COLOR_PROBLEMS_PANEL_BACKGROUND, 4.5],
 			['diagnostic error marker', constants.COLOR_PROBLEMS_PANEL_ERROR, constants.COLOR_PROBLEMS_PANEL_BACKGROUND, 4.5],
 			['diagnostic warning marker', constants.COLOR_PROBLEMS_PANEL_WARNING, constants.COLOR_PROBLEMS_PANEL_BACKGROUND, 4.5],
@@ -42,5 +45,8 @@ test('hover and Markdown text retain readable contrast on their actual surfaces 
 			assert.ok(contrast >= minimum, `${theme} ${name} contrast is ${contrast}:1`);
 		}
 		assert.notEqual(constants.HOVER_TOOLTIP_BORDER, constants.HOVER_TOOLTIP_BACKGROUND);
+		assert.notEqual(constants.COLOR_DIFF_INSERTED_BACKGROUND, constants.COLOR_DIFF_REMOVED_BACKGROUND);
+		assert.notEqual(constants.COLOR_DIFF_INSERTED_BACKGROUND, constants.COLOR_CODE_BACKGROUND);
+		assert.notEqual(constants.COLOR_DIFF_REMOVED_BACKGROUND, constants.COLOR_CODE_BACKGROUND);
 	}
 });

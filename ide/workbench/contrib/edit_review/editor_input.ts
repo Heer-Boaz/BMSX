@@ -1,9 +1,11 @@
 import { ReadonlyEditorInput } from '../../common/editor_input';
+import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { WorkspaceEditProposal, WorkspaceEditProposalState } from '../../services/working_copy/workspace_edit';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
-import type { EditReviewRow } from './projection';
+import { createEditReviewLines, type EditReviewLine, type EditReviewRow } from './projection';
+import { EditReviewReadingState } from './reading_state';
 import type { EditorFont } from '../../../editor/ui/view/font';
 
 let nextReviewId = 1;
@@ -18,6 +20,9 @@ export class WorkspaceEditReviewInput extends ReadonlyEditorInput<`edit-review:$
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
 	};
 	public readonly rows: EditReviewRow[] = [];
+	public readonly lines: readonly EditReviewLine[];
+	public readonly rowStorage = new ScratchBuffer<EditReviewRow>(() => ({ text: '', kind: 'header', line: undefined!, start: 0, end: 0, decoration: 0, endDecoration: 0 }));
+	public readonly reading = new EditReviewReadingState();
 	public heading = '';
 	public status = '';
 	public renderedState: WorkspaceEditProposalState | undefined;
@@ -25,6 +30,7 @@ export class WorkspaceEditReviewInput extends ReadonlyEditorInput<`edit-review:$
 	public projectedFont: EditorFont | null = null;
 	public constructor(public readonly proposal: WorkspaceEditProposal) {
 		super(`edit-review:${nextReviewId++}`, 'workspace_edit_review', 'REVIEW', true);
+		this.lines = createEditReviewLines(proposal.files);
 		this.setLabel('REVIEW', proposal.title);
 		this.disposables.add(proposal);
 	}

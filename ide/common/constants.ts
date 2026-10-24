@@ -15,6 +15,10 @@ import {
 	THEME_TOKEN_DEEP_GREY,
 	THEME_TOKEN_DEEP_TEAL,
 	THEME_TOKEN_DROP_SHADOW,
+	THEME_TOKEN_DIFF_INSERTED_LIGHT,
+	THEME_TOKEN_DIFF_REMOVED_LIGHT,
+	THEME_TOKEN_DIFF_INSERTED_DARK,
+	THEME_TOKEN_DIFF_REMOVED_DARK,
 	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND,
 	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND_HOVER,
 	THEME_TOKEN_ERROR_OVERLAY_LINE_HOVER,
@@ -120,6 +124,7 @@ type ThemeDefinition = {
 	};
 	graph: { active: number };
 	inspection: { label: number; changedValue: number; warningValue: number };
+	diff: { insertedBackground: number; removedBackground: number };
 	focusBorder: number;
 	connection: {
 		connected: number;
@@ -216,6 +221,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		window: { background: THEME_TOKEN_BLACK, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
 			inactiveHeader: THEME_TOKEN_NEAR_BLACK, inactiveText: THEME_TOKEN_TERMINAL_GREY, border: THEME_TOKEN_MID_GREY },
 		inspection: { label: THEME_TOKEN_HINT_GREY, changedValue: THEME_TOKEN_LIGHT_PURPLE, warningValue: THEME_TOKEN_WARNING_AMBER },
+		diff: { insertedBackground: THEME_TOKEN_DIFF_INSERTED_DARK, removedBackground: THEME_TOKEN_DIFF_REMOVED_DARK },
 		markdown: {
 			codeBackground: THEME_TOKEN_DEEP_TEAL,
 			codeText: THEME_TOKEN_LIGHT_TEAL,
@@ -348,6 +354,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		window: { background: THEME_TOKEN_GENTLE_WHITE, activeHeader: THEME_TOKEN_DEEP_GREY, activeText: THEME_TOKEN_WHITE, activeDisabledText: THEME_TOKEN_MID_GREY,
 			inactiveHeader: THEME_TOKEN_PANEL_GREY, inactiveText: THEME_TOKEN_TEXT_GREY, border: THEME_TOKEN_MID_GREY },
 		inspection: { label: THEME_TOKEN_STATUS_TEXT_GREY, changedValue: THEME_TOKEN_DARK_PURPLE, warningValue: THEME_TOKEN_PROBLEM_WARNING_TEXT },
+		diff: { insertedBackground: THEME_TOKEN_DIFF_INSERTED_LIGHT, removedBackground: THEME_TOKEN_DIFF_REMOVED_LIGHT },
 		markdown: {
 			codeBackground: THEME_TOKEN_PALE_TEAL,
 			codeText: THEME_TOKEN_DARK_TEAL,
@@ -587,6 +594,8 @@ export let COLOR_INSPECTOR_LABEL: number;
 export let COLOR_DESCRIPTION_TEXT: number;
 export let COLOR_INSPECTOR_VALUE_CHANGED: number;
 export let COLOR_INSPECTOR_WARNING_TEXT: number;
+export let COLOR_DIFF_INSERTED_BACKGROUND: number;
+export let COLOR_DIFF_REMOVED_BACKGROUND: number;
 export let COLOR_SERVER_CONNECTED: number;
 export let COLOR_SERVER_DISCONNECTED: number;
 export let COLOR_SERVER_CONNECTING: number;
@@ -771,6 +780,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_DESCRIPTION_TEXT = theme.descriptionForeground;
 	COLOR_INSPECTOR_VALUE_CHANGED = theme.inspection.changedValue;
 	COLOR_INSPECTOR_WARNING_TEXT = theme.inspection.warningValue;
+	COLOR_DIFF_INSERTED_BACKGROUND = theme.diff.insertedBackground;
+	COLOR_DIFF_REMOVED_BACKGROUND = theme.diff.removedBackground;
 	COLOR_SERVER_CONNECTED = theme.connection.connected;
 	COLOR_SERVER_DISCONNECTED = theme.connection.disconnected;
 	COLOR_SERVER_CONNECTING = theme.connection.connecting;
