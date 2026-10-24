@@ -12,8 +12,8 @@ import { ScrollbarPointerControl } from './scrollbar_pointer';
 export class WorkbenchScrollControl {
 	public readonly focusTarget: InputFocusTarget;
 	public lineStep = 0;
-	/** Admitted user scrolling, including a thumb press; layout/reveal never calls this. */
-	public onWillScroll: (() => void) | undefined;
+	/** Admitted user scrolling; absolute keyboard targets survive even unchanged scroll pixels. */
+	public onWillScroll: ((edge?: 'start' | 'end') => void) | undefined;
 	private input: WorkbenchScrollViewport | null = null;
 	private readonly pointer: ScrollbarPointerControl;
 	private readonly unbindKeyboard: () => void;
@@ -72,7 +72,7 @@ export class WorkbenchScrollControl {
 			if (!isKeyDown(code, input)) continue;
 			consumeIdeKey(code, input);
 			this.cancelPointer();
-			this.onWillScroll?.();
+			this.onWillScroll?.(code === 'Home' ? 'start' : code === 'End' ? 'end' : undefined);
 			switch (code) {
 				case 'ArrowUp': view.scrollbar.setScroll(view.scrollTop - this.lineStep); break;
 				case 'ArrowDown': view.scrollbar.setScroll(view.scrollTop + this.lineStep); break;

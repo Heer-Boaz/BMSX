@@ -111,7 +111,7 @@ for (let font = 0; font < 2; font++) {
 	t.assert(input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(), 'review End did not reveal its actual final source rows');
 	await capture(`workspace-review-end-${variant}`);
 	await narrow(input);
-	t.assert(input.reading.end && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(), 'a true user End did not follow the new bottom');
+	t.assert(input.reading.edge === 'end' && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(), 'a true user End did not follow the new bottom');
 	await wide(input); unchanged(input); await press('Home');
 	t.assert(input.viewport.scrollTop === 0, 'review Home did not return to its real file header');
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
@@ -142,10 +142,66 @@ await wide(input); t.assert(input.viewport.scrollTop === 0, 'all-content-fit geo
 await narrow(input); sameIntent(input, clamped);
 t.assert(input.viewport.scrollTop === clamped.scroll, 'a width-only clamp overwrote hidden source intent');
 await wide(input); await press('Home'); await narrow(input);
-t.assert(input.viewport.scrollTop === 0 && input.reading.offset === 0 && input.reading.line === input.lines[0], 'physical Home at clamped zero did not replace the old hidden intent');
+t.assert(input.viewport.scrollTop === 0 && input.reading.edge === 'start', 'physical Home at clamped zero did not replace the old hidden intent');
 await press('End'); await wide(input); await narrow(input);
-t.assert(input.reading.end && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(), 'End intent was lost through an all-content-fit zero clamp');
+t.assert(input.reading.edge === 'end' && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(), 'End intent was lost through an all-content-fit zero clamp');
 await capture('workspace-review-short-end-msx'); unchanged(input);
+
+// A physical edge command is intent even when the current geometry cannot move pixels.
+await wide(input);
+t.assert(input.viewport.height > 0 && input.viewport.scrollbar.getMaximumScroll() === 0,
+	'the physical fitting-End case requires a positive-height viewport with no scroll range');
+await press('Home'); await press('End'); await narrow(input);
+t.assert(input.viewport.scrollbar.getMaximumScroll() > 0 && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(),
+	'physical End while all content fits did not reveal the new bottom after narrowing');
+await capture('workspace-review-fit-end-restored-msx'); unchanged(input);
+
+await scrollToRow(input, 3);
+await resizeAboveProblems(input, input.layout.top + 1);
+t.assert(input.viewport.height === 0, 'the physical zero-height Home case requires a fully covered Review body');
+await press('Home');
+await resizeAboveProblems(input, reviewBottom);
+t.assert(input.viewport.scrollTop === 0, 'physical Home in a zero-height Review did not replace the old middle-source intent');
+await capture('workspace-review-zero-home-restored-msx'); unchanged(input);
+
+await scrollToRow(input, 3);
+await resizeAboveProblems(input, input.layout.top + 1);
+t.assert(input.viewport.height === 0, 'the physical zero-height End case requires a fully covered Review body');
+await press('End');
+await resizeAboveProblems(input, reviewBottom);
+t.assert(input.viewport.scrollbar.getMaximumScroll() > 0 && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(),
+	'physical End in a zero-height Review did not reveal its actual final source rows after restoring the body');
+await capture('workspace-review-zero-end-restored-msx'); unchanged(input);
+
+// Relative navigation after an absolute edge has a real source-row origin even while hidden.
+await scrollToRow(input, 3);
+await resizeAboveProblems(input, input.layout.top + 1);
+t.assert(input.viewport.height === 0, 'the physical End-then-Up case requires a fully covered Review body');
+await press('End'); await press('ArrowUp');
+const endUpRow = input.rows[Math.trunc(input.viewport.scrollTop / input.layout.rowHeight)];
+const endUpOrigin = { line: endUpRow.line, offset: endUpRow.start, decoration: endUpRow.decoration };
+await resizeAboveProblems(input, reviewBottom);
+t.assert(input.reading.edge === undefined && input.reading.line === endUpOrigin.line
+	&& input.reading.offset === endUpOrigin.offset && input.reading.decoration === endUpOrigin.decoration,
+	'physical End then Up at zero height did not retain its actual original-source row');
+t.assert(input.viewport.scrollbar.getMaximumScroll() > 0 && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(),
+	'the actual End-then-Up source row did not clamp to the restored positive viewport bottom');
+await capture('workspace-review-zero-end-up-restored-msx'); unchanged(input);
+
+await scrollToRow(input, 3);
+await resizeAboveProblems(input, input.layout.top + 1);
+t.assert(input.viewport.height === 0, 'the physical Home-then-Down case requires a fully covered Review body');
+await press('Home'); await press('ArrowDown');
+const homeDownRow = input.rows[Math.trunc(input.viewport.scrollTop / input.layout.rowHeight)];
+const homeDownOrigin = { line: homeDownRow.line, offset: homeDownRow.start, decoration: homeDownRow.decoration };
+await resizeAboveProblems(input, reviewBottom);
+t.assert(input.reading.edge === undefined && input.reading.line === homeDownOrigin.line
+	&& input.reading.offset === homeDownOrigin.offset && input.reading.decoration === homeDownOrigin.decoration,
+	'physical Home then Down at zero height did not retain its actual original-source row');
+t.assert(input.viewport.scrollTop === input.layout.rowHeight,
+	'physical Home then Down at zero height did not reveal the actual second row after restoring the body');
+await capture('workspace-review-zero-home-down-restored-msx'); unchanged(input);
+
 await press('ControlLeft', 'KeyW');
 t.assert(input.proposal.state === 'discarded' && model.buffer.getText() === source && model.version === version && !model.dirty && !model.canUndo,
 	'final review disposal changed canonical bytes, version, dirty state or undo history');

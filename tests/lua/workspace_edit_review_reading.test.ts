@@ -121,13 +121,76 @@ test('explicit Home at a projected zero replaces old hidden intent, while End st
 	project(input, 118, 80, 'msx'); input.viewport.scrollbar.setScroll(400);
 	project(input, 20_000, 20_000, 'tiny'); assert.equal(input.viewport.scrollTop, 0);
 	// The shared scroll control publishes this intent even when Home leaves the pixels at zero.
-	input.reading.projectedScroll = undefined;
+	input.reading.noteUserScroll('start');
 	input.reading.capture(input.viewport, input.rows);
 	project(input, 118, 80, 'msx'); assert.equal(input.viewport.scrollTop, 0);
+	input.reading.noteUserScroll('end');
 	input.viewport.scrollbar.setScroll(input.viewport.scrollbar.getMaximumScroll());
 	project(input, 384, 160, 'tiny');
-	assert.equal(input.reading.end, true);
+	assert.equal(input.reading.edge, 'end');
 	assert.equal(input.viewport.scrollTop, input.viewport.scrollbar.getMaximumScroll());
+	project(input, 118, 80, 'msx');
+	assert.equal(input.viewport.scrollTop, input.viewport.scrollbar.getMaximumScroll());
+});
+
+for (const height of [0, 20_000]) for (const edge of ['start', 'end'] as const) {
+	test(`explicit ${edge} survives ${height === 0 ? 'zero-height' : 'all-content-fit'} geometry and later source-relative input replaces it`, t => {
+		const { input } = fixture(t, SOURCE, SOURCE.replaceAll('source', 'changed'));
+		project(input, 118, 80, 'msx');
+		input.viewport.scrollbar.setScroll(400.5);
+		project(input, 20_000, height, 'tiny');
+		input.reading.noteUserScroll(edge);
+		input.viewport.scrollbar.setScroll(edge === 'start' ? 0 : input.viewport.contentHeight);
+		input.reading.capture(input.viewport, input.rows);
+		assert.equal(input.reading.edge, edge); assert.equal(input.reading.line, undefined);
+		project(input, 118, 80, 'msx');
+		assert.equal(input.viewport.scrollTop, edge === 'start' ? 0 : input.viewport.scrollbar.getMaximumScroll());
+		project(input, 20_000, height, 'tiny'); project(input, 118, 80, 'msx');
+		assert.equal(input.viewport.scrollTop, edge === 'start' ? 0 : input.viewport.scrollbar.getMaximumScroll());
+		input.reading.noteUserScroll(); input.viewport.scrollbar.setScroll(200.5);
+		input.reading.capture(input.viewport, input.rows);
+		assert.equal(input.reading.edge, undefined); assert.notEqual(input.reading.line, undefined);
+		project(input, 384, 160, 'tiny'); project(input, 118, 80, 'msx');
+		assert.equal(input.viewport.scrollTop, 200.5);
+	});
+}
+
+test('successive absolute commands replace each other without waiting for a visible row or reflow', t => {
+	const { input } = fixture(t, SOURCE, SOURCE.replaceAll('source', 'changed'));
+	project(input, 20_000, 0, 'tiny');
+	for (const edges of [['start', 'end'], ['end', 'start']] as const) {
+		for (const edge of edges) {
+			input.reading.noteUserScroll(edge);
+			input.viewport.scrollbar.setScroll(edge === 'start' ? 0 : input.viewport.contentHeight);
+		}
+		project(input, 118, 80, 'msx');
+		assert.equal(input.reading.edge, edges[1]);
+		assert.equal(input.viewport.scrollTop, edges[1] === 'start' ? 0 : input.viewport.scrollbar.getMaximumScroll());
+		project(input, 20_000, 0, 'tiny');
+	}
+});
+
+for (const edge of ['start', 'end'] as const) test(`relative input after ${edge} captures logical source rows even while covered`, t => {
+	const { input } = fixture(t, SOURCE, SOURCE.replaceAll('source', 'changed'));
+	project(input, 118, 0, 'msx');
+	input.reading.noteUserScroll(edge);
+	input.viewport.scrollbar.setScroll(edge === 'start' ? 0 : input.viewport.contentHeight);
+	input.reading.noteUserScroll();
+	const index = edge === 'start' ? 1 : input.rows.length - 1, expected = input.rows[index];
+	input.viewport.scrollbar.setScroll(index * editorViewState.lineHeight);
+	input.reading.capture(input.viewport, input.rows);
+	assert.equal(input.reading.edge, undefined); assert.equal(input.reading.line, expected.line);
+	assert.equal(input.reading.offset, expected.start); assert.equal(input.reading.decoration, expected.decoration);
+	project(input, 118, 80, 'msx');
+	assert.equal(input.viewport.scrollTop, edge === 'start' ? editorViewState.lineHeight : input.viewport.scrollbar.getMaximumScroll());
+});
+
+test('an admitted zero-height relative scroll to the document endpoint never reads a one-past row', t => {
+	const { input } = fixture(t, SOURCE, SOURCE.replaceAll('source', 'changed'));
+	project(input, 118, 0, 'msx');
+	input.reading.noteUserScroll(); input.viewport.scrollbar.setScroll(input.viewport.contentHeight);
+	input.reading.capture(input.viewport, input.rows);
+	assert.equal(input.reading.edge, 'end'); assert.equal(input.reading.line, undefined);
 	project(input, 118, 80, 'msx');
 	assert.equal(input.viewport.scrollTop, input.viewport.scrollbar.getMaximumScroll());
 });

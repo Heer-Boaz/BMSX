@@ -1,4 +1,4 @@
-import { KeyInputEvent } from '../../hosts/common/input/text';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
@@ -190,4 +190,28 @@ test('a coalesced track click completes immediately; empty/clipped areas never f
 	f.view.layout(20, 30, 123, 130, 400);
 	f.pointer(40, 29, PRIMARY, PRIMARY);
 	assert.equal(f.focus.target, f.parent); assert.equal(f.capture.active, false);
+});
+
+test('absolute keyboard targets are admitted before unchanged pixels, while relative gestures carry no edge', t => {
+	const f = fixture(t), intents: Array<'start' | 'end' | undefined> = [], pixels: number[] = [];
+	f.control.onWillScroll = edge => { intents.push(edge); pixels.push(f.view.scrollTop); };
+	f.control.focusTarget.focus();
+	const press = (code: string) => {
+		f.focus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none));
+		f.focus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false));
+	};
+	f.view.layout(20, 30, 123, 130, 50);
+	press('Home'); press('End');
+	assert.deepEqual(intents, ['start', 'end']); assert.deepEqual(pixels, [0, 0]);
+	f.control.handleWheel(f.pointer(40, 50), 0);
+	assert.equal(intents.length, 2, 'zero wheel delta cannot replace an absolute target');
+	f.control.handleWheel(f.pointer(40, 50), 10);
+	assert.equal(intents[2], undefined); assert.equal(intents.length, 3);
+	f.view.layout(20, 30, 123, 30, 400);
+	press('End'); press('Home');
+	assert.deepEqual(intents.slice(3), ['end', 'start']); assert.deepEqual(pixels.slice(3), [0, 400]);
+	f.view.layout(20, 30, 123, 130, 400);
+	press('PageDown'); press('ArrowUp');
+	f.pointer(121, 35, PRIMARY, PRIMARY); f.pointer(121, 35, 0, 0, PRIMARY);
+	assert.deepEqual(intents.slice(5), [undefined, undefined, undefined]);
 });

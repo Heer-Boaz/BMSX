@@ -27,7 +27,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 	public constructor(resourcePanel: ResourcePanelController, private readonly reveal: (models: readonly EditorTextModel[]) => void) {
 		super(resourcePanel);
-		this.scroll.onWillScroll = () => { this.input.reading.projectedScroll = undefined; };
+		this.scroll.onWillScroll = edge => this.input.reading.noteUserScroll(edge);
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		this.scroll.focusTarget.next = this.actions.focusTarget;
 		this.actions.focusTarget.previous = this.scroll.focusTarget;
