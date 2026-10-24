@@ -11,9 +11,13 @@ import type { AnimationProperty } from './details';
 import { AnimationKeyViewport } from './key_viewport';
 import { AnimationOverview } from './overview';
 import { AnimationFramePreview } from './frame_preview';
+import { WorkbenchSplitView } from '../../ui/split_view';
+import type { AnimationEditorLayout } from './layout';
+import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 
 export type AnimationSourceSelection = { readonly path: string; readonly range: TrackedTextRange };
 export type AnimationTrackRow = { readonly track: AnimationTrackSource | undefined; readonly clip: AnimationClipSource | undefined; readonly frames: boolean; label: string; text: string };
+export type AnimationClient = 'tracks' | 'keys' | 'details';
 
 let nextInputId = 0;
 
@@ -39,7 +43,12 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 	public readonly overview = new AnimationOverview();
 	public readonly framePreview = new AnimationFramePreview();
 	public readonly actionBar = createWorkbenchActionBar('animation.title', true, WORKBENCH_MENUS['animation.context']);
-	public caption = '';
+	public readonly clientBar = createWorkbenchActionBar('animation.clients');
+	public activeClient: AnimationClient = 'tracks';
+	public readonly columnSplit = new WorkbenchSplitView(0.36);
+	public readonly rowSplit = new WorkbenchSplitView(0.35, 'vertical');
+	public readonly layout: AnimationEditorLayout = { bounds: create_rect_bounds(), font: undefined,
+		mode: 'compact', rowHeight: 0, tracksVisible: true, keysVisible: false, detailsVisible: false };
 	public status = '';
 	private readonly projectionListeners = new Set<() => void>();
 	public constructor(public readonly workingCopy: EditorTextModel, definitionRange?: TrackedTextRange,

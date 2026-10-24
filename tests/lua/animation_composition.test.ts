@@ -23,6 +23,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 
 import { AnimationEditorPane } from '../../ide/workbench/contrib/animation/editor_pane';
+import { measureAnimationEditor } from '../../ide/workbench/contrib/animation/layout';
 import type { IdeCommandController } from '../../ide/commands/controller';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import type { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
@@ -35,7 +36,7 @@ import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
-import { KeyModifier } from '../../hosts/common/input/text';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 
 const resource = { domain: 0 as const, path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
@@ -255,15 +256,48 @@ test('animation recovery restores the native cursor after the document admits it
 		const input = new AnimationEditorInput(model);
 		controller.refresh(input); controller.selectTrack(input, 1);
 		input.keys.setView(0.2, 0.8); input.keys.setCursor(0.625); input.keys.snap = false;
+		input.activeClient = 'keys'; input.columnSplit.resize(0.45); input.rowSplit.resize(0.4);
 		const serializer = new AnimationInputSerializer(sources, controller);
 		const restored = await serializer.deserialize(serializer.serialize(input));
 		assert.equal(restored.keys.unit, unit);
 		assert.equal(restored.keys.cursor, 0.625);
 		assert.equal(restored.keys.range.minimum, 0.2); assert.equal(restored.keys.range.maximum, 0.8);
 		assert.equal(restored.keys.snap, false);
+		assert.equal(restored.activeClient, 'keys');
+		assert.equal(restored.columnSplit.ratio, 0.45); assert.equal(restored.rowSplit.ratio, 0.4);
 		assert.equal(restored.workingCopy, model); assert.equal(model.undo(), null);
 		restored.dispose(); input.dispose(); editorTextModelService.clear();
 	}
+});
+
+test('known unversioned animation recovery preserves source selections and history while new presentation uses its declared defaults', async t => {
+	const source = "return {duration_ms=100,tracks={{kind='value',keys={{time_ms=0,value=1},{time_ms=100,value=2}}}}}";
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
+	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
+	const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
+	const input = new AnimationEditorInput(model);
+	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1); controller.selectProperty(input, 0);
+	input.tracks.scroll = 1; input.keys.setView(10, 90); input.keys.setCursor(50);
+	input.activeClient = 'details'; input.columnSplit.resize(0.45); input.rowSplit.resize(0.4);
+	const serializer = new AnimationInputSerializer(sources, controller);
+	const current = JSON.parse(serializer.serialize(input));
+	assert.equal(current.version, 1);
+	const legacy = { source: current.source, definition: current.definition, label: current.label, consumer: current.consumer,
+		dependencies: current.dependencies, track: current.track, key: current.key, detail: current.detail,
+		scroll: current.scroll, cursor: current.cursor, view: current.view };
+	const restored = await serializer.deserialize(JSON.stringify(legacy)); t.after(() => restored.dispose());
+	assert.equal(restored.workingCopy, model); assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
+	assert.deepEqual(restored.trackSelection, input.trackSelection); assert.deepEqual(restored.keySelection, input.keySelection);
+	assert.deepEqual(restored.detailSelection, input.detailSelection); assert.equal(restored.tracks.scroll, input.tracks.scroll);
+	assert.equal(restored.keys.range.minimum, 10); assert.equal(restored.keys.range.maximum, 90); assert.equal(restored.keys.cursor, 50);
+	assert.equal(restored.activeClient, 'tracks');
+	assert.equal(restored.columnSplit.ratio, restored.columnSplit.defaultRatio); assert.equal(restored.rowSplit.ratio, restored.rowSplit.defaultRatio);
+	const models = [...editorTextModelService.models];
+	await assert.rejects(serializer.deserialize(JSON.stringify({ ...current, version: 2,
+		source: { ...current.source, resource: { ...current.source.resource, path: 'not-retained.lua' } } })),
+		/Unsupported animation editor view version '2'/);
+	assert.deepEqual([...editorTextModelService.models], models, 'unknown formats are rejected before resolving or retaining a model');
 });
 
 function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=1},{time_ms=100,value=2}}},{kind='event',keys={{time_ms=25,event='other'}}}}}") {
@@ -280,7 +314,10 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	const input = new AnimationEditorInput(model), menu = new ContextMenuController(inputFocus, pointerCapture);
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
-	const surfaces = new WorkbenchSurfaceService(), bounds = { left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 274 };
+	const measured = measureAnimationEditor(editorViewState.font);
+	const surfaces = new WorkbenchSurfaceService(), bounds = { left: 0, top: 24,
+		right: measured.expandedWidth + editorViewState.font.advance('M') * 10,
+		bottom: 24 + measured.expandedHeight + measured.rowHeight * 3 };
 	const root = { ...bounds, right: 384 };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('animation pane'), isVisible: () => true,
 		getBounds: () => bounds, getClip: () => bounds, draw() {} });
@@ -293,7 +330,7 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	const pointer = (x: number, y: number, secondary = true) => pane.handlePointer({ viewportX: x, viewportY: y, valid: true, insideViewport: true,
 		pressedButtons: secondary ? PointerButton.Secondary : PointerButton.Primary,
 		justPressedButtons: secondary ? PointerButton.Secondary : PointerButton.Primary, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false }, !secondary, secondary, 0, false);
-	return { pane, input, menu, model, controller, pointer, source, navigated };
+	return { pane, input, menu, model, controller, pointer, source, navigated, bounds, commands };
 }
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Animation context follows the secondary-hit property, track and key without primary gestures`, t => {
@@ -367,5 +404,109 @@ test('secondary context on the current clip lane replaces its former Details-pro
 	const range = clip.file.chunk.locations.range(clip.field.span);
 	f.menu.model.selectedIndex = f.menu.model.rows.findIndex(row => row.command === 'animation.source'); f.menu.accept();
 	assert.deepEqual(f.navigated, [[0, resource.path, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} an actual property draft and focus survive compact, font and sash relayout without publication`, t => {
+	const f = animationPane(t, variant), { input, controller, pane, model } = f;
+	controller.selectTrack(input, 1); controller.selectKey(input, 0);
+	const property = input.details.rows.findIndex(row => row.element.field === input.document!.tracks[0].keys[0].value!.field);
+	controller.selectProperty(input, property); pane.update();
+	f.commands.execute('animation.details', inputFocus.target!.commandContext);
+	f.commands.execute('animation.edit', inputFocus.target!.commandContext);
+	const field = inputFocus.target!, draft = field.edit!, text = field.textInput!;
+	assert.ok(draft); assert.equal(text.replaceText(0, text.readText().text.length, '999'), true);
+	const pending = text.readText(), trackSelection = input.trackSelection, keySelection = input.keySelection, detailSelection = input.detailSelection;
+	for (const split of [input.columnSplit, input.rowSplit]) {
+		const horizontal = split.orientation === 'horizontal';
+		const x = horizontal ? split.position : split.bounds.right - 12;
+		const y = horizontal ? split.bounds.top + 4 : split.position;
+		f.pointer(x, y, false);
+		assert.equal(pointerCapture.active, true);
+		const moved = { viewportX: x + (horizontal ? 12 : 0), viewportY: y + (horizontal ? 0 : 12), valid: true, insideViewport: true,
+			pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 };
+		pointerCapture.dispatch(moved, false, 0); pane.update();
+		pointerCapture.dispatch({ ...moved, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 0); pane.update();
+		assert.equal(inputFocus.target, field); assert.equal(field.edit, draft); assert.deepEqual(text.readText(), pending);
+		assert.equal(model.buffer.getText(), f.source); assert.equal(model.undo(), null);
+	}
+	for (const font of ['tiny', 'msx'] as const) {
+		configureFontVariant(new VirtualHeadlessClock(), font, null);
+		const measured = measureAnimationEditor(editorViewState.font);
+		pane.layout({ ...f.bounds, right: measured.compactWidth, bottom: f.bounds.top + measured.compactHeight }); pane.update();
+		assert.equal(input.layout.mode, 'compact'); assert.equal(input.layout.detailsVisible, true);
+		assert.equal(input.layout.tracksVisible || input.layout.keysVisible, false);
+		assert.equal(inputFocus.target, field); assert.equal(field.edit, draft); assert.equal(draft.pending, true);
+		assert.deepEqual(text.readText(), pending);
+		assert.equal(input.trackSelection, trackSelection); assert.equal(input.keySelection, keySelection); assert.equal(input.detailSelection, detailSelection);
+		assert.equal(model.buffer.getText(), f.source); assert.equal(model.undo(), null);
+		pane.layout({ ...f.bounds, right: measured.expandedWidth * 2, bottom: f.bounds.top + measured.expandedHeight * 2 }); pane.update();
+		assert.equal(input.layout.mode, 'expanded'); assert.equal(inputFocus.target, field); assert.deepEqual(text.readText(), pending);
+	}
+	inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
+	assert.equal(model.buffer.getText(), f.source); assert.equal(model.undo(), null);
+	assert.equal(input.activeClient, 'details'); assert.notEqual(inputFocus.target, field);
+});
+
+test('a key gesture retired by compact relayout or client navigation cannot edit on its later physical release', t => {
+	const f = animationPane(t, 'tiny'), { input, controller, pane, model } = f;
+	controller.selectTrack(input, 1); controller.selectKey(input, 0); pane.update();
+	for (const retire of ['compact', 'client'] as const) {
+		pane.layout(f.bounds); pane.update();
+		f.commands.execute('animation.keys', inputFocus.target!.commandContext);
+		const bounds = input.keys.range.bounds, x = input.keys.xAt(0), y = (bounds.top + bounds.bottom) / 2;
+		f.pointer(x, y, false);
+		assert.equal(pointerCapture.active, true);
+		const moved = { viewportX: x + 20, viewportY: y, valid: true, insideViewport: true,
+			pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 };
+		pointerCapture.dispatch(moved, false, 0); assert.notEqual(input.keys.dragValue, undefined);
+		const measured = measureAnimationEditor(editorViewState.font);
+		pane.layout({ ...f.bounds, right: measured.compactWidth });
+		if (retire === 'client') f.commands.execute('animation.tracks', inputFocus.target!.commandContext);
+		else pane.update();
+		pointerCapture.dispatch({ ...moved, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 0);
+		assert.equal(pointerCapture.active, false); assert.equal(input.keys.dragValue, undefined);
+		assert.equal(model.buffer.getText(), f.source); assert.equal(model.undo(), null);
+		assert.equal(input.layout.keysVisible, retire === 'compact');
+		if (retire === 'client') {
+			const track = input.trackSelection, key = input.keySelection;
+			f.pointer(moved.viewportX, moved.viewportY);
+			assert.equal(f.menu.visible, false); assert.equal(input.trackSelection, track); assert.equal(input.keySelection, key);
+		}
+	}
+});
+
+test('source-only tracks do not expose an unfocusable compact Keys client', t => {
+	const f = animationPane(t, 'tiny', "return {tracks={{kind='event',keys={{time_ms=1,event='first'},{frame=2,event='second'}}}}}");
+	f.controller.selectTrack(f.input, 1); f.pane.update();
+	const context = inputFocus.target!.commandContext, focus = inputFocus.target;
+	assert.equal(f.input.keys.unit, undefined);
+	assert.equal(f.input.layout.mode, 'compact', 'a source-only definition never reserves an empty numeric workspace');
+	assert.equal(f.input.layout.keysVisible || f.input.layout.detailsVisible, false);
+	assert.equal(f.commands.isEnabled('animation.keys', context), false);
+	f.commands.execute('animation.keys', context);
+	assert.equal(f.input.activeClient, 'tracks'); assert.equal(inputFocus.target, focus);
+	f.commands.execute('animation.details', context);
+	assert.equal(f.input.layout.detailsVisible, true); assert.equal(f.input.layout.tracksVisible || f.input.layout.keysVisible, false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
+});
+
+test('unchanged animation frames reuse measured text and only visible clients participate in compact focus order', t => {
+	const f = animationPane(t, 'tiny'), { input, pane } = f;
+	f.controller.selectTrack(input, 1); f.controller.selectKey(input, 0); pane.update();
+	const measured = measureAnimationEditor(editorViewState.font);
+	pane.layout({ ...f.bounds, right: measured.compactWidth }); pane.update();
+	for (const client of ['tracks', 'keys', 'details'] as const) {
+		f.commands.execute(`animation.${client}`, inputFocus.target!.commandContext);
+		const body = inputFocus.target;
+		inputFocus.moveFocus(false); assert.equal(input.actionBar.hasFocus, true);
+		inputFocus.moveFocus(false); assert.equal(input.clientBar.hasFocus, true);
+		inputFocus.moveFocus(false); assert.equal(inputFocus.target, body);
+	}
+	const font = editorViewState.font, advance = font.advance.bind(font);
+	let measurements = 0;
+	t.mock.method(font, 'advance', character => { measurements++; return advance(character); });
+	for (let frame = 0; frame < 100; frame++) pane.update();
+	assert.equal(measurements, 0, 'idle layout, client switching and repeated text projection must not be polled work');
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
 });

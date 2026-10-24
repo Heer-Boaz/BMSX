@@ -5,6 +5,7 @@ import { EditorEditStateType } from '../../../editor/model/edit_state';
 import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
 import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
+import type { EditorFont } from '../../../editor/ui/view/font';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
 import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
@@ -35,6 +36,7 @@ export type CartMapTreeElement = {
 	readonly diagnostic: string | null;
 };
 export type CartMapLayout = FullWidthWorkbenchLayout & {
+	minimumFont: EditorFont | undefined;
 	mode: CartMapLayoutMode;
 	splitMinimumWidth: number;
 	outlineMinimumWidth: number;
@@ -66,6 +68,7 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 	public readonly actionBar = createWorkbenchActionBar('cartMap.title');
 	public readonly fieldBounds = [create_rect_bounds(), create_rect_bounds()] as const;
 	public readonly layout: CartMapLayout = {
+		minimumFont: undefined,
 		mode: 'outline', splitMinimumWidth: 0, outlineMinimumWidth: 0, mapMinimumWidth: 0, fieldMinimumWidth: 0, axisLabelWidth: 0,
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, gridLeft: 0, sourceTitle: '', outlineTitle: '', selectionTitle: '', selectionLabel: '', sourceVersion: -1,
 		sourceBounds: create_rect_bounds(), selectionBounds: create_rect_bounds(),

@@ -24,8 +24,14 @@ await press('Enter'); await t.frames(3);
 const input = t.activeWorkbenchTab();
 t.assert(input.kind === 'animation' && input.workingCopy.resource.path === 'end_demo.lua', 'the real EndDemo source did not open');
 const source = input.workingCopy.buffer.getText(), cycles = t.runtime().machine.scheduler.nowCycles;
+const showClient = async client => {
+	const action = input.clientBar.items.find(item => item.command === `animation.${client}`);
+	await click((action.bounds.left + action.bounds.right) / 2, (action.bounds.top + action.bounds.bottom) / 2);
+	t.assert(input.activeClient === client && input.layout[`${client}Visible`], 'ordinary client navigation did not reveal its actual retained control');
+};
 await press('ArrowDown');
 for (const variant of ['tiny', 'msx']) {
+	await showClient('keys');
 	const viewport = input.keys.range.bounds;
 	await click(input.keys.xAt(0), (viewport.top + viewport.bottom) / 2);
 	t.assert(input.trackIndex === 0 && input.keyIndex === 0, 'the actual first authored key was not selected');
@@ -43,7 +49,9 @@ for (const variant of ['tiny', 'msx']) {
 	const contextSource = input.workingCopy.buffer.getText();
 	const keyDetails = input.details, priorProperty = keyDetails.rows.findIndex(row => row.element.field === temporaryKey.value.field);
 	t.assert(priorProperty >= 0, 'the selected key has no real value property');
+	await showClient('details');
 	await click(keyDetails.layout.contentRight - 3, keyDetails.layout.contentTop + (priorProperty - (keyDetails.scroll | 0) + 0.5) * keyDetails.layout.rowHeight);
+	await showClient('keys');
 	await secondaryClick(input.keys.xAt(input.keys.positionAt(0)), (input.keys.range.bounds.top + input.keys.range.bounds.bottom) / 2);
 	t.assert(input.trackIndex === 0 && input.keyIndex === 0 && input.workingCopy.buffer.getText() === contextSource,
 		'secondary key input did not target the clicked key without editing or dragging it');
@@ -54,6 +62,7 @@ for (const variant of ['tiny', 'msx']) {
 	await press('ShiftLeft', 'F10'); await press('Home');
 	t.assert(input.keyIndex === temporaryKeyIndex, 'key ShiftF10 did not consume Home in its actual context menu');
 	await press('Escape');
+	await showClient('tracks');
 	const tracks = input.tracks, targetTrack = input.document.tracks[1];
 	const trackRow = tracks.rows.findIndex(row => row.track === targetTrack);
 	t.assert(trackRow >= 0, 'the real second track is unavailable');
@@ -78,6 +87,7 @@ for (const variant of ['tiny', 'msx']) {
 	await press('ControlLeft', 'KeyZ');
 	t.assert(input.workingCopy.buffer.getText() === source && !input.workingCopy.dirty && input.document.tracks[0].keys.length === 2,
 		'ordinary Undo did not remove the temporary context key and restore the exact pristine working copy');
+	await showClient('keys');
 	await click(input.keys.xAt(0), (input.keys.range.bounds.top + input.keys.range.bounds.bottom) / 2);
 	t.assert(input.trackIndex === 0 && input.keyIndex === 0, 'the first authored key did not regain selection after track Source');
 	const tree = input.details, index = tree.rows.findIndex(row => row.element.field === input.document.tracks[0].keys[0].value.field);
@@ -86,6 +96,7 @@ for (const variant of ['tiny', 'msx']) {
 	const valueStart = input.workingCopy.buffer.offsetAt(valueRange.start.line - 1, valueRange.start.column - 1);
 	const valueEnd = input.workingCopy.buffer.offsetAt(valueRange.end.line - 1, valueRange.end.column);
 	const propertySource = source.slice(0, valueStart) + '2' + source.slice(valueEnd);
+	await showClient('details');
 	await click(tree.layout.contentRight - 3, tree.layout.contentTop + (index - (tree.scroll | 0) + 0.5) * tree.layout.rowHeight);
 	await press('Enter'); await press('Digit2');
 	t.assert(input.workingCopy.buffer.getText() === source, 'a pending property draft wrote canonical source before acceptance');
@@ -115,6 +126,7 @@ for (const variant of ['tiny', 'msx']) {
 	await press('ControlLeft', 'KeyZ');
 	t.assert(input.workingCopy.buffer.getText() === propertySource && input.trackIndex === issuingTrack && input.keyIndex === issuingKey,
 		'keyboard Undo did not restore the preceding source and selected animation subject');
+	await showClient('keys');
 	await click(input.keys.xAt(0), (input.keys.range.bounds.top + input.keys.range.bounds.bottom) / 2);
 	t.assert(input.trackIndex === 0 && input.keyIndex === 0, 'ordinary key-lane input did not focus the first authored key');
 	t.log(JSON.stringify({ historyKeyboard: 'animation-key-client', variant, toolbarFocused: input.actionBar.hasFocus, track: input.trackIndex, key: input.keyIndex }));
@@ -130,15 +142,33 @@ for (const variant of ['tiny', 'msx']) {
 }
 // The same real property stays editable at the supported outer Game Panel minimum.
 // Its readable draft surface belongs to the root workarea, not the tiny Details cell.
+await showClient('keys');
 const firstKeys = input.keys.range.bounds;
 await click(input.keys.xAt(0), (firstKeys.top + firstKeys.bottom) / 2);
 t.assert(input.trackIndex === 0 && input.keyIndex === 0, 'the first actual authored key did not regain selection after Undo');
+const fullRight = input.layout.bounds.right;
 t.command('gameView.togglePanel'); await t.frames(3);
 for (const variant of ['tiny', 'msx']) {
-	const sash = input.actionBar.bounds.right + 6;
-	t.controlInput([{ type: 'pointer', x: sash, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	const companionVisible = input.layout.bounds.right !== fullRight;
+	if (companionVisible) {
+		const sash = input.layout.bounds.right + 2;
+		t.controlInput([{ type: 'pointer', x: sash, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	}
+	const presentation = companionVisible ? 'companion' : 'full-companion-hidden';
+	await showClient('tracks');
+	if (input.layout.mode === 'compact') t.assert(!input.layout.keysVisible && !input.layout.detailsVisible,
+		'the compact layout still squeezes all Animation clients into one unreadable body');
+	// The selected source subject is independent of the compact visible client.
+	t.assert(input.trackIndex === 0 && input.keyIndex === 0, 'Tracks navigation replaced the selected authored key');
+	await press('ShiftLeft', 'Tab');
+	t.assert(input.clientBar.hasFocus, 'the compact client selector is not keyboard reachable from its actual body');
+	await press('Home'); await press('ArrowRight'); await press('Enter');
+	t.assert(input.activeClient === 'keys' && input.layout.keysVisible, 'keyboard client navigation did not reveal the selected key editor');
+	if (input.layout.mode === 'compact') t.assert(!input.layout.tracksVisible && !input.layout.detailsVisible,
+		'compact keyboard navigation retained an unselected client');
+	await showClient('details');
 	const tree = input.details, index = tree.rows.findIndex(row => row.element.field === input.document.tracks[0].keys[0].value.field);
 	t.assert(index >= 0 && input.document.tracks[0].keys[0].value.value === 1, 'the selected authored key value was lost at minimum width');
 	const property = tree.rows[index].element, valueRange = property.source.file.chunk.locations.range(property.field.value.span);
@@ -146,14 +176,30 @@ for (const variant of ['tiny', 'msx']) {
 	const valueEnd = input.workingCopy.buffer.offsetAt(valueRange.end.line - 1, valueRange.end.column);
 	const propertySource = source.slice(0, valueStart) + '2' + source.slice(valueEnd);
 	await click(tree.layout.contentRight - 3, tree.layout.contentTop + (index - (tree.scroll | 0) + 0.5) * tree.layout.rowHeight);
+	// Geometry-only transitions retain the same pending real value field. Accepting
+	// after the round trip proves that its draft and keyboard client survived.
+	await press('Enter'); await press('Digit2');
+	t.command('gameView.closePanel'); await t.frames(3);
+	await press('ControlLeft', 'ShiftLeft', 'KeyT');
+	await capture(`animation-${variant}-pending-property-wide-other-font`);
+	t.command('gameView.togglePanel'); await t.frames(3);
+	await press('ControlLeft', 'ShiftLeft', 'KeyT');
+	t.assert(input.workingCopy.buffer.getText() === source && input.trackIndex === 0 && input.keyIndex === 0,
+		'resize or font change published a pending field or replaced its source subject');
+	await press('Enter');
+	t.assert(input.workingCopy.buffer.getText() === propertySource && input.document.tracks[0].keys[0].value.value === 2,
+		'the original pending field did not retain its draft and focus through compact and font reflow');
+	await press('ControlLeft', 'KeyZ');
+	t.assert(input.workingCopy.buffer.getText() === source && !input.workingCopy.dirty, 'reflow introduced extra source history');
+	await click(tree.layout.contentRight - 3, tree.layout.contentTop + (index - (tree.scroll | 0) + 0.5) * tree.layout.rowHeight);
 	for (let theme = 0; theme < 2; theme++) {
 		await press('Enter');
 		for (const code of ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7']) await press(code);
 		t.assert(input.workingCopy.buffer.getText() === source, 'a minimum-width value draft wrote canonical source');
-		await capture(`animation-${variant}-minimum-value-editor-theme-${theme}`);
+		await capture(`animation-${variant}-${presentation}-value-editor-theme-${theme}`);
 		await press('Escape');
 		t.assert(input.workingCopy.buffer.getText() === source, 'Escape accepted a minimum-width value draft');
-		await capture(`animation-${variant}-cancelled-value-editor-theme-${theme}`);
+		await capture(`animation-${variant}-${presentation}-cancelled-value-editor-theme-${theme}`);
 		const coordinate = input.document.tracks[0].keys[0].coordinate;
 		const coordinateIndex = tree.rows.findIndex(row => row.element.field === coordinate.field);
 		t.assert(coordinateIndex >= 0 && coordinateIndex !== index, 'the real key has no distinct coordinate property');
@@ -166,7 +212,7 @@ for (const variant of ['tiny', 'msx']) {
 		t.assert(tree.selectionIndex === index && input.detailSelection.path === selected.source.file.file
 			&& input.detailSelection.range.start === fieldStart && input.detailSelection.range.end === fieldEnd,
 			'secondary input did not publish the actually clicked property as its command subject');
-		await capture(`animation-${variant}-pointer-context-theme-${theme}`);
+		await capture(`animation-${variant}-${presentation}-pointer-context-theme-${theme}`);
 		await press('Home');
 		t.assert(tree.selectionIndex === index && input.trackIndex === 0 && input.keyIndex === 0,
 			'context-menu Home leaked to the underlying property or track list');
@@ -176,7 +222,7 @@ for (const variant of ['tiny', 'msx']) {
 		await press('ArrowDown'); await press('ShiftLeft', 'F10'); await press('Home');
 		t.assert(tree.selectionIndex === index && input.trackIndex === 0 && input.keyIndex === 0,
 			'ShiftF10 did not open an owning Details menu that consumes Home');
-		await capture(`animation-${variant}-keyboard-context-theme-${theme}`);
+		await capture(`animation-${variant}-${presentation}-keyboard-context-theme-${theme}`);
 		await press('Escape'); await press('ArrowUp');
 		t.assert(tree.selectionIndex === coordinateIndex, 'closing the keyboard menu did not restore the actual Details target');
 		await press('ArrowDown');

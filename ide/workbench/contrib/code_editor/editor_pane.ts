@@ -21,7 +21,7 @@ import { showEditorMessage } from '../../../common/feedback_state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { getCodeAreaBounds, scrollRows, scrollHorizontally, refreshViewportLayout, handlePointerAutoScroll } from '../../../editor/ui/view/view';
+import { getCodeAreaBounds, measureGutterWidth, scrollRows, scrollHorizontally, refreshViewportLayout, handlePointerAutoScroll } from '../../../editor/ui/view/view';
 import { renderCodeArea } from '../../../editor/render/code_area/area';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
@@ -58,9 +58,17 @@ import { closeLineJump } from './find/line_jump';
 import { setActiveDiagnostics } from '../../../editor/contrib/diagnostics/state';
 import { ensureCursorVisible } from '../../../editor/ui/view/caret/view';
 
+// A short source line remains readable without making the gutter part of its text budget.
+const SOURCE_READING_COLUMNS = 48;
+
 const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
 export class CodeEditorPane extends EditorPane<CodeEditorInput> implements PointerCaptureTarget {
+	public override get companionGameMinimumWidth(): number {
+		return measureGutterWidth() + 2 + editorViewState.charAdvance * (SOURCE_READING_COLUMNS + 1)
+			+ constants.SCROLLBAR_WIDTH + constants.CODE_AREA_RIGHT_MARGIN;
+	}
+
 	private readonly nativeText = new CodeEditorTextInput();
 	private textTop = -1;
 	private textBottom = -1;

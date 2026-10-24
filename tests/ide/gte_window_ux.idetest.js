@@ -191,7 +191,10 @@ t.command('gte.follow'); await t.frames(2);
 t.assert(input.selected.sequence !== firstSequence, 'Follow did not change the capture during the Source icon hold');
 t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 t.assert(t.activeWorkbenchTab() === input, 'a retired Source icon press navigated using a newer capture');
-await press('Escape'); await press('Home');
+await press('Escape'); await press('End');
+const popupSequence = input.selected.sequence;
+t.assert(popupSequence === original.sequence && input.selected.commandWord === 0x06,
+	'the popup Source phase did not select the original NCLIP issuing instruction');
 const more = input.actions.overflow.button.bounds;
 await click((more.left + more.right) / 2, (more.top + more.bottom) / 2);
 const sourceIndex = input.actions.overflow.items.filter(item => item.type === 'command').findIndex(item => item.command === 'gte.source');
@@ -200,11 +203,25 @@ await press('Home');
 for (let index = 0; index < sourceIndex; index++) await press('ArrowDown');
 await capture('gte-window-popup-captured-source');
 t.controlInput([{ type: 'key', code: 'Enter', down: true }]); await t.frames(1);
-t.command('gte.follow'); await t.frames(2);
-t.assert(input.selected.sequence !== firstSequence, 'Follow did not change the capture during popup Source acceptance');
+// The popup owns this gesture; cancellation must retire its pending acceptance.
+// Source-generation retirement during accept is covered at the captured popup owner.
+await press('Escape');
 t.controlInput([{ type: 'key', code: 'Enter', down: false }]); await t.frames(2);
-t.assert(t.activeWorkbenchTab() === input, 'an old popup Source attempt navigated using a newer selected capture');
-await capture('gte-window-popup-source-retired');
+t.assert(t.activeWorkbenchTab() === input && input.selected.sequence === popupSequence,
+	'a cancelled popup Source attempt navigated or changed its retained capture');
+await capture('gte-window-popup-source-cancelled');
+await click((more.left + more.right) / 2, (more.top + more.bottom) / 2);
+await press('Home');
+for (let index = 0; index < sourceIndex; index++) await press('ArrowDown');
+await press('Enter');
+t.assert(t.activeWorkbenchTab() === authored && authored.workingCopy === model
+	&& authored.context.view.cursorRow === 70 && authored.context.view.cursorColumn === 8
+	&& input.selected.sequence === popupSequence,
+	'a fresh popup Source acceptance lost its canonical issuing instruction or retained capture');
+await capture('gte-window-popup-source-accepted');
+t.command('gteDebugger'); await t.frames(3);
+t.assert(t.activeWorkbenchTab() === input && input.selected.sequence === popupSequence,
+	'popup Source return replaced the retained GTE input or its captured subject');
 await press('Escape'); await press('Home'); t.command('gte.details'); await t.frames(2);
 const pinned = selected();
 await capture('gte-window-list-selection-retired-source-attempt');
@@ -266,28 +283,31 @@ t.command('gteDebugger'); await t.frames(3);
 t.assert(t.activeWorkbenchTab() === input && window.open && sameBounds(window.requestedBounds, placement), 'reattaching GTE lost its retained window placement');
 sameCapture(pinned); await capture('gte-window-reattached');
 
-// A constrained history never forces its root-owned inspector back into a cramped side column.
+// Optional companion composition preserves history and the root-owned inspector's placement.
 for (let font = 0; font < 2; font++) {
 	const variant = input.layout.font.variant;
-	await clickAction('window.hide'); t.command('gameView.togglePanel'); await t.frames(3);
-	await drag(input.layout.right + 2, 80, 50, 80); t.command('gteDebugger'); await t.frames(2);
+	await clickAction('window.hide'); t.command('gameView.closePanel'); await t.frames(3);
+	const fullRight = input.layout.right, inspectorPlacement = { ...window.requestedBounds };
+	t.command('gameView.togglePanel'); await t.frames(3);
+	const companion = input.layout.right < fullRight;
+	if (companion) await drag(input.layout.right + 2, 80, 50, 80);
+	t.command('gteDebugger'); await t.frames(2);
+	const phase = companion ? 'companion' : 'full-preview-unavailable';
 	for (let theme = 0; theme < 2; theme++) {
-		t.assert(input.layout.right - input.layout.left === (variant === 'tiny' ? 78 : 118), 'the real GTE sash did not reach its supported font minimum');
-		t.assert(input.list.bounds.right - input.list.bounds.left >= input.layout.right - input.layout.left - 16,
-			'the minimum command history still shares a fixed diagram split');
-		await capture(`gte-history-minimum-${variant}-theme-${theme}`);
+		const historyBounds = { ...input.list.bounds };
+		await capture(`gte-history-${phase}-${variant}-theme-${theme}`);
 		t.command('gte.details'); await t.frames(2); await chooseView('Properties', 'properties');
-		t.assert(input.inspectorBounds.right - input.inspectorBounds.left > input.list.bounds.right - input.list.bounds.left,
-			'the root-owned GTE inspector shrank to its constrained history pane');
-		await capture(`gte-inspector-minimum-owner-${variant}-theme-${theme}-properties`);
+		t.assert(window.open && sameBounds(window.requestedBounds, inspectorPlacement) && sameBounds(input.list.bounds, historyBounds),
+			'opening the root-owned GTE inspector changed its requested placement or the retained history allocation');
+		await capture(`gte-inspector-${phase}-${variant}-theme-${theme}-properties`);
 		await chooseView('Automatic', 'diagram', 'auto'); await focusClient(); await press('Home');
-		sameCapture(pinned); await capture(`gte-inspector-minimum-owner-${variant}-theme-${theme}-diagram`);
+		sameCapture(pinned); await capture(`gte-inspector-${phase}-${variant}-theme-${theme}-diagram`);
 		await press('End');
-		t.assert(input.diagram.scrollTop === input.diagram.scrollbar.getMaximumScroll(), 'the narrow-owner command diagram cannot reveal its final annotation');
+		t.assert(input.diagram.scrollTop === input.diagram.scrollbar.getMaximumScroll(), 'the retained command diagram cannot reveal its final annotation');
 		await chooseView('Properties', 'properties'); await clickAction('window.hide');
 		t.command('theme-toggle'); await t.frames(2);
 	}
-	t.command('gameView.togglePanel'); await t.frames(3); t.command('gteDebugger'); t.command('gte.details'); await t.frames(2);
+	t.command('gameView.closePanel'); await t.frames(3); t.command('gteDebugger'); t.command('gte.details'); await t.frames(2);
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 

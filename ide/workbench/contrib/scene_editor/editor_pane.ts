@@ -26,7 +26,7 @@ import type { ResourcePanelController } from '../resources/panel/controller';
 import type { SceneEditorController } from './controller';
 import { POSITION_AXES, type SceneEditorInput, type SceneEditorSection } from './editor_input';
 import { drawSceneEditor } from './render';
-import { layoutSceneEditor } from './layout';
+import { layoutSceneEditor, measureSceneEditorMinimumWidth } from './layout';
 import { selectSceneOutlineRow } from './outline';
 import { SceneOptionEditor, type SceneEditorSectionCommands } from './option_editor';
 import type { SceneOptionProperty } from './option_properties';
@@ -39,6 +39,7 @@ import { SceneOutlineFeedback } from './feedback';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInput> {
+	public override get companionGameMinimumWidth(): number { return measureSceneEditorMinimumWidth(); }
 	public override getSelection(): SceneEditorNavigationSelection {
 		this.controller.refresh(this.input);
 		return new SceneEditorNavigationSelection(this.input);

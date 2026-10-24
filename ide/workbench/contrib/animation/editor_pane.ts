@@ -19,6 +19,8 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
+import { WorkbenchSplitControl } from '../../ui/split_control';
+import { drawWorkbenchSplit } from '../../render/split_view';
 import { WorkbenchPropertyEdit } from '../../ui/property_edit';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { WorkbenchImageControl } from '../../ui/image_control';
@@ -27,22 +29,28 @@ import { workbenchListRowIndexAtPosition, scrollWorkbenchList, revealWorkbenchLi
 import { navigateWorkbenchTree } from '../../ui/tree_view';
 import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
-import type { AnimationTrackSource } from './model';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AnimationEditorController } from './controller';
-import type { AnimationEditorInput } from './editor_input';
+import type { AnimationClient, AnimationEditorInput } from './editor_input';
 import { AnimationKeyControl } from './key_control';
 import { AnimationLaneControl } from './lane_control';
-import { layoutAnimationEditor } from './layout';
+import { layoutAnimationEditor, measureAnimationEditor } from './layout';
 import { drawAnimationEditor } from './render';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
 const TRACK_NAVIGATION = [['ArrowUp', -1], ['ArrowDown', 1]] as const;
 const DETAILS_NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['Home', 'home'], ['End', 'end']] as const;
+const ANIMATION_AUTHORING_COMMANDS = ['animation.addTrack', 'animation.addKey', 'animation.addClip', 'animation.addFrame',
+	'animation.addProperty', 'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.openClip',
+	'animation.fit', 'animation.snap', 'animation.remove', 'animation.source', 'animation.producerSource', 'animation.edit', 'animation.more'] as const;
 
 export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationEditorInput> {
+	public override get companionGameMinimumWidth(): number { return measureAnimationEditor(editorViewState.font).compactWidth; }
 	private readonly actions: WorkbenchActionBarControl;
+	private readonly clients: WorkbenchActionBarControl;
+	private readonly columnSash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
+	private readonly rowSash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionTooltip = new WorkbenchTooltip();
 	private readonly propertyPointer = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly detailsFocus = inputFocus.createTarget(this.focusTarget);
@@ -52,12 +60,15 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	private readonly image = new WorkbenchImageControl(inputFocus, pointerCapture, this.focusTarget);
 	private imageBitmap: HostBitmap | undefined;
 	private readonly unbindDetailsKeyboard: () => void;
+	private readonly unbindClientFocus: readonly (() => void)[];
+	private readonly focusOrder: readonly InputFocusTarget[];
 	private unbindProjection: (() => void) | undefined;
 	private version = -1;
-	private font: typeof editorViewState.font | undefined;
-	private keyTrack: AnimationTrackSource | undefined;
-	private keyRevision = -1;
-	private left = 0; private top = 0; private right = 0; private bottom = 0;
+	private endLabel = '';
+	private columnRevision = -1;
+	private rowRevision = -1;
+	private client: AnimationClient | undefined;
+	private keysAvailable = false;
 	public constructor(resources: ResourcePanelController, private readonly controller: AnimationEditorController,
 		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
@@ -68,36 +79,62 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		this.lanes = new AnimationLaneControl(this.focusTarget, controller);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
+		this.clients = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
+		this.focusTarget.canFocus = () => this.hasInput && this.input.layout.tracksVisible;
+		this.detailsFocus.canFocus = () => this.hasInput && this.input.layout.detailsVisible;
+		this.keys.focusTarget.canFocus = () => this.hasInput && this.input.layout.keysVisible && this.input.keys.unit !== undefined;
+		this.image.focusTarget.canFocus = () => this.hasInput && this.input.layout.keysVisible && this.imageBitmap !== undefined;
+		this.columnSash.focusTarget.canFocus = this.rowSash.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode === 'expanded';
+		this.unbindClientFocus = [
+			this.focusTarget.onDidFocus(() => { this.input.activeClient = 'tracks'; }),
+			this.keys.focusTarget.onDidFocus(() => { this.input.activeClient = 'keys'; }),
+			this.image.focusTarget.onDidFocus(() => { this.input.activeClient = 'keys'; }),
+			this.detailsFocus.onDidFocus(() => { this.input.activeClient = 'details'; }),
+		];
+		const tracksCommand = { isEnabled: () => this.hasInput, run: () => this.selectClient('tracks') };
+		const keysCommand = { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => this.selectClient('keys') };
+		const detailsCommand = { isEnabled: () => this.hasInput, run: () => this.selectClient('details') };
+		for (const target of [this.focusTarget, this.keys.focusTarget, this.detailsFocus, this.image.focusTarget, this.edit.control.field.focusTarget,
+			this.actions.focusTarget, this.clients.focusTarget, this.columnSash.focusTarget, this.rowSash.focusTarget]) {
+			target.registerCommand('animation.tracks', tracksCommand);
+			target.registerCommand('animation.keys', keysCommand);
+			target.registerCommand('animation.details', detailsCommand);
+		}
 		this.actions.onDidOpenOverflow = lifetime => {
 			this.keys.cancelPointer(); this.lanes.cancelPointer(); this.propertyPointer.hideFeedback(); this.actionTooltip.hide();
 			lifetime.add({ dispose: this.input.onDidInvalidateProjection(() => contextMenu.hide()) });
 		};
 		this.detailsFocus.commandContext = this.focusTarget;
 		this.unbindDetailsKeyboard = this.detailsFocus.bindKeyboard(player => this.handleDetailsKeyboard(player));
-		this.focusTarget.registerCommand('animation.addTrack', { isEnabled: () => this.controller.authoring.canAddTrack(this.input), run: () => this.controller.authoring.addTrack(this.input) });
-		this.focusTarget.registerCommand('animation.addKey', { isEnabled: () => this.controller.authoring.canAddKey(this.input), run: () => this.controller.authoring.addKey(this.input) });
-		this.focusTarget.registerCommand('animation.addClip', { isEnabled: () => this.controller.authoring.canAddClip(this.input), run: () => this.controller.authoring.addClip(this.input) });
-		this.focusTarget.registerCommand('animation.addFrame', { isEnabled: () => this.controller.authoring.canAddFrame(this.input), run: () => this.controller.authoring.addFrame(this.input) });
-		this.focusTarget.registerCommand('animation.addProperty', { isEnabled: () => this.controller.authoring.canAddProperty(this.input), run: () => this.controller.authoring.addProperty(this.input) });
-		this.focusTarget.registerCommand('animation.duplicate', { isEnabled: () => this.controller.authoring.canDuplicate(this.input), run: () => this.controller.authoring.duplicate(this.input) });
-		this.focusTarget.registerCommand('animation.earlier', { isEnabled: () => this.controller.authoring.canReorder(this.input, -1), run: () => this.controller.authoring.reorder(this.input, -1) });
-		this.focusTarget.registerCommand('animation.later', { isEnabled: () => this.controller.authoring.canReorder(this.input, 1), run: () => this.controller.authoring.reorder(this.input, 1) });
-		this.focusTarget.registerCommand('animation.openClip', { isEnabled: () => this.input.document?.clips[this.input.clipIndex]?.sequence !== undefined, run: () => this.controller.openClip(this.input) });
-		this.focusTarget.registerCommand('animation.fit', { isEnabled: () => this.input.keys.unit !== undefined, run: () => { this.input.keys.fit(); this.input.keys.curve.bind(this.input.keys); } });
-		this.focusTarget.registerCommand('animation.snap', { isEnabled: () => this.input.keys.unit !== undefined, run: () => { this.input.keys.snap = !this.input.keys.snap; this.input.status = this.input.keys.snap ? 'Snap on' : 'Snap off'; } });
-		this.focusTarget.registerCommand('animation.remove', { isEnabled: () => this.controller.authoring.canRemove(this.input), run: () => this.controller.authoring.remove(this.input) });
-		this.focusTarget.registerCommand('animation.source', { isEnabled: () => true, run: () => this.controller.openSource(this.input) });
+		this.focusTarget.registerCommand('animation.addTrack', { isEnabled: () => this.hasInput && this.controller.authoring.canAddTrack(this.input), run: () => this.controller.authoring.addTrack(this.input) });
+		this.focusTarget.registerCommand('animation.addKey', { isEnabled: () => this.hasInput && this.controller.authoring.canAddKey(this.input), run: () => this.controller.authoring.addKey(this.input) });
+		this.focusTarget.registerCommand('animation.addClip', { isEnabled: () => this.hasInput && this.controller.authoring.canAddClip(this.input), run: () => this.controller.authoring.addClip(this.input) });
+		this.focusTarget.registerCommand('animation.addFrame', { isEnabled: () => this.hasInput && this.controller.authoring.canAddFrame(this.input), run: () => this.controller.authoring.addFrame(this.input) });
+		this.focusTarget.registerCommand('animation.addProperty', { isEnabled: () => this.hasInput && this.controller.authoring.canAddProperty(this.input), run: () => this.controller.authoring.addProperty(this.input) });
+		this.focusTarget.registerCommand('animation.duplicate', { isEnabled: () => this.hasInput && this.controller.authoring.canDuplicate(this.input), run: () => this.controller.authoring.duplicate(this.input) });
+		this.focusTarget.registerCommand('animation.earlier', { isEnabled: () => this.hasInput && this.controller.authoring.canReorder(this.input, -1), run: () => this.controller.authoring.reorder(this.input, -1) });
+		this.focusTarget.registerCommand('animation.later', { isEnabled: () => this.hasInput && this.controller.authoring.canReorder(this.input, 1), run: () => this.controller.authoring.reorder(this.input, 1) });
+		this.focusTarget.registerCommand('animation.openClip', { isEnabled: () => this.hasInput && this.input.document?.clips[this.input.clipIndex]?.sequence !== undefined, run: () => this.controller.openClip(this.input) });
+		this.focusTarget.registerCommand('animation.fit', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.fit(); this.input.keys.curve.bind(this.input.keys); } });
+		this.focusTarget.registerCommand('animation.snap', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.snap = !this.input.keys.snap; this.input.status = this.input.keys.snap ? 'Snap on' : 'Snap off'; } });
+		this.focusTarget.registerCommand('animation.remove', { isEnabled: () => this.hasInput && this.controller.authoring.canRemove(this.input), run: () => this.controller.authoring.remove(this.input) });
+		this.focusTarget.registerCommand('animation.source', { isEnabled: () => this.hasInput, run: () => this.controller.openSource(this.input) });
 		this.focusTarget.registerCommand('animation.producerSource', {
-			isEnabled: () => this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined,
+			isEnabled: () => this.hasInput && this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined,
 			run: () => this.controller.openProducerSource(this.input),
 		});
 		this.focusTarget.registerCommand('animation.edit', { isEnabled: () => {
+			if (!this.hasInput) return false;
 			const property = this.input.details.rows[this.input.details.selectionIndex]?.element;
 			if (property === undefined || !property.source.structural || !this.input.document!.syntaxComplete) return false;
 			const range = property.source.file.chunk.locations.range(property.field.value.span);
 			return range.start.line === range.end.line && !this.controller.modelFor(this.input, property.source.file).readOnly;
 		}, run: () => this.editProperty() });
-		this.focusTarget.registerCommand('animation.more', { isEnabled: () => this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
+		this.focusTarget.registerCommand('animation.more', { isEnabled: () => this.hasInput && this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
+		for (const target of [this.keys.focusTarget, this.detailsFocus, this.image.focusTarget, this.edit.control.field.focusTarget,
+			this.actions.focusTarget, this.clients.focusTarget, this.columnSash.focusTarget, this.rowSash.focusTarget]) {
+			for (const command of ANIMATION_AUTHORING_COMMANDS) target.registerCommand(command, this.focusTarget.getCommand(command)!);
+		}
 		this.focusTarget.registerCommand('contextMenu', {
 			isEnabled: () => this.input.tracks.selectionIndex >= 0,
 			run: () => {
@@ -133,28 +170,48 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 			this.keys.focusTarget.registerCommand(direction, historyCommand);
 			this.image.focusTarget.registerCommand(direction, historyCommand);
 		}
-		this.focusTarget.next = this.keys.focusTarget; this.keys.focusTarget.previous = this.focusTarget;
-		this.keys.focusTarget.next = this.image.focusTarget; this.image.focusTarget.previous = this.keys.focusTarget;
-		this.image.focusTarget.next = this.detailsFocus; this.detailsFocus.previous = this.image.focusTarget;
-		this.detailsFocus.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.detailsFocus;
-		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
+		this.focusOrder = [this.focusTarget, this.keys.focusTarget, this.image.focusTarget, this.detailsFocus,
+			this.columnSash.focusTarget, this.rowSash.focusTarget, this.actions.focusTarget, this.clients.focusTarget];
 	}
 	protected override activate(): void {
 		super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.keys.setInput(this.input); this.lanes.setInput(this.input);
+		this.clients.setInput(this.input.clientBar, this.focusTarget); this.columnSash.setInput(this.input.columnSplit); this.rowSash.setInput(this.input.rowSplit);
 		this.unbindProjection = this.input.onDidInvalidateProjection(() => this.edit.close()); this.version = -1; this.update();
+	}
+	public override focus(): void {
+		switch (this.input.activeClient) {
+			case 'tracks': this.focusTarget.focus(); break;
+			case 'keys': (this.imageBitmap === undefined ? this.keys.focusTarget : this.image.focusTarget).focus(); break;
+			case 'details': this.detailsFocus.focus(); break;
+		}
+	}
+	private selectClient(client: AnimationClient): void {
+		this.input.activeClient = client;
+		this.update(); this.focus();
+	}
+	private updateFocusOrder(): void {
+		let previous = this.clients.focusTarget;
+		for (const target of this.focusOrder) {
+			if (!target.canFocus!()) continue;
+			previous.next = target; target.previous = previous; previous = target;
+		}
 	}
 	public override clearInput(): void {
 		this.unbindProjection?.(); this.unbindProjection = undefined; this.edit.close(); this.keys.clearInput(); this.lanes.clearInput(); this.actions.clearInput();
+		this.clients.clearInput(); this.columnSash.clearInput(); this.rowSash.clearInput();
 		this.image.clearInput(); this.imageBitmap = undefined;
 		this.actionTooltip.hide();
 		this.propertyPointer.clear(); this.detailsFocus.release(); super.clearInput();
 	}
 	public override dispose(): void {
 		this.unbindProjection?.(); this.keys.dispose(); this.lanes.dispose(); this.image.dispose(); this.actions.dispose(); this.edit.dispose(); this.unbindDetailsKeyboard();
+		this.clients.dispose(); this.columnSash.dispose(); this.rowSash.dispose();
+		for (const unbind of this.unbindClientFocus) unbind();
 		this.propertyPointer.dispose(); super.dispose();
 		this.actionTooltip.detach();
 	}
 	private editProperty(): void {
+		this.input.activeClient = 'details'; this.update();
 		this.propertyPointer.hideFeedback();
 		const input = this.input, row = input.details.rows[input.details.selectionIndex], property = row.element;
 		const model = this.controller.modelFor(input, property.source.file), locations = property.source.file.chunk.locations;
@@ -165,44 +222,72 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	}
 	public override update(): void {
 		this.controller.refresh(this.input);
-		const bounds = this.contentBounds;
-		if (this.version !== this.input.version || this.font !== editorViewState.font || this.left !== bounds.left || this.top !== bounds.top || this.right !== bounds.right || this.bottom !== bounds.bottom) {
+		const bounds = this.contentBounds, input = this.input, previousBounds = input.layout.bounds;
+		const keysAvailable = input.keys.unit !== undefined;
+		// A changed source can retire its numeric axis; its selected source remains available in Details.
+		if (this.version !== input.version && !keysAvailable && input.activeClient === 'keys') input.activeClient = 'details';
+		const availabilityChanged = this.keysAvailable !== keysAvailable;
+		this.keysAvailable = keysAvailable;
+		if (this.version !== input.version || input.layout.font !== editorViewState.font || this.client !== input.activeClient
+			|| this.columnRevision !== input.columnSplit.revision || this.rowRevision !== input.rowSplit.revision
+			|| previousBounds.left !== bounds.left || previousBounds.top !== bounds.top || previousBounds.right !== bounds.right || previousBounds.bottom !== bounds.bottom) {
 			this.lanes.cancelPointer();
-			layoutAnimationEditor(this.input, bounds, this.keys);
-			this.input.keys.endLabelWidth = measureText(this.input.keys.endLabel);
-			this.keyTrack = this.input.keys.track;
-			this.version = this.input.version; this.font = editorViewState.font;
-			this.left = bounds.left; this.top = bounds.top; this.right = bounds.right; this.bottom = bounds.bottom;
+			layoutAnimationEditor(input, bounds, this.keys);
+			if (!input.layout.keysVisible) { this.keys.cancelPointer(); this.image.cancelPointer(); }
+			input.keys.endLabelWidth = measureText(input.keys.endLabel);
+			this.endLabel = input.keys.endLabel;
+			this.version = input.version; this.client = input.activeClient;
+			this.columnRevision = input.columnSplit.revision; this.rowRevision = input.rowSplit.revision;
+			this.updateFocusOrder();
+			if (input.layout.mode === 'compact') {
+				this.columnSash.cancelPointer(); this.rowSash.cancelPointer();
+				if (this.columnSash.focusTarget.hasFocus || this.rowSash.focusTarget.hasFocus) this.focus();
+			}
+			if (!input.layout.detailsVisible) this.propertyPointer.hideFeedback();
 		}
-		if (this.keyTrack !== this.input.keys.track) {
-			this.keyTrack = this.input.keys.track;
-			this.input.keys.endLabelWidth = measureText(this.input.keys.endLabel);
+		if (availabilityChanged) {
+			this.updateFocusOrder();
+			if (!keysAvailable && (this.keys.focusTarget.hasFocus || this.image.focusTarget.hasFocus)) this.focus();
 		}
-		if (this.keyRevision !== this.input.keys.revision) {
-			this.keyRevision = this.input.keys.revision;
-			this.input.keys.endLabelWidth = measureText(this.input.keys.endLabel);
+		if (this.endLabel !== input.keys.endLabel) {
+			this.endLabel = input.keys.endLabel;
+			input.keys.endLabelWidth = measureText(input.keys.endLabel);
 		}
-		this.input.keys.update(); this.input.keys.curve.update(this.input.keys);
-		this.input.overview.update(this.input);
+		if (input.layout.keysVisible) input.keys.update();
+		if (input.layout.keysVisible) input.keys.curve.update(input.keys);
+		if (input.layout.mode === 'expanded') input.overview.update(input);
 		const preview = this.input.framePreview;
 		if (preview.bitmap !== this.imageBitmap) {
+			const returnToKeys = this.image.focusTarget.hasFocus && keysAvailable;
 			this.imageBitmap = preview.bitmap;
-			if (preview.bitmap === undefined) this.image.clearInput(); else this.image.setInput(preview.view);
+			if (preview.bitmap === undefined) {
+				this.image.clearInput();
+				if (returnToKeys) this.keys.focusTarget.focus();
+			} else this.image.setInput(preview.view);
+			this.updateFocusOrder();
 		}
-		if (preview.bitmap !== undefined) {
+		if (input.layout.keysVisible && preview.bitmap !== undefined) {
 			const area = this.input.keys.curve.bounds;
 			preview.view.layout(area.left, area.top + editorViewState.font.lineHeight + 4, area.right, area.bottom);
 		}
-		const details = this.input.details.layout;
-		layoutWorkbenchPropertyTree(this.input.details, editorViewState.font.renderFont(), measureTextRange,
-			details.contentLeft, details.contentTop, details.contentRight, details.bottom);
-		this.propertyPointer.updateFeedback(this.input.details);
-		this.edit.update(); this.actions.update();
+		if (input.layout.detailsVisible) {
+			const details = input.details.layout;
+			layoutWorkbenchPropertyTree(input.details, editorViewState.font.renderFont(), measureTextRange,
+				details.contentLeft, details.contentTop, details.contentRight, details.bottom);
+			this.propertyPointer.updateFeedback(input.details);
+		}
+		this.edit.update(); this.actions.update(); this.clients.update();
 		const hint = this.actions.tooltipItem;
 		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.actionTooltip.hide();
 	}
-	public draw(): void { drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus); }
+	public draw(): void {
+		drawAnimationEditor(this.input, this.contentBounds, this.keys.focusTarget.hasFocus);
+		if (this.input.layout.mode === 'expanded') {
+			drawWorkbenchSplit(this.input.columnSplit, this.columnSash.hovered || this.columnSash.focusTarget.hasFocus);
+			drawWorkbenchSplit(this.input.rowSplit, this.rowSash.hovered || this.rowSash.focusTarget.hasFocus);
+		}
+	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
 	public handleKeyboard(player: KeyInputEvent): void {
 		if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.lanes.cancelPointer(); return; }
@@ -230,45 +315,52 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		});
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
-		if (this.imageBitmap !== undefined && this.image.handlePointer(snapshot)) return true;
-		if (this.actions.handlePointer(snapshot)) return true;
+		const input = this.input, layout = input.layout;
+		if (this.actions.handlePointer(snapshot) || this.clients.handlePointer(snapshot)) return true;
+		if (layout.mode === 'expanded' && (this.columnSash.handlePointer(snapshot) || this.rowSash.handlePointer(snapshot))) return true;
+		if (layout.keysVisible && this.imageBitmap !== undefined && this.image.handlePointer(snapshot)) return true;
 		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
-		if (this.keys.handlePointer(snapshot)) {
-			if (secondary) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.keys.focusTarget);
+		if (layout.keysVisible && this.keys.handlePointer(snapshot)) {
+			if (secondary) { input.activeClient = 'keys'; this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.keys.focusTarget); }
 			return true;
 		}
-		if (this.lanes.handlePointer(snapshot)) {
+		if (layout.mode === 'expanded' && this.lanes.handlePointer(snapshot)) {
+			if (justPressed || secondary) input.activeClient = 'tracks';
 			if (secondary) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget);
 			return true;
 		}
-		const result = this.propertyPointer.handle(this.input.details, snapshot, justPressed, now);
-		if (result !== WorkbenchPropertyPointerResult.Outside) {
-			if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) {
-				this.controller.selectProperty(this.input, this.input.details.selectionIndex);
-				if (justPressed) this.detailsFocus.focus();
+		if (layout.detailsVisible) {
+			const result = this.propertyPointer.handle(input.details, snapshot, justPressed, now);
+			if (result !== WorkbenchPropertyPointerResult.Outside) {
+				if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) {
+					this.controller.selectProperty(input, input.details.selectionIndex);
+					input.activeClient = 'details';
+					if (justPressed) this.detailsFocus.focus();
+				}
+				if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.detailsFocus);
+				if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('animation.edit', this.focusTarget);
+				return true;
 			}
-			if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.detailsFocus);
-			if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('animation.edit', this.focusTarget);
-			return true;
 		}
-		const index = workbenchListRowIndexAtPosition(this.input.tracks, snapshot.viewportX, snapshot.viewportY);
+		if (!layout.tracksVisible) return false;
+		const index = workbenchListRowIndexAtPosition(input.tracks, snapshot.viewportX, snapshot.viewportY);
 		if (index === -1) return false;
 		if (justPressed || secondary) {
-			this.controller.selectTrack(this.input, index);
-			if (justPressed) this.focus();
+			this.controller.selectTrack(input, index); input.activeClient = 'tracks';
+			if (justPressed) this.focusTarget.focus();
 			if (secondary) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget);
 		}
 		return true;
 	}
 	public handleWheel(event: WheelInputSnapshot): void {
-		if (this.imageBitmap !== undefined && this.image.handleWheel(event, 16)) return;
-		const list = this.input.tracks, details = this.input.details;
-		if (this.input.keys.unit !== undefined && (point_in_rect(event.viewportX, event.viewportY, this.input.overview.bounds)
-			|| point_in_rect(event.viewportX, event.viewportY, this.input.keys.range.bounds) || point_in_rect(event.viewportX, event.viewportY, this.input.keys.curve.bounds))) {
-			this.keys.cancelPointer(); this.lanes.cancelPointer(); this.input.keys.zoom(event.viewportX, 1.25 ** event.deltaY);
+		const input = this.input, layout = input.layout, list = input.tracks, details = input.details;
+		if (layout.keysVisible && this.imageBitmap !== undefined && this.image.handleWheel(event, 16)) return;
+		if (input.keys.unit !== undefined && (layout.mode === 'expanded' && point_in_rect(event.viewportX, event.viewportY, input.overview.bounds)
+			|| layout.keysVisible && (point_in_rect(event.viewportX, event.viewportY, input.keys.range.bounds) || point_in_rect(event.viewportX, event.viewportY, input.keys.curve.bounds)))) {
+			this.keys.cancelPointer(); this.lanes.cancelPointer(); input.keys.zoom(event.viewportX, 1.25 ** event.deltaY);
 			return;
 		}
-		if (workbenchListRowIndexAtPosition(list, event.viewportX, event.viewportY) !== -1) scrollWorkbenchList(list, event.deltaY * 3);
-		else if (workbenchListRowIndexAtPosition(details, event.viewportX, event.viewportY) !== -1) scrollWorkbenchList(details, event.deltaY * 3);
+		if (layout.tracksVisible && workbenchListRowIndexAtPosition(list, event.viewportX, event.viewportY) !== -1) scrollWorkbenchList(list, event.deltaY * 3);
+		else if (layout.detailsVisible && workbenchListRowIndexAtPosition(details, event.viewportX, event.viewportY) !== -1) scrollWorkbenchList(details, event.deltaY * 3);
 	}
 }

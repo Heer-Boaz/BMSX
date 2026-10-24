@@ -1,3 +1,4 @@
+import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../../common/constants';
@@ -46,8 +47,13 @@ const SORTS: { label: string; description: string; detail: string; sort: RomInsp
 	{ label: 'File offset', description: 'Physical order', detail: '', sort: 'offset', descending: false },
 ];
 
+// Entry names share a row with byte sizes; the next line retains category and address.
+const ENTRY_READING_COLUMNS = 36;
+
 /** Native workbench controls over one immutable packed-image input. */
 export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorInput> {
+	public override get companionGameMinimumWidth(): number { return editorViewState.charAdvance * ENTRY_READING_COLUMNS + SCROLLBAR_WIDTH + 12; }
+
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.navigate(input));
 	private readonly presentation = new RomInspectorPresentation();
@@ -80,8 +86,10 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionTooltip.attach(surfaces, owner, workArea);
 		this.actions.onDidOpenOverflow = () => this.actionTooltip.hide();
-		for (const target of [this.focusTarget, this.filter.focusTarget]) for (const command of COMMANDS)
-			target.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
+		for (const command of COMMANDS) {
+			const implementation = { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) };
+			for (const target of [this.focusTarget, this.filter.focusTarget, this.list.focusTarget]) target.registerCommand(command, implementation);
+		}
 		this.list.focusTarget.commandContext = this.focusTarget;
 		this.list.focusTarget.registerCommand('list.find', {
 			isEnabled: () => this.hasInput,
@@ -128,6 +136,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		return resource?.domain === domain ? resource : undefined;
 	}
 	public isEnabled(command: EditorCommandId): boolean {
+		if (!this.hasInput) return false;
 		if (command === 'romInspector.inspect') return this.input.model.selection !== undefined || this.input.readerHeld && this.input.reader.subject !== undefined;
 		if (command === 'romInspector.source') return this.source() !== undefined;
 		if (command === 'romInspector.sort') return this.input.model.mode !== 'structure';

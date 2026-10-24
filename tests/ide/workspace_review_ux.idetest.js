@@ -27,12 +27,18 @@ const preview = async (line, replacement) => {
 	return input;
 };
 const narrow = async input => {
+	t.command('gameView.closePanel'); await t.frames(3);
+	const fullRight = input.layout.right;
 	t.command('gameView.togglePanel'); await t.frames(3);
-	t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	const companion = input.layout.right < fullRight;
+	if (companion) {
+		t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	}
 	t.assert(t.activeWorkbenchTab() === input && input.proposal.state === 'pending', 'resizing replaced or settled the retained source review');
 	await focusContent(input);
+	return companion ? 'companion' : 'full-preview-unavailable';
 };
 const wide = async input => { t.command('gameView.closePanel'); await t.frames(3); await focusContent(input); };
 const resizeAboveProblems = async (input, bottom) => {
@@ -103,9 +109,9 @@ for (let font = 0; font < 2; font++) {
 	t.assert(t.activeWorkbenchTab() === input && input.proposal === acceptedProposal, 'Files or font reflow replaced the accepted review');
 	t.command('resources'); await t.frames(3); await focusContent(input); sameIntent(input, expected);
 	t.assert(input.viewport.scrollTop === expected.scroll, 'Files open/resize/font/close accumulated reading drift');
-	await narrow(input); sameIntent(input, expected);
+	const phase = await narrow(input); sameIntent(input, expected);
 	for (let theme = 0; theme < 2; theme++) {
-		unchanged(input); await capture(`workspace-review-minimum-${variant}-theme-${theme}`);
+		unchanged(input); await capture(`workspace-review-${phase}-${variant}-theme-${theme}`);
 		t.command('theme-toggle'); await t.frames(2); sameIntent(input, expected);
 	}
 	await wide(input); sameIntent(input, expected);
@@ -135,8 +141,8 @@ for (let font = 0; font < 2; font++) {
 await press('ControlLeft', 'KeyW');
 t.assert(input.proposal.state === 'discarded' && model.buffer.getText() === source && !model.canUndo, 'closing the real review did not discard without source writes');
 
-// A short real rename fits above a resized Problems panel at full width but overflows the MSX
-// minimum. Its hidden intent survives a layout clamp; physical Home at that zero replaces it.
+// A short real rename fits above Problems at full width but wraps beside an explicitly
+// resized Files panel. Its hidden intent survives a layout clamp; physical Home replaces it.
 input = await preview(24, 'opening_duration_frames');
 t.assert(input.proposal.files.length === 1 && input.proposal.files[0].model === model && input.proposal.files[0].hunks.length === 2,
 	'the short rename no longer supplies two real hunks from the same canonical source');
@@ -145,29 +151,38 @@ t.command('problems'); await t.frames(3);
 const reviewBottom = input.viewport.bounds.top + (input.rows.length + 1) * input.layout.rowHeight;
 await resizeAboveProblems(input, reviewBottom); await focusContent(input);
 t.assert(input.viewport.scrollbar.getMaximumScroll() === 0, 'the real short rename no longer fits the full-width MSX viewport');
-await narrow(input);
-t.assert(input.viewport.scrollbar.getMaximumScroll() > input.layout.rowHeight * 4, 'the real short rename did not overflow at the MSX minimum');
+const narrowReading = async () => {
+	t.command('resources'); await t.frames(3);
+	const divider = input.layout.left, y = (input.layout.top + input.layout.bottom) / 2;
+	t.controlInput([{ type: 'pointer', x: divider, y }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+	t.controlInput([{ type: 'pointer', x: input.layout.right, y }]); await t.frames(2);
+	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	await focusContent(input);
+};
+const wideReading = async () => { t.command('resources'); await t.frames(3); await focusContent(input); };
+await narrowReading();
+t.assert(input.viewport.scrollbar.getMaximumScroll() > input.layout.rowHeight * 4, 'resizing the real Files panel did not establish an overflowing short review');
 await scrollToRow(input, 3);
 const clamped = bookmark(input);
-await capture('workspace-review-short-minimum-msx');
+await capture('workspace-review-short-files-msx');
 await resizeAboveProblems(input, input.layout.top + 1);
 t.assert(input.viewport.height === 0, 'the real Problems sash did not reduce the review viewport to zero height');
 await resizeAboveProblems(input, reviewBottom); await focusContent(input); sameIntent(input, clamped);
 t.assert(input.viewport.scrollTop === clamped.scroll, 'the actual zero-height lifecycle replaced hidden source intent');
-await wide(input); t.assert(input.viewport.scrollTop === 0, 'all-content-fit geometry did not clamp the projected pixels');
-await narrow(input); sameIntent(input, clamped);
+await wideReading(); t.assert(input.viewport.scrollTop === 0, 'all-content-fit geometry did not clamp the projected pixels');
+await narrowReading(); sameIntent(input, clamped);
 t.assert(input.viewport.scrollTop === clamped.scroll, 'a width-only clamp overwrote hidden source intent');
-await wide(input); await press('Home'); await narrow(input);
+await wideReading(); await press('Home'); await narrowReading();
 t.assert(input.viewport.scrollTop === 0 && input.reading.edge === 'start', 'physical Home at clamped zero did not replace the old hidden intent');
-await press('End'); await wide(input); await narrow(input);
+await press('End'); await wideReading(); await narrowReading();
 t.assert(input.reading.edge === 'end' && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(), 'End intent was lost through an all-content-fit zero clamp');
 await capture('workspace-review-short-end-msx'); unchanged(input);
 
 // A physical edge command is intent even when the current geometry cannot move pixels.
-await wide(input);
+await wideReading();
 t.assert(input.viewport.height > 0 && input.viewport.scrollbar.getMaximumScroll() === 0,
 	'the physical fitting-End case requires a positive-height viewport with no scroll range');
-await press('Home'); await press('End'); await narrow(input);
+await press('Home'); await press('End'); await narrowReading();
 t.assert(input.viewport.scrollbar.getMaximumScroll() > 0 && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(),
 	'physical End while all content fits did not reveal the new bottom after narrowing');
 await capture('workspace-review-fit-end-restored-msx'); unchanged(input);

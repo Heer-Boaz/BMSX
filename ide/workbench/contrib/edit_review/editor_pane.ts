@@ -21,8 +21,14 @@ import type { ResourcePanelController } from '../resources/panel/controller';
 import type { WorkspaceEditReviewInput } from './editor_input';
 import { layoutEditReviewRows } from './projection';
 
+// Keep a short source line readable beside the preview, rather than wrapping a diff into fragments.
+const REVIEW_READING_COLUMNS = 48;
+
 /** Source review shares the ordinary authoring pause, without borrowing guest state. */
 export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<WorkspaceEditReviewInput> {
+	public override get companionGameMinimumWidth(): number {
+		return editorViewState.charAdvance * REVIEW_READING_COLUMNS + colors.SCROLLBAR_WIDTH + 8;
+	}
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 	public constructor(resourcePanel: ResourcePanelController, private readonly reveal: (models: readonly EditorTextModel[]) => void) {

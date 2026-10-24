@@ -137,6 +137,7 @@ export type EditorCommandId =
 	| 'animation.edit' | 'animation.remove' | 'animation.source' | 'animation.producerSource'
 	| 'animation.fit' | 'animation.snap' | 'animation.addClip' | 'animation.addFrame' | 'animation.addProperty'
 	| 'animation.openClip' | 'animation.duplicate' | 'animation.earlier' | 'animation.later' | 'animation.more'
+	| 'animation.tracks' | 'animation.keys' | 'animation.details'
 	| 'input.testActionString' | 'behaviorLens.testEffect'
 	| 'builds.start' | 'builds.jobs'
 	| 'buildLog.refresh' | 'buildLog.copyAll' | 'buildLog.output' | 'buildLog.error'

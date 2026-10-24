@@ -13,13 +13,19 @@ import type { SceneEditorInput } from './editor_input';
 import type { SceneOutlineElement } from './outline';
 
 const PADDING = 4;
+const CLIENT_READING_COLUMNS = 24;
+
+/** Either retained compact section keeps one readable column and its scroll lane. */
+export function measureSceneEditorMinimumWidth(): number {
+	return editorViewState.charAdvance * CLIENT_READING_COLUMNS + PADDING * 2 + constants.SCROLLBAR_WIDTH;
+}
 
 /** Measure content on invalidation; a scroll only projects the retained field rectangles. */
 export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boolean, selectionChanged = false, bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): boolean {
 	const changed = updateFullWidthWorkbenchLayout(input.layout, bounds);
 	const layout = input.layout;
 	// Each split column needs usable text width; font changes can cross this boundary.
-	if (changed) layout.splitMinimumWidth = 2 * (editorViewState.font.advance('M') * 24 + PADDING * 2 + constants.SCROLLBAR_WIDTH) + 1;
+	if (changed) layout.splitMinimumWidth = 2 * measureSceneEditorMinimumWidth() + 1;
 	const mode = layout.right - layout.left >= layout.splitMinimumWidth ? 'split' : input.section;
 	const measured = changed || contentChanged || selectionChanged || mode !== layout.mode;
 	layout.mode = mode;

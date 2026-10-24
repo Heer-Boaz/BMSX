@@ -37,24 +37,35 @@ const action = async command => {
 	t.assert(item.visible && !item.overflowed && item.enabled, `${command} is not a directly painted command`);
 	await click(item.bounds);
 };
+const outline = async () => {
+	if (input.layout.mode === 'map') await action('cartMap.outline');
+	else {
+		const layout = input.tree.layout;
+		await click({ left: layout.contentLeft, right: layout.contentRight, top: layout.contentTop, bottom: layout.contentTop + layout.rowHeight });
+	}
+};
 const root = () => t.assert(input.selected === undefined && input.selectionRange.start === initialRange.start && input.selectionRange.end === initialRange.end,
 	'orientation must not automatically replace the actual selected sheet with a marker');
 for (const font of ['tiny', 'msx']) {
 	for (const theme of ['light', 'dark']) {
-		root(); t.assert(input.layout.mode === 'split' && input.layout.right - input.layout.left === 384, 'the initial sheet is not the full-width split');
+		t.command('gameView.closePanel'); await t.frames(3);
+		root(); t.assert(input.layout.mode === 'split', 'the initial sheet did not restore its wide split presentation');
 		t.assert(grid.captureView().x === 0 && grid.captureView().y === 0, 'the initial sheet was silently panned to a marker');
 		await capture(`orientation-${input.mapKind}-${font}-${theme}-wide-origin`);
+		const fullRight = input.layout.right;
 		t.command('gameView.togglePanel'); await t.frames(3);
-		t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
-		t.assert(input.layout.right - input.layout.left === (font === 'tiny' ? 78 : 118), 'the physical sash did not reach the supported font minimum');
+		const companion = input.layout.right < fullRight;
+		if (companion) {
+			t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+			t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+			t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+		}
+		const phase = companion ? 'companion' : 'full-preview-unavailable';
 		const tree = input.tree;
 		await click({ left: tree.layout.contentLeft, right: tree.layout.contentRight, top: tree.layout.contentTop, bottom: tree.layout.contentTop + tree.layout.rowHeight });
 		await press('Home'); await press('Enter'); root();
-		t.assert(input.layout.mode === 'map' && grid.bounds.right - grid.bounds.left >= grid.cellSize * 8,
-			'orientation consumed the eight-cell minimum or opened a hidden grid');
-		await capture(`orientation-${input.mapKind}-${font}-${theme}-minimum-origin`);
+		t.assert(input.layout.mode !== 'outline' && grid.content !== undefined, 'explicit Map navigation left the authored grid hidden');
+		await capture(`orientation-${input.mapKind}-${font}-${theme}-${phase}-origin`);
 		const x = grid.bounds.left + grid.cellSize * 2 + 1, y = grid.bounds.top + grid.cellSize + 1;
 		t.controlInput([{ type: 'pointer', x, y }]); await t.frames(2);
 		t.assert(grid.columnAt(x) === 2 && grid.rowAt(y) === 1, 'the actual pointer no longer addresses the authored cell plane');
@@ -64,7 +75,7 @@ for (const font of ['tiny', 'msx']) {
 			await capture(`orientation-${input.mapKind}-${font}-palette-retires-hover`, true);
 			await press('Escape'); unchanged();
 		}
-		await action('cartMap.outline'); await press('Home'); await press('ArrowDown');
+		await outline(); await press('Home'); await press('ArrowDown');
 		if (input.mapKind === 'pietious') {
 			t.assert(tree.rows[tree.selectionIndex].element.sheet.key === '2' && tree.rows[tree.selectionIndex].collapsed,
 				'ordinary navigation did not reach the closed authored ROOM 2 branch');
@@ -79,10 +90,10 @@ for (const font of ['tiny', 'msx']) {
 		t.assert(left >= grid.bounds.left && left + grid.cellSize <= grid.bounds.right && top >= grid.bounds.top && top + grid.cellSize <= grid.bounds.bottom,
 			'explicit Map navigation did not reveal its selected source identity');
 		await capture(`orientation-${input.mapKind}-${font}-${theme}-explicit-selected-map`);
-		await action('cartMap.outline'); await press('Home'); await press('Enter');
+		await outline(); await press('Home'); await press('Enter');
 		t.controlInput([{ type: 'key', code: 'ShiftLeft', down: true }, { type: 'pointer', x: grid.bounds.left + 8, y: grid.bounds.top + 8 },
 			{ type: 'wheel', deltaY: -1000 }, { type: 'key', code: 'ShiftLeft', down: false }, { type: 'wheel', deltaY: -1000 }]); await t.frames(2);
-		await action('cartMap.outline');
+		await outline();
 		if (input.mapKind === 'pietious') {
 			await press('ArrowDown');
 			t.assert(tree.rows[tree.selectionIndex].element.sheet.key === '2' && !tree.rows[tree.selectionIndex].collapsed,

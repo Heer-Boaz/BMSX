@@ -8,7 +8,7 @@ import { drawWorkbenchPropertyInspector } from '../../render/property_inspector'
 import { describeScenarioMessageDetails, describeScenarioTestResult, type ScenarioMessageProperty } from './message_inspection';
 import type { ScenarioLabInspectableRow } from './view_model';
 import { selectedScenarioResultRow } from './projection';
-import { prepareScenarioLabLayout } from './layout';
+import { prepareScenarioLabLayout, measureScenarioLabMinimumWidth } from './layout';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
@@ -41,6 +41,7 @@ import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense
 import { ScenarioLabRowFeedback } from './feedback';
 
 export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<ScenarioLabInput> {
+	public override get companionGameMinimumWidth(): number { return measureScenarioLabMinimumWidth(this.input.view); }
 	public override getSelection(): ScenarioLabNavigationSelection {
 		this.controller.updateView(this.input.view);
 		return new ScenarioLabNavigationSelection(this.input.view);

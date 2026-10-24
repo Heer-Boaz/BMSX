@@ -75,22 +75,22 @@ test('code horizontal pixelscroll reaches Unicode line end through real Studio u
 	await wait(160); await press('ControlRight+ShiftRight'); await wait(3);
 	await press('ControlLeft+Comma'); await paste('cart.lua'); await wait(3); await press('Enter'); await wait(3);
 	const original = await copyAll(); assert.ok(original.includes('world:render()'), 'the shipped cartridge source did not open');
-	await capture('canonical-source-before-edit');
-	const line = '--' + '…'.repeat(20);
+	const presentation = await capture('canonical-source-before-edit');
+	// The Unicode fixture exceeds the actual full presentation, independently of optional panels.
+	const line = '--' + '…'.repeat(presentation.width);
 	await paste(line); let pending = true;
 	try {
-		assert.equal(await copyAll(), line, 'clipboard paste did not retain the exact twenty Unicode glyphs'); await press('Home');
-		await palette('Word Wrap'); await palette('Toggle Game Panel');
-		await action({ execute: 'drag', path: [[222, 80], [50, 80]] }); await wait(160);
+		assert.equal(await copyAll(), line, 'clipboard paste did not retain the complete Unicode source fixture'); await press('Home');
+		await palette('Word Wrap'); await wait(160);
 		for (const metrics of [
-			{ variant: 'tiny', left: 20, top: 21, right: 78, height: 6, advance: 4, barY: 274 },
-			{ variant: 'msx', left: 26, top: 25, right: 118, height: 8, advance: 6, barY: 272 },
+			{ variant: 'tiny', left: 20, top: 21, height: 6, advance: 4, barY: 274 },
+			{ variant: 'msx', left: 26, top: 25, height: 8, advance: 6, barY: 272 },
 		]) {
-			await t.test(`${metrics.variant} minimum: thumb maximum, visible EOF caret and exact last-glyph hit`, async () => {
-				const { variant, left, top, right, height, advance, barY } = metrics;
+			await t.test(`${metrics.variant} full client: thumb maximum, visible EOF caret and exact last-glyph hit`, async () => {
+				const { variant, left, top, height, advance, barY } = metrics;
 				await action({ execute: 'click', x: left + 1, y: top + 2 }); await press('Home'); await wait(3);
 				const start = await capture(`${variant}-start`), startImage = PNG.sync.read(await fs.readFile(start.path));
-				assert.equal(start.width, 384); assert.equal(start.height, 288);
+				const right = start.width;
 				const caretOffset = (top * startImage.width + left) * 4;
 				const caretColor = Array.from(startImage.data.subarray(caretOffset, caretOffset + 3));
 				const startCaret = paintedBounds(startImage, caretColor, left, top, right, top + height);

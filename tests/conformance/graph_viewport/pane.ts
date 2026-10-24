@@ -19,6 +19,8 @@ import { EditorTabGroupModel } from '../../../ide/workbench/ui/tab/group_model';
 type GraphFixtureView = { view: WorkbenchGraphViewport; dragSource?: WorkbenchGraphDragSource };
 
 class GraphFixturePane extends EditorPane<CodeEditorInput> {
+	public override get companionGameMinimumWidth(): undefined { return undefined; }
+
 	public readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover);
 	public result = WorkbenchGraphPointerResult.Outside;
 	public constructor(private readonly views: ReadonlyMap<CodeEditorInput, GraphFixtureView>) { super(); }

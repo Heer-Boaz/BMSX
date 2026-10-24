@@ -193,7 +193,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	const actorPane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
 	const inspector = actorPane.inspector, details = actor.details;
-	check(actorPane.showsGameFrame && inspector.visible && actor.detailsWindow.open && actorPane.detailsWindow.visible,
+	check(actorPane.companionGameMinimumWidth === undefined && inspector.visible && actor.detailsWindow.open && actorPane.detailsWindow.visible,
 		'instance Details attach as a separate floating window over the full game preview');
 	await press('ArrowDown');
 	const selectedProperty = inspector.model.rows[inspector.model.selectionIndex].element.label;
@@ -289,7 +289,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	check(actorPane.detailsWindow.visible && JSON.stringify(actor.detailsWindow.requestedBounds) === resizedRequest,
 		'reopening restores the same requested window placement instead of an old split');
 	await press('Escape');
-	check(actorPane.showsGameFrame && inspector.visible && actor.detailsWindow.open,
+	check(actorPane.companionGameMinimumWidth === undefined && inspector.visible && actor.detailsWindow.open,
 		'Escape returns focus to the tree without closing modeless Details');
 	const detailsReturnFocus = inputFocus.target;
 	await runPaletteCommand('Actor Lab: Inspect Instance');

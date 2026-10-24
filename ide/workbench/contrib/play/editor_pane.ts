@@ -61,7 +61,7 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 				run: () => { this.session!.navigation.step(direction); } });
 		}
 	}
-	public override get showsGameFrame(): boolean { return true; }
+	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	public override get suspendsRuntime(): boolean { return false; }
 	public override get runtimeControlContext() { return this.session?.ready === true ? this.focusTarget : undefined; }
 	public override get runtimeTransport() { return this.session?.ready === true ? this.session.transport : undefined; }

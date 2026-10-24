@@ -101,10 +101,10 @@ test('inline source widgets share visible geometry and pointer ownership in both
 	for (const theme of ['light', 'dark']) {
 		if (theme === 'dark') await palette('Toggle Theme');
 		for (const metrics of [
-			{ variant: 'tiny', advance: 4, height: 6, top: 21, textLeft: 28, hyphenY: 2, minimumRight: 78 },
-			{ variant: 'msx', advance: 6, height: 8, top: 25, textLeft: 38, hyphenY: 3, minimumRight: 118 },
+			{ variant: 'tiny', advance: 4, height: 6, top: 21, textLeft: 28, hyphenY: 2 },
+			{ variant: 'msx', advance: 6, height: 8, top: 25, textLeft: 38, hyphenY: 3 },
 		]) {
-			const { variant, advance, height, top, textLeft, hyphenY, minimumRight } = metrics;
+			const { variant, advance, height, top, textLeft, hyphenY } = metrics;
 			await sourceUnchanged();
 			const baseline = PNG.sync.read(await fs.readFile((await capture(`${theme}-${variant}-source-origin-baseline`)).path));
 			const caretOffset = ((top + height - 1) * baseline.width + textLeft) * 4;
@@ -112,7 +112,7 @@ test('inline source widgets share visible geometry and pointer ownership in both
 			const hyphenX = textLeft + advance + 1;
 			const commentOffset = ((top + hyphenY) * baseline.width + hyphenX) * 4;
 			const commentInk = Array.from(baseline.data.subarray(commentOffset, commentOffset + 3));
-			const captureField = async (label, right = 384, cursor = 'end') => {
+			const captureField = async (label, right = baseline.width, cursor = 'end') => {
 				if (cursor !== null) await press(cursor === 'end' ? 'End' : 'Home');
 				const image = PNG.sync.read(await fs.readFile((await capture(label)).path));
 				const rowTop = top + 2;
@@ -151,7 +151,7 @@ test('inline source widgets share visible geometry and pointer ownership in both
 			await press('Escape'); await sourceUnchanged();
 			await rename(); await captureField(`${theme}-${variant}-full-rename`); await press('Escape'); await sourceUnchanged();
 			await palette('Show Files'); await action({ execute: 'click', x: 250, y: 150 }); await press('ControlLeft+Home');
-			await find(query); const inset = await captureField(`${theme}-${variant}-resource-inset-find`, 384, 'home');
+			await find(query); const inset = await captureField(`${theme}-${variant}-resource-inset-find`, baseline.width, 'home');
 			await press('ShiftLeft+ArrowRight'); await expectSelection(query.charAt(0));
 			await press('End'); await press('ShiftLeft+ArrowLeft'); await expectSelection(query.at(-1)); await press('Home');
 			const sidebarPixels = new Set();
@@ -178,21 +178,21 @@ test('inline source widgets share visible geometry and pointer ownership in both
 			assert.notEqual(returned, query, 'a source hold must never become the Find field selection');
 			await action({ execute: 'click', x: 100, y: top + 3 }); await press('ControlLeft+KeyA'); await expectSelection(query);
 			await press('Escape'); await sourceUnchanged();
-			await palette('Toggle Game Panel'); await action({ execute: 'drag', path: [[222, 80], [50, 80]] });
+			// The host-control protocol observes pixels, not editor bounds. Exercise real
+			// full-client widget scrolling rather than inventing an optional panel sash.
 			await action({ execute: 'click', x: 40, y: 150 }); await press('ControlLeft+Home');
-			await find('command_list'); await captureField(`${theme}-${variant}-minimum-find`, minimumRight);
-			const longQuery = 'inline_widget_scroll_' + 'abcdefghijklmnopqrstuvwxyz'.repeat(2);
+			await find('command_list'); await captureField(`${theme}-${variant}-full-scroll-find`);
+			const longQuery = 'inline_widget_scroll_' + 'abcdefghijklmnopqrstuvwxyz'.repeat(Math.trunc(baseline.width / 26) + 1);
 			await press('ControlLeft+KeyA'); await paste(longQuery); await wait(60);
-			const atEnd = await captureField(`${theme}-${variant}-minimum-query-end-caret`, minimumRight);
+			const atEnd = await captureField(`${theme}-${variant}-full-query-end-caret`);
 			await action({ execute: 'click', x: atEnd.caret.left - advance + 1, y: atEnd.caret.top + 2 });
 			await press('ShiftLeft+End'); await expectSelection(longQuery.at(-1));
-			await captureField(`${theme}-${variant}-minimum-query-pointer-suffix`, minimumRight, null);
+			await captureField(`${theme}-${variant}-full-query-pointer-suffix`, baseline.width, null);
 			await press('ControlLeft+KeyA'); await expectSelection(longQuery);
 			await press('Escape'); await sourceUnchanged();
 			await press('ControlLeft+KeyL'); await paste(String(declarationRow));
-			await captureField(`${theme}-${variant}-minimum-line-jump`, minimumRight); await press('Escape'); await sourceUnchanged();
-			await rename(); await captureField(`${theme}-${variant}-minimum-rename`, minimumRight); await press('Escape'); await sourceUnchanged();
-			await action({ execute: 'drag', path: [[minimumRight + 2, 80], [222, 80]] }); await palette('Toggle Game Panel');
+			await captureField(`${theme}-${variant}-full-scroll-line-jump`); await press('Escape'); await sourceUnchanged();
+			await rename(); await captureField(`${theme}-${variant}-full-scroll-rename`); await press('Escape'); await sourceUnchanged();
 			await press('ControlLeft+ShiftLeft+KeyT'); await wait(3);
 		}
 	}

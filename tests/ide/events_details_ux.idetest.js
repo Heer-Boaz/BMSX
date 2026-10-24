@@ -47,26 +47,30 @@ const firstCompactRow = font => {
 for (const font of ['tiny', 'msx']) {
 	t.assert(input.layout.font.variant === font, 'the actual Events font does not match its test phase');
 	for (const theme of ['light', 'dark']) {
-		t.assert(input.layout.right - input.layout.left === 384, 'default Details did not use the full client');
+		t.command('gameView.closePanel'); await t.frames(3);
 		await inspect(); await capture(`events-details-${font}-${theme}-wide-compact`);
 		// This literal first compact row must address Event, not the old Emission help card.
 		await click(firstCompactRow(font)); await copiedValue('"intro"');
 		await inspect(); await press('End'); await press('ArrowRight');
 		await capture(`events-details-${font}-${theme}-wide-help-expanded`);
 		await press('ArrowLeft'); await copiedValue(emission);
+		const fullRight = input.layout.right;
 		t.command('gameView.togglePanel'); await t.frames(3);
-		t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
-		t.assert(input.layout.right - input.layout.left === (font === 'tiny' ? 78 : 118), 'the actual sash did not reach the font minimum');
-		await inspect(); await capture(`events-details-${font}-${theme}-minimum-compact`);
+		const companion = input.layout.right < fullRight;
+		if (companion) {
+			t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+			t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+			t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+		}
+		const phase = companion ? 'companion' : 'full-preview-unavailable';
+		await inspect(); await capture(`events-details-${font}-${theme}-${phase}-compact`);
 		await click(firstCompactRow(font)); await copiedValue('"intro"');
 		await inspect(); await press('End'); await press('ArrowRight');
-		await capture(`events-details-${font}-${theme}-minimum-help-expanded`);
-		await press('ArrowLeft'); await capture(`events-details-${font}-${theme}-minimum-help-collapsed`);
+		await capture(`events-details-${font}-${theme}-${phase}-help-expanded`);
+		await press('ArrowLeft'); await capture(`events-details-${font}-${theme}-${phase}-help-collapsed`);
 		await copiedValue(emission);
 		await inspect(); await press('ArrowDown'); await press('ArrowDown');
-		await capture(`events-details-${font}-${theme}-minimum-payload`); await copiedValue('nil');
+		await capture(`events-details-${font}-${theme}-${phase}-payload`); await copiedValue('nil');
 		await press('Home'); await press('ControlLeft', 'KeyC'); t.openLuaSource('cart.lua'); await t.frames(2);
 		t.assert(t.activeWorkbenchTab() === code && code.workingCopy === model, 'full clipboard verification replaced the canonical source input');
 		await press('ControlLeft', 'End'); await press('ControlLeft', 'KeyV');

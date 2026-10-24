@@ -31,6 +31,23 @@ export function createWorkbenchPropertyTree<Element extends WorkbenchPropertyEle
 			indentWidth: 0, twistieWidth: 0, valueLeft: 0, bottom: 0, font: null, measure: undefined } };
 }
 
+let minimumFont: BFont | undefined;
+let minimumAdvance = 0, minimumIndent = 0;
+
+/** Root-property reading budgets include both branches of the retained 40/60 partition. */
+export function measureWorkbenchPropertyTreeMinimumWidth(font: BFont, labelColumns: number, valueColumns: number): number {
+	if (minimumFont !== font) {
+		minimumFont = font;
+		minimumAdvance = font.advance('M');
+		minimumIndent = Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 4);
+	}
+	const labelLeft = minimumIndent + 2;
+	const label = minimumAdvance * labelColumns, value = minimumAdvance * valueColumns;
+	// The root value starts after BOTH the global and the indented local split.
+	return Math.max(Math.trunc(((label + labelLeft + 4) * 5 + 1) / 2),
+		Math.trunc(((value + 8) * 5 + 2) / 3), labelLeft + 8 + Math.trunc((value * 5 + 2) / 3));
+}
+
 /** Layout and text are retained across scrolling, hover and unchanged frames. */
 export function layoutWorkbenchPropertyTree<Element extends WorkbenchPropertyElement>(
 	state: WorkbenchPropertyTree<Element>, font: BFont, measure: TextRangeMeasure,

@@ -10,19 +10,28 @@ import type { CartMapInput, CartMapLayoutMode } from './editor_input';
 
 const PADDING = 4;
 
+/** Current-font constraints are available before arrangement, including the retained compact section. */
+export function measureCartMapMinimumWidth(input: CartMapInput): number {
+	const { layout, grid } = input, font = editorViewState.font;
+	if (layout.minimumFont !== font) {
+		layout.minimumFont = font;
+		const indent = Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2);
+		layout.axisLabelWidth = Math.max(font.advance('X'), font.advance('Y'));
+		layout.fieldMinimumWidth = measureText('-2147483648') + font.advance(' ') + 6;
+		layout.outlineMinimumWidth = editorViewState.charAdvance * 14 + indent * 2 + SCROLLBAR_WIDTH + PADDING * 2;
+		layout.mapMinimumWidth = Math.max(grid.minimumWidth, layout.fieldMinimumWidth + layout.axisLabelWidth + PADDING) + PADDING * 2;
+		layout.splitMinimumWidth = layout.outlineMinimumWidth + layout.mapMinimumWidth + 1;
+	}
+	return input.section === 'map' ? layout.mapMinimumWidth : layout.outlineMinimumWidth;
+}
+
 /** A split exists only while both clients fit their measured reading/editing budget. */
 export function layoutCartMap(input: CartMapInput, bounds: Readonly<RectBounds>, changed: boolean,
 	beforeModeChange?: (mode: CartMapLayoutMode) => void, beforeFieldHide?: (axis: number) => void): boolean {
 	const resized = updateFullWidthWorkbenchLayout(input.layout, bounds), { layout, tree, grid } = input;
 	const font = editorViewState.font, row = layout.rowHeight + PADDING;
 	const indent = resized ? Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2) : tree.layout.indentWidth;
-	if (resized) {
-		layout.axisLabelWidth = Math.max(font.advance('X'), font.advance('Y'));
-		layout.fieldMinimumWidth = measureText('-2147483648') + font.advance(' ') + 6;
-		layout.outlineMinimumWidth = font.advance('M') * 14 + indent * 2 + SCROLLBAR_WIDTH + PADDING * 2;
-		layout.mapMinimumWidth = Math.max(grid.minimumWidth, layout.fieldMinimumWidth + layout.axisLabelWidth + PADDING) + PADDING * 2;
-		layout.splitMinimumWidth = layout.outlineMinimumWidth + layout.mapMinimumWidth + 1;
-	}
+	measureCartMapMinimumWidth(input);
 	const width = layout.right - layout.left;
 	const mode = width >= layout.splitMinimumWidth ? 'split' : input.section;
 	const modeChanged = mode !== layout.mode, measured = resized || changed || modeChanged;

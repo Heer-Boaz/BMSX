@@ -20,7 +20,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	public constructor(resources: ResourcePanelController, private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter) {
 		super(resources); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 	}
-	public override get showsGameFrame(): boolean { return true; }
+	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	public override focus(): void {
 		if (this.terminal.active) this.gameInput.focusTarget.focus();
 		else super.focus();

@@ -10,7 +10,7 @@ import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model'
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
-import { layoutSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
+import { layoutSceneEditor, measureSceneEditorMinimumWidth } from '../../ide/workbench/contrib/scene_editor/layout';
 import { drawSceneEditor } from '../../ide/workbench/contrib/scene_editor/render';
 import { workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -302,4 +302,22 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 		assert.equal(input.detailsText[0], text, 'theme changes do not remeasure content or retain an obsolete palette token');
 	}
 	assert.equal(input.workingCopy.dirty, false);
+});
+
+test('Scene intrinsic compact minimum uses current font before arrangement and does not demand its internal split', t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	const input = scene(); t.after(() => { input.dispose(); input.workingCopy.dispose(); });
+	const bounds = { left: 17, top: 31, right: 717, bottom: 231 };
+	input.section = 'details'; layoutSceneEditor(input, true, false, bounds);
+	const tiny = measureSceneEditorMinimumWidth(), arrangedFont = input.layout.font;
+	assert.equal(input.layout.splitMinimumWidth, tiny * 2 + 1);
+	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	const msx = measureSceneEditorMinimumWidth();
+	assert.ok(msx > tiny); assert.equal(input.layout.font, arrangedFont); assert.equal(input.section, 'details');
+	bounds.right = bounds.left + msx; layoutSceneEditor(input, false, false, bounds);
+	assert.equal(input.layout.mode, 'details');
+	assert.equal(input.details.bounds.right - input.details.bounds.left, msx - colors.SCROLLBAR_WIDTH);
+	const advance = t.mock.method(editorViewState.font, 'advance');
+	for (let frame = 0; frame < 1000; frame++) assert.equal(measureSceneEditorMinimumWidth(), msx);
+	assert.equal(advance.mock.callCount(), 0);
 });

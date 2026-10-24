@@ -6,6 +6,7 @@ import * as colors from '../../../common/constants';
 import type { IdeCommandController } from '../../../commands/controller';
 import { measureText } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
+import type { EditorFont } from '../../../editor/ui/view/font';
 import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
@@ -17,12 +18,17 @@ import { topMargin } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { drawWorkbenchSplit } from '../../render/split_view';
 import type { EditorPanes } from '../../services/editor/editor_panes';
-import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../ui/action_bar';
+import { createWorkbenchActionBar, layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { editorChromeState } from '../../ui/chrome_state';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { WorkbenchSplitView } from '../../ui/split_view';
 import { GameInputControl } from './game_input';
+
+// A companion must show a useful image, not merely a nonzero aspect-fit result.
+const MINIMUM_FRAME_WIDTH = 160;
+const MINIMUM_FRAME_HEIGHT = 120;
+const SPLIT_GAP = 4;
 
 /** A workbench part displaying the existing scanout, never another editor or runtime. */
 export class GamePanel {
@@ -39,6 +45,9 @@ export class GamePanel {
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly unbindKeyboard: () => void;
 	private measuredFont = editorViewState.font;
+	private minimumFont: EditorFont | undefined;
+	private minimumWidth = 0;
+	private minimumHeight = 0;
 	private headerBottom = 0;
 
 	public constructor(private readonly panes: EditorPanes, commands: IdeCommandController, recipient: InputRecipient, presenter: VideoPresenter) {
@@ -77,11 +86,18 @@ export class GamePanel {
 	/** Publish only a content inset; the physical canvas and tab strip keep their geometry. */
 	public update(): boolean {
 		const pane = this.panes.activePane;
-		this.split.minimumFirstSize = editorViewState.charAdvance * 20;
-		this.split.minimumSecondSize = editorViewState.charAdvance * 12;
-		// A narrow workbench keeps the editor usable; widening restores the user's panel choice.
-		const visible = this.enabled && pane !== null && !pane.showsGameFrame
-			&& editorViewState.viewportWidth - editorViewState.codeAreaLeft >= this.split.minimumFirstSize + this.split.minimumSecondSize;
+		const minimumClientWidth = this.enabled ? pane?.companionGameMinimumWidth : undefined;
+		const font = editorViewState.font;
+		if (minimumClientWidth !== undefined && this.minimumFont !== font) {
+			this.minimumFont = font;
+			const actionWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, font.lineHeight + 2);
+			this.minimumWidth = Math.max(MINIMUM_FRAME_WIDTH + 8, measureText('GAME') + actionWidth + 12);
+			this.minimumHeight = font.lineHeight + 14 + MINIMUM_FRAME_HEIGHT;
+		}
+		// Temporary constraints change presentation, not the user's open/placement intent.
+		const visible = this.enabled && pane !== null && minimumClientWidth !== undefined
+			&& editorViewState.viewportWidth - editorViewState.codeAreaLeft >= minimumClientWidth + this.minimumWidth + SPLIT_GAP
+			&& editorViewState.codeAreaBottom - topMargin() >= this.minimumHeight;
 		if (visible !== this.visible) {
 			if (visible) { this.sash.setInput(this.split); this.actions.setInput(this.actionBar, this.focusTarget); this.gameInput.setInput(this.frame); }
 			else this.detach();
@@ -89,13 +105,15 @@ export class GamePanel {
 		}
 		const previousInset = editorChromeState.editorRightInset;
 		if (!visible) { editorChromeState.editorRightInset = 0; return previousInset !== 0; }
+		this.split.minimumFirstSize = minimumClientWidth + SPLIT_GAP / 2;
+		this.split.minimumSecondSize = this.minimumWidth + SPLIT_GAP / 2;
 		this.focusTarget.commandContext = pane.runtimeControlContext ?? this.focusTarget;
 		this.sash.focusTarget.commandContext = this.focusTarget.commandContext;
 		this.actions.setInput(this.actionBar, this.focusTarget.commandContext);
 		this.split.layout(editorViewState.codeAreaLeft, topMargin(), editorViewState.viewportWidth, editorViewState.codeAreaBottom);
-		const left = this.split.position + 2, top = this.split.bounds.top;
+		const left = this.split.position + SPLIT_GAP / 2, top = this.split.bounds.top;
 		const right = this.split.bounds.right, bottom = this.split.bounds.bottom;
-		editorChromeState.editorRightInset = editorViewState.viewportWidth - (this.split.position - 2);
+		editorChromeState.editorRightInset = editorViewState.viewportWidth - (this.split.position - SPLIT_GAP / 2);
 		if (this.bounds.left !== left || this.bounds.top !== top || this.bounds.right !== right || this.bounds.bottom !== bottom || this.measuredFont !== editorViewState.font) {
 			write_rect_bounds(this.bounds, left, top, right, bottom);
 			this.measuredFont = editorViewState.font;

@@ -21,6 +21,7 @@ import type { ConversationObserverInput } from './editor_input';
 
 /** Deliberately no composer, account controls, stop button or agent-tool authority. */
 export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<ConversationObserverInput> {
+	public override get companionGameMinimumWidth(): number { return this.transcriptView.minimumWidth; }
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly transcriptView: AssistantTranscriptControl;

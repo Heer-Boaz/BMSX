@@ -146,7 +146,7 @@ actor_tool_ready = true`)
 	await until(() => ide.frameNavigation.active === undefined && cycles() > changed, 'actor changes: next unchanged completed observation');
 	check(pin.item.value === '10' && !pin.item.valueChanged && property.value === '10' && !property.valueChanged,
 		'the next completed unchanged observation clears Details and pin decorations');
-	check(pane.showsGameFrame && inspector.visible && pane.detailsWindow.visible && lab.detailsWindow.open,
+	check(pane.companionGameMinimumWidth === undefined && inspector.visible && pane.detailsWindow.visible && lab.detailsWindow.open,
 		'change decorations and physical history preserve the full game preview and independently attached floating Details');
 	await press('Home');
 	await test.capture?.('unchanged-cleared');

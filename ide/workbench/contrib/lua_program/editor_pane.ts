@@ -18,7 +18,7 @@ import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../languag
 import { readLuaSourceRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
+import { layoutWorkbenchPropertyTree, measureWorkbenchPropertyTreeMinimumWidth } from '../../ui/property_tree';
 import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { WorkbenchPropertyEdit } from '../../ui/property_edit';
@@ -38,7 +38,17 @@ import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import { truncateMeasuredText } from '../../../common/text';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 
+const PROPERTY_NAME_READING_COLUMNS = 12;
+const SOURCE_VALUE_READING_COLUMNS = 20;
+const RUNTIME_VALUE_READING_COLUMNS = 24;
+
 export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgramInput> {
+	// A root property keeps a meaningful source name and expression, including its tree/control lanes.
+	public override get companionGameMinimumWidth(): number {
+		return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(), PROPERTY_NAME_READING_COLUMNS,
+			this.input.liveVisible ? RUNTIME_VALUE_READING_COLUMNS : SOURCE_VALUE_READING_COLUMNS) + 8;
+	}
+
 	private readonly pointer = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly edit: WorkbenchPropertyEdit<LuaFieldValueEdit>;

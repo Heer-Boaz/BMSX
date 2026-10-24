@@ -2,6 +2,7 @@ import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
+import type { EditorFont } from '../../../editor/ui/view/font';
 import { getWorkbenchEditorBounds, updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
@@ -29,6 +30,24 @@ const PANE_PADDING_X = 4;
 const PANE_HEADER_PADDING_Y = 2;
 const TREE_INDENT_COLUMNS = 2;
 const STATUS_PADDING_X = 4;
+// Tests retain suite/module/case lanes; results keep a readable failure summary beside them.
+const TEST_READING_COLUMNS = 24;
+const RESULT_READING_COLUMNS = 32;
+let minimumFont: EditorFont | undefined;
+let testsMinimumWidth = 0, resultsMinimumWidth = 0;
+
+export function measureScenarioLabMinimumWidth(state: ScenarioLabViewState): number {
+	const font = editorViewState.font;
+	if (minimumFont !== font) {
+		minimumFont = font;
+		const indent = Math.max(editorViewState.charAdvance * TREE_INDENT_COLUMNS, WORKBENCH_ICON_SIZE + 2);
+		testsMinimumWidth = editorViewState.charAdvance * TEST_READING_COLUMNS + indent * 3 + PANE_PADDING_X * 2 + 2;
+		resultsMinimumWidth = editorViewState.charAdvance * RESULT_READING_COLUMNS + indent * 3 + PANE_PADDING_X * 2 + 2;
+	}
+	// The user-owned inner ratio remains intact; admission must fit both clients at that ratio.
+	return Math.max(Math.ceil(testsMinimumWidth / state.split.ratio),
+		Math.ceil((resultsMinimumWidth + 1) / (1 - state.split.ratio)));
+}
 
 export function createScenarioLabLayout(): ScenarioLabLayout {
 	return {

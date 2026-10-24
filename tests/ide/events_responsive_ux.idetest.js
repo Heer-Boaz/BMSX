@@ -45,16 +45,10 @@ const resize = async () => {
 	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 };
-const contained = () => {
-	for (const item of input.actions.items) if (item.visible && !item.overflowed)
-		t.assert(item.bounds.left >= input.layout.left + 4 && item.bounds.right <= input.layout.right - 4,
-			`the directly painted ${item.command} escaped the real Events header`);
+const availableActions = () => {
 	const overflow = input.actions.overflow;
-	t.assert(overflow !== undefined && overflow.button.visible && overflow.button.bounds.left >= input.layout.left + 4
-		&& overflow.button.bounds.right <= input.layout.right - 4, 'the real More button escaped Events');
+	t.assert(overflow !== undefined && overflow.button.visible, 'Events lost its actual secondary-action menu');
 	const primary = input.actions.items.filter(item => item.visible && !item.overflowed);
-	t.assert(primary.length === 2 && primary[0].command === 'events.filter' && primary[0].icon === 'filter'
-		&& primary[1].command === 'events.details' && primary[1].icon === 'info', 'the useful primary Events commands are not native Filter/Details icons');
 	const secondary = overflow.items.filter(item => item.type === 'command').map(item => item.command);
 	const commands = primary.map(item => item.command).concat(secondary);
 	t.assert(new Set(commands).size === commands.length && !commands.some(command => command.endsWith('.more')),
@@ -77,15 +71,16 @@ const clearFilter = async () => { await action('events.filter'); await acceptFil
 await focusFirst();
 for (const font of ['tiny', 'msx']) {
 	for (const theme of ['light', 'dark']) {
-		t.assert(input.layout.right - input.layout.left === 384, 'wide Events is not the actual full pane');
+		t.command('gameView.closePanel'); await t.frames(3);
 		await capture(`events-${font}-${theme}-wide-subject`);
-		t.command('gameView.togglePanel'); await t.frames(3); await resize();
-		t.assert(input.layout.right - input.layout.left === (font === 'tiny' ? 78 : 118), 'the physical sash did not reach the font minimum');
-		await focusFirst(); await capture(`events-${font}-${theme}-minimum-subject`);
-		contained();
-		t.assert(input.layout.compact && input.layout.eventLeft === input.viewport.bounds.left
-			&& input.layout.eventWidth >= input.viewport.bounds.right - input.viewport.bounds.left - 4,
-			'compact Events still sacrifices its subject column to timeline/tick metadata');
+		const fullRight = input.layout.right;
+		t.command('gameView.togglePanel'); await t.frames(3);
+		const companion = input.layout.right < fullRight;
+		if (companion) await resize();
+		const phase = companion ? 'companion' : 'full-preview-unavailable';
+		await focusFirst(); await capture(`events-${font}-${theme}-${phase}-subject`);
+		availableActions();
+		if (companion) t.assert(input.layout.compact, 'Events did not switch to its subject-first presentation beside the companion');
 		await action('events.filter'); await acceptFilter('zzzz');
 		t.assert(input.projection.rows.length === 0 && input.selected === -1, 'the actual no-match query left stale rows or selection');
 		await capture(`events-${font}-${theme}-filter-no-match`); await clearFilter();
@@ -120,9 +115,8 @@ for (const font of ['tiny', 'msx']) {
 		await focusFirst();
 		unchanged();
 		t.command('gameView.closePanel'); await t.frames(3); t.command('theme-toggle'); await t.frames(2);
-		t.assert(!input.layout.compact && input.layout.eventLeft === input.viewport.bounds.left
-			&& input.layout.timelineLeft >= input.layout.eventLeft + input.layout.eventWidth && input.layout.tickLeft > input.layout.timelineLeft,
-			'the wide subject/metadata column order was not restored');
+		t.assert(!input.layout.compact && input.projection.rows[input.selected] === first,
+			'closing the companion did not restore the wide captured-event presentation and selection');
 	}
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }

@@ -48,6 +48,11 @@ import { AssistantConversation } from '../../ide/workbench/services/assistant/co
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
 import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
+import { buildCommandQuickPickItems, showCommandPalette } from '../../ide/workbench/contrib/commands/quick_access';
+import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
+import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
+import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
+import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
 
 function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: LuaSourceRegistry }) {
 	const host = createHostFrameFixture(authored === undefined ? undefined : createTestRuntime(authored.image.romBytes));
@@ -229,19 +234,130 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Assistant clien
 	input.draft.undo(); assert.equal(input.draft.text, '', 'reflow adds no draft edits or history entries');
 });
 
-test('source-consuming actions publish the actual focused draft before resolving the explicit action owner', t => {
+for (const command of ['animation.remove', 'animation.tracks', 'animation.keys', 'animation.details'] as const)
+test(`${command} publishes the actual focused draft before resolving the explicit action owner`, t => {
 	const { editor } = fixture(t), parent = inputFocus.createTarget();
 	let value = 1, calls = 0;
 	const field = new ValueInput(parent, INTEGER_INPUT_FORMAT, accepted => { value = accepted; });
 	t.after(() => field.dispose()); field.setValue(value);
 	field.field.focusTarget.commandContext = parent;
-	parent.registerCommand('animation.remove', { isEnabled: () => true, run: () => { assert.equal(value, 2); calls++; } });
+	parent.registerCommand(command, { isEnabled: () => true, run: () => { assert.equal(value, 2); calls++; } });
 	field.field.focusTarget.focus(); selectAll(field.field); insertValue(field.field, '2');
-	editor.commands.execute('animation.remove', parent);
+	editor.commands.execute(command, parent);
 	assert.equal(calls, 1); assert.equal(field.pending, false);
 	selectAll(field.field); insertValue(field.field, 'invalid');
-	editor.commands.execute('animation.remove', parent);
+	editor.commands.execute(command, parent);
 	assert.equal(calls, 1); assert.equal(value, 2); assert.equal(field.pending, true);
+});
+
+test('Animation body clients and its actual property draft publish exact client-navigation handlers to the real command controller and Palette', t => {
+	const path = 'animation-navigation.lua';
+	const source = "local sprite=require('cartlib/component/sprite_animation_component'); local definition={duration_ms=100,tracks={{kind='value',keys={{time_ms=0,value=1},{time_ms=100,value=2}}}},frames={'picture'}}; sprite.factory(definition); return definition";
+	const timelinePath = 'animation-key-palette.lua';
+	const timelineSource = "return {duration_ms=100,tracks={{kind='value',keys={{time_ms=0,value=1},{time_ms=100,value=2}}}}}";
+	const boot = 'return 42';
+	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(boot, 'boot.lua'), [],
+		{ entrySource: boot, programDomain: 'system', optLevel: 0 }));
+	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: 'boot.lua',
+		projectRootPath: '', can_boot_from_source: true, revision: 0 };
+	registerLuaSourceRecord(registry, { resid: 'boot', type: 'lua', src: boot, base_src: boot,
+		source_path: 'boot.lua', normalized_source_path: 'boot.lua', module_path: 'boot', update_timestamp: 0,
+		base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
+	registerLuaSourceRecord(registry, { resid: path, type: 'lua', src: source, base_src: source,
+		source_path: path, normalized_source_path: path, module_path: 'animation-navigation', update_timestamp: 0,
+		base_update_timestamp: 0, generated: false, sourceKind: 'source-only', program_module: false });
+	registerLuaSourceRecord(registry, { resid: timelinePath, type: 'lua', src: timelineSource, base_src: timelineSource,
+		source_path: timelinePath, normalized_source_path: timelinePath, module_path: 'animation-key-palette', update_timestamp: 0,
+		base_update_timestamp: 0, generated: false, sourceKind: 'source-only', program_module: false });
+	const { editor, sources } = fixture(t, { image, registry });
+	const texture = encodeDirect16GxTexture(1, 1, new Uint8ClampedArray([255, 0, 0, 255]));
+	const encoded = new Uint8Array(encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount));
+	const rom = sources.systemRom, start = rom.bytes.length, bytes = new Uint8Array(start + encoded.length);
+	bytes.set(rom.bytes); bytes.set(encoded, start); rom.bytes = bytes;
+	const assets: RomAsset[] = [{ resid: 'picture', type: 'image', imgmeta: { width: 1, height: 1, texture_u: 0, texture_v: 0, gx_atlas_id: 'picture-atlas' } },
+		{ resid: 'picture-atlas', type: 'texture', start, end: bytes.length, texturemeta: { mode: texture.mode,
+			word_width: texture.wordWidth, height: texture.height, texture_word_count: texture.textureWordCount, clut_word_count: texture.clutWordCount } }];
+	finalizePackedRomAssets(assets); rom.index.entries.push(...assets);
+	const input = editor.animations.openResource(sources.luaResources.find(resource => resource.path === path)!); editor.update(0);
+	const tracks = inputFocus.target!, commands = ['animation.tracks', 'animation.keys', 'animation.details'] as const;
+	const handlers = commands.map(command => tracks.getCommand(command));
+	editor.animations.selectTrack(input, 1); editor.animations.selectKey(input, 0); editor.update(0);
+	const clients = [tracks];
+	for (const command of ['animation.keys', 'animation.details'] as const) {
+		editor.commands.execute(command); editor.update(0); clients.push(inputFocus.target!);
+	}
+	editor.animations.selectTrack(input, input.tracks.rows.length - 1); editor.animations.selectProperty(input, 0); editor.update(0);
+	assert.equal(input.framePreview.bitmap!.image.width, 1);
+	editor.commands.execute('animation.keys'); editor.update(0); clients.push(inputFocus.target!);
+	assert.equal(new Set(clients).size, 4, 'the real frame preview is a distinct concrete image client');
+	for (const client of clients) {
+		for (let index = 0; index < commands.length; index++) {
+			assert.equal(client.getCommand(commands[index]), handlers[index]);
+			assert.equal(editor.commands.isEnabled(commands[index], client), true);
+		}
+		const picks = buildCommandQuickPickItems(editor.commands, client);
+		for (const command of commands) assert.ok(picks.some(item => item.command === command));
+		for (const command of ['animation.source', 'animation.fit', 'animation.snap', 'animation.addFrame'] as const) {
+			assert.equal(client.getCommand(command), tracks.getCommand(command));
+			assert.equal(editor.commands.isEnabled(command, client), true);
+			assert.ok(picks.some(item => item.command === command));
+		}
+	}
+	editor.commands.execute('animation.tracks'); editor.animations.selectTrack(input, 1); editor.animations.selectKey(input, 0);
+	const property = input.details.rows.findIndex(row => row.element.field === input.document!.tracks[0].keys[0].value!.field);
+	editor.animations.selectProperty(input, property); editor.update(0); editor.commands.execute('animation.details');
+	const details = inputFocus.target!;
+	editor.commands.execute('animation.edit', details.commandContext);
+	const field = inputFocus.target!, native = field.textInput!, undo = field.getCommand('undo');
+	assert.ok(field.edit); assert.notEqual(undo, tracks.getCommand('undo'));
+	const fieldPicks = buildCommandQuickPickItems(editor.commands, field);
+	for (const command of commands) assert.ok(fieldPicks.some(item => item.command === command));
+	assert.equal(native.replaceText(0, native.readText().text.length, 'invalid +'), true);
+	editor.commands.execute('animation.tracks', field);
+	assert.equal(inputFocus.target, field); assert.equal(input.activeClient, 'details'); assert.equal(field.edit!.pending, true);
+	assert.equal(input.workingCopy.buffer.getText(), source);
+	for (let index = 0; index < commands.length; index++) assert.equal(field.getCommand(commands[index]), handlers[index]);
+	assert.equal(field.getCommand('undo'), undo, 'navigation does not borrow or replace the actual field-local history');
+	assert.equal(native.replaceText(0, native.readText().text.length, '2'), true);
+	showCommandPalette(editor.quickInput, editor.commands);
+	assert.equal(input.document!.tracks[0].keys[0].value!.value, 2, 'ordinary Palette blur first publishes the actual field draft');
+	assert.equal(editor.quickInput.invocationOrigin, details, 'the retired field resolves to its actual Details owner before catalog enumeration');
+	const palette = editor.quickInput.model.list;
+	assert.ok(palette.rows.some(row => (row.item as CommandQuickPickItem).command === 'animation.tracks'));
+	editor.quickInput.hide();
+	const edited = input.workingCopy.buffer.getText();
+	editor.commands.execute('animation.tracks', field); assert.equal(input.activeClient, 'tracks');
+	assert.equal(input.workingCopy.buffer.getText(), edited);
+	editor.editorPanes.clearEditor();
+	for (const client of [...clients, field]) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), false);
+	const detachedPicks = buildCommandQuickPickItems(editor.commands, field);
+	for (const command of commands) assert.equal(detachedPicks.some(item => item.command === command), false);
+	openEditorTab(editor.editorPanes, input); editor.update(0);
+	for (const client of [...clients, field]) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), true);
+	assert.equal(input.workingCopy.buffer.getText(), edited);
+	const timeline = editor.animations.openResource(sources.luaResources.find(resource => resource.path === timelinePath)!);
+	editor.animations.selectTrack(timeline, 1); editor.animations.selectKey(timeline, 0); editor.update(0);
+	editor.commands.execute('animation.keys');
+	const keysClient = inputFocus.target!;
+	assert.equal(editor.commands.isEnabled('animation.addKey', keysClient), true);
+	assert.ok(buildCommandQuickPickItems(editor.commands, keysClient).some(item => item.command === 'animation.addKey'));
+	editor.animations.selectProperty(timeline, timeline.details.rows.findIndex(row => row.element.field === timeline.document!.tracks[0].keys[0].value!.field));
+	editor.commands.execute('animation.details'); editor.commands.execute('animation.edit');
+	const valueField = inputFocus.target!, valueText = valueField.textInput!, localUndo = valueField.getCommand('undo');
+	assert.equal(valueText.replaceText(0, valueText.readText().text.length, 'invalid +'), true);
+	editor.commands.execute('animation.addKey', valueField);
+	assert.equal(inputFocus.target, valueField); assert.equal(editor.quickInput.visible, false);
+	assert.equal(timeline.workingCopy.buffer.getText(), timelineSource);
+	assert.equal(valueText.replaceText(0, valueText.readText().text.length, '2'), true);
+	editor.commands.execute('animation.addKey', valueField);
+	assert.equal(editor.quickInput.inputBox, true, 'the actual Add Key handler opens its owned value prompt after publishing the old property');
+	assert.equal(timeline.document!.tracks[0].keys[0].value!.value, 2);
+	assert.equal(valueField.getCommand('undo'), localUndo);
+	editor.quickInput.hide(); timeline.workingCopy.undo();
+	assert.equal(timeline.workingCopy.buffer.getText(), timelineSource); assert.equal(timeline.workingCopy.undo(), null);
+	editor.editorPanes.clearEditor();
+	for (const client of [...clients, field, valueField]) for (const command of ['animation.source', 'animation.fit', 'animation.snap', 'animation.addKey', 'animation.addFrame'] as const)
+		assert.equal(editor.commands.isEnabled(command, client), false);
 });
 
 test('clipboard admission and execution retain the supplied leaf rather than its alias or ambient focus', async t => {

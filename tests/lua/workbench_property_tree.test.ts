@@ -10,7 +10,7 @@ import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { api } from '../../ide/runtime/overlay_api';
 import { drawWorkbenchPropertyTree } from '../../ide/workbench/render/property_tree';
-import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree, type WorkbenchPropertyElement } from '../../ide/workbench/ui/property_tree';
+import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree, measureWorkbenchPropertyTreeMinimumWidth, type WorkbenchPropertyElement } from '../../ide/workbench/ui/property_tree';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult as PointerResult } from '../../ide/workbench/ui/property_tree_pointer';
 import { appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRows, WorkbenchTreeNavigationResult as NavigationResult } from '../../ide/workbench/ui/tree_view';
 import { scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
@@ -288,4 +288,22 @@ test('property full-text feedback retires on scroll, projection replacement, cle
 	assert.equal(retained.feedbackNode, undefined); assert.equal(retained.tree, undefined); assert.equal(retained.feedbackText, '', 'input retirement does not retain authored AST/source element bindings');
 	f.move(1); f.paint(); assert.ok(f.texts.includes(replacement.element.label));
 	f.owner.dispose(); f.paint(); assert.equal(f.texts.includes(replacement.element.label), false);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} property minimum preserves its declared root label and value reading budgets`, t => {
+	const font = new Font({ variant });
+	for (const [labelColumns, valueColumns] of [[8, 10], [12, 20], [12, 24], [10, 24]]) {
+		const state = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
+		const label = 'M'.repeat(labelColumns), value = 'M'.repeat(valueColumns);
+		const node = appendWorkbenchTreeNode(state, null, { kind: 'property', label, value, description: '', warning: false,
+			displayLabel: '', displayValue: '', displayValueLeft: 0 });
+		rebuildWorkbenchTreeRows(state, node);
+		const width = measureWorkbenchPropertyTreeMinimumWidth(font, labelColumns, valueColumns);
+		layoutWorkbenchPropertyTree(state, font, (text, start, end) => font.measure(text.slice(start, end)), 23, 31, 23 + width, 231);
+		assert.equal(node.element.displayLabel, label, 'the actual label producer must honor the declared reading budget');
+		assert.equal(node.element.displayValue, value, 'both value-column placement branches must leave the declared value budget');
+	}
+	const advance = t.mock.method(font, 'advance');
+	for (let frame = 0; frame < 1000; frame++) measureWorkbenchPropertyTreeMinimumWidth(font, 12, 24);
+	assert.equal(advance.mock.callCount(), 0, 'unchanged current-font metrics do not repeat glyph measurement');
 });

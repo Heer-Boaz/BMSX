@@ -16,7 +16,7 @@ import {
 } from '../../ide/workbench/contrib/scenario_lab/navigation';
 import { refreshScenarioLabProjection } from '../../ide/workbench/contrib/scenario_lab/projection';
 import { drawScenarioLab } from '../../ide/workbench/contrib/scenario_lab/render';
-import { prepareScenarioLabLayout } from '../../ide/workbench/contrib/scenario_lab/layout';
+import { prepareScenarioLabLayout, measureScenarioLabMinimumWidth } from '../../ide/workbench/contrib/scenario_lab/layout';
 import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from '../../ide/workbench/contrib/scenario_lab/pointer';
 import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
 import { ScenarioLabRowFeedback } from '../../ide/workbench/contrib/scenario_lab/feedback';
@@ -694,3 +694,21 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 		}
 	});
 }
+
+for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} companion minimum honors both clients at the retained inner ratio`, t => {
+	const { view } = createViewFixture(t, variant), font = editorViewState.font;
+	const indent = Math.max(editorViewState.charAdvance * 2, WORKBENCH_ICON_SIZE + 2);
+	const testsBudget = editorViewState.charAdvance * 24 + indent * 3 + 10;
+	const resultsBudget = editorViewState.charAdvance * 32 + indent * 3 + 10;
+	for (const ratio of [0.15, 5 / 12, 0.85]) {
+		view.split.resize(ratio);
+		const retained = view.split.ratio, minimum = measureScenarioLabMinimumWidth(view);
+		prepareScenarioLabLayout(view, { left: 23, top: 31, right: 23 + minimum, bottom: 231 });
+		assert.equal(view.split.ratio, retained, 'measuring or arranging does not rewrite user placement intent');
+		assert.ok(view.testPane.layout.contentRight - view.testPane.layout.contentLeft >= testsBudget);
+		assert.ok(view.resultPane.layout.contentRight - view.resultPane.layout.contentLeft >= resultsBudget);
+	}
+	const advance = t.mock.method(font, 'advance');
+	for (let frame = 0; frame < 1000; frame++) measureScenarioLabMinimumWidth(view);
+	assert.equal(advance.mock.callCount(), 0);
+});

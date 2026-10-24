@@ -6,6 +6,9 @@ import { updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '.
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import type { EventViewerInput } from './editor_input';
 
+// Event identity has priority; Timeline and Tick can move into Details.
+export const EVENT_READING_COLUMNS = 16;
+
 export type EventViewerLayout = FullWidthWorkbenchLayout & {
 	compact: boolean;
 	eventMinimumWidth: number;
@@ -40,7 +43,7 @@ export function layoutEventViewer(input: EventViewerInput, bounds: Readonly<Rect
 	if (fontChanged) {
 		layout.digitWidth = 0;
 		for (const digit of '0123456789') layout.digitWidth = Math.max(layout.digitWidth, measureText(digit));
-		layout.eventMinimumWidth = font.advance('M') * 16;
+		layout.eventMinimumWidth = editorViewState.charAdvance * EVENT_READING_COLUMNS;
 		layout.timelineLabelWidth = measureText('Timeline'); layout.timelinePrefixWidth = font.advance('T');
 		layout.tickLabelWidth = measureText('Tick');
 	}

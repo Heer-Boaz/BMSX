@@ -12,23 +12,31 @@ const click = async bounds => {
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 };
 const type = async text => { for (const character of text) await press(`Key${character.toUpperCase()}`); };
-let captures = 0, panelOpen = false;
+let captures = 0;
 const capture = async label => {
 	t.assert(++captures <= 44, 'the bounded toolbar workflow exceeded its capture budget');
 	await t.frames(2); t.log(`VISUAL ${label}`); t.capture(label);
 };
 const full = async () => {
-	if (panelOpen) { t.command('gameView.closePanel'); await t.frames(3); panelOpen = false; }
+	t.command('gameView.closePanel'); await t.frames(3);
 };
-const minimum = async (input, bar, variant) => {
-	if (!panelOpen) { t.command('gameView.togglePanel'); await t.frames(3); panelOpen = true; }
+const minimum = async (input, bar) => {
+	const before = input.kind === 'animation' ? input.layout.bounds.right : input.layout.right;
+	t.command('gameView.togglePanel'); await t.frames(3);
+	const edge = input.kind === 'animation' ? input.layout.bounds.right : input.layout.right;
+	// A font's intrinsic client and scanout may not fit together. That real full-width
+	// presentation has no sash to drag, and must not be reported as a minimum-width capture.
+	const companion = edge !== before;
 	// Read the owning editor edge, not a contribution's internal divider.
-	const x = (input.kind === 'animation' ? bar.bounds.right + 4 : input.layout.right) + 2;
-	t.controlInput([{ type: 'pointer', x, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
-	t.assert((input.kind === 'animation' ? bar.bounds.right + 4 : input.layout.right) === (variant === 'tiny' ? 78 : 118),
-		`${input.kind}: the actual sash did not reach its font minimum`);
+	if (companion) {
+		t.controlInput([{ type: 'pointer', x: edge + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	}
+	const ownedBar = input.kind === 'rom_inspector' ? input.actions : input.actionBar;
+	t.assert(t.activeWorkbenchTab() === input && ownedBar === bar,
+		`${input.kind}: resizing replaced the retained contribution or its actions`);
+	return companion;
 };
 const metadata = (label, phase, variant, theme, bars) => {
 	t.log(JSON.stringify({ surfaceInk: label, phase, variant, theme, bars: bars.map(([surface, bar]) => ({
@@ -62,7 +70,7 @@ const matrix = async (label, input, bar, fullCaptures, groups = false) => {
 	const model = input.workingCopy, source = model?.buffer.getText(), version = model?.version;
 	const cycles = t.runtime().machine.scheduler.nowCycles;
 	for (let font = 0; font < 2; font++) {
-		const variant = input.kind === 'animation' ? (input.tracks.layout.rowHeight - 4 === 6 ? 'tiny' : 'msx') : input.layout.font.variant;
+		const variant = input.layout.font.variant;
 		for (let theme = 0; theme < 2; theme++) {
 			await full(); await point(2, 285);
 			let groupIndex = -1;
@@ -102,10 +110,11 @@ const matrix = async (label, input, bar, fullCaptures, groups = false) => {
 				// Actor Lab already owns a game frame; the separate Game Panel stays hidden.
 				await capture(`${label}-${variant}-${theme}-full-idle`);
 			} else {
-				await minimum(input, bar, variant);
+				const companion = await minimum(input, bar);
 				await hoverAction(bar);
-				metadata(label, 'minimum-hover', variant, theme, [['body', bar]]);
-				await capture(`${label}-${variant}-${theme}-minimum-hover`);
+				const phase = companion ? 'minimum-hover' : 'full-companion-hidden-hover';
+				metadata(label, phase, variant, theme, [['body', bar]]);
+				await capture(`${label}-${variant}-${theme}-${phase}`);
 			}
 			t.assert(t.activeWorkbenchTab() === input, `${label}: hover or resize replaced the input`);
 			if (model !== undefined) t.assert(model.buffer.getText() === source && model.version === version, `${label}: presentation changed canonical source`);
@@ -152,7 +161,7 @@ const snapshot = rom.snapshot, subject = rom.model.selection, cycles = t.runtime
 for (let font = 0; font < 2; font++) {
 	const variant = rom.layout.font.variant;
 	for (let theme = 0; theme < 2; theme++) {
-		await full(); await minimum(rom, rom.actions, variant);
+		await full(); const companion = await minimum(rom, rom.actions);
 		t.command('romInspector.inspect'); await t.frames(3);
 		t.assert(rom.readerWindow.open && rom.reader.subject === subject && rom.reader.preview.image.width > 0, 'ordinary inspection lost the actual image document');
 		const source = rom.readerViewActions.items.find(item => item.command === 'romInspector.source');
@@ -160,9 +169,10 @@ for (let font = 0; font < 2; font++) {
 			'the shipped image no longer exercises the actual disabled Reader Source icon');
 		await point((source.bounds.left + source.bounds.right) / 2, (source.bounds.top + source.bounds.bottom) / 2);
 		t.assert(rom.readerViewActions.hoveredCommand === source.command, 'the disabled Reader Source icon did not receive actual hover');
-		metadata('rom', 'minimum-reader-disabled-hover', variant, theme,
+		const phase = companion ? 'minimum-reader-disabled-hover' : 'full-companion-hidden-reader-disabled-hover';
+		metadata('rom', phase, variant, theme,
 			[['body', rom.actions], ['floating-body', rom.readerViewActions], ['window-title', rom.readerActions]]);
-		await capture(`rom-${variant}-${theme}-minimum-reader-disabled-hover`);
+		await capture(`rom-${variant}-${theme}-${phase}`);
 		await press('Escape');
 		t.assert(rom.readerWindow.open, 'Escape from the actual Reader unexpectedly hid it');
 		// One filtered row makes Home/End a vacuous focus probe. Edit the actual catalog filter instead.

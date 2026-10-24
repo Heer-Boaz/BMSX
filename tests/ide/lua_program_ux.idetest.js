@@ -53,50 +53,55 @@ for (let font = 0; font < 2; font++) {
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 
-// The actual outer Game Panel sash permits 20 font cells; the toolbar must
-// keep all real commands reachable there instead of painting them offscreen.
+// Request the optional companion without forcing a split that cannot fit the current font.
 const authoredSource = input.workingCopy.buffer.getText();
-t.command('gameView.togglePanel');
-await t.frames(3);
 for (const variant of ['tiny', 'msx']) {
-	const sashX = input.layout.right + 2;
-	t.controlInput([{ type: 'pointer', x: sashX, y: 80 }, { type: 'button', button: 'primary', down: true }]);
-	await t.frames(1);
-	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]);
-	await t.frames(2);
-	t.controlInput([{ type: 'button', button: 'primary', down: false }]);
-	await t.frames(2);
-	t.assert(input.layout.font.variant === variant && input.layout.right === (variant === 'tiny' ? 78 : 118), 'the real minimum sash geometry was not exercised');
+	t.command('gameView.closePanel'); await t.frames(3);
+	const fullRight = input.layout.right;
+	t.command('gameView.togglePanel'); await t.frames(3);
+	const companion = input.layout.right < fullRight;
+	if (companion) {
+		t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	}
+	const phase = companion ? 'companion' : 'full-preview-unavailable';
+	t.assert(t.activeWorkbenchTab() === input && input.layout.font.variant === variant, 'requesting the companion replaced the retained program or its current font');
 	const bar = input.actionBar, more = bar.overflow.button;
-	t.assert(more.visible && more.bounds.right - more.bounds.left >= 13, 'the actual minimum pane has no hittable More');
-	t.assert(bar.items.every(item => !item.visible || item.overflowed || item.bounds.left >= input.layout.left + 4), 'a primary action paints outside its real pane');
-	const commands = bar.overflow.items.filter(item => item.type === 'command').map(item => item.command);
+	t.assert(more.visible, 'the actual program has no secondary-action menu');
+	const commands = [...bar.items.filter(item => item.visible && !item.overflowed).map(item => item.command),
+		...bar.overflow.items.filter(item => item.type === 'command').map(item => item.command)];
 	t.assert(commands.includes('luaProgram.source') && commands.includes('luaProgram.selectInstance') && new Set(commands).size === commands.length,
 		'primary overflow and filtered secondary context are not one complete command set');
 	t.assert(!commands.includes('luaProgram.more') && !commands.includes('luaProgram.testInput'), 'the popup contains nested More or an ineligible input-only command');
 	await click(8, input.live.layout.contentTop + input.live.layout.rowHeight / 2);
 	await click((more.bounds.left + more.bounds.right) / 2, (more.bounds.top + more.bounds.bottom) / 2);
-	await capture(`program-more-pointer-${variant}-minimum`);
+	await capture(`program-more-pointer-${variant}-${phase}`);
 	await press('Escape');
 	await press('Tab');
 	await press('End');
 	t.assert(bar.hasFocus && bar.focusedIndex === bar.items.length, 'Escape did not return to the actual content before keyboard More');
 	await press('Enter');
-	await capture(`program-more-keyboard-${variant}-minimum`);
+	await capture(`program-more-keyboard-${variant}-${phase}`);
 	await press('Escape');
 	t.assert(bar.hasFocus, 'keyboard More did not return to its actual toolbar');
 	if (variant === 'tiny') await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
-// Invoke the real source action through that same shared popup.
-await press('Enter');
-const eligible = input.actionBar.overflow.items.filter(entry => entry.type === 'command'
-	&& !input.actionBar.items.some(item => item.command === entry.command && !item.enabled));
-const sourceIndex = eligible.findIndex(item => item.command === 'luaProgram.source');
-t.assert(sourceIndex >= 0, 'the actual Source action was not reachable');
-await press('Home');
-for (let row = 0; row < sourceIndex; row++) await press('ArrowDown');
-await press('Enter');
+// Invoke Source from whichever actual action surface owns it at this width.
+const sourceAction = input.actionBar.items.find(item => item.command === 'luaProgram.source');
+if (sourceAction.visible && !sourceAction.overflowed) {
+	await click((sourceAction.bounds.left + sourceAction.bounds.right) / 2, (sourceAction.bounds.top + sourceAction.bounds.bottom) / 2);
+} else {
+	await press('Enter');
+	const eligible = input.actionBar.overflow.items.filter(entry => entry.type === 'command'
+		&& !input.actionBar.items.some(item => item.command === entry.command && !item.enabled));
+	const sourceIndex = eligible.findIndex(item => item.command === 'luaProgram.source');
+	t.assert(sourceIndex >= 0, 'the actual Source action was not reachable');
+	await press('Home');
+	for (let row = 0; row < sourceIndex; row++) await press('ArrowDown');
+	await press('Enter');
+}
 await t.frames(3);
 const source = t.activeWorkbenchTab();
-t.assert(source.kind === 'code_editor' && source.workingCopy === input.workingCopy, 'minimum-toolbar Source lost its original authored working copy');
+t.assert(source.kind === 'code_editor' && source.workingCopy === input.workingCopy, 'program Source lost its original authored working copy');
 t.assert(input.workingCopy.buffer.getText() === authoredSource, 'presentation or popup navigation changed authored source');

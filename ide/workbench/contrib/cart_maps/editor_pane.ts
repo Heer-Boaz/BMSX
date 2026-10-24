@@ -26,7 +26,7 @@ import type { ResourcePanelController } from '../resources/panel/controller';
 import type { CartMapController } from './controller';
 import type { CartMapInput, CartMapLayoutMode, CartMapSection } from './editor_input';
 import { projectCartMap, selectCartMapRow, createCartMapMove } from './source_projection';
-import { layoutCartMap } from './layout';
+import { layoutCartMap, measureCartMapMinimumWidth } from './layout';
 import { drawCartMap } from './render';
 import { CartMapNavigationSelection, restoreCartMapView } from './view_snapshot';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
@@ -39,6 +39,7 @@ import type { EditorFont } from '../../../editor/ui/view/font';
 export type CartMapCoordinateEdit = { readonly coordinate: number; readonly edit?: EditorModelEdit };
 
 export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
+	public override get companionGameMinimumWidth(): number { return measureCartMapMinimumWidth(this.input); }
 	public readonly controls: readonly ValueInput<CartMapCoordinateEdit>[];
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);

@@ -21,8 +21,12 @@ import { WORKBENCH_ICON_SIZE } from '../icon';
 import { WorkbenchScrollControl } from '../scroll_control';
 import type { WorkbenchTextViewModel, WorkbenchTextViewMove } from './model';
 
+// Read build diagnostics as short source lines, not a stack of wrapped word fragments.
+const DOCUMENT_READING_COLUMNS = 48;
+
 /** Focus, selection gestures and a local query for a resource-independent read-only document. */
 export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHoverTarget {
+	public get minimumWidth(): number { return editorViewState.charAdvance * DOCUMENT_READING_COLUMNS + colors.SCROLLBAR_WIDTH + 8; }
 	public readonly focusTarget: InputFocusTarget;
 	public readonly findField: TextField;
 	public readonly findBounds = create_rect_bounds();

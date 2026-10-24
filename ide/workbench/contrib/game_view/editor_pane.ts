@@ -28,7 +28,7 @@ export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInp
 		this.focusTarget.previous = this.gameInput.focusTarget;
 	}
 	public override get suspendsRuntime(): boolean { return false; }
-	public override get showsGameFrame(): boolean { return true; }
+	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	protected override activate(): void {

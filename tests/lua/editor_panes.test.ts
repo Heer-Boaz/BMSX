@@ -38,6 +38,8 @@ import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import type { StudioBuildJob } from '../../hosts/common/studio_builds';
 
 class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
+	public override get companionGameMinimumWidth(): undefined { return undefined; }
+
 	public readonly focusTarget = inputFocus.createTarget();
 	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	public setInputCount = 0;

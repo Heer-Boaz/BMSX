@@ -28,6 +28,7 @@ const ACTIONS = ['buildLog.error', 'buildLog.output', 'buildLog.refresh', 'build
 
 /** Captured stdout/stderr and a failure diagnostic are separate documents of the same request. */
 export class BuildLogPane extends FullWidthWorkbenchEditorPane<BuildLogInput> {
+	public override get companionGameMinimumWidth(): number { return this.reading.minimumWidth; }
 	private readonly reading = new WorkbenchTextViewControl(this.focusTarget);
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly tooltip = new WorkbenchTooltip();

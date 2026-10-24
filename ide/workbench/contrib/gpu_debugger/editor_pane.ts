@@ -1,3 +1,4 @@
+import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
@@ -38,8 +39,13 @@ const COMMANDS = ['gpu.follow', 'gpu.view', 'gpu.details', 'gpu.goToFrame', 'gpu
 const CLIENT_COMMANDS = [...COMMANDS, 'pause', 'stepFrameBack', 'stepFrame'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
 
+// Keep an operation identity and sequence readable beside the observed scanout.
+const OPERATION_READING_COLUMNS = 32;
+
 /** History selection and shared transport; optional observation decoding belongs to Details. */
 export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInput> {
+	public override get companionGameMinimumWidth(): number { return editorViewState.charAdvance * OPERATION_READING_COLUMNS + SCROLLBAR_WIDTH + 12; }
+
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event));
 	private details: GpuDetailsWindow | undefined;

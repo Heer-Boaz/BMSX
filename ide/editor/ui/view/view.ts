@@ -47,11 +47,24 @@ export function getBreakpointLaneWidth(): number {
 	return width > 6 ? width : 6;
 }
 
-export function updateGutterWidth(): number {
+let gutterFont: EditorFont | undefined;
+let gutterLineCount = -1, measuredGutterWidth = 0;
+
+/** Intrinsic gutter measurement is independent of publishing the current code viewport. */
+export function measureGutterWidth(): number {
 	const lineCount = activeCodeEditor.model.buffer.getLineCount();
-	const computedDigits = decimalDigitCount(lineCount);
-	const digitCount = computedDigits > 2 ? computedDigits : 2;
-	editorViewState.gutterWidth = getBreakpointLaneWidth() + 4 + digitCount * editorViewState.font.advance('0');
+	const font = editorViewState.font;
+	if (gutterFont !== font || gutterLineCount !== lineCount) {
+		gutterFont = font; gutterLineCount = lineCount;
+		const computedDigits = decimalDigitCount(lineCount);
+		const digitCount = computedDigits > 2 ? computedDigits : 2;
+		measuredGutterWidth = getBreakpointLaneWidth() + 4 + digitCount * font.advance('0');
+	}
+	return measuredGutterWidth;
+}
+
+export function updateGutterWidth(): number {
+	editorViewState.gutterWidth = measureGutterWidth();
 	return editorViewState.gutterWidth;
 }
 

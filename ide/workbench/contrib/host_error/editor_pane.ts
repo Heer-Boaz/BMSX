@@ -14,8 +14,15 @@ import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { HostErrorInput } from './editor_input';
 
+// Keep exception names and stack frames readable before their ordinary line wrapping.
+const HOST_STACK_READING_COLUMNS = 48;
+
 /** Read-only host text, with ordinary document scrolling and the original clipboard bytes. */
 export class HostErrorPane extends FullWidthWorkbenchEditorPane<HostErrorInput> {
+	public override get companionGameMinimumWidth(): number {
+		return editorViewState.charAdvance * HOST_STACK_READING_COLUMNS + colors.SCROLLBAR_WIDTH + 8;
+	}
+
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 
 	public constructor(resourcePanel: ResourcePanelController) {

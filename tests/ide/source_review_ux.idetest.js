@@ -42,16 +42,21 @@ const propose = async input => {
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(3);
 	await press('Tab'); await press('Home');
 };
-const narrow = async input => {
+const requestCompanion = async input => {
+	t.command('gameView.closePanel'); await t.frames(3);
+	const fullRight = input.view.layout.right;
 	t.command('gameView.togglePanel'); await t.frames(3);
-	t.controlInput([{ type: 'pointer', x: input.view.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
-	t.assert(input.view.layout.right === (input.view.layout.font.variant === 'tiny' ? 78 : 118), 'the actual review editor did not reach its font minimum');
-	// The sash owns its keyboard focus until the user returns to the review.
+	const companion = input.view.layout.right < fullRight;
+	if (companion) {
+		t.controlInput([{ type: 'pointer', x: input.view.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	}
+	// Return focus to the actual review after the optional sash interaction.
 	t.controlInput([{ type: 'pointer', x: input.view.layout.left + 5, y: input.view.layout.top + 3 },
 		{ type: 'button', button: 'primary', down: true }]); await t.frames(1);
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	return companion ? 'companion' : 'full-preview-unavailable';
 };
 
 await t.waitForCart(); await t.frames(90);
@@ -70,17 +75,17 @@ for (let font = 0; font < 2; font++) {
 		await capture(`source-review-${variant}-${theme}-full`);
 		t.command('theme-toggle'); await t.frames(2);
 	}
-	await narrow(input);
+	const phase = await requestCompanion(input);
 	for (let theme = 0; theme < 2; theme++) {
-		await capture(`source-review-${variant}-${theme}-minimum`);
+		await capture(`source-review-${variant}-${theme}-${phase}`);
 		t.controlInput([{ type: 'pointer', x: input.view.layout.left + 8, y: input.view.layout.top + 4 }]); await t.frames(3);
-		await capture(`source-review-${variant}-${theme}-minimum-title-hint`);
+		await capture(`source-review-${variant}-${theme}-${phase}-title-hint`);
 		t.controlInput([{ type: 'pointer', x: input.view.layout.left + 8,
 			y: input.view.layout.top + input.view.layout.font.lineHeight + 7 }]); await t.frames(3);
-		await capture(`source-review-${variant}-${theme}-minimum-summary-hint`);
-		await press('Tab'); await press('End'); await press('Enter');
-		await capture(`source-review-${variant}-${theme}-minimum-more`);
-		await press('Escape'); await press('Escape');
+		await capture(`source-review-${variant}-${theme}-${phase}-summary-hint`);
+		await press('Tab'); await press('Home');
+		await capture(`source-review-${variant}-${theme}-${phase}-actions`);
+		await press('Escape');
 		t.assert(t.activeWorkbenchTab() === input && model.buffer.getText() === source && model.version === version,
 			'font, theme, resize or owned popup changed the proposal source');
 		t.command('theme-toggle'); await t.frames(2);
@@ -90,10 +95,10 @@ for (let font = 0; font < 2; font++) {
 	// Restore the review action focus for the next iteration's Escape-to-content.
 	await press('Tab'); await press('Home');
 }
-await press('Escape'); await narrow(input);
-await press('Tab'); await press('End'); await press('Enter'); await press('Home'); await press('Enter'); await t.frames(3);
+await press('Escape'); await requestCompanion(input);
+t.command('sourceEditReview.source'); await t.frames(3);
 t.assert(t.activeWorkbenchTab().kind === 'code_editor' && t.activeWorkbenchTab().workingCopy === model,
-	'actual overflow Source did not reveal the proposal\'s canonical written expression');
+	'actual review Source did not reveal the proposal\'s canonical written expression');
 t.assert(model.buffer.getText() === source && model.version === version, 'impact Source applied the proposal');
 await capture('source-review-open-canonical-impact');
 

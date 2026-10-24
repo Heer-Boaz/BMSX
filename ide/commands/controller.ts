@@ -66,6 +66,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'animation.addClip', 'animation.addFrame', 'animation.addProperty', 'animation.openClip',
 	'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.fit', 'animation.snap',
 	'animation.edit', 'animation.remove', 'animation.source', 'animation.producerSource',
+	'animation.tracks', 'animation.keys', 'animation.details',
 	'aem', 'aem.create', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.testEvent',
 	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
 	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
@@ -400,8 +401,8 @@ export class IdeCommandController {
 			case 'runtime.resume':
 				return this.selectedTransport.rewind.active && this.selectedTransport.navigation.active === undefined
 					&& this.selectedTransport.playbackEnabled;
-			case 'gameView.togglePanel': return this.editor.isActive;
-			case 'gameView.closePanel': return this.editor.gamePanel.visible;
+			case 'gameView.togglePanel': return this.editor.isActive && this.editor.editorPanes.activePane?.companionGameMinimumWidth !== undefined;
+			case 'gameView.closePanel': return this.editor.gamePanel.enabled;
 			case 'gameView.playback':
 				return this.editor.gamePanel.visible && this.selectedTransport.playbackEnabled;
 			case 'scenarioLab.play':
@@ -479,6 +480,7 @@ export class IdeCommandController {
 
 	public isActive(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
 			case 'romInspector.hold': {
 				const input = getActiveTab();
 				return input?.kind === 'rom_inspector' && input.readerHeld;

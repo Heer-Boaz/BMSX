@@ -18,13 +18,18 @@ const index = input.tree.rows.findIndex(row => row.element.kind === 'property' &
 t.assert(index >= 0, 'the shipped program has no actual editable scalar');
 const property = input.tree.rows[index].element, owner = input.sourceModels.get(property.file.file), original = owner.buffer.getText();
 const rootSource = input.workingCopy.buffer.getText(), cycles = t.runtime().machine.scheduler.nowCycles;
-t.command('gameView.togglePanel'); await t.frames(3);
-const sash = input.layout.right + 2;
-t.controlInput([{ type: 'pointer', x: sash, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 for (const variant of ['tiny', 'msx']) {
-	t.assert(input.layout.right === (variant === 'tiny' ? 78 : 118), 'the real Game Panel minimum was not exercised');
+	t.command('gameView.closePanel'); await t.frames(3);
+	const fullRight = input.layout.right;
+	t.command('gameView.togglePanel'); await t.frames(3);
+	const companion = input.layout.right < fullRight;
+	if (companion) {
+		t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	}
+	const phase = companion ? 'companion' : 'full-preview-unavailable';
+	t.assert(t.activeWorkbenchTab() === input && input.layout.font.variant === variant, 'requesting the companion replaced the program input or its current font');
 	const layout = input.tree.layout;
 	await click(layout.contentLeft + layout.twistieWidth + 6, layout.contentTop + layout.rowHeight / 2);
 	await press('Home'); for (let row = 0; row < index; row++) await press('ArrowDown');
@@ -33,7 +38,7 @@ for (const variant of ['tiny', 'msx']) {
 	for (const code of ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7']) await press(code);
 	for (let theme = 0; theme < 2; theme++) {
 		t.assert(owner.buffer.getText() === original, 'a temporary value draft changed the canonical source');
-		await capture(`program-${variant}-minimum-value-editor-theme-${theme}`);
+		await capture(`program-${variant}-${phase}-value-editor-theme-${theme}`);
 		t.command('theme-toggle'); await t.frames(2);
 	}
 	await press('Escape');

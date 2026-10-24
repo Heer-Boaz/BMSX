@@ -4,11 +4,6 @@ const press = async (...codes) => {
 	t.controlInput(codes.map(code => ({ type: 'key', code, down: true }))); await t.frames(2);
 	t.controlInput(codes.map(code => ({ type: 'key', code, down: false }))); await t.frames(2);
 };
-const drag = async (x, y, toX, toY) => {
-	t.controlInput([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-	t.controlInput([{ type: 'pointer', x: toX, y: toY }]); await t.frames(2);
-	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
-};
 const capture = async label => { await t.frames(3); t.log(`VISUAL ${label}`); t.capture(label); };
 const focusFirst = async () => {
 	t.command('problems.coverage'); await t.frames(2); await press('Tab'); await press('Home');
@@ -43,11 +38,10 @@ for (const [font, variant] of ['tiny', 'msx'].entries()) {
 			'same-message diagnostic was resolved by position or basename instead of its owned source model');
 		t.assert(documents[1].input.context.view.cursorRow === 0 && documents[1].input.context.view.cursorColumn === 0,
 			'second diagnostic lost its original source range');
-		// The Problems part remains readable across the root while the real Game Panel
-		// constrains the code editor to its supported font-dependent minimum.
+		// Requesting the companion must not change the root-owned diagnostic identities.
+		// The source reading budget may keep the full client; there is then no sash to drag.
 		t.command('gameView.togglePanel'); await t.frames(3);
-		if (font === 0 && theme === 0) await drag(222, 80, 50, 80);
-		await focusFirst(); await capture(`${variant}-theme-${theme}-diagnostic-narrow-editor`);
+		await focusFirst(); await capture(`${variant}-theme-${theme}-diagnostic-preview-requested`);
 		unchanged(); t.command('gameView.closePanel'); await t.frames(3);
 		t.command('theme-toggle'); await t.frames(2);
 	}

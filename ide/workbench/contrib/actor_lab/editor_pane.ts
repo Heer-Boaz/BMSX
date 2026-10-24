@@ -239,7 +239,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.detailsWindow.update();
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
-	public override get showsGameFrame(): boolean { return true; }
+	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.controller.viewport.transport; }
 	public override get runtimeControlContext() { return this.input.presentation === 'outline' ? this.focusTarget : this.graph.focusTarget; }
 	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }

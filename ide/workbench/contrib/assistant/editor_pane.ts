@@ -41,6 +41,7 @@ const COMMANDS = ['assistant.queue', 'assistant.direct', 'assistant.send', 'assi
 
 /** Host-only conversation work continues under the ordinary workbench game pause. */
 export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> {
+	public override get companionGameMinimumWidth(): number { return this.transcriptView.minimumWidth; }
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly attachments: AssistantAttachmentStrip;

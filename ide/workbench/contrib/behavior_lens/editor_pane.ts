@@ -28,7 +28,7 @@ import {
 import type { IdeCommandController } from '../../../commands/controller';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { drawBehaviorLens } from './render';
-import { prepareBehaviorLensLayout } from './layout';
+import { prepareBehaviorLensLayout, measureBehaviorLensMinimumWidth } from './layout';
 import { BehaviorLensPointer, BehaviorLensPointerResult } from './pointer';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { acceptEffectPropertySelection } from './action_effect_properties';
@@ -55,6 +55,8 @@ import { addActionEffectProperty, editableActionEffect, removeActionEffectProper
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
+	public override get companionGameMinimumWidth(): number { return measureBehaviorLensMinimumWidth(this.input.view); }
+
 	public override get suspendsRuntime(): boolean { return this.input.runtimeInspection?.running !== true; }
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.input.runtimeInspection === undefined ? undefined : this.inspector.focusTarget; }

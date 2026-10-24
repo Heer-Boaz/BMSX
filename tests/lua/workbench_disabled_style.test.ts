@@ -88,12 +88,11 @@ for (const theme of ['dark', 'light']) {
 				assert.ok(contrastRatio(label.color, background.color) >= 4.5, `${intent}: label ink must contrast with its actual button fill`);
 			}
 		});
-		test(`${theme}/${variant} the animation pane paints its own body beneath captions and bare actions`, t => {
+		test(`${theme}/${variant} the animation pane paints its own body beneath its actions`, t => {
 			const f = fixture(t, theme, variant), bounds = { left: 4, top: 26, right: 380, bottom: 268 };
 			const model = new EditorTextModel({ domain: 0, path: 'empty.lua', source: { resid: 'empty', type: 'lua' } }, 'lua', 'return { tracks = {} }');
 			const input = new AnimationEditorInput(model);
 			t.after(() => { input.dispose(); model.dispose(); });
-			input.caption = 'Animation';
 			layoutWorkbenchActionBar(input.actionBar, bounds.right - 4, bounds.top, bounds.top + f.font.lineHeight + 6,
 				text => f.font.measure(text), f.font.renderFont(), bounds.left + 4);
 			layoutWorkbenchPropertyTree(input.details, f.font.renderFont(), (text, start, end) => f.font.measure(text.slice(start, end)),

@@ -29,6 +29,8 @@ import { EditorPanes } from '../../ide/workbench/services/editor/editor_panes';
 import { inputFocus } from '../../ide/input/focus';
 
 class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
+	public override get companionGameMinimumWidth(): undefined { return undefined; }
+
 	private readonly focusTarget = inputFocus.createTarget();
 	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	public constructor(

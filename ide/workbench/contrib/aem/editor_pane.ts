@@ -19,7 +19,7 @@ import { createStructuredValueEdit } from '../../../language/yaml/structured_edi
 import { aemDocumentFormat } from '../../../../toolchain/ts/rompack/aem';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
+import { layoutWorkbenchPropertyTree, measureWorkbenchPropertyTreeMinimumWidth } from '../../ui/property_tree';
 import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { WorkbenchPropertyEdit } from '../../ui/property_edit';
@@ -38,7 +38,15 @@ import { projectAemSource } from './source';
 import * as colors from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 
+const PROPERTY_NAME_READING_COLUMNS = 12;
+const EXPRESSION_READING_COLUMNS = 20;
+
 export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> {
+	// A root property keeps a meaningful source name and expression, including its tree/control lanes.
+	public override get companionGameMinimumWidth(): number {
+		return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(), PROPERTY_NAME_READING_COLUMNS, EXPRESSION_READING_COLUMNS) + 8;
+	}
+
 	private readonly pointer = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly edit: WorkbenchPropertyEdit<EditorTextEdit>;

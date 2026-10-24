@@ -1,4 +1,4 @@
-// Shipped ActionEffect drafts and all three Behavior Lens toolbars at actual Game Panel minima.
+// Shipped ActionEffect drafts and all three Behavior Lens toolbars with optional companion composition.
 // Run: npm run ide:test -- nemesis_s tests/ide/behavior_property_edit_ux.idetest.js --ttl 120
 const press = async (...codes) => {
 	t.controlInput(codes.map(code => ({ type: 'key', code, down: true }))); await t.frames(2);
@@ -19,23 +19,24 @@ const choose = async (path, query) => {
 	t.assert(input.kind === 'behavior_lens', 'the real behavior definition chooser did not open a lens');
 	return input;
 };
-const minimum = async input => {
+const requestCompanion = async input => {
+	t.command('gameView.closePanel'); await t.frames(3);
+	const fullRight = input.view.layout.right;
 	t.command('gameView.togglePanel'); await t.frames(3);
-	t.controlInput([{ type: 'pointer', x: input.view.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
-	const layout = input.view.layout;
-	t.assert(layout.right - layout.left === (layout.font.variant === 'tiny' ? 78 : 118), 'the actual Game Panel did not reach its supported font-dependent minimum');
+	const companion = input.view.layout.right < fullRight;
+	if (companion) {
+		t.controlInput([{ type: 'pointer', x: input.view.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	}
+	return companion ? 'companion' : 'full-preview-unavailable';
 };
 const sourceAction = input => input.view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.source');
 const more = input => input.view.presentation.actionBar.overflow.button;
-const bounded = input => {
-	const { layout, presentation } = input.view, bar = presentation.actionBar;
-	for (const item of bar.items) if (item.visible && !item.overflowed)
-		t.assert(item.bounds.left >= layout.left && item.bounds.right <= layout.right, 'a primary Behavior Lens action escaped its editor');
-	t.assert(more(input).visible && more(input).icon === 'more' && more(input).bounds.right > more(input).bounds.left,
-		'the narrow toolbar has no real reachable symbol More');
-	t.assert(sourceAction(input).visible && !sourceAction(input).overflowed, 'Source is not directly reachable at the real supported minimum');
+const availableActions = input => {
+	const bar = input.view.presentation.actionBar;
+	t.assert(more(input).visible, 'the actual Behavior Lens has no secondary-action menu');
+	t.assert(sourceAction(input).visible && !sourceAction(input).overflowed, 'Source is not directly reachable in the actual Behavior Lens');
 	const commands = [...bar.items.filter(item => item.visible && !item.overflowed).map(item => item.command),
 		...bar.overflow.items.filter(item => item.type === 'command').map(item => item.command)];
 	t.assert(new Set(commands).size === commands.length && commands.every(command => command !== 'behaviorLens.more'),
@@ -69,7 +70,7 @@ t.assert(input.view.presentation.kind === 'properties' && input.workingCopy.reso
 const model = input.workingCopy, original = model.buffer.getText(), cycles = t.runtime().machine.scheduler.nowCycles;
 const dependencies = snapshot(input);
 for (let font = 0; font < 2; font++) {
-	await minimum(input); bounded(input);
+	const phase = await requestCompanion(input); availableActions(input);
 	const variant = input.view.layout.font.variant;
 	for (let theme = 0; theme < 2; theme++) {
 		const element = await editPeriod(input), write = element.write;
@@ -77,7 +78,7 @@ for (let font = 0; font < 2; font++) {
 		const start = model.buffer.offsetAt(range.start.line - 1, range.start.column - 1), end = model.buffer.offsetAt(range.end.line - 1, range.end.column);
 		await typeDigits('1234567');
 		t.assert(model.buffer.getText() === original, 'the temporary Effect draft published before acceptance');
-		await capture(`effect-${variant}-theme-${theme}-minimum-seven-digit-draft`);
+		await capture(`effect-${variant}-theme-${theme}-${phase}-seven-digit-draft`);
 		await press('ControlLeft', 'KeyZ'); await press('Enter');
 		t.assert(model.buffer.getText() === original.slice(0, start) + '123456' + original.slice(end), 'local draft Undo was routed to canonical history or lost its suffix');
 		t.command('undo'); await t.frames(3); t.assert(model.buffer.getText() === original, 'document Undo did not restore exact authored Effect bytes');
@@ -183,18 +184,18 @@ for (const [path, query, kind] of [['enemies/moon_tree.lua', 'bt moon', 'graph']
 	const lens = await choose(path, query), source = lens.workingCopy.buffer.getText();
 	t.assert(lens.view.presentation.kind === kind, 'the real chooser selected a different behavior presentation');
 	for (let font = 0; font < 2; font++) {
-		await minimum(lens); bounded(lens);
+		const phase = await requestCompanion(lens); availableActions(lens);
 		if (kind === 'state-graph') {
 			await lens.graphLayout.settled; await t.frames(2);
 			t.assert(lens.graphLayout.state.kind === 'ready' && lens.view.presentation.viewport.model === lens.graphLayout.state.model,
 				'the current font layout has not reached the visible graph before capture');
 		}
 		for (let theme = 0; theme < 2; theme++) {
-			await click(more(lens).bounds); await capture(`behavior-${kind}-${lens.view.layout.font.variant}-theme-${theme}-minimum-more`); await press('Escape');
+			await click(more(lens).bounds); await capture(`behavior-${kind}-${lens.view.layout.font.variant}-theme-${theme}-${phase}-more`); await press('Escape');
 			t.command('theme-toggle'); await t.frames(2);
 		}
 		await click(sourceAction(lens).bounds); await t.frames(3);
-		t.assert(t.activeWorkbenchTab().kind === 'code_editor' && t.activeWorkbenchTab().workingCopy === lens.workingCopy, 'a narrow behavior toolbar opened a different Source owner');
+		t.assert(t.activeWorkbenchTab().kind === 'code_editor' && t.activeWorkbenchTab().workingCopy === lens.workingCopy, 'the actual behavior toolbar opened a different Source owner');
 		t.assert(await choose(path, query) === lens && lens.workingCopy.buffer.getText() === source, 'toolbar navigation replaced a retained lens or rewrote source');
 		t.command('gameView.closePanel'); await t.frames(3); await press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}

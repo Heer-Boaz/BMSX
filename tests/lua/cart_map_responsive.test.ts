@@ -297,3 +297,22 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 		f.input.diagnostic = null; f.pane.clearInput(); assert.equal(pointerHover.has(f.pane), false);
 	});
 }
+
+for (const variant of ['tiny', 'msx'] as const) test(`Cart Map ${variant} intrinsic admission uses retained section and new font before pane arrangement`, t => {
+	const f = fixture(t, variant, 700), { input, pane } = f;
+	assert.equal(input.layout.mode, 'split');
+	input.section = 'outline';
+	assert.equal(pane.companionGameMinimumWidth, input.layout.outlineMinimumWidth);
+	input.section = 'map';
+	assert.equal(pane.companionGameMinimumWidth, input.layout.mapMinimumWidth);
+	const arrangedFont = input.layout.font;
+	configureFontVariant(new VirtualHeadlessClock(), variant === 'tiny' ? 'msx' : 'tiny', null);
+	const width = pane.companionGameMinimumWidth;
+	assert.equal(input.layout.font, arrangedFont, 'intrinsic measurement does not pretend that pane arrangement has run');
+	assert.equal(input.layout.mode, 'split'); assert.equal(input.section, 'map');
+	assert.equal(width, input.layout.mapMinimumWidth);
+	assert.ok(width >= input.grid.minimumWidth + 8, 'the selected compact map retains eight complete cells and its lanes');
+	const read = t.mock.method(f.model.buffer, 'getText'), advance = t.mock.method(editorViewState.font, 'advance');
+	for (let frame = 0; frame < 1000; frame++) assert.equal(pane.companionGameMinimumWidth, width);
+	assert.equal(read.mock.callCount(), 0); assert.equal(advance.mock.callCount(), 0);
+});

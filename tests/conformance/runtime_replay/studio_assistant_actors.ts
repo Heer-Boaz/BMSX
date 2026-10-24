@@ -53,7 +53,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await press('Enter'); await frame();
 	const actorPane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
 	let inspector = actorPane.inspector;
-	check(inspector.visible && actorPane.showsGameFrame && actorPane.detailsWindow.visible && lab.detailsWindow.open,
+	check(inspector.visible && actorPane.companionGameMinimumWidth === undefined && actorPane.detailsWindow.visible && lab.detailsWindow.open,
 		'ordinary Details leave the actor outline and game preview visible');
 	await press('End');
 	const retainedProperty = inspector.model.rows[inspector.model.selectionIndex].element.label;

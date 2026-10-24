@@ -12,7 +12,7 @@ import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { AnimationEditorController } from '../../ide/workbench/contrib/animation/controller';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { AnimationKeyControl } from '../../ide/workbench/contrib/animation/key_control';
-import { layoutAnimationEditor } from '../../ide/workbench/contrib/animation/layout';
+import { layoutAnimationEditor, measureAnimationEditor } from '../../ide/workbench/contrib/animation/layout';
 import { drawAnimationEditor } from '../../ide/workbench/contrib/animation/render';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
@@ -40,12 +40,14 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 			keys.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null);
 			editorViewState.font = previousFont; editorViewState.layout = previousLayout; colors.setIdeThemeVariant(previousTheme);
 		});
-		const bounds = { left: 4, top: 24, right: 380, bottom: 268 };
+		// This renderer contract exercises overview and curve ink together, not a fixed physical viewport's layout mode.
+		const measured = measureAnimationEditor(editorViewState.font);
+		const bounds = { left: 4, top: 24, right: 4 + measured.expandedWidth, bottom: 24 + measured.expandedHeight };
 		layoutAnimationEditor(input, bounds, keys); input.keys.update(); input.keys.curve.update(input.keys); input.overview.update(input);
 		assert.equal(input.keys.curve.available, true);
 		const unitLabel = input.overview.lanes.find(lane => lane.label !== '');
 		assert.ok(unitLabel, 'the actual mismatched-unit track supplies explanatory overview text');
-		const overlay = createHostOverlayFixture(384, 288);
+		const overlay = createHostOverlayFixture(bounds.right + 4, bounds.bottom + 4);
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 		drawAnimationEditor(input, bounds, false); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];

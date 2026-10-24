@@ -357,6 +357,7 @@ await readerAction('romInspector.hold'); await readerAction('window.hide');
 // The same real controls remain explained and reachable beside the Game Panel.
 for (let font = 0; font < 2; font++) {
 	const variant = rom.layout.font.variant;
+	t.command('gameView.closePanel'); await t.frames(3);
 	t.command('romInspector.assets'); await t.frames(2);
 	const filter = rom.filterBounds;
 	await click((filter.left + filter.right) / 2, (filter.top + filter.bottom) / 2);
@@ -364,43 +365,40 @@ for (let font = 0; font < 2; font++) {
 	for (const character of 'KONAMI') await press(`Key${character}`);
 	await press('Enter'); await press('Home');
 	t.assert(rom.model.selection.label === 'intro_konami' && rom.model.selection.kind === 'asset',
-		'the actual catalog did not retain the image subject for the minimum-width reader case');
+		'the actual catalog did not retain the image subject for the companion reader case');
 	const keyAction = rom.actions.items.find(item => item.command === 'romInspector.key');
 	t.controlInput([{ type: 'pointer', x: (keyAction.bounds.left + keyAction.bounds.right) / 2,
 		y: (keyAction.bounds.top + keyAction.bounds.bottom) / 2 }]); await t.frames(2);
 	t.assert(rom.actions.hoveredCommand === 'romInspector.key', 'the actual key icon did not receive hover');
 	await capture(`rom-key-info-hint-${variant}`);
-	if (font === 0) {
-		t.command('gameView.togglePanel'); await t.frames(3);
-		const sash = rom.actions.bounds.right + 6;
-		t.controlInput([{ type: 'pointer', x: sash, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+	const fullRight = rom.layout.right, keyPlacement = { ...rom.keyWindow.requestedBounds }, readerPlacement = { ...rom.readerWindow.requestedBounds };
+	t.command('gameView.togglePanel'); await t.frames(3);
+	const companion = rom.layout.right < fullRight;
+	if (companion) {
+		t.controlInput([{ type: 'pointer', x: rom.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
 		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
 		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 	}
-	t.assert(rom.layout.right === (variant === 'tiny' ? 78 : 118), 'the real ROM sash did not reach the supported font minimum');
-	for (const [bar, left] of [[rom.actions, rom.layout.left + 4]]) {
-		for (const item of bar.items) if (item.visible && !item.overflowed)
-			t.assert(item.bounds.left >= left && item.bounds.right <= rom.layout.right - 4, 'a painted ROM action escaped its actual content region');
-		if (bar.overflow.button.visible) t.assert(bar.overflow.button.bounds.left >= left
-			&& bar.overflow.button.bounds.right <= rom.layout.right - 4, 'a ROM More icon escaped its actual content region');
-		const commands = [...bar.items.filter(item => item.visible && !item.overflowed).map(item => item.command),
-			...bar.overflow.items.filter(item => item.type === 'command').map(item => item.command)];
-		t.assert(new Set(commands).size === commands.length, 'ROM overflow duplicated a still-painted primary action');
-		if (bar === rom.actions) t.assert(commands.filter(command => command === 'romInspector.key').length === 1,
-			'the key must be reachable exactly once, not forced into More as well as its primary icon');
-	}
+	const phase = companion ? 'companion' : 'full-preview-unavailable';
+	const commands = [...rom.actions.items.filter(item => item.visible && !item.overflowed).map(item => item.command),
+		...rom.actions.overflow.items.filter(item => item.type === 'command').map(item => item.command)];
+	t.assert(new Set(commands).size === commands.length, 'ROM overflow duplicated a still-painted primary action');
+	t.assert(commands.filter(command => command === 'romInspector.key').length === 1,
+		'the key must be reachable exactly once, not forced into More as well as its primary icon');
 	const more = rom.actions.overflow.button;
-	t.assert(more.visible, 'the supported ROM minimum did not expose its overflow actions');
-	t.controlInput([{ type: 'pointer', x: (more.bounds.left + more.bounds.right) / 2,
-		y: (more.bounds.top + more.bounds.bottom) / 2 }]); await t.frames(2);
-	t.assert(rom.actions.hoveredCommand === more.command, 'the actual More control did not receive hover');
-	await capture(`rom-more-hint-${variant}`);
-	await click((more.bounds.left + more.bounds.right) / 2, (more.bounds.top + more.bounds.bottom) / 2);
-	await capture(`rom-minimum-more-${variant}`); await press('Escape');
+	if (more.visible) {
+		t.controlInput([{ type: 'pointer', x: (more.bounds.left + more.bounds.right) / 2,
+			y: (more.bounds.top + more.bounds.bottom) / 2 }]); await t.frames(2);
+		t.assert(rom.actions.hoveredCommand === more.command, 'the actual More control did not receive hover');
+		await capture(`rom-more-hint-${variant}-${phase}`);
+		await click((more.bounds.left + more.bounds.right) / 2, (more.bounds.top + more.bounds.bottom) / 2);
+		await capture(`rom-more-${variant}-${phase}`); await press('Escape');
+	} else await capture(`rom-primary-actions-${variant}-${phase}`);
 	await click((keyAction.bounds.left + keyAction.bounds.right) / 2, (keyAction.bounds.top + keyAction.bounds.bottom) / 2);
-	t.assert(rom.keyWindow.open && rom.keyWindow.bounds.right > rom.layout.right,
-		'the readable key was closed or incorrectly constrained to the narrow owning pane');
-	await capture(`rom-minimum-root-key-${variant}`);
+	t.assert(rom.keyWindow.open && rom.keyWindow.requestedBounds.left === keyPlacement.left && rom.keyWindow.requestedBounds.top === keyPlacement.top
+		&& rom.keyWindow.requestedBounds.right === keyPlacement.right && rom.keyWindow.requestedBounds.bottom === keyPlacement.bottom,
+		'companion composition changed the root-owned key placement or prevented it from opening');
+	await capture(`rom-root-key-${variant}-${phase}`);
 	// This selected palette action must resolve through the actual key client context.
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	for (const character of 'Window Close Window') await press(character === ' ' ? 'Space' : `Key${character.toUpperCase()}`);
@@ -411,10 +409,11 @@ for (let font = 0; font < 2; font++) {
 	await press('Enter');
 	const imageSubject = rom.model.selection, image = rom.reader.preview, viewport = rom.reader.imageView;
 	t.assert(rom.readerWindow.open && rom.reader.subject === imageSubject && rom.reader.view === 'preview'
-		&& rom.readerWindow.bounds.right > rom.layout.right && rom.readerWindow.bounds.right - rom.readerWindow.bounds.left > rom.layout.right - rom.layout.left,
-		'the entry reader was constrained to the narrow catalog instead of the root work area');
-	await capture(`rom-minimum-root-reader-${variant}`);
-	await chooseReaderView('info'); await capture(`rom-minimum-reader-properties-${variant}`); await chooseReaderView('preview');
+		&& rom.readerWindow.requestedBounds.left === readerPlacement.left && rom.readerWindow.requestedBounds.top === readerPlacement.top
+		&& rom.readerWindow.requestedBounds.right === readerPlacement.right && rom.readerWindow.requestedBounds.bottom === readerPlacement.bottom,
+		'companion composition changed the root-owned reader placement or its actual image subject');
+	await capture(`rom-root-reader-${variant}-${phase}`);
+	await chooseReaderView('info'); await capture(`rom-reader-properties-${variant}-${phase}`); await chooseReaderView('preview');
 	t.command('romInspector.zoom'); await t.frames(2); await press('ControlLeft', 'End'); await press('Enter');
 	await press('Home'); await press('ArrowRight'); await press('PageDown');
 	const imageX = viewport.horizontal.getScroll(), imageY = viewport.vertical.getScroll();

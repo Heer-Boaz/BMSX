@@ -5,12 +5,15 @@ import * as colors from '../../ide/common/constants';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
+import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { api } from '../../ide/runtime/overlay_api';
 import { resolveRuntimeResourceForContext } from '../../ide/runtime/sources';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
+import { RomInspectorPane } from '../../ide/workbench/contrib/rom_inspector/editor_pane';
+import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import type { RomInspectorSnapshot } from '../../ide/workbench/contrib/rom_inspector/model';
 import { RomEntryInspectorWindow } from '../../ide/workbench/contrib/rom_inspector/reader_window';
 import type { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
@@ -59,6 +62,54 @@ function imageSnapshot(): RomInspectorSnapshot {
 		blua32ExceptionFunctionAddress: 0, blua32StaticLayoutTokenLo: 0, blua32StaticLayoutTokenHi: 0, blua32DiagnosticDirectoryOffset: 0,
 	} };
 }
+
+test('ROM catalog commands dispatch from the actual focused list and after filter Enter', t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	const input = new RomInspectorInput(imageSnapshot()), surfaces = new WorkbenchSurfaceService();
+	const previousScrollbars = editorViewState.scrollbarController;
+	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: input.list.scrollbar, codeHorizontal: input.readerHorizontal,
+		viewerVertical: input.list.scrollbar, resourceVertical: input.list.scrollbar, resourceHorizontal: input.readerHorizontal }, () => {}, pointerCapture);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('ROM catalog command owner'), getBounds: () => area,
+		getClip: () => area, isVisible: () => true, draw() {} });
+	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
+		execute: (command, target) => inputFocus.executeCommand(command, target) };
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('a.lua', 1), createScenarioTestSourceRecord('b.lua', 2)]);
+	const opened: { domain: number; path: string }[] = [];
+	const navigation = { openResource: async (resource: { domain: number; path: string }) => { opened.push(resource); return 1; } } as EditorNavigationController;
+	const pane = new RomInspectorPane({ hide() {} } as ResourcePanelController, commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area);
+	t.after(() => { pane.clearInput(); pane.dispose(); quickInput.dispose(); contextMenu.dispose(); inputFocus.setTarget(null);
+		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); editorViewState.scrollbarController = previousScrollbars; });
+	pane.setInput(input, area); pane.focus();
+	const catalog = inputFocus.target;
+	commands.execute('romInspector.structure');
+	assert.equal(input.model.mode, 'structure', 'the focused catalog owns mode commands, not only its toolbar command context');
+	assert.equal(input.model.rows.length, input.model.inspection.sections.length);
+	commands.execute('list.find');
+	assert.notEqual(inputFocus.target, catalog);
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, true));
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	assert.equal(inputFocus.target, catalog, 'filter Enter returns to the real catalog target');
+	commands.execute('romInspector.assets');
+	assert.equal(input.model.mode, 'assets'); assert.equal(input.model.rows.length, input.model.assets.length);
+	input.model.select(input.model.rows.findIndex(row => row.label === 'a-image'));
+	const subject = input.model.selection;
+	commands.execute('romInspector.inspect');
+	assert.equal(input.readerWindow.open, true); assert.equal(input.reader.subject, subject);
+	pane.focus(); commands.execute('romInspector.source');
+	assert.equal(opened.length, 1); assert.equal(opened[0].path, 'a.lua');
+	const catalogCommands = ['romInspector.key', 'romInspector.inspect', 'romInspector.assets', 'romInspector.structure',
+		'romInspector.code', 'romInspector.sort', 'romInspector.source'] as const;
+	pane.clearInput();
+	for (const command of catalogCommands) assert.equal(catalog.getCommand(command)!.isEnabled(), false,
+		'a retained catalog command cannot admit work after its editor input detaches');
+	commands.execute('romInspector.structure', catalog);
+	assert.equal(input.model.mode, 'assets', 'detached command references do not mutate their former input');
+	pane.setInput(input, area); pane.focus();
+	assert.equal(inputFocus.target, catalog, 'reattachment reuses the actual catalog control');
+	commands.execute('romInspector.structure');
+	assert.equal(input.model.mode, 'structure', 'the retained control admits work again only after attachment');
+});
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'light', snapshot = imageSnapshot()) {
 	const previousTheme = colors.getActiveIdeThemeVariant(), previousCommands = inputFocus.workbenchScope.commands;

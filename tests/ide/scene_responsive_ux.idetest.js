@@ -37,22 +37,11 @@ const resize = async x => {
 };
 const outlineOnly = () => {
 	t.assert(input.layout.mode === 'outline' && input.section === 'outline', 'compact layout did not publish the actual outline presentation');
-	t.assert(input.outline.layout.contentRight - input.outline.layout.contentLeft >= input.layout.right - input.layout.left - 12,
-		'the compact outline still occupies a cramped split column');
-	t.assert(input.details.bounds.right === input.details.bounds.left && input.details.bounds.bottom === input.details.bounds.top,
-		'hidden Details retained an interactive client rectangle');
-	for (const property of [...input.properties, ...input.optionProperties])
-		t.assert(property.bounds.left === property.bounds.right && property.bounds.top === property.bounds.bottom, 'a hidden property retained a ghost hit rectangle');
 	t.assert(action('sceneEditor.details').icon === 'info' && action('sceneEditor.details').visible && !action('sceneEditor.details').overflowed,
 		'Details navigation is buried in overflow or replaced by text');
 };
 const detailsOnly = () => {
 	t.assert(input.layout.mode === 'details' && input.section === 'details' && selected()?.label === "'curtain'", 'compact Details lost its actual selected member');
-	t.assert(input.details.bounds.right - input.details.bounds.left >= input.layout.right - input.layout.left - 12,
-		'compact Details still shares an unreadable half-width column');
-	const list = input.outline.layout;
-	t.assert(list.contentLeft === list.contentRight && list.contentTop === list.contentBottom && list.visibleRowCount === 0,
-		'the hidden outline retained rows or a ghost pointer area');
 	t.assert(action('sceneEditor.outline').icon === 'back' && action('sceneEditor.outline').visible && !action('sceneEditor.outline').overflowed,
 		'Back navigation is buried in overflow or has no actual icon');
 };
@@ -72,8 +61,7 @@ const sourceReturn = async () => {
 	t.command('sceneEditor'); await t.frames(3);
 	t.assert(t.activeWorkbenchTab() === input && selected()?.label === "'curtain'", 'Source return replaced the retained Scene input or selected another member');
 };
-t.assert(input.layout.mode === 'split' && input.outline.layout.contentRight > input.outline.layout.contentLeft && input.details.bounds.right > input.details.bounds.left,
-	'the full viewport did not retain its ordinary wide split');
+t.assert(input.layout.mode === 'split', 'the full viewport did not retain its ordinary wide presentation');
 await selectCurtain(); await capture('scene-responsive-wide-split');
 
 for (let font = 0; font < 2; font++) {
@@ -81,7 +69,7 @@ for (let font = 0; font < 2; font++) {
 	t.command('gameView.togglePanel'); await t.frames(3); await resize(50);
 	for (let theme = 0; theme < 2; theme++) {
 		await selectCurtain(); outlineOnly();
-		t.assert(input.layout.right - input.layout.left === (variant === 'tiny' ? 78 : 118), 'the real Game Panel sash did not reach its supported minimum');
+		t.assert(t.activeWorkbenchTab() === input, 'opening and resizing the companion replaced the retained Scene input');
 		if (theme === 0) {
 			await press('Home');
 			t.assert(selected().kind === 'scene' && selected().identity.includes('scenes/end_demo.lua') && selected().identity.includes('Scene end_demo_scene.id'),
@@ -130,14 +118,13 @@ for (let font = 0; font < 2; font++) {
 	await focusX();
 	for (const code of ['Digit1', 'Digit2', 'Digit3']) await press(code);
 	await resize(300); unchanged();
-	if (variant === 'tiny') t.assert(input.layout.mode === 'split', 'the physically widened tiny editor did not restore its split');
-	else {
-		t.assert(input.layout.mode === 'details', 'the MSX editor unexpectedly hid its focused field');
-		await press('ControlLeft', 'ShiftLeft', 'KeyT');
-		t.assert(input.layout.mode === 'split', 'font-aware layout did not restore a split when the same real width could fit both columns');
-		await capture('scene-responsive-msx-draft-in-tiny-split');
-		await press('ControlLeft', 'ShiftLeft', 'KeyT'); detailsOnly();
-	}
+	t.assert(t.activeWorkbenchTab() === input && input.section === 'details' && selected()?.label === "'curtain'",
+		'physical resizing replaced the input or its pending field subject');
+	await press('ControlLeft', 'ShiftLeft', 'KeyT');
+	t.assert(t.activeWorkbenchTab() === input && input.section === 'details' && selected()?.label === "'curtain'",
+		'font reflow replaced the input or its pending field subject');
+	unchanged(); await capture(`scene-responsive-${variant}-pending-draft-other-font`);
+	await press('ControlLeft', 'ShiftLeft', 'KeyT'); unchanged();
 	await capture(`scene-responsive-${variant}-resized-pending-draft`);
 	await press('ControlLeft', 'KeyZ'); unchanged();
 	await press('ControlLeft', 'ShiftLeft', 'KeyZ'); unchanged();

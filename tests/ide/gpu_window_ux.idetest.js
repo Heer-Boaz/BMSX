@@ -222,31 +222,34 @@ t.command('gpuDebugger'); await t.frames(3);
 t.assert(t.activeWorkbenchTab() === input && window.open && sameBounds(window.requestedBounds, placement), 'returning to GPU lost retained window placement');
 sameOperation(second); await capture('gpu-window-reattached');
 
-// The real minimum-width history stays useful while the root-owned inspector keeps its reading area.
+// Optional companion composition preserves history and the root-owned inspector's placement.
 for (let font = 0; font < 2; font++) {
 	const variant = input.layout.font.variant;
-	await clickAction('window.hide'); t.command('gameView.togglePanel'); await t.frames(3);
-	await drag(input.layout.right + 2, 80, 50, 80); t.command('gpuDebugger'); await t.frames(2);
+	await clickAction('window.hide'); t.command('gameView.closePanel'); await t.frames(3);
+	const fullRight = input.layout.right, inspectorPlacement = { ...window.requestedBounds };
+	t.command('gameView.togglePanel'); await t.frames(3);
+	const companion = input.layout.right < fullRight;
+	if (companion) await drag(input.layout.right + 2, 80, 50, 80);
+	t.command('gpuDebugger'); await t.frames(2);
+	const phase = companion ? 'companion' : 'full-preview-unavailable';
 	for (let theme = 0; theme < 2; theme++) {
-		t.assert(input.layout.right - input.layout.left === (variant === 'tiny' ? 78 : 118), 'the real GPU sash did not reach its supported font minimum');
-		t.assert(input.list.bounds.right - input.list.bounds.left >= input.layout.right - input.layout.left - 16,
-			'the minimum history still shares a fixed diagram split');
-		await capture(`gpu-history-minimum-${variant}-theme-${theme}`);
+		const historyBounds = { ...input.list.bounds };
+		await capture(`gpu-history-${phase}-${variant}-theme-${theme}`);
 		t.command('gpu.details'); await t.frames(2); await chooseView('Properties', 'properties');
-		t.assert(input.inspectorBounds.right - input.inspectorBounds.left > input.list.bounds.right - input.list.bounds.left,
-			'the root-owned inspector shrank to the constrained history pane');
-		await capture(`gpu-inspector-minimum-owner-${variant}-theme-${theme}-properties`);
+		t.assert(window.open && sameBounds(window.requestedBounds, inspectorPlacement) && sameBounds(input.list.bounds, historyBounds),
+			'opening the root-owned inspector changed its requested placement or the retained history allocation');
+		await capture(`gpu-inspector-${phase}-${variant}-theme-${theme}-properties`);
 		await chooseView('Geometry', 'diagram', 'geometry'); await focusClient(); await press('Home');
-		await capture(`gpu-inspector-minimum-owner-${variant}-theme-${theme}-diagram`);
+		await capture(`gpu-inspector-${phase}-${variant}-theme-${theme}-diagram`);
 		await press('End');
-		t.assert(input.diagram.scrollTop === input.diagram.scrollbar.getMaximumScroll(), 'the narrow-owner diagram cannot reveal its final annotation');
+		t.assert(input.diagram.scrollTop === input.diagram.scrollbar.getMaximumScroll(), 'the retained diagram cannot reveal its final annotation');
 		await chooseView('Words', 'words'); await focusClient(); await press('End');
-		t.assert(input.selectedWord === input.selected.wordCount - 1, 'the narrow owner made the last active word unreachable');
-		await capture(`gpu-inspector-minimum-owner-${variant}-theme-${theme}-words`);
+		t.assert(input.selectedWord === input.selected.wordCount - 1, 'the retained inspector made the last active word unreachable');
+		await capture(`gpu-inspector-${phase}-${variant}-theme-${theme}-words`);
 		sameOperation(second); await chooseView('Properties', 'properties');
 		await clickAction('window.hide'); t.command('theme-toggle'); await t.frames(2);
 	}
-	t.command('gameView.togglePanel'); await t.frames(3); t.command('gpuDebugger'); t.command('gpu.details'); await t.frames(2);
+	t.command('gameView.closePanel'); await t.frames(3); t.command('gpuDebugger'); t.command('gpu.details'); await t.frames(2);
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 

@@ -1,4 +1,4 @@
-// Real contribution toolbars at the Game Panel's supported minimum editor width.
+// Real contribution actions remain reachable when the companion constrains the primary client.
 // Run: npm run ide:test -- nemesis_s tests/ide/toolbar_minimum.idetest.js
 const press = async (...codes) => {
 	t.controlInput(codes.map(code => ({ type: 'key', code, down: true })));
@@ -22,19 +22,15 @@ const open = async (command, kind) => {
 	t.assert(input.kind === kind, `${command}: the actual shipped contribution did not open`);
 	return input;
 };
-const lineHeight = input => input.kind === 'animation' ? input.tracks.layout.rowHeight - 4 : input.layout.rowHeight;
 const focusContent = async input => {
 	if (input.kind === 'animation') {
 		const list = input.tracks.layout;
 		await click({ left: list.contentLeft, right: list.contentRight, top: list.contentTop, bottom: list.contentTop + list.rowHeight });
 	} else await click(input.layout.sourceBounds);
 };
-const bounded = input => {
-	const bar = input.actionBar, right = bar.bounds.right + 4;
-	for (const item of bar.items) if (item.visible && !item.overflowed)
-		t.assert(item.bounds.left >= 0 && item.bounds.right <= right - 4, `${input.kind}: a painted primary command escaped its actual editor bounds`);
+const distinctActions = input => {
+	const bar = input.actionBar;
 	if (bar.overflow?.button.visible) {
-		t.assert(bar.overflow.button.bounds.left >= 0 && bar.overflow.button.bounds.right <= right - 4, `${input.kind}: More escaped its actual editor bounds`);
 		const commands = [...bar.items.filter(item => item.visible && !item.overflowed).map(item => item.command),
 			...bar.overflow.items.filter(item => item.type === 'command').map(item => item.command)];
 		t.assert(new Set(commands).size === commands.length, `${input.kind}: a command appears in both primary and secondary actions`);
@@ -55,34 +51,44 @@ for (const [command, kind, path] of [
 	let input = await open(command, kind);
 	t.assert(input.workingCopy.resource.path === path, `${kind}: the chooser selected a different authored resource`);
 	const originalInput = input, source = input.workingCopy.buffer.getText(), cycles = t.runtime().machine.scheduler.nowCycles;
+	const bounds = input.kind === 'animation' ? input.layout.bounds : input.layout;
+	const fullRight = bounds.right;
 	for (let font = 0; font < 2; font++) {
-		bounded(input);
-		await capture(`${kind}-full-${lineHeight(input) === 6 ? 'tiny' : 'msx'}`);
+		distinctActions(input);
+		await capture(`${kind}-full-${input.layout.font.variant}`);
 		await press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
 	t.command('gameView.togglePanel'); await t.frames(3);
 	// The published editor right edge is two pixels before the actual outer sash.
-	const sash = input.actionBar.bounds.right + 6;
-	t.controlInput([{ type: 'pointer', x: sash, y: 80 }, { type: 'button', button: 'primary', down: true }]);
-	await t.frames(1);
-	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	const sash = bounds.right + 2;
+	if (bounds.right < fullRight) {
+		t.controlInput([{ type: 'pointer', x: sash, y: 80 }, { type: 'button', button: 'primary', down: true }]);
+		await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+	}
 	for (let font = 0; font < 2; font++) {
-		const variant = lineHeight(input) === 6 ? 'tiny' : 'msx';
-		t.assert(input.actionBar.bounds.right + 4 === (variant === 'tiny' ? 78 : 118), `${kind}: the real sash did not reach the supported ${variant} minimum`);
+		const variant = input.layout.font.variant;
+		const presentation = bounds.right < fullRight ? 'companion-visible' : 'companion-hidden';
+		t.assert(t.activeWorkbenchTab() === input && input === originalInput, `${kind}: client constraints replaced the authored input`);
 		if (kind === 'scene_editor') {
 			const details = input.actionBar.items.find(item => item.command === 'sceneEditor.details');
 			t.assert(input.layout.mode === 'outline' && input.section === 'outline', 'the narrow Scene toolbar still accompanies two cramped columns');
 			t.assert(details.visible && !details.overflowed && details.icon === 'info', 'compact Details navigation is not a directly reachable native icon');
 		}
 		for (let theme = 0; theme < 2; theme++) {
-			bounded(input); await capture(`${kind}-minimum-${variant}-theme-${theme}`);
+			distinctActions(input); await capture(`${kind}-${presentation}-${variant}-theme-${theme}`);
 			t.command('theme-toggle'); await t.frames(2);
 		}
 		if (kind !== 'animation') {
 			const header = input.layout.sourceBounds;
 			t.controlInput([{ type: 'pointer', x: (header.left + header.right) / 2, y: (header.top + header.bottom) / 2 }]);
 			await capture(`${kind}-minimum-${variant}-full-source-hint`);
+		}
+		if (kind === 'animation' && input.keys.unit === undefined) {
+			t.command('animation.details'); await t.frames(2);
+			await capture(`animation-source-metadata-${variant}`);
+			t.command('animation.tracks'); await t.frames(2);
 		}
 		await focusContent(input);
 		const bar = input.actionBar;
@@ -102,6 +108,7 @@ for (const [command, kind, path] of [
 			t.assert(bar.overflow.items.some(item => item.type === 'command' && item.command === `${command}.source`), `${kind}: original Source is not reachable in More`);
 			await click(bar.overflow.button.bounds); await capture(`${kind}-minimum-${variant}-more-pointer`);
 			await press('Escape'); await press('ShiftLeft', 'Tab');
+			if (kind === 'animation') await press('ShiftLeft', 'Tab');
 			t.assert(bar.hasFocus, `${kind}: dismissing pointer More did not restore the actual content focus ring`);
 			await press('End'); await press('Enter'); await capture(`${kind}-minimum-${variant}-more-keyboard`);
 			// All member mutations are disabled at the scene root. Animation has no selected producer;

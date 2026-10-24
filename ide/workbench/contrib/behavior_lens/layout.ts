@@ -1,3 +1,6 @@
+import { SCROLLBAR_WIDTH } from '../../../common/constants';
+import { GRAPH_NODE_PADDING } from '../../ui/graph/model';
+import { measureWorkbenchPropertyTreeMinimumWidth } from '../../ui/property_tree';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
@@ -23,6 +26,21 @@ const HEADER_PADDING_X = 4;
 const HEADER_PADDING_Y = 2;
 const CONTENT_PADDING_X = 4;
 const TREE_INDENT_COLUMNS = 2;
+
+// Preserve a named behavior and its relationship context, not just a clipped card sliver.
+const GRAPH_READING_COLUMNS = 32;
+const OUTLINE_READING_COLUMNS = 32;
+const PROPERTY_NAME_READING_COLUMNS = 12;
+const PROPERTY_VALUE_READING_COLUMNS = 20;
+
+export function measureBehaviorLensMinimumWidth(state: BehaviorLensViewState): number {
+	const presentation = state.presentation;
+	if (presentation.kind === 'properties') return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(),
+		PROPERTY_NAME_READING_COLUMNS, PROPERTY_VALUE_READING_COLUMNS) + CONTENT_PADDING_X * 2;
+	if (presentation.kind === 'outline') return editorViewState.charAdvance * OUTLINE_READING_COLUMNS
+		+ editorViewState.charAdvance * TREE_INDENT_COLUMNS * 2 + CONTENT_PADDING_X * 2;
+	return editorViewState.charAdvance * GRAPH_READING_COLUMNS + GRAPH_NODE_PADDING * 2 + SCROLLBAR_WIDTH + CONTENT_PADDING_X * 2;
+}
 
 export function createBehaviorLensLayout(): BehaviorLensLayout {
 	return {
