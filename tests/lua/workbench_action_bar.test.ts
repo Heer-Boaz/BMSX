@@ -277,17 +277,91 @@ test('callbacks see cleared capture and may synchronously detach or replace the 
 	assert.equal(f.focus.target, f.content);
 });
 
-test('a toolbar carries explicit command context, but children never inherit parent commands', t => {
+test('toolbar and child focus do not implicitly inherit the action context capabilities', t => {
 	const f = fixture(t);
 	let undos = 0;
 	f.content.registerCommand('undo', { isEnabled: () => true, run: () => { undos += 1; } });
 	f.bar.focusTarget.focus(); f.focus.executeCommand('undo');
-	assert.equal(undos, 1);
+	assert.equal(undos, 0);
 	const field = f.focus.createTarget(f.content); field.focus();
 	assert.equal(f.focus.getCommand('undo'), undefined);
-	f.focus.executeCommand('undo'); assert.equal(undos, 1);
+	f.focus.executeCommand('undo'); assert.equal(undos, 0);
 	field.registerCommand('undo', { isEnabled: () => false, run: () => assert.fail('disabled field command') });
-	f.focus.executeCommand('undo'); assert.equal(undos, 1);
+	f.focus.executeCommand('undo'); assert.equal(undos, 0);
+});
+
+test('real toolbar items publish the exact local handlers without borrowing unrelated capabilities', t => {
+	const f = fixture(t), command = f.state.items[0].command;
+	let available = true, runs = 0;
+	const handler = { isEnabled: () => available, run: () => { runs++; } };
+	f.content.registerCommand(command, handler);
+	f.content.registerCommand('undo', { isEnabled: () => true, run: () => assert.fail('unrelated history capability') });
+	f.bar.clearInput(); f.bar.setInput(f.state, f.content);
+	assert.equal(f.bar.focusTarget.getCommand(command), handler);
+	assert.equal(f.bar.focusTarget.getCommand('undo'), undefined);
+	f.bar.focusTarget.focus(); f.focus.executeCommand(command);
+	assert.equal(runs, 1);
+	available = false;
+	assert.equal(f.bar.focusTarget.getCommand(command), handler);
+	assert.equal(f.focus.getCommand(command)!.isEnabled(), false);
+	f.focus.executeCommand(command); assert.equal(runs, 1, 'a present disabled item handler cannot fall through');
+});
+
+test('input retirement removes only projected items before blur and rebinding reads current producer handlers', t => {
+	const f = fixture(t), command = f.state.items[0].command;
+	const first = { isEnabled: () => true, run() {} }, second = { isEnabled: () => false, run() {} };
+	const own = { isEnabled: () => true, run() {} };
+	f.content.registerCommand(command, first);
+	f.bar.clearInput(); f.bar.focusTarget.registerCommand('contextMenu', own); f.bar.setInput(f.state, f.content);
+	f.bar.focusTarget.focus();
+	const unbind = f.bar.focusTarget.onDidBlur(() => {
+		assert.equal(f.bar.focusTarget.getCommand(command), undefined);
+		assert.equal(f.bar.focusTarget.getCommand('contextMenu'), own);
+	});
+	f.bar.clearInput(); unbind();
+	assert.equal(f.bar.focusTarget.getCommand(command), undefined);
+	f.content.registerCommand(command, second);
+	f.bar.setInput(f.state, f.content);
+	assert.equal(f.bar.focusTarget.getCommand(command), second);
+	const replacement = createWorkbenchActionBar('window.title'), context = f.focus.createTarget();
+	context.registerCommand(replacement.items[0].command, first);
+	f.bar.setInput(replacement, context);
+	assert.equal(f.bar.focusTarget.getCommand(command), undefined);
+	assert.equal(f.bar.focusTarget.getCommand(replacement.items[0].command), first);
+	assert.equal(f.bar.focusTarget.getCommand('contextMenu'), own);
+	f.bar.clearInput();
+	assert.equal(f.bar.focusTarget.getCommand(replacement.items[0].command), undefined);
+	assert.equal(f.bar.focusTarget.getCommand('contextMenu'), own);
+});
+
+test('global and self-context items create no command proxies or stale projected handlers', t => {
+	const f = fixture(t), command = f.state.items[0].command;
+	const handler = { isEnabled: () => true, run() {} };
+	f.content.registerCommand(command, handler);
+	f.bar.clearInput(); f.bar.setInput(f.state, f.content);
+	assert.equal(f.bar.focusTarget.getCommand(command), handler);
+	f.bar.setInput(f.state, f.bar.focusTarget);
+	assert.equal(f.bar.focusTarget.getCommand(command), undefined);
+	f.bar.focusTarget.registerCommand(command, handler);
+	f.bar.clearInput(); f.bar.setInput(f.state, f.bar.focusTarget);
+	assert.equal(f.bar.focusTarget.getCommand(command), handler);
+	f.bar.clearInput(); assert.equal(f.bar.focusTarget.getCommand(command), handler);
+	f.bar.focusTarget.unregisterCommand(command);
+	f.bar.setInput(f.state, f.bar.focusTarget); f.bar.update();
+	f.bar.focusTarget.focus(); f.press('Enter');
+	assert.equal(f.calls.length, 1, 'global actions still use the supplied command runner');
+	assert.equal(f.bar.focusTarget.getCommand(command), undefined);
+});
+
+test('1000 unchanged toolbar updates retain item capability references without lookup or registration', t => {
+	const f = fixture(t), command = f.state.items[0].command;
+	const handler = { isEnabled: () => true, run() {} };
+	f.content.registerCommand(command, handler);
+	f.bar.clearInput(); f.bar.setInput(f.state, f.content);
+	const lookup = t.mock.method(f.content, 'getCommand'), register = t.mock.method(f.bar.focusTarget, 'registerCommand');
+	for (let frame = 0; frame < 1000; frame++) { f.bar.setInput(f.state, f.content); f.bar.update(); }
+	assert.equal(lookup.mock.callCount(), 0); assert.equal(register.mock.callCount(), 0);
+	assert.equal(f.bar.focusTarget.getCommand(command), handler);
 });
 
 test('pointer admission and dispatch use the action context without blurring another control', t => {
@@ -296,9 +370,9 @@ test('pointer admission and dispatch use the action context without blurring ano
 	let blurs = 0, calls = 0;
 	field.onDidBlur(() => { blurs += 1; });
 	field.focus();
-	f.commands.isEnabled = (_command, target) => target?.commandContext === f.content;
+	f.commands.isEnabled = (_command, target) => target === f.content;
 	f.commands.execute = (_command, target) => {
-		assert.equal(target?.commandContext, f.content);
+		assert.equal(target, f.content);
 		assert.equal(f.focus.target, field);
 		calls += 1;
 	};
@@ -307,6 +381,17 @@ test('pointer admission and dispatch use the action context without blurring ano
 	f.pointer(0, PRIMARY, PRIMARY); f.pointer(0, 0, 0, PRIMARY);
 	assert.equal(calls, 1);
 	assert.equal(blurs, 0);
+});
+
+test('keyboard action admission and execution use the same explicit semantic context', t => {
+	const f = fixture(t);
+	const targets: Array<Parameters<EditorCommandRunner['isEnabled']>[1]> = [];
+	f.commands.isEnabled = (_command, target) => { targets.push(target); return target === f.content; };
+	f.commands.execute = (command, target) => { assert.equal(target, f.content); f.calls.push(command); };
+	f.bar.focusTarget.focus(); f.press('Enter');
+	assert.equal(f.calls.length, 1);
+	assert.ok(targets.length > 1);
+	assert.ok(targets.every(target => target === f.content));
 });
 
 test('unchanged frames keep item storage, geometry and focus identity', t => {

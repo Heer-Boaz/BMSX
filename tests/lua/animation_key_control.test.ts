@@ -36,6 +36,11 @@ test('a key beneath a coincident tangent endpoint owns the pointer gesture', t =
 	assert.equal(input.keys.curve.keyAt(input.keys, x, y), 1);
 	const pointer: PointerSnapshot = { viewportX: x, viewportY: y, valid: true, insideViewport: true,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	control.handlePointer({ ...pointer, pressedButtons: PointerButton.Secondary, justPressedButtons: PointerButton.Secondary });
+	assert.equal(input.keyIndex, 1);
+	assert.equal(pointerCapture.active, false, 'secondary picking must never start the primary key/tangent edit gesture');
+	assert.equal(inputFocus.target, parent, 'the popup owner admits focus only after its invalidation subscription exists');
+	input.keys.select(0); input.keys.curve.update(input.keys);
 	control.handlePointer(pointer);
 	assert.equal(input.keys.selected, 1);
 	pointerCapture.dispatch({ ...pointer, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 0);

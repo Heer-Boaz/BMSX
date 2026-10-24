@@ -17,6 +17,8 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	public get runtimeControlContext(): InputFocusTarget | undefined { return undefined; }
 	/** The displayed timeline and commands must name the same physical target. */
 	public get runtimeTransport(): RuntimeTransport | undefined { return undefined; }
+	/** Update this view's live capture latch; its transport owns physical execution. */
+	public setRuntimeCaptureRunning?(running: boolean): void;
 	/** Avoid a second scanout panel when this editor already presents the game. */
 	public get showsGameFrame(): boolean { return false; }
 

@@ -88,8 +88,6 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		this.focusTarget.registerCommand('luaProgram.more', { isEnabled: () => this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
 		this.focusTarget.registerCommand('luaProgram.selectInstance', { isEnabled: () => this.input.liveVisible,
 			run: () => this.controller.chooseInstance(this.input) });
-		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => this.input.liveVisible, run: () => { this.input.running = false; } });
-		this.focusTarget.registerCommand('runtime.resume', { isEnabled: () => this.input.liveVisible, run: () => { this.input.running = true; } });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => this.input.liveVisible && this.commands.transport.playbackEnabled,
 			run: () => { this.input.running = this.commands.transport.togglePlayback(); } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) {
@@ -115,6 +113,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.input.liveVisible ? this.focusTarget : undefined; }
+	public override setRuntimeCaptureRunning(running: boolean): void { if (this.input.liveVisible) this.input.running = running; }
 	protected override activate(): void { super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
 	public override clearInput(): void { this.input.running = false; this.input.invalidateProjection(); this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); super.clearInput(); }
 	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
@@ -206,8 +205,8 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		this.pointer.hideFeedback();
 		const input = this.input;
 		input.running = false;
-		const items = WORKBENCH_MENUS['luaProgram.context'].filter(item => item.type !== 'command' || this.commands.isEnabled(item.command));
-		this.contextMenu.show(x, y, items, this.commands, { selectFirst: keyboard,
+		const items = WORKBENCH_MENUS['luaProgram.context'].filter(item => item.type !== 'command' || this.commands.isEnabled(item.command, this.focusTarget));
+		this.contextMenu.show(x, y, items, this.commands, { selectFirst: keyboard, commandTarget: this.focusTarget,
 			onWillShow: lifetime => lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.contextMenu.hide()) }) });
 	}
 	public handleWheel(event: WheelInputSnapshot): void {

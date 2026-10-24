@@ -95,7 +95,7 @@ function fixture(t: TestContext, menuId: WorkbenchActionMenuId = 'aem.title') {
 	const commands: EditorCommandRunner = {
 		isEnabled: () => true,
 		execute: (command, target) => {
-			assert.equal(menu.visible, false); assert.equal(target!.commandContext, content, 'popup commands keep the original domain context');
+			assert.equal(menu.visible, false); assert.equal(target, content, 'overflow actions use the explicit domain owner');
 			calls.push(command);
 		},
 	};

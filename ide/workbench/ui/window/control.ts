@@ -84,6 +84,8 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('window.collapse', { isEnabled: () => this.visible, run: () => this.setCollapsed(!options.model.collapsed) });
 		this.focusTarget.registerCommand('window.hide', { isEnabled: () => this.visible, run: () => this.hide() });
+		for (const command of ['window.collapse', 'window.hide'] as const)
+			this.clientFocusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.updateCollapseState();
 	}
 

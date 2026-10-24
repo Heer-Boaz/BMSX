@@ -7,7 +7,7 @@ import type { QuickInputController } from '../../services/quick_input/controller
 import { CommandQuickPickProvider, type CommandQuickPickItem } from './quick_pick_provider';
 
 /** Menu, keybinding and Palette actions share one command catalog and controller. */
-export function buildCommandQuickPickItems(commands: IdeCommandController, origin: InputFocusTarget | null): CommandQuickPickItem[] {
+export function buildCommandQuickPickItems(commands: Pick<IdeCommandController, 'isEnabled' | 'isActive'>, origin: InputFocusTarget | null): CommandQuickPickItem[] {
 	const items: CommandQuickPickItem[] = [];
 	for (const command of EDITOR_COMMAND_IDS) {
 		if (!commands.isEnabled(command, origin)) continue;
@@ -24,14 +24,18 @@ export function buildCommandQuickPickItems(commands: IdeCommandController, origi
 	return items;
 }
 
-export function showCommandPalette(picker: QuickInputController, commands: IdeCommandController): void {
-	picker.pick('COMMAND PALETTE', 'Type a command', origin => new CommandQuickPickProvider(buildCommandQuickPickItems(commands, origin)), item => {
+export function showCommandPalette(picker: QuickInputController, commands: Pick<IdeCommandController, 'isEnabled' | 'isActive' | 'execute'>): void {
+	let origin: InputFocusTarget | null = null;
+	picker.pick('COMMAND PALETTE', 'Type a command', target => {
+		origin = target;
+		return new CommandQuickPickProvider(buildCommandQuickPickItems(commands, target));
+	}, item => {
 		// Selection is new user input. An asynchronous operation may have ended
 		// since the available actions were enumerated; never execute a stale Cancel.
-		if (!commands.isEnabled(item.command)) {
+		if (!commands.isEnabled(item.command, origin)) {
 			showEditorMessage(`${item.label} is no longer available.`, 'warning', 2);
 			return;
 		}
-		commands.execute(item.command);
+		commands.execute(item.command, origin);
 	});
 }

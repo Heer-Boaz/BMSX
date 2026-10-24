@@ -34,6 +34,11 @@ import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchPropertyInspector } from '../../ide/workbench/ui/property_inspector/control';
 import { measureText, measureTextRange } from '../../ide/editor/common/text/layout';
+import { TextField } from '../../ide/editor/ui/inline/text_field_model';
+import { insertValue, selectAll, setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { ValueInput } from '../../ide/editor/ui/inline/value_input';
+import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
+import { HostPauseReason } from '../../hosts/common/execution_control';
 
 function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: LuaSourceRegistry }) {
 	const host = createHostFrameFixture(authored === undefined ? undefined : createTestRuntime(authored.image.romBytes));
@@ -68,6 +73,108 @@ function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: 
 	const extent = { left: 0, top: 0, right: 384, bottom: 288 };
 	return { editor, host, pointer, extent };
 }
+
+test('generic command admission and execution use the exact target and disabled locals shadow other owners', t => {
+	const { editor } = fixture(t), parent = inputFocus.createTarget(), leaf = inputFocus.createTarget(parent);
+	leaf.commandContext = parent;
+	let local = 0, ancestor = 0, enabled = true;
+	for (const command of ['undo', 'resourceSearch'] as const) {
+		parent.registerCommand(command, { isEnabled: () => true, run: () => { ancestor++; } });
+		leaf.registerCommand(command, { isEnabled: () => enabled, run: () => { local++; } });
+		assert.equal(editor.commands.isEnabled(command, leaf), true);
+		editor.commands.execute(command, leaf);
+		assert.equal(local, 1); assert.equal(ancestor, 0);
+		enabled = false;
+		assert.equal(editor.commands.isEnabled(command, leaf), false);
+		editor.commands.execute(command, leaf);
+		assert.equal(local, 1); assert.equal(ancestor, 0);
+		enabled = true; local = 0;
+	}
+	const absent = inputFocus.createTarget(parent); absent.commandContext = parent;
+	assert.equal(editor.commands.isEnabled('undo', absent), false);
+	editor.commands.execute('undo', absent);
+	assert.equal(ancestor, 0, 'an absent local capability does not inherit a document action');
+});
+
+test('source-consuming actions publish the actual focused draft before resolving the explicit action owner', t => {
+	const { editor } = fixture(t), parent = inputFocus.createTarget();
+	let value = 1, calls = 0;
+	const field = new ValueInput(parent, INTEGER_INPUT_FORMAT, accepted => { value = accepted; });
+	t.after(() => field.dispose()); field.setValue(value);
+	field.field.focusTarget.commandContext = parent;
+	parent.registerCommand('animation.remove', { isEnabled: () => true, run: () => { assert.equal(value, 2); calls++; } });
+	field.field.focusTarget.focus(); selectAll(field.field); insertValue(field.field, '2');
+	editor.commands.execute('animation.remove', parent);
+	assert.equal(calls, 1); assert.equal(field.pending, false);
+	selectAll(field.field); insertValue(field.field, 'invalid');
+	editor.commands.execute('animation.remove', parent);
+	assert.equal(calls, 1); assert.equal(value, 2); assert.equal(field.pending, true);
+});
+
+test('clipboard admission and execution retain the supplied leaf rather than its alias or ambient focus', async t => {
+	const { editor } = fixture(t), parent = inputFocus.createTarget(), selected = new TextField(parent), other = new TextField();
+	selected.focusTarget.commandContext = parent;
+	setFieldText(selected, 'selected data', true); selectAll(selected);
+	setFieldText(other, 'unrelated data', true); selectAll(other); other.focusTarget.focus();
+	assert.equal(editor.commands.isEnabled('copy', selected.focusTarget), true);
+	editor.commands.execute('copy', selected.focusTarget);
+	assert.equal((await editor.clipboard.read()).text, 'selected data');
+	assert.equal(selected.text, 'selected data'); assert.equal(other.text, 'unrelated data');
+	assert.equal(inputFocus.target, other.focusTarget);
+});
+
+test('common runtime commands orchestrate the physical transport and the active view capture latch', t => {
+	const { editor, host } = fixture(t);
+	const toggle = t.mock.method(editor.commands.transport, 'togglePlayback');
+	assert.equal(editor.editorPanes.activePane, null);
+	editor.commands.execute('gameView.playback');
+	assert.equal(toggle.mock.callCount(), 1, 'the transport operation does not depend on an optional capture view');
+	editor.commands.execute('events');
+	const pane = editor.editorPanes.activePane!;
+	assert.equal(pane.input.kind, 'event_viewer');
+	assert.equal(pane.runtimeControlContext!.getCommand('runtime.pause'), undefined, 'a latch is not a partial public command');
+	pane.setRuntimeCaptureRunning!(true); host.execution.setPauseReason(HostPauseReason.Requested, false);
+	assert.equal(pane.suspendsRuntime, false);
+	editor.commands.execute('runtime.pause', pane.runtimeControlContext);
+	assert.equal(pane.suspendsRuntime, true); assert.equal(host.execution.userPaused, true);
+	editor.commands.execute('gameView.playback', pane.runtimeControlContext);
+	assert.equal(pane.suspendsRuntime, false); assert.equal(host.execution.userPaused, false);
+	assert.equal(toggle.mock.callCount(), 2);
+});
+
+for (const command of ['events', 'gpuDebugger', 'gteDebugger'] as const) test(`${command} reading client owns complete pane actions without a semantic alias lookup`, t => {
+	const { editor } = fixture(t); editor.commands.execute(command);
+	const pane = editor.editorPanes.activePane!, owner = pane.runtimeControlContext!;
+	assert.notEqual(inputFocus.target, owner, 'the actual reading control, not its pane action context, has focus');
+	for (const action of ['pause', 'stepFrameBack', 'stepFrame', command === 'events' ? 'events.filter' : command === 'gpuDebugger' ? 'gpu.follow' : 'gte.follow'] as const)
+		assert.equal(inputFocus.target!.getCommand(action), owner.getCommand(action), 'the client publishes the actual complete command handler');
+	assert.equal(inputFocus.target!.getCommand('runtime.pause'), undefined, 'private capture state is not exposed as a partial public transport command');
+});
+
+test('context menu admission and execution belong to the explicit control, not its semantic command alias or current popup focus', t => {
+	const { editor, extent } = fixture(t);
+	const scope = new InputFocusScope(Symbol('context client'));
+	editor.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, isVisible: () => true,
+		getBounds: () => extent, getClip: () => extent, draw() {} });
+	const parent = inputFocus.createTarget(null, scope), leaf = inputFocus.createTarget(parent), other = inputFocus.createTarget(parent);
+	for (const target of [parent, leaf, other]) target.bindKeyboard(() => {});
+	leaf.commandContext = parent; other.commandContext = parent;
+	let parentMenus = 0, leafMenus = 0, enabled = true;
+	parent.registerCommand('contextMenu', { isEnabled: () => true, run: () => { parentMenus++; } });
+	leaf.registerCommand('contextMenu', { isEnabled: () => enabled, run: () => { leafMenus++; } });
+	other.focus();
+	assert.equal(inputFocus.target, other);
+	assert.equal(editor.commands.isEnabled('contextMenu', leaf), true);
+	editor.commands.execute('contextMenu', leaf);
+	assert.equal(leafMenus, 1); assert.equal(parentMenus, 0);
+	enabled = false;
+	assert.equal(editor.commands.isEnabled('contextMenu', leaf), false);
+	editor.commands.execute('contextMenu', leaf);
+	assert.equal(leafMenus, 1); assert.equal(parentMenus, 0);
+	assert.equal(editor.commands.isEnabled('contextMenu', other), false);
+	editor.commands.execute('contextMenu', other);
+	assert.equal(leafMenus, 1); assert.equal(parentMenus, 0);
+});
 
 test('production dispatcher retains the first surface through all physical buttons; wheel uses its own current hit', t => {
 	const { editor, pointer, extent } = fixture(t);

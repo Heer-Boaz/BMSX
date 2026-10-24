@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { semanticSnapshot } from './semantic_test_harness';
 import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animation/source';
@@ -22,6 +22,22 @@ import { ANIMATION_TRACK_TEMPLATES } from '../../ide/workbench/contrib/animation
 import { inputFocus } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 
+import { AnimationEditorPane } from '../../ide/workbench/contrib/animation/editor_pane';
+import type { IdeCommandController } from '../../ide/commands/controller';
+import type { EditorCommandRunner } from '../../ide/common/commands';
+import type { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
+import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { editorViewState } from '../../ide/editor/ui/view/state';
+import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
+import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { pointerHover } from '../../ide/input/pointer/hover';
+import { KeyModifier } from '../../hosts/common/input/text';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+
 const resource = { domain: 0 as const, path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
 const child = "return {duration_ms=100, tracks={{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}";
 
@@ -39,6 +55,11 @@ test('overview key picking does not clear the active occurrence before resolving
 	t.after(() => { control.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); });
 	const pointer = { viewportX: input.keys.xAt(50), viewportY: 30, valid: true, insideViewport: true,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	control.handlePointer({ ...pointer, viewportX: input.keys.xAt(25), viewportY: 50,
+		pressedButtons: PointerButton.Secondary, justPressedButtons: PointerButton.Secondary });
+	assert.equal(input.trackIndex, 1); assert.equal(input.keyIndex, 0);
+	assert.equal(pointerCapture.active, false, 'secondary overview selection must not start a clip/key edit');
+	controller.selectTrack(input, 1); controller.selectKey(input, 1);
 	control.handlePointer(pointer);
 	assert.equal(input.keys.selected, 1); assert.equal(input.keyIndex, 1);
 	control.handlePointer({ ...pointer, viewportX: input.keys.xAt(25), viewportY: 50 });
@@ -243,4 +264,108 @@ test('animation recovery restores the native cursor after the document admits it
 		assert.equal(restored.workingCopy, model); assert.equal(model.undo(), null);
 		restored.dispose(); input.dispose(); editorTextModelService.clear();
 	}
+});
+
+function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=1},{time_ms=100,value=2}}},{kind='event',keys={{time_ms=25,event='other'}}}}}") {
+	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
+	const oldScrollbars = editorViewState.scrollbarController;
+	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
+		viewerVertical: new Scrollbar('vertical'), resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, () => {}, pointerCapture);
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
+	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
+	const navigated: unknown[][] = [];
+	const navigation = { focusChunkSourceForContext: (...args: unknown[]) => navigated.push(args) } as unknown as EditorNavigationController;
+	const controller = new AnimationEditorController(sources, undefined!, navigation, undefined!);
+	const input = new AnimationEditorInput(model), menu = new ContextMenuController(inputFocus, pointerCapture);
+	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
+		execute: (command, target) => inputFocus.executeCommand(command, target) };
+	const surfaces = new WorkbenchSurfaceService(), bounds = { left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 274 };
+	const root = { ...bounds, right: 384 };
+	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('animation pane'), isVisible: () => true,
+		getBounds: () => bounds, getClip: () => bounds, draw() {} });
+	const pane = new AnimationEditorPane({ hide() {} } as ResourcePanelController, controller, commands as IdeCommandController, menu, surfaces, owner, root);
+	t.after(() => {
+		menu.dispose(); pane.dispose(); input.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear();
+		editorTextModelService.clear(); editorViewState.scrollbarController = oldScrollbars;
+	});
+	pane.setInput(input, bounds); pane.focus();
+	const pointer = (x: number, y: number, secondary = true) => pane.handlePointer({ viewportX: x, viewportY: y, valid: true, insideViewport: true,
+		pressedButtons: secondary ? PointerButton.Secondary : PointerButton.Primary,
+		justPressedButtons: secondary ? PointerButton.Secondary : PointerButton.Primary, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false }, !secondary, secondary, 0, false);
+	return { pane, input, menu, model, controller, pointer, source, navigated };
+}
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} Animation context follows the secondary-hit property, track and key without primary gestures`, t => {
+	const f = animationPane(t, variant), { pane, input, menu, controller } = f;
+	controller.selectTrack(input, 1); controller.selectKey(input, 0); pane.update();
+	const tree = input.details, index = tree.rows.findIndex(row => row.element.label === 'value'), property = tree.rows[index].element;
+	controller.selectProperty(input, 0);
+	const originalFocus = inputFocus.target;
+	f.pointer(tree.layout.contentRight - 2, tree.layout.contentTop + (index + 0.5) * tree.layout.rowHeight);
+	assert.equal(menu.visible, true);
+	const details = menu.invocationOrigin!;
+	assert.notEqual(details, originalFocus);
+	assert.ok(details.getCommand('contextMenu'));
+	assert.deepEqual(input.detailSelection!.range, luaSourceRangeToTextRange(f.model.buffer, property.source.file.chunk.locations.range(property.field.span)));
+	assert.equal(menu.model.rows.find(row => row.command === 'animation.edit')!.enabled, true);
+	assert.equal(menu.model.rows.find(row => row.command === 'animation.earlier')!.enabled, false);
+	const range = property.source.file.chunk.locations.range(property.field.span);
+	menu.model.selectedIndex = menu.model.rows.findIndex(row => row.command === 'animation.source'); menu.accept();
+	assert.deepEqual(f.navigated, [[0, resource.path, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
+	assert.equal(inputFocus.target, details);
+	pane.focus(); details.getCommand('contextMenu')!.run();
+	assert.equal(menu.visible, true); assert.equal(menu.invocationOrigin, details); menu.hide();
+	assert.equal(inputFocus.target, details);
+
+	const list = input.tracks;
+	f.pointer(list.layout.contentRight - 2, list.layout.contentTop + 2.5 * list.layout.rowHeight);
+	assert.equal(menu.visible, true); assert.equal(input.trackIndex, 1); assert.equal(input.keyIndex, -1);
+	const tracks = menu.invocationOrigin!; assert.notEqual(tracks, details); assert.ok(tracks.getCommand('contextMenu'));
+	assert.equal(menu.model.rows.find(row => row.command === 'animation.earlier')!.enabled, true);
+	assert.equal(menu.model.rows.find(row => row.command === 'animation.later')!.enabled, false);
+	menu.hide(); assert.equal(inputFocus.target, tracks);
+	tracks.getCommand('contextMenu')!.run(); assert.equal(menu.visible, true); assert.equal(menu.invocationOrigin, tracks); menu.hide();
+	f.pointer(input.overview.bounds.right - 2, input.overview.bounds.bottom - 1);
+	assert.equal(menu.visible, false, 'blank overview space has no row context');
+	assert.equal(input.trackIndex, 1); assert.equal(input.keyIndex, -1);
+
+	controller.selectTrack(input, 1); controller.selectKey(input, 0); pane.update();
+	const keys = input.keys;
+	f.pointer(keys.xAt(100), (keys.range.bounds.top + keys.range.bounds.bottom) / 2);
+	assert.equal(menu.visible, true); assert.equal(input.keyIndex, 1); assert.equal(pointerCapture.active, false);
+	const keyClient = menu.invocationOrigin!; assert.notEqual(keyClient, tracks); assert.ok(keyClient.getCommand('contextMenu'));
+	menu.hide(); assert.equal(inputFocus.target, keyClient);
+	pane.focus(); keyClient.getCommand('contextMenu')!.run();
+	assert.equal(menu.visible, true); assert.equal(menu.invocationOrigin, keyClient);
+	input.invalidateProjection(); assert.equal(menu.visible, false); assert.equal(inputFocus.target, keyClient);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
+});
+
+test('secondary blank frame-lane space does not reuse the previously selected frame as a context target', t => {
+	const f = animationPane(t, 'tiny', "return {frames={'first','second'}}");
+	f.controller.selectTrack(f.input, 1); f.controller.selectProperty(f.input, 0); f.pane.update();
+	f.input.keys.setView(0, 10);
+	const list = f.input.tracks;
+	f.pointer(f.input.keys.xAt(9), list.layout.contentTop + 1.5 * list.layout.rowHeight);
+	assert.equal(f.menu.visible, false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
+});
+
+test('secondary context on the current clip lane replaces its former Details-property target with that clip occurrence', t => {
+	const f = animationPane(t, 'tiny', 'return {subsequences={{start_time_ms=0,duration_ms=100,sequence={duration_ms=100,tracks={}}}}}');
+	f.controller.selectTrack(f.input, 1); f.pane.update();
+	const clip = f.input.document!.clips[0];
+	const property = f.input.details.rows.findIndex(row => row.element.field === clip.duration!.field);
+	assert.ok(property >= 0);
+	f.controller.selectProperty(f.input, property);
+	const list = f.input.tracks;
+	f.pointer(f.input.keys.xAt(50), list.layout.contentTop + 1.5 * list.layout.rowHeight);
+	assert.equal(f.menu.visible, true); assert.equal(f.input.clipIndex, 0);
+	assert.equal(f.input.detailSelection, undefined); assert.equal(f.input.details.selectionIndex, -1);
+	assert.equal(f.menu.model.rows.find(row => row.command === 'animation.edit')!.enabled, false);
+	const range = clip.file.chunk.locations.range(clip.field.span);
+	f.menu.model.selectedIndex = f.menu.model.rows.findIndex(row => row.command === 'animation.source'); f.menu.accept();
+	assert.deepEqual(f.navigated, [[0, resource.path, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
 });

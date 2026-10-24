@@ -12,7 +12,9 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { insertValue, selectAll, setCursorFromOffset, setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { SingleLineFieldViewport } from '../../ide/editor/ui/inline/single_line_viewport';
-import { inputFocus } from '../../ide/input/focus';
+import { inputFocus, type InputFocusTarget } from '../../ide/input/focus';
+import type { EditorCommandId } from '../../ide/common/commands';
+import { showCommandPalette } from '../../ide/workbench/contrib/commands/quick_access';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { QuickPickModel } from '../../ide/workbench/services/quick_input/model';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -48,6 +50,32 @@ function createPicker(t: TestContext, onDidChangeVisibility?: () => void): Quick
 	return picker;
 }
 
+for (const enabledAtAccept of [true, false]) test(`Palette retains the actual provider origin when acceptance is ${enabledAtAccept ? 'admitted' : 'disabled'} after focus changes`, t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget(), alias = inputFocus.createTarget(), replacement = inputFocus.createTarget();
+	for (const target of [origin, alias, replacement]) target.bindKeyboard(() => {});
+	origin.commandContext = alias; origin.focus();
+	let enabled = true;
+	const checked: Array<InputFocusTarget | null | undefined> = [], executed: EditorCommandId[] = [];
+	const commands = {
+		isEnabled: (command: EditorCommandId, target?: InputFocusTarget | null) => {
+			checked.push(target); return command === 'undo' && target === origin && enabled;
+		},
+		isActive: () => false,
+		execute: (command: EditorCommandId, target?: InputFocusTarget | null) => {
+			assert.equal(target, origin); assert.equal(inputFocus.target, replacement); executed.push(command);
+		},
+	};
+	showCommandPalette(picker, commands);
+	assert.equal(picker.model.list.rows.length, 1);
+	assert.equal(picker.invocationOrigin, origin);
+	t.after(picker.field.focusTarget.onDidBlur(next => { if (next === origin) replacement.focus(); }));
+	enabled = enabledAtAccept;
+	picker.accept();
+	assert.equal(inputFocus.target, replacement);
+	assert.equal(checked.at(-1), origin, 'acceptance rechecks the same control that admitted the catalog');
+	assert.deepEqual(executed, enabledAtAccept ? ['undo'] : []);
+});
+
 test('popup origins and cancellation belong to the containing scope after an inline edit ends on blur', t => {
 	const picker = createPicker(t);
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
@@ -78,9 +106,9 @@ test('popup origins and cancellation belong to the containing scope after an inl
 		else if (surface === 'input') picker.input('Value', 'Text', '', async value => value, () => assert.fail('cancelled input accepted'));
 		else {
 			menu.show(10, 10, [{ type: 'command', command: 'undo' }], {
-				isEnabled: command => inputFocus.getCommand(command)?.isEnabled() === true,
+				isEnabled: (command, target) => target?.getCommand(command)?.isEnabled() === true,
 				execute: () => assert.fail('cancelled menu accepted'),
-			});
+			}, { commandTarget: parent });
 			assert.equal(menu.focusTarget.commandContext, parent, 'the popup keeps document commands, not a retired draft history');
 		}
 		assert.equal(edit.active, false);
@@ -93,6 +121,38 @@ test('popup origins and cancellation belong to the containing scope after an inl
 		if (draft === '30') inputFocus.executeCommand('undo');
 		assert.equal(model.buffer.getText(), 'return 20');
 	}
+});
+
+test('a field context menu keeps its actual local history and clipboard despite a separate pane action context', t => {
+	const picker = createPicker(t), parent = inputFocus.createTarget(), field = new TextField(parent);
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const model = new EditorTextModel({ domain: 0, path: 'document.lua', source: { type: 'lua', resid: 'document' } }, 'lua', 'return 1');
+	model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
+	parent.registerCommand('undo', { isEnabled: () => model.canUndo, run: () => model.undo() });
+	parent.clipboard = { readOnly: true, copy: () => model.buffer.getText() };
+	field.focusTarget.commandContext = parent;
+	setFieldText(field, 'field', true); insertValue(field, '!'); field.focusTarget.focus();
+	let copied: ReturnType<NonNullable<InputFocusTarget['clipboard']>['copy']> = null;
+	const commands = {
+		isEnabled: (command: EditorCommandId, target?: InputFocusTarget | null) => {
+			assert.equal(target, field.focusTarget);
+			return command === 'copy' ? field.copy() !== null : field.canUndo;
+		},
+		execute: (command: EditorCommandId, target?: InputFocusTarget | null) => {
+			assert.equal(target, field.focusTarget);
+			if (command === 'copy') copied = target!.clipboard!.copy();
+			else target!.getCommand(command)!.run();
+		},
+	};
+	t.after(() => { menu.dispose(); model.dispose(); });
+	const version = model.version;
+	menu.show(10, 10, [{ type: 'command', command: 'undo' }], commands, { selectFirst: true }); menu.accept();
+	assert.equal(field.text, 'field'); assert.equal(field.canRedo, true);
+	assert.equal(model.version, version); assert.equal(model.buffer.getText(), 'return 2');
+	selectAll(field);
+	menu.show(10, 10, [{ type: 'command', command: 'copy' }], commands, { selectFirst: true }); menu.accept();
+	assert.equal(copied, 'field', 'clipboard copies the exact selected field bytes, not the document');
+	assert.equal(inputFocus.target, field.focusTarget); assert.equal(picker.visible, false);
 });
 
 test('source-bound quick input cancels its snapshot on content change and releases the subscription', t => {

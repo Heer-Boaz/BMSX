@@ -31,7 +31,7 @@ export class AssistantAttachmentStrip {
 			}
 			if (isKeyJustPressed('Enter', input)) {
 				consumeIdeKey('Enter', input);
-				if (isCtrlDown(input) || isMetaDown(input)) inputFocus.executeCommand(isShiftDown(input) ? 'assistant.direct' : 'assistant.send');
+				if (isCtrlDown(input) || isMetaDown(input)) inputFocus.executeCommand(isShiftDown(input) ? 'assistant.direct' : 'assistant.send', this.focusTarget.commandContext);
 				else this.openSelected();
 				return;
 			}

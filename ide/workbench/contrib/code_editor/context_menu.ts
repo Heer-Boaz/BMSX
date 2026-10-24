@@ -21,13 +21,13 @@ export function openCodeContextMenu(editor: CartEditor, row: number, column: num
 	const token = resolveContextMenuToken(row, column, model.resource.path);
 	activeCodeEditor.focusTarget.focus();
 	editor.contextMenu.show(x, y, codeContextMenuItems(token), {
-		isEnabled: command => editor.commands.isEnabled(command),
-		execute: command => {
+		isEnabled: (command, target) => editor.commands.isEnabled(command, target),
+		execute: (command, target) => {
 			switch (command) {
 				case 'goToDefinition': case 'referenceSearch': case 'callHierarchy': case 'rename':
 					focusEditorAtPosition(editor, token!.row, token!.startColumn);
 			}
-			editor.commands.execute(command);
+			editor.commands.execute(command, target);
 		},
 	}, { selectFirst: keyboard,
 		onWillShow: lifetime => { lifetime.add({ dispose: model.onDidChangeContent(() => editor.contextMenu.hide()) }); },

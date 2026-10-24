@@ -88,6 +88,63 @@ test('a context menu returns to its explicit clicked client without pre-focusing
 	assert.equal(f.focus.target, f.origin, 'a retired clicked client returns through its real focus parent');
 });
 
+test('a menu publishes its explicit action owner before callbacks while retaining separate invocation and return targets', t => {
+	const f = fixture(t), toolbar = f.focus.createTarget(f.origin), returnTarget = f.focus.createTarget(), replacement = f.focus.createTarget();
+	toolbar.bindKeyboard(() => {}); returnTarget.bindKeyboard(() => {});
+	toolbar.commandContext = f.origin;
+	const checked: Array<Parameters<EditorCommandRunner['isEnabled']>[1]> = [];
+	let executed = 0;
+	f.menu.show(20, 30, [{ type: 'command', command: 'undo' }], {
+		isEnabled: (_command, target) => { checked.push(target); return target === f.origin; },
+		execute: (_command, target) => { assert.equal(target, f.origin); assert.equal(f.focus.target, returnTarget); executed++; },
+	}, { invocationOrigin: toolbar, commandTarget: f.origin, returnFocus: returnTarget, selectFirst: true, onWillShow: () => {
+		assert.equal(f.menu.focusTarget.commandContext, f.origin);
+		toolbar.commandContext = replacement;
+	} });
+	assert.equal(f.menu.invocationOrigin, toolbar);
+	assert.equal(f.menu.returnFocus, returnTarget);
+	f.menu.accept();
+	assert.equal(executed, 1);
+	assert.ok(checked.length > 1);
+	assert.ok(checked.every(target => target === f.origin));
+});
+
+test('a context menu keeps the actual leaf history instead of borrowing its declared action context', t => {
+	const f = fixture(t), field = f.focus.createTarget(f.origin);
+	field.bindKeyboard(() => {}); field.commandContext = f.origin;
+	let fieldUndos = 0, documentUndos = 0;
+	field.registerCommand('undo', { isEnabled: () => true, run: () => { fieldUndos++; } });
+	f.origin.registerCommand('undo', { isEnabled: () => true, run: () => { documentUndos++; } });
+	field.focus();
+	f.menu.show(20, 30, [{ type: 'command', command: 'undo' }], {
+		isEnabled: (command, target) => target?.getCommand(command)?.isEnabled() === true,
+		execute: (command, target) => { assert.equal(target, field); target!.getCommand(command)!.run(); },
+	}, { selectFirst: true });
+	assert.equal(f.menu.focusTarget.commandContext, field);
+	f.menu.accept();
+	assert.equal(fieldUndos, 1); assert.equal(documentUndos, 0);
+});
+
+test('retiring a context menu command target cannot retarget an old history attempt to its focus parent', t => {
+	const f = fixture(t), field = f.focus.createTarget(f.origin);
+	let attached = true, fieldUndos = 0, documentUndos = 0;
+	field.bindKeyboard(() => {}); field.canFocus = () => attached;
+	field.registerCommand('undo', { isEnabled: () => attached, run: () => { fieldUndos++; } });
+	f.origin.registerCommand('undo', { isEnabled: () => true, run: () => { documentUndos++; } });
+	field.onDidBlur(() => { attached = false; }); field.focus();
+	f.menu.show(20, 30, [{ type: 'command', command: 'undo' }], {
+		isEnabled: (command, target) => target?.getCommand(command)?.isEnabled() === true,
+		execute: (command, target) => target!.getCommand(command)!.run(),
+	}, { selectFirst: true });
+	assert.equal(f.menu.invocationOrigin, field);
+	assert.equal(f.menu.returnFocus, f.origin, 'focus return may resolve the retired control independently');
+	assert.equal(f.menu.focusTarget.commandContext, field);
+	assert.equal(f.menu.model.rows[0].enabled, false);
+	f.menu.accept();
+	assert.equal(fieldUndos, 0); assert.equal(documentUndos, 0);
+	f.menu.hide(); assert.equal(f.focus.target, f.origin);
+});
+
 test('focus-time source invalidation retires the context session before a departing draft can leave stale actions', t => {
 	const f = fixture(t), clicked = f.focus.createTarget(f.origin);
 	clicked.bindKeyboard(() => {});

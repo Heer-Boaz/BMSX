@@ -28,13 +28,15 @@ export class AnimationLaneControl implements PointerCaptureTarget {
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		const input = this.input!;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, input.overview.bounds)) return false;
-		if ((snapshot.justPressedButtons & PointerButton.Primary) === 0) return true;
+		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
+		if ((snapshot.justPressedButtons & PointerButton.Primary) === 0 && !secondary) return true;
 		const list = input.tracks, index = (list.scroll | 0) + ((snapshot.viewportY - list.layout.contentTop) / list.layout.rowHeight | 0);
-		if (index >= list.rows.length) return true;
-		this.focus.focus();
-		if (index !== list.selectionIndex) this.controller.selectTrack(input, index);
+		if (index >= list.rows.length) return !secondary;
+		if (!secondary) this.focus.focus();
 		const row = list.rows[index], clip = row.clip;
+		if (index !== list.selectionIndex || secondary && row.track === undefined) this.controller.selectTrack(input, index);
 		if (clip !== undefined) {
+			if (secondary) return true;
 			const start = clip.start === undefined ? 0 : clip.start.value, duration = clip.duration?.value;
 			if (start === null || duration === undefined || duration === null) return true;
 			const left = input.keys.xAt(start), right = input.keys.xAt(start + duration), x = snapshot.viewportX;
@@ -51,8 +53,8 @@ export class AnimationLaneControl implements PointerCaptureTarget {
 				if (position >= 0 && position < frames.table.fields.length) {
 					const frame = position | 0;
 					this.controller.selectProperty(input, frame); input.keys.setCursor(frame);
-				}
-			}
+				} else if (secondary) return false;
+			} else if (secondary) return false;
 		} else if (row.track !== undefined) {
 			const key = input.keys.keyAt(snapshot.viewportX); this.controller.selectKey(input, key);
 			if (key < 0) input.keys.setCursor(input.keys.valueAt(snapshot.viewportX));

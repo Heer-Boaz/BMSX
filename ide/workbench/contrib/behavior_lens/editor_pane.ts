@@ -58,6 +58,10 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public override get suspendsRuntime(): boolean { return this.input.runtimeInspection?.running !== true; }
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.input.runtimeInspection === undefined ? undefined : this.inspector.focusTarget; }
+	public override setRuntimeCaptureRunning(running: boolean): void {
+		const inspection = this.input.runtimeInspection;
+		if (inspection !== undefined) inspection.running = running;
+	}
 	public override getSelection(): BehaviorLensNavigationSelection {
 		this.controller.updateView(this.input);
 		return new BehaviorLensNavigationSelection(this.input);
@@ -125,10 +129,6 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		};
 		this.propertyEdit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, workArea);
 		for (const target of [this.focusTarget, this.inspector.focusTarget]) {
-			target.registerCommand('runtime.pause', { isEnabled: () => this.input.runtimeInspection !== undefined,
-				run: () => { this.input.runtimeInspection!.running = false; } });
-			target.registerCommand('runtime.resume', { isEnabled: () => this.input.runtimeInspection !== undefined,
-				run: () => { this.input.runtimeInspection!.running = true; } });
 			target.registerCommand('pause', { isEnabled: () => this.input.runtimeInspection !== undefined && this.commands.transport.playbackEnabled,
 				run: () => { this.input.runtimeInspection!.running = this.commands.transport.togglePlayback(); } });
 			for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
@@ -353,6 +353,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 				: presentation.kind === 'graph' ? 'behaviorLens.node.context' : 'behaviorLens.state.context';
 		} else menu = 'behaviorLens.property.context';
 		this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands, { selectFirst: keyboard,
+			commandTarget: presentation.kind === 'graph' || presentation.kind === 'state-graph' ? this.graph.focusTarget : this.focusTarget,
 			onWillShow: lifetime => { lifetime.add({ dispose: view.source.onDidInvalidate(() => this.contextMenu.hide()) }); },
 		});
 	}

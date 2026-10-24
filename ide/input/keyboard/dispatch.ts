@@ -20,7 +20,7 @@ export function handleEditorInput(
 		focused!.handleKeyboard(playerInput);
 		return;
 	}
-	if (handleClipboardBindings(playerInput, editor.clipboard, editor.clipboardTarget)) return;
+	if (handleClipboardBindings(playerInput, editor.clipboard, focused)) return;
 	const commands = inputFocus.commandRunner;
 	if (pointerCapture.active && isKeyJustPressed('Escape', playerInput)) {
 		consumeIdeKey('Escape', playerInput);

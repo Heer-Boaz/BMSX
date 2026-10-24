@@ -12,6 +12,10 @@ const click = async (x, y) => {
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]);
 	await t.frames(2);
 };
+const secondaryClick = async (x, y) => {
+	t.controlInput([{ type: 'pointer', x, y }, { type: 'button', button: 'secondary', down: true }]); await t.frames(1);
+	t.controlInput([{ type: 'button', button: 'secondary', down: false }]); await t.frames(2);
+};
 const capture = async label => { await t.frames(2); t.log(`VISUAL ${label}`); t.capture(label); };
 await t.waitForCart(); await t.frames(90); t.openLuaSource('cart.lua'); await t.frames(2);
 t.command('animation'); await t.frames(2);
@@ -25,8 +29,59 @@ for (const variant of ['tiny', 'msx']) {
 	const viewport = input.keys.range.bounds;
 	await click(input.keys.xAt(0), (viewport.top + viewport.bottom) / 2);
 	t.assert(input.trackIndex === 0 && input.keyIndex === 0, 'the actual first authored key was not selected');
-	const tree = input.details, index = tree.rows.findIndex(row => row.element.label === 'value');
-	t.assert(index >= 0 && tree.rows[index].element.value === '1', 'the actual initial key value is missing');
+	// EndDemo's written-reference coordinates are intentionally unresolved. Author a
+	// second rendered key through the real prompt, then undo it before the original edit/history cases.
+	await click(input.keys.xAt(1), (input.keys.range.bounds.top + input.keys.range.bounds.bottom) / 2);
+	const temporaryCoordinate = input.keys.cursor;
+	t.assert(input.keyIndex === -1 && temporaryCoordinate > 0, 'ordinary empty-lane input did not place a distinct new-key cursor');
+	const addTemporary = input.actionBar.items.find(item => item.command === 'animation.addKey');
+	await click((addTemporary.bounds.left + addTemporary.bounds.right) / 2, (addTemporary.bounds.top + addTemporary.bounds.bottom) / 2);
+	await press('ControlLeft', 'KeyA'); await press('Digit9'); await press('Enter'); await t.frames(3);
+	const temporaryKeyIndex = input.keyIndex, temporaryKey = input.document.tracks[0].keys[temporaryKeyIndex];
+	t.assert(input.document.tracks[0].keys.length === 3 && temporaryKey.coordinate.value === temporaryCoordinate && temporaryKey.value.value === 9,
+		'the real +Key prompt did not publish its selected literal key');
+	const contextSource = input.workingCopy.buffer.getText();
+	const keyDetails = input.details, priorProperty = keyDetails.rows.findIndex(row => row.element.field === temporaryKey.value.field);
+	t.assert(priorProperty >= 0, 'the selected key has no real value property');
+	await click(keyDetails.layout.contentRight - 3, keyDetails.layout.contentTop + (priorProperty - (keyDetails.scroll | 0) + 0.5) * keyDetails.layout.rowHeight);
+	await secondaryClick(input.keys.xAt(input.keys.positionAt(0)), (input.keys.range.bounds.top + input.keys.range.bounds.bottom) / 2);
+	t.assert(input.trackIndex === 0 && input.keyIndex === 0 && input.workingCopy.buffer.getText() === contextSource,
+		'secondary key input did not target the clicked key without editing or dragging it');
+	await press('End'); t.assert(input.keyIndex === 0, 'key-context End leaked to the underlying last-key navigation');
+	await capture(`animation-${variant}-key-context`);
+	await press('Escape'); await press('ArrowRight');
+	t.assert(input.trackIndex === 0 && input.keyIndex === temporaryKeyIndex && input.document.tracks[0].keys[temporaryKeyIndex] === temporaryKey, 'key-menu Escape did not return to the clicked key client');
+	await press('ShiftLeft', 'F10'); await press('Home');
+	t.assert(input.keyIndex === temporaryKeyIndex, 'key ShiftF10 did not consume Home in its actual context menu');
+	await press('Escape');
+	const tracks = input.tracks, targetTrack = input.document.tracks[1];
+	const trackRow = tracks.rows.findIndex(row => row.track === targetTrack);
+	t.assert(trackRow >= 0, 'the real second track is unavailable');
+	await secondaryClick(tracks.layout.contentLeft + 4, tracks.layout.contentTop + (trackRow - (tracks.scroll | 0) + 0.5) * tracks.layout.rowHeight);
+	t.assert(input.trackIndex === 1 && input.keyIndex === -1 && input.keySelection === undefined && input.detailSelection === undefined,
+		'secondary track input retained a previous key/property command subject');
+	await press('ArrowDown'); t.assert(input.trackIndex === 1, 'track context navigation leaked into the underlying track list');
+	await capture(`animation-${variant}-track-context`);
+	await press('Escape'); await press('ArrowUp');
+	t.assert(input.trackIndex === 0 && input.keyIndex === -1, 'track-menu Escape did not return to the clicked track client');
+	await press('ShiftLeft', 'F10'); await press('ArrowDown');
+	t.assert(input.trackIndex === 0, 'track ShiftF10 did not own ordinary menu navigation');
+	const trackSource = input.document.tracks[0], trackRange = trackSource.file.chunk.locations.range(trackSource.field.span);
+	await press('End'); await press('Enter'); await t.frames(2);
+	const trackCode = t.activeWorkbenchTab();
+	t.assert(trackCode.kind === 'code_editor' && trackCode.workingCopy === input.workingCopy
+		&& trackCode.context.view.cursorRow === trackRange.start.line - 1 && trackCode.context.view.cursorColumn === trackRange.start.column - 1,
+		'track menu Source did not open the canonical track rather than a prior property/key');
+	await press('AltLeft', 'ArrowLeft');
+	t.assert(t.activeWorkbenchTab() === input && input.workingCopy.buffer.getText() === contextSource,
+		'track context Source/Back replaced its input or edited canonical source');
+	await press('ControlLeft', 'KeyZ');
+	t.assert(input.workingCopy.buffer.getText() === source && !input.workingCopy.dirty && input.document.tracks[0].keys.length === 2,
+		'ordinary Undo did not remove the temporary context key and restore the exact pristine working copy');
+	await click(input.keys.xAt(0), (input.keys.range.bounds.top + input.keys.range.bounds.bottom) / 2);
+	t.assert(input.trackIndex === 0 && input.keyIndex === 0, 'the first authored key did not regain selection after track Source');
+	const tree = input.details, index = tree.rows.findIndex(row => row.element.field === input.document.tracks[0].keys[0].value.field);
+	t.assert(index >= 0 && input.document.tracks[0].keys[0].value.value === 1, 'the actual initial key value is missing');
 	const property = tree.rows[index].element, valueRange = property.source.file.chunk.locations.range(property.field.value.span);
 	const valueStart = input.workingCopy.buffer.offsetAt(valueRange.start.line - 1, valueRange.start.column - 1);
 	const valueEnd = input.workingCopy.buffer.offsetAt(valueRange.end.line - 1, valueRange.end.column);
@@ -84,9 +139,8 @@ for (const variant of ['tiny', 'msx']) {
 	t.controlInput([{ type: 'pointer', x: sash, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
 	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
-	t.assert(input.actionBar.bounds.right + 4 === (variant === 'tiny' ? 78 : 118), 'the actual Game Panel minimum was not exercised');
-	const tree = input.details, index = tree.rows.findIndex(row => row.element.label === 'value');
-	t.assert(index >= 0 && tree.rows[index].element.value === '1', 'the selected authored key value was lost at minimum width');
+	const tree = input.details, index = tree.rows.findIndex(row => row.element.field === input.document.tracks[0].keys[0].value.field);
+	t.assert(index >= 0 && input.document.tracks[0].keys[0].value.value === 1, 'the selected authored key value was lost at minimum width');
 	const property = tree.rows[index].element, valueRange = property.source.file.chunk.locations.range(property.field.value.span);
 	const valueStart = input.workingCopy.buffer.offsetAt(valueRange.start.line - 1, valueRange.start.column - 1);
 	const valueEnd = input.workingCopy.buffer.offsetAt(valueRange.end.line - 1, valueRange.end.column);
@@ -100,6 +154,43 @@ for (const variant of ['tiny', 'msx']) {
 		await press('Escape');
 		t.assert(input.workingCopy.buffer.getText() === source, 'Escape accepted a minimum-width value draft');
 		await capture(`animation-${variant}-cancelled-value-editor-theme-${theme}`);
+		const coordinate = input.document.tracks[0].keys[0].coordinate;
+		const coordinateIndex = tree.rows.findIndex(row => row.element.field === coordinate.field);
+		t.assert(coordinateIndex >= 0 && coordinateIndex !== index, 'the real key has no distinct coordinate property');
+		await click(tree.layout.contentRight - 3, tree.layout.contentTop + (coordinateIndex - (tree.scroll | 0) + 0.5) * tree.layout.rowHeight);
+		t.assert(tree.selectionIndex === coordinateIndex, 'ordinary primary input did not select the coordinate property');
+		await secondaryClick(tree.layout.contentRight - 3, tree.layout.contentTop + (index - (tree.scroll | 0) + 0.5) * tree.layout.rowHeight);
+		const selected = tree.rows[index].element, fieldRange = selected.source.file.chunk.locations.range(selected.field.span);
+		const fieldStart = input.workingCopy.buffer.offsetAt(fieldRange.start.line - 1, fieldRange.start.column - 1);
+		const fieldEnd = input.workingCopy.buffer.offsetAt(fieldRange.end.line - 1, fieldRange.end.column);
+		t.assert(tree.selectionIndex === index && input.detailSelection.path === selected.source.file.file
+			&& input.detailSelection.range.start === fieldStart && input.detailSelection.range.end === fieldEnd,
+			'secondary input did not publish the actually clicked property as its command subject');
+		await capture(`animation-${variant}-pointer-context-theme-${theme}`);
+		await press('Home');
+		t.assert(tree.selectionIndex === index && input.trackIndex === 0 && input.keyIndex === 0,
+			'context-menu Home leaked to the underlying property or track list');
+		await press('Escape'); await press('ArrowUp');
+		t.assert(tree.selectionIndex === coordinateIndex && input.trackIndex === 0 && input.keyIndex === 0,
+			'closing the pointer menu did not return keyboard focus to actual Details');
+		await press('ArrowDown'); await press('ShiftLeft', 'F10'); await press('Home');
+		t.assert(tree.selectionIndex === index && input.trackIndex === 0 && input.keyIndex === 0,
+			'ShiftF10 did not open an owning Details menu that consumes Home');
+		await capture(`animation-${variant}-keyboard-context-theme-${theme}`);
+		await press('Escape'); await press('ArrowUp');
+		t.assert(tree.selectionIndex === coordinateIndex, 'closing the keyboard menu did not restore the actual Details target');
+		await press('ArrowDown');
+		// Source opens the field; the following Producer Source opens its value expression.
+		await press('ShiftLeft', 'F10'); await press('End'); await press('ArrowUp'); await press('Enter'); await t.frames(2);
+		const opened = t.activeWorkbenchTab();
+		t.assert(opened.kind === 'code_editor' && opened.workingCopy === input.workingCopy
+			&& opened.context.view.cursorRow === fieldRange.start.line - 1 && opened.context.view.cursorColumn === fieldRange.start.column - 1
+			&& t.activeEditorDocument().focusTarget.hasFocus, 'context Source did not open the same canonical working copy at its selected field');
+		t.assert(input.workingCopy.buffer.getText() === source && !input.workingCopy.dirty, 'context navigation edited canonical source');
+		await press('AltLeft', 'ArrowLeft');
+		t.assert(t.activeWorkbenchTab() === input && input.trackIndex === 0 && input.keyIndex === 0,
+			'normal source Back did not return the retained animation subject');
+		await click(tree.layout.contentRight - 3, tree.layout.contentTop + (index - (tree.scroll | 0) + 0.5) * tree.layout.rowHeight);
 		t.command('theme-toggle'); await t.frames(2);
 	}
 	// Accept a fresh draft through the actual field to distinguish readable editing

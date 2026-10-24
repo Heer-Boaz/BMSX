@@ -45,7 +45,7 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 		this.actions.focusTarget.next = this.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		this.focusTarget.registerCommand('play.more', { isEnabled: () => true, run: () => {
 			const bounds = this.input.actionBar.items.find(item => item.command === 'play.more')!.bounds;
-			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['play.context'], commands, { selectFirst: true });
+			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['play.context'], commands, { selectFirst: true, commandTarget: this.focusTarget });
 		} });
 		this.focusTarget.registerCommand('play.details', { isEnabled: () => true, run: () => {
 			this.details.show({ title: 'Play session', items: describePlaySession(this.input.handle),

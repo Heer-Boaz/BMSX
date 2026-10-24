@@ -62,6 +62,21 @@ function fixture() {
 	return { focus, capture, surfaces, workArea, parent, owner, font, window, measurements: () => measurements };
 }
 
+test('window client and focused chrome publish their actual window commands without parent lookup', t => {
+	const f = fixture(), a = f.window('Owned window');
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.show(true); a.control.clientFocusTarget.focus();
+	for (const command of ['window.collapse', 'window.hide'] as const)
+		assert.equal(a.control.clientFocusTarget.getCommand(command), a.control.focusTarget.getCommand(command));
+	f.focus.executeCommand('window.collapse');
+	assert.equal(a.model.collapsed, true); assert.equal(f.focus.target, a.control.actionFocusTarget);
+	f.focus.executeCommand('window.collapse');
+	assert.equal(a.model.collapsed, false, 'the actual focused expand action owns its complete command');
+	f.focus.executeCommand('window.hide', a.control.clientFocusTarget);
+	assert.equal(a.model.open, false); assert.equal(a.hidden(), 1);
+	assert.equal(f.owner.visible, true, 'closing a window does not retire its owning content');
+});
+
 test('requested placement survives narrow work areas and collapse preserves expanded dimensions', () => {
 	const model = new WorkbenchWindowModel({ left: 170, top: 90, right: 470, bottom: 330 }, 150, 100);
 	const area = { left: 0, top: 20, right: 500, bottom: 380 };

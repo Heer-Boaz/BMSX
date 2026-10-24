@@ -38,6 +38,7 @@ import { GteDetailsWindow } from './details_window';
 import { drawGteDebugger, type GteCommandRow } from './render';
 
 const COMMANDS = ['gte.follow', 'gte.view', 'gte.details', 'gte.source', 'gte.goToFrame', 'gte.filter', 'gte.clear'] as const;
+const CLIENT_COMMANDS = [...COMMANDS, 'pause', 'stepFrameBack', 'stepFrame'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
 export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInput> {
 	private readonly actions: WorkbenchActionBarControl;
@@ -80,11 +81,10 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled,
 			run: () => { this.input.running = commands.transport.togglePlayback(); } });
-		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
-		this.focusTarget.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.input.running = true; } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) this.focusTarget.registerCommand(command, {
 			isEnabled: () => navigation.canStep(direction), run: () => { this.input.running = false; navigation.step(direction); },
 		});
+		for (const command of CLIENT_COMMANDS) this.scroll.focusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput, run: () => {
 			this.input.following = false;
 			this.showContextMenu(this.input.list.bounds.left, this.input.list.bounds.top, true);
@@ -100,6 +100,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override get runtimeTransport() { return this.commands.transport; }
+	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }
 	public override focus(): void { this.scroll.focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.labels.clear();
@@ -109,7 +110,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 		const details = this.details = new GteDetailsWindow(this.input, this.commands, this.surfaces, this.paneSurface, this.scroll.focusTarget,
 			this.workArea, this.quickInput, this.contextMenu, this.source, () => this.openSource());
 		for (const target of [details.window.focusTarget, details.inspector.focusTarget, details.diagramControl.focusTarget, details.viewActions.focusTarget])
-			for (const command of [...COMMANDS, 'pause', 'runtime.pause', 'runtime.resume', 'stepFrameBack', 'stepFrame'] as const)
+			for (const command of CLIENT_COMMANDS)
 				if (command !== 'gte.source' && command !== 'gte.view') target.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.sourceRevision = -1;
 		this.update();
@@ -140,7 +141,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	private showContextMenu(x: number, y: number, selectFirst = false): void {
 		this.synchronizeSelection(); this.source.update();
 		this.contextMenu.show(x, y, WORKBENCH_MENUS['gte.context'], this.commands, {
-			selectFirst, invocationOrigin: this.scroll.focusTarget, onWillShow: lifetime => this.ownContextMenu(lifetime),
+			selectFirst, invocationOrigin: this.scroll.focusTarget, commandTarget: this.focusTarget, onWillShow: lifetime => this.ownContextMenu(lifetime),
 		});
 	}
 

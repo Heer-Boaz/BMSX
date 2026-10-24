@@ -61,8 +61,9 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 			this.gesture = { kind: 'pan', originX: snapshot.viewportX, minimum: input.keys.range.minimum, maximum: input.keys.range.maximum };
 			return true;
 		}
-		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
-			this.focusTarget.focus();
+		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
+		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 || secondary) {
+			if (!secondary) this.focusTarget.focus();
 			if (input.keys.track === undefined) {
 				input.keys.setCursor(input.keys.valueAt(snapshot.viewportX)); return true;
 			}
@@ -72,7 +73,7 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 			const index = handle === undefined ? hitKey : input.keys.selected;
 			this.controller.selectKey(input, index);
 			if (index < 0) input.keys.setCursor(input.keys.valueAt(snapshot.viewportX));
-			else {
+			else if (!secondary) {
 				const key = input.keys.track.keys[index];
 				const moveTime = handle === undefined && this.authoring.canMoveKey(input, key);
 				const field = inCurve ? handle ?? 'value' : undefined;
@@ -151,7 +152,7 @@ export class AnimationKeyControl implements PointerCaptureTarget {
 			return;
 		}
 		if (isKeyJustPressed('Delete', player)) {
-			consumeIdeKey('Delete', player); this.cancelPointer(); inputFocus.executeCommand('animation.remove', this.focusTarget); return;
+			consumeIdeKey('Delete', player); this.cancelPointer(); inputFocus.executeCommand('animation.remove', this.focusTarget.commandContext); return;
 		}
 		for (const key of KEY_NAVIGATION) {
 			if (!isKeyDown(key, player)) continue;

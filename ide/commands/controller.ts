@@ -111,19 +111,19 @@ export class IdeCommandController {
 	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): void {
 		// Committing the focused draft and choosing an action's target are distinct.
 		// Pointer actions retain field focus but invoke their own explicit context.
-		const edit = inputFocus.target?.commandContext.edit;
+		const edit = inputFocus.target?.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
+		const implementation = target?.getCommand(command);
+		if (implementation !== undefined) {
+			if (implementation.isEnabled()) implementation.run();
+			return;
+		}
 		switch (command) {
-			case 'list.find': case 'text.find': case 'text.findNext': case 'text.findPrevious': {
-				const implementation = target?.getCommand(command);
-				if (implementation !== undefined && implementation.isEnabled()) implementation.run();
-				return;
-			}
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				this.editor.play.execute(command); return;
 			case 'copy': case 'cut': case 'paste':
-				void executeClipboardAction(this.editor.clipboard, command, this.editor.clipboardTarget);
+				void executeClipboardAction(this.editor.clipboard, command, target);
 				return;
 			case 'menubar.focus': this.editor.menubar.toggleFocus(); return;
 			case 'navigateBack':
@@ -184,70 +184,6 @@ export class IdeCommandController {
 			case 'conversations.history':
 				openObservedConversation(this.editor.editorPanes, this.editor.observedConversation, this.editor.quickInput);
 				return;
-			case 'graph.zoomIn':
-			case 'graph.zoomOut':
-			case 'graph.resetZoom':
-			case 'actorLab.playback':
-			case 'actorLab.select':
-			case 'actorLab.spawn':
-			case 'actorLab.emit':
-			case 'actorLab.actions':
-			case 'actorLab.call':
-			case 'actorLab.details': case 'actorLab.lockDetails':
-			case 'actorLab.stateGraph': case 'actorLab.outline':
-			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more': case 'actorLab.find':
-			case 'actorLab.pinProperty': case 'actorLab.unpinProperty': case 'actorLab.revealPinnedProperty':
-			case 'behaviorLens.details':
-			case 'sceneEditor.details': case 'sceneEditor.outline':
-			case 'behaviorLens.inspectRuntimeEffect':
-			case 'behaviorLens.inspectRuntimeStateMachine':
-			case 'behaviorLens.inspectRuntimeTree':
-			case 'behaviorLens.inspectRegisteredDefinitions':
-			case 'cartMap.source': case 'cartMap.map': case 'cartMap.outline':
-			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
-			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove':
-			case 'animation.source': case 'animation.producerSource': case 'animation.more':
-			case 'animation.addClip': case 'animation.addFrame': case 'animation.addProperty': case 'animation.openClip':
-			case 'animation.duplicate': case 'animation.earlier': case 'animation.later': case 'animation.fit': case 'animation.snap':
-			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
-			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
-			case 'behaviorLens.editProperty':
-			case 'behaviorLens.addProperty': case 'behaviorLens.removeProperty':
-			case 'scenarioLab.details':
-			case 'play.more': case 'play.details':
-			case 'scenarioLab.inspectTarget':
-			case 'scenarioLab.inspectStop':
-			case 'scenarioLab.closeTarget':
-			case 'contextMenu':
-			case 'propertyInspector.source':
-			case 'propertyInspector.close':
-			case 'window.collapse': case 'window.hide':
-			case 'sourceEditReview.apply':
-			case 'conversations.older':
-			case 'romInspector.inspect': case 'romInspector.hold': case 'romInspector.key': case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
-			case 'events.clear': case 'events.filter': case 'events.details':
-			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
-			case 'buildLog.refresh': case 'buildLog.copyAll': case 'buildLog.output': case 'buildLog.error':
-			case 'gpu.follow': case 'gpu.view': case 'gpu.details': case 'gpu.goToFrame': case 'gpu.filter': case 'gpu.clear':
-			case 'gte.follow': case 'gte.view': case 'gte.details': case 'gte.source':
-			case 'gte.goToFrame': case 'gte.filter': case 'gte.clear':
-			case 'assistant.send':
-			case 'assistant.queue':
-			case 'assistant.direct':
-			case 'assistant.review':
-			case 'assistant.copy':
-			case 'workspaceEditReview.apply':
-			case 'workspaceEditReview.discard':
-			case 'sourceEditReview.discard':
-			case 'sourceEditReview.source':
-			case 'undo':
-			case 'redo':
-			case 'suggest.accept':
-			case 'behaviorLens.removeChild':
-			case 'behaviorLens.duplicateChild':
-			case 'behaviorLens.setInitialState':
-				inputFocus.executeCommand(command, target);
-				return;
 			case 'debugEvaluation':
 				if (this.debuggerState.plans.controlSuspended && this.debuggerState.source.stop !== undefined) {
 					resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
@@ -263,7 +199,6 @@ export class IdeCommandController {
 					+ (command === 'tabs.scrollLeft' ? -1 : 1) * editorChromeState.tabViewportBounds.right * 0.75);
 				return;
 			case 'pause':
-				if (inputFocus.getCommand(command, target) !== undefined) { inputFocus.executeCommand(command, target); return; }
 				if (this.execution.userPaused) {
 					if (this.rewind.active) this.rewind.resumeHere();
 					this.execution.requestExecution(true);
@@ -278,27 +213,27 @@ export class IdeCommandController {
 			case 'runtime.focusTimeline': this.editor.runtimeTimeline.focus(); return;
 			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
 			case 'runtime.pause':
-				inputFocus.executeCommand(command, target);
+				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(false);
 				this.selectedTransport.pause();
 				return;
 			case 'runtime.present':
 			case 'runtime.accept':
-				inputFocus.executeCommand('runtime.pause', target);
+				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(false);
 				this.selectedTransport.navigation.finishReview(command === 'runtime.present' ? 'present' : 'here');
 				return;
 			case 'runtime.resume':
-				inputFocus.executeCommand(command, this.editor.editorPanes.activePane?.runtimeControlContext);
+				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(true);
 				this.selectedTransport.resumeHere();
 				return;
-			case 'gameView.playback':
-				if (inputFocus.getCommand(command, target) !== undefined) inputFocus.executeCommand(command, target);
-				else inputFocus.executeCommand('pause', target);
+			case 'gameView.playback': {
+				const running = this.selectedTransport.togglePlayback();
+				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(running);
 				return;
+			}
 			case 'gameView.togglePanel': this.editor.gamePanel.toggle(); return;
 			case 'gameView.closePanel': this.editor.gamePanel.close(); return;
 			case 'stepFrame':
 			case 'stepFrameBack':
-				if (inputFocus.getCommand(command, target) !== undefined) { inputFocus.executeCommand(command, target); return; }
 				openGameView(this.editor.editorPanes);
 				this.frameNavigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
@@ -354,7 +289,6 @@ export class IdeCommandController {
 			);
 			return;
 		}
-		throw new Error(`Unhandled editor command: ${command}`);
 	}
 
 	public async executeConfirmedAction(
@@ -383,9 +317,9 @@ export class IdeCommandController {
 	}
 
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
-		const context = focus?.commandContext;
+		const implementation = focus?.getCommand(command);
+		if (implementation !== undefined) return implementation.isEnabled();
 		switch (command) {
-			case 'list.find': case 'text.find': case 'text.findNext': case 'text.findPrevious': return focus?.getCommand(command)?.isEnabled() === true;
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				return this.editor.play.isCommandEnabled(command);
@@ -395,7 +329,7 @@ export class IdeCommandController {
 			case 'terminal': return this.editor.terminal.canOpen;
 			case 'conversations': return this.editor.observedConversation.available;
 			case 'copy': case 'cut': case 'paste':
-				return context?.clipboard?.[command] !== undefined && (command === 'copy' || !context.clipboard.readOnly)
+				return focus?.clipboard?.[command] !== undefined && (command === 'copy' || !focus.clipboard.readOnly)
 					&& (command !== 'paste' || this.editor.clipboard.canRead);
 			case 'hot-resume':
 				return this.hotResumes.acceptingRequests && !this.execution.launchPending;
@@ -445,71 +379,6 @@ export class IdeCommandController {
 			case 'server.connection': return true;
 			case 'conversations.history':
 				return this.editor.observedConversation.available && !this.editor.observedConversation.pending;
-			case 'graph.zoomIn':
-			case 'graph.zoomOut':
-			case 'graph.resetZoom':
-			case 'actorLab.playback':
-			case 'actorLab.select':
-			case 'actorLab.spawn':
-			case 'actorLab.emit':
-			case 'actorLab.actions':
-			case 'actorLab.call':
-			case 'actorLab.details': case 'actorLab.lockDetails':
-			case 'actorLab.stateGraph': case 'actorLab.outline':
-			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more': case 'actorLab.find':
-			case 'actorLab.pinProperty': case 'actorLab.unpinProperty': case 'actorLab.revealPinnedProperty':
-			case 'behaviorLens.details':
-			case 'behaviorLens.inspectRuntimeEffect':
-			case 'behaviorLens.inspectRuntimeStateMachine':
-			case 'behaviorLens.inspectRuntimeTree':
-			case 'behaviorLens.inspectRegisteredDefinitions':
-			case 'cartMap.source': case 'cartMap.map': case 'cartMap.outline':
-			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
-			case 'animation.addTrack': case 'animation.addKey': case 'animation.edit': case 'animation.remove':
-			case 'animation.source': case 'animation.producerSource': case 'animation.more':
-			case 'animation.addClip': case 'animation.addFrame': case 'animation.addProperty': case 'animation.openClip':
-			case 'animation.duplicate': case 'animation.earlier': case 'animation.later': case 'animation.fit': case 'animation.snap':
-			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
-			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
-			case 'behaviorLens.editProperty':
-			case 'behaviorLens.addProperty': case 'behaviorLens.removeProperty':
-			case 'sceneEditor.details': case 'sceneEditor.outline':
-			case 'play.more': case 'play.details':
-			case 'scenarioLab.details':
-			case 'scenarioLab.inspectTarget':
-			case 'scenarioLab.inspectStop':
-			case 'scenarioLab.closeTarget':
-			case 'contextMenu':
-			case 'propertyInspector.source':
-			case 'propertyInspector.close':
-			case 'window.collapse': case 'window.hide':
-			case 'sourceEditReview.apply':
-			case 'conversations.older':
-			case 'romInspector.inspect': case 'romInspector.hold': case 'romInspector.key': case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
-			case 'events.clear': case 'events.filter': case 'events.details':
-			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
-			case 'buildLog.refresh': case 'buildLog.copyAll': case 'buildLog.output': case 'buildLog.error':
-			case 'gpu.follow': case 'gpu.view': case 'gpu.details': case 'gpu.goToFrame': case 'gpu.filter': case 'gpu.clear':
-			case 'gte.follow': case 'gte.view': case 'gte.details': case 'gte.source':
-			case 'gte.goToFrame': case 'gte.filter': case 'gte.clear':
-			case 'assistant.send':
-			case 'assistant.queue':
-			case 'assistant.direct':
-			case 'assistant.review':
-			case 'assistant.copy':
-			case 'workspaceEditReview.apply':
-			case 'workspaceEditReview.discard':
-			case 'sourceEditReview.discard':
-			case 'sourceEditReview.source':
-			case 'undo':
-			case 'redo':
-			case 'suggest.accept':
-			case 'behaviorLens.removeChild':
-			case 'behaviorLens.duplicateChild':
-			case 'behaviorLens.setInitialState': {
-				const implementation = context?.getCommand(command);
-				return implementation !== undefined && implementation.isEnabled();
-			}
 			case 'debugEvaluation':
 				return this.runtimeTasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
 			case 'tabs.close': return editorTabGroup.activeTab?.closable === true;
@@ -518,11 +387,9 @@ export class IdeCommandController {
 			case 'tabs.scrollRight': return editorChromeState.tabScrollbar.getScroll() < editorChromeState.tabScrollbar.getMaximumScroll();
 			case 'openEditors': return editorTabGroup.tabs.length > 0;
 			case 'pause':
-				if (context?.getCommand(command) !== undefined) return context.getCommand(command)!.isEnabled();
 				return !this.execution.userPaused || this.runtimeTasks.mutationReady;
 			case 'stepFrame':
 			case 'stepFrameBack':
-				if (context?.getCommand(command) !== undefined) return context.getCommand(command)!.isEnabled();
 				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
 			case 'runtime.focusTimeline': return this.editor.isActive && this.editor.runtimeTimeline.visible;
 			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
@@ -536,7 +403,7 @@ export class IdeCommandController {
 			case 'gameView.togglePanel': return this.editor.isActive;
 			case 'gameView.closePanel': return this.editor.gamePanel.visible;
 			case 'gameView.playback':
-				return (context?.getCommand(command) ?? context?.getCommand('pause'))?.isEnabled() === true;
+				return this.editor.gamePanel.visible && this.selectedTransport.playbackEnabled;
 			case 'scenarioLab.play':
 			case 'scenarioLab.debug':
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
@@ -555,7 +422,7 @@ export class IdeCommandController {
 			case 'save': {
 				const activeInput = getActiveTab();
 				return this.textFileSaves.acceptingSaves && activeInput instanceof TextEditorInput
-					&& (activeInput.canSave() || !activeInput.readOnly && context?.edit?.pending === true);
+					&& (activeInput.canSave() || !activeInput.readOnly && focus?.edit?.pending === true);
 			}
 			case 'symbolSearch':
 			case 'symbolSearchGlobal':
@@ -605,7 +472,8 @@ export class IdeCommandController {
 				return this.editor.resourcePanel.isVisible()
 					&& this.editor.resourcePanel.getMode() === 'resources';
 			default:
-				return true;
+				return isEditorSymbolNavigationCommand(command) || isEditorSearchCommand(command)
+					|| isEditorViewCommand(command) || isEditorWorkspaceCommand(command);
 		}
 	}
 

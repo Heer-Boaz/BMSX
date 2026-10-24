@@ -60,7 +60,7 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 	assert.equal(editor.clipboardTarget, field);
 	const read = Promise.withResolvers<ClipboardContents>();
 	clipboard.read = () => read.promise;
-	const pendingPaste = executeClipboardAction(clipboard, 'paste', field);
+	const pendingPaste = executeClipboardAction(clipboard, 'paste', field.focusTarget);
 	pointerCapture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() { assert.fail('host takeover is not UP'); },
 		cancelPointer() { pointerCancellations++; } });
 	menu.requestToggleMenu();
@@ -154,7 +154,7 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 	for (const cancel of [() => editor.cancelInput(), () => host.input.resetInput('keyboard:0')]) {
 		const read = Promise.withResolvers<ClipboardContents>();
 		clipboard.read = () => read.promise;
-		const pending = executeClipboardAction(clipboard, 'paste', field);
+		const pending = executeClipboardAction(clipboard, 'paste', field.focusTarget);
 		cancel();
 		assert.equal(inputFocus.target, field.focusTarget);
 		read.resolve({ text: 'late input read', images: [] });

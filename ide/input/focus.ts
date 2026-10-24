@@ -84,6 +84,7 @@ export class InputFocusTarget {
 	public registerCommand(command: EditorCommandId, implementation: FocusCommand): void {
 		this.commands.set(command, implementation);
 	}
+	public unregisterCommand(command: EditorCommandId): void { this.commands.delete(command); }
 
 	public getCommand(command: EditorCommandId): FocusCommand | undefined {
 		return this.commands.get(command);
@@ -227,7 +228,7 @@ export class InputFocusService {
 	}
 
 	public getCommand(command: EditorCommandId, target: InputFocusTarget | null = this.targetValue): FocusCommand | undefined {
-		return target?.commandContext.getCommand(command);
+		return target?.getCommand(command);
 	}
 
 	public executeCommand(command: EditorCommandId, target: InputFocusTarget | null = this.targetValue): void {

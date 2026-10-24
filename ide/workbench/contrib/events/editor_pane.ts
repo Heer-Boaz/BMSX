@@ -37,6 +37,7 @@ import { layoutEventViewer } from './layout';
 import { drawEventViewer } from './render';
 
 const COMMANDS = ['events.clear', 'events.filter', 'events.details', 'events.goToFrame', 'events.previousFrame', 'events.nextFrame', 'events.more'] as const;
+const CLIENT_COMMANDS = [...COMMANDS, 'pause', 'stepFrameBack', 'stepFrame'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'] as const;
 
 export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInput> {
@@ -76,8 +77,6 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		this.unbindListBlur = this.scroll.focusTarget.onDidBlur(() => { this.keyboardFeedback = false; this.tooltip.hide(); });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled,
 			run: () => { this.running = commands.transport.togglePlayback(); } });
-		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.running = false; } });
-		this.focusTarget.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.running = true; } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) {
 			this.focusTarget.registerCommand(command, {
 				isEnabled: () => navigation.canStep(direction),
@@ -86,6 +85,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		}
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
+		for (const command of CLIENT_COMMANDS) this.scroll.focusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.scroll.focusTarget.registerCommand('list.find', this.focusTarget.getCommand('events.filter')!);
 		const context = { isEnabled: () => !this.inspector.visible, run: () => {
 			const input = this.input, viewport = input.viewport;
@@ -107,6 +107,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 	public override get suspendsRuntime(): boolean { return !this.running; }
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.focusTarget; }
+	public override setRuntimeCaptureRunning(running: boolean): void { this.running = running; }
 	public override focus(): void { (this.inspector.visible ? this.inspector : this.scroll).focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate(); this.presentation.reset(); this.historyRevision = -1;

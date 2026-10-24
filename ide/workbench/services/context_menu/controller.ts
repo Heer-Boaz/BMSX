@@ -22,6 +22,8 @@ export type ContextMenuOptions = {
 	readonly onNavigate?: (direction: 1 | -1) => void;
 	/** Actual invoking control; pointer toolbars may retain focus in another control. */
 	readonly invocationOrigin?: InputFocusTarget;
+	/** Explicit action capability owner; physical context menus use the invoking leaf. */
+	readonly commandTarget?: InputFocusTarget | null;
 	/** Pointer context menus return to the clicked client, independent of the previously focused control. */
 	readonly returnFocus?: InputFocusTarget;
 };
@@ -33,7 +35,7 @@ type ContextMenuSession = {
 	readonly options: ContextMenuOptions;
 	readonly invocationOrigin: InputFocusTarget | null;
 	returnFocus: InputFocusTarget | null;
-	commandOrigin: InputFocusTarget | null;
+	readonly commandOrigin: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
 };
 
@@ -77,14 +79,16 @@ export class ContextMenuController implements PointerCaptureTarget {
 		const focusOrigin = this.focus.target === null ? this.focus.pendingTarget : this.focus.target;
 		const origin = this.session !== undefined ? this.session.returnFocus
 			: this.retiringSession !== undefined && focusOrigin === this.focusTarget ? this.retiringSession.returnFocus : focusOrigin;
+		const invocationOrigin = options.invocationOrigin === undefined ? origin : options.invocationOrigin;
+		const returnOrigin = options.returnFocus === undefined ? origin : options.returnFocus;
+		const commandOrigin = options.commandTarget === undefined ? invocationOrigin : options.commandTarget;
 		this.retireSession(false);
 		if (request !== this.requestRevision) { disposables.dispose(); return disposables; }
 		this.capture.cancel();
 		if (request !== this.requestRevision) { disposables.dispose(); return disposables; }
-		const invocationOrigin = options.invocationOrigin === undefined ? origin : options.invocationOrigin;
-		const returnOrigin = options.returnFocus === undefined ? origin : options.returnFocus;
-		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: returnOrigin, commandOrigin: invocationOrigin, disposables, options };
+		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: returnOrigin, commandOrigin, disposables, options };
 		this.session = session;
+		this.focusTarget.commandContext = commandOrigin === null ? this.focusTarget : commandOrigin;
 		this.model.setItems(items, x, y, options.shortTitles, options.placement);
 		this.pointerX = x;
 		this.pointerY = y;
@@ -98,8 +102,6 @@ export class ContextMenuController implements PointerCaptureTarget {
 		this.focusTarget.focus();
 		if (this.session !== session) return disposables;
 		session.returnFocus = this.focus.resolveTarget(returnOrigin);
-		const commandOrigin = session.commandOrigin = this.focus.resolveTarget(invocationOrigin);
-		this.focusTarget.commandContext = commandOrigin === null ? this.focusTarget : commandOrigin.commandContext;
 		this.update();
 		if (this.session !== session) return disposables;
 		if (options.selectFirst) this.model.selectNext(1);

@@ -167,6 +167,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.equal(input.grid.horizontal.isVisible(), true);
 		f.pointer((track.left + track.right) / 2, (track.top + track.bottom) / 2, PointerButton.Primary, PointerButton.Primary);
 		assert.equal(pointerCapture.active, true);
+			assert.notEqual(inputFocus.target!.getCommand('cartMap.outline'), undefined, 'the active map client owns its outline action directly');
 		inputFocus.executeCommand('cartMap.outline'); pane.update();
 		assert.equal(input.layout.mode, 'outline'); assert.equal(pointerCapture.active, false);
 		const handle = t.mock.method(pane.controls[0], 'handlePointer');

@@ -44,8 +44,6 @@ export class GamePanel {
 	public constructor(private readonly panes: EditorPanes, commands: IdeCommandController, recipient: InputRecipient, presenter: VideoPresenter) {
 		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focusTarget.focus());
-		this.focusTarget.registerCommand('gameView.playback', { isEnabled: () => commands.transport.playbackEnabled,
-			run: () => { commands.transport.togglePlayback(); } });
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {
 			if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.close(); }
 		});
@@ -93,7 +91,7 @@ export class GamePanel {
 		if (!visible) { editorChromeState.editorRightInset = 0; return previousInset !== 0; }
 		this.focusTarget.commandContext = pane.runtimeControlContext ?? this.focusTarget;
 		this.sash.focusTarget.commandContext = this.focusTarget.commandContext;
-		this.actions.focusTarget.commandContext = this.focusTarget.commandContext;
+		this.actions.setInput(this.actionBar, this.focusTarget.commandContext);
 		this.split.layout(editorViewState.codeAreaLeft, topMargin(), editorViewState.viewportWidth, editorViewState.codeAreaBottom);
 		const left = this.split.position + 2, top = this.split.bounds.top;
 		const right = this.split.bounds.right, bottom = this.split.bounds.bottom;

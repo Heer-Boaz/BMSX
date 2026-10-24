@@ -79,9 +79,11 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		const source = { isEnabled: () => this.hasInput, run: () => controller.openSource(this.input) };
 		const map = { isEnabled: () => this.hasInput && this.input.grid.content !== undefined, run: () => this.showSection('map') };
 		const outline = { isEnabled: () => this.hasInput, run: () => this.showSection('outline') };
-		this.focusTarget.registerCommand('cartMap.source', source);
-		this.focusTarget.registerCommand('cartMap.map', map);
-		this.focusTarget.registerCommand('cartMap.outline', outline);
+		for (const target of [this.focusTarget, this.gridFocus]) {
+			target.registerCommand('cartMap.source', source);
+			target.registerCommand('cartMap.map', map);
+			target.registerCommand('cartMap.outline', outline);
+		}
 		for (const direction of ['undo', 'redo'] as const) {
 			const historyCommand = {
 				isEnabled: () => !this.input.workingCopy.readOnly && (direction === 'undo' ? this.input.workingCopy.canUndo : this.input.workingCopy.canRedo),

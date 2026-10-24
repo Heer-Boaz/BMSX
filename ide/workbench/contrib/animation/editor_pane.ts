@@ -1,9 +1,11 @@
+import { clamp } from '../../../../machine/ts/common/clamp';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
@@ -34,6 +36,7 @@ import { AnimationLaneControl } from './lane_control';
 import { layoutAnimationEditor } from './layout';
 import { drawAnimationEditor } from './render';
 import { WorkbenchTooltip } from '../../ui/tooltip';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
 const TRACK_NAVIGATION = [['ArrowUp', -1], ['ArrowDown', 1]] as const;
 const DETAILS_NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['Home', 'home'], ['End', 'end']] as const;
@@ -56,7 +59,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	private keyRevision = -1;
 	private left = 0; private top = 0; private right = 0; private bottom = 0;
 	public constructor(resources: ResourcePanelController, private readonly controller: AnimationEditorController,
-		private readonly commands: IdeCommandController, contextMenu: ContextMenuController,
+		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super(resources);
 		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, workArea);
@@ -95,6 +98,31 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 			return range.start.line === range.end.line && !this.controller.modelFor(this.input, property.source.file).readOnly;
 		}, run: () => this.editProperty() });
 		this.focusTarget.registerCommand('animation.more', { isEnabled: () => this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
+		this.focusTarget.registerCommand('contextMenu', {
+			isEnabled: () => this.input.tracks.selectionIndex >= 0,
+			run: () => {
+				const tracks = this.input.tracks;
+				revealWorkbenchListSelection(tracks);
+				this.openContextMenu(tracks.layout.contentLeft + 4,
+					tracks.layout.contentTop + (tracks.selectionIndex - (tracks.scroll | 0) + 1) * tracks.layout.rowHeight, this.focusTarget, true);
+			},
+		});
+		this.detailsFocus.registerCommand('contextMenu', {
+			isEnabled: () => this.input.details.selectionIndex >= 0,
+			run: () => {
+				const tree = this.input.details;
+				this.controller.selectProperty(this.input, tree.selectionIndex);
+				this.openContextMenu(tree.layout.contentLeft + 4,
+					tree.layout.contentTop + (tree.selectionIndex - (tree.scroll | 0) + 1) * tree.layout.rowHeight, this.detailsFocus, true);
+			},
+		});
+		this.keys.focusTarget.registerCommand('contextMenu', {
+			isEnabled: () => this.input.keys.unit !== undefined,
+			run: () => {
+				const keys = this.input.keys, bounds = keys.range.bounds;
+				this.openContextMenu(clamp(keys.xAt(keys.cursor), bounds.left, bounds.right), bounds.bottom, this.keys.focusTarget, true);
+			},
+		});
 		for (const direction of ['undo', 'redo'] as const) {
 			const historyCommand = {
 				isEnabled: () => { const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction); return model !== undefined && !model.readOnly; },
@@ -192,20 +220,44 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 		for (const [key, command] of DETAILS_NAVIGATION) {
 			if (isKeyDown(key, player)) { consumeIdeKey(key, player); navigateWorkbenchTree(this.input.details, command); this.controller.selectProperty(this.input, this.input.details.selectionIndex); this.propertyPointer.keyboardSelection(this.input.details); return; }
 		}
-		if (isKeyJustPressed('Enter', player)) { consumeIdeKey('Enter', player); this.commands.execute('animation.edit'); }
+		if (isKeyJustPressed('Enter', player)) { consumeIdeKey('Enter', player); this.commands.execute('animation.edit', this.focusTarget); }
+	}
+	private openContextMenu(x: number, y: number, origin: InputFocusTarget, keyboard = false): void {
+		this.keys.cancelPointer(); this.lanes.cancelPointer(); this.propertyPointer.hideFeedback(); this.actionTooltip.hide();
+		const input = this.input;
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['animation.context'], this.commands, { selectFirst: keyboard, invocationOrigin: origin, returnFocus: origin, commandTarget: this.focusTarget,
+			onWillShow: lifetime => { lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.contextMenu.hide()) }); },
+		});
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.imageBitmap !== undefined && this.image.handlePointer(snapshot)) return true;
-		if (this.actions.handlePointer(snapshot) || this.keys.handlePointer(snapshot) || this.lanes.handlePointer(snapshot)) return true;
+		if (this.actions.handlePointer(snapshot)) return true;
+		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
+		if (this.keys.handlePointer(snapshot)) {
+			if (secondary) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.keys.focusTarget);
+			return true;
+		}
+		if (this.lanes.handlePointer(snapshot)) {
+			if (secondary) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget);
+			return true;
+		}
 		const result = this.propertyPointer.handle(this.input.details, snapshot, justPressed, now);
 		if (result !== WorkbenchPropertyPointerResult.Outside) {
-			if (justPressed) { this.detailsFocus.focus(); this.controller.selectProperty(this.input, this.input.details.selectionIndex); }
-			if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('animation.edit');
+			if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) {
+				this.controller.selectProperty(this.input, this.input.details.selectionIndex);
+				if (justPressed) this.detailsFocus.focus();
+			}
+			if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.detailsFocus);
+			if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('animation.edit', this.focusTarget);
 			return true;
 		}
 		const index = workbenchListRowIndexAtPosition(this.input.tracks, snapshot.viewportX, snapshot.viewportY);
 		if (index === -1) return false;
-		if (justPressed) { this.focus(); this.controller.selectTrack(this.input, index); }
+		if (justPressed || secondary) {
+			this.controller.selectTrack(this.input, index);
+			if (justPressed) this.focus();
+			if (secondary) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget);
+		}
 		return true;
 	}
 	public handleWheel(event: WheelInputSnapshot): void {

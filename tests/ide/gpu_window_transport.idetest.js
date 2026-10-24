@@ -35,9 +35,11 @@ const stopped = t.runtime().machine.scheduler.nowCycles;
 await t.frames(5);
 t.assert(t.runtime().machine.scheduler.nowCycles === stopped, 'paused transport continued advancing behind the window');
 t.command('window.collapse'); await t.frames(3);
+t.assert(!input.detailsWindow.collapsed, 'the focused expand action did not restore its actual client');
 await capture('gpu-window-follow-paused-expanded');
-t.command('gpu.details'); t.command('window.hide'); await t.frames(2);
-t.assert(!input.detailsWindow.open && input.history.observing, 'closing the view destroyed the input-owned observation lease');
+t.command('window.hide'); await t.frames(2);
+t.assert(!input.detailsWindow.open, 'the focused Close action did not close its actual window');
+t.assert(input.history.observing, 'closing the view destroyed the input-owned observation lease');
 t.assert(authored.context.model.buffer.getText() === source, 'transport/window input changed canonical source');
 for (let index = 0; index < t.logMessageCount(); index++)
 	t.assert(t.logMessage(index).level !== 3, `GPU transport workflow logged an error: ${t.logMessage(index).message}`);

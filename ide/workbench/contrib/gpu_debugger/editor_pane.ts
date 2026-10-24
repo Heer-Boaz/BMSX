@@ -35,6 +35,7 @@ import { drawGpuDebugger, type GpuOperationRow } from './render';
 import { GpuDetailsWindow } from './details_window';
 
 const COMMANDS = ['gpu.follow', 'gpu.view', 'gpu.details', 'gpu.goToFrame', 'gpu.filter', 'gpu.clear'] as const;
+const CLIENT_COMMANDS = [...COMMANDS, 'pause', 'stepFrameBack', 'stepFrame'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
 
 /** History selection and shared transport; optional observation decoding belongs to Details. */
@@ -72,11 +73,10 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.list.focusTarget.registerCommand('list.find', this.focusTarget.getCommand('gpu.filter')!);
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { this.input.running = commands.transport.togglePlayback(); } });
-		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
-		this.focusTarget.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.input.running = true; } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) this.focusTarget.registerCommand(command, {
 			isEnabled: () => navigation.canStep(direction), run: () => { this.input.running = false; navigation.step(direction); },
 		});
+		for (const command of CLIENT_COMMANDS) this.list.focusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput, run: () => this.showContextMenu(this.input.list.bounds.left, this.input.list.bounds.top, true) });
 		this.list.focusTarget.registerCommand('contextMenu', this.focusTarget.getCommand('contextMenu')!);
 		this.list.focusTarget.commandContext = this.focusTarget;
@@ -86,6 +86,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override get runtimeTransport() { return this.commands.transport; }
+	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }
 	public override focus(): void { this.list.focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.selectedRevision = -1;
@@ -94,7 +95,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 		const details = this.details = new GpuDetailsWindow(this.input, this.commands, this.quickInput, this.contextMenu,
 			this.surfaces, this.paneSurface, this.list.focusTarget, this.workArea);
 		for (const target of [details.window.focusTarget, details.inspector.focusTarget, details.diagram.focusTarget, details.words.focusTarget])
-			for (const command of [...COMMANDS, 'pause', 'runtime.pause', 'runtime.resume', 'stepFrameBack', 'stepFrame'] as const)
+			for (const command of CLIENT_COMMANDS)
 				if (command !== 'gpu.view') target.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.unbindSelection = this.input.onWillChangeSelection(() => this.retireMenu());
 		this.update();

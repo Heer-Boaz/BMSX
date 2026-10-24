@@ -52,7 +52,7 @@ test('pending clipboard reads cannot edit a control after blur, even when the sa
 	let resolve!: (contents: ClipboardContents) => void;
 	clipboard.read = () => new Promise(done => { resolve = done; });
 	field.focusTarget.focus();
-	const pending = executeClipboardAction(clipboard, 'paste', field);
+	const pending = executeClipboardAction(clipboard, 'paste', field.focusTarget);
 	other.focusTarget.focus();
 	field.focusTarget.focus();
 	resolve({ text: 'old request', images: [] });
@@ -60,7 +60,7 @@ test('pending clipboard reads cannot edit a control after blur, even when the sa
 	assert.equal(field.text, '');
 	assert.equal(field.canUndo, false);
 	assert.equal(other.text, '');
-	const current = executeClipboardAction(clipboard, 'paste', field);
+	const current = executeClipboardAction(clipboard, 'paste', field.focusTarget);
 	resolve({ text: 'current request', images: [] });
 	await current;
 	assert.equal(field.text, 'current request');
@@ -74,7 +74,7 @@ test('a clipboard read completing after the control becomes read-only cannot edi
 	const clipboard = new HeadlessClipboard();
 	clipboard.text = 'external text';
 	field.focusTarget.focus();
-	const pending = executeClipboardAction(clipboard, 'paste', field);
+	const pending = executeClipboardAction(clipboard, 'paste', field.focusTarget);
 	field.readOnly = true;
 	await pending;
 	assert.equal(field.text, '');
@@ -91,7 +91,7 @@ test('input cancellation revokes pending clipboard edits without semantic blur o
 	field.focusTarget.bindKeyboard(() => {}, () => keyboardCancellations++);
 	field.focusTarget.edit = { pending: true, commit() { commits++; return true; } };
 	field.focusTarget.focus();
-	const pending = executeClipboardAction(clipboard, 'paste', field);
+	const pending = executeClipboardAction(clipboard, 'paste', field.focusTarget);
 	inputFocus.cancelInput();
 	assert.equal(inputFocus.target, field.focusTarget);
 	assert.equal(blurs, 0);
@@ -102,8 +102,25 @@ test('input cancellation revokes pending clipboard edits without semantic blur o
 	assert.equal(field.text, '');
 	assert.equal(field.canUndo, false);
 	clipboard.read = async () => ({ text: 'fresh', images: [] });
-	await executeClipboardAction(clipboard, 'paste', field);
+	await executeClipboardAction(clipboard, 'paste', field.focusTarget);
 	assert.equal(field.text, 'fresh', 'cancellation retires the request, not the focused control');
+});
+
+test('explicit clipboard operations subscribe to their actual owner, not another focused control', async t => {
+	t.after(() => inputFocus.setTarget(null));
+	const selected = new TextField(), other = new TextField(), third = new TextField();
+	const clipboard = new HeadlessClipboard();
+	const read = Promise.withResolvers<ClipboardContents>(); clipboard.read = () => read.promise;
+	other.focusTarget.focus();
+	const pending = executeClipboardAction(clipboard, 'paste', selected.focusTarget);
+	third.focusTarget.focus();
+	read.resolve({ text: 'selected data', images: [] }); await pending;
+	assert.equal(selected.text, 'selected data'); assert.equal(other.text, ''); assert.equal(third.text, '');
+	const cancelled = Promise.withResolvers<ClipboardContents>(); clipboard.read = () => cancelled.promise;
+	const retired = executeClipboardAction(clipboard, 'paste', selected.focusTarget);
+	selected.focusTarget.cancelInput();
+	cancelled.resolve({ text: 'retired data', images: [] }); await retired;
+	assert.equal(selected.text, 'selected data');
 });
 
 test('focus dispatch has one concrete keyboard owner and detaches before blur notification', () => {

@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { KeyModifier, type KeyInputEvent } from '../../../hosts/common/input/text';
-import type { EditorCommandRunner } from '../../common/commands';
+import type { EditorCommandId, EditorCommandRunner } from '../../common/commands';
 import type { PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../input/keyboard/key_input';
@@ -31,6 +31,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	private readonly cancelPress = () => this.cancelPointer();
 	private layoutRevision = -1;
 	private overflowSession: DisposableStore | undefined;
+	private readonly itemCommands: EditorCommandId[] = [];
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly hover: PointerHoverService, private readonly commands: EditorCommandRunner, parent: InputFocusTarget | null,
@@ -53,9 +54,19 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		this.clearInput();
 		this.input = input;
 		this.focusTarget.commandContext = context;
+		if (context === this.focusTarget) return;
+		for (const item of input.items) {
+			const command = context.getCommand(item.command);
+			if (command !== undefined) {
+				this.focusTarget.registerCommand(item.command, command);
+				this.itemCommands.push(item.command);
+			}
+		}
 	}
 
 	public clearInput(): void {
+		for (const command of this.itemCommands) this.focusTarget.unregisterCommand(command);
+		this.itemCommands.length = 0;
 		if (this.overflowSession !== undefined) this.contextMenu!.hide();
 		this.hover.release(this);
 		this.cancelPointer();
@@ -92,7 +103,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 			if (this.overflowSession !== undefined) this.contextMenu!.hide();
 		}
 		for (const item of state.items) {
-			item.enabled = item.visible && this.commands.isEnabled(item.command, this.focusTarget);
+			item.enabled = item.visible && this.commands.isEnabled(item.command, this.focusTarget.commandContext);
 			item.tooltip = editorCommandTitle(item.command, item.checked);
 		}
 		const command = this.pointerCommand === null ? state.pressedCommand : this.pointerCommand;
@@ -195,7 +206,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	private isEnabled(command: WorkbenchActionBarAction): boolean {
 		return command === WORKBENCH_ACTION_BAR_OVERFLOW ? this.input!.overflow!.button.visible
 			: this.input!.items.some(item => item.command === command && item.visible && !item.overflowed)
-				&& this.commands.isEnabled(command, this.focusTarget);
+				&& this.commands.isEnabled(command, this.focusTarget.commandContext);
 	}
 	private invoke(command: WorkbenchActionBarAction, context: InputFocusTarget): void {
 		if (command !== WORKBENCH_ACTION_BAR_OVERFLOW) { this.commands.execute(command, context); return; }
@@ -205,7 +216,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	public openOverflow(): void {
 		const state = this.input!, overflow = state.overflow!;
 		this.contextMenu!.show(overflow.button.bounds.left, overflow.button.bounds.bottom, overflow.items,
-			this.commands, { placement: 'below', selectFirst: true, invocationOrigin: this.focusTarget, onWillShow: session => {
+			this.commands, { placement: 'below', selectFirst: true, invocationOrigin: this.focusTarget,
+				commandTarget: this.focusTarget.commandContext, onWillShow: session => {
 				this.overflowSession = session;
 				session.add({ dispose: () => { if (this.overflowSession === session) this.overflowSession = undefined; } });
 				this.onDidOpenOverflow?.(session);
