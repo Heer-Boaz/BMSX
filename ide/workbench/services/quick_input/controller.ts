@@ -21,10 +21,11 @@ import type { QuickPickItem, QuickPickMatch, QuickPickProvider } from './provide
 import { drawQuickInput, layoutQuickInput } from './render';
 
 type QuickInputSession = {
+	readonly kind: 'pick' | 'input';
 	returnFocus: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
-} & ({ readonly kind: 'pick'; readonly accept: (itemIndex: number) => void }
-	| { readonly kind: 'input'; readonly accept: () => Promise<void> });
+	readonly accept: () => void | Promise<void>;
+};
 
 /** One transient workbench surface, independent of editor panes and their documents. */
 export class QuickInputController implements PointerCaptureTarget {
@@ -46,6 +47,8 @@ export class QuickInputController implements PointerCaptureTarget {
 	public message = '';
 	public labelsDirty = true;
 	private session: QuickInputSession | null = null;
+	private retiringSession: QuickInputSession | null = null;
+	private disposed = false;
 	private readonly scrollbarPointer = new ScrollbarPointerControl(pointerCapture, this.pointerScope);
 	private pressedRow: QuickPickMatch | undefined;
 	private pointerRevision = 0;
@@ -58,6 +61,7 @@ export class QuickInputController implements PointerCaptureTarget {
 	public constructor(private readonly contextMenu: ContextMenuController,
 		private readonly onDidChangeVisibility: () => void = () => {},
 		private readonly acceptsFocusTransfer: (next: InputFocusTarget | null) => boolean = () => false) {
+		this.field.focusTarget.canFocus = () => this.session !== null;
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.field.onDidChangeText(() => {
 			this.cancelPointer();
@@ -79,43 +83,43 @@ export class QuickInputController implements PointerCaptureTarget {
 		provide: (origin: InputFocusTarget | null, disposables: DisposableStore) => QuickPickProvider<T>,
 		accept: (item: T) => void,
 	): void {
-		this.hide();
-		// Retire the popup before retaining the invoking control for this session.
-		this.contextMenu.hide();
-		pointerCapture.cancel();
-		const origin = inputFocus.target;
-		// A provider observes the invoking control after its ordinary blur policy,
-		// never the previous popup's query or an unaccepted property draft.
-		const disposables = new DisposableStore();
-		const session: QuickInputSession = { kind: 'pick', returnFocus: origin, disposables, accept: index => accept(provider.items[index]) };
-		this.session = session;
-		this.field.focusTarget.focus();
-		const returnFocus = session.returnFocus = inputFocus.resolveTarget(origin);
-		const provider = provide(returnFocus, disposables);
+		const session: QuickInputSession = {
+			kind: 'pick', returnFocus: null, disposables: new DisposableStore(),
+			accept: () => {
+				const list = this.model.list;
+				if (list.selectionIndex === -1) return; // A real user choice is required.
+				const item = provider.items[list.rows[list.selectionIndex].itemIndex];
+				this.hide();
+				accept(item);
+			},
+		};
+		if (!this.show(session)) return;
+		// Catalogs observe the invoking control after ordinary blur has published
+		// its draft. Reentrant focus/provider callbacks may replace this session.
+		const provider = provide(session.returnFocus, session.disposables);
+		if (this.session !== session) return;
 		this.title = title;
 		this.placeholder = placeholder;
 		this.model.setInput(provider);
 		this.labelsDirty = true;
 		setFieldText(this.field, '', true);
+		if (this.session !== session) return;
 		this.update();
-		this.onDidChangeVisibility();
 		resetBlink();
+		this.onDidChangeVisibility();
 	}
 
-	/** Submission owns its operation; this surface owns feedback and focus lifetime. */
+	/** Attach scoped resources before focus can publish source changes. Submission owns its operation. */
 	public input<T>(
 		title: string,
 		placeholder: string,
 		value: string,
 		submit: (value: string) => Promise<T>,
 		accept: (result: T) => void,
-	): DisposableStore {
-		this.hide();
-		this.contextMenu.hide();
-		pointerCapture.cancel();
-		const origin = inputFocus.target;
+		onWillShow?: (lifetime: DisposableStore) => void,
+	): void {
 		const session: QuickInputSession = {
-			kind: 'input', returnFocus: origin, disposables: new DisposableStore(),
+			kind: 'input', returnFocus: null, disposables: new DisposableStore(),
 			accept: async () => {
 				if (this.field.readOnly) return; // One outstanding submission per input session.
 				this.field.readOnly = true;
@@ -138,47 +142,69 @@ export class QuickInputController implements PointerCaptureTarget {
 				accept(result);
 			},
 		};
-		this.session = session;
-		this.field.focusTarget.focus();
-		session.returnFocus = inputFocus.resolveTarget(origin);
+		if (!this.show(session, onWillShow)) return;
 		this.title = title;
 		this.placeholder = placeholder;
 		this.labelsDirty = true;
 		setFieldText(this.field, value, true);
+		if (this.session !== session) return;
 		this.update();
-		this.onDidChangeVisibility();
 		resetBlink();
-		return session.disposables;
+		this.onDidChangeVisibility();
 	}
 
-	public hide(restoreFocus = true): void {
+	/** Publish the new owner before retiring callbacks; replacements keep the invoking context. */
+	private show(session: QuickInputSession, onWillShow?: (lifetime: DisposableStore) => void): boolean {
+		if (this.disposed) { session.disposables.dispose(); return false; }
+		const previous = this.session;
+		const target = inputFocus.target === null ? inputFocus.pendingTarget : inputFocus.target;
+		const origin = previous !== null ? previous.returnFocus
+			: target === this.contextMenu.focusTarget ? this.contextMenu.returnFocus
+			: this.retiringSession !== null && target === this.field.focusTarget ? this.retiringSession.returnFocus : target;
+		session.returnFocus = origin;
+		this.session = session;
+		this.clearPresentation();
+		onWillShow?.(session.disposables);
+		previous?.disposables.dispose();
+		if (this.session !== session) return false;
+		this.contextMenu.hide();
+		if (this.session !== session) return false;
+		pointerCapture.cancel();
+		if (this.session !== session) return false;
+		this.field.focusTarget.focus();
+		if (this.session !== session) return false;
+		session.returnFocus = inputFocus.resolveTarget(origin);
+		return true;
+	}
+
+	private clearPresentation(): void {
 		pointerHover.release(this);
 		this.cancelPointer();
 		this.scrollbarPointer.cancelPointer();
-		const session = this.session;
-		if (session === null) return;
-		this.session = null;
-		session.disposables.dispose();
 		this.model.clearInput();
 		this.layout.renderRows.length = 0;
 		this.message = '';
 		this.field.readOnly = false;
 		this.field.pointerSelecting = false;
-		if (this.field.focusTarget.hasFocus || this.acceptsFocusTransfer(inputFocus.target)) {
+	}
+
+	public hide(restoreFocus = true): void {
+		const session = this.session;
+		if (session === null) return;
+		this.session = null;
+		this.retiringSession = session;
+		this.clearPresentation();
+		session.disposables.dispose();
+		if (this.retiringSession === session) this.retiringSession = null;
+		if (this.session !== null) return;
+		if (this.field.focusTarget.hasFocus || inputFocus.pendingTarget === this.field.focusTarget || this.acceptsFocusTransfer(inputFocus.target)) {
 			inputFocus.setTarget(restoreFocus ? session.returnFocus : null);
 		}
 		this.onDidChangeVisibility();
 	}
 
 	public accept(): void | Promise<void> {
-		const session = this.session!;
-		if (session.kind === 'input') return session.accept();
-		const list = this.model.list;
-		if (list.selectionIndex === -1) return; // A real user choice is required.
-		const index = list.rows[list.selectionIndex].itemIndex;
-		const accept = session.accept;
-		this.hide();
-		accept(index);
+		return this.session!.accept();
 	}
 
 	public update(): void {
@@ -298,6 +324,7 @@ export class QuickInputController implements PointerCaptureTarget {
 	}
 
 	public dispose(): void {
+		this.disposed = true;
 		this.hide(false);
 		this.unbindKeyboard();
 	}

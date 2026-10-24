@@ -36,13 +36,14 @@ export function addActionEffectProperty(view: BehaviorLensViewState, quickInput:
 			lifetime.add({ dispose: view.source.onDidInvalidate(() => quickInput.hide()) });
 			return new TextQuickPickProvider(choices);
 		}, choice => {
-			const lifetime = quickInput.input(choice.label, 'Lua expression', INITIAL_VALUES[choice.name],
+			quickInput.input(choice.label, 'Lua expression', INITIAL_VALUES[choice.name],
 				async text => validateLuaTableFieldExpression(text), value => {
 				const model = view.source.models.get(body.file.file)!;
 				model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, body.file.chunk, body.table,
 					body.table.fields.length, [formatLuaTableFieldSource(choice.name, value)]));
+			}, lifetime => {
+				lifetime.add({ dispose: view.source.onDidInvalidate(() => quickInput.hide()) });
 			});
-			lifetime.add({ dispose: view.source.onDidInvalidate(() => quickInput.hide()) });
 		});
 }
 

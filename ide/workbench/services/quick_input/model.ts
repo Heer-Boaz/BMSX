@@ -57,6 +57,7 @@ export class QuickPickModel {
 	}
 
 	public clearInput(): void {
+		this.revision += 1;
 		this.input = undefined;
 		this.items = EMPTY_ITEMS;
 		this.list.rows = EMPTY_MATCHES;
@@ -68,7 +69,9 @@ export class QuickPickModel {
 	}
 
 	public filter(value: string): void {
+		const revision = this.revision;
 		const projection = this.input!.getPicks(value);
+		if (this.revision !== revision) return; // The provider may retire or replace its own input.
 		const list = this.list;
 		list.rows = projection.matches;
 		this.highlights = projection.highlights;

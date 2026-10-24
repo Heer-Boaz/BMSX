@@ -131,9 +131,11 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 			case 'gpu.follow': input.following = true; break;
 			case 'gpu.view': this.details!.show(); this.details!.chooseView(); break;
 			case 'gpu.filter': {
-				const lifetime = this.quickInput.input('Filter GPU operations', 'Operation or opcode; empty shows all', input.filter,
-					async text => text, text => { input.filter = text; input.list.scrollbar.setScroll(0); });
-				this.filterSession = lifetime; lifetime.add({ dispose: () => { if (this.filterSession === lifetime) this.filterSession = undefined; } }); break;
+				this.quickInput.input('Filter GPU operations', 'Operation or opcode; empty shows all', input.filter,
+					async text => text, text => { input.filter = text; input.list.scrollbar.setScroll(0); }, lifetime => {
+						this.filterSession = lifetime;
+						lifetime.add({ dispose: () => { if (this.filterSession === lifetime) this.filterSession = undefined; } });
+					}); break;
 			}
 			case 'gpu.clear': input.clear(); break;
 			case 'gpu.details': input.following = false; this.details!.show(); break;

@@ -61,6 +61,46 @@ function fixture(t: TestContext) {
 	return { focus, capture, origin, menu, commands, executed, disabled, show, row, event, pointer, press };
 }
 
+test('a context menu returns to its explicit clicked client without pre-focusing away from the invoking control', t => {
+	const f = fixture(t), clicked = f.focus.createTarget(f.origin);
+	clicked.bindKeyboard(() => {});
+	let admittedBeforeBlur = false;
+	f.menu.show(100, 80, ITEMS, f.commands, { invocationOrigin: clicked, returnFocus: clicked,
+		onWillShow: () => { admittedBeforeBlur = f.focus.target === f.origin; },
+	});
+	assert.equal(admittedBeforeBlur, true);
+	assert.equal(f.menu.invocationOrigin, clicked);
+	assert.equal(f.menu.focusTarget.commandContext, clicked);
+	assert.equal(f.focus.target, f.menu.focusTarget);
+	f.menu.hide();
+	assert.equal(f.focus.target, clicked);
+
+	f.origin.focus();
+	f.menu.show(100, 80, ITEMS, f.commands, { returnFocus: clicked });
+	assert.equal(f.menu.invocationOrigin, f.origin);
+	assert.equal(f.menu.focusTarget.commandContext, f.origin, 'return focus is not the command target');
+	f.menu.hide(); assert.equal(f.focus.target, clicked);
+
+	f.origin.focus();
+	f.menu.show(100, 80, ITEMS, f.commands, { invocationOrigin: clicked, returnFocus: clicked });
+	clicked.canFocus = () => false;
+	f.menu.hide();
+	assert.equal(f.focus.target, f.origin, 'a retired clicked client returns through its real focus parent');
+});
+
+test('focus-time source invalidation retires the context session before a departing draft can leave stale actions', t => {
+	const f = fixture(t), clicked = f.focus.createTarget(f.origin);
+	clicked.bindKeyboard(() => {});
+	let invalidated = 0;
+	f.menu.show(100, 80, ITEMS, f.commands, { invocationOrigin: clicked, returnFocus: clicked,
+		onWillShow: lifetime => lifetime.add({ dispose: f.origin.onDidBlur(() => { invalidated++; f.menu.hide(); }) }),
+	});
+	assert.equal(invalidated, 1);
+	assert.equal(f.menu.visible, false);
+	assert.equal(f.focus.target, clicked);
+	assert.deepEqual(f.executed, []);
+});
+
 test('popup owns one lifetime, cancels old capture and never steals focus on blur/detach', t => {
 	const f = fixture(t); let cancelled = 0; let disposed = 0;
 	f.capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancelled += 1; } });

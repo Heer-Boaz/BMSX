@@ -148,10 +148,11 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		switch (command) {
 			case 'events.clear': input.history.clear(); input.selected = -1; input.viewport.scrollbar.setScroll(0); break;
 			case 'events.filter': {
-				const lifetime = this.quickInput.input('Filter events', 'Event or emitter contains; empty shows all', input.filter, async text => text,
-					filter => { input.filter = filter; input.selected = -1; input.viewport.scrollbar.setScroll(0); });
-				this.filterSession = lifetime;
-				lifetime.add({ dispose: () => { if (this.filterSession === lifetime) this.filterSession = undefined; } }); break;
+				this.quickInput.input('Filter events', 'Event or emitter contains; empty shows all', input.filter, async text => text,
+					filter => { input.filter = filter; input.selected = -1; input.viewport.scrollbar.setScroll(0); }, lifetime => {
+						this.filterSession = lifetime;
+						lifetime.add({ dispose: () => { if (this.filterSession === lifetime) this.filterSession = undefined; } });
+					}); break;
 			}
 			case 'events.details': {
 				const record = input.projection.rows[input.selected];

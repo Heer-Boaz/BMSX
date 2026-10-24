@@ -53,7 +53,7 @@ export class AemEditorController {
 		const format = aemDocumentFormat(input.workingCopy.resource.path);
 		const insertion = (value: string, name?: string) => createStructuredInsertionEdit(input.source, format, collection, value, name);
 		if (property.path.length === 1 && property.path[0] === 'events') {
-			const lifetime = this.quickInput.input('NEW AUDIO EVENT', 'Event name', 'game.effect', async name => {
+			this.quickInput.input('NEW AUDIO EVENT', 'Event name', 'game.effect', async name => {
 				if (collection.has(name)) throw new Error(`Event '${name}' already exists.`);
 				return name;
 			}, name => {
@@ -61,25 +61,28 @@ export class AemEditorController {
 					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
 					return new TextQuickPickProvider(this.audioIds(input).map(id => ({ label: id, description: '', detail: '' })));
 				}, audio => input.workingCopy.pushEditOperations([insertion(JSON.stringify({ channel: 'sfx', rules: [{ go: { audio_id: audio.label } }] }), name)]));
+			}, lifetime => {
+				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
 			});
-			lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
 			return;
 		}
 		if (isSeq(collection)) {
 			const value = aemSequenceValueTemplate(property.path);
 			if (value !== undefined) {
-				const lifetime = this.quickInput.input('NEW VALUE', 'YAML / JSON value', value,
-					async text => insertion(text), edit => input.workingCopy.pushEditOperations([edit]));
-				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+				this.quickInput.input('NEW VALUE', 'YAML / JSON value', value,
+					async text => insertion(text), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
+						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+					});
 				return;
 			}
 			this.quickInput.pick('RULE / ACTION AUDIO', 'Choose an actual asset for the new action', (_origin, lifetime) => {
 				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(this.audioIds(input).map(id => ({ label: id, description: '', detail: '' })));
 			}, audio => {
-				const lifetime = this.quickInput.input('NEW AUDIO RULE / ACTION', 'YAML / JSON value', aemSequenceTemplate(property.path, audio.label),
-					async text => insertion(text), edit => input.workingCopy.pushEditOperations([edit]));
-				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+				this.quickInput.input('NEW AUDIO RULE / ACTION', 'YAML / JSON value', aemSequenceTemplate(property.path, audio.label),
+					async text => insertion(text), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
+						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+					});
 			});
 			return;
 		}
@@ -98,19 +101,22 @@ export class AemEditorController {
 				return;
 			}
 			if (item.name === '') {
-				const lifetime = this.quickInput.input('PROPERTY NAME', 'Authored map key', '', async name => {
+				this.quickInput.input('PROPERTY NAME', 'Authored map key', '', async name => {
 					if (collection.has(name)) throw new Error(`Property '${name}' already exists.`);
 					return name;
 				}, name => {
-					const lifetime = this.quickInput.input(name, 'YAML / JSON value', '{}', async text => insertion(text, name), edit => input.workingCopy.pushEditOperations([edit]));
+					this.quickInput.input(name, 'YAML / JSON value', '{}', async text => insertion(text, name), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
+						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+					});
+				}, lifetime => {
 					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
 				});
-				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
 				return;
 			}
-			const lifetime = this.quickInput.input(item.name, 'YAML / JSON value', item.value,
-				async text => insertion(text, item.name), edit => input.workingCopy.pushEditOperations([edit]));
-			lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+			this.quickInput.input(item.name, 'YAML / JSON value', item.value,
+				async text => insertion(text, item.name), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
+					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+				});
 		});
 	}
 	public remove(input: AemEditorInput): void {

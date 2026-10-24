@@ -374,9 +374,10 @@ export class ActorLabController {
 				return new TextQuickPickProvider(items);
 			}, operation => {
 				if (operation.payload !== undefined) {
-					const lifetime = this.quickInput.input(operation.label, 'Lua arguments', operation.payload,
-						async text => prepareLuaArguments(text), args => this.run(input, { kind: 'action', target, method: operation.method, args }));
-					lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+					this.quickInput.input(operation.label, 'Lua arguments', operation.payload,
+						async text => prepareLuaArguments(text), args => this.run(input, { kind: 'action', target, method: operation.method, args }), lifetime => {
+							lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+						});
 				} else this.run(input, { kind: 'action', target, method: operation.method, args: [] });
 			});
 	}
@@ -393,9 +394,10 @@ export class ActorLabController {
 				})));
 			}, method => {
 				const identity = this.guest.identity(this.guest.readStringMember(node.value, method.label));
-				const lifetime = this.quickInput.input(`${node.label}:${method.label}(...)`, 'Lua arguments, excluding self; empty means no arguments', '',
-					async text => prepareLuaArguments(text), args => this.run(input, { kind: 'method', target, method: method.label, identity, args }));
-				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				this.quickInput.input(`${node.label}:${method.label}(...)`, 'Lua arguments, excluding self; empty means no arguments', '',
+					async text => prepareLuaArguments(text), args => this.run(input, { kind: 'method', target, method: method.label, identity, args }), lifetime => {
+						lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+					});
 			});
 	}
 
@@ -407,13 +409,15 @@ export class ActorLabController {
 	public emitEvent(input: ActorLabInput, eventName = ''): void {
 		input.running = false;
 		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, input.runtime.roots[0], this.guest);
-		const nameLifetime = this.quickInput.input('EMIT FROM ACTOR', 'Event name', eventName, async text => text, name => {
-			const payloadLifetime = this.quickInput.input(`PAYLOAD / ${name}`, 'Lua literal', '{}', async text => prepareLuaLiteral(text), payload => {
+		this.quickInput.input('EMIT FROM ACTOR', 'Event name', eventName, async text => text, name => {
+			this.quickInput.input(`PAYLOAD / ${name}`, 'Lua literal', '{}', async text => prepareLuaLiteral(text), payload => {
 				this.run(input, { kind: 'event', target, name, payload });
+			}, lifetime => {
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 			});
-			payloadLifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+		}, lifetime => {
+			lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 		});
-		nameLifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 	}
 
 	public spawn(input: ActorLabInput): void {
@@ -432,7 +436,7 @@ export class ActorLabController {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(choices);
 			}, choice => {
-				const lifetime = this.quickInput.input('SPAWN OPTIONS', 'Lua table; current world owns construction and assets', '{ pos = { x = 0, y = 0 } }',
+				this.quickInput.input('SPAWN OPTIONS', 'Lua table; current world owns construction and assets', '{ pos = { x = 0, y = 0 } }',
 				async text => prepareLuaLiteral(text), options => this.run(input, { kind: 'spawn', domain: input.domain,
 					worldHashId: runtimeWorld(this.sources, this.guest, input.domain)!.hashId,
 					definitionId: choice.id, definition: choice.definition, options }, result => {
@@ -442,8 +446,9 @@ export class ActorLabController {
 					input.selectionPath = undefined;
 					input.dirty = true;
 					this.refresh(input); this.projection.reveal(input.runtime.roots[0]);
-				}));
-				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				}), lifetime => {
+					lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				});
 			});
 	}
 }

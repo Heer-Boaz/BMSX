@@ -22,6 +22,8 @@ export type ContextMenuOptions = {
 	readonly onNavigate?: (direction: 1 | -1) => void;
 	/** Actual invoking control; pointer toolbars may retain focus in another control. */
 	readonly invocationOrigin?: InputFocusTarget;
+	/** Pointer context menus return to the clicked client, independent of the previously focused control. */
+	readonly returnFocus?: InputFocusTarget;
 };
 
 type ContextMenuCommandRunner = EditorCommandRunner & { isActive?(command: EditorCommandId): boolean };
@@ -65,6 +67,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 
 	public get visible(): boolean { return this.session !== undefined; }
 	public get invocationOrigin(): InputFocusTarget | null { return this.session!.invocationOrigin; }
+	public get returnFocus(): InputFocusTarget | null { return this.session!.returnFocus; }
 
 	/** Domain invalidation belongs in onWillShow, before departing focus can publish source changes. */
 	public show(x: number, y: number, items: readonly WorkbenchMenuItem[], commands: ContextMenuCommandRunner,
@@ -79,7 +82,8 @@ export class ContextMenuController implements PointerCaptureTarget {
 		this.capture.cancel();
 		if (request !== this.requestRevision) { disposables.dispose(); return disposables; }
 		const invocationOrigin = options.invocationOrigin === undefined ? origin : options.invocationOrigin;
-		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: origin, commandOrigin: invocationOrigin, disposables, options };
+		const returnOrigin = options.returnFocus === undefined ? origin : options.returnFocus;
+		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: returnOrigin, commandOrigin: invocationOrigin, disposables, options };
 		this.session = session;
 		this.model.setItems(items, x, y, options.shortTitles, options.placement);
 		this.pointerX = x;
@@ -93,8 +97,8 @@ export class ContextMenuController implements PointerCaptureTarget {
 		if (this.session !== session) return disposables;
 		this.focusTarget.focus();
 		if (this.session !== session) return disposables;
-		const returnFocus = session.returnFocus = this.focus.resolveTarget(origin);
-		const commandOrigin = session.commandOrigin = options.invocationOrigin === undefined ? returnFocus : this.focus.resolveTarget(invocationOrigin);
+		session.returnFocus = this.focus.resolveTarget(returnOrigin);
+		const commandOrigin = session.commandOrigin = this.focus.resolveTarget(invocationOrigin);
 		this.focusTarget.commandContext = commandOrigin === null ? this.focusTarget : commandOrigin.commandContext;
 		this.update();
 		if (this.session !== session) return disposables;

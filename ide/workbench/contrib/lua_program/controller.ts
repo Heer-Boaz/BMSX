@@ -144,10 +144,11 @@ export class LuaProgramController {
 		const model = input.sourceModels.get(target.file.file)!;
 		const entry = programEntryTemplate(input.programKind, property);
 		if (entry !== undefined) {
-			const lifetime = this.quickInput.input('ADD ENTRY', 'Authored Lua table', entry,
+			this.quickInput.input('ADD ENTRY', 'Authored Lua table', entry,
 				async text => validateLuaTableFieldExpression(text), value => model.pushEditOperations(
-					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])));
-			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])), lifetime => {
+					lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+				});
 			return;
 		}
 		const existing = new Set(target.table.fields.map(staticLuaTableFieldName));
@@ -158,15 +159,16 @@ export class LuaProgramController {
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 			return new TextQuickPickProvider(choices);
 		}, item => {
-			const lifetime = this.quickInput.input(item.label, item.name === '' ? 'Complete Lua field: name = expression or [key] = expression' : 'Lua expression', item.value,
+			this.quickInput.input(item.label, item.name === '' ? 'Complete Lua field: name = expression or [key] = expression' : 'Lua expression', item.value,
 				async text => {
 					if (item.name !== '') return formatLuaTableFieldSource(item.name, validateLuaTableFieldExpression(text));
 					// Admit a complete authored table field through the same Lua grammar as source insertion.
 					validateLuaTableFieldExpression(`{ ${text} }`);
 					return text;
 				}, value => model.pushEditOperations(
-					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])));
-			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])), lifetime => {
+					lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+				});
 		});
 	}
 	public remove(input: LuaProgramInput): void {

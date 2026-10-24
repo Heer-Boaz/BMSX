@@ -78,10 +78,11 @@ export class AnimationAuthoring {
 			return new TextQuickPickProvider(ANIMATION_TRACK_TEMPLATES);
 		}, item => {
 			if (!item.path) { this.insertTrack(input, item.create('')); return; }
-			const prompt = this.quickInput.input('PROPERTY PATH', "Lua path, e.g. {'visual', 'offset_x'}", "{'x'}", async value => validateLuaTableFieldExpression(value), path => {
+			this.quickInput.input('PROPERTY PATH', "Lua path, e.g. {'visual', 'offset_x'}", "{'x'}", async value => validateLuaTableFieldExpression(value), path => {
 				this.insertTrack(input, item.create(path));
+			}, lifetime => {
+				lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 			});
-			prompt.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 		});
 	}
 	private insertTrack(input: AnimationEditorInput, track: string): void {
@@ -104,27 +105,29 @@ export class AnimationAuthoring {
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 			return new TextQuickPickProvider(KEY_UNITS);
 		}, item => {
-			const prompt = this.quickInput.input(item.label, 'Position', '0', async text => {
+			this.quickInput.input(item.label, 'Position', '0', async text => {
 				validateLuaTableFieldExpression(text);
 				const expression = parseLuaExpressionSource(text, '[key]').expression;
 				const value = readLuaNumberLiteral(expression);
 				if (value === null) throw new Error('Numeric literal required');
 				return value;
-			}, value => this.insertKey(input, item.unit, value));
-			prompt.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+			}, value => this.insertKey(input, item.unit, value), lifetime => {
+				lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+			});
 		});
 	}
 	private insertKey(input: AnimationEditorInput, unit: AnimationKeyUnit, time: number): void {
 		const track = input.document!.tracks[input.trackIndex], source = track.keysSource!;
 		const event = track.kind === 'event';
-		const lifetime = this.quickInput.input(event ? 'EVENT' : 'KEY VALUE', `${unit} = ${time}`, event ? "'animation.event'" : '0', async text => validateLuaTableFieldExpression(text), value => {
+		this.quickInput.input(event ? 'EVENT' : 'KEY VALUE', `${unit} = ${time}`, event ? "'animation.event'" : '0', async text => validateLuaTableFieldExpression(text), value => {
 			const tangents = track.interpolation === 'cubic' ? ', arrive_tangent = 0, leave_tangent = 0' : '';
 			this.controller.modelFor(input, source.file).pushEditOperations(createLuaTableFieldsInsertionEdits(this.controller.modelFor(input, source.file).buffer,
 				source.file.chunk, source.table, source.table.fields.length, [`{ ${unit} = ${time}, ${event ? "direction = 'forward', event" : 'value'} = ${value}${tangents} }`]));
 			this.controller.refresh(input);
 			this.controller.selectKey(input, input.document!.tracks[input.trackIndex].keys.length - 1);
+		}, lifetime => {
+			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 		});
-		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 	}
 	public canRemove(input: AnimationEditorInput): boolean {
 		if (input.clipIndex >= 0) return input.document?.syntaxComplete === true && input.document.clipsSource?.structural === true
@@ -159,15 +162,16 @@ export class AnimationAuthoring {
 	}
 	public addClip(input: AnimationEditorInput): void {
 		const document = input.document!, source = document.clipsSource === undefined ? document.root : document.clipsSource;
-		const lifetime = this.quickInput.input('CHILD SEQUENCE', 'Definition or require(...)', '{duration_ms = 100, tracks = {}}',
+		this.quickInput.input('CHILD SEQUENCE', 'Definition or require(...)', '{duration_ms = 100, tracks = {}}',
 			async value => validateLuaTableFieldExpression(value), sequence => {
 				const clip = `{id = 'clip${document.clips.length + 1}', start_time_ms = 0, duration_ms = 100, sequence = ${sequence}}`;
 				const model = this.controller.modelFor(input, source.file);
 				model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length,
 					[document.clipsSource === undefined ? `subsequences = { ${clip} }` : clip]));
 				this.controller.refresh(input); this.controller.selectTrack(input, input.document!.tracks.length + input.document!.clips.length);
+			}, lifetime => {
+				lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 			});
-		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 	}
 	public canAddFrame(input: AnimationEditorInput): boolean {
 		const document = input.document;
@@ -187,8 +191,9 @@ export class AnimationAuthoring {
 			}, item => this.insertFrame(input, quoteLuaString(item.asset.resid)));
 			return;
 		}
-		const lifetime = this.quickInput.input('FRAME', 'Native Lua frame value', '{}', async value => validateLuaTableFieldExpression(value), frame => this.insertFrame(input, frame));
-		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+		this.quickInput.input('FRAME', 'Native Lua frame value', '{}', async value => validateLuaTableFieldExpression(value), frame => this.insertFrame(input, frame), lifetime => {
+			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+		});
 	}
 	private insertFrame(input: AnimationEditorInput, frame: string): void {
 		const document = input.document!, source = document.framesSource === undefined ? document.root : document.framesSource;
@@ -205,18 +210,20 @@ export class AnimationAuthoring {
 	}
 	public addProperty(input: AnimationEditorInput): void {
 		const source = input.selectedSource!;
-		const lifetime = this.quickInput.input('PROPERTY', 'Native field name', '', async name => {
+		this.quickInput.input('PROPERTY', 'Native field name', '', async name => {
 			if (name.length === 0) throw new Error('Name required');
 			if (findNamedLuaTableField(source.table, name) !== null) throw new Error('Property exists');
 			return name;
 		}, name => {
-			const valuePrompt = this.quickInput.input(name, 'Lua value', 'nil', async value => validateLuaTableFieldExpression(value), value => {
+			this.quickInput.input(name, 'Lua value', 'nil', async value => validateLuaTableFieldExpression(value), value => {
 				const model = this.controller.modelFor(input, source.file);
 				model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, source.file.chunk, source.table, source.table.fields.length, [formatLuaTableFieldSource(name, value)]));
+			}, lifetime => {
+				lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 			});
-			valuePrompt.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+		}, lifetime => {
+			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 		});
-		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 	}
 	private orderedSource(input: AnimationEditorInput): AnimationTableSource | undefined {
 		const document = input.document;

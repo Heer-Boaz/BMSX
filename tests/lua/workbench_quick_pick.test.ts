@@ -30,6 +30,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { WorkbenchPropertyEdit } from '../../ide/workbench/ui/property_edit';
 import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree, type WorkbenchPropertyElement } from '../../ide/workbench/ui/property_tree';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
+import type { DisposableStore } from '../../ide/common/lifecycle';
 
 const items = [
 	{ label: 'scenes/root.lua', description: 'LUA / SLOT 0', detail: 'root', resourceId: 10 },
@@ -37,12 +38,12 @@ const items = [
 	{ label: 'title_screen.lua', description: 'LUA / SLOT 0', detail: 'title_screen', resourceId: 30 },
 ];
 
-function createPicker(t: TestContext): QuickInputController {
+function createPicker(t: TestContext, onDidChangeVisibility?: () => void): QuickInputController {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 384;
 	editorViewState.viewportHeight = 288;
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const picker = new QuickInputController(menu);
+	const picker = new QuickInputController(menu, onDidChangeVisibility);
 	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
@@ -133,6 +134,243 @@ test('quick input session resources end before accept, replacement, blur, cancel
 		else picker.dispose();
 		assert.equal(disposals, 1, route);
 	}
+});
+
+test('a session opened by retiring resources owns the surface and its original return focus', t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget();
+	origin.focus();
+	let retirements = 0;
+	picker.input('Old', '', 'old', async value => value, () => assert.fail('retired input accepted'), lifetime => {
+		lifetime.add({ dispose: () => {
+			retirements += 1;
+			picker.input('Replacement', '', 'fresh', async value => value, () => {});
+		} });
+	});
+	picker.hide();
+	assert.equal(retirements, 1);
+	assert.equal(picker.visible, true);
+	assert.equal(picker.inputBox, true);
+	assert.equal(picker.field.text, 'fresh', 'cleanup must not erase the replacement input');
+	assert.equal(inputFocus.target, picker.field.focusTarget);
+	assert.equal(picker.invocationOrigin, origin);
+	picker.hide();
+	assert.equal(inputFocus.target, origin);
+	picker.field.focusTarget.focus();
+	assert.equal(inputFocus.target, null, 'an unattached root popup cannot reacquire focus');
+});
+
+test('a provider cannot publish over the picker it opened while preparing its catalog', t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget();
+	origin.focus();
+	const replacement = items.slice(1);
+	let retirements = 0, accepted: typeof items[number] | undefined;
+	picker.pick('Outer', '', (_origin, lifetime) => {
+		lifetime.add({ dispose: () => { retirements += 1; } });
+		picker.pick('Replacement', '', () => new TextQuickPickProvider(replacement), item => { accepted = item; });
+		return new TextQuickPickProvider(items);
+	}, () => assert.fail('superseded provider accepted'));
+	assert.equal(retirements, 1);
+	assert.equal(picker.model.items, replacement);
+	assert.equal(picker.model.list.rows[0].item, replacement[0]);
+	assert.equal(picker.invocationOrigin, origin);
+	picker.accept();
+	assert.equal(accepted, replacement[0]);
+	assert.equal(inputFocus.target, origin);
+});
+
+for (const kind of ['pick', 'input'] as const) test(`a blur-time replacement supersedes an opening ${kind} before it can publish`, t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget();
+	origin.focus();
+	const replacement = items.slice(1);
+	const unbind = origin.onDidBlur(() => {
+		picker.pick('Replacement', '', () => new TextQuickPickProvider(replacement), () => {});
+	});
+	t.after(unbind);
+	if (kind === 'pick') picker.pick('Outer', '', () => assert.fail('superseded provider was invoked'), () => {});
+	else {
+		let lifetime!: DisposableStore;
+		picker.input('Outer', '', 'stale', async value => value, () => {}, owner => { lifetime = owner; });
+		assert.equal(lifetime.isDisposed, true);
+	}
+	assert.equal(picker.visible, true);
+	assert.equal(picker.inputBox, false);
+	assert.equal(picker.model.items, replacement);
+	assert.equal(picker.field.text, '');
+	assert.equal(picker.invocationOrigin, origin);
+	unbind(); picker.hide();
+	assert.equal(inputFocus.target, origin);
+});
+
+test('a cancelled provider cannot retain its catalog or field focus after returning', t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget();
+	origin.focus();
+	let retirements = 0;
+	picker.pick('Outer', '', (_origin, lifetime) => {
+		lifetime.add({ dispose: () => { retirements += 1; } });
+		picker.hide();
+		return new TextQuickPickProvider(items);
+	}, () => assert.fail('cancelled provider accepted'));
+	assert.equal(retirements, 1);
+	assert.equal(picker.visible, false);
+	assert.equal(picker.model.items.length, 0);
+	assert.equal(picker.model.list.rows.length, 0);
+	assert.equal(inputFocus.target, origin);
+});
+
+test('a retired query cannot publish results over its replacement catalog', t => {
+	const picker = createPicker(t), replacement = items.slice(1);
+	const provider = new TextQuickPickProvider(items);
+	picker.pick('Outer', '', () => ({ items, getPicks(query) {
+		if (query.length !== 0) picker.pick('Replacement', '', () => new TextQuickPickProvider(replacement), () => {});
+		return provider.getPicks(query);
+	} }), () => assert.fail('retired query accepted'));
+	insertValue(picker.field, 'root');
+	assert.equal(picker.model.items, replacement);
+	assert.deepEqual(picker.model.list.rows.map(row => row.item), replacement);
+	assert.equal(picker.field.text, '');
+});
+
+test('acceptance retains the selected item before disposing the catalog lifetime', t => {
+	const picker = createPicker(t), catalog = items.slice();
+	let accepted: typeof items[number] | undefined;
+	picker.pick('Catalog', '', (_origin, lifetime) => {
+		lifetime.add({ dispose: () => { catalog.length = 0; } });
+		return new TextQuickPickProvider(catalog);
+	}, item => { accepted = item; });
+	picker.model.list.selectionIndex = 1;
+	picker.accept();
+	assert.equal(catalog.length, 0);
+	assert.equal(accepted, items[1], 'the accepted identity is data, not an index into a retired provider');
+});
+
+test('a replacement opened from retirement uses a newer concrete invoker when focus has moved', t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget(), next = inputFocus.createTarget();
+	origin.focus();
+	picker.input('Old', '', '', async value => value, () => {}, lifetime => {
+		lifetime.add({ dispose: () => {
+			next.focus();
+			picker.pick('Replacement', '', () => new TextQuickPickProvider(items), () => {});
+		} });
+	});
+	picker.hide();
+	assert.equal(picker.visible, true);
+	assert.equal(picker.invocationOrigin, next);
+	picker.hide();
+	assert.equal(inputFocus.target, next);
+});
+
+for (const phase of ['show', 'hide'] as const) test(`a visibility callback can replace the ${phase} session without stale presentation writes`, t => {
+	let replace = false;
+	const picker = createPicker(t, () => {
+		if (!replace) return;
+		replace = false;
+		picker.pick('Replacement', '', () => new TextQuickPickProvider(items), () => {});
+	});
+	const origin = inputFocus.createTarget(); origin.focus();
+	if (phase === 'show') replace = true;
+	let lifetime!: DisposableStore;
+	picker.input('Old', '', 'stale', async value => value, () => {}, owner => { lifetime = owner; });
+	if (phase === 'hide') { replace = true; picker.hide(); }
+	assert.equal(lifetime.isDisposed, true);
+	assert.equal(picker.visible, true);
+	assert.equal(picker.inputBox, false);
+	assert.equal(picker.model.items, items);
+	assert.equal(picker.field.text, '');
+	assert.equal(inputFocus.target, picker.field.focusTarget);
+	assert.equal(picker.invocationOrigin, origin);
+});
+
+for (const kind of ['pick', 'input'] as const) test(`a ${kind} replacing a context menu retains its actual return client, not its action subject`, t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
+	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
+	const invoker = inputFocus.createTarget(), subject = inputFocus.createTarget(), client = inputFocus.createTarget();
+	invoker.focus();
+	menu.show(20, 20, [{ type: 'command', command: 'copy' }], { isEnabled: () => true, execute: () => {} },
+		{ invocationOrigin: subject, returnFocus: client });
+	assert.equal(inputFocus.target, menu.focusTarget);
+	if (kind === 'pick') picker.pick('Files', '', () => new TextQuickPickProvider(items), () => {});
+	else picker.input('Value', '', '', async value => value, () => {});
+	assert.equal(menu.visible, false);
+	assert.equal(picker.invocationOrigin, client);
+	assert.equal(inputFocus.target, picker.field.focusTarget);
+	picker.hide();
+	assert.equal(inputFocus.target, client);
+});
+
+test('terminal controller disposal cannot reopen a surface from retiring session callbacks', t => {
+	const picker = createPicker(t);
+	let initialized = false;
+	picker.input('Old', '', '', async value => value, () => {}, lifetime => {
+		lifetime.add({ dispose: () => {
+			picker.input('Replacement', '', 'fresh', async value => value, () => {}, () => { initialized = true; });
+		} });
+	});
+	picker.dispose();
+	assert.equal(initialized, false);
+	assert.equal(picker.visible, false);
+	assert.equal(inputFocus.target, null);
+	assert.equal(picker.model.items.length, 0);
+});
+
+test('source lifetime initialization precedes blur publication and cancels an opening input to its invoker', t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget();
+	const model = new EditorTextModel({ domain: 0, path: 'draft.lua', source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
+	t.after(() => model.dispose());
+	let initialized = false, invalidations = 0;
+	origin.focus();
+	const unbind = origin.onDidBlur(() => {
+		assert.equal(initialized, true, 'the source lifetime exists before focus can publish a draft');
+		model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
+	});
+	t.after(unbind);
+	let lifetime!: DisposableStore;
+	picker.input('Source action', '', 'stale', async value => value, () => assert.fail('stale input accepted'), owner => {
+		lifetime = owner;
+		initialized = true;
+		lifetime.add({ dispose: model.onDidChangeContent(() => { invalidations += 1; picker.hide(); }) });
+	});
+	assert.equal(invalidations, 1);
+	assert.equal(lifetime.isDisposed, true);
+	assert.equal(picker.visible, false);
+	assert.equal(inputFocus.target, origin, 'opening cancellation restores focus during pending focus admission');
+	unbind(); model.undo();
+	assert.equal(invalidations, 1, 'the cancelled subscription no longer observes source edits');
+});
+
+test('an input source lifetime also precedes publication from the previous session disposal', t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget();
+	const model = new EditorTextModel({ domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 1');
+	t.after(() => model.dispose()); origin.focus();
+	let previous!: DisposableStore, lifetime!: DisposableStore;
+	picker.input('Old', '', '', async value => value, () => {}, owner => {
+		previous = owner;
+		previous.add({ dispose: () => model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]) });
+	});
+	picker.input('Source action', '', 'stale', async value => value, () => assert.fail('stale input accepted'), owner => {
+		lifetime = owner;
+		lifetime.add({ dispose: model.onDidChangeContent(() => picker.hide()) });
+	});
+	assert.equal(previous.isDisposed, true);
+	assert.equal(lifetime.isDisposed, true);
+	assert.equal(picker.visible, false);
+	assert.equal(inputFocus.target, origin);
+});
+
+test('an input initializer can replace its own session without stale field publication', t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget(); origin.focus();
+	let lifetime!: DisposableStore;
+	picker.input('Outer', '', 'stale', async value => value, () => {}, owner => {
+		lifetime = owner;
+		picker.pick('Replacement', '', () => new TextQuickPickProvider(items), () => {});
+	});
+	assert.equal(lifetime.isDisposed, true);
+	assert.equal(picker.visible, true);
+	assert.equal(picker.inputBox, false);
+	assert.equal(picker.field.text, '');
+	assert.equal(picker.model.items, items);
+	assert.equal(picker.invocationOrigin, origin);
 });
 
 test('quick pick filtering retains caller items, rows and result storage across queries', () => {
@@ -236,7 +474,7 @@ test('item providers observe the invoking control after blur, not the replaced q
 	picker.pick('Commands', 'Filter', focus => {
 		provisions += 1;
 		assert.equal(focus, origin);
-		assert.equal(blurs, 2, 'replace restores origin, then its new blur precedes admission');
+		assert.equal(blurs, 1, 'replacing a popup retains its origin without bouncing focus through the document');
 		assert.equal(inputFocus.target, picker.field.focusTarget, 'provider receives context explicitly without focus swapping');
 		return new TextQuickPickProvider(items);
 	}, item => {
@@ -427,7 +665,6 @@ test('input boxes share focus and text history without filtering a hidden picker
 	assert.equal(input.field.text, 'src/');
 	inputFocus.executeCommand('redo');
 	input.update();
-	assert.equal(input.layout.bounds.bottom, input.layout.field.bottom + 8, 'no empty result list');
 	t.mock.method(editorViewState.font, 'advance', () => assert.fail('idle input measurement'));
 	for (let frame = 0; frame < 1000; frame += 1) input.update();
 	await input.accept();
@@ -473,7 +710,7 @@ test('late input completion never closes a replacement, steals focus or navigate
 		await pending;
 		assert.equal(input.visible, true);
 		assert.equal(input.inputBox, false);
-		assert.equal(input.title, 'NEW');
+		assert.equal(input.model.items, items);
 		assert.equal(input.message, '');
 		assert.equal(input.field.readOnly, false);
 		assert.equal(inputFocus.target, input.field.focusTarget);

@@ -10,11 +10,12 @@ export function importCartridgeFiles(editor: CartEditor, sources: RuntimeSourceS
 		.map(domain => ({ label: sources.cartridgeSlots[domain]!.projectRootPath, description: `CART ${domain}`, detail: '' }));
 	editor.quickInput.pick('IMPORT FILES', 'Choose the destination cartridge', () => new TextQuickPickProvider(projects), project => {
 		const lifetime = new AbortController();
-		const disposables = editor.quickInput.input(`IMPORT FILES - ${project.label}`, 'Destination folder; then choose files. Existing files are not replaced.', 'res',
+		editor.quickInput.input(`IMPORT FILES - ${project.label}`, 'Destination folder; then choose files. Existing files are not replaced.', 'res',
 			async directory => editor.importFiles!(joinWorkspacePaths(project.label, normalizeRelativeWorkspacePath(directory, 'directory')), lifetime.signal),
 			paths => {
 				if (paths.length !== 0) showEditorMessage(`Imported ${paths.length} file(s). Build the cartridge and open its published result to use new assets.`, 'success', 12);
+			}, disposables => {
+				disposables.add({ dispose: () => lifetime.abort() });
 			});
-		disposables.add({ dispose: () => lifetime.abort() });
 	});
 }
