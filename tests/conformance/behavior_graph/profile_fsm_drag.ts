@@ -24,6 +24,8 @@ import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/q
 import { api } from '../../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../../helpers/host_overlay';
 import { medianMilliseconds } from '../../helpers/performance';
+import { ContextMenuController } from '../../../ide/workbench/services/context_menu/controller';
+import { WorkbenchSurfaceService } from '../../../ide/workbench/services/windows/service';
 
 async function main() {
 	const imported = process.argv.includes('--imported');
@@ -43,7 +45,12 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 		const graph = view.presentation; assert.ok(graph.kind === 'state-graph');
 		const input = new BehaviorLensInput(model, view, () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 		const focus = new InputFocusService();
-		const review = new WorkbenchSourceEditReview(focus, new PointerCaptureService(), new PointerHoverService(), focus.createTarget());
+		const capture = new PointerCaptureService(), parent = focus.createTarget();
+		const menu = new ContextMenuController(focus, capture), surfaces = new WorkbenchSurfaceService();
+		const area = { left: 0, top: 0, right: 384, bottom: 288 };
+		const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope,
+			getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });
+		const review = new WorkbenchSourceEditReview(focus, capture, new PointerHoverService(), parent, menu, surfaces, owner, () => area);
 		try {
 			input.updatePresentation(font); await input.graphLayout.settled; input.updatePresentation(font);
 			const viewport = graph.viewport;
@@ -101,7 +108,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 			console.log(JSON.stringify({ imported, registrations, capabilityMicroseconds, firstCandidateMicroseconds, movingInsideTargetMicroseconds,
 				impactOpenLayoutMicroseconds, retainedReviewLayoutMicroseconds, reviewAndQuadsMicroseconds,
 				boundary: 'Actual source index and native-worker geometry retained before timing. 10 warmups / median of 25 batches. No parser, layout-worker timing, complete pointer dispatch, GPU raster, guest, Hot Resume, heap/GC or complete Studio frame.' }));
-		} finally { review.dispose(); input.dispose(); model.dispose(); provider.dispose(); }
+		} finally { review.dispose(); menu.dispose(); surfaces.dispose(); input.dispose(); model.dispose(); provider.dispose(); }
 	}
 }
 void main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -232,8 +232,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'behaviorLens.canvas.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
 	'sourceEditReview.title': [
-		{ type: 'command', command: 'sourceEditReview.source' },
 		{ type: 'command', command: 'sourceEditReview.apply' },
+		{ type: 'command', command: 'sourceEditReview.source' },
 		{ type: 'command', command: 'sourceEditReview.discard' },
 	],
 	'romInspector.reader.title': [
@@ -302,9 +302,9 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'assistant.turn': [
 		{ type: 'command', command: 'assistant.send' },
+		{ type: 'command', command: 'assistant.stop' },
 		{ type: 'command', command: 'assistant.queue' },
 		{ type: 'command', command: 'assistant.direct' },
-		{ type: 'command', command: 'assistant.stop' },
 		{ type: 'command', command: 'assistant.review' },
 	],
 	'workspaceEditReview.title': [

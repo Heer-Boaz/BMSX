@@ -67,7 +67,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	private readonly properties = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, input => this.handleKeyboard(input), this.focusTarget);
 	private readonly unbindGraphGamepad = this.graph.focusTarget.bindGamepad(input => this.handleGamepad(input));
-	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, pointerHover, this.graph.focusTarget);
+	public readonly sourceEditReview: WorkbenchSourceEditReview;
 	public readonly inspector = new WorkbenchPropertyInspector<RuntimeInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionBar: WorkbenchActionBarControl;
 	public readonly propertyEdit: WorkbenchPropertyEdit<LuaFieldValueEdit>;
@@ -76,14 +76,14 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		const model = input.view.source.models.get(target.file.file)!;
 		if (target.uses.length === 1) retargetStateMachineTransition(model, input.view, selection, target);
 		else {
-			const lifetime = this.sourceEditReview.show({
+			this.sourceEditReview.show({
 				model, title: 'RETARGET FSM',
 				summary: `${target.uses.length} RECOGNIZED USES: ${target.literal.value} -> ${target.text}`,
 				items: stateMachineRetargetImpacts(input.view, target),
 				apply: () => retargetStateMachineTransition(model, input.view, selection, target),
 				openSource: index => this.controller.openStateMachineUseSource(input, target.uses[index].use),
+				onWillShow: lifetime => lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.sourceEditReview.clear()) }),
 			});
-			lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.sourceEditReview.clear()) });
 		}
 	};
 	private readonly stateMachineDragSource: WorkbenchGraphDragSource = {
@@ -94,13 +94,13 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		const input = this.input;
 		const model = input.view.source.models.get(analysis.member.file.file)!;
 		const items = behaviorTreeTransferImpacts(input.view, analysis, insertion, check);
-		const lifetime = this.sourceEditReview.show({
+		this.sourceEditReview.show({
 			model, title: 'MOVE BT SOURCE', summary: `${analysis.member.branch.role} -> ${check.target.role} POSITION ${insertion + 1}`,
 			items,
 			apply: () => transferBehaviorTreeChild(model, input.view, analysis.member, check, insertion),
 			openSource: index => this.controller.openWrittenSource(input, items[index].range),
+			onWillShow: lifetime => lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.sourceEditReview.clear()) }),
 		});
-		lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.sourceEditReview.clear()) });
 	};
 	private readonly graphDragSource = { begin: () => this.controller.beginTreeDrag(this.input, this.treeDrop) };
 	private readonly unbindPointerBlur = this.focusTarget.onDidBlur(() => {
@@ -117,6 +117,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, getWorkArea: () => Readonly<RectBounds>,
 	) {
 		super(resourcePanel);
+		this.sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, pointerHover, this.graph.focusTarget,
+			contextMenu, surfaces, paneSurface, getWorkArea);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionBar.onDidOpenOverflow = lifetime => {
 			lifetime.add({ dispose: this.input.view.source.onDidInvalidate(() => this.contextMenu.hide()) });
@@ -249,13 +251,13 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		const items = this.input.runtimeInspection?.refresh();
 		if (items !== undefined) this.inspector.updateItems(items, runtimeInspectionPropertiesEqual);
 		this.propertyEdit.update();
-		this.sourceEditReview.update();
 		this.inspector.update();
 		this.graph.update();
 		this.actionBar.update();
 		const layout = this.input.view.layout;
 		if (this.inspector.visible) this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, layout);
 		else if (this.sourceEditReview.visible) this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, layout);
+		this.sourceEditReview.update();
 	}
 
 	public override clearInput(): void {

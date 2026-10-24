@@ -1,5 +1,6 @@
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { WorkbenchPropertyElement } from '../property_tree';
+import type { DisposableStore } from '../../../common/lifecycle';
 
 /** An atomic source proposal may affect many uses; rows are not independent edits. */
 export type SourceEditReviewItem = {
@@ -13,6 +14,7 @@ export type SourceEditReview = {
 	readonly title: string;
 	readonly summary: string;
 	readonly items: readonly SourceEditReviewItem[];
+	onWillShow?(lifetime: DisposableStore): void;
 	apply(): void;
 	openSource(index: number): void;
 };

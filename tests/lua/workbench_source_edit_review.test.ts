@@ -11,19 +11,28 @@ import { WorkbenchSourceEditReview } from '../../ide/workbench/ui/source_edit_re
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { api } from '../../ide/runtime/overlay_api';
 import { drawWorkbenchSourceEditReview } from '../../ide/workbench/render/source_edit_review';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import type { DisposableStore } from '../../ide/common/lifecycle';
 
 function fixture(t: TestContext, count = 36) {
 	const model = new EditorTextModel({ domain: 0, path: 'review.lua', source: { type: 'lua', resid: 'review' } }, 'lua', "return 'before'");
 	const focus = new InputFocusService();
 	const parent = focus.createTarget();
-	const review = new WorkbenchSourceEditReview(focus, new PointerCaptureService(), new PointerHoverService(), parent);
+	const capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const menu = new ContextMenuController(focus, capture), surfaces = new WorkbenchSurfaceService();
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope,
+		getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });
+	const review = new WorkbenchSourceEditReview(focus, capture, hover, parent, menu, surfaces, owner, () => area);
 	const font = new Font({ variant: 'tiny' });
 	let measurements = 0;
 	const measure = (text: string, start: number, end: number) => { measurements += 1; return font.measure(text.slice(start, end)); };
 	const bounds = { left: 4, top: 26, right: 380, bottom: 268 };
 	let applied = 0;
 	let opened = -1;
-	const show = () => review.show({ model, title: 'REVIEW SOURCE', summary: `${count} USES OF ONE SOURCE EDIT`,
+	const show = (onWillShow?: (lifetime: DisposableStore) => void) => review.show({ model, title: 'REVIEW SOURCE', summary: `${count} USES OF ONE SOURCE EDIT`,
+		onWillShow,
 		items: Array.from({ length: count }, (_, index) => ({ label: `CONSUMER ${index}`, value: 'before -> after', description: `CONSUMER ${index}: AUTHORED SOURCE ONLY.` })),
 		apply() {
 			assert.equal(review.visible, false, 'control is detached before the source edit');
@@ -33,9 +42,9 @@ function fixture(t: TestContext, count = 36) {
 		},
 		openSource(index) { assert.equal(review.visible, false); opened = index; },
 	});
-	const layout = () => review.layout(font, measure, text => measure(text, 0, text.length), bounds);
+	const layout = () => { review.layout(font, measure, text => measure(text, 0, text.length), bounds); review.update(); };
 	parent.focus(); show(); layout();
-	t.after(() => { review.dispose(); model.dispose(); });
+	t.after(() => { review.dispose(); menu.dispose(); surfaces.dispose(); model.dispose(); });
 	const pointer = (x: number, y: number, pressed: boolean, time = 10) => review.handlePointer({ valid: true, insideViewport: true,
 		viewportX: x, viewportY: y, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0 }, pressed, time);
 	return { model, focus, parent, review, font, show, layout, pointer, measurements: () => measurements, applied: () => applied, opened: () => opened };
@@ -108,14 +117,13 @@ test('review lifetime owns external dependency cancellation and releases it befo
 	const f = fixture(t);
 	const dependency = new EditorTextModel({ domain: 0, path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'return true');
 	t.after(() => dependency.dispose());
-	const lifetime = f.show();
-	lifetime.add({ dispose: dependency.onDidChangeContent(() => f.review.clear()) });
+	f.show(lifetime => lifetime.add({ dispose: dependency.onDidChangeContent(() => f.review.clear()) }));
 	dependency.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dependency changed\n' }]);
 	assert.equal(f.review.visible, false);
 	f.review.apply();
 	assert.equal(f.applied(), 0); assert.equal(f.model.canUndo, false);
 	let disposed = 0;
-	f.show().add({ dispose: () => { disposed += 1; } });
+	f.show(lifetime => lifetime.add({ dispose: () => { disposed += 1; } }));
 	f.review.apply();
 	assert.equal(disposed, 1); assert.equal(f.applied(), 1);
 });

@@ -12,24 +12,20 @@ import * as colors from '../../../common/constants';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { truncateMeasuredText } from '../../../common/text';
 import { measureStyledText } from '../../../editor/render/markdown';
-import { measureText, measureTextRange } from '../../../editor/common/text/layout';
+import { measureTextRange } from '../../../editor/common/text/layout';
 import { MultilineFieldControl } from '../../../editor/ui/inline/multiline_control';
 import { drawMultilineField } from '../../../editor/ui/inline/multiline_render';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { writeClipboard } from '../../../input/clipboard';
-import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
-import { pointerCapture } from '../../../input/pointer/capture';
-import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout, STATUS_BAR_CONNECTION_WIDTH } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
-import { layoutWorkbenchActionBar } from '../../ui/action_bar';
-import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
+import type { ContextMenuController } from '../../services/context_menu/controller';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
@@ -37,6 +33,7 @@ import { WorkspaceEditReviewInput } from '../edit_review/editor_input';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AssistantInput } from './editor_input';
 import { isAssistantCommand, type AssistantChatCommands } from './chat_commands';
+import { AssistantTurnToolbar } from './turn_toolbar';
 
 const SPINNER = ['|', '/', '-', '\\'];
 
@@ -50,14 +47,16 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	private imagesVisible = false;
 	private contentTop = 0;
 	private readonly references = new AssistantReferences();
-	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
+	private readonly turnToolbar: AssistantTurnToolbar;
 	private readonly transcriptView: AssistantTranscriptControl;
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
 	private unbindAttachmentClipboard: (() => void) | undefined;
 	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
-		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner) {
+		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner,
+		contextMenu: ContextMenuController, getWorkArea: () => Readonly<RectBounds>) {
 		super(resources);
+		this.turnToolbar = new AssistantTurnToolbar(this, this.focusTarget, () => this.focus(), contextMenu, surfaces, owner, getWorkArea);
 		this.previews = new ImagePreviewCache(decodeImage);
 		this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner, commands);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview, () => this.execute('assistant.review'));
@@ -67,7 +66,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	public override focus(): void { this.input.draft.focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate();
-		this.actions.setInput(this.input.turnActions, this.focusTarget);
+		this.turnToolbar.setInput(this.input, this.focusTarget);
 		this.transcriptView.setInput(this.input);
 		this.attachments.setInput(this.input.attachments);
 		const draftInput = this.input;
@@ -78,7 +77,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			isEnabled: () => this.input.draft.focusTarget.hasFocus && this.references.suggestions.visible && this.references.suggestions.model.list.selectionIndex >= 0,
 			run: () => this.references.suggestions.acceptSelection(),
 		});
-		const ring = [this.input.draft.focusTarget, this.actions.focusTarget, this.transcriptView.scroll.focusTarget];
+		const ring = [this.input.draft.focusTarget, this.turnToolbar.control.focusTarget, this.transcriptView.scroll.focusTarget];
 		for (let index = 0; index < ring.length; index++) {
 			ring[index].next = ring[(index + 1) % ring.length];
 			ring[index].previous = ring[(index + ring.length - 1) % ring.length];
@@ -95,10 +94,10 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.unbindDraft?.(); this.unbindDraft = undefined;
 		this.unbindAttachmentClipboard?.(); this.unbindAttachmentClipboard = undefined;
 		this.preview.close(); this.attachments.clearInput(); this.previews.dispose();
-		this.references.clear(); this.composer.clearInput(); this.actions.clearInput(); this.transcriptView.clearInput();
+		this.references.clear(); this.composer.clearInput(); this.turnToolbar.clearInput(); this.transcriptView.clearInput();
 		super.clearInput();
 	}
-	public override dispose(): void { this.clearInput(); this.preview.dispose(); this.actions.dispose(); this.transcriptView.dispose(); super.dispose(); }
+	public override dispose(): void { this.clearInput(); this.preview.dispose(); this.turnToolbar.dispose(); this.transcriptView.dispose(); super.dispose(); }
 	public isEnabled(command: EditorCommandId): boolean {
 		const { conversation: model, selectedEntry } = this.input;
 		const hasContent = this.input.draftHasText || this.input.attachments.images.length > 0;
@@ -107,7 +106,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			case 'assistant.send': case 'assistant.queue': return hasContent && !this.input.commandPending && (this.input.draft.text.startsWith('/') || ready && model.canSubmit);
 			case 'assistant.direct': return model.canDirect && ready && hasContent;
 			case 'assistant.stop': return this.chat.isEnabled(command);
-			case 'assistant.review': return model.entries[selectedEntry]?.proposal !== undefined;
+			case 'assistant.review': return this.input.selectedProposal !== undefined;
 			case 'assistant.copy': return selectedEntry >= 0;
 			default: return false;
 		}
@@ -121,7 +120,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			case 'assistant.stop': this.chat.execute(command); break;
 			case 'assistant.copy': void writeClipboard(this.clipboard, model.entries[this.input.selectedEntry].text.getText(), 'Copied message'); break;
 			case 'assistant.review': {
-				const proposal = model.entries[this.input.selectedEntry].proposal!;
+				const proposal = this.input.selectedProposal!;
 				const existing = editorTabGroup.tabs.find(input => input.kind === 'workspace_edit_review' && input.proposal === proposal);
 				openEditorTab(this.panes, existing ?? new WorkspaceEditReviewInput(proposal)); break;
 			}
@@ -188,16 +187,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		viewport.layout(4, layout.top + 4, layout.right, transcriptBottom, input.transcript.rowCount * row);
 		viewport.scrollbar.setScroll(scrollRow * row);
 
-		let actionsChanged = changed || footerChanged;
-		const queuedSend = (model.state === 'running' || model.queued.length > 0) && !input.draft.text.startsWith('/') && input.editingQueuedId === undefined;
-		for (const item of input.turnActions.items) {
-			const visible = item.command === 'assistant.send' ? !queuedSend : item.command === 'assistant.queue' ? queuedSend
-				: item.command === 'assistant.direct' ? queuedSend && model.state === 'running' : item.command === 'assistant.stop' ? model.state === 'running' || model.state === 'starting' || model.state === 'stopping'
-				: model.entries[input.selectedEntry]?.proposal !== undefined;
-			if (item.visible !== visible) { item.visible = visible; actionsChanged = true; }
-		}
-		if (actionsChanged) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, footerTop - row - 4, footerTop, measureText, editorViewState.font.renderFont(), layout.left + 4);
-		this.actions.update(); this.references.update(input);
+		this.turnToolbar.update(changed || footerChanged); this.references.update(input);
 	}
 	public draw(): void {
 		const input = this.input, { layout } = input;
@@ -239,7 +229,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		if (this.input.attachments.images.length > 0 && this.attachments.handlePointer(snapshot)) return true;
 		if (this.references.suggestions.handlePointer(snapshot)) return true;
 		// Actions act on the selected message; scrollbar capture preserves selection/focus.
-		if (this.actions.handlePointer(snapshot)) return true;
+		if (this.turnToolbar.control.handlePointer(snapshot)) return true;
 		if (this.transcriptView.handleSelection(snapshot)) return true;
 		// Controls own focus: a transcript click still routes Ctrl+C to the message.
 		return this.composer.handlePointer(snapshot) || this.transcriptView.scroll.handlePointer(snapshot) || snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;

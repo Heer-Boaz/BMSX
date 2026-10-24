@@ -508,7 +508,8 @@ export class RuntimeCartEditor implements CartEditor {
 			gte_debugger: () => new GteDebuggerPane(this.resourcePanel, this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, this.paneSurface, getWorkbenchWorkArea),
 			terminal: () => new TerminalPane(this.resourcePanel, this.terminal, input, presenter),
 			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage, this.surfaces, this.paneSurface, this.commands),
-			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage, this.surfaces, this.paneSurface, this.commands),
+			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage,
+				this.surfaces, this.paneSurface, this.commands, this.contextMenu, getWorkbenchWorkArea),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, models => {
 				for (const model of models) openEditorTab(this.editorPanes, resolveCodeEditorInput(retainModelCodeTabContext(model)));
 			}),

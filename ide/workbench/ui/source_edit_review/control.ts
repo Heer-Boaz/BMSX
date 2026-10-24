@@ -7,7 +7,7 @@ import type { EditorCommandId } from '../../../common/commands';
 import type { PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
-import type { PointerHoverService } from '../../../input/pointer/hover';
+import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import type { PointerCaptureService } from '../../../input/pointer/capture';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../action_bar';
@@ -17,6 +17,10 @@ import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree } from '../pro
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../property_tree_pointer';
 import { appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRows, type WorkbenchTreeNavigation } from '../tree_view';
 import type { SourceEditReview, SourceEditReviewElement } from './model';
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import { WorkbenchTooltip } from '../tooltip';
 
 const ACTION_KEYS = ['Enter', 'NumpadEnter', 'Escape'] as const;
 const NAVIGATION: readonly [string, WorkbenchTreeNavigation][] = [
@@ -25,10 +29,10 @@ const NAVIGATION: readonly [string, WorkbenchTreeNavigation][] = [
 ];
 
 /** Editor-local review, not a modal router, working copy or second history. */
-export class WorkbenchSourceEditReview {
+export class WorkbenchSourceEditReview implements PointerHoverTarget {
 	public readonly focusTarget: InputFocusTarget;
 	public readonly tree = createWorkbenchPropertyTree<SourceEditReviewElement>();
-	public readonly actionBar = createWorkbenchActionBar('sourceEditReview.title');
+	public readonly actionBar = createWorkbenchActionBar('sourceEditReview.title', true);
 	public readonly bounds = create_rect_bounds();
 	public title = '';
 	public summary = '';
@@ -39,12 +43,22 @@ export class WorkbenchSourceEditReview {
 	private readonly actionControl: WorkbenchActionBarControl;
 	private lifetime: DisposableStore | undefined;
 	private layoutDirty = true;
+	private readonly feedback = new WorkbenchTooltip();
+	private readonly titleBounds = create_rect_bounds();
+	private readonly summaryBounds = create_rect_bounds();
+	private hoveredText: 'title' | 'summary' | undefined;
+	private measure: TextRangeMeasure | undefined;
+	private measureText: ((text: string) => number) | undefined;
 
-	public constructor(focus: InputFocusService, capture: PointerCaptureService, hover: PointerHoverService, parent: InputFocusTarget) {
+	public constructor(focus: InputFocusService, capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget,
+		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
+		private readonly getWorkArea: () => Readonly<RectBounds>) {
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.visible;
 		this.pointer = new WorkbenchPropertyTreePointer(hover);
-		this.actionControl = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget, () => this.focusTarget.focus());
+		this.actionControl = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget, () => this.focusTarget.focus(), contextMenu);
+		this.actionControl.onDidOpenOverflow = () => this.feedback.hide();
+		this.feedback.attach(surfaces, owner, getWorkArea);
 		this.focusTarget.next = this.actionControl.focusTarget;
 		this.focusTarget.previous = this.actionControl.focusTarget;
 		this.actionControl.focusTarget.next = this.focusTarget;
@@ -53,11 +67,13 @@ export class WorkbenchSourceEditReview {
 		this.focusTarget.registerCommand('sourceEditReview.apply', { isEnabled: () => this.isEnabled('sourceEditReview.apply'), run: () => this.apply() });
 		this.focusTarget.registerCommand('sourceEditReview.discard', { isEnabled: () => this.visible, run: () => this.clear() });
 		this.focusTarget.registerCommand('sourceEditReview.source', { isEnabled: () => this.isEnabled('sourceEditReview.source'), run: () => this.openSource() });
+		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.visible && this.actionBar.overflow!.button.visible,
+			run: () => this.actionControl.openOverflow() });
 	}
 
 	public get visible(): boolean { return this.input !== undefined; }
 
-	public show(input: SourceEditReview): DisposableStore {
+	public show(input: SourceEditReview): void {
 		this.clear();
 		const lifetime = new DisposableStore();
 		this.lifetime = lifetime;
@@ -71,12 +87,13 @@ export class WorkbenchSourceEditReview {
 		this.layoutDirty = true;
 		lifetime.add({ dispose: input.model.onDidChangeContent(() => this.clear()) });
 		lifetime.add({ dispose: input.model.onWillDispose(() => this.clear()) });
+		input.onWillShow?.(lifetime);
 		this.focusTarget.focus();
-		return lifetime;
 	}
 
 	/** Detach before source edits/navigation; an unrelated control keeps its focus. */
 	public clear(): void {
+		this.feedback.hide(); this.hover.release(this); this.hoveredText = undefined;
 		this.actionControl.clearInput();
 		this.input = undefined;
 		this.lifetime?.dispose();
@@ -89,11 +106,18 @@ export class WorkbenchSourceEditReview {
 		this.focusTarget.release();
 	}
 
-	public dispose(): void { this.clear(); this.actionControl.dispose(); this.unbindKeyboard(); }
+	public dispose(): void { this.clear(); this.actionControl.dispose(); this.feedback.detach(); this.unbindKeyboard(); }
 
 	public update(): void {
 		if (this.input !== undefined && this.input.model.readOnly) this.clear();
-		if (this.visible) this.actionControl.update();
+		if (!this.visible) return;
+		this.actionControl.update();
+		const item = this.actionControl.tooltipItem;
+		if (item !== undefined) this.feedback.show(item.tooltip, item.bounds, this.font!, this.measure!, this.measureText!, this.getWorkArea());
+		else if (this.hoveredText !== undefined && this[this.hoveredText] !== this.input![this.hoveredText])
+			this.feedback.show(this.input![this.hoveredText], this.hoveredText === 'title' ? this.titleBounds : this.summaryBounds,
+				this.font!, this.measure!, this.measureText!, this.getWorkArea());
+		else this.feedback.hide();
 	}
 
 	public execute(command: EditorCommandId): void {
@@ -134,24 +158,37 @@ export class WorkbenchSourceEditReview {
 		if (this.layoutDirty || this.font !== font || this.bounds.left !== bounds.left || this.bounds.top !== bounds.top
 			|| this.bounds.right !== bounds.right || this.bounds.bottom !== bounds.bottom) {
 			this.font = font;
+			this.measure = measure; this.measureText = measureText;
 			write_rect_bounds(this.bounds, bounds.left, bounds.top, bounds.right, bounds.bottom);
-			layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, bounds.top + font.lineHeight + 4, measureText, font, bounds.left + 4);
-			this.title = truncateMeasuredText(this.input!.title, this.actionBar.items[0].bounds.left - bounds.left - 8, measure);
+			layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, bounds.top + font.lineHeight + 4,
+				measureText, font, bounds.left + measureText('Edit') + 8);
+			this.title = truncateMeasuredText(this.input!.title, this.actionBar.bounds.left - bounds.left - 8, measure);
 			this.summary = truncateMeasuredText(this.input!.summary, bounds.right - bounds.left - 8, measure);
+			write_rect_bounds(this.titleBounds, bounds.left + 4, bounds.top + 2, this.actionBar.bounds.left - 4, bounds.top + font.lineHeight + 4);
+			write_rect_bounds(this.summaryBounds, bounds.left + 4, bounds.top + font.lineHeight + 6, bounds.right - 4, bounds.top + font.lineHeight * 2 + 8);
 			this.layoutDirty = false;
 		}
 		layoutWorkbenchPropertyTree(this.tree, font, measure, bounds.left, bounds.top + font.lineHeight * 2 + 10, bounds.right, bounds.bottom);
 	}
 
 	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
-		if (this.actionControl.handlePointer(snapshot)) return true;
-		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) return false;
+		this.hoveredText = undefined;
+		if (this.actionControl.handlePointer(snapshot)) { this.hover.release(this); return true; }
+		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) {
+			this.hover.release(this); return false;
+		}
+		if (point_in_rect(snapshot.viewportX, snapshot.viewportY, this.titleBounds)) this.hoveredText = 'title';
+		else if (point_in_rect(snapshot.viewportX, snapshot.viewportY, this.summaryBounds)) this.hoveredText = 'summary';
+		if (this.hoveredText === undefined) this.hover.release(this);
+		else this.hover.visit(this);
 		if (justPressed) this.focusTarget.focus();
 		if (this.pointer.handle(this.tree, snapshot, justPressed, now) === WorkbenchPropertyPointerResult.Activate) this.openSource();
 		return true;
 	}
 
 	public handleWheel(rows: number): void { this.pointer.cancel(); scrollWorkbenchList(this.tree, rows); }
+
+	public onPointerLeave(): void { this.hoveredText = undefined; this.feedback.hide(); }
 
 	private handleKeyboard(input: KeyInputEvent): void {
 		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {

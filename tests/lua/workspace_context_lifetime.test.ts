@@ -6,6 +6,9 @@ import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { WorkbenchSourceEditReview } from '../../ide/workbench/ui/source_edit_review/control';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import type { DisposableStore } from '../../ide/common/lifecycle';
 
 const resource = { domain: 0 as const, path: 'proposal.lua', source: { type: 'lua' as const, resid: 'proposal' } };
 const edit = { version: 1, edits: [{ offset: 0, deleteLength: 1, text: 'new' }] };
@@ -42,10 +45,15 @@ test('source review retires synchronously with its document, without transferrin
 	const models = new EditorTextModelService();
 	const model = models.retain(resource, 'lua', 'x');
 	const focus = new InputFocusService(), parent = focus.createTarget(), elsewhere = focus.createTarget();
-	const review = new WorkbenchSourceEditReview(focus, new PointerCaptureService(), new PointerHoverService(), parent);
-	t.after(() => { review.dispose(); models.clear(); });
+	const capture = new PointerCaptureService(), menu = new ContextMenuController(focus, capture), surfaces = new WorkbenchSurfaceService();
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope,
+		getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });
+	const review = new WorkbenchSourceEditReview(focus, capture, new PointerHoverService(), parent, menu, surfaces, owner, () => area);
+	t.after(() => { review.dispose(); menu.dispose(); surfaces.dispose(); models.clear(); });
 	let applied = 0;
-	const lifetime = review.show({ model, title: 'REVIEW', summary: 'ONE EDIT', items: [],
+	let lifetime!: DisposableStore;
+	review.show({ model, title: 'REVIEW', summary: 'ONE EDIT', items: [], onWillShow: owner => { lifetime = owner; },
 		apply: () => { applied++; }, openSource() {} });
 	elsewhere.focus();
 	models.clear();
