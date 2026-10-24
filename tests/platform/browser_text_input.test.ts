@@ -9,6 +9,7 @@ test('native text input stays ordered independently of render/input polling', as
 		const native: Array<{ type: string; trusted: boolean; data?: string }> = [];
 		const keyboard: Array<{ code: string; down: boolean; modifiers: number; repeat: boolean }> = [];
 		const rawKeys: string[] = [];
+		const publicationOrder: string[] = [];
 		const listeners = new Set<() => void>();
 		const edits: Array<{ from: number; to: number; text: string }> = [];
 		let clipboardPastes = 0;
@@ -45,6 +46,7 @@ test('native text input stays ordered independently of render/input polling', as
 			onDidChangeTarget(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
 			dispatchKey(event: { code: string; down: boolean; modifiers: number; repeat: boolean }) {
 				if (blocked) return false;
+				publicationOrder.push('editing:' + event.code + ':' + event.down);
 				keyboard.push({ code: event.code, down: event.down, modifiers: event.modifiers, repeat: event.repeat });
 				if (!event.down || target === undefined) return false;
 				if (event.code === 'KeyA' && (event.modifiers & 10) !== 0) { target.select(0, target.text.length); return true; }
@@ -59,8 +61,13 @@ test('native text input stays ordered independently of render/input polling', as
 		const canvas = document.querySelector('canvas')!;
 		const clock = new api.BrowserHostClock();
 		const hub = new api.BrowserInputHub(canvas, document.querySelector('#surface'), clock, undefined, 'ScrollLock');
-		hub.subscribe({ inputButton(_id: string, code: string, down: boolean) { rawKeys.push(code + ':' + down); },
-			inputAxis1() {}, inputAxis2() {}, setSupervisorRequestLine() {}, resetInput() {} });
+		const controller = new api.Input(clock, hub, -1);
+		const publishButton = controller.inputButton.bind(controller);
+		controller.inputButton = (...args: Parameters<typeof controller.inputButton>) => {
+			rawKeys.push(args[1] + ':' + args[2]); publicationOrder.push('raw:' + args[1] + ':' + args[2]);
+			publishButton(...args);
+		};
+		const snapshot = api.createInputControllerSnapshot();
 		const input = new api.BrowserTextInput(canvas, host);
 		hub.setNativeKeyHandler(input.handleKey);
 		const clipboard = new api.BrowserClipboard();
@@ -78,15 +85,23 @@ test('native text input stays ordered independently of render/input polling', as
 		}
 		(globalThis as any).textFixture = {
 			reset(text = '', start = text.length, end = start) {
+				controller.resetInput();
 				blocked = false;
 				target = new Target(); target.text = text; target.start = start; target.end = end;
-				edits.length = keyboard.length = rawKeys.length = native.length = 0; clipboardPastes = 0;
+				edits.length = keyboard.length = rawKeys.length = native.length = publicationOrder.length = 0; clipboardPastes = 0;
 				for (const listener of listeners) listener();
 			},
 			read() {
 				const state = target?.readText();
 				return { text: target?.text, start: state === undefined ? undefined : state.offset + state.selectionStart,
-					end: state === undefined ? undefined : state.offset + state.selectionEnd, edits, keyboard, rawKeys, native, clipboardPastes };
+					end: state === undefined ? undefined : state.offset + state.selectionEnd, edits, keyboard, rawKeys, native, clipboardPastes,
+					publicationOrder };
+			},
+			poll(code: string) {
+				controller.pollInput(); controller.sampleInputControllerSnapshot(snapshot, 0);
+				const usage = api.hidKeyUsageForCode(code), raw = controller.getPlayerInput(1).inputHandlers.keyboard;
+				return { pressed: (snapshot.keyWords[usage >>> 5] & (1 << (usage & 31))) !== 0,
+					rawPressed: raw.physicalKeyPressed(code), keyWords: Array.from(snapshot.keyWords) };
 			},
 			constrain(text: string, maxLength: number | undefined, digits: boolean, start: number, end: number) {
 				const field = new api.TextField(undefined, { allowSpace: true, maxLength,
@@ -107,6 +122,9 @@ test('native text input stays ordered independently of render/input polling', as
 export { BrowserInputHub } from './hosts/browser/input';
 export { BrowserClipboard } from './hosts/browser/clipboard';
 export { BrowserHostClock } from './hosts/browser/timing';
+export { Input } from './hosts/common/input/manager';
+export { hidKeyUsageForCode } from './hosts/common/input/hid_keys';
+export { createInputControllerSnapshot } from './machine/ts/machine/devices/input/contracts';
 export { TextField } from './ide/editor/ui/inline/text_field_model';
 export { setFieldText } from './ide/editor/ui/inline/text_field';` + fixture, loader: 'ts', resolveDir: process.cwd() },
 		bundle: true, platform: 'browser', format: 'iife', globalName: 'nativeInputApi', write: false,
@@ -140,6 +158,73 @@ export { setFieldText } from './ide/editor/ui/inline/text_field';` + fixture, lo
 		assert.equal((await read()).text, 'bb');
 		assert.deepEqual((await read()).rawKeys, ['KeyB:true', 'KeyB:false']);
 		assert.ok((await read()).keyboard.some(event => event.code === 'KeyB' && event.repeat));
+	});
+	await t.test('native Enter consumption precedes raw publication and owns the hold after text focus retires', async () => {
+		await reset();
+		try {
+			await page.keyboard.down('Enter');
+			const state = await read();
+			assert.equal(state.text, '\n');
+			assert.deepEqual(state.publicationOrder.slice(0, 2), ['editing:Enter:true', 'raw:Enter:true'],
+				'the actual browser producer admits native editing before it publishes the physical key');
+			await page.evaluate(() => (globalThis as any).textFixture.detach());
+			const polls = await page.evaluate(() => Array.from({ length: 50 }, () => (globalThis as any).textFixture.poll('Enter')));
+			assert.ok(polls.every(state => state.rawPressed), 'native consumption never fabricates physical key-up');
+			assert.ok(polls.every(state => !state.pressed), 'the same native editor hold cannot become guest Enter after focus transfer');
+			await page.keyboard.up('Enter');
+			assert.equal((await page.evaluate(() => (globalThis as any).textFixture.poll('Enter'))).pressed, false);
+			await page.keyboard.down('Enter');
+			assert.equal((await page.evaluate(() => (globalThis as any).textFixture.poll('Enter'))).pressed, true,
+				'a genuinely fresh guest Enter remains admitted');
+		} finally { await page.keyboard.up('Enter'); }
+	});
+	await t.test('native printable insertion owns its hold without suppressing later ordinary game keys', async () => {
+		await reset();
+		try {
+			await page.keyboard.down('b');
+			assert.equal((await read()).text, 'b', 'actual browser beforeinput performed the insertion');
+			await page.evaluate(() => (globalThis as any).textFixture.detach());
+			await page.keyboard.down('q');
+			const polls = await page.evaluate(() => Array.from({ length: 20 }, () => ({
+				owned: (globalThis as any).textFixture.poll('KeyB'), ordinary: (globalThis as any).textFixture.poll('KeyQ'),
+			})));
+			assert.ok(polls.every(state => state.owned.rawPressed && state.ordinary.rawPressed));
+			assert.ok(polls.every(state => !state.owned.pressed), 'native text ownership survives every host poll');
+			assert.ok(polls.every(state => state.ordinary.pressed), 'a later normal game key is not globally captured');
+		} finally { await page.keyboard.up('b'); await page.keyboard.up('q'); }
+	});
+	await t.test('a native repeat can acquire an existing raw hold without publishing a second down edge', async () => {
+		await reset();
+		try {
+			await page.evaluate(() => (globalThis as any).textFixture.block(true));
+			await page.keyboard.down('b');
+			assert.equal((await page.evaluate(() => (globalThis as any).textFixture.poll('KeyB'))).pressed, true);
+			await page.evaluate(() => (globalThis as any).textFixture.block(false));
+			await page.keyboard.down('b');
+			const state = await read();
+			assert.equal(state.text, 'b');
+			assert.ok(state.keyboard.some(event => event.code === 'KeyB' && event.repeat));
+			assert.deepEqual(state.rawKeys, ['KeyB:true'], 'native repeat keeps the original physical occurrence');
+			await page.evaluate(() => (globalThis as any).textFixture.detach());
+			const polls = await page.evaluate(() => Array.from({ length: 20 }, () => (globalThis as any).textFixture.poll('KeyB')));
+			assert.ok(polls.every(state => state.rawPressed && !state.pressed), 'native repeat acquired only guest routing, never raw state');
+		} finally { await page.keyboard.up('b'); }
+	});
+	await t.test('native text focus preserves shared modifier levels for the following genuine game chord', async () => {
+		await reset();
+		try {
+			await page.keyboard.down('Shift');
+			await page.evaluate(() => (globalThis as any).textFixture.detach());
+			await page.keyboard.down('q');
+			const shifted = await page.evaluate(() => ({
+				modifier: (globalThis as any).textFixture.poll('ShiftLeft'), letter: (globalThis as any).textFixture.poll('KeyQ'),
+			}));
+			assert.equal(shifted.modifier.rawPressed, true); assert.equal(shifted.modifier.pressed, true,
+				'modifier levels remain shared context, not captured ordinary editing actions');
+			assert.equal(shifted.letter.pressed, true, 'text-context modifier ownership is not a global keyboard capture');
+			await page.keyboard.up('Shift'); await page.keyboard.down('Shift');
+			assert.equal((await page.evaluate(() => (globalThis as any).textFixture.poll('ShiftLeft'))).pressed, true);
+		} finally { await page.keyboard.up('Shift'); await page.keyboard.up('q'); }
 	});
 	await t.test('native selection replacement and surrounding repeated characters retain actual edit offsets', async () => {
 		await reset('abab', 1, 3);

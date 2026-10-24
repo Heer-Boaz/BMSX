@@ -3,7 +3,7 @@ import { inputBindingId, type ButtonState, type KeyboardButtonId, type KeyboardI
 import type { HostClock } from '../clock';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
 import { HID_MODIFIER_FIRST_USAGE, HID_MODIFIER_MASK_ALT, HID_MODIFIER_MASK_CONTROL, HID_MODIFIER_MASK_SHIFT, hidKeyUsageForCode } from './hid_keys';
-import { KeyModifier } from './text';
+import { KeyInputSource, KeyModifier } from './text';
 
 
 /** Retains the combined keyboard state of every keyboard source assigned to player one. */
@@ -29,6 +29,8 @@ export class KeyboardInput implements KeyboardInputHandler {
 	private readonly virtualKeyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 	private readonly routedPhysicalKeyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 	private readonly routedVirtualKeyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
+	private readonly uiPhysicalKeyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
+	private readonly uiVirtualKeyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 
 	private nextPressId = 1;
 	private ordinaryHeldCount = 0;
@@ -76,6 +78,8 @@ export class KeyboardInput implements KeyboardInputHandler {
 		this.virtualKeyUsageWords.fill(0);
 		this.routedPhysicalKeyUsageWords.fill(0);
 		this.routedVirtualKeyUsageWords.fill(0);
+		this.uiPhysicalKeyUsageWords.fill(0);
+		this.uiVirtualKeyUsageWords.fill(0);
 	}
 
 	private setKeyUsageWord(words: Uint32Array, usage: number, pressed: boolean): void {
@@ -142,6 +146,20 @@ export class KeyboardInput implements KeyboardInputHandler {
 		this.setKeyUsageWord(this.routedVirtualKeyUsageWords, usage, false);
 	}
 
+	/** Editing owns action-key holds; HID modifiers remain shared typing context. */
+	public captureKeyHold(code: string, source: KeyInputSource): void {
+		const usage = hidKeyUsageForCode(code);
+		if (usage < 0 || usage >= HID_MODIFIER_FIRST_USAGE) return;
+		const word = usage >>> 5, bit = 1 << (usage & 31);
+		const physical = source === KeyInputSource.Physical;
+		const raw = physical ? this.physicalKeyUsageWords : this.virtualKeyUsageWords;
+		const owned = physical ? this.uiPhysicalKeyUsageWords : this.uiVirtualKeyUsageWords;
+		const routed = physical ? this.routedPhysicalKeyUsageWords : this.routedVirtualKeyUsageWords;
+		const held = raw[word] & bit;
+		owned[word] |= held;
+		routed[word] &= ~held;
+	}
+
 	/** Returns the physical-only console-control view used by host control chords. */
 	// disable-next-line single_line_method_pattern -- KeyboardInputHandler keeps hardware controls separate from merged typing state.
 	public getButtonState(button: string): ButtonState {
@@ -162,8 +180,10 @@ export class KeyboardInput implements KeyboardInputHandler {
 
 	public pollInput(): void {
 		const now = this.clock.now();
-		this.routedPhysicalKeyUsageWords.set(this.physicalKeyUsageWords);
-		this.routedVirtualKeyUsageWords.set(this.virtualKeyUsageWords);
+		for (let word = 0; word < INPUT_CONTROLLER_KEY_WORD_COUNT; word++) {
+			this.routedPhysicalKeyUsageWords[word] = this.physicalKeyUsageWords[word] & ~this.uiPhysicalKeyUsageWords[word];
+			this.routedVirtualKeyUsageWords[word] = this.virtualKeyUsageWords[word] & ~this.uiVirtualKeyUsageWords[word];
+		}
 		this.publishKeyStates(this.physicalKeyStates, this.physicalKeyCodes, this.polledPhysicalKeyStates, now);
 		this.publishKeyStates(this.virtualKeyStates, this.virtualKeyCodes, this.polledVirtualKeyStates, now);
 		this.publishKeyStates(this.keyStates, this.keyCodes, this.polledKeyStates, now);
@@ -287,6 +307,7 @@ export class KeyboardInput implements KeyboardInputHandler {
 		const usage = hidKeyUsageForCode(keyCode);
 		if (usage >= 0 && usage < HID_MODIFIER_FIRST_USAGE) this.ordinaryHeldCount -= 1;
 		this.setKeyUsageWord(this.physicalKeyUsageWords, usage, false);
+		this.setKeyUsageWord(this.uiPhysicalKeyUsageWords, usage, false);
 	}
 
 	/** The on-screen keyboard already aggregates its contact and modifier sources. */
@@ -294,7 +315,9 @@ export class KeyboardInput implements KeyboardInputHandler {
 		const now = this.clock.now();
 		this.setEventKeyState(this.virtualKeyStates, this.virtualKeyCodes, code, down, now);
 		if (!this.physicalKeyStates[code]?.pressed) this.setEventKeyState(this.keyStates, this.keyCodes, code, down, now);
-		this.setKeyUsageWord(this.virtualKeyUsageWords, hidKeyUsageForCode(code), down);
+		const usage = hidKeyUsageForCode(code);
+		this.setKeyUsageWord(this.virtualKeyUsageWords, usage, down);
+		if (!down) this.setKeyUsageWord(this.uiVirtualKeyUsageWords, usage, false);
 	}
 
 	private setEventKeyState(states: KeyOrButtonId2ButtonState, codes: string[], code: string, down: boolean, now: number): void {

@@ -6,6 +6,8 @@ import { NATIVE_KEYBOARD_PAGES, ON_SCREEN_KEY_INDEX_BY_CODE, OnScreenKeyboardCom
 import { KeyInputEvent, KeyModifier, type TextInputHost, type TextInputTarget } from '../../hosts/common/input/text';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createInputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
+import { RemoteInput } from '../../hosts/common/input/remote';
+import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 
 function fixture(text = '', offset = 0) {
 	const clock = new VirtualHeadlessClock();
@@ -142,11 +144,10 @@ test('virtual text uses absolute UTF-16 replacement offsets and never edits a re
 	assert.equal(f.state.text, 'ax b');
 });
 
-test('attaching an editing recipient leaves every guest keyboard sample unchanged', t => {
+test('an unhandled editing recipient leaves guest keyboard samples unchanged', t => {
 	const baseline = fixture(), editing = fixture();
 	t.after(() => { baseline.input.dispose(); editing.input.dispose(); });
-	editing.host.dispatchKey = event => { event.consumed = true; return true; };
-	editing.input.setEditingInput(editing.host);
+	editing.input.setEditingInput({ ...editing.host, textTarget: undefined });
 	const baselineSources: number[] = [], editingSources: number[] = [];
 	for (const code of ['ShiftLeft', 'KeyB', 'KeyB', 'ArrowLeft', 'ControlLeft', 'Space']) {
 		baselineSources.push(baseline.press(code)); editingSources.push(editing.press(code));
@@ -176,3 +177,143 @@ test('global and keyboard resets cancel host keyboard gestures without treating 
 	assert.equal(f.host.textTarget, f.target);
 	assert.deepEqual(f.events, [], 'cancellation is not a fabricated key-up event');
 });
+
+test('a RemoteInput editor-consumed hold stays masked after guest recipient gain until physical release', t => {
+	const f = fixture(); t.after(() => f.input.dispose());
+	f.host.dispatchKey = event => { f.events.push(event); event.consumed = event.code === 'Enter'; return event.consumed; };
+	f.input.setEditingInput(f.host);
+	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
+	f.input.guestInputRecipient = null;
+	remote.apply([{ type: 'key', code: 'Enter', down: true }]);
+	assert.equal(f.events[0].consumed, true, 'the actual ordered editing consumer accepted the physical occurrence');
+	const usage = hidKeyUsageForCode('Enter'), word = usage >>> 5, mask = 1 << (usage & 31);
+	f.input.setEditingInput(undefined); f.input.guestInputRecipient = f.input;
+	for (let frame = 0; frame < 50; frame++) {
+		assert.equal(f.snapshot().keyWords[word] & mask, 0, `the original editor hold is not a fresh guest Enter on poll ${frame}`);
+		assert.equal(f.input.getPlayerInput(1).inputHandlers.keyboard!.physicalKeyPressed('Enter'), true,
+			'UI ownership does not fabricate a raw physical release');
+	}
+	remote.apply([{ type: 'key', code: 'Enter', down: false }]);
+	assert.equal(f.snapshot().keyWords[word] & mask, 0);
+	remote.apply([{ type: 'key', code: 'Enter', down: true }]);
+	assert.notEqual(f.snapshot().keyWords[word] & mask, 0, 'a genuinely fresh guest press is admitted');
+	remote.release();
+});
+
+test('a consumed Enter release and fresh guest repress between polls cannot alias the old UI hold', t => {
+	const f = fixture(); t.after(() => f.input.dispose());
+	f.host.dispatchKey = event => event.down && event.code === 'Enter';
+	f.input.setEditingInput(f.host);
+	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
+	remote.apply([{ type: 'key', code: 'Enter', down: true }]);
+	const usage = hidKeyUsageForCode('Enter'), word = usage >>> 5, mask = 1 << (usage & 31);
+	assert.equal(f.snapshot().keyWords[word] & mask, 0);
+	f.input.setEditingInput(undefined);
+	remote.apply([{ type: 'key', code: 'Enter', down: false }, { type: 'key', code: 'Enter', down: true }]);
+	assert.notEqual(f.snapshot().keyWords[word] & mask, 0, 'release/repress is an event boundary, not a polled-state inference');
+	remote.release();
+});
+
+for (const captured of ['physical', 'virtual'] as const) {
+	test(`an editor-consumed ${captured} Enter does not consume the independent same-usage source`, t => {
+		const f = fixture(); t.after(() => f.input.dispose());
+		f.host.dispatchKey = event => event.code === 'Enter'; f.input.setEditingInput(f.host);
+		const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
+		let contact: number;
+		if (captured === 'physical') remote.apply([{ type: 'key', code: 'Enter', down: true }]);
+		else contact = f.press('Enter');
+		const usage = hidKeyUsageForCode('Enter'), word = usage >>> 5, mask = 1 << (usage & 31);
+		assert.equal(f.snapshot().keyWords[word] & mask, 0);
+		f.input.setEditingInput(undefined);
+		if (captured === 'physical') contact = f.press('Enter');
+		else remote.apply([{ type: 'key', code: 'Enter', down: true }]);
+		assert.notEqual(f.snapshot().keyWords[word] & mask, 0, 'only the source occurrence accepted by the editor is owned');
+		if (captured === 'physical') f.keyboard.releaseSource(contact);
+		else remote.apply([{ type: 'key', code: 'Enter', down: false }]);
+		assert.equal(f.snapshot().keyWords[word] & mask, 0, 'the remaining original UI hold stays masked');
+		remote.release(); f.keyboard.close();
+	});
+}
+
+test('successful printable editing owns the physical hold without consuming unrelated gameplay or host chords', t => {
+	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
+	remote.apply([{ type: 'key', code: 'KeyB', down: true }]);
+	assert.equal(f.state.text, 'b', 'the real manager text producer performed the insertion');
+	const b = hidKeyUsageForCode('KeyB'), q = hidKeyUsageForCode('KeyQ');
+	f.input.setEditingInput(undefined);
+	remote.apply([{ type: 'key', code: 'KeyQ', down: true }]);
+	for (let frame = 0; frame < 20; frame++) {
+		const snapshot = f.snapshot();
+		assert.equal(snapshot.keyWords[b >>> 5] & (1 << (b & 31)), 0);
+		assert.notEqual(snapshot.keyWords[q >>> 5] & (1 << (q & 31)), 0, 'ordinary guest keys have no global keyboard capture');
+		assert.equal(f.input.getPlayerInput(1).inputHandlers.keyboard!.physicalKeyPressed('KeyB'), true);
+	}
+	remote.apply([{ type: 'key', code: 'ControlRight', down: true }, { type: 'key', code: 'ShiftLeft', down: true }]);
+	f.snapshot(); assert.equal(f.input.supervisorRequestLineHigh(), true, 'the physical host chord still observes its raw source');
+	assert.equal(f.state.text, 'b'); remote.release();
+});
+
+test('explicit physical host-chord ownership remains independent of an unhandled text-context modifier', t => {
+	const f = fixture(); t.after(() => f.input.dispose());
+	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
+	remote.apply([{ type: 'key', code: 'ControlRight', down: true }]);
+	f.snapshot();
+	f.input.setEditingInput(f.host);
+	remote.apply([{ type: 'key', code: 'ShiftLeft', down: true }]);
+	assert.equal(f.events[0].consumed, false, 'the editor did not accept a modifier as an ordinary action');
+	const usage = hidKeyUsageForCode('ShiftLeft'), word = usage >>> 5, mask = 1 << (usage & 31);
+	f.input.setEditingInput(undefined);
+	assert.equal(f.snapshot().keyWords[word] & mask, 0);
+	assert.equal(f.input.getPlayerInput(1).inputHandlers.keyboard!.physicalKeyPressed('ShiftLeft'), true);
+	assert.equal(f.input.supervisorRequestLineHigh(), true, 'the explicit host chord owns its raw modifier independently of editing');
+	remote.release();
+});
+
+test('an OSK sticky Shift latched in a text context agrees with the next guest Digit1 after focus transfer', t => {
+	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const shift = f.press('ShiftLeft'); f.keyboard.releaseSource(shift, true);
+	const digit = ON_SCREEN_KEY_INDEX_BY_CODE.get('Digit1');
+	assert.equal(f.keyboard.label(digit), '!'); assert.equal(f.keyboard.shiftActive, true);
+	f.snapshot();
+	f.input.setEditingInput(undefined);
+	const contact = f.press('Digit1'), snapshot = f.snapshot();
+	const shiftUsage = hidKeyUsageForCode('ShiftLeft'), digitUsage = hidKeyUsageForCode('Digit1');
+	assert.equal(f.keyboard.label(digit), '!');
+	assert.notEqual(snapshot.keyWords[digitUsage >>> 5] & (1 << (digitUsage & 31)), 0, 'the new guest digit is admitted');
+	assert.notEqual(snapshot.keyWords[shiftUsage >>> 5] & (1 << (shiftUsage & 31)), 0,
+		'the sticky modifier shown by the OSK must accompany the new guest digit');
+	assert.equal(f.state.text, '', 'the post-transfer digit never edits the retired text target');
+	f.keyboard.releaseSource(contact);
+	assert.equal(f.keyboard.label(digit), '1', 'the actual sticky Shift still expires after its ordinary key release');
+});
+
+test('a physical Shift held in a text context gives the OSK the same shifted legend as actual virtual typing', t => {
+	const f = fixture(); t.after(() => f.input.dispose()); f.input.setEditingInput(f.host);
+	const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
+	remote.apply([{ type: 'key', code: 'ShiftLeft', down: true }]);
+	f.snapshot(); f.keyboard.updateFeedback(f.clock.now());
+	const digit = ON_SCREEN_KEY_INDEX_BY_CODE.get('Digit1'), shown = f.keyboard.label(digit);
+	const contact = f.press('Digit1');
+	assert.equal(f.state.text, '!', 'the real manager inserts the character selected by the held physical modifier');
+	assert.equal(shown, '!', 'the visible key legend must describe the character the same source actually inserts');
+	f.keyboard.releaseSource(contact); remote.release();
+});
+
+for (const reset of ['keyboard', 'all', 'remote'] as const) {
+	test(`${reset} cancellation retires consumed keyboard ownership before a new guest occurrence`, t => {
+		const f = fixture(); t.after(() => f.input.dispose());
+		f.host.dispatchKey = event => event.code === 'Enter'; f.input.setEditingInput(f.host);
+		const remote = new RemoteInput(f.input, f.clock, f.input.dispatchEditingKey.bind(f.input));
+		remote.apply([{ type: 'key', code: 'Enter', down: true }]);
+		const usage = hidKeyUsageForCode('Enter'), word = usage >>> 5, mask = 1 << (usage & 31);
+		assert.equal(f.snapshot().keyWords[word] & mask, 0);
+		if (reset === 'remote') remote.release();
+		else f.input.resetInput(reset === 'keyboard' ? 'keyboard:0' : undefined);
+		assert.equal(f.snapshot().keyWords[word] & mask, 0);
+		f.input.setEditingInput(undefined);
+		f.physical('Enter', true);
+		assert.notEqual(f.snapshot().keyWords[word] & mask, 0, 'cancellation does not leave a stale mask on the next physical press');
+		remote.release();
+	});
+}

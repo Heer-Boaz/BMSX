@@ -38,6 +38,7 @@ function createFixture() {
 	const edges: Array<{ code: string; down: boolean; value: number; time: number; pressId: number }> = [];
 	const axes: Array<{ code: string; x: number; y: number; time: number }> = [];
 	const sink: InputEventSink = {
+		capturePhysicalKeyHold() { assert.fail('a gamepad source cannot claim a native keyboard hold'); },
 		inputButton(_device, code, down, value, time, pressId) { edges.push({ code, down, value, time, pressId }); },
 		inputAxis2(_device, code, x, y, time) { axes.push({ code, x, y, time }); },
 		inputAxis1() {}, cancelPointerButtons() {}, resetInput() {}, setSupervisorRequestLine() {}, connectInputDevice() {}, disconnectInputDevice() {},

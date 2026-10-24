@@ -435,7 +435,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.routeButtonEvent(binding, code, down, value, timestamp, pressId);
 	}
 
-	/** Studio editing is an optional host recipient, independent of sampled guest keys. */
+	/** Editing actions and their owned key holds are separate from physical device state. */
 	public setEditingInput(host: TextInputHost | undefined): void {
 		this.editingInput = host;
 	}
@@ -480,13 +480,24 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		if (host === undefined) return;
 		const modifiers = this.keyboardInput.liveModifiers;
 		const event = new KeyInputEvent(code, modifiers, false, down, source);
-		if (host.dispatchKey(event) || !down || (modifiers & (KeyModifier.ctrl | KeyModifier.alt | KeyModifier.meta)) !== 0) return;
+		if (host.dispatchKey(event)) {
+			if (down) this.keyboardInput.captureKeyHold(code, source);
+			return;
+		}
+		if (!down) return;
 		const target = host.textTarget;
+		if (target !== undefined) this.keyboardInput.captureKeyHold(code, source);
+		if ((modifiers & (KeyModifier.ctrl | KeyModifier.alt | KeyModifier.meta)) !== 0) return;
 		const character = CHARACTER_MAP[code];
 		if (target === undefined || target.readOnly || character === undefined) return;
 		const text = (modifiers & KeyModifier.shift) !== 0 ? character.shift : character.normal;
 		const state = target.readText();
 		target.replaceText(state.offset + state.selectionStart, state.offset + state.selectionEnd, text);
+	}
+
+	/** Native editing can claim a physical DOWN after the browser publishes its raw state. */
+	public capturePhysicalKeyHold(code: string): void {
+		this.keyboardInput.captureKeyHold(code, KeyInputSource.Physical);
 	}
 
 	public inputAxis1(deviceId: string, code: string, x: number, timestamp: number): void {

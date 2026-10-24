@@ -440,6 +440,7 @@ export class BrowserInputHub implements InputSource {
 			event.returnValue = false;
 		}
 		if (this.activeKeyPressIds.has(event.code)) {
+			if (native) this.sink.capturePhysicalKeyHold(event.code);
 			return;
 		}
 		const now = this.clock.now();
@@ -450,6 +451,7 @@ export class BrowserInputHub implements InputSource {
 			return;
 		}
 		this.sink.inputButton('keyboard:0', event.code, true, 1, now, pressId);
+		if (native) this.sink.capturePhysicalKeyHold(event.code);
 	};
 
 	private onKeyUp = (event: KeyboardEvent) => {

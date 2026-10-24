@@ -41,6 +41,8 @@ export interface InputEventSink {
 	resetInput(deviceId?: string): void;
 	/** Cancel only these canonical pointer-button bits, without physical release edges. */
 	cancelPointerButtons(deviceId: string, buttons: number, timestamp: MonoTime): void;
+	/** The native editor owns this physical key hold until its actual release. */
+	capturePhysicalKeyHold(code: string): void;
 	setSupervisorRequestLine(down: boolean): void;
 	connectInputDevice(device: InputDevice): void;
 	disconnectInputDevice(deviceId: string): void;

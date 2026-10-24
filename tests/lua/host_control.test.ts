@@ -66,6 +66,7 @@ test('remote input owns press IDs across requests and releases only held input',
 	const clock = new VirtualHeadlessClock();
 	const sink: InputEventSink = {
 		resetInput() {}, cancelPointerButtons() {}, connectInputDevice() {}, disconnectInputDevice() {},
+		capturePhysicalKeyHold() { assert.fail('RemoteInput does not manufacture native editing ownership'); },
 		setSupervisorRequestLine: down => events.push({ type: 'supervisor-request', down, timestamp: clock.now() }),
 		inputButton: (deviceId, code, down, value, timestamp, pressId) => events.push({ type: 'button', deviceId, code, down, value, timestamp, pressId }),
 		inputAxis1: (deviceId, code, x, timestamp) => events.push({ type: 'axis1', deviceId, code, x, timestamp }),
