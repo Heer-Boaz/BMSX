@@ -53,3 +53,11 @@ test('completion filtering removes no-op current identifiers without hiding meth
 	], 'draw_frame', 'draw_frame');
 	assert.deepEqual(methodFiltered.map(item => item.label), ['draw_frame']);
 });
+
+test('automatic prefix eligibility retains exact native-method ranking over longer local names', () => {
+	const filtered = filterCompletionItems([
+		completionItem('draw_frame_long', 'local'),
+		completionItem('draw_frame', 'native_method'),
+	], 'draw_frame', 'draw_frame', 'prefix');
+	assert.deepEqual(filtered.map(item => item.label), ['draw_frame', 'draw_frame_long']);
+});

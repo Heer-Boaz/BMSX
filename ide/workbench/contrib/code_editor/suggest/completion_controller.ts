@@ -28,7 +28,8 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import { getLuaTextContext, LuaTextContext } from '../../../../common/text';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
 import { LuaLexer } from '../../../../../toolchain/ts/lua/syntax/lexer';
-import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletionWordRange, resolveModuleCompletionRange } from '../../../../editor/contrib/suggest/completion_model';
+import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletionWordRange, resolveModuleCompletionRange,
+	type CompletionMatchMode, type InlineCompletionPreview } from '../../../../editor/contrib/suggest/completion_model';
 import { buildEditorSemanticFrontend } from '../../../../editor/contrib/intellisense/frontend';
 import { assignRowColumn } from '../../../../common/state';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
@@ -69,6 +70,7 @@ export class CompletionController {
 	private readonly cursorPositionScratch = { row: 0, column: 0 };
 	private readonly clampPositionScratch = { row: 0, column: 0 };
 	private readonly inlineCompletionPreviewScratch = { row: 0, column: 0, suffix: '' };
+	private inlineCompletionPreview: InlineCompletionPreview | null = null;
 	private readonly lastCursorPositionScratch = { row: 0, column: 0 };
 	private maxVisibleItems = constants.COMPLETION_POPUP_MAX_VISIBLE;
 	public readonly popupBoundsScratch = create_rect_bounds();
@@ -201,8 +203,20 @@ export class CompletionController {
 
 	public closeSession(): void {
 		this.completionSession = null;
+		this.inlineCompletionPreview = null;
 		this.popupBounds = null;
 		this.cancelPendingCompletion();
+	}
+
+	/** Retire the complete attached-input presentation before the source view leaves focus. */
+	public clearInput(): void {
+		this.closeSession();
+		this.parameterHint = null;
+		this.parameterHintTriggerPending = false;
+		this.parameterHintIdleElapsed = 0;
+		this.lastCursorPosition = null;
+		this.lastTextVersion = -1;
+		this.suppressNextAutoCompletion = false;
 	}
 
 	public listCompletionCandidates(): { context: CompletionContext; items: LuaCompletionItem[]; filteredItems: LuaCompletionItem[] } | null {
@@ -232,31 +246,23 @@ export class CompletionController {
 		return true;
 	}
 
-	public getInlineCompletionPreview(): { row: number; column: number; suffix: string } {
+	public getInlineCompletionPreview(): InlineCompletionPreview | null { return this.inlineCompletionPreview; }
+
+	private updateInlineCompletionPreview(): void {
+		this.inlineCompletionPreview = null;
 		const session = this.completionSession;
 		if (!session || session.trigger === 'manual') {
-			return null;
+			return;
 		}
-		if (session.filteredItems.length === 0) {
-			return null;
-		}
-		let index = session.selectionIndex;
-		if (index < 0 || index >= session.filteredItems.length) index = 0;
-		const item = session.filteredItems[index];
+		const item = session.filteredItems[session.selectionIndex];
 		const addParentheses = item.kind === 'native_method';
 		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
 		const prefix = session.context.prefix;
-		if (!insertion.startsWith(prefix)) {
-			return null;
-		}
-		if (prefix.length >= insertion.length) {
-			return null;
-		}
 		const preview = this.inlineCompletionPreviewScratch;
 		preview.row = session.context.row;
 		preview.column = session.context.replaceFromColumn + prefix.length;
 		preview.suffix = insertion.slice(prefix.length);
-		return preview;
+		this.inlineCompletionPreview = preview;
 	}
 
 	public handlePointerWheel(event: WheelInputSnapshot): boolean {
@@ -561,8 +567,9 @@ export class CompletionController {
 		return line.slice(replaceStart, replaceEnd);
 	}
 
-	private filterCompletionItemsForContext(items: LuaCompletionItem[], context: CompletionContext): LuaCompletionItem[] {
-		return filterCompletionItems(items, context.prefix, this.getCompletionReplacementText(context));
+	private filterCompletionItemsForContext(items: LuaCompletionItem[], context: CompletionContext,
+		matchMode: CompletionMatchMode = 'substring'): LuaCompletionItem[] {
+		return filterCompletionItems(items, context.prefix, this.getCompletionReplacementText(context), matchMode);
 	}
 
 	private getLocalCompletionItems(context: CompletionContext): LuaCompletionItem[] {
@@ -821,7 +828,7 @@ export class CompletionController {
 		const cacheKey = prefix;
 		let filtered = session.filterCache.get(cacheKey);
 		if (!filtered) {
-			filtered = this.filterCompletionItemsForContext(session.items, session.context);
+			filtered = this.filterCompletionItemsForContext(session.items, session.context, session.trigger === 'manual' ? 'substring' : 'prefix');
 			session.filterCache.set(cacheKey, filtered);
 		}
 		if (filtered.length === 0) {
@@ -834,6 +841,7 @@ export class CompletionController {
 		session.filteredItems = filtered;
 		if (session.selectionIndex < 0 || session.selectionIndex >= session.filteredItems.length) session.selectionIndex = 0;
 		this.ensureCompletionSelectionVisible(session);
+		this.updateInlineCompletionPreview();
 	}
 
 	private moveCompletionSelection(delta: number): void {
@@ -846,6 +854,7 @@ export class CompletionController {
 		if (index < 0) index = delta > 0 ? 0 : total - 1; else { index += delta; index = ((index % total) + total) % total; }
 		session.selectionIndex = index;
 		this.ensureCompletionSelectionVisible(session);
+		this.updateInlineCompletionPreview();
 	}
 
 	private handleNavigationKeys(playerInput: KeyInputEvent, session: CompletionSession, allowHomeEnd: boolean): boolean {
@@ -1051,6 +1060,6 @@ export class EditorCompletionController extends CompletionController {
 	public dispose(): void {
 		this.unsubscribeCursorMoved();
 		this.unsubscribeTextMutated();
-		this.closeSession();
+		this.clearInput();
 	}
 }

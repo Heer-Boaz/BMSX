@@ -29,7 +29,7 @@ function renderActiveCursor(baseColor: number): HostOverlayFrame {
 	return queue.consumeOverlayFrame();
 }
 
-test('active code caret redraws the underlying glyph with its inverse color', (t) => {
+for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) test(`${variant}/${theme} active code caret glyph contrasts with its actual block fill, independent of source syntax`, (t) => {
 	const originalTheme = constants.getActiveIdeThemeVariant();
 	const originalFont = editorViewState.font;
 	t.after(() => {
@@ -37,8 +37,8 @@ test('active code caret redraws the underlying glyph with its inverse color', (t
 		editorViewState.font = originalFont;
 	});
 
-	constants.setIdeThemeVariant('light');
-	editorViewState.font = new EditorFont('msx');
+	constants.setIdeThemeVariant(theme);
+	editorViewState.font = new EditorFont(variant);
 	const darkBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME;
 	const lightBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT;
 	const darkFrame = renderActiveCursor(darkBaseColor);
@@ -50,12 +50,12 @@ test('active code caret redraws the underlying glyph with its inverse color', (t
 	assert.equal(darkFrame.commandKinds[0], Host2DKind.Rect);
 	assert.equal(darkFrame.commandKinds[1], Host2DKind.Glyphs);
 	assert.equal(darkGlyphs.items, 'A');
-	assert.equal(darkGlyphs.color, resolveThemeTokenColor(invertThemeToken(darkBaseColor)));
+	assert.equal(darkGlyphs.color, resolveThemeTokenColor(invertThemeToken(constants.CARET_COLOR)));
 
 	assert.equal(lightFrame.commandCount, 2);
 	assert.equal(lightFrame.commandKinds[0], Host2DKind.Rect);
 	assert.equal(lightFrame.commandKinds[1], Host2DKind.Glyphs);
 	assert.equal(lightGlyphs.items, 'A');
-	assert.equal(lightGlyphs.color, resolveThemeTokenColor(invertThemeToken(lightBaseColor)));
-	assert.notEqual(darkGlyphs.color, lightGlyphs.color);
+	assert.equal(lightGlyphs.color, resolveThemeTokenColor(invertThemeToken(constants.CARET_COLOR)));
+	assert.equal(darkGlyphs.color, lightGlyphs.color);
 });

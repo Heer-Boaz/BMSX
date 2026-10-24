@@ -130,6 +130,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public override clearInput(): void {
+		this.editor.completion.clearInput();
 		activeCodeEditor.focusTarget.release();
 		activeCodeEditor.focusTarget.textInput = undefined;
 		this.editor.search.closeSearch(false);

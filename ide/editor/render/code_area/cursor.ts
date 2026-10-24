@@ -6,12 +6,8 @@ import { api } from '../../../runtime/overlay_api';
 import { drawHighlightSlice } from './highlights';
 import { activeCodeEditor } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
-
-export type InlineCompletionPreview = {
-	row: number;
-	column: number;
-	suffix: string;
-};
+import { editorRuntimeState } from '../../common/runtime_state';
+import type { InlineCompletionPreview } from '../../contrib/suggest/completion_model';
 
 export function drawCodeRowText(
 	renderFont: Font,
@@ -54,7 +50,8 @@ export function drawCodeRowText(
 	drawHighlightSlice(renderFont, renderText, highlight.colors, entry.advancePrefix, sliceStartDisplay, sliceEndDisplay, textLeft, rowY, 0);
 }
 
-export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
+export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number,
+	preview: InlineCompletionPreview | null = null): CursorScreenInfo {
 	const highlight = entry.hi;
 	const columnToDisplay = highlight.columnToDisplay;
 	const clampedColumn = columnToDisplay.length > 0
@@ -67,17 +64,23 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 	let cursorWidth = editorViewState.charAdvance;
 	let baseChar = ' ';
 	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
-	if (cursorDisplayIndex < highlight.text.length) {
-		baseChar = highlight.text.charAt(cursorDisplayIndex);
-		baseColor = highlight.colors[cursorDisplayIndex];
-		const widthIndex = cursorDisplayIndex + 1;
-		if (widthIndex < entry.advancePrefix.length) {
-			const widthValue = entry.advancePrefix[widthIndex] - entry.advancePrefix[cursorDisplayIndex];
-			cursorWidth = widthValue > 0 ? widthValue : editorViewState.charAdvance;
+	if (preview !== null) {
+		baseChar = preview.suffix.charAt(0);
+		baseColor = constants.COLOR_COMPLETION_PREVIEW_TEXT;
+		cursorWidth = editorViewState.font.advance(editorRuntimeState.uppercaseDisplay ? baseChar.toUpperCase() : baseChar);
+	} else {
+		if (cursorDisplayIndex < highlight.text.length) {
+			baseChar = highlight.text.charAt(cursorDisplayIndex);
+			baseColor = highlight.colors[cursorDisplayIndex];
+			const widthIndex = cursorDisplayIndex + 1;
+			if (widthIndex < entry.advancePrefix.length) {
+				const widthValue = entry.advancePrefix[widthIndex] - entry.advancePrefix[cursorDisplayIndex];
+				cursorWidth = widthValue > 0 ? widthValue : editorViewState.charAdvance;
+			}
 		}
-	}
-	if (activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow).charAt(activeCodeEditor.view.cursorColumn) === '\t') {
-		cursorWidth = editorViewState.spaceAdvance * constants.TAB_SPACES;
+		if (activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow).charAt(activeCodeEditor.view.cursorColumn) === '\t') {
+			cursorWidth = editorViewState.spaceAdvance * constants.TAB_SPACES;
+		}
 	}
 	return {
 		row: activeCodeEditor.view.cursorRow,

@@ -9,7 +9,7 @@ import { editorRuntimeState } from '../../common/runtime_state';
 import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../ui/code/area_viewport';
 import { resolveCursorVisualIndex } from '../../ui/view/caret/visual_index';
 import type { CompletionPresentation } from '../completion';
-import type { InlineCompletionPreview } from './cursor';
+import type { InlineCompletionPreview } from '../../contrib/suggest/completion_model';
 import type { SearchMatch } from '../../../common/models';
 
 export function renderCodeArea(

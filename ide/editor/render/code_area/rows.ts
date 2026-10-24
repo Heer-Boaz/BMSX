@@ -6,7 +6,8 @@ import { computeSelectionSlice } from '../../common/text/layout';
 import * as constants from '../../../common/constants';
 import { runtimeErrorState } from '../../contrib/runtime_error/state';
 import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './highlights';
-import { computeCursorScreenInfo, drawCodeRowText, type InlineCompletionPreview } from './cursor';
+import { computeCursorScreenInfo, drawCodeRowText } from './cursor';
+import type { InlineCompletionPreview } from '../../contrib/suggest/completion_model';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './underlines';
 import { drawCodeAreaRowChrome } from './gutter';
 import { activeCodeEditor } from '../../ui/code_editor_state';
@@ -118,6 +119,9 @@ export function drawCodeAreaRows(
 				api.fill_rect(drawLeft, rowY, drawRight, rowY + editorViewState.lineHeight, 0, constants.SELECTION_OVERLAY);
 			}
 		}
+		const inlinePreview = shouldRenderInlinePreview && visualIndex === cursorVisualIndex && lineIndex === inlineCompletionPreview.row
+			&& inlineCompletionPreview.column >= clampedStartColumn && inlineCompletionPreview.column <= clampedEndColumn
+			? inlineCompletionPreview : null;
 		drawCodeRowText(
 			renderFont,
 			renderText,
@@ -127,8 +131,8 @@ export function drawCodeAreaRows(
 			viewport.textLeft,
 			rowY,
 			useUppercase,
-			shouldRenderInlinePreview && visualIndex === cursorVisualIndex && lineIndex === inlineCompletionPreview.row,
-			inlineCompletionPreview,
+			inlinePreview !== null,
+			inlinePreview,
 		);
 		drawDiagnosticUnderlinesForRow(
 			lineIndex,
@@ -153,7 +157,7 @@ export function drawCodeAreaRows(
 			activeGotoHighlight,
 		);
 		if (visualIndex === cursorVisualIndex) {
-			cursorInfo = computeCursorScreenInfo(entry, viewport.textLeft, rowY, sliceStartDisplay);
+			cursorInfo = computeCursorScreenInfo(entry, viewport.textLeft, rowY, sliceStartDisplay, inlinePreview);
 		}
 	}
 	return cursorInfo;

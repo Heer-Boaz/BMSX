@@ -3,6 +3,15 @@ import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import type { SourceRange } from '../../../../toolchain/ts/lua/source_range';
 import type { LuaCompletionItem, LuaCompletionKind } from '../../../common/models';
 
+/** An automatic completion presents a nonempty suffix after the typed source prefix. */
+export type InlineCompletionPreview = {
+	readonly row: number;
+	readonly column: number;
+	readonly suffix: string;
+};
+
+export type CompletionMatchMode = 'prefix' | 'substring';
+
 const COMPLETION_KIND_PRIORITY: Record<LuaCompletionKind, number> = {
 	local: 90,
 	member: 80,
@@ -82,7 +91,8 @@ export function buildCanonicalCompletionItems(items: readonly LuaCompletionItem[
 	return result;
 }
 
-export function filterCompletionItems(items: readonly LuaCompletionItem[], prefix: string, replacementText: string): LuaCompletionItem[] {
+export function filterCompletionItems(items: readonly LuaCompletionItem[], prefix: string, replacementText: string,
+	matchMode: CompletionMatchMode = 'substring'): LuaCompletionItem[] {
 	const matches: Array<{ item: LuaCompletionItem; score: number; exact: boolean }> = [];
 	for (let i = 0; i < items.length; i += 1) {
 		const item = items[i];
@@ -95,7 +105,9 @@ export function filterCompletionItems(items: readonly LuaCompletionItem[], prefi
 		const label = item.label;
 		let score: number = null;
 		let exact = false;
-		if (label.startsWith(prefix)) { score = 0; exact = label === prefix; }
+		if (matchMode === 'prefix') {
+			if (insertText.length > prefix.length && insertText.startsWith(prefix)) { score = 0; exact = label === prefix; }
+		} else if (label.startsWith(prefix)) { score = 0; exact = label === prefix; }
 		else if (prefix.length > 0) {
 			const index = label.indexOf(prefix);
 			if (index !== -1) score = index + 10;
