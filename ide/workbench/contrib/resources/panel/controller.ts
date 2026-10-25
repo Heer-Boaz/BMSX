@@ -1,6 +1,9 @@
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
+import { create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
+import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
+import type { PointerSnapshot } from '../../../../common/models';
+import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import type { Scrollbar } from '../../../ui/scrollbar';
 import { renderResourcePanel } from '../../../render/resource_panel';
@@ -47,8 +50,8 @@ import { inputFocus } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
-import { editorChromeState } from '../../../ui/chrome_state';
 import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation } from '../../../ui/tree_view';
+import { getWorkbenchEditorBounds } from '../../../common/layout';
 
 export type ResourcePanelItemMetrics = {
 	fontVariant: FontVariant | null;
@@ -81,7 +84,7 @@ function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
 	};
 }
 
-export class ResourcePanelController implements PointerHoverTarget {
+export class ResourcePanelController implements PointerHoverTarget, PointerCaptureTarget {
 	public onPointerLeave(): void { this.hoverIndex = -1; }
 	private static readonly EMPTY_ITEMS: CallHierarchyPanelItem[] = [];
 	public visible = false;
@@ -124,6 +127,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 	private readonly callMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
 	public readonly resourceVertical: Scrollbar;
 	public readonly resourceHorizontal: Scrollbar;
+	private resizeStartX = 0;
+	private resizeStartRatio = 0;
 
 	constructor(
 		private readonly editor: CartEditor,
@@ -135,6 +140,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.widthRatio = initialWidthRatio;
 		this.resourceVertical = scrollbars.resourceVertical;
 		this.resourceHorizontal = scrollbars.resourceHorizontal;
+		this.focusTarget.canFocus = () => this.isVisible();
 		this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
 	}
 
@@ -148,14 +154,15 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	// === Panel lifecycle ===
-	isVisible(): boolean { return this.visible; }
+	isVisible(): boolean { return this.bounds.right > this.bounds.left && this.bounds.bottom > this.bounds.top; }
 	isFocused(): boolean { return this.focusTarget.hasFocus; }
 	setFocused(focused: boolean): void {
 		if (focused) {
 			this.focusTarget.focus();
 		} else if (this.focusTarget.hasFocus) {
 			const activePane = this.editor.editorPanes.activePane;
-			if (activePane === null) this.focusTarget.release();
+			const bounds = getWorkbenchEditorBounds();
+			if (activePane === null || bounds.right === bounds.left || bounds.bottom === bounds.top) this.focusTarget.release();
 			else activePane.focus();
 		}
 	}
@@ -165,33 +172,20 @@ export class ResourcePanelController implements PointerHoverTarget {
 	togglePanel(): void { this.visible ? this.hide() : this.show(); }
 
 	show(): void {
-		const desiredRatio = this.widthRatio;
-		const clamped = clampResourcePanelRatio(desiredRatio);
-		if (!writeResourcePanelBounds(this.bounds, clamped)) {
-			showEditorMessage('Viewport too small for resource panel.', 'warning', 3.0);
-			return;
-		}
 		pointerHover.release(this);
 		this.files.tree.hoverIndex = -1;
-		this.widthRatio = clamped;
+		this.widthRatio = clampResourcePanelRatio(this.widthRatio);
 		this.mode = 'resources';
 		this.visible = true;
-		this.focusTarget.focus();
 		this.refresh();
+		this.focusTarget.focus();
 	}
 
 	showCallHierarchy(model: CallHierarchyModel): void {
-		const desiredRatio = this.widthRatio;
-		const clamped = clampResourcePanelRatio(desiredRatio);
-		if (!writeResourcePanelBounds(this.bounds, clamped)) {
-			showEditorMessage('Viewport too small for call hierarchy panel.', 'warning', 3.0);
-			return;
-		}
 		pointerHover.release(this);
-		this.widthRatio = clamped;
+		this.widthRatio = clampResourcePanelRatio(this.widthRatio);
 		this.mode = 'command';
 		this.visible = true;
-		this.focusTarget.focus();
 		this.callHierarchyModel = model;
 		this.callHierarchyDirection = CallHierarchyDirection.CallsTo;
 		this.callScroll = this.callHScroll = 0;
@@ -201,7 +195,9 @@ export class ResourcePanelController implements PointerHoverTarget {
 			const root = model.roots[0];
 			this.callHierarchyExpandedNodeIds.add(root.id);
 		}
+		this.prepareLayout();
 		this.refreshCallHierarchyContents();
+		this.focusTarget.focus();
 	}
 
 	toggleCallHierarchyDirection(): void {
@@ -225,13 +221,11 @@ export class ResourcePanelController implements PointerHoverTarget {
 	hide(): void {
 		pointerHover.release(this);
 		this.visible = false;
-		editorChromeState.resourcePanelResizing = false;
-		this.setFocused(false);
+		this.prepareLayout();
 		this.resetCallHierarchyState();
 		this.mode = 'resources';
 		this.callHierarchyModel = null;
 		this.callHierarchyExpandedNodeIds.clear();
-		this.publishCodeAreaLeft();
 	}
 
 	toggleFilterMode(): void {
@@ -247,7 +241,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	// === Rendering ===
 	draw(): void {
-		if (!this.visible) return;
+		if (!this.isVisible()) return;
 		renderResourcePanel(this);
 	}
 
@@ -286,17 +280,17 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	setScroll(scroll: number): void {
 		const layout = this.prepareLayout();
-		this.scroll = clamp(scroll, 0, layout ? layout.maxVerticalScroll : 0);
+		if (layout !== null) this.scroll = clamp(scroll, 0, layout.maxVerticalScroll);
 	}
 
 	setHScroll(scroll: number): void {
 		const layout = this.prepareLayout();
-		this.hscroll = clamp(scroll, 0, layout ? layout.maxHorizontalScroll : 0);
+		if (layout !== null) this.hscroll = clamp(scroll, 0, layout.maxHorizontalScroll);
 	}
 
 	scrollBy(amount: number): void {
 		const layout = this.prepareLayout();
-		this.scroll = clamp(this.scroll + amount, 0, layout ? layout.maxVerticalScroll : 0);
+		if (layout !== null) this.scroll = clamp(this.scroll + amount, 0, layout.maxVerticalScroll);
 		this.clampHScroll();
 	}
 
@@ -323,20 +317,35 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
+		if (!this.isVisible()) return false;
 		const requestedRatio = viewportX / viewportWidth;
 		const clampedRatio = clampResourcePanelRatio(requestedRatio);
-		if (!writeResourcePanelBounds(this.bounds, clampedRatio)) {
-			this.hide();
-			return false;
-		}
 		this.widthRatio = clampedRatio;
-		this.visible = true;
+		this.prepareLayout();
 		this.focusTarget.focus();
-		this.publishCodeAreaLeft();
-		this.clampHScroll();
-		this.setScroll(this.scroll);
-		return true;
+		return this.isVisible();
 	}
+
+	public beginResize(snapshot: PointerSnapshot): void {
+		this.resizeStartX = snapshot.viewportX;
+		this.resizeStartRatio = this.widthRatio;
+		this.focusTarget.focus();
+		pointerCapture.capture(this);
+		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
+	}
+
+	public handleCapturedPointer(snapshot: PointerSnapshot): void {
+		const delta = snapshot.viewportX - this.resizeStartX;
+		const width = editorViewState.viewportWidth;
+		if (this.setRatioFromViewportX(this.resizeStartRatio * width + delta, width)) editorViewState.layout.markVisualLinesDirty();
+	}
+
+	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
+		pointerCapture.release(this);
+		this.handleCapturedPointer(snapshot);
+	}
+
+	public cancelPointer(): void { pointerCapture.release(this); }
 
 	// === Internals ===
 	private resetCallHierarchyState(): void {
@@ -346,10 +355,11 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	/** Publish the active view and its layout; Call Hierarchy changes only on explicit tree commands. */
-	public refresh(): void {
-		if (!this.visible) return;
+	public refresh(): boolean {
+		if (!this.visible) return false;
+		const previousInset = editorViewState.codeAreaLeft;
 		let reveal = false;
-		if (this.mode === 'resources') {
+		if (this.editor.isActive && this.mode === 'resources') {
 			const changed = this.files.sync(this.sources, this.filterMode);
 			if (this.pendingSelectionIdentity !== null && this.selectionRevealRevision !== this.files.revision) {
 				this.selectionRevealRevision = this.files.revision;
@@ -359,8 +369,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 			this.updateFilesMetrics();
 			if (changed || reveal) pointerHover.release(this);
 		}
-		if (this.prepareLayout() === null) this.hide();
-		else if (reveal) this.ensureSelectionVisible();
+		if (this.prepareLayout() !== null && reveal) this.ensureSelectionVisible();
+		return editorViewState.codeAreaLeft !== previousInset;
 	}
 
 	public navigateFiles(command: WorkbenchTreeNavigation): void {
@@ -383,10 +393,6 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	private refreshCallHierarchyContents(): void {
-		const bounds = this.getBounds();
-		if (!bounds) {
-			return;
-		}
 		this.hoverIndex = -1;
 		const previousNodeId = this.selectionIndex >= 0 && this.selectionIndex < this.itemCount
 			? this.callHierarchyItems[this.selectionIndex].callHierarchyNodeId
@@ -395,7 +401,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 			model: this.callHierarchyModel,
 			direction: this.callHierarchyDirection,
 			expandedNodeIds: this.callHierarchyExpandedNodeIds,
-			bounds,
+			bounds: this.bounds,
 			lineHeight: this.lineHeight,
 			previousNodeId,
 			previousScroll: this.scroll,
@@ -408,7 +414,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	applyPendingSelection(): void {
-		if (!this.visible || this.mode !== 'resources' || this.pendingSelectionIdentity === null) return;
+		if (!this.isVisible() || this.mode !== 'resources' || this.pendingSelectionIdentity === null) return;
 		this.selectionRevealRevision = this.files.revision;
 		if (!this.files.reveal(this.pendingSelectionIdentity)) return;
 		this.pendingSelectionIdentity = null;
@@ -424,37 +430,35 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 	public ensureSelectionVisible(): void {
 		const layout = this.prepareLayout();
-		const capacity = layout ? layout.capacity : 1;
-		this.scroll = ensureResourcePanelSelectionScroll(this.selectionIndex, this.scroll, capacity, this.itemCount);
+		if (layout === null) return;
+		this.scroll = ensureResourcePanelSelectionScroll(this.selectionIndex, this.scroll, layout.capacity, this.itemCount);
 		this.clampHScroll();
 	}
 
 	public lineCapacity(): number {
-		const layout = this.prepareLayout();
-		return layout ? layout.capacity : 1;
+		this.prepareLayout();
+		return this.layout.capacity;
 	}
 
 	public getBounds(): RectBounds {
-		if (!this.visible) {
-			this.publishCodeAreaLeft();
-			return null;
-		}
-		if (!writeResourcePanelBounds(this.bounds, this.widthRatio)) {
-			editorViewState.codeAreaLeft = 0;
-			return null;
-		}
-		this.publishCodeAreaLeft();
-		return this.bounds;
+		return this.isVisible() ? this.bounds : null;
 	}
 
 	public prepareLayout(): ResourcePanelLayout {
-		const bounds = this.getBounds();
-		if (!bounds) return null;
+		if (this.visible && this.editor.isActive) writeResourcePanelBounds(this.bounds, this.widthRatio);
+		else write_rect_bounds(this.bounds, 0, 0, 0, 0);
 		const layout = writeResourcePanelLayout(this.layout, this.itemCount, this.maxLineWidth, this.lineHeight);
 		this.resourceVertical.layout(layout.verticalTrack, this.itemCount, layout.capacity, this.scroll);
-		this.scroll = this.resourceVertical.getScroll();
 		this.resourceHorizontal.layout(layout.horizontalTrack, Math.max(this.maxLineWidth, layout.availableWidth), layout.availableWidth, this.hscroll);
-		this.hscroll = this.resourceHorizontal.getScroll();
+		editorViewState.codeAreaLeft = this.bounds.right - this.bounds.left;
+		if (this.isVisible()) {
+			this.scroll = this.resourceVertical.getScroll();
+			this.hscroll = this.resourceHorizontal.getScroll();
+		} else {
+			pointerHover.release(this);
+			pointerCapture.cancelTarget(this);
+			this.setFocused(false);
+		}
 		if (this.mode === 'resources') {
 			const tree = this.files.tree.layout;
 			tree.contentLeft = layout.contentLeft; tree.contentTop = layout.contentTop;
@@ -462,7 +466,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 			tree.rowHeight = this.lineHeight; tree.visibleRowCount = layout.capacity;
 			tree.indentWidth = tree.twistieWidth = editorViewState.spaceAdvance * 2;
 		}
-		return layout;
+		return this.isVisible() ? layout : null;
 	}
 
 	public getItemMetrics(index: number): ResourcePanelItemMetrics {
@@ -496,7 +500,9 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	public clampHScroll(): void {
-		const maxScroll = this.computeMaxHScroll();
+		const layout = this.prepareLayout();
+		if (layout === null) return;
+		const maxScroll = layout.maxHorizontalScroll;
 		const current = this.hscroll;
 		this.hscroll = clamp(current, 0, maxScroll);
 	}
@@ -560,11 +566,5 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.selectionIndex = refreshed.selectionIndex;
 		this.scroll = refreshed.scroll;
 		this.clampHScroll();
-	}
-
-	private publishCodeAreaLeft(): void {
-		editorViewState.codeAreaLeft = this.visible
-			? Math.max(0, this.bounds.right - this.bounds.left)
-			: 0;
 	}
 }

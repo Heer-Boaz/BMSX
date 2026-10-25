@@ -501,7 +501,7 @@ export class IdeCommandController {
 			case 'pause':
 				return this.execution.userPaused;
 			case 'resources':
-				return this.editor.resourcePanel.isVisible();
+				return this.editor.resourcePanel.visible;
 			case 'problems':
 				return problemsPanel.isVisible;
 			case 'behaviorLens':

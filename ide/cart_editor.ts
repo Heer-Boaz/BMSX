@@ -730,8 +730,8 @@ export class RuntimeCartEditor implements CartEditor {
 		const codeTabActive = activeTab?.kind === 'code_editor';
 		editorCaretState.cursorVisible = codeTabActive;
 		editorCaretState.blinkTimer = 0;
-		if (!wasActive) this.enterRenderTargets();
 		editorRuntimeState.active = true;
+		if (!wasActive) this.enterRenderTargets();
 		this.diagnostics.setEnabled(true);
 		this.overlayRenderer.active = true;
 		setEditorFeedbackActive(true);
@@ -806,8 +806,7 @@ export class RuntimeCartEditor implements CartEditor {
 		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		this.actionPrompt.close();
-		this.resourcePanel.hide();
-		editorChromeState.resourcePanelResizing = false;
+		if (this.resourcePanel.refresh()) refreshWorkbenchLayout();
 		this.diagnostics.setEnabled(false);
 		editorRuntimeState.lastReportedSemanticError = null;
 		if (wasActive) this.leaveRenderTargets();
@@ -839,8 +838,8 @@ export class RuntimeCartEditor implements CartEditor {
 		this.runtimeTimeline.setContext(this.editorPanes.activePane?.runtimeControlContext, this.editorPanes.activePane?.runtimeTransport);
 		editorChromeState.runtimeTimelineHeight = this.runtimeTimeline.height;
 		let layoutChanged = refreshWorkbenchLayout();
+		if (this.resourcePanel.refresh()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
 		if (this.gamePanel.update()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
-		this.resourcePanel.refresh();
 		if (layoutChanged) this.surfaces.changed();
 		this.editorPanes.layout(getWorkbenchEditorBounds());
 		this.editorPanes.activePane?.update(deltaSeconds);
@@ -858,8 +857,8 @@ export class RuntimeCartEditor implements CartEditor {
 		this.menubar.update();
 		layoutTabBar(this.chromeRenderContext);
 		refreshWorkbenchLayout();
+		if (this.resourcePanel.refresh()) refreshWorkbenchLayout();
 		if (this.gamePanel.update()) refreshWorkbenchLayout();
-		this.resourcePanel.refresh();
 		this.editorPanes.layout(getWorkbenchEditorBounds());
 		this.surfaces.changed();
 	}
@@ -982,7 +981,6 @@ export class RuntimeCartEditor implements CartEditor {
 		lineJumpState.visible = false;
 		applyLineJumpFieldText('', true);
 		this.resourcePanel.hide();
-		editorChromeState.resourcePanelResizing = false;
 	}
 
 	public setFontVariant(variant: Parameters<typeof setFontVariant>[1]): void {
@@ -1124,7 +1122,6 @@ export class RuntimeCartEditor implements CartEditor {
 		const entry = retainEntryTabContext(this.sources);
 		initializeTabs(entry, this.editorPanes);
 		this.resourcePanel.queuePendingSelection(entry.model.resource.domain === SYSTEM_RESOURCE_DOMAIN ? null : entry.model.resource);
-		editorChromeState.resourcePanelResizing = false;
 		activeCodeEditor.view.desiredColumn = activeCodeEditor.view.cursorColumn;
 		initializeNavigationState(this.editorPanes);
 		editorRuntimeState.initialized = true;

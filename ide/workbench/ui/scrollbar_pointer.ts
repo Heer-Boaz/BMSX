@@ -19,6 +19,8 @@ export class ScrollbarPointerControl implements PointerCaptureTarget {
 
 	public constructor(private readonly capture: PointerCaptureService, private readonly scope?: PointerCaptureScope) {}
 
+	private readonly onTrackChanged = (): void => { this.capture.cancelTarget(this); };
+
 	public readonly cancelPointer = (): void => {
 		this.capture.release(this);
 		this.gesture?.unbindTrack();
@@ -41,7 +43,7 @@ export class ScrollbarPointerControl implements PointerCaptureTarget {
 		const pointer = scrollbar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
 		const previous = scrollbar.getScroll();
 		const start = scrollbar.beginDrag(pointer);
-		this.gesture = { scrollbar, start, pointer, onScroll, unbindTrack: scrollbar.onDidChangeTrack(this.cancelPointer) };
+		this.gesture = { scrollbar, start, pointer, onScroll, unbindTrack: scrollbar.onDidChangeTrack(this.onTrackChanged) };
 		// A coalesced click has its final coordinates already; it cannot leave a live grab.
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.cancelPointer();
 		if (scrollbar.getScroll() !== previous) onScroll?.(scrollbar.getScroll());

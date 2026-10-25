@@ -15,7 +15,7 @@ import { WORKBENCH_ICON_SIZE } from '../ui/icon';
 
 const resourceViewerVerticalTrack: RectBounds = create_rect_bounds();
 export function renderResourcePanel(controller: ResourcePanelController): void {
-	if (!controller.visible) {
+	if (!controller.isVisible()) {
 		return;
 	}
 	const layout = controller.layout;

@@ -28,6 +28,8 @@ for (const path of ['cart.lua', 'intro.lua']) {
 	t.assert(model.buffer.getText() === '9' + original, 'ordinary input did not create the intended retained parse fault');
 	documents.push({ input, model, original, version: model.version });
 }
+// Studio's authoring hold ends when hidden; an explicit physical pause must not.
+t.command('runtime.pause'); await t.frames(2);
 const [cart, intro] = documents, cycles = t.runtime().machine.scheduler.nowCycles;
 const media = t.sourceState().currentBlua32Media;
 const unchanged = () => {
@@ -58,6 +60,36 @@ const gpu = t.activeWorkbenchTab();
 t.assert(gpu.kind === 'gpu_debugger', 'the actual GPU inspector did not open');
 for (const font of ['tiny', 'msx']) {
 	for (const theme of ['light', 'dark']) {
+		await focusTab(gpu);
+		const retainedSequence = gpu.selected.sequence, retainedView = gpu.view, retainedProjection = gpu.projection;
+		// The shipped Select+RB host chord hides Studio without closing its parts.
+		// Hide/reveal changes the render target; do not freeze its geometry projection.
+		await press('ControlRight', 'ShiftRight');
+		t.assert(!t.workbenchActive() && t.activeWorkbenchTab() === gpu,
+			'the actual host shortcut did not conceal Studio with its retained inspector');
+		await capture(`parts-${font}-${theme}-studio-hidden`); unchanged();
+		await press('ControlRight', 'ShiftRight'); await t.frames(3);
+		t.assert(t.workbenchActive() && t.activeWorkbenchTab() === gpu && gpu.selected.sequence === retainedSequence
+			&& gpu.view === retainedView && gpu.projection === retainedProjection,
+			'Studio reveal replaced the retained inspector or its selected observation');
+		await capture(`parts-${font}-${theme}-studio-revealed`); unchanged();
+
+		// Published client edges target the real Problems sash, never a pixel oracle.
+		// Its minimum position leaves no Files/editor body, then the old edge restores it.
+		const dividerX = gpu.layout.left + 12, dividerBottom = gpu.layout.bottom, concealedY = gpu.layout.top - 1;
+		t.controlInput([{ type: 'pointer', x: dividerX, y: dividerBottom }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: dividerX, y: concealedY }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+		await capture(`parts-${font}-${theme}-body-concealed`); unchanged();
+		t.controlInput([{ type: 'pointer', x: dividerX, y: concealedY }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: dividerX, y: dividerBottom }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+		t.assert(t.workbenchActive() && t.activeWorkbenchTab() === gpu && gpu.selected.sequence === retainedSequence
+			&& gpu.view === retainedView && gpu.projection === retainedProjection,
+			'temporary body concealment replaced the inspector input or its selected observation');
+		await capture(`parts-${font}-${theme}-body-recovered`); unchanged();
+
+		// Establish this exact reading bookmark only after legitimate layout changes settle.
 		await focusTab(cart.input);
 		await press('ControlLeft', 'End'); await press('ArrowUp'); await press('Home'); await press('ShiftLeft', 'End');
 		const view = cart.input.context.view, anchor = view.selectionAnchor;

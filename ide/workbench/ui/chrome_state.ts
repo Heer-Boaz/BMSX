@@ -27,7 +27,6 @@ type EditorChromeState = {
 	lastTabClickId: EditorTabId | null;
 	lastTabClickTime: number;
 	problemsPanelResizing: boolean;
-	resourcePanelResizing: boolean;
 };
 
 const tabScrollbar = new Scrollbar('horizontal');
@@ -57,5 +56,4 @@ export const editorChromeState: EditorChromeState = {
 	lastTabClickId: null,
 	lastTabClickTime: 0,
 	problemsPanelResizing: false,
-	resourcePanelResizing: false,
 };

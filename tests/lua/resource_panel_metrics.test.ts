@@ -20,7 +20,7 @@ function fixture(t: TestContext, variant: FontVariant) {
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const path = `deep/tree/${'wide_name_'.repeat(12)}.lua`;
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(path, 1), createScenarioTestSourceRecord('short.lua', 1)]);
-	const panes = createTestEditorPanes(), editor = { editorPanes: panes } as CartEditor;
+	const panes = createTestEditorPanes(), editor = { editorPanes: panes, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
 	panel.setFontMetrics(editorViewState.font); panel.queuePendingSelection({ domain: 0, path }); panel.show();
 	const index = panel.files.tree.rows.findIndex(node => node.element.kind === 'file' && node.element.resource.path === path); assert.ok(index >= 0);

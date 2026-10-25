@@ -20,6 +20,8 @@ import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { getProblemsPanelBounds } from '../../ide/workbench/contrib/problems/panel/layout';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { RuntimeIdeState } from '../../ide/workbench/state';
+import { getWorkbenchEditorBounds } from '../../ide/workbench/common/layout';
+import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { closeTab, getActiveTab, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
 import { createCodeEditorInput, retainLuaCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
@@ -220,4 +222,141 @@ test('an actual Files scrollbar gesture survives sibling editor activation while
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+for (const mode of ['resources', 'command'] as const) test(`${mode} open intent survives whole-Studio suspension without resetting its retained reading owner`, t => {
+	const f = fixture(t), panel = f.editor.resourcePanel;
+	t.after(() => pointerCapture.interrupt(false));
+	if (mode === 'resources') {
+		panel.show(); panel.queuePendingSelection(f.resource(40)); panel.applyPendingSelection();
+		panel.navigateFiles('left'); panel.navigateFiles('left');
+	} else {
+		const calls = 'local function target() end\n'
+			+ Array.from({ length: 20 }, (_, index) => `local function caller_${index}() target() end`).join('\n') + '\n'
+			+ Array.from({ length: 40 }, (_, index) => `local function leaf_${index}() caller_0() end`).join('\n');
+		const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source: calls }]);
+		const symbol = frontend.findSymbolsByPosition('calls.lua', 1, 16)!;
+		panel.showCallHierarchy(new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target'));
+		panel.setSelectionIndex(1); const firstLevel = panel.itemCount; panel.expandSelectedCallHierarchyNode();
+		assert.ok(panel.itemCount > firstLevel); panel.setSelectionIndex(25);
+	}
+	panel.setRatioFromViewportX(144, editorViewState.viewportWidth);
+	panel.setScroll(10); panel.setFocused(true); f.editor.update(0); panel.prepareLayout();
+	const selected = panel.selectionIndex, count = panel.itemCount, scroll = panel.scroll, filesNode = panel.files.selectedNode;
+	const requestedWidth = panel.getBounds()!.right - panel.getBounds()!.left;
+	const thumb = panel.resourceVertical.getThumb()!; assert.ok(thumb !== null);
+	const x = (thumb.left + thumb.right) / 2, y = (thumb.top + thumb.bottom) / 2;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
+	assert.equal(pointerCapture.active, true);
+	assert.ok(scroll > 0);
+	f.editor.deactivate();
+	assert.equal(panel.visible, true, 'suspending Studio revokes presentation, not explicit open intent');
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
+	assert.equal(panel.isFocused(), false); assert.equal(panel.getBounds(), null);
+	assert.equal(panel.getMode(), mode); assert.equal(panel.selectionIndex, selected); assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll);
+	panel.setFocused(true); assert.equal(panel.isFocused(), false, 'an unavailable part cannot regain focus');
+	f.editor.activate(); f.editor.update(0);
+	assert.equal(panel.visible, true); assert.equal(panel.getMode(), mode); assert.equal(panel.selectionIndex, selected);
+	assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll); assert.ok(panel.files.selectedNode === filesNode);
+	assert.ok(panel.getBounds() !== null);
+	// The committed user-sized span, at the same viewport, is the layout contract here.
+	assert.equal(panel.getBounds()!.right - panel.getBounds()!.left, requestedWidth);
+	f.editor.dispatchPointer({ x, y: y + 24, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
+	assert.equal(panel.scroll, scroll, 'resuming Studio cannot turn an old hold into a new scrollbar gesture');
+	f.editor.dispatchPointer({ x, y: y + 24, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
+	assert.equal(pointerCapture.draining, false);
+	panel.prepareLayout();
+	const liveThumb = panel.resourceVertical.getThumb()!;
+	const liveX = (liveThumb.left + liveThumb.right) / 2, liveY = (liveThumb.top + liveThumb.bottom) / 2;
+	f.editor.dispatchPointer({ x: liveX, y: liveY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 4 });
+	assert.equal(pointerCapture.active, true);
+	// Another real workbench part consumes the editor client, while the physical canvas stays available.
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(1000000); f.editor.update(0);
+	assert.equal(panel.visible, true); assert.equal(panel.getBounds(), null); assert.equal(panel.isFocused(), false);
+	assert.equal(getWorkbenchEditorBounds().left, 0, 'an unavailable part contributes no editor-client inset in the same composition');
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
+	assert.equal(panel.resourceVertical.getThumb(), null); assert.equal(panel.resourceHorizontal.getThumb(), null);
+	panel.setFocused(true); assert.ok(inputFocus.admittedTarget !== panel.focusTarget);
+	assert.equal(editorViewState.scrollbarController.begin(['resourceVertical'], { valid: true, insideViewport: true,
+		viewportX: liveX, viewportY: liveY, pressedButtons: PointerButton.Primary,
+		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }, 0), false,
+		'a zero-area part cannot begin a scrollbar gesture through old track geometry');
+	f.editor.dispatchWheel({ x: liveX, y: liveY, deltaX: 0, deltaY: 5, attachmentDeltaY: 5, modifiers: KeyModifier.none, timestamp: 5 });
+	f.editor.dispatchPointer({ x: liveX, y: liveY + 24, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 6 });
+	assert.equal(panel.scroll, scroll); assert.equal(panel.selectionIndex, selected); assert.equal(panel.getMode(), mode);
+	f.editor.updateViewport({ width: 512, height: 288 }); f.editor.update(0);
+	assert.equal(panel.getBounds(), null); assert.equal(panel.visible, true);
+	problemsPanel.hide(); f.editor.update(0); panel.prepareLayout();
+	assert.equal(getWorkbenchEditorBounds().left, panel.getBounds()!.right, 'recovery publishes the actual admitted part inset before editor layout');
+	assert.equal(panel.getMode(), mode); assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll);
+	f.editor.dispatchPointer({ x: liveX, y: liveY + 24, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 7 });
+	assert.equal(panel.scroll, scroll, 'layout recovery cannot replay the retired hold');
+	f.editor.dispatchPointer({ x: liveX, y: liveY + 24, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 8 });
+	assert.equal(pointerCapture.draining, false);
+	assert.equal(editorViewState.scrollbarController.begin(['resourceVertical'], { valid: true, insideViewport: true,
+		viewportX: liveX, viewportY: liveY, pressedButtons: PointerButton.Primary,
+		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }, 0), false,
+		'the recovered part cannot admit a drag at its obsolete pre-resize thumb');
+	const recoveredThumb = panel.resourceVertical.getThumb()!; assert.ok(recoveredThumb !== null);
+	const recoveredX = (recoveredThumb.left + recoveredThumb.right) / 2, recoveredY = (recoveredThumb.top + recoveredThumb.bottom) / 2;
+	f.editor.dispatchPointer({ x: recoveredX, y: recoveredY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 9 });
+	assert.equal(pointerCapture.active, true);
+	f.editor.dispatchPointer({ x: recoveredX, y: recoveredY + 24, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 10 });
+	assert.ok(panel.scroll > scroll, 'freshly published thumb geometry admits a new actual gesture after recovery');
+	f.editor.dispatchPointer({ x: recoveredX, y: recoveredY + 24, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 11 });
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
+	const dividerX = panel.layout.dividerLeft, dividerY = (panel.getBounds()!.top + panel.getBounds()!.bottom) / 2;
+	const committedSpan = panel.getBounds()!.right - panel.getBounds()!.left;
+	f.editor.dispatchPointer({ x: dividerX, y: dividerY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 12 });
+	assert.equal(pointerCapture.active, true, 'the actual resource sash, not a resize flag, owns its hold');
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(1000000); f.editor.update(0);
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
+	problemsPanel.hide(); f.editor.update(0);
+	f.editor.dispatchPointer({ x: dividerX + 32, y: dividerY, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 13 });
+	assert.equal(panel.getBounds()!.right - panel.getBounds()!.left, committedSpan, 'the retired sash hold cannot resize the recovered part');
+	f.editor.dispatchPointer({ x: dividerX + 32, y: dividerY, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 14 });
+	assert.equal(pointerCapture.draining, false);
+	f.editor.dispatchPointer({ x: dividerX, y: dividerY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 15 });
+	assert.equal(pointerCapture.active, true);
+	f.editor.dispatchPointer({ x: dividerX + 32, y: dividerY, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 16 });
+	assert.ok(panel.getBounds()!.right - panel.getBounds()!.left > committedSpan, 'a fresh admitted sash gesture still changes the user size intent');
+	f.editor.dispatchPointer({ x: dividerX + 32, y: dividerY, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 17 });
+	for (let index = 40; index < 48; index++) openEditorTab(f.editor.editorPanes,
+		createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(index))));
+	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0);
+	const tabThumb = editorChromeState.tabScrollbar.getThumb()!; assert.ok(tabThumb !== null);
+	const tabX = (tabThumb.left + tabThumb.right) / 2, tabY = (tabThumb.top + tabThumb.bottom) / 2;
+	const tabScroll = editorChromeState.tabScrollbar.getScroll(), fileScroll = panel.scroll;
+	f.editor.dispatchPointer({ x: tabX, y: tabY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 18 });
+	assert.equal(pointerCapture.active, true);
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(1000000); f.editor.update(0);
+	assert.equal(panel.getBounds(), null); assert.equal(panel.visible, true);
+	assert.equal(pointerCapture.active, true, 'withholding Files cannot cancel a sibling tab-strip capture');
+	assert.equal(pointerCapture.draining, false);
+	f.editor.dispatchPointer({ x: tabX + 32, y: tabY, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 19 });
+	assert.ok(editorChromeState.tabScrollbar.getScroll() > tabScroll); assert.equal(panel.scroll, fileScroll);
+	f.editor.dispatchPointer({ x: tabX + 32, y: tabY, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 20 });
+	assert.equal(pointerCapture.active, false); problemsPanel.hide(); f.editor.update(0);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	assert.equal(f.model.canUndo, true); assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+	panel.hide(); assert.equal(panel.visible, false); assert.equal(panel.getMode(), 'resources');
 });

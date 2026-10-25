@@ -26,7 +26,7 @@ function fixture(t: TestContext) {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const sources = createScenarioTestSourceState(Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1)));
-	const panes = createTestEditorPanes(), editor = { editorPanes: panes } as CartEditor;
+	const panes = createTestEditorPanes(), editor = { editorPanes: panes, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
 	const navigation = new EditorNavigationController(sources, panel, createResourceEditorResolver(sources), panes, new EditorSearchController(sources, renameController));
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();

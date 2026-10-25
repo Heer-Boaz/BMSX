@@ -73,13 +73,11 @@ const lineCapacityLayoutScratch = createResourcePanelLayout(lineCapacityBoundsSc
 
 export function writeResourcePanelBounds(out: RectBounds, widthRatio: number): boolean {
 	const width = computeResourcePanelPixelWidth(widthRatio);
-	if (width <= 0) {
-		return false;
-	}
 	const root = getWorkbenchEditorBounds();
 	const top = root.top;
 	const bottom = root.bottom;
-	if (bottom <= top) {
+	if (width <= 0 || bottom <= top) {
+		write_rect_bounds(out, 0, top, 0, top);
 		return false;
 	}
 	out.left = 0;
@@ -101,6 +99,15 @@ export function writeResourcePanelLayout(
 	lineHeight: number,
 ): ResourcePanelLayout {
 	const bounds = out.bounds;
+	if (bounds.right === bounds.left || bounds.bottom === bounds.top) {
+		out.contentLeft = out.contentRight = out.dividerLeft = bounds.left;
+		out.contentTop = out.effectiveBottom = bounds.top;
+		out.availableWidth = out.capacity = out.maxVerticalScroll = out.maxHorizontalScroll = 0;
+		out.verticalVisible = out.horizontalVisible = false;
+		write_rect_bounds(out.verticalTrack, bounds.left, bounds.top, bounds.left, bounds.top);
+		write_rect_bounds(out.horizontalTrack, bounds.left, bounds.top, bounds.left, bounds.top);
+		return out;
+	}
 	const dividerLeft = bounds.right - 1;
 	const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
 	const contentTop = bounds.top + 2;

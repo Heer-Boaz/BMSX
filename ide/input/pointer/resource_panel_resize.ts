@@ -1,17 +1,10 @@
-import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../common/models';
 import * as constants from '../../common/constants';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
-import { editorViewState } from '../../editor/ui/view/state';
-import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { clearEditorPointerSelectionState } from './state';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 
 export function handleResourcePanelResizePointer(resourcePanel: ResourcePanelController, snapshot: PointerSnapshot, justPressed: boolean): boolean {
-	if (editorChromeState.resourcePanelResizing) {
-		updateResourcePanelResize(resourcePanel, snapshot);
-		return true;
-	}
 	if (!justPressed) {
 		return false;
 	}
@@ -20,29 +13,11 @@ export function handleResourcePanelResizePointer(resourcePanel: ResourcePanelCon
 	}
 	const bounds = resourcePanel.getBounds();
 	if (bounds && bounds.right > bounds.left) {
-		editorChromeState.resourcePanelResizing = true;
-		resourcePanel.setFocused(true);
+		resourcePanel.beginResize(snapshot);
 		clearEditorPointerSelectionState();
 	}
 	clearGotoHoverHighlight();
 	return true;
-}
-
-function updateResourcePanelResize(resourcePanel: ResourcePanelController, snapshot: PointerSnapshot): void {
-	if (!snapshot.valid || (snapshot.pressedButtons & PointerButton.Primary) === 0) {
-		editorChromeState.resourcePanelResizing = false;
-		clearGotoHoverHighlight();
-		return;
-	}
-	const ok = resourcePanel.setRatioFromViewportX(snapshot.viewportX, editorViewState.viewportWidth);
-	if (!ok) {
-		editorChromeState.resourcePanelResizing = false;
-	} else {
-		editorViewState.layout.markVisualLinesDirty();
-	}
-	resourcePanel.setFocused(true);
-	clearEditorPointerSelectionState();
-	clearGotoHoverHighlight();
 }
 
 function isPointerOverResourcePanelDivider(resourcePanel: ResourcePanelController, x: number, y: number): boolean {

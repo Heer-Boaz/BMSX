@@ -35,7 +35,7 @@ export function refreshResourcePanelCallHierarchyState(options: {
 	if (selectionIndex === -1 && items.length > 0) {
 		selectionIndex = 0;
 	}
-	const scroll = ensureResourcePanelSelectionScroll(
+	const scroll = capacity === 0 ? options.previousScroll : ensureResourcePanelSelectionScroll(
 		selectionIndex,
 		options.previousScroll,
 		capacity,
