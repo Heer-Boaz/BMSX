@@ -21,7 +21,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 
 test('a key beneath a coincident tangent endpoint owns the pointer gesture', t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,leave_tangent=0},{time_ms=32,value=0,arrive_tangent=0,leave_tangent=0},{time_ms=100,value=0,arrive_tangent=0}}}}}";
-	const resource = { domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+	const resource = { location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
 	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
 	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
 	input.trackIndex = 0;
@@ -49,7 +49,7 @@ test('a key beneath a coincident tangent endpoint owns the pointer gesture', t =
 
 test('key capture preserves grab offset and commits only a physical drop; click, source invalidation and focus loss do not edit', t => {
 	const source = "return {duration_ms=1000,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100.25,value=1}}}}}";
-	const resource = { domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+	const resource = { location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
 	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
 	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
 	input.trackIndex = 0;
@@ -103,7 +103,7 @@ test('key capture preserves grab offset and commits only a physical drop; click,
 
 test('frame and clip axes navigate without a scalar track or a document edit', t => {
 	const source = "return {frames={'first','second'},subsequences={{start_ms=50,duration_ms=100,sequence={}}}}";
-	const resource = { domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+	const resource = { location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
 	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
 	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
@@ -148,7 +148,7 @@ test('frame and clip axes navigate without a scalar track or a document edit', t
 test('tangent direction uses both pointer axes and commits one native slope without moving its key', t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=2},{time_ms=100,value=100,arrive_tangent=2,leave_tangent=0}}}}}";
 	for (const field of ['leave', 'arrive'] as const) {
-		const resource = { domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+		const resource = { location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
 		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
 		input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
 		input.trackIndex = 0;

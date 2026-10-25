@@ -18,7 +18,7 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 		lineHeight: editorViewState.lineHeight, codeAreaTop: editorViewState.codeAreaTop, codeAreaBottom: editorViewState.codeAreaBottom };
 	t.after(() => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
-	const model = new EditorTextModel({ domain: 0, path: 'order.lua', source: { type: 'lua', resid: 'order' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'order.lua' }, domain: 0, path: 'order.lua', source: { type: 'lua', resid: 'order' } }, 'lua', source);
 	let analysis: FileSemanticData;
 	const project = () => {
 		analysis = buildLuaFileSemanticData(model.buffer.getText(), model.resource.path);

@@ -9,7 +9,7 @@ import { EditorFont } from '../../ide/editor/ui/view/font';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 
 function fixture(t: TestContext, source: string, variant: FontVariant = 'tiny', width = 8) {
-	const model = new EditorTextModel({ domain: 0, path: 'inline-layout.lua',
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'inline-layout.lua' }, domain: 0, path: 'inline-layout.lua',
 		source: { type: 'lua', resid: 'inline-layout' } }, 'lua', source);
 	const widget = new ActiveCodeEditorState(), font = new EditorFont(variant);
 	widget.attach(model, createCodeEditorViewState());

@@ -26,7 +26,7 @@ for (const modelCount of [1, 64, 256, 1024]) {
 			module_path: `module_${index}`, update_timestamp: 0, generated: false, sourceKind: 'project' as const, program_module: true,
 		};
 		registerLuaSourceRecord(registry, record);
-		editorTextModelService.retain({ domain: 0, path, source: record }, 'lua', source);
+		editorTextModelService.retain({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: record }, 'lua', source);
 	}
 	const sources = createTestRuntimeSourceState(system, [registry, null], 0);
 	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);

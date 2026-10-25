@@ -7,7 +7,7 @@ import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 test('project identity includes the working-copy owner and unchanged queries reuse each exact snapshot', t => {
 	const first = new EditorTextModelService(), second = new EditorTextModelService();
 	t.after(() => { first.clear(); second.clear(); });
-	const resource = { domain: 0 as const, path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
+	const resource = { location: { kind: 'workspace' as const, path: 'same.lua' }, domain: 0 as const, path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
 	const a = first.retain(resource, 'lua', 'return 1'), b = second.retain(resource, 'lua', 'return 2');
 	const projectA = getOrCreateSemanticProject(first, 0), projectB = getOrCreateSemanticProject(second, 0);
 	assert.notEqual(projectA, projectB);
@@ -30,7 +30,7 @@ test('project identity includes the working-copy owner and unchanged queries reu
 test('model teardown retires only its projects and a reopened matching source cannot revive them', t => {
 	const first = new EditorTextModelService(), second = new EditorTextModelService();
 	t.after(() => { first.clear(); second.clear(); });
-	const resource = { domain: 0 as const, path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
+	const resource = { location: { kind: 'workspace' as const, path: 'same.lua' }, domain: 0 as const, path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
 	first.retain(resource, 'lua', 'return 1'); second.retain(resource, 'lua', 'return 2');
 	const project = getOrCreateSemanticProject(first, 0), foreign = getOrCreateSemanticProject(second, 0);
 	const old = project.getSnapshot(), other = foreign.getSnapshot();

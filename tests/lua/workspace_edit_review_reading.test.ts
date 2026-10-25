@@ -15,7 +15,7 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 function fixture(t: TestContext, before: string, after: string) {
 	const models = new EditorTextModelService(), record = createScenarioTestSourceRecord('review.lua', 1, before);
 	const sources = createScenarioTestSourceState([record]);
-	const model = models.retain({ domain: 0, path: record.normalized_source_path, source: record }, 'lua', before);
+	const model = models.retain(sources.luaResources[0], 'lua', before);
 	const proposal = new WorkspaceEditProposal('Source reading', new WorkspaceSourceContext(models, sources), {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 0, deleteLength: before.length, text: after }] }]]),
 	});
@@ -238,7 +238,7 @@ test('repeated source text keeps exact file/hunk/part identity and offsets withi
 	const models = new EditorTextModelService(), source = 'keep\nold\nkeep\nkeep\nold\nkeep';
 	const records = ['one.lua', 'two.lua'].map(path => createScenarioTestSourceRecord(path, 1, source));
 	const sources = createScenarioTestSourceState(records);
-	const retained = records.map(record => models.retain({ domain: 0, path: record.normalized_source_path, source: record }, 'lua', source));
+	const retained = records.map(record => models.retain(sources.luaResources.find(resource => resource.domain === 0 && resource.path === record.source_path)!, 'lua', source));
 	const proposal = new WorkspaceEditProposal('Repeated source', new WorkspaceSourceContext(models, sources), {
 		kind: 'edit', edits: new Map(retained.map(model => [model, { version: model.version, edits: [
 			{ offset: source.indexOf('old'), deleteLength: 3, text: 'longer' },

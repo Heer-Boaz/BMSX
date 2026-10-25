@@ -26,7 +26,7 @@ function createFixture(t: TestContext, variant: 'tiny' | 'msx', theme: 'light' |
 	const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
 	const previousTheme = constants.getActiveIdeThemeVariant();
 	configureFontVariant(new VirtualHeadlessClock(), variant, null); constants.setIdeThemeVariant(theme);
-	const model = new EditorTextModel({ domain: 0, path: 'decoration.lua', source: { type: 'lua', resid: 'decoration' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'decoration.lua' }, domain: 0, path: 'decoration.lua', source: { type: 'lua', resid: 'decoration' } }, 'lua', source);
 	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
 	editorViewState.wordWrapEnabled = false; editorViewState.layout.ensureVisualLines(model.buffer, false, 0, 1);
 	const line = editorViewState.layout.getViewLine(model.buffer, 0), overlay = createHostOverlayFixture(256, 64);

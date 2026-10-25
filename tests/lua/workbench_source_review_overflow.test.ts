@@ -37,7 +37,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny') {
 	});
 	const review = new WorkbenchSourceEditReview(focus, capture, hover, parent, menu, surfaces, owner, area);
 	const models = new EditorTextModelService();
-	const model = models.retain({ domain: 0, path: 'shared_review.lua', source: { type: 'lua', resid: 'shared_review' } }, 'lua', "return 'before'");
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'shared_review.lua' }, domain: 0, path: 'shared_review.lua', source: { type: 'lua', resid: 'shared_review' } }, 'lua', "return 'before'");
 	let font = new Font({ variant }), measurements = 0, applied = 0, opened = -1, time = 0;
 	const measure = (text: string, start: number, end: number) => { measurements++; return font.measure(text.slice(start, end)); };
 	const measureText = (text: string) => measure(text, 0, text.length);
@@ -141,7 +141,7 @@ test('replacement, external dependency publication and model teardown retire the
 	const f = fixture(t), apply = f.review.actionBar.items.find(item => item.command === 'sourceEditReview.apply')!;
 	f.pointer(apply.bounds, PRIMARY, PRIMARY); f.show(); f.layout();
 	f.pointer(apply.bounds, 0, 0, PRIMARY); assert.equal(f.applied(), 0);
-	const dependency = f.models.retain({ domain: 0, path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'return true');
+	const dependency = f.models.retain({ location: { kind: 'workspace' as const, path: 'dependency.lua' }, domain: 0, path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'return true');
 	f.show(lifetime => lifetime.add({ dispose: dependency.onDidChangeContent(() => f.review.clear()) })); f.layout();
 	f.pointer(apply.bounds, PRIMARY, PRIMARY); dependency.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed dependency\n' }]);
 	assert.equal(f.review.visible, false); assert.equal(f.capture.active, false); f.pointer(apply.bounds, 0, 0, PRIMARY); assert.equal(f.applied(), 0);
@@ -171,7 +171,7 @@ test('source listeners precede departing-focus publication when a real source ow
 
 test('dependency attachments exist before blur can retire a new review and have no disposed-return continuation', t => {
 	const f = fixture(t); f.review.clear();
-	const dependency = f.models.retain({ domain: 0, path: 'review_dependency.lua', source: { type: 'lua', resid: 'review_dependency' } }, 'lua', 'return true');
+	const dependency = f.models.retain({ location: { kind: 'workspace' as const, path: 'review_dependency.lua' }, domain: 0, path: 'review_dependency.lua', source: { type: 'lua', resid: 'review_dependency' } }, 'lua', 'return true');
 	const departing = f.focus.createTarget(f.parent); departing.bindKeyboard(() => {}); departing.focus();
 	let subscribed = false, disposed = 0;
 	const unbind = departing.onDidBlur(() => {

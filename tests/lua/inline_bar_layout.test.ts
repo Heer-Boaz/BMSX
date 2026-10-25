@@ -148,7 +148,7 @@ test('a viewport shorter than permanent chrome publishes an empty pane and no ph
 test('asynchronous local results publish the smaller child viewport before revealing their source match', t => {
 	const clock = fixture(t);
 	const source = Array.from({ length: 200 }, (_, row) => `local needle_${row} = ${row}`).join('\n');
-	const model = new EditorTextModel({ domain: 0, path: 'inline-find.lua', source: { type: 'lua', resid: 'inline-find' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'inline-find.lua' }, domain: 0, path: 'inline-find.lua', source: { type: 'lua', resid: 'inline-find' } }, 'lua', source);
 	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
 	const search = new EditorSearchController({} as RuntimeSourceState, new RenameController());
 	t.after(() => { search.closeSearch(true); activeCodeEditor.detach(); model.dispose(); clearBackgroundTasks(); });

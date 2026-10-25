@@ -10,7 +10,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import type { DisposableStore } from '../../ide/common/lifecycle';
 
-const resource = { domain: 0 as const, path: 'proposal.lua', source: { type: 'lua' as const, resid: 'proposal' } };
+const resource = { location: { kind: 'workspace' as const, path: 'proposal.lua' }, domain: 0 as const, path: 'proposal.lua', source: { type: 'lua' as const, resid: 'proposal' } };
 const edit = { version: 1, edits: [{ offset: 0, deleteLength: 1, text: 'new' }] };
 
 test('reopening the same resource/version cannot revive edit rights from a retired workspace', t => {

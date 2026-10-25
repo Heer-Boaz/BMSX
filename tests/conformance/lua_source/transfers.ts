@@ -24,7 +24,7 @@ for (const path of paths) {
 	assert.equal(original.syntaxError, null, path);
 	const all: LuaTableConstructorExpression[] = [];
 	walkLuaAst(original.chunk!, node => { if (node.kind === LuaSyntaxKind.TableConstructorExpression) all.push(node); });
-	const model = new EditorTextModel({ domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', source);
 	const spans = all.map(table => luaSourceRangeToTextRange(model.buffer, original.chunk.locations.range(table.span)));
 	for (let fromIndex = 0; fromIndex < all.length; fromIndex += 1) {
 		const from = all[fromIndex];

@@ -15,7 +15,7 @@ for (const siblings of [32, 1024]) {
 local callback<const> = function(owner) if owner.done then return '../active' end return '../active' end
 local branch<const> = { states = { idle = { update = callback, on = { go = '../active' } }, active = {} } }
 machines.register('profile', { states = {${Array.from({ length: siblings }, (_, index) => `lane${index}=branch`).join(',')}} })`;
-	const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
 	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const definition = document.definitions[0];

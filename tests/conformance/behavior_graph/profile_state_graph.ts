@@ -29,7 +29,7 @@ async function main() {
 local step<const> = function(actor) if actor.a then return '../active' end if actor.b then return '../active' end return nil end
 local shared<const> = { initial = 'idle', states = { idle = { update = step }, active = { on = { reset = '../idle' } } } }
 fsm.register('profile', { initial = 'lane0', states = { ${Array.from({ length: copies }, (_, index) => `lane${index} = shared`).join(',')} } })`;
-		const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { resid: 'profile', type: 'lua' } }, 'lua', source);
+		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0, path: 'profile.lua', source: { resid: 'profile', type: 'lua' } }, 'lua', source);
 		const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 		editorViewState.font = new EditorFont('tiny');
 		const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);

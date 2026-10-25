@@ -19,7 +19,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 
 const diagnostic: EditorDiagnostic = { row: 0, startColumn: 0, endColumn: 1,
 	message: 'The authored source contains an undefined name and remains editable.', severity: 'error',
-	model: new EditorTextModel({ domain: 0, path: 'diagnostics.lua', source: { type: 'lua', resid: 'diagnostics' } }, 'lua', 'x'), version: 1 };
+	model: new EditorTextModel({ location: { kind: 'workspace' as const, path: 'diagnostics.lua' }, domain: 0, path: 'diagnostics.lua', source: { type: 'lua', resid: 'diagnostics' } }, 'lua', 'x'), version: 1 };
 
 for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark'] as const) {
 	test(`Problems inactive selection preserves legible row geometry (${font}, ${theme})`, t => {

@@ -131,9 +131,9 @@ test('initial source choice is revealed and accepted through the shared picker w
 test('Lua choice subscriptions retire only the captured project and end before a replacement', t => {
 	const picker = pickerFixture(t);
 	const models = new EditorTextModelService();
-	const source = models.retain({ domain: 0, path: 'main.lua', source: { resid: 'main', type: 'lua' } }, 'lua', 'return 1');
-	const other = models.retain({ domain: 1, path: 'main.lua', source: { resid: 'main', type: 'lua' } }, 'lua', 'return 2');
-	const data = models.retain({ domain: 0, path: 'data.aem', source: { resid: 'data', type: 'data' } }, 'aem', '{}');
+	const source = models.retain({ location: { kind: 'workspace' as const, path: 'main.lua' }, domain: 0, path: 'main.lua', source: { resid: 'main', type: 'lua' } }, 'lua', 'return 1');
+	const other = models.retain({ location: { kind: 'workspace' as const, path: 'main.lua' }, domain: 1, path: 'main.lua', source: { resid: 'main', type: 'lua' } }, 'lua', 'return 2');
+	const data = models.retain({ location: { kind: 'workspace' as const, path: 'data.aem' }, domain: 0, path: 'data.aem', source: { resid: 'data', type: 'data' } }, 'aem', '{}');
 	const provider = new TextQuickPickProvider([{ label: 'symbol', description: '', detail: '' }]);
 	let invalidations = 0;
 	const open = () => picker.pick('SYMBOLS', 'Filter', (_origin, lifetime) => {
@@ -148,11 +148,11 @@ test('Lua choice subscriptions retire only the captured project and end before a
 	assert.equal(picker.visible, false); assert.equal(invalidations, 1);
 	picker.pick('FILES', 'Filter', () => provider, () => {}); source.undo();
 	assert.equal(picker.visible, true); assert.equal(invalidations, 1);
-	open(); models.retain({ domain: -1, path: 'base.lua', source: { resid: 'base', type: 'lua' } }, 'lua', 'return {}');
+	open(); models.retain({ location: { kind: 'workspace' as const, path: 'base.lua' }, domain: -1, path: 'base.lua', source: { resid: 'base', type: 'lua' } }, 'lua', 'return {}');
 	assert.equal(picker.visible, false); assert.equal(invalidations, 2);
 	open(); models.clear();
 	assert.equal(picker.visible, false); assert.equal(invalidations, 3, 'removal listener detaches during retirement');
 	open(); picker.hide();
-	models.retain({ domain: 0, path: 'next.lua', source: { resid: 'next', type: 'lua' } }, 'lua', 'return 1');
+	models.retain({ location: { kind: 'workspace' as const, path: 'next.lua' }, domain: 0, path: 'next.lua', source: { resid: 'next', type: 'lua' } }, 'lua', 'return 1');
 	assert.equal(invalidations, 3, 'ordinary cancellation also releases the source generation');
 });

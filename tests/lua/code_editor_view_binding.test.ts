@@ -8,7 +8,7 @@ import { getSingleCursorSelectionRange, setSingleCursorSelectionAnchor } from '.
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 
-const resource = { domain: 0 as const, path: 'positions.lua', source: { resid: 'positions.lua', type: 'lua' as const } };
+const resource = { location: { kind: 'workspace' as const, path: 'positions.lua' }, domain: 0 as const, path: 'positions.lua', source: { resid: 'positions.lua', type: 'lua' as const } };
 
 test('external model edits track an unattached code cursor, oriented selection and visual scroll without changing text again', t => {
 	const model = new EditorTextModel(resource, 'lua', 'header\nabcdef\ntail');

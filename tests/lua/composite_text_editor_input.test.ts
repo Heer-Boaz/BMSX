@@ -11,7 +11,7 @@ class SourceInput extends CompositeTextEditorInput<'fixture', 'fixture'> {
 
 test('composite source membership, dirty notifications and write access follow real working copies', t => {
 	const service = new EditorTextModelService();
-	const [a, b, c] = ['a', 'b', 'c'].map(path => service.retain({ domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', path));
+	const [a, b, c] = ['a', 'b', 'c'].map(path => service.retain({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', path));
 	const input = new SourceInput(a);
 	t.after(() => { input.dispose(); service.clear(); });
 	input.present(a, b, b);

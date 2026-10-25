@@ -24,7 +24,7 @@ function fixture(t: TestContext, source: string, columnOffset = source.length) {
 	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
 	const record = createScenarioTestSourceRecord('inline.lua', 1, source);
 	const sources = createScenarioTestSourceState([record]);
-	const model = editorTextModelService.retain({ domain: 0, path: record.normalized_source_path, source: record }, 'lua', source);
+	const model = editorTextModelService.retain(sources.luaResources[0], 'lua', source);
 	const view = createCodeEditorViewState(), position = { row: 0, column: 0 };
 	model.buffer.positionAt(columnOffset, position); view.cursorRow = position.row; view.cursorColumn = position.column;
 	const input = new CodeEditorInput({ id: buildCodeTabId(model.resource), title: 'inline.lua', model, view,
@@ -133,7 +133,7 @@ for (const [label, kind, insertion, expectedCaret] of [
 
 test('an actual empty require-path candidate inserts at a zero-width range with one complete edit and exact history', t => {
 	const source = "local m = require('')", column = source.indexOf("')"), f = fixture(t, source, column);
-	editorTextModelService.retain({ domain: 0, path: 'module/real.lua',
+	editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'module/real.lua' }, domain: 0, path: 'module/real.lua',
 		source: { type: 'lua', resid: 'real-module', source_path: 'module/real.lua' } }, 'lua', 'return {}');
 	const candidates = f.controller.listCompletionCandidates()!, item = candidates.filteredItems.find(item => item.insertText === 'module/real')!;
 	assert.equal(candidates.context.kind, 'module'); assert.equal(candidates.context.replaceFromColumn, column);
@@ -207,7 +207,7 @@ test('input retirement clears the published completion before another source att
 	assert.equal(activeCodeEditor.inlineEdit.active, true);
 	f.controller.clearInput();
 	assert.equal(f.controller.session, null); assert.equal(activeCodeEditor.inlineEdit.active, false);
-	const other = editorTextModelService.retain({ domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
+	const other = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'other.lua' }, domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
 	activeCodeEditor.attach(other, createCodeEditorViewState()); f.settle();
 	assert.equal(f.controller.session, null); assert.equal(activeCodeEditor.inlineEdit.active, false);
 	const tab = new KeyInputEvent('Tab', KeyModifier.none);
@@ -286,7 +286,7 @@ for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', '
 
 test('module completion preserves authored case and exact path replacement range', t => {
 	const source = "local m = require('art/P_tail')", f = fixture(t, source, source.indexOf('_tail'));
-	editorTextModelService.retain({ domain: 0, path: 'art/Picture.lua', source: { type: 'lua', resid: 'picture', source_path: 'art/Picture.lua' } }, 'lua', 'return {}');
+	editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'art/Picture.lua' }, domain: 0, path: 'art/Picture.lua', source: { type: 'lua', resid: 'picture', source_path: 'art/Picture.lua' } }, 'lua', 'return {}');
 	f.type('i'); f.settle();
 	const edit = activeCodeEditor.inlineEdit;
 	assert.equal(edit.active, true); assert.equal(edit.preserveCase, true); assert.equal(edit.text, 'cture');
@@ -302,7 +302,7 @@ test('widget publication is stable across font replacement but retires before so
 	assert.equal(activeCodeEditor.inlineEdit, edit); assert.equal(edit.active, true); assert.equal(edit.version, version);
 	assert.equal(activeCodeEditor.setInlineEdit(edit.row, edit.startColumn, edit.endColumn, edit.text, edit.preserveCase), false);
 	assert.equal(edit.version, version, 'republishing identical intent cannot dirty layout');
-	const other = editorTextModelService.retain({ domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
+	const other = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'other.lua' }, domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
 	const lineCount = other.buffer.getLineCount.bind(other.buffer);
 	t.mock.method(other.buffer, 'getLineCount', () => {
 		assert.equal(edit.active, false, 'old presentation retires before the new source is read or attached');

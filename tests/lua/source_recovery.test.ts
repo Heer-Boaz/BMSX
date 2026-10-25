@@ -26,7 +26,7 @@ test('viewless recovery shares working-copy semantics without touching the human
 	await writeFile(humanPath, 'human tabs and drafts');
 	await openWorkspaceRecords(new DiskWorkspaceRecordProvider(root));
 	const options = () => ({ identity: 'agent-session', projectRootPath: project, models: new EditorTextModelService(),
-		sources: createScenarioTestSourceState([createScenarioTestSourceRecord(path, 0, source)]),
+		sources: createScenarioTestSourceState([createScenarioTestSourceRecord(path, 0, source, path)]),
 		clock: new VirtualHeadlessClock(), logOutput: { log() {} } });
 	const first = options(), recovery = new WorkspaceSourceRecovery(first);
 	await applyAllWorkspaceSourceOverrides(first.sources, await recovery.initialize());
@@ -58,7 +58,7 @@ for (const externalChange of ['changed', 'removed'] as const) test(`recovered dr
 	await writeFile(join(root, path), original);
 	await openWorkspaceRecords(new DiskWorkspaceRecordProvider(root));
 	const options = () => ({ identity: 'agent-session', projectRootPath: project, models: new EditorTextModelService(),
-		sources: createScenarioTestSourceState([createScenarioTestSourceRecord(path, 0, original)]),
+		sources: createScenarioTestSourceState([createScenarioTestSourceRecord(path, 0, original, path)]),
 		clock: new VirtualHeadlessClock(), logOutput: { log() {} } });
 	const first = options(), recovery = new WorkspaceSourceRecovery(first);
 	await applyAllWorkspaceSourceOverrides(first.sources, await recovery.initialize());

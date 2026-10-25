@@ -30,6 +30,7 @@ export function createScenarioTestSourceRecord(
 	path: string,
 	timestamp: number,
 	source = `return { kind = 'unit', tests = { sample = function() end } }`,
+	normalizedSourcePath = `carts/nemesis_s/${path}`,
 ): LuaSourceRecord {
 	return {
 		resid: scenarioTestAssetId(path),
@@ -38,7 +39,7 @@ export function createScenarioTestSourceRecord(
 		base_src: source,
 		base_update_timestamp: timestamp,
 		source_path: path,
-		normalized_source_path: path,
+		normalized_source_path: normalizedSourcePath,
 		module_path: path.slice(0, -4),
 		update_timestamp: timestamp,
 		generated: false,

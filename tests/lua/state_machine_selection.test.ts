@@ -16,7 +16,7 @@ import { FSM_PROOF_SOURCE } from '../helpers/fsm_source_fixture';
 import { behaviorSourceBookmarksEqual, captureBehaviorSourceBookmark } from '../../ide/workbench/contrib/behavior_lens/source_bookmark';
 
 function fixture(source = FSM_PROOF_SOURCE) {
-	const model = new EditorTextModel({ domain: 0, path: 'fsm_proofs.lua', source: { resid: 'fsm_proofs', type: 'lua' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'fsm_proofs.lua' }, domain: 0, path: 'fsm_proofs.lua', source: { resid: 'fsm_proofs', type: 'lua' } }, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
 	const view = createBehaviorLensViewState(project(), model, 'outline', assert.fail);
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));

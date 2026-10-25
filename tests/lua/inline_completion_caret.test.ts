@@ -32,7 +32,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 			const previousFont = editorViewState.font, previousLayout = editorViewState.layout;
 			configureFontVariant(new VirtualHeadlessClock(), variant, null);
 			editorRuntimeState.uppercaseDisplay = variant === 'tiny'; colors.setIdeThemeVariant(theme);
-			const model = new EditorTextModel({ domain: 0, path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', source);
+			const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'caret.lua' }, domain: 0, path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', source);
 			const view = createCodeEditorViewState(); view.cursorColumn = source.length;
 			activeCodeEditor.attach(model, view);
 			t.after(() => {
@@ -81,7 +81,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 test('a suggestion clipped left of the source slice does not become a phantom caret glyph at the viewport edge', t => {
 	const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
 	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
-	const model = new EditorTextModel({ domain: 0, path: 'clipped.lua', source: { type: 'lua', resid: 'clipped' } }, 'lua', 'retur + 2');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'clipped.lua' }, domain: 0, path: 'clipped.lua', source: { type: 'lua', resid: 'clipped' } }, 'lua', 'retur + 2');
 	const view = createCodeEditorViewState(); view.cursorColumn = 5; view.scrollLeft = editorViewState.font.measure('retur +');
 	activeCodeEditor.attach(model, view);
 	activeCodeEditor.setInlineEdit(0, 5, 5, 'n');
@@ -107,7 +107,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const previousTheme = colors.getActiveIdeThemeVariant(), previousFont = editorViewState.font, previousLayout = editorViewState.layout;
 		configureFontVariant(new VirtualHeadlessClock(), variant, null); colors.setIdeThemeVariant(theme);
 		const source = 'retur_tail + 2';
-		const model = new EditorTextModel({ domain: 0, path: 'marks.lua', source: { type: 'lua', resid: 'marks' } }, 'lua', source);
+		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'marks.lua' }, domain: 0, path: 'marks.lua', source: { type: 'lua', resid: 'marks' } }, 'lua', source);
 		const view = createCodeEditorViewState(); view.cursorColumn = 5; activeCodeEditor.attach(model, view);
 		activeCodeEditor.setInlineEdit(0, 5, 10, 'n');
 		t.after(() => {
@@ -155,7 +155,7 @@ test('horizontal scrolling past a short row does not pull its end caret back ont
 	const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
 	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
 	const source = 'abc\n' + 'x'.repeat(30);
-	const model = new EditorTextModel({ domain: 0, path: 'short.lua', source: { type: 'lua', resid: 'short' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'short.lua' }, domain: 0, path: 'short.lua', source: { type: 'lua', resid: 'short' } }, 'lua', source);
 	const view = createCodeEditorViewState(); view.cursorColumn = 3; view.scrollLeft = editorViewState.font.measure('xxxxxxx');
 	activeCodeEditor.attach(model, view); editorViewState.wordWrapEnabled = false;
 	t.after(() => {
@@ -177,7 +177,7 @@ test('horizontal scrolling past a short row does not pull its end caret back ont
 test('an empty replacement of a source tab measures the surviving visible glyph rather than the removed source column', t => {
 	const previousFont = editorViewState.font, previousLayout = editorViewState.layout;
 	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
-	const model = new EditorTextModel({ domain: 0, path: 'deleted-tab.lua', source: { type: 'lua', resid: 'deleted-tab' } }, 'lua', '\ta');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'deleted-tab.lua' }, domain: 0, path: 'deleted-tab.lua', source: { type: 'lua', resid: 'deleted-tab' } }, 'lua', '\ta');
 	activeCodeEditor.attach(model, createCodeEditorViewState());
 	activeCodeEditor.setInlineEdit(0, 0, 1, '');
 	t.after(() => {
@@ -204,7 +204,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		};
 		editorViewState.wordWrapEnabled = false; editorRuntimeState.uppercaseDisplay = false; editorCaretState.cursorVisible = true;
 		const source = '\tretur_tail + call()' + ' + trailing'.repeat(8);
-		const model = new EditorTextModel({ domain: 0, path: 'pixels.lua', source: { type: 'lua', resid: 'pixels' } }, 'lua', source);
+		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'pixels.lua' }, domain: 0, path: 'pixels.lua', source: { type: 'lua', resid: 'pixels' } }, 'lua', source);
 		const view = createCodeEditorViewState(); view.cursorColumn = 6; activeCodeEditor.attach(model, view);
 		activeCodeEditor.setInlineEdit(0, 6, 11, 'n');
 		t.after(() => {

@@ -10,7 +10,7 @@ import { FSM_INITIAL_SOURCE, FSM_INITIAL_MODULE_SOURCE, fsmInitialImportedSource
 import { createBehaviorEditFixture } from '../helpers/behavior_edit_fixture';
 
 function fixture(t: TestContext, source = FSM_INITIAL_SOURCE) {
-	const resource = { domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
+	const resource = { location: { kind: 'workspace' as const, path: 'initial.lua' }, domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	t.after(() => model.dispose());
 	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));

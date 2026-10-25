@@ -14,8 +14,15 @@ export type RuntimeResourceSource = RomAsset & {
 	generated?: boolean;
 };
 
+/** Authoring topology is independent of the physical execution context. */
+export type RuntimeResourceLocation =
+	| { readonly kind: 'project'; readonly projectRootPath: string; readonly path: string }
+	| { readonly kind: 'workspace'; readonly path: string }
+	| { readonly kind: 'generated'; readonly path: string };
+
 export type RuntimeResource = ResourceIdentity & {
 	source: RuntimeResourceSource;
+	location: RuntimeResourceLocation;
 };
 
 export type TextResourceCreationRequest = {
@@ -34,4 +41,10 @@ export function resourceIdentityKey(resource: ResourceIdentity): string {
 
 export function resourceIdentityEquals(left: ResourceIdentity, right: ResourceIdentity): boolean {
 	return left.domain === right.domain && left.path === right.path;
+}
+
+export function resourceLocationEquals(left: RuntimeResourceLocation, right: RuntimeResourceLocation): boolean {
+	if (left === right) return true;
+	if (left.kind !== right.kind || left.path !== right.path) return false;
+	return left.kind !== 'project' || right.kind === 'project' && left.projectRootPath === right.projectRootPath;
 }

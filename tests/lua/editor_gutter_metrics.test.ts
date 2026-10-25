@@ -8,7 +8,7 @@ import { configureFontVariant, measureGutterWidth, updateGutterWidth } from '../
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} intrinsic gutter measurement is current, cached and separate from publication`, t => {
 	const clock = new VirtualHeadlessClock();
-	const model = new EditorTextModel({ domain: 0, path: 'gutter.lua', source: { resid: 'gutter', type: 'lua' } }, 'lua', '\n'.repeat(98));
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'gutter.lua' }, domain: 0, path: 'gutter.lua', source: { resid: 'gutter', type: 'lua' } }, 'lua', '\n'.repeat(98));
 	activeCodeEditor.attach(model, createCodeEditorViewState());
 	configureFontVariant(clock, variant, 'lua');
 	t.after(() => { activeCodeEditor.detach(); model.dispose(); });

@@ -21,7 +21,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} query Home and 
 	const sources = {} as RuntimeSourceState;
 	const search = new EditorSearchController(sources, new RenameController());
 	const source = 'local needle = 1\nreturn needle';
-	const model = new EditorTextModel({ domain: 0, path: 'query.lua', source: { resid: 'query', type: 'lua' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'query.lua' }, domain: 0, path: 'query.lua', source: { resid: 'query', type: 'lua' } }, 'lua', source);
 	activeCodeEditor.attach(model, createCodeEditorViewState());
 	configureFontVariant(clock, variant, 'lua');
 	t.after(() => { search.closeSearch(true); inputFocus.setTarget(null); activeCodeEditor.detach(); model.dispose(); clearBackgroundTasks(); });
@@ -40,7 +40,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} query Home and 
 for (const scope of ['local', 'global'] as const) {
 	test(`${scope} Find cancels before detach; clearing its retained field cannot access the old editor`, t => {
 		const search = new EditorSearchController({ luaResources: [] } as unknown as RuntimeSourceState, new RenameController());
-		const model = new EditorTextModel({ domain: 0, path: 'find.lua', source: { resid: 'find', type: 'lua' } }, 'lua', 'needle');
+		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'find.lua' }, domain: 0, path: 'find.lua', source: { resid: 'find', type: 'lua' } }, 'lua', 'needle');
 		const view = createCodeEditorViewState();
 		activeCodeEditor.attach(model, view);
 		configureFontVariant(clock, 'tiny', 'lua');
@@ -74,7 +74,7 @@ for (const scope of ['local', 'global'] as const) {
 
 test('Find seeds from the source selection before applying query effects, including repeated opening', t => {
 	const search = new EditorSearchController({} as RuntimeSourceState, new RenameController());
-	const model = new EditorTextModel({ domain: 0, path: 'selection.lua', source: { resid: 'selection', type: 'lua' } }, 'lua', 'first second');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'selection.lua' }, domain: 0, path: 'selection.lua', source: { resid: 'selection', type: 'lua' } }, 'lua', 'first second');
 	const view = createCodeEditorViewState();
 	activeCodeEditor.attach(model, view);
 	configureFontVariant(clock, 'tiny', 'lua');
@@ -99,7 +99,7 @@ test('Find seeds from the source selection before applying query effects, includ
 
 test('Find field edits and Undo rebind on opening; leaving an empty Find ends the session', t => {
 	const search = new EditorSearchController({} as RuntimeSourceState, new RenameController());
-	const model = new EditorTextModel({ domain: 0, path: 'edits.lua', source: { resid: 'edits', type: 'lua' } }, 'lua', 'first second');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'edits.lua' }, domain: 0, path: 'edits.lua', source: { resid: 'edits', type: 'lua' } }, 'lua', 'first second');
 	activeCodeEditor.attach(model, createCodeEditorViewState());
 	configureFontVariant(clock, 'tiny', 'lua');
 	t.after(() => {

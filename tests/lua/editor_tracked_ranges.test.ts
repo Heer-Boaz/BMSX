@@ -6,7 +6,7 @@ import type { TrackedTextRange } from '../../ide/editor/text/text_change';
 
 test('tracked model ranges are final before content observers, including earlier service listeners', () => {
 	const models = new EditorTextModelService();
-	const model = models.retain({ domain: 0, path: 'text.lua', source: { type: 'lua', resid: 'text' } }, 'lua', 'abc');
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'text.lua' }, domain: 0, path: 'text.lua', source: { type: 'lua', resid: 'text' } }, 'lua', 'abc');
 	const span = { start: 1, end: 3 };
 	let observed = 0;
 	models.onDidChangeContent(() => { observed += 1; assert.deepEqual(span, { start: 3, end: 5 }); });
@@ -18,7 +18,7 @@ test('tracked model ranges are final before content observers, including earlier
 });
 
 test('tracked ranges follow edit, Undo and Redo once and keep complete replacement collapsed', () => {
-	const model = new EditorTextModel({ domain: 0, path: 'text.lua', source: { type: 'lua', resid: 'text' } }, 'lua', 'abc');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'text.lua' }, domain: 0, path: 'text.lua', source: { type: 'lua', resid: 'text' } }, 'lua', 'abc');
 	const span = { start: 1, end: 3 };
 	const release = model.trackRanges(new Map([['source', span]]));
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '\r\n' }]);
@@ -30,7 +30,7 @@ test('tracked ranges follow edit, Undo and Redo once and keep complete replaceme
 });
 
 test('tracking uses application-order changes for multi-edit operations', () => {
-	const model = new EditorTextModel({ domain: 0, path: 'text.lua', source: { type: 'lua', resid: 'text' } }, 'lua', 'abcd');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'text.lua' }, domain: 0, path: 'text.lua', source: { type: 'lua', resid: 'text' } }, 'lua', 'abcd');
 	const span = { start: 1, end: 3 };
 	const release = model.trackRanges(new Map([['source', span]]));
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: 'L' }, { offset: 4, deleteLength: 0, text: 'R' }]);
@@ -40,8 +40,8 @@ test('tracking uses application-order changes for multi-edit operations', () => 
 });
 
 test('identical paths in different models never share range mapping', () => {
-	const left = new EditorTextModel({ domain: 0, path: 'same.lua', source: { type: 'lua', resid: 'left' } }, 'lua', 'abc');
-	const right = new EditorTextModel({ domain: 1, path: 'same.lua', source: { type: 'lua', resid: 'right' } }, 'lua', 'abc');
+	const left = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'same.lua' }, domain: 0, path: 'same.lua', source: { type: 'lua', resid: 'left' } }, 'lua', 'abc');
+	const right = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'same.lua' }, domain: 1, path: 'same.lua', source: { type: 'lua', resid: 'right' } }, 'lua', 'abc');
 	const a = { start: 1, end: 3 }, b = { start: 1, end: 3 };
 	const releaseLeft = left.trackRanges(new Map([[0, a]]));
 	const releaseRight = right.trackRanges(new Map([[0, b]]));
@@ -52,7 +52,7 @@ test('identical paths in different models never share range mapping', () => {
 });
 
 test('released collections stop tracking without clearing or rewriting their retained values', () => {
-	const model = new EditorTextModel({ domain: 0, path: 'text.lua', source: { type: 'lua', resid: 'text' } }, 'lua', 'abc');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'text.lua' }, domain: 0, path: 'text.lua', source: { type: 'lua', resid: 'text' } }, 'lua', 'abc');
 	const spans = new Map<string, TrackedTextRange>([['a', { start: 0, end: 1 }]]);
 	const release = model.trackRanges(spans);
 	spans.set('bc', { start: 1, end: 3 });

@@ -22,7 +22,7 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 
-const resource = { domain: 0 as const, path: 'definitions.lua', source: { resid: 'definitions', type: 'lua' as const } };
+const resource = { location: { kind: 'workspace' as const, path: 'definitions.lua' }, domain: 0 as const, path: 'definitions.lua', source: { resid: 'definitions', type: 'lua' as const } };
 
 test('native procedural, duration-only and sequence definitions are source, not manufactured keys', () => {
 	for (const source of ['return { frames = function(params) error(params) end, frame_duration = 20 }',

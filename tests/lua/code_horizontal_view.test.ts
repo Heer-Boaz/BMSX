@@ -17,7 +17,7 @@ function fixture(t: TestContext, source: string, variant: FontVariant) {
 	configureFontVariant(new VirtualHeadlessClock(), variant, 'lua');
 	applyViewportSize({ width: variant === 'tiny' ? 78 : 118, height: 288 }); refreshWorkbenchLayout();
 	editorViewState.wordWrapEnabled = false; editorCaretState.cursorRevealSuspended = false;
-	const model = editorTextModelService.retain({ domain: 0, path: 'horizontal.lua',
+	const model = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'horizontal.lua' }, domain: 0, path: 'horizontal.lua',
 		source: { type: 'lua', resid: 'horizontal', source_path: 'horizontal.lua' } }, 'lua', source);
 	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
 	t.after(() => {

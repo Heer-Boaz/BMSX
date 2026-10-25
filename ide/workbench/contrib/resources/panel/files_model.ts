@@ -1,6 +1,6 @@
 import {
-	CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, resourceIdentityKey, resourceIdentityKeyFromParts,
-	type ResourceDomain, type ResourceIdentity, type RuntimeResource,
+	CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, resourceIdentityKey, resourceLocationEquals,
+	type ResourceDomain, type ResourceIdentity, type RuntimeResource, type RuntimeResourceLocation,
 } from '../../../../common/resource';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import { revealWorkbenchListSelection } from '../../../ui/list_view';
@@ -17,13 +17,15 @@ type FileElementPresentation = ResourceIdentity & {
 	contentStartColumn: number;
 };
 export type FileElement = FileElementPresentation & (
-	| { kind: 'domain' }
+	| { kind: 'root'; locationKind: RuntimeResourceLocation['kind'] }
 	| { kind: 'directory' }
-	| { kind: 'file'; resource: RuntimeResource }
+	| { kind: 'file'; resource: RuntimeResource; location: RuntimeResourceLocation }
 );
 type FileNode<Element extends FileElement = FileElement> = WorkbenchTreeNode<FileElement> & {
 	readonly element: Element; seen: number; included: number; visible: boolean;
 };
+type FileRoot = { node: FileNode<Extract<FileElement, { kind: 'root' }>>; directories: Map<string, FileNode> };
+const FILE_LOCATION_KINDS = ['project', 'workspace', 'generated'] as const;
 const FILE_DOMAINS = [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const;
 
 /** One resource catalog's retained topology; filtering changes presentation, never source identity. */
@@ -34,10 +36,8 @@ export class ResourceFilesModel {
 	};
 	public revision = 0;
 	public horizontalScroll = 0;
-	private readonly domains = new Map<ResourceDomain, FileNode>();
-	private readonly directories = new Map<string, FileNode>();
+	private readonly contexts = new Map<ResourceDomain, Map<RuntimeResourceLocation['kind'], FileRoot>>();
 	private readonly files = new Map<string, FileNode<Extract<FileElement, { kind: 'file' }>>>();
-	private readonly namespaces = new Map<ResourceDomain, string>();
 	private sources: RuntimeSourceState | undefined;
 	private catalogRevision = -1;
 	private filter: ResourcePanelFilterMode | undefined;
@@ -49,85 +49,118 @@ export class ResourceFilesModel {
 
 	public sync(sources: RuntimeSourceState, filter: ResourcePanelFilterMode): boolean {
 		if (this.sources === sources && this.catalogRevision === sources.resourceCatalogRevision && this.filter === filter) return false;
-		const selected = this.selectedNode, publication = ++this.publication;
+		let selected = this.selectedNode;
+		const publication = ++this.publication;
 		let changed = false;
-		for (const domain of FILE_DOMAINS) {
-			const namespace = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemProjectRootPath : sources.cartridgeSlots[domain]?.projectRootPath;
-			if (this.namespaces.get(domain) !== namespace) {
-				if (this.domains.delete(domain)) changed = true;
-				for (const [key, node] of this.directories) if (node.element.domain === domain) { this.directories.delete(key); changed = true; }
-				for (const [key, node] of this.files) if (node.element.domain === domain) { this.files.delete(key); changed = true; }
-				if (namespace === undefined) this.namespaces.delete(domain);
-				else this.namespaces.set(domain, namespace);
-			}
-		}
 		for (const [key, resource] of sources.resourceByIdentity) {
 			let node = this.files.get(key);
-			if (node === undefined) {
-				let parent = this.domains.get(resource.domain);
-				if (parent === undefined) {
-					parent = this.append(null, { kind: 'domain', domain: resource.domain, path: '',
-						label: resource.domain === SYSTEM_RESOURCE_DOMAIN ? 'system' : `slot${resource.domain}`, line: '', contentStartColumn: 0 });
-					this.domains.set(resource.domain, parent);
+			if (node === undefined || !resourceLocationEquals(node.element.location, resource.location)) {
+				const previous = node, location = resource.location;
+				let context = this.contexts.get(resource.domain);
+				if (context === undefined) { context = new Map(); this.contexts.set(resource.domain, context); }
+				let root = context.get(location.kind);
+				if (root === undefined || location.kind === 'project' && root.node.element.path !== location.projectRootPath) {
+					if (root !== undefined) {
+						for (let ancestor = selected; ancestor !== null; ancestor = ancestor.parent) {
+							if (ancestor === root.node) { selected = null; break; }
+						}
+					}
+					const suffix = resource.domain === SYSTEM_RESOURCE_DOMAIN ? 'S' : String(resource.domain);
+					const rootPath = location.kind === 'project' ? location.projectRootPath : '';
+					const name = location.kind === 'project'
+						? rootPath.length === 0 ? 'Project' : rootPath.slice(rootPath.lastIndexOf('/') + 1)
+						: location.kind === 'workspace' ? 'Shared' : 'Generated';
+					root = { node: this.append(null, { kind: 'root', locationKind: location.kind, domain: resource.domain, path: rootPath,
+						label: `${name} ${suffix}`, line: '', contentStartColumn: 0 }), directories: new Map() };
+					context.set(location.kind, root);
 				}
-				let start = 0, separator = resource.path.indexOf('/');
+				let parent: FileNode = root.node;
+				let start = 0, separator = location.path.indexOf('/');
 				while (separator !== -1) {
-					const path = resource.path.slice(0, separator), directoryKey = resourceIdentityKeyFromParts(resource.domain, path);
-					let directory = this.directories.get(directoryKey);
+					const path = location.path.slice(0, separator);
+					let directory = root.directories.get(path);
 					if (directory === undefined) {
 						directory = this.append(parent, { kind: 'directory', domain: resource.domain, path,
-							label: resource.path.slice(start, separator), line: '', contentStartColumn: 0 });
-						this.directories.set(directoryKey, directory);
+							label: location.path.slice(start, separator), line: '', contentStartColumn: 0 });
+						root.directories.set(path, directory);
 					}
-					parent = directory; start = separator + 1; separator = resource.path.indexOf('/', start);
+					parent = directory; start = separator + 1; separator = location.path.indexOf('/', start);
 				}
 				node = this.append(parent, { kind: 'file', domain: resource.domain, path: resource.path,
-					label: resource.path.slice(start), line: '', contentStartColumn: 0, resource });
+					label: location.path.slice(start), line: '', contentStartColumn: 0, resource, location });
 				this.files.set(key, node); changed = true;
-			} else node.element.resource = resource;
+				if (selected === previous) {
+					selected = node;
+					for (let ancestor = node.parent; ancestor !== null; ancestor = ancestor.parent) ancestor.collapsed = false;
+				}
+			} else { node.element.resource = resource; node.element.location = resource.location; }
 			const included = filter === 'all' || resource.source.type === 'lua';
 			for (let ancestor: FileNode | null = node; ancestor !== null; ancestor = ancestor.parent as FileNode | null) {
 				ancestor.seen = publication;
 				if (included) ancestor.included = publication;
 			}
 		}
-		for (const map of [this.files, this.directories]) for (const [key, node] of map) {
-			if (node.seen !== publication) { map.delete(key); changed = true; }
+		for (const [key, node] of this.files) {
+			if (node.seen !== publication) { this.files.delete(key); changed = true; }
 			else {
 				const visible = node.included === publication;
 				if (visible !== node.visible) changed = true;
 				node.visible = visible;
 			}
 		}
-		for (const [domain, node] of this.domains) {
-			if (node.seen !== publication) { this.domains.delete(domain); changed = true; }
-			else {
-				const visible = node.included === publication;
-				if (visible !== node.visible) changed = true;
-				node.visible = visible;
+		for (const [domain, context] of this.contexts) {
+			for (const [kind, root] of context) {
+				for (const [path, node] of root.directories) {
+					if (node.seen !== publication) { root.directories.delete(path); changed = true; }
+					else {
+						const visible = node.included === publication;
+						if (visible !== node.visible) changed = true;
+						node.visible = visible;
+					}
+				}
+				const node = root.node;
+				if (node.seen !== publication) { context.delete(kind); changed = true; }
+				else {
+					const visible = node.included === publication;
+					if (visible !== node.visible) changed = true;
+					node.visible = visible;
+				}
 			}
+			if (context.size === 0) this.contexts.delete(domain);
 		}
 		this.sources = sources; this.catalogRevision = sources.resourceCatalogRevision; this.filter = filter;
 		if (!changed) return false;
 		this.tree.roots.length = 0;
-		for (const node of this.domains.values()) { node.children.length = 0; node.expandable = false; }
-		for (const node of this.directories.values()) { node.children.length = 0; node.expandable = false; }
 		for (const domain of FILE_DOMAINS) {
-			const node = this.domains.get(domain);
-			if (node?.visible) this.tree.roots.push(node);
+			const context = this.contexts.get(domain);
+			if (context === undefined) continue;
+			for (const kind of FILE_LOCATION_KINDS) {
+				const root = context.get(kind);
+				if (root === undefined) continue;
+				root.node.children.length = 0; root.node.expandable = false;
+				if (root.node.visible) this.tree.roots.push(root.node);
+				for (const node of root.directories.values()) { node.children.length = 0; node.expandable = false; }
+			}
 		}
-		for (const map of [this.directories, this.files]) for (const node of map.values()) if (node.visible) {
+		for (const context of this.contexts.values()) for (const root of context.values()) {
+			for (const node of root.directories.values()) if (node.visible) {
+				node.parent!.children.push(node); node.parent!.expandable = true;
+			}
+		}
+		for (const node of this.files.values()) if (node.visible) {
 			node.parent!.children.push(node); node.parent!.expandable = true;
 		}
-		for (const node of this.domains.values()) node.children.sort(compareFileNodes);
-		for (const node of this.directories.values()) node.children.sort(compareFileNodes);
+		for (const context of this.contexts.values()) for (const root of context.values()) {
+			root.node.children.sort(compareFileNodes);
+			for (const node of root.directories.values()) node.children.sort(compareFileNodes);
+		}
 		rebuildWorkbenchTreeRows(this.tree, selected); this.revision++;
 		return true;
 	}
 
 	private append<Element extends FileElement>(parent: FileNode | null, element: Element): FileNode<Element> {
 		const node = appendWorkbenchTreeNode(this.tree, parent, element,
-			element.kind === 'directory' || element.kind === 'domain' && element.domain === SYSTEM_RESOURCE_DOMAIN) as FileNode<Element>;
+			element.kind === 'directory' || element.kind === 'root' && (element.locationKind !== 'project' || element.domain === SYSTEM_RESOURCE_DOMAIN)) as FileNode<Element>;
 		element.contentStartColumn = 2 * (node.depth + 1);
 		element.line = ' '.repeat(element.contentStartColumn) + element.label;
 		node.seen = 0; node.included = 0; node.visible = false;

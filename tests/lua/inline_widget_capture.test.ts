@@ -78,7 +78,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} source endpoint consumes admitted motion in a primary-release sample`, t => {
 		configureFontVariant(new VirtualHeadlessClock(), variant, 'lua');
 		const source = 'mmmmmm\nnnnnnn';
-		const model = new EditorTextModel({ domain: 0, path: 'hold.lua', source: { type: 'lua', resid: 'hold' } }, 'lua', source);
+		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'hold.lua' }, domain: 0, path: 'hold.lua', source: { type: 'lua', resid: 'hold' } }, 'lua', source);
 		const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
 		t.after(() => { editorPointerState.pointerSelecting = false; activeCodeEditor.detach(); model.dispose(); });
 		editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; editorViewState.codeAreaLeft = 0;
@@ -111,7 +111,7 @@ test('retiring a target preserves a sibling capture and consumes the interrupted
 
 test('an empty workbench budget retires the real Find field before its next captured move', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
-	const model = new EditorTextModel({ domain: 0, path: 'budget.lua', source: { type: 'lua', resid: 'budget' } }, 'lua', '-- source');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'budget.lua' }, domain: 0, path: 'budget.lua', source: { type: 'lua', resid: 'budget' } }, 'lua', '-- source');
 	activeCodeEditor.attach(model, createCodeEditorViewState());
 	t.after(() => {
 		inputFocus.setTarget(null); editorSearchState.visible = false; pointerCapture.cancel();

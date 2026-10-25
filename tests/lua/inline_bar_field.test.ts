@@ -35,7 +35,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 
 	test(`${variant} source viewport consumes the space reserved for the Find field`, t => {
 		configureFontVariant(new VirtualHeadlessClock(), variant, null);
-		const model = new EditorTextModel({ domain: 0, path: 'inline.lua', source: { type: 'lua', resid: 'inline' } }, 'lua', '-- source');
+		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'inline.lua' }, domain: 0, path: 'inline.lua', source: { type: 'lua', resid: 'inline' } }, 'lua', '-- source');
 		activeCodeEditor.attach(model, createCodeEditorViewState());
 		t.after(() => { editorSearchState.visible = false; activeCodeEditor.detach(); model.dispose(); });
 		editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;

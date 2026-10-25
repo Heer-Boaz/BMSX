@@ -23,7 +23,7 @@ function fixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock();
 	const service = new ResourceDiagnosticsService(models, sources, clock);
 	t.after(() => { service.dispose(); resetSemanticProjects(models); models.clear(); clearBackgroundTasks(); });
-	const retain = (domain: ResourceDomain, path: string, source: string) => models.retain({ domain, path,
+	const retain = (domain: ResourceDomain, path: string, source: string) => models.retain({ location: { kind: 'workspace' as const, path }, domain, path,
 		source: { type: 'lua', resid: path } }, 'lua', source);
 	return { service, clock, retain, registries };
 }
@@ -56,7 +56,7 @@ test('boot primitive globals are known only in BIOS diagnostics, not either cart
 test('diagnostics cover retained resources without code inputs; unknown and unsupported coverage is not a clean result', t => {
 	const { service, retain } = fixture(t);
 	const model = retain(0, 'visual.lua', 'return missing_from_visual_source');
-	const yaml = models.retain({ domain: 0, path: 'level.yaml', source: { type: 'data', resid: 'level' } }, 'yaml', 'level: one');
+	const yaml = models.retain({ location: { kind: 'workspace' as const, path: 'level.yaml' }, domain: 0, path: 'level.yaml', source: { type: 'data', resid: 'level' } }, 'yaml', 'level: one');
 	assert.equal(service.get(model.identity)!.status, 'pending');
 	assert.equal(service.get(yaml.identity)!.status, 'unsupported');
 	assert.equal(service.get({ domain: 0, path: 'unopened.lua' }), undefined);

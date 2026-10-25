@@ -60,7 +60,7 @@ function runtimeSources(system: LuaSourceRegistry, cartridge: LuaSourceRegistry 
 }
 
 function resource(domain: ResourceDomain, path: string): RuntimeResource {
-	return { domain, path, source: { resid: path, type: 'lua', source_path: path } };
+	return { location: { kind: 'workspace' as const, path }, domain, path, source: { resid: path, type: 'lua', source_path: path } };
 }
 
 test('editor semantic project retains its immutable snapshot while source generations are unchanged', () => {
@@ -345,7 +345,7 @@ test('non-Lua model changes do not invalidate a Lua semantic project', () => {
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(0, models);
 	const before = project.getSnapshot();
-	const model = models.retain({ domain: 0, path: 'art.aem', source: { resid: 'art', type: 'data' } }, 'aem', '{}');
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'art.aem' }, domain: 0, path: 'art.aem', source: { resid: 'art', type: 'data' } }, 'aem', '{}');
 	model.pushEditOperations([{ offset: 1, deleteLength: 0, text: ' ' }]);
 	models.clear();
 	assert.equal(project.getSnapshot(), before);

@@ -48,7 +48,7 @@ async function fixture(t: TestContext) {
 	const files = new SaveFiles();
 	const clock = new VirtualHeadlessClock();
 	const root = 'carts/nemesis_s';
-	const lua = createScenarioTestSourceRecord(`${root}/tests/save.lua`, 1, 'return true');
+	const lua = createScenarioTestSourceRecord(`${root}/tests/save.lua`, 1, 'return true', `${root}/tests/save.lua`);
 	const sources = createScenarioTestSourceState([lua]);
 	const models = new EditorTextModelService();
 	let readbackFailure: Error | undefined;
@@ -65,7 +65,7 @@ async function fixture(t: TestContext) {
 		await closeWorkspaceRecords();
 		clearWorkspaceSourceCaches();
 	});
-	const yaml = (path = 'res/data/save.yaml') => models.retain({ domain: 0, path,
+	const yaml = (path = 'res/data/save.yaml') => models.retain({ location: { kind: 'project', projectRootPath: root, path }, domain: 0, path,
 		source: { resid: path, type: 'data' } }, 'yaml', '# untouched\nvalue: 1\n');
 	return { saves, models, storage, files, clock, root, yaml, sources, lua, tasks,
 		failReadback(error: Error) { readbackFailure = error; } };
@@ -208,7 +208,7 @@ test('a failed write keeps source dirty and cannot be replayed by reading; only 
 });
 
 test('failed Lua save cannot promote the source catalog or its saved baseline', async t => {
-	const f = await fixture(t), model = f.models.retain({ domain: 0, path: f.lua.source_path, source: f.lua }, 'lua', f.lua.src);
+	const f = await fixture(t), model = f.models.retain(f.sources.luaResources[0], 'lua', f.lua.src);
 	setSource(model, 'return false'); f.files.failure = new Error('write denied');
 	assert.equal((await f.saves.save(model).completion).status, 'failed');
 	assert.equal(f.lua.src, 'return true'); assert.equal(f.lua.base_src, 'return true'); assert.equal(model.dirty, true);
@@ -286,7 +286,7 @@ test('AEM build rejection reports saved source separately and does not poison th
 	const installedEventMap = {};
 	cartridge.package.audioevents.cue = installedEventMap;
 	const media = f.sources.currentBlua32Media;
-	const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	const model = f.models.retain({ location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, '[');
 	const result = await f.saves.save(model).completion;
 	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail(`expected saved source and rejected AEM: ${JSON.stringify(result)}`);
@@ -311,7 +311,7 @@ for (const reason of ['module-not-installed', 'asset-not-installed'] as const) {
 		} else {
 			cartridge.installedBlua32Sources = new Map([['cartlib/aem', 'return {}']]);
 		}
-		const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+		const model = f.models.retain({ location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 		setSource(model, '[');
 		const media = f.sources.currentBlua32Media;
 		const installedEventMap = cartridge.package.audioevents.cue;
@@ -332,7 +332,7 @@ for (const reason of ['module-not-installed', 'asset-not-installed'] as const) {
 test('inactive AEM saves source without attempting another domain\'s build or guest reload', async t => {
 	const f = await fixture(t);
 	f.sources.activeCartridgeSlot = -1;
-	const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	const model = f.models.retain({ location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, '[');
 	const media = f.sources.currentBlua32Media;
 	const result = await f.saves.save(model).completion;
@@ -348,7 +348,7 @@ test('inactive AEM saves source without attempting another domain\'s build or gu
 
 test('runtime synchronization failure cannot be reported as a failed source write or an applied asset', async t => {
 	const f = await fixture(t);
-	const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	const model = f.models.retain({ location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, 'events: {}');
 	const error = new Error('readback failed');
 	f.failReadback(error);
@@ -362,7 +362,7 @@ test('runtime synchronization failure cannot be reported as a failed source writ
 
 test('source-only Lua uses its catalog owner and publishes one model-service save event', async t => {
 	const f = await fixture(t);
-	const model = f.models.retain({ domain: 0, path: f.lua.source_path, source: f.lua }, 'lua', f.lua.src);
+	const model = f.models.retain(f.sources.luaResources[0], 'lua', f.lua.src);
 	setSource(model, 'return false');
 	const saved: EditorTextModel[] = [];
 	const dispose = f.models.onDidSaveModel(model => saved.push(model));

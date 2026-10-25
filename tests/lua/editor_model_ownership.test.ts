@@ -40,7 +40,7 @@ const editorTestClock: HostClock = {
 };
 
 function luaResource(path: string): RuntimeResource {
-	return {
+	return { location: { kind: 'workspace' as const, path },
 		domain: 0,
 		path,
 		source: {

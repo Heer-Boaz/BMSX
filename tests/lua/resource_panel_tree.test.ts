@@ -9,23 +9,25 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { registerRuntimeLuaResource, registerWorkspaceTextSources } from '../../ide/runtime/sources';
-import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
+import { registerLuaSourceRecord, type LuaSourceRecord } from '../../ide/runtime/source_registry';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
 import { renameController } from '../../ide/workbench/contrib/code_editor/rename/controller';
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
+import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
+import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
 import { createTestEditorPanes } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1))) {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
-	const sources = createScenarioTestSourceState(Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1)));
+	const sources = createScenarioTestSourceState(records);
 	const panes = createTestEditorPanes(), editor = { editorPanes: panes, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
 	const navigation = new EditorNavigationController(sources, panel, createResourceEditorResolver(sources), panes, new EditorSearchController(sources, renameController));
@@ -50,6 +52,50 @@ test('folder activation retains Files focus; a leaf invokes the real resource op
 	assert.equal(input.isDirty(), false);
 	f.panel.setFocused(true); f.panel.openSelected(); await opening;
 	assert.equal(f.panes.activePane!.input, input);
+});
+
+test('Files separates canonical project, shared and generated ownership while reveal opens the retained dirty resource', async t => {
+	const local = createScenarioTestSourceRecord('cartlib/local.lua', 1, 'return 1');
+	const shared = createScenarioTestSourceRecord('runtime/world.lua', 1, 'return 42', 'cartlib/world.lua');
+	const tests = createScenarioTestSourceRecord('testlib/assert.lua', 1, 'return true', 'testlib/assert.lua');
+	const generated = { ...createScenarioTestSourceRecord('bmsx/gpu.lua', 1, 'return {}'), generated: true };
+	const f = fixture(t, [local, shared, tests, generated]);
+	const reveal = (path: string) => {
+		f.panel.queuePendingSelection({ domain: 0, path }); f.panel.applyPendingSelection();
+		const node = f.panel.files.selectedNode!; assert.ok(node.element.kind === 'file');
+		return node;
+	};
+	const rootOf = (node: WorkbenchTreeNode<FileElement>) => {
+		while (node.parent !== null) node = node.parent;
+		return node;
+	};
+	const localLeaf = reveal(local.source_path), projectRoot = rootOf(localLeaf);
+	assert.ok(projectRoot.element.kind === 'root');
+	assert.equal(projectRoot.element.locationKind, 'project'); assert.equal(projectRoot.element.path, 'carts/nemesis_s');
+	assert.equal(localLeaf.parent!.element.path, 'cartlib', 'a directory name never decides project membership');
+	const sharedLeaf = reveal(shared.source_path), workspaceRoot = rootOf(sharedLeaf);
+	assert.ok(workspaceRoot.element.kind === 'root'); assert.equal(workspaceRoot.element.locationKind, 'workspace');
+	assert.ok(workspaceRoot !== projectRoot); assert.equal(sharedLeaf.parent!.element.path, 'cartlib');
+	assert.ok(rootOf(reveal(tests.source_path)) === workspaceRoot);
+	const generatedRoot = rootOf(reveal(generated.source_path));
+	assert.ok(generatedRoot.element.kind === 'root'); assert.equal(generatedRoot.element.locationKind, 'generated');
+	assert.ok(generatedRoot !== projectRoot && generatedRoot !== workspaceRoot);
+	reveal(shared.source_path);
+	const resource = f.sources.resources.find(resource => resource.domain === 0 && resource.path === shared.source_path)!;
+	await f.navigation.openResource(resource);
+	const input = f.panes.activePane!.input;
+	const model = editorTextModelService.get(resource)!;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved shared source\n' }]);
+	const bytes = model.buffer.getText(); assert.equal(input.isDirty(), true);
+	const replacement = { ...shared, update_timestamp: 2 };
+	registerLuaSourceRecord(f.sources.cartridgeSlots[0]!.luaSources, replacement);
+	assert.ok(registerRuntimeLuaResource(f.sources, 0, replacement) === resource);
+	f.panel.refresh();
+	assert.ok(f.panel.files.selectedNode === sharedLeaf); assert.ok(rootOf(sharedLeaf) === workspaceRoot);
+	await f.navigation.openResource(resource);
+	assert.ok(f.panes.activePane!.input === input); assert.ok(editorTextModelService.get(resource) === model);
+	assert.equal(model.buffer.getText(), bytes); assert.equal(input.isDirty(), true);
+	model.undo(); assert.equal(model.buffer.getText(), shared.src); assert.equal(input.isDirty(), false);
 });
 
 test('hide/show and Call Hierarchy presentation retain the actual selected folder and independent Files reading position', t => {

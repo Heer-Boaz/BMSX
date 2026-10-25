@@ -149,7 +149,7 @@ test('resize cancels paired pointer/key activation, dismisses owned overflow, an
 
 test('source invalidation owns popup lifetime and consumes the remainder of an armed menu activation', t => {
 	const f = fixture(t);
-	const model = new EditorTextModel({ domain: 0, path: 'audio.aem.yaml', source: { resid: 'audio', type: 'aem' } }, 'yaml', 'events: {}');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'audio.aem.yaml' }, domain: 0, path: 'audio.aem.yaml', source: { resid: 'audio', type: 'aem' } }, 'yaml', 'events: {}');
 	let detached = false;
 	f.bar.onDidOpenOverflow = lifetime => {
 		lifetime.add({ dispose: model.onDidChangeContent(() => f.menu.hide()) });
@@ -205,7 +205,7 @@ for (const replacement of ['origin', 'other', 'none', 'menu'] as const) test(`va
 	const capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const content = inputFocus.createTarget(); content.bindKeyboard(() => {});
 	const other = inputFocus.createTarget(); other.bindKeyboard(() => {});
-	const model = new EditorTextModel({ domain: 0, path: 'actual.lua', source: { resid: 'actual', type: 'lua' } }, 'lua', '1');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'actual.lua' }, domain: 0, path: 'actual.lua', source: { resid: 'actual', type: 'lua' } }, 'lua', '1');
 	const field = new ValueInput(content, INTEGER_INPUT_FORMAT, value => model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.getText().length, text: String(value) }]));
 	const surfaces = new WorkbenchSurfaceService(), area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const root = surfaces.attach({ role: 'content', captureScope: content.scope.surfaceScope, getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });

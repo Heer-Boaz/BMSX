@@ -10,7 +10,7 @@ import { createTestEditorPanes } from '../helpers/editor_panes';
 import { navigationState } from '../../ide/navigation/navigation_history';
 
 function scene(path: string) {
-	return new SceneEditorInput(new EditorTextModel({ domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', 'return {}'));
+	return new SceneEditorInput(new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', 'return {}'));
 }
 
 test('one group preview replaces only its clean predecessor and keeps its tab position', () => {

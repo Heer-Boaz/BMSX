@@ -33,8 +33,8 @@ async function main() {
 		const source = `local machines<const> = require('cartlib/fsm/library')
 local shared<const> = ${imported ? "require('provider')" : "{ on={go=function() return 'idle' end}, initial='idle', states={idle={},active={}} }"}
 ${Array.from({ length: registrations }, (_, index) => `machines.register('fixture.${index}',shared)`).join('\n')}`;
-		const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
-		const provider = new EditorTextModel({ domain: 0, path: 'provider.lua', source: { type: 'lua', resid: 'provider' } }, 'lua',
+		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
+		const provider = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'provider.lua' }, domain: 0, path: 'provider.lua', source: { type: 'lua', resid: 'provider' } }, 'lua',
 			"return { on={go=function() return 'idle' end}, initial='idle', states={idle={},active={}} }");
 		const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path),
 			buildLuaFileSemanticData(provider.buffer.getText(), provider.resource.path)));

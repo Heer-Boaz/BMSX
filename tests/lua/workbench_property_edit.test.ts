@@ -28,7 +28,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 		displayLabel: '', displayValue: '', displayValueLeft: 0 });
 	rebuildWorkbenchTreeRows(tree, row);
 	layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), (text, a, b) => editorViewState.font.measure(text.slice(a, b)), 4, 60, pane.right - 4, 250);
-	const model = new EditorTextModel({ domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 17');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'source.lua' }, domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 17');
 	const edit = new WorkbenchPropertyEdit<string>(parent, text => text, surfaces, owner, root);
 	let applied = 0;
 	const open = () => edit.open({ model, tree, row,

@@ -28,7 +28,7 @@ scenes.register('other room', { objects = {
 
 function scene(t: TestContext, domain: 0 | 1 = 0) {
 	const path = 'scenes/room.lua';
-	const model = new EditorTextModel({ domain, path, source: { resid: path, type: 'lua' } }, 'lua', SOURCE);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain, path, source: { resid: path, type: 'lua' } }, 'lua', SOURCE);
 	const input = new SceneEditorInput(model);
 	installSceneOutline(input, buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SOURCE, path))));
 	selectSceneOutlineRow(input, 1);

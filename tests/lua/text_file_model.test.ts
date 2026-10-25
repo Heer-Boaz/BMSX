@@ -16,7 +16,7 @@ for (const type of ['data', 'aem'] as const) {
 		t.after(async () => { models.clear(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
 		const sources = createScenarioTestSourceState([]);
 		const original = '# Keep this formatting\r\nvalue: "01"\r\n';
-		const resource: RuntimeResource = { domain: 0, path: 'res/stage.yaml',
+		const resource: RuntimeResource = { location: { kind: 'workspace' as const, path: 'res/stage.yaml' }, domain: 0, path: 'res/stage.yaml',
 			source: { type, resid: 'stage', sourcemeta: { text: original } } };
 		const [first, second] = await Promise.all([
 			resolveTextFileModel(models, sources, resource), resolveTextFileModel(models, sources, resource),
@@ -50,7 +50,7 @@ test('YAML installed-source equality is independent of saved identity and cached
 	const sources = createScenarioTestSourceState([]), models = new EditorTextModelService();
 	t.after(() => models.clear());
 	const source = '# exact authored bytes\r\nvalue: "01"\r\n';
-	const resource: RuntimeResource = { domain: 0, path: 'res/stage.yaml',
+	const resource: RuntimeResource = { location: { kind: 'workspace' as const, path: 'res/stage.yaml' }, domain: 0, path: 'res/stage.yaml',
 		source: { type: 'data', resid: 'stage', sourcemeta: { text: source } } };
 	const model = models.retain(resource, 'yaml', source);
 	const reads = t.mock.method(model.buffer, 'getText');
@@ -80,7 +80,7 @@ test('YAML source provenance stays resource-domain specific and an empty package
 	const domains = [-1, 0, 1] as const;
 	for (const domain of domains) {
 		const source = domain === -1 ? '' : `value: ${domain}\n`;
-		const model = models.retain({ domain, path: 'res/stage.yaml',
+		const model = models.retain({ location: { kind: 'workspace' as const, path: 'res/stage.yaml' }, domain, path: 'res/stage.yaml',
 			source: { type: 'data', resid: 'stage', sourcemeta: { text: source } } }, 'yaml', source);
 		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
 	}

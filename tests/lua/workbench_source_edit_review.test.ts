@@ -16,7 +16,7 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import type { DisposableStore } from '../../ide/common/lifecycle';
 
 function fixture(t: TestContext, count = 36) {
-	const model = new EditorTextModel({ domain: 0, path: 'review.lua', source: { type: 'lua', resid: 'review' } }, 'lua', "return 'before'");
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'review.lua' }, domain: 0, path: 'review.lua', source: { type: 'lua', resid: 'review' } }, 'lua', "return 'before'");
 	const focus = new InputFocusService();
 	const parent = focus.createTarget();
 	const capture = new PointerCaptureService(), hover = new PointerHoverService();
@@ -115,7 +115,7 @@ test('source invalidation under a popup cannot resurrect the retired review or i
 
 test('review lifetime owns external dependency cancellation and releases it before apply', t => {
 	const f = fixture(t);
-	const dependency = new EditorTextModel({ domain: 0, path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'return true');
+	const dependency = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'dependency.lua' }, domain: 0, path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'return true');
 	t.after(() => dependency.dispose());
 	f.show(lifetime => lifetime.add({ dispose: dependency.onDidChangeContent(() => f.review.clear()) }));
 	dependency.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dependency changed\n' }]);

@@ -26,7 +26,7 @@ async function fixture(t: TestContext) {
 	const guest = f.guest, diagnostics = new ResourceDiagnosticsService(models, sources, clock);
 	const saves = new TextFileSaveService(models, clock, sources, guest, f.runtime, f.tasks);
 	const model = models.retain(sources.luaResources[0], 'lua', 'return 1\n');
-	const yaml: RuntimeResource = { domain: 0, path: 'res/data/probe.yaml', source: { type: 'data', resid: 'probe' } };
+	const yaml: RuntimeResource = { location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'res/data/probe.yaml' }, domain: 0, path: 'res/data/probe.yaml', source: { type: 'data', resid: 'probe' } };
 	sources.resourceByIdentity.set(resourceIdentityKey(yaml), yaml);
 	const data = models.retain(yaml, 'yaml', '# canonical 🐉\r\nvalue: 1\r\n');
 	const tools = () => {
@@ -139,7 +139,7 @@ test('project write failure and AEM build failure remain distinct textual wire o
 		},
 	});
 	rejectWrite = true;
-	const resource: RuntimeResource = { domain: 0, path: 'res/probe.aem.yaml', source: { type: 'aem', resid: 'probe' } };
+	const resource: RuntimeResource = { location: { kind: 'workspace' as const, path: 'res/probe.aem.yaml' }, domain: 0, path: 'res/probe.aem.yaml', source: { type: 'aem', resid: 'probe' } };
 	f.sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const model = f.models.retain(resource, 'aem', '{}');
 	model.pushEditOperations([{ offset: 0, deleteLength: 2, text: 'not: [valid' }]);

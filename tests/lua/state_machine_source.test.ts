@@ -15,7 +15,7 @@ import type { LuaSyntaxSpan } from '../../toolchain/ts/lua/syntax/source_locatio
 import { FSM_BEHAVIOR_SOURCE, FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
 
 function fixture(source = FSM_BEHAVIOR_SOURCE) {
-	const resource = { domain: 0 as const, path: 'fsm_fixture.lua',
+	const resource = { location: { kind: 'workspace' as const, path: 'fsm_fixture.lua' }, domain: 0 as const, path: 'fsm_fixture.lua',
 		source: { resid: 'fsm_fixture', type: 'lua' as const, source_path: 'fsm_fixture.lua', generated: false } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	const analysis = buildLuaFileSemanticData(source, resource.path);

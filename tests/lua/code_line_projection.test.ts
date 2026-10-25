@@ -15,7 +15,7 @@ function fixture(t: TestContext, text: string, variant: FontVariant = 'msx') {
 	const inactive: InlineEditState = { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: false };
 	const layout = new CodeLayout(font, { maxHighlightCache: 16, semanticDebounceMs: 200, clock: new VirtualHeadlessClock(),
 		getBuiltinIdentifiers: () => ({ epoch: 1, ids: [] }), computeWrapWidth: () => 384, inlineEdit: inactive });
-	const model = new EditorTextModel({ domain: 0, path: 'projection.lua', source: { type: 'lua', resid: 'projection' } }, 'lua', text);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'projection.lua' }, domain: 0, path: 'projection.lua', source: { type: 'lua', resid: 'projection' } }, 'lua', text);
 	const source = layout.getCachedHighlight(model.buffer, 0);
 	assert.equal(source.inline, null); assert.equal(source.src, text);
 	assert.equal(source.viewText, text); assert.equal(source.viewColumnToDisplay, source.hi.columnToDisplay);

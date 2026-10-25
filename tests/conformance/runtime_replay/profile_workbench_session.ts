@@ -52,7 +52,7 @@ for (const documents of [4, 32, 128]) {
 	let sourceReads = 0;
 	const codeInputs: CodeEditorInput[] = [];
 	for (let index = 0; index < documents; index += 1) {
-		const resource = { domain: 0 as const, path: `workspace/definition_${index}.lua`, source: { type: 'lua' as const, resid: `definition_${index}` } };
+		const resource = { location: { kind: 'workspace' as const, path: `workspace/definition_${index}.lua` }, domain: 0 as const, path: `workspace/definition_${index}.lua`, source: { type: 'lua' as const, resid: `definition_${index}` } };
 		const model = new EditorTextModel(resource, 'lua', source);
 		const readText = model.buffer.getText.bind(model.buffer);
 		model.buffer.getText = () => { sourceReads += 1; return readText(); };

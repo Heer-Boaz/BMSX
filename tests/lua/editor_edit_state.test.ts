@@ -3,7 +3,7 @@ import test from 'node:test';
 import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import { EditorTextModel, type EditorTextModelContentChangeEvent } from '../../ide/editor/model/text_model';
 
-const resource = { domain: 0 as const, path: 'history.lua', source: { type: 'lua' as const, resid: 'history' } };
+const resource = { location: { kind: 'workspace' as const, path: 'history.lua' }, domain: 0 as const, path: 'history.lua', source: { type: 'lua' as const, resid: 'history' } };
 const selection = new EditorEditStateType<{ readonly position: number }>();
 
 test('one document record publishes the computed result, Undo origin and Redo result after the actual text change', () => {

@@ -30,7 +30,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384) 
 	editorTabGroup.clear();
 	const models: EditorTextModel[] = [];
 	const add = (label: string, preview = false) => {
-		const model = new EditorTextModel({ domain: 0, path: label + '.lua', source: { type: 'lua', resid: label } }, 'lua', 'return {}');
+		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: label + '.lua' }, domain: 0, path: label + '.lua', source: { type: 'lua', resid: label } }, 'lua', 'return {}');
 		models.push(model);
 		const input = new SceneEditorInput(model); input.setLabel(label, model.resource.path);
 		editorTabGroup.add(input, { pinned: !preview }); editorTabGroup.activate(input);

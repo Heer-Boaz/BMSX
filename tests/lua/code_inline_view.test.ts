@@ -20,7 +20,7 @@ function fixture(t: TestContext, source: string, variant: FontVariant, width = 3
 	configureFontVariant(clock, variant, 'lua');
 	applyViewportSize({ width, height: 288 }); refreshWorkbenchLayout();
 	editorViewState.wordWrapEnabled = true; editorCaretState.cursorRevealSuspended = false;
-	const model = editorTextModelService.retain({ domain: 0, path: 'inline-view.lua',
+	const model = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'inline-view.lua' }, domain: 0, path: 'inline-view.lua',
 		source: { type: 'lua', resid: 'inline-view', source_path: 'inline-view.lua' } }, 'lua', source);
 	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
 	t.after(() => {
@@ -67,7 +67,7 @@ test('visual cursor affinity is one retained widget record and retires before in
 	assert.equal(activeCodeEditor.visualCursor, affinity, 'Home/End affinity survives its source-cursor publication');
 	activeCodeEditor.setInlineEdit(0, 5, 10, 'n'); assert.equal(activeCodeEditor.visualCursor, null);
 	activeCodeEditor.clearInlineEdit(); activeCodeEditor.captureVisualCursor(0, 5, 3);
-	const other = editorTextModelService.retain({ domain: 0, path: 'other-view.lua',
+	const other = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'other-view.lua' }, domain: 0, path: 'other-view.lua',
 		source: { type: 'lua', resid: 'other-view' } }, 'lua', 'local other = 1');
 	const lineCount = other.buffer.getLineCount.bind(other.buffer);
 	t.mock.method(other.buffer, 'getLineCount', () => {

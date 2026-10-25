@@ -25,7 +25,7 @@ const SOURCE = [
 function fixture(source = SOURCE, kind: 'pietious' | 'nemesis' = 'pietious') {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const path = kind === 'pietious' ? 'res/data/castle_map.yaml' : 'res/data/nemesis_s_stage.yaml';
-	const model = new EditorTextModel({ domain: 0, path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
 	const input = new CartMapInput(model, kind);
 	projectCartMap(input);
 	return { model, input };

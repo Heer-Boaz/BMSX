@@ -32,7 +32,7 @@ scenes.register('room', { objects = {
 
 function fixture(source = SOURCE) {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
-	const model = new EditorTextModel({ domain: 0, path: 'room.lua', source: { resid: 'room', type: 'lua' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'room.lua' }, domain: 0, path: 'room.lua', source: { resid: 'room', type: 'lua' } }, 'lua', source);
 	const input = new SceneEditorInput(model);
 	let boundSource = '';
 	const refresh = () => {

@@ -61,7 +61,7 @@ test('property and resource renderers project fractional positions without losin
 	layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), measureTextRange, 0, 0, 240, 160);
 	scrollWorkbenchList(tree, 1.5);
 	const viewer: ResourceViewerState = { scroll: 0, content: {
-		resource: { domain: 0, path: 'rows.lua', source: { type: 'lua', resid: 'rows' } },
+		resource: { location: { kind: 'workspace' as const, path: 'rows.lua' }, domain: 0, path: 'rows.lua', source: { type: 'lua', resid: 'rows' } },
 		lines: Array.from({ length: 80 }, (_, index) => String(index)), error: '', title: 'rows',
 	} };
 	for (let step = 0; step < 6; step++) applyResourceViewerScroll(viewer, 4, viewer.scroll + 0.25);
@@ -77,7 +77,7 @@ test('property and resource renderers project fractional positions without losin
 
 test('source scrolling retains fractional pixels while hit tests resolve source columns', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
-	const model = new EditorTextModel({ domain: 0, path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'wheel.lua' }, domain: 0, path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
 	const view = createCodeEditorViewState();
 	activeCodeEditor.attach(model, view);
 	t.after(() => { activeCodeEditor.detach(); model.dispose(); });
@@ -108,7 +108,7 @@ test('source scrolling retains fractional pixels while hit tests resolve source 
 
 test('Problems wheel integrates sub-row distances without changing selection or being undone by focused drawing', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
-	const model = new EditorTextModel({ domain: 0, path: 'problems.lua', source: { type: 'lua', resid: 'problems' } }, 'lua', 'x');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'problems.lua' }, domain: 0, path: 'problems.lua', source: { type: 'lua', resid: 'problems' } }, 'lua', 'x');
 	const diagnostics: EditorDiagnostic[] = Array.from({ length: 10 }, (_, row) => ({ model, version: 1, row,
 		startColumn: 0, endColumn: 1, message: 'A diagnostic message that wraps across several narrow panel lines.', severity: 'error' }));
 	const controller = new ProblemsPanelController();
@@ -135,7 +135,7 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 
 test('Problems wheel prepares current variable-height layout after show, resize and diagnostic refresh without painting', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
-	const model = new EditorTextModel({ domain: 0, path: 'problems-layout.lua', source: { type: 'lua', resid: 'problems-layout' } }, 'lua', 'x');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'problems-layout.lua' }, domain: 0, path: 'problems-layout.lua', source: { type: 'lua', resid: 'problems-layout' } }, 'lua', 'x');
 	const diagnostic = (message: string, row: number): EditorDiagnostic => ({ model, version: 1, row, startColumn: 0, endColumn: 1, message, severity: 'error' });
 	const diagnostics = [diagnostic('Short', 0), diagnostic('A diagnostic message that wraps across several narrow panel lines.', 1), diagnostic('Last', 2)];
 	const coverage = { ready: 1, pending: 0, unsupported: 0, failed: 0 };

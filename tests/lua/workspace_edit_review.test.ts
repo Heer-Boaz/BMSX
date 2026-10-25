@@ -20,8 +20,8 @@ function fixture(t: TestContext) {
 	const models = new EditorTextModelService();
 	const source = createScenarioTestSourceRecord('main.lua', 1, 'return old, old');
 	const sources = createScenarioTestSourceState([source]);
-	const a = models.retain({ domain: 0, path: 'main.lua', source }, 'lua', source.src);
-	const b = models.retain({ domain: 0, path: 'other.yaml', source: { resid: 'other', type: 'data' } }, 'yaml', '# trivia\r\nvalue: old\r\n');
+	const a = models.retain(sources.luaResources[0], 'lua', source.src);
+	const b = models.retain({ location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'other.yaml' }, domain: 0, path: 'other.yaml', source: { resid: 'other', type: 'data' } }, 'yaml', '# trivia\r\nvalue: old\r\n');
 	const edits = new Map<EditorTextModel, EditorModelEdit>([
 		[a, { version: a.version, edits: [{ offset: 7, deleteLength: 3, text: 'new' }, { offset: 12, deleteLength: 3, text: 'new' }] }],
 		[b, { version: b.version, edits: [{ offset: 17, deleteLength: 3, text: 'new' }] }],
@@ -92,7 +92,7 @@ for (const outcome of ['applied', 'discarded', 'stale', 'conflict', 'failed'] as
 
 test('target edits and dependency edits both retire pending workspace context, even after Undo', t => {
 	const f = fixture(t);
-	const dependency = f.models.retain({ domain: 0, path: 'dep.lua', source: { resid: 'dep', type: 'lua' } }, 'lua', 'x');
+	const dependency = f.models.retain({ location: { kind: 'workspace' as const, path: 'dep.lua' }, domain: 0, path: 'dep.lua', source: { resid: 'dep', type: 'lua' } }, 'lua', 'x');
 	dependency.pushEditOperations([{ offset: 0, deleteLength: 1, text: 'y' }]);
 	dependency.undo();
 	assert.equal(f.proposal.state, 'stale');

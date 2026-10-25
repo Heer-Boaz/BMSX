@@ -4,9 +4,8 @@ import { collectAnimationDefinitions } from '../../animation/definitions';
 import type { CartEditor } from '../../../../cart_editor';
 import type { HostClock } from '../../../../../hosts/common/clock';
 import { structuredTextAssetFromPath } from '../../../../../toolchain/ts/rompack/assets';
-import { runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../../runtime/sources';
+import { resolveRuntimeResource, runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../../runtime/sources';
 import { createTextResource } from '../../../../workspace/workspace';
-import { stripProjectRootPrefix } from '../../../../workspace/path';
 import { getActiveTab } from '../../../ui/tabs';
 import { openLuaCodeTab } from '../../../ui/code_tab/io';
 import { NEW_AEM_SOURCE, newLuaSource, type NewSourceKind } from './source_templates';
@@ -20,14 +19,16 @@ export function openCreateResourcePrompt(
 	clock: HostClock,
 	kind: NewSourceKind = 'empty',
 ): void {
-	const resource = getActiveTab()?.resource;
-	if (resource) {
-		const root = runtimeSourceProjectRootPath(sources, resource.domain);
-		const path = stripProjectRootPrefix(resource.path, root);
-		showNewSourceInput(editor, sources, clock, resource.domain, path.slice(0, path.lastIndexOf('/') + 1), kind);
-		return;
+	const identity = getActiveTab()?.resource;
+	if (identity !== undefined) {
+		const resource = resolveRuntimeResource(sources, identity)!;
+		if (resource.location.kind === 'project') {
+			const path = resource.location.path;
+			showNewSourceInput(editor, sources, clock, resource.domain, path.slice(0, path.lastIndexOf('/') + 1), kind);
+			return;
+		}
 	}
-	// Non-resource panes have no implicit file owner. Choose a workspace folder,
+	// Shared/generated sources and non-resource panes have no implicit project owner. Choose a workspace folder,
 	// not the socket currently executing (which may be BIOS supervisor code).
 	const projects: Array<QuickPickItem & { domain: ResourceDomain }> = [];
 	for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {

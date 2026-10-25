@@ -18,6 +18,7 @@ import {
 	type ResourceDomain,
 	type ResourceIdentity,
 	type RuntimeResource,
+	type RuntimeResourceLocation,
 	resourceIdentityKey,
 	resourceIdentityKeyFromParts,
 } from '../common/resource';
@@ -33,6 +34,7 @@ import {
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
+import { stripProjectRootPrefix } from '../workspace/path';
 
 
 export const enum Blua32GlobalRegisterFile {
@@ -470,22 +472,27 @@ export function registerRuntimeLuaResource(
 ): RuntimeResource {
 	const key = resourceIdentityKeyFromParts(domain, source.source_path);
 	const previous = state.resourceByIdentity.get(key);
+	const location = retainLuaResourceLocation(previous?.location, source, runtimeLuaSourceRegistry(state, domain)!.projectRootPath);
 	if (previous) {
 		const becameLua = previous.source.type !== 'lua';
+		const locationChanged = previous.location !== location;
 		previous.source = source;
+		previous.location = location;
 		if (becameLua) {
 			state.luaResources.push(previous);
 			sortRuntimeResources(state.luaResources);
-			state.resourceCatalogRevision++;
 		}
+		if (becameLua || locationChanged) state.resourceCatalogRevision++;
 		return previous;
 	}
 	const resource = retainRuntimeResource(
+		previous,
 		state.resourceByIdentity,
-		state.resourceByIdentity,
+		key,
 		domain,
 		source.source_path,
 		source,
+		location,
 	);
 	state.luaResources.push(resource);
 	sortRuntimeResources(state.luaResources);
@@ -507,7 +514,7 @@ export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
 			continue;
 		}
 		retainLuaResources(previousResources, resources, state.luaResources, domain, cartridge.luaSources);
-		retainDataResources(previousResources, resources, domain, cartridge.romSource);
+		retainDataResources(previousResources, resources, domain, cartridge.romSource, cartridge.projectRootPath);
 	}
 	retainLuaResources(
 		previousResources,
@@ -521,6 +528,7 @@ export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
 		resources,
 		SYSTEM_RESOURCE_DOMAIN,
 		state.systemRomSource,
+		state.systemProjectRootPath,
 	);
 	for (const [key, authored] of state.workspaceTextSources) {
 		const registry = runtimeLuaSourceRegistry(state, authored.domain);
@@ -529,7 +537,9 @@ export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
 			continue;
 		}
 		if (!resources.has(key)) {
-			retainRuntimeResource(previousResources, resources, authored.domain, authored.source.source_path, authored.source);
+			const previous = previousResources.get(key);
+			retainRuntimeResource(previous, resources, key, authored.domain, authored.source.source_path, authored.source,
+				retainProjectResourceLocation(previous?.location, authored.projectRootPath, authored.source.source_path));
 		}
 	}
 	sortRuntimeResources(state.luaResources);
@@ -549,21 +559,36 @@ export function registerWorkspaceTextSources(
 	rebuildRuntimeSourceResources(state);
 }
 
+function retainProjectResourceLocation(previous: RuntimeResourceLocation | undefined, projectRootPath: string, path: string): RuntimeResourceLocation {
+	return previous?.kind === 'project' && previous.projectRootPath === projectRootPath && previous.path === path
+		? previous : { kind: 'project', projectRootPath, path };
+}
+
+function retainLuaResourceLocation(previous: RuntimeResourceLocation | undefined, source: LuaSourceRecord, projectRootPath: string): RuntimeResourceLocation {
+	if (source.generated) return previous?.kind === 'generated' && previous.path === source.source_path
+		? previous : { kind: 'generated', path: source.source_path };
+	const path = stripProjectRootPrefix(source.normalized_source_path, projectRootPath);
+	if (projectRootPath.length === 0 || path !== source.normalized_source_path) return retainProjectResourceLocation(previous, projectRootPath, path);
+	return previous?.kind === 'workspace' && previous.path === source.normalized_source_path
+		? previous : { kind: 'workspace', path: source.normalized_source_path };
+}
+
 function retainRuntimeResource(
-	previousResources: ReadonlyMap<string, RuntimeResource>,
+	retained: RuntimeResource | undefined,
 	resources: Map<string, RuntimeResource>,
+	key: string,
 	domain: ResourceDomain,
 	path: string,
 	source: RuntimeResource['source'],
+	location: RuntimeResourceLocation,
 ): RuntimeResource {
-	const key = resourceIdentityKeyFromParts(domain, path);
-	const retained = previousResources.get(key);
 	if (retained) {
 		retained.source = source;
+		retained.location = location;
 		resources.set(key, retained);
 		return retained;
 	}
-	const resource: RuntimeResource = { domain, path, source };
+	const resource: RuntimeResource = { domain, path, source, location };
 	resources.set(key, resource);
 	return resource;
 }
@@ -577,12 +602,16 @@ function retainLuaResources(
 ): void {
 	for (let index = 0; index < registry.records.length; index += 1) {
 		const source = registry.records[index];
+		const key = resourceIdentityKeyFromParts(domain, source.source_path);
+		const previous = previousResources.get(key);
 		luaResources.push(retainRuntimeResource(
-			previousResources,
+			previous,
 			resources,
+			key,
 			domain,
 			source.source_path,
 			source,
+			retainLuaResourceLocation(previous?.location, source, registry.projectRootPath),
 		));
 	}
 }
@@ -592,6 +621,7 @@ function retainDataResources(
 	resources: Map<string, RuntimeResource>,
 	domain: ResourceDomain,
 	romSource: RawRomSource,
+	projectRootPath: string,
 ): void {
 	const records = romSource.list();
 	for (let index = 0; index < records.length; index += 1) {
@@ -599,12 +629,16 @@ function retainDataResources(
 		if ((source.type !== 'data' && source.type !== 'aem') || !source.source_path) {
 			continue;
 		}
+		const key = resourceIdentityKeyFromParts(domain, source.source_path);
+		const previous = previousResources.get(key);
 		retainRuntimeResource(
-			previousResources,
+			previous,
 			resources,
+			key,
 			domain,
 			source.source_path,
 			source,
+			retainProjectResourceLocation(previous?.location, projectRootPath, source.source_path),
 		);
 	}
 }

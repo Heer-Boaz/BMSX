@@ -4,7 +4,7 @@ import { EditorTextModelService, type ResolvedTextModelSource } from '../../ide/
 import type { ResourceDomain, RuntimeResource } from '../../ide/common/resource';
 
 function resource(domain: ResourceDomain = 0): RuntimeResource {
-	return { domain, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem', generated: false } };
+	return { location: { kind: 'workspace' as const, path: 'res/cue.aem.yaml' }, domain, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem', generated: false } };
 }
 
 test('asynchronous source admission coalesces by resource, not filename or editor input', async () => {

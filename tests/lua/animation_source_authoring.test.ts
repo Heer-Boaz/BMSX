@@ -13,7 +13,7 @@ import { createLuaTableFieldNumberEdits } from '../../ide/language/lua/source_ed
 import { createLuaTableFieldsInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { newLuaSource } from '../../ide/workbench/contrib/resources/create/source_templates';
 
-const resource = { domain: 0 as const, path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
+const resource = { location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
 function project(source: string, imports: readonly { path: string; source: string }[] = []) {
 	return buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path),
 		...imports.map(item => buildLuaFileSemanticData(item.source, item.path))));

@@ -333,7 +333,7 @@ function testResource(
 	domain: ResourceDomain = TEST_DOMAIN,
 	type: RuntimeResource['source']['type'] = 'lua',
 ): RuntimeResource {
-	return {
+	return { location: { kind: 'workspace' as const, path },
 		domain,
 		path,
 		source: {

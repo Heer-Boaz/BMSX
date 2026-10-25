@@ -10,7 +10,7 @@ import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 
 function registry(root: string, paths: readonly string[]): LuaSourceRegistry {
 	const value: LuaSourceRegistry = { projectRootPath: root, records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', can_boot_from_source: false, revision: 0 };
-	for (const path of paths) registerLuaSourceRecord(value, createScenarioTestSourceRecord(path, 1));
+	for (const path of paths) registerLuaSourceRecord(value, createScenarioTestSourceRecord(path, 1, undefined, `${root}/${path}`));
 	return value;
 }
 function fixture() {
@@ -30,9 +30,11 @@ function file(model: ResourceFilesModel, domain: ResourceDomain, path: string): 
 	return selected;
 }
 
-test('Files retains actual domain roots, full directory parents and canonical resource leaves', () => {
+test('Files retains canonical project roots, full directory parents and canonical resource leaves', () => {
 	const f = fixture(), roots = f.model.tree.roots;
-	assert.deepEqual(roots.map(node => [node.element.kind, node.element.domain]), [['domain', -1], ['domain', 0], ['domain', 1]]);
+	assert.deepEqual(roots.map(node => node.element.kind === 'root'
+		? [node.element.locationKind, node.element.domain, node.element.path] : null),
+	[['project', -1, 'machine/bios'], ['project', 0, 'carts/first'], ['project', 1, 'carts/second']]);
 	assert.ok(roots.every(node => node.parent === null && node.depth === 0));
 	assert.equal(roots[0].collapsed, true);
 	assert.ok(roots.slice(1).every(node => !node.collapsed));
@@ -70,7 +72,7 @@ test('Left/Right and disclosure use shared tree semantics without opening or mut
 test('a new earlier sibling retains the selected folder node instead of its obsolete ordinal', () => {
 	const f = fixture(); file(f.model, 0, 'z/main.lua'); f.model.navigate('left');
 	const selected = f.model.selectedNode, index = f.model.tree.selectionIndex, rows = f.model.tree.rows;
-	const added = createScenarioTestSourceRecord('a/first.lua', 2);
+	const added = createScenarioTestSourceRecord('a/first.lua', 2, undefined, 'carts/first/a/first.lua');
 	registerLuaSourceRecord(f.cart, added); registerRuntimeLuaResource(f.sources, 0, added);
 	assert.equal(f.model.sync(f.sources, 'lua_only'), true);
 	assert.equal(f.model.tree.rows, rows); assert.equal(f.model.selectedNode, selected);
@@ -93,7 +95,7 @@ test('full catalog publications and same-key source replacement preserve nodes w
 	assert.equal(f.model.revision, revision); assert.equal(f.model.selectedNode, selected);
 	assert.ok(roots.every((node, index) => f.model.tree.roots[index] === node));
 	assert.equal(push.mock.callCount(), 0); assert.equal(sort.mock.callCount(), 0);
-	const replacement = createScenarioTestSourceRecord('deep/inner/main.lua', 3, 'return 123');
+	const replacement = createScenarioTestSourceRecord('deep/inner/main.lua', 3, 'return 123', 'carts/first/deep/inner/main.lua');
 	registerLuaSourceRecord(f.cart, replacement); registerRuntimeLuaResource(f.sources, 0, replacement);
 	assert.equal(f.model.sync(f.sources, 'lua_only'), false);
 	assert.equal(f.model.selectedNode, selected);
@@ -125,7 +127,7 @@ test('removing a selected source retires its occurrence and never transfers sele
 	rebuildRuntimeSourceResources(f.sources); f.model.sync(f.sources, 'lua_only');
 	assert.equal(f.model.selectedNode, null); assert.equal(f.model.tree.rows.includes(removed), false);
 	assert.equal(f.model.reveal({ domain: 0, path: 'z/main.lua' }), false);
-	const returned = createScenarioTestSourceRecord('z/main.lua', 4);
+	const returned = createScenarioTestSourceRecord('z/main.lua', 4, undefined, 'carts/first/z/main.lua');
 	registerLuaSourceRecord(f.sources.cartridgeSlots[0]!.luaSources, returned); registerRuntimeLuaResource(f.sources, 0, returned);
 	f.model.sync(f.sources, 'lua_only');
 	assert.equal(f.model.selectedNode, null);
@@ -140,6 +142,60 @@ test('slot namespace replacement retires equal-path nodes but leaves unrelated d
 	assert.equal(f.model.selectedNode, null);
 	assert.equal(file(f.model, 1, 'deep/inner/main.lua'), other);
 	assert.notEqual(file(f.model, 0, 'deep/inner/main.lua'), first);
+});
+
+test('project replacement retires project roots while canonical shared occurrences retain their own context and view state', () => {
+	const f = fixture(), path = 'runtime/shared.lua';
+	const shared = createScenarioTestSourceRecord(path, 1, 'return 42', 'cartlib/world.lua');
+	for (const domain of [0, 1] as const) {
+		registerLuaSourceRecord(f.sources.cartridgeSlots[domain]!.luaSources, { ...shared });
+		registerRuntimeLuaResource(f.sources, domain, f.sources.cartridgeSlots[domain]!.luaSources.path2lua[path]);
+	}
+	f.model.sync(f.sources, 'lua_only');
+	const rootOf = (node: WorkbenchTreeNode<FileElement>) => {
+		while (node.parent !== null) node = node.parent;
+		return node;
+	};
+	const project = rootOf(file(f.model, 0, 'top.lua'));
+	const selected = file(f.model, 0, path), root = rootOf(selected), directory = selected.parent!;
+	const other = file(f.model, 1, path), otherRoot = rootOf(other);
+	assert.ok(root.element.kind === 'root'); assert.equal(root.element.locationKind, 'workspace');
+	assert.ok(otherRoot.element.kind === 'root'); assert.equal(otherRoot.element.locationKind, 'workspace');
+	assert.ok(root !== otherRoot, 'shared provenance does not merge distinct runtime-context occurrences');
+	assert.ok(selected !== other); assert.equal(directory.element.path, 'cartlib');
+	file(f.model, 0, path);
+	f.model.navigate('left'); f.model.navigate('left');
+	assert.equal(directory.collapsed, true);
+	const nextCart = registry('carts/replacement', ['deep/inner/main.lua', 'top.lua']);
+	registerLuaSourceRecord(nextCart, { ...shared });
+	const next = createTestRuntimeSourceState(f.system, [nextCart, f.other], 0);
+	f.model.sync(next, 'lua_only');
+	assert.ok(f.model.selectedNode === directory);
+	assert.equal(directory.collapsed, true);
+	assert.ok(file(f.model, 0, path) === selected); assert.ok(rootOf(selected) === root);
+	assert.ok(file(f.model, 1, path) === other); assert.ok(rootOf(other) === otherRoot);
+	assert.ok(rootOf(file(f.model, 0, 'top.lua')) !== project);
+	assert.ok(selected.element.kind === 'file');
+	assert.ok(selected.element.resource === next.resourceByIdentity.get(resourceIdentityKey(selected.element)));
+});
+
+test('changed canonical location replaces its selected tree projection without changing runtime resource identity', () => {
+	const f = fixture(), path = 'runtime/shared.lua';
+	const shared = createScenarioTestSourceRecord(path, 1, 'return 42', 'cartlib/world.lua');
+	registerLuaSourceRecord(f.cart, shared); registerRuntimeLuaResource(f.sources, 0, shared);
+	f.model.sync(f.sources, 'lua_only');
+	const leaf = file(f.model, 0, path), oldParent = leaf.parent;
+	assert.ok(leaf.element.kind === 'file'); const resource = leaf.element.resource;
+	const replacement = { ...shared, normalized_source_path: 'carts/first/src/world.lua' };
+	registerLuaSourceRecord(f.cart, replacement); registerRuntimeLuaResource(f.sources, 0, replacement);
+	assert.equal(f.model.sync(f.sources, 'lua_only'), true);
+	const selected = f.model.selectedNode!;
+	assert.ok(selected !== leaf); assert.ok(file(f.model, 0, path) === selected);
+	assert.ok(selected.parent !== oldParent); assert.equal(selected.parent!.element.path, 'src');
+	assert.ok(selected.element.kind === 'file');
+	assert.equal(selected.element.path, path);
+	assert.ok(selected.element.resource === resource);
+	assert.ok(resource === f.sources.resourceByIdentity.get(resourceIdentityKey(selected.element)));
 });
 
 test('unchanged namespaces in a new source-state object retain canonical topology and update actual resource references', () => {
@@ -182,7 +238,7 @@ test('publishing Lua at an existing data identity publishes its new catalog clas
 	f.model.sync(f.sources, 'all'); const leaf = file(f.model, identity.domain, identity.path);
 	assert.ok(leaf.element.kind === 'file'); const resource = leaf.element.resource;
 	f.model.sync(f.sources, 'lua_only'); assert.equal(f.model.selectedNode, null);
-	const revision = f.sources.resourceCatalogRevision, source = createScenarioTestSourceRecord(identity.path, 2);
+	const revision = f.sources.resourceCatalogRevision, source = createScenarioTestSourceRecord(identity.path, 2, undefined, `carts/first/${identity.path}`);
 	registerLuaSourceRecord(f.cart, source); assert.equal(registerRuntimeLuaResource(f.sources, identity.domain, source), resource);
 	assert.ok(f.sources.resourceCatalogRevision > revision); assert.ok(f.sources.luaResources.includes(resource));
 	assert.equal(f.model.sync(f.sources, 'lua_only'), true);

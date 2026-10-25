@@ -16,7 +16,7 @@ test('inactive restored map retains its pending viewport across another session 
 	editorViewState.font = new EditorFont('tiny');
 	editorViewState.lineHeight = 6;
 	const sources = createScenarioTestSourceState([]);
-	const resource = { domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+	const resource = { location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const source = `map_rows:\n${Array.from({ length: 40 }, () => `  - "m${' '.repeat(119)}"\n`).join('')}`;
 	const model = editorTextModelService.retain(resource, 'yaml', source);
@@ -62,7 +62,7 @@ test('inactive restored map retains its pending viewport across another session 
 
 test('map recovery rejects a view snapshot when its canonical source changed', async t => {
 	const sources = createScenarioTestSourceState([]);
-	const resource = { domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+	const resource = { location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const source = 'map_rows: ["m   "]\n';
 	const model = editorTextModelService.retain(resource, 'yaml', source);
@@ -87,7 +87,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const section of ['outline'
 		editorViewState.font = new EditorFont(variant);
 		editorViewState.lineHeight = editorViewState.font.lineHeight;
 		const sources = createScenarioTestSourceState([]);
-		const resource = { domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+		const resource = { location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
 		sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 		const source = `map_rows:\n${Array.from({ length: 60 }, () => `  - "m${' '.repeat(119)}"\n`).join('')}`;
 		const model = editorTextModelService.retain(resource, 'yaml', source), input = new CartMapInput(model, 'nemesis'), version = model.version;
@@ -126,7 +126,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const section of ['outline'
 
 test('map capture projects background history selection before saving collapsed rooms', async t => {
 	const sources = createScenarioTestSourceState([]);
-	const resource = { domain: 0, path: 'res/data/castle_map.yaml', source: { resid: 'map', type: 'data' } } as const;
+	const resource = { location: { kind: 'workspace' as const, path: 'res/data/castle_map.yaml' }, domain: 0, path: 'res/data/castle_map.yaml', source: { resid: 'map', type: 'data' } } as const;
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const source = [
 		'2:', '  map: ["...."]', '  objects:', '  - { type: rock, x: 1, y: 0 }',
@@ -162,7 +162,7 @@ test('map capture projects background history selection before saving collapsed 
 test('an outline-selected far marker keeps its queued reveal through serialization until the map first opens', async t => {
 	editorViewState.font = new EditorFont('tiny'); editorViewState.lineHeight = editorViewState.font.lineHeight;
 	const sources = createScenarioTestSourceState([]);
-	const resource = { domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+	const resource = { location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const cells = Array<string>(300).fill(' '); cells[257] = 'm';
 	const source = `map_rows: ["${cells.join('')}"]\n`;

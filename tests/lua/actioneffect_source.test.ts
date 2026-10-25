@@ -11,7 +11,7 @@ import { installBehaviorLensDocument, selectBehaviorLensDefinition } from '../..
 import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavior_lens/source_correspondence';
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../helpers/actioneffect_source_fixture';
 
-const resource = { domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
+const resource = { location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 function document(source: string) {
 	return buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
 }

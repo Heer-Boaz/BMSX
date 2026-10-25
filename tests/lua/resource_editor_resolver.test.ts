@@ -10,7 +10,7 @@ import {
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 
 function resource(path: string, type: RuntimeResource['source']['type']): RuntimeResource {
-	return {
+	return { location: { kind: 'workspace' as const, path },
 		domain: 0,
 		path,
 		source: {

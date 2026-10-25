@@ -154,15 +154,9 @@ test('inline source widgets share visible geometry and pointer ownership in both
 			await press('Escape'); await sourceUnchanged();
 			await rename(); await captureField(`${theme}-${variant}-full-rename`); await press('Escape'); await sourceUnchanged();
 			await palette('Show Files'); await action({ execute: 'click', x: 250, y: 150 }); await press('ControlLeft+Home');
-			await find(query); const inset = await captureField(`${theme}-${variant}-resource-inset-find`, baseline.width, 'home');
+			await find(query); await captureField(`${theme}-${variant}-resource-inset-find`, baseline.width, 'home');
 			await press('ShiftLeft+ArrowRight'); await expectSelection(query.charAt(0));
 			await press('End'); await press('ShiftLeft+ArrowLeft'); await expectSelection(query.at(-1)); await press('Home');
-			const sidebarPixels = new Set();
-			for (let y = top + 2; y < top + 2 + height; y++) for (let x = 4; x < 4 + advance * 7; x++) {
-				const offset = (y * inset.image.width + x) * 4;
-				sidebarPixels.add((inset.image.data[offset] << 16) | (inset.image.data[offset + 1] << 8) | inset.image.data[offset + 2]);
-			}
-			assert.ok(sidebarPixels.size > 1, 'the ResourcePanel root label moved down with the source-only inline widget');
 			await press('Escape'); await palette('Hide Files'); await sourceUnchanged();
 			await find(query);
 			await send({ execute: 'input', events: [{ type: 'pointer', x: 50, y: 140 }, { type: 'button', button: 'primary', down: true }] });

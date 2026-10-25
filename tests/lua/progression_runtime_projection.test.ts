@@ -47,7 +47,7 @@ function fixture(optLevel: 0 | 3, source = ENTRY) {
 	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
 	runtime.machine.cpu.runUntilDepth(0, 1_000_000);
 	const guest = new SuspendedGuestSession(runtime);
-	const model = new EditorTextModel({ domain: 0, path: 'entry.lua', source: {type: 'lua', resid: 'entry'} }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'entry.lua' }, domain: 0, path: 'entry.lua', source: {type: 'lua', resid: 'entry'} }, 'lua', source);
 	const input = new LuaProgramInput(model, 'progression', {start: 0, end: source.length}, guest);
 	input.liveVisible = true;
 	const choices = readProgramInstances(sources, guest, 0, 'progression');

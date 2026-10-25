@@ -24,7 +24,7 @@ function sourceRangeFixture(t: TestContext, source: string) {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
 	applyViewportSize({ width: 78, height: 288 }); refreshWorkbenchLayout();
 	editorViewState.wordWrapEnabled = true;
-	const model = new EditorTextModel({ domain: 0, path: 'range.lua', source: { type: 'lua', resid: 'range' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'range.lua' }, domain: 0, path: 'range.lua', source: { type: 'lua', resid: 'range' } }, 'lua', source);
 	const view = createCodeEditorViewState(), inputs = new CodeEditorInputManager();
 	inputs.register({ id: 'code:0\0range.lua', title: 'range.lua', model, view, runtimeErrorOverlay: null, executionStopRow: null });
 	activeCodeEditor.attach(model, view);
@@ -130,7 +130,7 @@ test('native field constraints retain the accepted edit and its own cursor', () 
 
 test('native source replacement uses bounded canonical context and one shared Undo operation', t => {
 	const source = '-- header\r\nlocal label = "old"\r\nreturn label\r\n';
-	const model = new EditorTextModel({ domain: 0, path: 'native.lua', source: { type: 'lua', resid: 'native' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'native.lua' }, domain: 0, path: 'native.lua', source: { type: 'lua', resid: 'native' } }, 'lua', source);
 	const view = createCodeEditorViewState(), inputs = new CodeEditorInputManager();
 	inputs.register({ id: 'code:0\0native.lua', title: 'native.lua', model, view, runtimeErrorOverlay: null, executionStopRow: null });
 	activeCodeEditor.attach(model, view); configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
@@ -149,7 +149,7 @@ test('native source replacement uses bounded canonical context and one shared Un
 });
 
 test('native source selection notifies its actual cursor owner only on change', t => {
-	const model = new EditorTextModel({ domain: 0, path: 'cursor.lua', source: { type: 'lua', resid: 'cursor' } }, 'lua', 'abc');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'cursor.lua' }, domain: 0, path: 'cursor.lua', source: { type: 'lua', resid: 'cursor' } }, 'lua', 'abc');
 	activeCodeEditor.attach(model, createCodeEditorViewState()); configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
 	let moves = 0; const unbind = activeCodeEditor.onDidMoveCursor(() => moves++);
 	t.after(() => { unbind(); activeCodeEditor.detach(); model.dispose(); clearBackgroundTasks(); });

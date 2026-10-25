@@ -11,6 +11,7 @@ import {
 	enterSystemSources,
 	rebuildRuntimeSourceResources,
 	registerRuntimeLuaResource,
+	registerWorkspaceTextSources,
 	resolveRuntimeResource,
 	resolveRuntimeResourceForContext,
 } from '../../ide/runtime/sources';
@@ -122,6 +123,66 @@ test('runtime source owner retains Lua resource identity when its source record 
 	assert.strictEqual(retained.source, replacement);
 	assert.equal(sources.luaResources.filter(resource => resource === retained).length, 1);
 	assert.strictEqual(resolveRuntimeResourceForContext(sources, 0, 'system/main.lua')?.source, systemRegistry.records[0]);
+});
+
+test('catalog location follows canonical source provenance without changing execution identities or source roles', t => {
+	t.after(() => editorTextModelService.clear());
+	const sharedPath = 'cartlib/world.lua';
+	const shared = { ...luaSource(sharedPath, 'shared-world', 'return 42'), sourceKind: 'library' as const };
+	const local = { ...luaSource('cartlib/local.lua', 'local-world', 'return 1'),
+		normalized_source_path: 'carts/test/cartlib/local.lua', sourceKind: 'library' as const };
+	const testlib = { ...luaSource('testlib/assert.lua', 'test-assert', 'return true'),
+		sourceKind: 'source-only' as const, program_module: false };
+	const generated = { ...luaSource('bmsx/gpu.lua', 'generated-gpu', 'return {}'),
+		normalized_source_path: 'carts/test/bmsx/gpu.lua', generated: true };
+	const neighbour = { ...luaSource('neighbour.lua', 'neighbour', 'return 7'),
+		normalized_source_path: 'carts/test-other/neighbour.lua' };
+	const system = sourceRegistry('machine/bios', [{ ...shared }]);
+	const cart = sourceRegistry('carts/test', [shared, local, testlib, generated, neighbour]);
+	const sources = createTestRuntimeSourceState(system, [cart, null], 0);
+	const resource = (domain: -1 | 0, path: string) => resolveRuntimeResource(sources, { domain, path })!;
+	const systemShared = resource(-1, sharedPath), cartShared = resource(0, sharedPath);
+	assert.deepEqual(cartShared.location, { kind: 'workspace', path: sharedPath });
+	assert.deepEqual(systemShared.location, cartShared.location);
+	assert.ok(systemShared !== cartShared, 'canonical shared source still has a resource in each execution context');
+	assert.deepEqual(resource(0, local.source_path).location,
+		{ kind: 'project', projectRootPath: 'carts/test', path: local.source_path });
+	assert.deepEqual(resource(0, testlib.source_path).location, { kind: 'workspace', path: testlib.normalized_source_path });
+	assert.deepEqual(resource(0, generated.source_path).location, { kind: 'generated', path: generated.source_path });
+	assert.deepEqual(resource(0, neighbour.source_path).location, { kind: 'workspace', path: neighbour.normalized_source_path });
+	assert.equal(local.sourceKind, 'library'); assert.equal(testlib.sourceKind, 'source-only');
+	assert.equal(shared.program_module, true); assert.equal(testlib.program_module, false);
+	const systemModel = createLuaCodeTabContext(sources, systemShared).model;
+	const cartModel = createLuaCodeTabContext(sources, cartShared).model;
+	assert.ok(systemModel !== cartModel, 'provenance does not merge independently authored execution-context working copies');
+	assert.ok(systemModel.resource === systemShared); assert.ok(cartModel.resource === cartShared);
+	const location = cartShared.location, revision = sources.resourceCatalogRevision;
+	rebuildRuntimeSourceResources(sources);
+	assert.ok(resource(0, sharedPath) === cartShared); assert.ok(resource(-1, sharedPath) === systemShared);
+	assert.ok(cartShared.location === location, 'unchanged provenance retains its catalog-owned value');
+	assert.ok(sources.resourceCatalogRevision > revision);
+	registerWorkspaceTextSources(sources, 0, [{ type: 'data', resid: 'settings', source_path: 'res/settings.yaml' }]);
+	assert.deepEqual(resource(0, 'res/settings.yaml').location,
+		{ kind: 'project', projectRootPath: 'carts/test', path: 'res/settings.yaml' });
+});
+
+test('same runtime resource publishes changed provenance while retaining its canonical working copy', t => {
+	t.after(() => editorTextModelService.clear());
+	const source = luaSource('cartlib/world.lua', 'shared-world', 'return 42');
+	const registry = sourceRegistry('carts/test', [source]);
+	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', []), [registry, null], 0);
+	const resource = resolveRuntimeResource(sources, { domain: 0, path: source.source_path })!;
+	const model = createLuaCodeTabContext(sources, resource).model;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]);
+	const bytes = model.buffer.getText(), revision = sources.resourceCatalogRevision;
+	const replacement = { ...source, normalized_source_path: `carts/test/${source.source_path}` };
+	registerLuaSourceRecord(registry, replacement);
+	assert.ok(registerRuntimeLuaResource(sources, 0, replacement) === resource);
+	assert.deepEqual(resource.location, { kind: 'project', projectRootPath: 'carts/test', path: source.source_path });
+	assert.ok(sources.resourceCatalogRevision > revision, 'provenance is a catalog publication even when runtime identity and role are unchanged');
+	assert.ok(createLuaCodeTabContext(sources, resource).model === model);
+	assert.equal(model.buffer.getText(), bytes); assert.equal(model.dirty, true);
+	model.undo(); assert.equal(model.buffer.getText(), source.src); assert.equal(model.dirty, false);
 });
 
 test('resource panel, search, and code tabs consume the retained owner resource', (t) => {

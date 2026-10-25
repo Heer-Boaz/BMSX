@@ -29,7 +29,7 @@ function entry(path: string, value: number): NavigationHistoryEntry {
 	return new NavigationHistoryEntry({ kind: 'resource', resource: { domain: 0, path }, editorId: WORKBENCH_TEXT_EDITOR_ID }, new Location(value));
 }
 function code(path: string) {
-	const model = new EditorTextModel({ domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
 	return new CodeEditorInput({ id: `code:0\0${path}`, title: path, model, view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null });
 }
 

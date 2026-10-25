@@ -16,7 +16,7 @@ for (const count of [16, 256, 4096]) {
 	const models = new EditorTextModelService();
 	const source = createScenarioTestSourceRecord('review.lua', 1, 'return old\n'.repeat(count));
 	const sources = createScenarioTestSourceState([source]);
-	const model = models.retain({ domain: 0, path: 'review.lua', source }, 'lua', source.src);
+	const model = models.retain(sources.luaResources[0], 'lua', source.src);
 	const edit = { version: model.version, edits: Array.from({ length: count }, (_, index) => ({ offset: index * 11 + 7, deleteLength: 3, text: 'new_name' })) };
 	const edits = new Map([[model, edit]]);
 	const preparation: number[] = [], projection: number[] = [];

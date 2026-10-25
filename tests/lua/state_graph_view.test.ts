@@ -28,7 +28,7 @@ import { FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
 const font = new Font({ variant: 'tiny' });
 function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs')))) {
 	Object.assign(editorViewState, { font: new EditorFont('tiny') });
-	const resource = { domain: 0 as const, path: 'graph.lua', source: { resid: 'graph', type: 'lua' as const } };
+	const resource = { location: { kind: 'workspace' as const, path: 'graph.lua' }, domain: 0 as const, path: 'graph.lua', source: { resid: 'graph', type: 'lua' as const } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	const document = () => buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path)));
 	const view = createBehaviorLensViewState(document(), model, 'state-graph', assert.fail);

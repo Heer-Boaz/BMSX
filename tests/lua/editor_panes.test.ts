@@ -118,7 +118,7 @@ function codeInput(id: 'code:0\0a.lua' | 'code:0\0b.lua'): CodeEditorInput {
 	const context: CodeTabContext = {
 		id,
 		title: id,
-		model: new EditorTextModel({
+		model: new EditorTextModel({ location: { kind: 'workspace' as const, path },
 			domain: 0,
 			path,
 			source: { resid: path, type: 'lua' },
@@ -132,7 +132,7 @@ function codeInput(id: 'code:0\0a.lua' | 'code:0\0b.lua'): CodeEditorInput {
 
 function resourceInput(): ResourceViewerInput {
 	return new ResourceViewerInput({
-		resource: { domain: 0, path: 'image.png', source: { type: 'image', resid: 'image' } },
+		resource: { location: { kind: 'workspace' as const, path: 'image.png' }, domain: 0, path: 'image.png', source: { type: 'image', resid: 'image' } },
 		title: 'image.png',
 		lines: [], error: null,
 	});
