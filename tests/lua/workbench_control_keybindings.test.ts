@@ -106,6 +106,52 @@ test('F10 preserves the concrete step-over binding while closed and dismisses on
 	assert.equal(steps, 1); assert.equal(editor.contextMenu.visible, false); assert.ok(inputFocus.target === origin);
 });
 
+test('the real menubar popup owns its F10 binding only for its admitted menu lifetime', t => {
+	const { editor, origin, key } = menuFixture(t);
+	let steps = 0;
+	origin.registerCommand('debugStepOver', { isEnabled: () => true, run: () => { steps++; } });
+	t.after(() => origin.unregisterCommand('debugStepOver'));
+	key('AltLeft', KeyModifier.alt); key('AltLeft', KeyModifier.none, false);
+	const popup = editor.contextMenu.focusTarget;
+	const first = new KeyInputEvent('F10', KeyModifier.none);
+	// Deliberately enter the ordinary binding owner, not Menubar.handleKeyboard.
+	assert.equal(handleEditorCommandBindings(first, inputFocus.commandRunner, inputFocus.admittedTarget), true,
+		'the admitted popup publishes its own menu action to the normal keybinding resolver');
+	assert.equal(first.consumed, true); assert.equal(editor.contextMenu.visible, false); assert.ok(inputFocus.target === origin);
+	assert.equal(popup.getCommand('menubar.focus'), undefined); assert.equal(steps, 0);
+	key('AltLeft', KeyModifier.alt); key('AltLeft', KeyModifier.none, false);
+	assert.ok(popup.getCommand('menubar.focus')?.isEnabled());
+	key('ArrowRight'); assert.ok(popup.getCommand('menubar.focus')?.isEnabled(), 'category replacement retains the admitted menu capability');
+	const switched = new KeyInputEvent('F10', KeyModifier.none);
+	assert.equal(handleEditorCommandBindings(switched, inputFocus.commandRunner, inputFocus.admittedTarget), true);
+	assert.equal(editor.contextMenu.visible, false); assert.equal(popup.getCommand('menubar.focus'), undefined);
+	key('AltLeft', KeyModifier.alt); key('AltLeft', KeyModifier.none, false); key('Escape');
+	assert.equal(popup.getCommand('menubar.focus'), undefined);
+	key('AltLeft', KeyModifier.alt); key('AltLeft', KeyModifier.none, false);
+	editor.contextMenu.show(80, 40, [{ type: 'command', command: 'save' }], editor.commands);
+	assert.equal(editor.menubar.expanded, false); assert.equal(popup.getCommand('menubar.focus'), undefined);
+	assert.ok(popup.commandContext === origin); assert.ok(origin.getCommand('debugStepOver')?.isEnabled());
+	const ordinary = new KeyInputEvent('F10', KeyModifier.none);
+	assert.equal(handleEditorCommandBindings(ordinary, inputFocus.commandRunner, inputFocus.admittedTarget), false);
+	assert.equal(ordinary.consumed, false); assert.equal(editor.contextMenu.visible, true); assert.equal(steps, 0);
+});
+
+test('menubar focus admission publishes and retires its normal F10 capability synchronously', t => {
+	const { editor, origin } = menuFixture(t), popup = editor.contextMenu.focusTarget;
+	let focused = 0;
+	const unbind = popup.onDidFocus(() => {
+		focused++;
+		assert.ok(popup.getCommand('menubar.focus')?.isEnabled(), 'the popup capability exists before focus is published');
+		const event = new KeyInputEvent('F10', KeyModifier.none);
+		assert.equal(handleEditorCommandBindings(event, inputFocus.commandRunner, inputFocus.admittedTarget), true);
+		assert.equal(event.consumed, true);
+	});
+	t.after(unbind);
+	editor.commands.execute('menubar.focus', origin);
+	assert.equal(focused, 1); assert.equal(editor.contextMenu.visible, false); assert.equal(editor.menubar.expanded, false);
+	assert.equal(popup.getCommand('menubar.focus'), undefined); assert.ok(inputFocus.target === origin);
+});
+
 test('AltRight, modifier chords, repeats and cancelled AltLeft candidates never activate the real menu', t => {
 	const { editor, host, origin, key } = menuFixture(t);
 	for (const code of ['AltRight', 'AltLeft'] as const) {

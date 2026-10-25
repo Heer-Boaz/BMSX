@@ -48,9 +48,6 @@ export class MenubarController {
 	/** A clean left-Alt gesture belongs to Studio only after keyboard admission. */
 	public handleKeyboard(event: KeyInputEvent, origin: InputFocusTarget | null): boolean {
 		if (event.consumed) { this.cancelAlt(); return false; }
-		if (this.expanded && event.code === 'F10' && event.down && !event.repeat && event.modifiers === KeyModifier.none && this.commands.isEnabled('menubar.focus')) {
-			this.cancelAlt(); event.consumed = true; this.commands.execute('menubar.focus', origin); return true;
-		}
 		if (event.code !== 'AltLeft') {
 			if (event.down) this.cancelAlt();
 			return false;
@@ -120,7 +117,11 @@ export class MenubarController {
 		const entry = TOP_BAR_MENU_ENTRIES[index];
 		const anchor = editorChromeState.menuEntryBounds[entry.id];
 		const lifetime = this.popup.show(anchor.left, editorChromeState.topBarBounds.bottom, entry.items, this.commands,
-			{ selectFirst: keyboard, shortTitles: true, placement: 'below', onNavigate: this.navigate });
+			{ selectFirst: keyboard, shortTitles: true, placement: 'below', onNavigate: this.navigate,
+				onWillShow: lifetime => {
+					this.popup.focusTarget.registerCommand('menubar.focus', { isEnabled: () => true, run: () => this.popup.hide() });
+					lifetime.add({ dispose: () => this.popup.focusTarget.unregisterCommand('menubar.focus') });
+				} });
 		this.activeIndex = index;
 		if (lifetime.isDisposed) { this.activeIndex = -1; layoutTopBar(this.layout, false); return; }
 		this.openedWidth = editorViewState.viewportWidth; this.openedFont = editorViewState.font;
