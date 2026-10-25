@@ -62,6 +62,9 @@ export class WorkbenchPropertyEdit<T> {
 		this.close();
 		this.binding = binding; this.rowIndex = binding.tree.rows.indexOf(binding.row);
 		this.lifetime = new DisposableStore();
+		this.lifetime.add({ dispose: binding.model.onDidChangeReadOnly(() => {
+			if (binding.model.readOnly) this.close();
+		}) });
 		revealWorkbenchListSelection(binding.tree);
 		this.control.setValue(value);
 		this.layout();
@@ -88,8 +91,7 @@ export class WorkbenchPropertyEdit<T> {
 	}
 	public update(): void {
 		if (this.binding === undefined) return;
-		if (this.binding.model.readOnly) this.close();
-		else this.layout();
+		this.layout();
 	}
 	private layout(): void {
 		const { tree, row } = this.binding!;

@@ -31,9 +31,9 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'source.lua' }, domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 17');
 	const edit = new WorkbenchPropertyEdit<string>(parent, text => text, surfaces, owner, root);
 	let applied = 0;
-	const open = () => edit.open({ model, tree, row,
+	const open = (sourceModel = model) => edit.open({ model: sourceModel, tree, row,
 		parse: text => text === '-' ? { error: 'Incomplete expression' } : { value: text },
-		apply: text => { applied++; model.pushEditOperations([{ offset: 7, deleteLength: model.buffer.length - 7, text }]); },
+		apply: text => { applied++; sourceModel.pushEditOperations([{ offset: 7, deleteLength: sourceModel.buffer.length - 7, text }]); },
 	}, '17');
 	t.after(() => { edit.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); surfaces.dispose(); model.dispose(); });
 	const press = (code: string) => { inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, true)); inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false)); };
@@ -92,4 +92,52 @@ test('an external source publication and changed font/work area do not transfer 
 	assert.ok(f.edit.bounds.right <= 256); assert.equal(f.edit.control.field.text, '42');
 	f.model.pushEditOperations([{ offset: 7, deleteLength: 2, text: '60' }]);
 	assert.equal(f.edit.active, false); assert.equal(f.model.buffer.getText(), 'return 60'); assert.equal(f.applied(), 0);
+});
+
+for (const writableRoundtrip of [false, true]) test(`readonly source publication immediately retires a property draft${writableRoundtrip ? ' across a writable roundtrip' : ''}`, t => {
+	const f = fixture(t), resource = f.model.resource;
+	f.open(); insertValue(f.edit.control.field, '99');
+	assert.equal(f.edit.control.pending, true);
+	const version = f.model.version, canUndo = f.model.canUndo, canRedo = f.model.canRedo;
+	const scope = f.edit.control.field.focusTarget.scope.surfaceScope;
+	const snapshot = { valid: true, insideViewport: true, viewportX: f.edit.fieldBounds.left + 5, viewportY: f.edit.fieldBounds.top + 3,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	pointerCapture.beginRoute(scope, snapshot); f.edit.handlePointer(snapshot);
+	f.model.refreshResource({ ...resource, source: { ...resource.source, generated: true } });
+	assert.equal(f.edit.active, false, 'source authority loss retires the actual popup before another frame or blur');
+	assert.equal(f.edit.control.pending, false); assert.ok(inputFocus.target === f.parent);
+	assert.equal(f.surfaces.findByScope(scope), undefined); assert.equal(pointerCapture.draining, true);
+	if (writableRoundtrip) f.model.refreshResource(resource);
+	f.press('Enter'); f.parent.focus(); f.edit.update();
+	assert.equal(f.applied(), 0); assert.equal(f.edit.active, false);
+	assert.equal(f.model.buffer.getText(), 'return 17'); assert.equal(f.model.version, version);
+	assert.equal(f.model.canUndo, canUndo); assert.equal(f.model.canRedo, canRedo);
+});
+
+test('a property popup owns only its attached source readonly subscription', t => {
+	const f = fixture(t), other = new EditorTextModel({ ...f.model.resource,
+		location: { kind: 'workspace', path: 'other.lua' }, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'return 17');
+	t.after(() => other.dispose());
+	const firstSubscribe = f.model.onDidChangeReadOnly, nextSubscribe = other.onDidChangeReadOnly;
+	let firstSubscriptions = 0, nextSubscriptions = 0;
+	t.mock.method(f.model, 'onDidChangeReadOnly', listener => {
+		const unbind = firstSubscribe.call(f.model, listener); firstSubscriptions++;
+		return () => { firstSubscriptions--; unbind(); };
+	});
+	t.mock.method(other, 'onDidChangeReadOnly', listener => {
+		const unbind = nextSubscribe.call(other, listener); nextSubscriptions++;
+		return () => { nextSubscriptions--; unbind(); };
+	});
+	f.open(); insertValue(f.edit.control.field, '42');
+	assert.equal(firstSubscriptions, 1); assert.equal(nextSubscriptions, 0);
+	f.open(other); insertValue(f.edit.control.field, '60');
+	assert.equal(firstSubscriptions, 0); assert.equal(nextSubscriptions, 1);
+	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } });
+	assert.equal(f.edit.active, true); assert.equal(f.edit.control.field.text, '60');
+	assert.ok(inputFocus.target === f.edit.control.field.focusTarget); assert.equal(f.applied(), 0);
+	f.edit.close();
+	assert.equal(firstSubscriptions, 0); assert.equal(nextSubscriptions, 0); assert.equal(f.applied(), 0);
+	other.refreshResource({ ...other.resource, source: { ...other.resource.source, generated: true } });
+	assert.equal(f.edit.active, false); assert.ok(inputFocus.target === f.parent);
+	assert.equal(f.model.buffer.getText(), 'return 17'); assert.equal(other.buffer.getText(), 'return 17');
 });
