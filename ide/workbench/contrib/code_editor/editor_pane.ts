@@ -81,6 +81,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	}
 	private unsubscribeContentChange: () => void;
 	private unsubscribeBeforeContentChange: () => void;
+	private unsubscribeReadOnlyChange: () => void;
 	private readonly unbindKeyboard = activeCodeEditor.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	private readonly unbindClipboard = activeCodeEditor.focusTarget.bindClipboard({
 		get readOnly() { return activeCodeEditor.model.readOnly; },
@@ -137,6 +138,9 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		this.layoutWidth = this.contentBounds.right - this.contentBounds.left;
 		activeCodeEditor.focusTarget.textInput = this.nativeText;
 		setActiveDiagnostics(this.input.context.model, this.editor.diagnostics.diagnostics);
+		this.unsubscribeReadOnlyChange = this.input.context.model.onDidChangeReadOnly(() => {
+			if (this.input.context.model.readOnly) this.editor.completion.clearInput();
+		});
 		this.unsubscribeBeforeContentChange = this.input.context.model.onWillChangeContent(() => {
 			pointerCapture.cancelTarget(this);
 			activeCodeEditor.clearInlineEdit(); activeCodeEditor.clearVisualCursor();
@@ -167,6 +171,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		pointerHover.release(codeAreaHover);
 		this.unsubscribeBeforeContentChange();
 		this.unsubscribeContentChange();
+		this.unsubscribeReadOnlyChange();
 		clearRuntimeErrorOverlay();
 		clearExecutionStopHighlight();
 		editorCaretState.cursorRevealSuspended = false;

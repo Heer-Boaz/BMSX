@@ -768,3 +768,66 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 	assert.equal(f.model.canUndo, true); assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 	panel.hide(); assert.equal(panel.visible, false); assert.equal(panel.getMode(), 'resources');
 });
+
+for (const stage of ['visible', 'pending', 'pending-roundtrip'] as const) test(`completion readonly publication retires its ${stage} automatic session without changing authored history`, t => {
+	const f = fixture(t);
+	f.key('End', KeyModifier.ctrl);
+	assert.equal(f.editor.textTarget!.replaceText(f.model.buffer.length, f.model.buffer.length, '\nretur'), true);
+	if (stage === 'visible') {
+		f.host.clock.advance(200); f.editor.update(0.2);
+		assert.equal(activeCodeEditor.inlineEdit.active, true); assert.equal(f.editor.completion.session!.trigger, 'typing');
+	} else assert.ok(f.editor.completion.session === null);
+	const source = f.model.buffer.getText(), version = f.model.version, resource = f.model.resource;
+	const canUndo = f.model.canUndo, canRedo = f.model.canRedo;
+	f.model.refreshResource({ ...resource, source: { ...resource.source!, generated: true } });
+	assert.equal(f.model.readOnly, true);
+	assert.equal(activeCodeEditor.inlineEdit.active, false, 'metadata publication must synchronously retire the admitted ghost');
+	assert.ok(f.editor.completion.session === null);
+	if (stage === 'pending-roundtrip') f.model.refreshResource(resource);
+	f.host.clock.advance(200); f.editor.update(0.2);
+	assert.equal(activeCodeEditor.inlineEdit.active, false); assert.ok(f.editor.completion.session === null);
+	const tab = new KeyInputEvent('Tab', KeyModifier.none);
+	assert.equal(f.editor.completion.handleKeybindings(tab), false); assert.equal(tab.consumed, false);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
+	assert.equal(f.model.canUndo, canUndo); assert.equal(f.model.canRedo, canRedo);
+	f.model.refreshResource(resource); f.host.clock.advance(200); f.editor.update(0.2);
+	assert.equal(activeCodeEditor.inlineEdit.active, false); assert.ok(f.editor.completion.session === null);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
+	assert.equal(f.model.canUndo, canUndo); assert.equal(f.model.canRedo, canRedo);
+	f.key('Tab');
+	assert.equal(f.model.buffer.getText(), source + f.model.language.indentationUnit,
+		'writable return admits ordinary Tab indentation, not a resurrected source completion');
+	assert.equal(f.model.version, version + 1);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('completion readonly subscription belongs only to the attached canonical model', t => {
+	const f = fixture(t), previous = f.model;
+	const other = createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(50)));
+	const model = other.context.model, subscribe = model.onDidChangeReadOnly;
+	let subscriptions = 0;
+	t.mock.method(model, 'onDidChangeReadOnly', listener => {
+		const unbind = subscribe.call(model, listener); subscriptions++;
+		return () => { subscriptions--; unbind(); };
+	});
+	openEditorTab(f.editor.editorPanes, other); f.editor.update(0);
+	assert.equal(subscriptions, 1);
+	f.key('End', KeyModifier.ctrl);
+	assert.equal(f.editor.textTarget!.replaceText(model.buffer.length, model.buffer.length, '\nretur'), true);
+	f.host.clock.advance(200); f.editor.update(0.2);
+	const session = f.editor.completion.session, ghostVersion = activeCodeEditor.inlineEdit.version;
+	assert.ok(session !== null && activeCodeEditor.inlineEdit.active);
+	previous.refreshResource({ ...previous.resource, source: { ...previous.resource.source!, generated: true } });
+	assert.ok(activeCodeEditor.model === model); assert.ok(f.editor.completion.session === session);
+	assert.equal(activeCodeEditor.inlineEdit.active, true); assert.equal(activeCodeEditor.inlineEdit.version, ghostVersion);
+	for (let index = 0; index < 3; index++) { setActiveTab(f.editor.editorPanes, other.id); f.editor.update(0); }
+	assert.equal(subscriptions, 1, 'same-input reselection does not reattach the readonly observer');
+	const source = model.buffer.getText(), version = model.version;
+	model.refreshResource({ ...model.resource, source: { ...model.resource.source!, generated: true } });
+	assert.ok(f.editor.completion.session === null); assert.equal(activeCodeEditor.inlineEdit.active, false);
+	assert.equal(activeCodeEditor.inlineEdit.version, ghostVersion + 1);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version);
+	assert.equal(previous.buffer.getText(), f.edited); assert.equal(previous.version, f.version);
+	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0);
+	assert.equal(subscriptions, 0, 'detaching the source retires its readonly observer');
+});
