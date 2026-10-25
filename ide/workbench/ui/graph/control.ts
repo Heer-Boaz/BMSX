@@ -4,7 +4,7 @@ import { dragScrollSpeed } from '../drag_scroll';
 import { ScrollbarPointerControl } from '../scrollbar_pointer';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
-import type { PointerPosition, PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
+import type { PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
@@ -36,6 +36,8 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private dragSource: WorkbenchGraphDragSource | undefined;
 	private drag: WorkbenchGraphDragSession | undefined;
 	private pointerTime = 0;
+	private dragPointerX = 0;
+	private dragPointerY = 0;
 	private dragPositionValid = false;
 	private dragInside = false;
 	private dragX = 0;
@@ -136,6 +138,24 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 			|| (this.connectionHandles.ends !== 'both' && this.connectionHandles.ends !== this.pressConnection.end))) this.cancelPointer();
 	}
 
+	/** Captured edge scrolling advances from host time even when the physical pointer is stationary. */
+	public advanceDrag(now: number): void {
+		this.update();
+		if (this.gesture !== Gesture.Drag) return;
+		this.scrollDrag(now);
+		this.updateDrag(this.dragPointerX, this.dragPointerY);
+	}
+
+	private scrollDrag(now: number): void {
+		const elapsed = (now - this.pointerTime) / 1000;
+		this.pointerTime = now;
+		const view = this.inputValue!;
+		if (elapsed === 0 || !point_in_rect(this.dragPointerX, this.dragPointerY, view.bounds)) return;
+		const x = dragScrollSpeed(this.dragPointerX, view.bounds.left, view.bounds.right) * elapsed;
+		const y = dragScrollSpeed(this.dragPointerY, view.bounds.top, view.bounds.bottom) * elapsed;
+		if (x !== 0 || y !== 0) view.pan(x, y);
+	}
+
 	private updateConnectionHandles(): void {
 		const selected = this.inputValue!.selection;
 		if (selected?.kind === 'edge') {
@@ -174,14 +194,9 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 			this.lastClick = null;
 			this.dragPositionValid = false;
 			this.pointerTime = now;
-		}
-		const elapsed = (now - this.pointerTime) / 1000;
-		this.pointerTime = now;
-		if (point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) {
-			view.pan(dragScrollSpeed(snapshot.viewportX, view.bounds.left, view.bounds.right) * elapsed,
-				dragScrollSpeed(snapshot.viewportY, view.bounds.top, view.bounds.bottom) * elapsed);
-		}
-		this.updateDrag(snapshot);
+		} else this.scrollDrag(now);
+		this.dragPointerX = snapshot.viewportX; this.dragPointerY = snapshot.viewportY;
+		this.updateDrag(snapshot.viewportX, snapshot.viewportY);
 	}
 
 	public releaseCapturedPointer(snapshot: PointerSnapshot, now: number): void {
@@ -190,7 +205,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		else this.update();
 		if (this.gesture === Gesture.Drag) {
 			// Use the release coordinates, not the last accepted hover. No release-time scroll.
-			this.updateDrag(snapshot);
+			this.updateDrag(snapshot.viewportX, snapshot.viewportY);
 			const drag = this.drag!;
 			this.cancelPointer();
 			if (drag.feedback.accepted) drag.drop();
@@ -203,20 +218,20 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		}
 	}
 
-	private updateDrag(snapshot: PointerPosition): void {
+	private updateDrag(viewportX: number, viewportY: number): void {
 		const view = this.inputValue!;
 		const drag = this.drag!;
 		const feedback = drag.feedback;
 		if (feedback.kind === 'node-insertion') {
-			feedback.offsetX = (snapshot.viewportX - this.anchorX + view.scrollX - this.anchorScrollX) / view.zoom;
-			feedback.offsetY = (snapshot.viewportY - this.anchorY + view.scrollY - this.anchorScrollY) / view.zoom;
+			feedback.offsetX = (viewportX - this.anchorX + view.scrollX - this.anchorScrollX) / view.zoom;
+			feedback.offsetY = (viewportY - this.anchorY + view.scrollY - this.anchorScrollY) / view.zoom;
 		}
-		const inside = point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds);
-		const x = view.viewportToGraphX(snapshot.viewportX);
-		const y = view.viewportToGraphY(snapshot.viewportY);
+		const inside = point_in_rect(viewportX, viewportY, view.bounds);
+		const x = view.viewportToGraphX(viewportX);
+		const y = view.viewportToGraphY(viewportY);
 		// A stationary drag outside the scroll margins repeats neither hits nor domain work.
 		if (!this.dragPositionValid || this.dragX !== x || this.dragY !== y || this.dragInside !== inside) {
-			if (inside) drag.dragOver(snapshot.viewportX, snapshot.viewportY);
+			if (inside) drag.dragOver(viewportX, viewportY);
 			else if (feedback.kind === 'connection') feedback.target = undefined;
 			else feedback.accepted = false;
 			if (feedback.kind === 'connection') feedback.moveTo(x, y);
@@ -318,7 +333,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		if (this.gesture !== Gesture.Drag && this.gesture !== Gesture.PendingDrag) this.cancelPointer();
 		if ((snapshot.modifiers & KeyModifier.shift) !== 0 && snapshot.deltaX === 0) view.pan(snapshot.deltaY * pixelStep, 0);
 		else view.pan(snapshot.deltaX * pixelStep, snapshot.deltaY * pixelStep);
-		if (this.gesture === Gesture.Drag) this.updateDrag(snapshot);
+		if (this.gesture === Gesture.Drag) this.updateDrag(snapshot.viewportX, snapshot.viewportY);
 		return true;
 	}
 

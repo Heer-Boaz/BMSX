@@ -505,8 +505,9 @@ test('a click allocates no drag session and still double-clicks; threshold begin
 	f.control.dispose();
 });
 
-test('drag movement retains geometry and feedback; release commits once at the actual release target', () => {
+test('drag movement retains geometry and feedback; release commits once at the actual release target', t => {
 	const f = dragFixture();
+	const pan = t.mock.method(f.view, 'pan');
 	const geometry = JSON.stringify(f.model);
 	f.capture.dispatch(pointer(60, 60, true), false, 20);
 	assert.equal(f.control.dragFeedback, f.feedback);
@@ -514,11 +515,14 @@ test('drag movement retains geometry and feedback; release commits once at the a
 	for (let frame = 2; frame < 102; frame += 1) f.capture.dispatch(pointer(60, 60, true), false, frame * 20);
 	assert.equal(f.counts.starts, 1);
 	assert.equal(f.counts.overs, 1, 'stationary warm polling performs no repeated domain hit work');
+	for (let frame = 102; frame < 1102; frame++) f.control.advanceDrag(frame * 20);
+	assert.equal(f.counts.overs, 1, 'stationary frame advancement outside scroll margins performs no repeated domain hit work');
+	assert.equal(pan.mock.callCount(), 0, 'center drags do not publish no-op scroll writes');
 	assert.equal(JSON.stringify(f.model), geometry, 'preview does not move retained model nodes');
-	f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 2040);
+	f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 22040);
 	assert.equal(f.counts.drops, 1);
 	assert.equal(f.counts.overs, 2, 'release position supersedes previous hover');
-	f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 2060);
+	f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 22060);
 	assert.equal(f.counts.drops, 1);
 	f.control.dispose();
 });
@@ -544,18 +548,25 @@ test('coalesced press/move/release uses the same threshold and a single drop', (
 	f.control.dispose();
 });
 
-test('blur, detachment, model generation and domain invalidation clear feedback without waiting for pointer motion', () => {
-	for (const interrupt of ['blur', 'detach', 'model', 'domain', 'selection'] as const) {
+test('blur, detachment, capture loss, zoom, model generation and domain invalidation stop temporal drag work', () => {
+	for (const interrupt of ['blur', 'detach', 'capture', 'lost', 'zoom', 'model', 'domain', 'selection'] as const) {
 		const f = dragFixture();
-		f.capture.dispatch(pointer(60, 60, true), false, 20);
+		f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20);
+		f.control.advanceDrag(520);
 		if (interrupt === 'blur') f.focus.setTarget(null);
 		else if (interrupt === 'detach') { f.control.clearInput(); f.control.setInput(f.view); }
+		else if (interrupt === 'capture') f.capture.cancel();
+		else if (interrupt === 'lost') f.capture.dispatch(pointer(f.view.bounds.right - 1, 60), false, 540);
+		else if (interrupt === 'zoom') f.view.setZoom(0.5);
 		else if (interrupt === 'model') f.view.setModel({ ...f.model }, null);
 		else if (interrupt === 'selection') f.view.selection = f.b;
 		else f.counts.current = false;
 		f.control.update();
 		assert.equal(f.control.dragFeedback, undefined);
-		assert.equal(f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 40), false);
+		const scroll = f.view.scrollX, overs = f.counts.overs;
+		f.control.advanceDrag(10000);
+		assert.equal(f.view.scrollX, scroll); assert.equal(f.counts.overs, overs);
+		assert.equal(f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 10020), false);
 		assert.equal(f.counts.drops, 0);
 		f.control.dispose();
 	}
@@ -576,13 +587,61 @@ test('edge scrolling is host-time based and keeps the payload, not frame-paced o
 	for (const fps of [50, 60, 120]) {
 		const f = dragFixture();
 		f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20);
-		for (let frame = 1; frame <= fps; frame += 1) f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20 + frame * 1000 / fps);
+		for (let frame = 1; frame <= fps; frame += 1) f.control.advanceDrag(20 + frame * 1000 / fps);
 		results.push(f.view.scrollX);
 		assert.equal(f.counts.starts, 1);
 		assert.equal(f.view.model, f.model);
 		f.control.dispose();
 	}
 	for (const x of results) assert.ok(Math.abs(x - 110) < 1e-9);
+});
+
+test('motion integrates time at the previous real pointer position instead of charging a newly entered edge', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
+	f.control.advanceDrag(1020);
+	assert.equal(f.view.scrollX, 0);
+	f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 2020);
+	assert.equal(f.view.scrollX, 0, 'time spent in the center is not charged to the new edge');
+	f.control.advanceDrag(2520);
+	assert.ok(Math.abs(f.view.scrollX - 55) < 1e-9);
+	const overs = f.counts.overs;
+	f.capture.dispatch(pointer(f.view.bounds.left + 1, 60, true), false, 3020);
+	assert.ok(Math.abs(f.view.scrollX - 110) < 1e-9, 'the final interval belongs to the previous right edge');
+	assert.equal(f.counts.overs, overs + 1, 'motion refreshes the final target once, not the departed point too');
+	f.control.advanceDrag(3520);
+	assert.ok(Math.abs(f.view.scrollX - 55) < 1e-9);
+	f.control.dispose();
+});
+
+test('leaving the graph stops stationary edge scrolling without ending the captured drag', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20);
+	f.control.advanceDrag(520);
+	f.capture.dispatch(pointer(f.view.bounds.right + 1, 60, true), false, 520);
+	const scroll = f.view.scrollX, overs = f.counts.overs;
+	f.control.advanceDrag(10020);
+	assert.equal(f.view.scrollX, scroll); assert.equal(f.counts.overs, overs);
+	assert.equal(f.capture.active, true); assert.equal(f.feedback.accepted, false);
+	f.capture.dispatch(pointer(60, 60, true), false, 10020); f.control.advanceDrag(11020);
+	assert.equal(f.view.scrollX, scroll, 'time outside is not charged when returning to the graph');
+	f.control.dispose();
+});
+
+test('release neither charges a final scroll interval nor leaves temporal work after the synchronous drop', t => {
+	const f = dragFixture();
+	const pan = t.mock.method(f.view, 'pan');
+	f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20);
+	f.control.advanceDrag(520);
+	const scroll = f.view.scrollX;
+	const pans = pan.mock.callCount(), overs = f.counts.overs;
+	for (let duplicate = 0; duplicate < 100; duplicate++) f.control.advanceDrag(520);
+	assert.equal(pan.mock.callCount(), pans); assert.equal(f.counts.overs, overs);
+	f.capture.dispatch({ ...pointer(f.view.bounds.right - 1, 60), justReleasedButtons: PointerButton.Primary }, false, 1020);
+	assert.equal(f.view.scrollX, scroll); assert.equal(f.counts.drops, 1); assert.equal(f.capture.active, false);
+	f.control.advanceDrag(2020);
+	assert.equal(f.view.scrollX, scroll); assert.equal(f.counts.drops, 1);
+	f.control.dispose();
 });
 
 test('drag preview reuses clipped overlay command and glyph storage without changing the graph', () => {

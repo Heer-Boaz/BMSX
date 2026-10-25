@@ -1,6 +1,7 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
+import { inputFocus } from '../../../ide/input/focus';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -35,13 +36,19 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await press('ArrowRight');
 	check(viewport.selection === children()[1] && ide.editor.commands.isEnabled(remove), 'BT removal: keyboard selects the actual source member');
 	const selected = children()[1];
+	const graphContext = inputFocus.admittedTarget!;
 	movePointer(sourceButton.bounds); await frame();
 	setPointerButton('pointer_primary', true); await frame();
 	check(getActiveTab() === lens && model.version === version, 'A01: Source does not navigate on mouse down');
 	movePointer(viewport.bounds); setPointerButton('pointer_primary', false); await frame();
 	check(getActiveTab() === lens && model.version === version, 'A01: releasing Source outside cancels navigation');
 	await press('Tab');
-	check(graph.actionBar.hasFocus && ide.editor.commands.isEnabled(remove), 'A01: toolbar focus keeps graph command context');
+	check(graph.actionBar.hasFocus && inputFocus.admittedTarget!.commandContext === graphContext,
+		'A01: toolbar actions retain their explicit graph command context');
+	check(!ide.editor.commands.isEnabled(remove) && ide.editor.commands.isEnabled(remove, graphContext),
+		'A01: secondary graph actions are not inherited as toolbar keyboard capabilities');
+	await press('Delete');
+	check(model.version === version && viewport.selection === selected, 'A01: toolbar Delete does not remove a graph member');
 	await press('Home');
 	setKey('Enter', true);
 	for (let index = 0; index < 6; index += 1) await frame();
@@ -67,7 +74,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	check(children()[1].children.length === 2, 'BT removal: the selected subtree is expanded');
 	version = model.version;
 	console.info('STUDIO: BT removal action ready for visual inspection');
-	for (const cancel of ['outside', 'escape', 'palette']) {
+	for (const cancel of ['outside', 'escape', 'tab']) {
 		await click(graph.actionBar.overflow!.button.bounds);
 		const menu = ide.editor.contextMenu.model;
 		const row = menu.rows.find(row => row.command === remove)!;
@@ -75,12 +82,17 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 			top: menu.viewport.offsetTop + row.top, bottom: menu.viewport.offsetTop + row.bottom });
 		await frame(); setPointerButton('pointer_primary', true); await frame();
 		check(model.version === version, 'A01: Remove is only armed while held');
-		if (cancel === 'outside') movePointer(viewport.bounds);
+		if (cancel === 'outside') {
+			const x = menu.bounds.left - 4, y = (menu.bounds.top + menu.bounds.bottom) / 2;
+			movePointer({ left: x, right: x, top: y, bottom: y });
+		}
 		else if (cancel === 'escape') await press('Escape');
-		else await press('ControlLeft', 'ShiftLeft', 'KeyP');
+		else {
+			await press('Tab');
+			check(!ide.editor.contextMenu.visible, 'A01: Tab retires the actual popup before pointer release');
+		}
 		setPointerButton('pointer_primary', false); await frame();
-		if (cancel === 'palette') await press('Escape');
-		check(model.version === version && viewport.selection === children()[1], 'A01: cancelled Remove preserves exact source/selection');
+		check(model.version === version && viewport.selection === children()[1], `A01: ${cancel}-cancelled Remove preserves exact source/selection`);
 		if (ide.editor.contextMenu.visible) await press('Escape');
 	}
 	await press('Tab'); await press('End');

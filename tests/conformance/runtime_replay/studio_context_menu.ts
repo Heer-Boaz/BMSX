@@ -35,8 +35,8 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 	await click(cardBounds(), 1, 'pointer_secondary');
 	check(menu.visible && view.selection === leaf() && !pointerCapture.active && model.version === version,
 		'context menu: right click selects exact occurrence, without dragging, expanding or changing source');
-	check(menu.model.rows.filter(row => row.command !== undefined).every(row => row.enabled === ide.editor.commands.isEnabled(row.command!)),
-		'context menu: actions share toolbar/palette admission for invoking graph');
+	check(menu.model.rows.filter(row => row.command !== undefined).every(row => row.enabled === ide.editor.commands.isEnabled(row.command!, menu.focusTarget.commandContext)),
+		'context menu: actions use the invoking graph explicit command context');
 	check(menu.model.bounds.left >= 0 && menu.model.bounds.right <= 384 && menu.model.bounds.bottom <= 288,
 		'context menu: actual tiny-font popup fits workbench');
 	await press('Escape');
@@ -77,9 +77,10 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 		&& menu.model.rows.every(row => row.command === 'undo' || row.command === 'redo'),
 		'context menu: canvas is its own target, not the previously selected node');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
-	check(!menu.visible && ide.editor.quickInput.visible, 'context menu: command palette replaces popup through normal focus ownership');
+	check(menu.visible && !ide.editor.quickInput.visible && inputFocus.target === menu.focusTarget,
+		'context menu: isolated popup does not admit an unowned workbench shortcut');
 	await press('Escape');
-	check(inputFocus.target === graphFocus, 'context menu: cancelling the replacing palette restores the invoking graph, not the retired popup');
+	check(inputFocus.target === graphFocus, 'context menu: dismissal restores the invoking graph, not the retired popup');
 	await test.clickTab(code.id);
 	await press('ContextMenu');
 	check(menu.visible && inputFocus.target === menu.focusTarget, 'context menu: keyboard route also belongs to code control');

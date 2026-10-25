@@ -1,4 +1,5 @@
 import type { PointerInputSnapshot } from '../../../ide/common/models';
+import { editorRuntimeState } from '../../../ide/editor/common/runtime_state';
 import type { PointerInputEvent } from '../../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../../hosts/common/input/text';
 import { RemoteInput } from '../../../hosts/common/input/remote';
@@ -155,6 +156,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	};
 	const step = () => {
 		clock.advance(20);
+		editorRuntimeState.currentTimeMs = clock.now();
 		hub.poll(clock.now());
 		input.pollInput();
 		panes.activePane.update(0.02);

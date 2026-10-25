@@ -17,6 +17,7 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
+import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import type { BehaviorLensInput } from '../../ui/tab/model';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { BehaviorLensController } from './controller';
@@ -216,7 +217,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		if (items !== undefined) this.inspector.updateItems(items, runtimeInspectionPropertiesEqual);
 		this.propertyEdit.update();
 		this.inspector.update();
-		this.graph.update();
+		this.graph.advanceDrag(editorRuntimeState.currentTimeMs);
 		this.actionBar.update();
 		const layout = this.input.view.layout;
 		if (this.inspector.visible) this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, layout);

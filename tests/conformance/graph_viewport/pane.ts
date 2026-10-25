@@ -2,6 +2,7 @@ import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { pointerHover } from '../../../ide/input/pointer/hover';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../ide/common/models';
 import { inputFocus } from '../../../ide/input/focus';
+import { editorRuntimeState } from '../../../ide/editor/common/runtime_state';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
@@ -31,7 +32,7 @@ class GraphFixturePane extends EditorPane<CodeEditorInput> {
 	public focus(): void { this.graph.focusTarget.focus(); }
 	public override clearInput(): void { this.graph.clearInput(); super.clearInput(); }
 	public dispose(): void { this.graph.dispose(); }
-	public override update(): void { this.graph.update(); }
+	public override update(): void { this.graph.advanceDrag(editorRuntimeState.currentTimeMs); }
 	public draw(): void {
 		drawWorkbenchGraph(this.views.get(this.input)!.view, this.graph.hover, this.graph.focusTarget.hasFocus,
 			this.graph.dragFeedback, this.graph.connectionHandles);
