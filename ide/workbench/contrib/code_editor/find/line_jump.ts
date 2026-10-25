@@ -9,21 +9,26 @@ import { setCursorPosition } from '../../../../editor/ui/view/caret/caret';
 import { breakUndoSequence } from '../../../../editor/editing/undo_controller';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
-import { lineJumpState } from './widget_state';
+import { lineJumpFieldLayout, lineJumpState } from './widget_state';
+import { getLineJumpBarBounds, refreshWorkbenchLayout } from '../../../common/layout';
+import { getLineJumpFieldLayout } from '../inline_bar/layout';
 
 export function openLineJump(search: EditorSearchController): void {
 	clearReferenceHighlights();
 	search.closeSearch(false);
 	renameController.cancel();
-	lineJumpState.visible = true;
-	lineJumpState.field.focusTarget.focus();
 	applyLineJumpFieldText('', true);
+	lineJumpState.visible = true;
+	if (getLineJumpBarBounds() !== null) getLineJumpFieldLayout();
+	else lineJumpFieldLayout.hide();
+	lineJumpState.field.focusTarget.focus();
 	resetBlink();
 }
 
 export function closeLineJump(clearValue: boolean): void {
-	lineJumpState.field.focusTarget.release();
 	lineJumpState.visible = false;
+	refreshWorkbenchLayout();
+	lineJumpFieldLayout.hide();
 	if (clearValue) {
 		applyLineJumpFieldText('', true);
 	}
@@ -36,8 +41,9 @@ export function focusEditorFromLineJump(): void {
 	if (!lineJumpState.field.focusTarget.hasFocus && !lineJumpState.visible) {
 		return;
 	}
-	lineJumpState.field.focusTarget.release();
 	lineJumpState.visible = false;
+	refreshWorkbenchLayout();
+	lineJumpFieldLayout.hide();
 	lineJumpState.field.selectionAnchor = null;
 	lineJumpState.field.pointerSelecting = false;
 	resetBlink();

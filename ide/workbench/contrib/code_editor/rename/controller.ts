@@ -21,6 +21,10 @@ import type { EditorPanes } from '../../../services/editor/editor_panes';
 import { WorkspaceEditReviewInput } from '../../edit_review/editor_input';
 import { openEditorTab } from '../../../ui/tabs';
 import { WorkspaceSourceContext, WorkspaceSourceContextConflict } from '../../../services/working_copy/source_context';
+import { InlineBarFieldLayout } from '../inline_bar/field';
+import type { RectBounds } from '../../../../../machine/ts/common/rect';
+import * as constants from '../../../../common/constants';
+import { refreshWorkbenchLayout } from '../../../common/layout';
 
 export type RenameStartOptions = ReferenceLookupOptions;
 
@@ -28,6 +32,7 @@ const EMPTY_RENAME_MATCHES: SearchMatch[] = [];
 
 export class RenameController {
 	private readonly field = new TextField(activeCodeEditor.focusTarget, { allowSpace: false, singleLine: true, characterFilter: value => LuaLexer.isIdentifierPart(value.charAt(0)) });
+	public readonly fieldLayout = new InlineBarFieldLayout(this.field);
 	private visible = false;
 	private matches: SearchMatch[] = EMPTY_RENAME_MATCHES;
 	private info: ReferenceMatchInfo = null;
@@ -37,12 +42,15 @@ export class RenameController {
 	private originalName = '';
 	private activeIndex = -1;
 	private expressionLabel: string = null;
+	private layoutCount = -1;
+	private layoutExpression: string = '';
+	private layoutDetail = '';
 
 	public constructor() {
-		this.field.focusTarget.canFocus = () => this.context !== undefined;
+		this.field.focusTarget.canFocus = () => this.context !== undefined && this.fieldLayout.visible;
 		this.field.focusTarget.onDidFocus(() => {
 			setSingleCursorSelectionAnchor(this.field, 0, 0);
-			this.unbindSourceChanges = this.context!.onDidInvalidate(() => this.field.focusTarget.release());
+			this.unbindSourceChanges = this.context!.onDidInvalidate(() => this.cancel());
 		});
 		this.field.focusTarget.onDidBlur(() => {
 			this.unbindSourceChanges();
@@ -77,15 +85,25 @@ export class RenameController {
 		this.expressionLabel = info.expression;
 		this.resetInlineField(currentName);
 		this.visible = true;
-		this.field.focusTarget.focus();
 		return true;
 	}
 
 	public cancel(): void {
-		if (!this.isActive()) {
-			return;
+		if (!this.visible) return;
+		this.visible = false;
+		refreshWorkbenchLayout();
+		if (this.isActive()) this.field.focusTarget.release();
+		else this.dismiss();
+	}
+
+	public layoutField(bounds: Readonly<RectBounds>): void {
+		const count = this.matches.length, expression = this.expressionLabel;
+		if (count !== this.layoutCount || expression !== this.layoutExpression) {
+			this.layoutCount = count; this.layoutExpression = expression;
+			const refs = count === 1 ? '1 REF' : `${count} REFS`;
+			this.layoutDetail = expression.length > 0 ? `${expression} · ${refs}` : refs;
 		}
-		this.field.focusTarget.release();
+		this.fieldLayout.layout(bounds, 'RENAME', this.layoutDetail, constants.SEARCH_BAR_MARGIN_Y);
 	}
 
 	public handleInput(
@@ -146,7 +164,7 @@ export class RenameController {
 				showEditorMessage('Identifier contains invalid characters', 'warning', 1.8);
 				return;
 			case 'unchanged':
-				this.field.focusTarget.release();
+				this.cancel();
 				return;
 		}
 		let updatedMatches: number;
@@ -155,7 +173,7 @@ export class RenameController {
 				const proposal = crossFileRename.proposeRename(this.context!, activeCodeEditor.model.resource.domain, this.info, nextName);
 				this.context = undefined; // Review now owns the accepted reading operation.
 				const panes = this.reviewPanes;
-				this.field.focusTarget.release();
+				this.cancel();
 				openEditorTab(panes, new WorkspaceEditReviewInput(proposal));
 				return;
 			}
@@ -163,11 +181,11 @@ export class RenameController {
 		} catch (error) {
 			if (!(error instanceof EditorWorkspaceEditConflict || error instanceof WorkspaceSourceContextConflict)) throw error;
 			showEditorMessage(error.message, 'warning', 4);
-			this.field.focusTarget.release();
+			this.cancel();
 			return;
 		}
 		showEditorMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, 'success', 1.6);
-		this.field.focusTarget.release();
+		this.cancel();
 	}
 
 	public applyFieldEditing(playerInput: KeyInputEvent): void {
@@ -186,12 +204,14 @@ export class RenameController {
 		this.context?.dispose();
 		this.context = undefined;
 		this.visible = false;
+		refreshWorkbenchLayout();
 		this.matches = EMPTY_RENAME_MATCHES;
 		this.info = null;
 		this.reviewPanes = undefined;
 		this.originalName = '';
 		this.activeIndex = -1;
 		this.expressionLabel = null;
+		this.fieldLayout.hide();
 		focusEditorFromRename();
 	}
 }

@@ -7,6 +7,7 @@ import type { WorkbenchPropertyElement, WorkbenchPropertyTree } from '../ui/prop
 /** The same retained column geometry is used for rows, hit testing and clipping. */
 export function drawWorkbenchPropertyTree<Element extends WorkbenchPropertyElement>(state: WorkbenchPropertyTree<Element>): void {
 	const layout = state.layout;
+	if (layout.contentLeft === layout.contentRight || layout.contentTop === layout.bottom) return;
 	const font = layout.font!;
 	api.fill_rect(layout.contentLeft, layout.contentTop, layout.contentRight, layout.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.pushClipRect(layout.contentLeft, layout.contentTop, layout.contentRight, layout.contentBottom);

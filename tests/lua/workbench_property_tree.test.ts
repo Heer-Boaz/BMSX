@@ -13,7 +13,7 @@ import { drawWorkbenchPropertyTree } from '../../ide/workbench/render/property_t
 import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree, measureWorkbenchPropertyTreeMinimumWidth, type WorkbenchPropertyElement } from '../../ide/workbench/ui/property_tree';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult as PointerResult } from '../../ide/workbench/ui/property_tree_pointer';
 import { appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRows, WorkbenchTreeNavigationResult as NavigationResult } from '../../ide/workbench/ui/tree_view';
-import { scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
+import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
 function fixture(count = 40, groupDescription = 'A GROUP, NOT A PROPERTY.', property: Partial<WorkbenchPropertyElement> = {}) {
@@ -29,7 +29,27 @@ function fixture(count = 40, groupDescription = 'A GROUP, NOT A PROPERTY.', prop
 	rebuildWorkbenchTreeRows(state, group);
 	const layout = (right = 384) => layoutWorkbenchPropertyTree(state, font, measure, 4, 20, right - 4, 268);
 	layout();
-	return { state, font, group, layout, measurements: () => measurements };
+	return { state, font, group, layout, measure, measurements: () => measurements };
+}
+
+for (const dimension of ['width', 'height'] as const) {
+	test(`an unavailable property-tree ${dimension} has no rows or hidden layout work and preserves reading intent`, () => {
+		const f = fixture(); navigateWorkbenchTree(f.state, 'right'); f.layout();
+		scrollWorkbenchList(f.state, 12.375);
+		const scroll = f.state.scroll, selected = f.state.rows[f.state.selectionIndex], measurements = f.measurements();
+		// Focused layout contract: zero offered extent has zero admitted rows,
+		// rather than a negative/fictional viewport that rewrites reading intent.
+		layoutWorkbenchPropertyTree(f.state, f.font, f.measure, 4, 20,
+			dimension === 'width' ? 4 : 380, dimension === 'height' ? 20 : 268);
+		assert.equal(f.state.layout.visibleRowCount, 0);
+		assert.equal(workbenchListRowIndexAtPosition(f.state, 5, 21), -1);
+		revealWorkbenchListSelection(f.state);
+		assert.equal(f.state.scroll, scroll); assert.equal(f.state.rows[f.state.selectionIndex], selected);
+		assert.equal(f.measurements(), measurements);
+		f.layout();
+		assert.ok(f.state.layout.visibleRowCount > 0); assert.equal(f.state.scroll, scroll);
+		assert.equal(f.state.rows[f.state.selectionIndex], selected);
+	});
 }
 
 test('property columns, footer and every hittable row share measured tiny-font geometry', () => {

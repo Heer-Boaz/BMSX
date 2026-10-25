@@ -54,6 +54,12 @@ export function layoutWorkbenchPropertyTree<Element extends WorkbenchPropertyEle
 	left: number, top: number, right: number, bottom: number,
 ): void {
 	const layout = state.layout;
+	if (right <= left || bottom <= top) {
+		layout.font = font;
+		layout.bottom = Math.max(top, bottom);
+		layoutWorkbenchList(layout, left, top, right, layout.bottom, Math.max(font.lineHeight, WORKBENCH_ICON_SIZE) + 4);
+		return;
+	}
 	const changed = state.textDirty || layout.font !== font || layout.contentLeft !== left || layout.contentTop !== top
 		|| layout.contentRight !== right || layout.bottom !== bottom;
 	if (changed) {

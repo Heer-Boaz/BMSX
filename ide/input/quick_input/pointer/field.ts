@@ -28,6 +28,7 @@ export class InlineBarFieldPointer implements PointerCaptureTarget {
 
 	private move(snapshot: PointerSnapshot, justPressed: boolean, pressed: boolean): void {
 		const layout = this.getLayout();
+		if (!layout.visible) return;
 		this.options.metrics = editorViewState.inlineFieldMetricsRef;
 		this.options.textLeft = layout.bounds.left + 3 - layout.viewport.offset;
 		this.options.pointerX = snapshot.viewportX; this.options.justPressed = justPressed; this.options.pointerPressed = pressed;

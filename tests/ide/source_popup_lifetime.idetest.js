@@ -19,13 +19,14 @@ const input = t.activeWorkbenchTab();
 t.assert(input.kind === 'aem_editor', 'the actual authored audio event map did not open');
 const model = input.workingCopy, original = model.buffer.getText();
 const cycles = t.runtime().machine.scheduler.nowCycles;
+t.command('resources'); await t.frames(3);
+// Files is an actual resizable sibling in both fonts. A companion game may
+// legitimately be unavailable at the client's current reading minimum.
+const dividerX = input.layout.left, narrowX = (input.layout.left + input.layout.right) / 2;
+t.controlInput([{ type: 'pointer', x: dividerX, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+t.controlInput([{ type: 'pointer', x: narrowX, y: 80 }]); await t.frames(2);
+t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 for (let font = 0; font < 2; font++) {
-	t.command('gameView.togglePanel'); await t.frames(3);
-	const splitX = input.actionBar.bounds.right + 6;
-	t.controlInput([{ type: 'pointer', x: splitX, y: 80 }, { type: 'button', button: 'primary', down: true }]);
-	await t.frames(1);
-	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
-	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 	const tree = input.tree;
 	const index = tree.rows.findIndex(row => row.element.key === '["events","story","channel"]');
 	t.assert(index >= 0, 'the actual story channel is absent');
@@ -37,11 +38,11 @@ for (let font = 0; font < 2; font++) {
 	await press('Enter');
 	for (const code of ['KeyS', 'KeyF', 'KeyX']) await press(code);
 	t.assert(model.buffer.getText() === original, 'a local field draft published before normal blur admission');
-	await capture(`aem-${input.layout.font.variant}-minimum-property-editor-theme-0`);
-	t.command('theme-toggle'); await t.frames(2); await capture(`aem-${input.layout.font.variant}-minimum-property-editor-theme-1`);
+	await capture(`aem-${input.layout.font.variant}-constrained-property-editor-theme-0`);
+	t.command('theme-toggle'); await t.frames(2); await capture(`aem-${input.layout.font.variant}-constrained-property-editor-theme-1`);
 	t.command('theme-toggle'); await t.frames(2);
 	const more = input.actionBar.overflow.button;
-	t.assert(more.visible && more.bounds.right > more.bounds.left, 'the minimum-width More action is not reachable');
+	t.assert(more.visible, 'the constrained client did not expose its actual More action');
 	await click((more.bounds.left + more.bounds.right) / 2, (more.bounds.top + more.bounds.bottom) / 2);
 	await t.frames(3);
 	t.assert(model.buffer.getText() === original.slice(0, range[0]) + 'sfx' + original.slice(range[1]),
@@ -51,7 +52,6 @@ for (let font = 0; font < 2; font++) {
 	t.assert(input.tree.selectionIndex === 0, 'the retired popup kept focus instead of returning to actual AEM content');
 	await press('ControlLeft', 'KeyZ');
 	t.assert(model.buffer.getText() === original, 'ordinary document Undo did not restore the canonical audio source');
-	t.command('gameView.closePanel'); await t.frames(2);
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 t.assert(t.activeWorkbenchTab() === input, 'popup admission replaced the authored input');

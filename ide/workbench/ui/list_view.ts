@@ -37,10 +37,10 @@ export function layoutWorkbenchList(
 ): void {
 	layout.contentLeft = left;
 	layout.contentTop = top;
-	layout.contentRight = right;
-	layout.contentBottom = bottom;
+	layout.contentRight = Math.max(left, right);
+	layout.contentBottom = Math.max(top, bottom);
 	layout.rowHeight = rowHeight;
-	layout.visibleRowCount = ((bottom - top) / rowHeight) | 0;
+	layout.visibleRowCount = layout.contentRight === left ? 0 : ((layout.contentBottom - top) / rowHeight) | 0;
 }
 
 export function workbenchListRowIndexAtPosition<Row>(
@@ -70,6 +70,7 @@ export function workbenchListContainsPosition<Row>(
 }
 
 export function clampWorkbenchListScroll<Row>(state: WorkbenchListState<Row>): void {
+	if (state.layout.visibleRowCount === 0) return;
 	const maxScroll = state.rows.length > state.layout.visibleRowCount
 		? state.rows.length - state.layout.visibleRowCount
 		: 0;
@@ -83,6 +84,7 @@ export function scrollWorkbenchList<Row>(state: WorkbenchListState<Row>, delta: 
 }
 
 export function revealWorkbenchListSelection<Row>(state: WorkbenchListState<Row>): void {
+	if (state.layout.visibleRowCount === 0) return;
 	if (state.selectionIndex < (state.scroll | 0)) {
 		state.scroll = state.selectionIndex;
 	} else if (state.selectionIndex >= (state.scroll | 0) + state.layout.visibleRowCount) {

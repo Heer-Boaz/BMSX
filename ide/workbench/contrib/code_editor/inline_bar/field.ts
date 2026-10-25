@@ -21,19 +21,24 @@ export class InlineBarFieldLayout {
 	private marginY = -1;
 	private requestedLabel = '';
 	private requestedDetail = '';
-	private visible = false;
 
 	public constructor(public readonly field: TextField) {}
 
+	public get visible(): boolean {
+		return this.bounds.left + 3 < this.bounds.right - 3 && this.bounds.top + 2 < this.bounds.bottom;
+	}
+
 	public hide(): void {
-		if (!this.visible) return;
-		this.visible = false;
-		this.field.focusTarget.cancelInput();
+		if (this.bounds.left === this.bounds.right && this.bounds.top === this.bounds.bottom) return;
+		if (this.visible) this.font = null;
+		write_rect_bounds(this.bounds, 0, 0, 0, 0);
 		this.field.nativeCaret.width = 0; this.field.nativeCaret.height = 0;
+		const target = this.field.focusTarget;
+		if (target.hasFocus) target.release();
+		else target.cancelInput();
 	}
 
 	public layout(bar: Readonly<RectBounds>, label: string, detail: string, marginY: number): void {
-		this.visible = true;
 		const font = editorViewState.font;
 		if (this.font !== font || this.left !== bar.left || this.right !== bar.right || this.top !== bar.top
 			|| this.bottom !== bar.bottom || this.marginY !== marginY || this.requestedLabel !== label || this.requestedDetail !== detail) {
@@ -54,12 +59,13 @@ export class InlineBarFieldLayout {
 			write_rect_bounds(this.bounds, textLeft - 3, bar.top + marginY - 2, textRight + 3,
 				Math.min(bar.bottom, bar.top + marginY + editorViewState.lineHeight + 2));
 		}
-		this.viewport.update(this.field, Math.max(0, this.bounds.right - this.bounds.left - 6),
+		if (!this.visible) { this.hide(); return; }
+		this.viewport.update(this.field, this.bounds.right - this.bounds.left - 6,
 			editorViewState.inlineFieldMetricsRef, font.renderFont());
 		const caret = this.field.nativeCaret;
 		caret.x = this.bounds.left + 3 + this.viewport.advances[getCursorOffset(this.field)] - this.viewport.offset;
 		caret.y = this.bounds.top + 2;
-		caret.width = this.viewport.caretWidth;
-		caret.height = editorViewState.lineHeight;
+		caret.width = Math.min(this.viewport.caretWidth, this.bounds.right - 3 - caret.x);
+		caret.height = Math.min(editorViewState.lineHeight, this.bounds.bottom - caret.y);
 	}
 }

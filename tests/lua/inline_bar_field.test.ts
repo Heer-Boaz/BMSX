@@ -14,8 +14,32 @@ import { layoutInlineWidgets } from '../../ide/quick_input/inline_widget';
 import { getSearchFieldLayout } from '../../ide/workbench/contrib/code_editor/inline_bar/layout';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
+import { inputFocus } from '../../ide/input/focus';
 
 for (const variant of ['tiny', 'msx'] as const) {
+	for (const axis of ['width', 'height'] as const) test(`${variant} empty inner ${axis} revokes an inline field without retiring its draft`, t => {
+		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		const field = new TextField(null, { singleLine: true, allowSpace: true }), layout = new InlineBarFieldLayout(field);
+		field.focusTarget.canFocus = () => layout.visible;
+		t.after(() => { layout.hide(); inputFocus.setTarget(null); });
+		const bar = { left: 0, top: 0, right: 180, bottom: 40 };
+		layout.layout(bar, '', '', 2);
+		// The producer's empty-field native origin supplies the current text insets.
+		// These input budgets remove the inner client, not merely all outer chrome.
+		const textInset = field.nativeCaret.x - bar.left, textTop = field.nativeCaret.y - bar.top;
+		field.replaceText(0, 0, 'retained_draft'); layout.layout(bar, '', '', 2); field.focusTarget.focus();
+		assert.ok(inputFocus.admittedTarget === field.focusTarget);
+		const revision = field.revision;
+		layout.layout({ ...bar, ...(axis === 'width' ? { right: textInset * 2 } : { bottom: textTop }) }, '', '', 2);
+		assert.equal(layout.visible, false); assert.ok(inputFocus.admittedTarget !== field.focusTarget);
+		assert.equal(field.nativeCaret.width, 0); assert.equal(field.nativeCaret.height, 0);
+		assert.equal(field.text, 'retained_draft'); assert.equal(field.revision, revision); assert.equal(field.canUndo, true);
+		layout.layout(bar, '', '', 2);
+		assert.ok(inputFocus.admittedTarget !== field.focusTarget, 'layout recovery cannot silently reclaim native input');
+		field.focusTarget.focus(); assert.ok(inputFocus.admittedTarget === field.focusTarget);
+		field.undo(); assert.equal(field.text, ''); assert.equal(field.canRedo, true);
+	});
+
 	test(`${variant} accepted field keys restart the visible caret without changing unrelated key phases`, t => {
 		configureFontVariant(new VirtualHeadlessClock(), variant, null);
 		const field = new TextField(null, { singleLine: true, allowSpace: true });

@@ -1,14 +1,10 @@
 import * as constants from '../../../../common/constants';
 import { getLineJumpBarBounds, getRenameBarBounds, getSearchBarBounds } from '../../../common/layout';
-import { editorSearchState, lineJumpState } from '../find/widget_state';
+import { editorSearchState, lineJumpFieldLayout, searchFieldLayout } from '../find/widget_state';
 import { renameController } from '../rename/controller';
-import { InlineBarFieldLayout } from './field';
+import type { InlineBarFieldLayout } from './field';
 
-export const searchFieldLayout = new InlineBarFieldLayout(editorSearchState.field);
-export const renameFieldLayout = new InlineBarFieldLayout(renameController.getField());
-export const lineJumpFieldLayout = new InlineBarFieldLayout(lineJumpState.field);
 let searchCount = -1, searchIndex = -1, searchWorking = false, searchDetail = '';
-let renameCount = -1, renameExpression = '', renameDetail = '';
 
 export function getSearchFieldLayout(): InlineBarFieldLayout {
 	const count = editorSearchState.scope === 'global' ? editorSearchState.globalMatches.length : editorSearchState.matches.length;
@@ -24,14 +20,8 @@ export function getSearchFieldLayout(): InlineBarFieldLayout {
 }
 
 export function getRenameFieldLayout(): InlineBarFieldLayout {
-	const count = renameController.getMatchCount(), expression = renameController.getExpressionLabel();
-	if (count !== renameCount || expression !== renameExpression) {
-		renameCount = count; renameExpression = expression;
-		const refs = count === 1 ? '1 REF' : `${count} REFS`;
-		renameDetail = expression.length > 0 ? `${expression} · ${refs}` : refs;
-	}
-	renameFieldLayout.layout(getRenameBarBounds()!, 'RENAME', renameDetail, constants.SEARCH_BAR_MARGIN_Y);
-	return renameFieldLayout;
+	renameController.layoutField(getRenameBarBounds()!);
+	return renameController.fieldLayout;
 }
 
 export function getLineJumpFieldLayout(): InlineBarFieldLayout {

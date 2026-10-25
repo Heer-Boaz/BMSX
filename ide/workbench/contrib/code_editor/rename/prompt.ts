@@ -9,6 +9,8 @@ import { revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
+import { getRenameBarBounds } from '../../../common/layout';
+import { inputFocus } from '../../../../input/focus';
 
 export function openRenamePrompt(sources: RuntimeSourceState, rename: RenameController, search: EditorSearchController, reviewPanes?: EditorPanes): void {
 	if (!isEditableCodeTab()) {
@@ -32,12 +34,18 @@ export function openRenamePrompt(sources: RuntimeSourceState, rename: RenameCont
 		identity: context.model.resource,
 	}, reviewPanes);
 	if (started) {
+		const bounds = getRenameBarBounds();
+		if (bounds === null) { rename.cancel(); return; }
+		rename.layoutField(bounds);
+		rename.getField().focusTarget.focus();
+		if (!rename.isActive()) { rename.cancel(); return; }
 		editorCaretState.cursorVisible = true;
 		resetBlink();
 	}
 }
 
 export function focusEditorFromRename(): void {
+	if (inputFocus.pendingTarget !== activeCodeEditor.focusTarget) return;
 	editorCaretState.cursorRevealSuspended = false;
 	resetBlink();
 	revealCursor();

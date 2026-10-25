@@ -18,10 +18,11 @@ import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../.
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import { splitText } from '../../../../../machine/ts/common/text_lines';
 import type { RenameController } from '../rename/controller';
-import { editorSearchState } from './widget_state';
+import { editorSearchState, searchFieldLayout } from './widget_state';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { EditorTextModel } from '../../../../editor/model/text_model';
-import { getSearchResultCapacity, refreshWorkbenchLayout } from '../../../common/layout';
+import { getSearchBarBounds, getSearchResultCapacity, refreshWorkbenchLayout } from '../../../common/layout';
+import { getSearchFieldLayout } from '../inline_bar/layout';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -96,7 +97,8 @@ export class EditorSearchController {
 		applySearchFieldText(query, true);
 		editorSearchState.scope = scope;
 		editorSearchState.visible = true;
-		refreshWorkbenchLayout();
+		if (getSearchBarBounds() !== null) getSearchFieldLayout();
+		else searchFieldLayout.hide();
 		this.unbindQueryChange = editorSearchState.field.onDidChangeText(() => {
 			editorSearchState.query = editorSearchState.field.text;
 			this.onSearchQueryChanged();
@@ -115,10 +117,11 @@ export class EditorSearchController {
 		cancelSearchJob();
 		cancelGlobalSearchJob();
 		pointerHover.release(searchHover);
-		editorSearchState.field.focusTarget.release();
+		editorSearchState.visible = false;
+		refreshWorkbenchLayout();
+		searchFieldLayout.hide();
 		editorSearchState.field.selectionAnchor = null;
 		editorSearchState.field.pointerSelecting = false;
-		editorSearchState.visible = false;
 		editorSearchState.scope = 'local';
 		editorSearchState.matches = [];
 		editorSearchState.globalMatches = [];

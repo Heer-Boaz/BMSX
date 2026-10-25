@@ -12,6 +12,8 @@ import { activeCodeEditor } from '../../ide/editor/ui/code_editor_state';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../ide/editor/ui/view/view';
+import { editorSearchState, lineJumpState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
+import { renameController } from '../../ide/workbench/contrib/code_editor/rename/controller';
 import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 import { runtimeErrorState } from '../../ide/editor/contrib/runtime_error/state';
 import { PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN } from '../../ide/common/constants';
@@ -19,11 +21,12 @@ import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture, WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { api } from '../../ide/runtime/overlay_api';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
+import { createBlua32SystemSourceImage, registerWorkspaceTextSources } from '../../ide/runtime/sources';
+import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { getProblemsPanelBounds } from '../../ide/workbench/contrib/problems/panel/layout';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { RuntimeIdeState } from '../../ide/workbench/state';
-import { getWorkbenchEditorBounds } from '../../ide/workbench/common/layout';
+import { getSearchBarBounds, getWorkbenchEditorBounds } from '../../ide/workbench/common/layout';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { closeTab, getActiveTab, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
@@ -75,6 +78,178 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	const resource = (index: number) => sources.resourceByIdentity.get(resourceIdentityKeyFromParts(-1, `directory_${index}/child.lua`))!;
 	return { ide, editor, host, sources, input, model, view, source, edited, version, cycles, key, resource, clipboard };
 }
+
+function openAemFixture(f: ReturnType<typeof fixture>) {
+	const path = 'events.aem.yaml', source = 'events:\n  story:\n    channel: music\n    rules: []\n';
+	registerWorkspaceTextSources(f.sources, -1, [{ type: 'aem', resid: 'events', source_path: path }]);
+	const resource = f.sources.resourceByIdentity.get(resourceIdentityKeyFromParts(-1, path))!;
+	const model = editorTextModelService.retain(resource, 'aem', source), input = new AemEditorInput(model);
+	openEditorTab(f.editor.editorPanes, input); f.editor.update(0);
+	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["events","story","channel"]');
+	assert.ok(input.tree.selectionIndex >= 0);
+	return { input, model, source };
+}
+
+for (const control of ['tree', 'actions'] as const) {
+	test(`concealing the actual AEM ${control} revokes its source mutation commands without discarding its working copy`, t => {
+		const f = fixture(t), aem = openAemFixture(f);
+		f.key('Enter');
+		assert.ok(f.editor.textTarget !== undefined);
+		assert.equal(f.editor.textTarget!.replaceText(0, 'music'.length, 'audiofx'), true);
+		f.key('Enter');
+		const edited = aem.model.buffer.getText(), version = aem.model.version;
+		assert.equal(edited, aem.source.replace('music', 'audiofx')); assert.equal(aem.model.canUndo, true);
+		const selected = aem.input.tree.rows[aem.input.tree.selectionIndex];
+		if (control === 'actions') {
+			f.key('Tab'); f.key('Home');
+			for (let step = 0; step <= aem.input.actionBar.items.length; step++) {
+				if (aem.input.actionBar.items[aem.input.actionBar.focusedIndex]?.command === 'aem.remove') break;
+				f.key('ArrowRight');
+			}
+			assert.equal(aem.input.actionBar.hasFocus, true);
+			assert.equal(aem.input.actionBar.items[aem.input.actionBar.focusedIndex].command, 'aem.remove');
+		}
+		const target = inputFocus.admittedTarget;
+		assert.ok(target !== null);
+		problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+		assert.notEqual(inputFocus.admittedTarget, target);
+		f.key(control === 'tree' ? 'Delete' : 'Enter'); f.key('KeyZ', KeyModifier.ctrl);
+		assert.equal(aem.model.buffer.getText(), edited); assert.equal(aem.model.version, version);
+		assert.equal(aem.model.canUndo, true); assert.equal(aem.model.canRedo, false);
+		problemsPanel.hide(); f.editor.update(0);
+		assert.notEqual(inputFocus.admittedTarget, target, 'recovery does not silently reclaim focus');
+		f.key('Delete'); assert.equal(aem.model.buffer.getText(), edited);
+		assert.ok(aem.input.tree.rows[aem.input.tree.selectionIndex] === selected);
+		assert.ok(getActiveTab() === aem.input && aem.input.workingCopy === aem.model);
+		f.editor.editorPanes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
+		assert.equal(aem.model.buffer.getText(), aem.source); assert.equal(aem.model.canRedo, true);
+		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+		assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+	});
+}
+
+test('the independently presented AEM property edit retains its own input above an unavailable main tree', t => {
+	const f = fixture(t), aem = openAemFixture(f);
+	f.key('Enter');
+	const field = f.editor.textTarget!;
+	assert.ok(field !== undefined);
+	const target = inputFocus.admittedTarget;
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	assert.ok(f.editor.textTarget === field && inputFocus.admittedTarget === target);
+	assert.equal(field.replaceText(0, 'music'.length, 'audiofx'), true);
+	assert.equal(aem.model.buffer.getText(), aem.source, 'an independent field draft is not an accepted source edit');
+	f.key('Enter');
+	assert.equal(aem.model.buffer.getText(), aem.source.replace('music', 'audiofx'));
+	assert.ok(f.editor.textTarget === undefined);
+	problemsPanel.hide(); f.editor.update(0);
+	assert.ok(inputFocus.admittedTarget === null);
+	f.editor.editorPanes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
+	assert.equal(aem.model.buffer.getText(), aem.source); assert.equal(aem.model.canRedo, true);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+for (const command of ['findLocal', 'lineJump', 'rename'] as const) test(`${command} synchronously publishes an arranged native field before the next frame`, t => {
+	const f = fixture(t);
+	if (command === 'rename') { f.key('End', KeyModifier.ctrl); f.key('ArrowLeft'); }
+	f.editor.commands.execute(command);
+	const field = command === 'findLocal' ? editorSearchState.field : command === 'lineJump' ? lineJumpState.field : renameController.getField();
+	assert.ok(f.editor.textTarget === field && f.editor.clipboardTarget === field);
+	assert.ok(field.nativeCaret.width > 0 && field.nativeCaret.height > 0, 'accepted field focus needs an actual native input placement synchronously');
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+for (const command of ['findLocal', 'lineJump', 'rename'] as const) test(`${command} revokes a withheld field gesture, Paste and keyboard admission without editing Source`, async t => {
+	const f = fixture(t, 'local value = 42\n' + '-- retained reading context\n'.repeat(100) + 'return value');
+	t.after(() => pointerCapture.interrupt(false));
+	if (command === 'rename') { f.key('End', KeyModifier.ctrl); f.key('ArrowLeft'); }
+	f.editor.commands.execute(command); f.editor.update(0);
+	const field = command === 'findLocal' ? editorSearchState.field : command === 'lineJump' ? lineJumpState.field : renameController.getField();
+	assert.ok(f.editor.textTarget === field);
+	const seed = field.text, draft = command === 'lineJump' ? '12' : 'retained_draft';
+	assert.equal(f.editor.textTarget!.replaceText(0, seed.length, draft), true); f.editor.update(0);
+	assert.equal(field.canUndo, true);
+	if (command === 'rename') {
+		const bounds = getCodeAreaBounds();
+		f.editor.dispatchWheel({ x: (bounds.codeLeft + bounds.codeRight) / 2, y: (bounds.codeTop + bounds.codeBottom) / 2,
+			deltaX: 0, deltaY: -12, attachmentDeltaY: -12, modifiers: KeyModifier.none, timestamp: 1 });
+		f.editor.update(0);
+	}
+	const sourceScroll = f.view.scrollRow, revision = field.revision;
+	const pending = Promise.withResolvers<ClipboardContents>();
+	const read = t.mock.method(f.clipboard, 'read', () => pending.promise), execute = t.mock.method(f.clipboard, 'execute');
+	f.key('KeyV', KeyModifier.ctrl); assert.equal(read.mock.callCount(), 1);
+	const caret = field.caretRect(), x = caret.x + caret.width / 2, y = caret.y + caret.height / 2;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
+	assert.equal(pointerCapture.active, true);
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	pending.resolve({ text: 'late_paste', images: [] }); await pending.promise;
+	assert.ok(f.editor.textTarget === undefined && f.editor.clipboardTarget === undefined,
+		'a retained field draft is not permission for native input outside its presented geometry');
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
+	f.key('Backspace'); f.key('KeyX', KeyModifier.ctrl); f.key('KeyV', KeyModifier.ctrl); f.key('KeyZ', KeyModifier.ctrl);
+	assert.equal(read.mock.callCount(), 1); assert.equal(execute.mock.callCount(), 0);
+	f.editor.dispatchPointer({ x: x + 32, y, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
+	f.editor.dispatchPointer({ x: x + 32, y, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 4 });
+	assert.equal(pointerCapture.draining, false); assert.equal(field.pointerSelecting, false);
+	assert.equal(field.text, draft); assert.equal(field.revision, revision); assert.equal(field.canUndo, true);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version); assert.equal(f.view.scrollRow, sourceScroll);
+	problemsPanel.hide(); f.editor.update(0);
+	assert.ok(f.editor.textTarget === undefined, 'rearranging a retained field does not steal focus');
+	assert.equal(f.view.scrollRow, sourceScroll);
+	if (command === 'rename') {
+		assert.equal(renameController.isVisible(), false); assert.equal(renameController.getMatchCount(), 0);
+	} else {
+		assert.equal(command === 'findLocal' ? editorSearchState.visible : lineJumpState.visible, true);
+		field.focusTarget.focus(); assert.ok(f.editor.textTarget === field);
+		f.key('KeyZ', KeyModifier.ctrl); assert.equal(field.text, seed); assert.equal(field.canRedo, true);
+	}
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('Find remains an admitted text owner when its own bar is visible above a zero-height Source body', t => {
+	const f = fixture(t);
+	f.editor.commands.execute('findLocal'); f.editor.update(0);
+	const field = editorSearchState.field, bar = getSearchBarBounds()!, bounds = getWorkbenchEditorBounds();
+	const sourceBodyBudget = bounds.bottom - bounds.top - (bar.bottom - bar.top);
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(sourceBodyBudget); f.editor.update(0);
+	assert.ok(!activeCodeEditor.focusTarget.canFocus!(), 'the physical body budget withholds Source, independently of its inline bar');
+	assert.ok(f.editor.textTarget === field && f.editor.clipboardTarget === field);
+	assert.ok(field.nativeCaret.width > 0 && field.nativeCaret.height > 0);
+	assert.equal(f.editor.textTarget!.replaceText(0, field.text.length, 'visible_field'), true);
+	assert.equal(field.text, 'visible_field'); assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	f.key('Escape');
+	assert.equal(editorSearchState.visible, false);
+	assert.ok(inputFocus.admittedTarget === activeCodeEditor.focusTarget && f.editor.textTarget !== undefined,
+		'explicit Find close returns focus only after its own bar has freed Source client space');
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('Rename rejected before field presentation retires its source-reading subscriptions and admits a later fresh operation', t => {
+	const f = fixture(t);
+	f.key('End', KeyModifier.ctrl); f.key('ArrowLeft');
+	const subscribe = editorTextModelService.onDidChangeContent;
+	let subscriptions = 0;
+	t.mock.method(editorTextModelService, 'onDidChangeContent', listener => {
+		const unbind = subscribe.call(editorTextModelService, listener); subscriptions++;
+		return () => { subscriptions--; unbind(); };
+	});
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	f.editor.commands.execute('rename');
+	assert.equal(renameController.isVisible(), false); assert.equal(renameController.isActive(), false);
+	assert.equal(renameController.getMatchCount(), 0); assert.equal(subscriptions, 0, 'rejected Rename cannot retain a workspace-source observer');
+	assert.ok(f.editor.textTarget === undefined && f.editor.clipboardTarget === undefined);
+	problemsPanel.hide(); f.editor.update(0); f.editor.editorPanes.activePane!.focus();
+	f.editor.commands.execute('rename');
+	assert.equal(renameController.isActive(), true); assert.ok(renameController.getMatchCount() > 0); assert.equal(subscriptions, 1);
+	f.key('Escape'); assert.equal(subscriptions, 0); assert.equal(renameController.isVisible(), false);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version); assert.equal(f.model.canUndo, true);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
 
 test('actual inspector and source attachments preserve user-opened Files and Problems reading state', t => {
 	const f = fixture(t), files = f.editor.resourcePanel, tree = files.files.tree;

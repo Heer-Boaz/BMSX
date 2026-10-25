@@ -17,6 +17,7 @@ export function renderInlineBarFrame(
 }
 
 export function renderInlineBarField(layout: InlineBarFieldLayout, textColor: number, placeholder: string, placeholderColor: number): void {
+	if (!layout.visible) return;
 	const { field, bounds } = layout;
 	const y = bounds.top + 2, font = editorViewState.font.renderFont();
 	if (layout.label.length > 0) api.blit_text_inline_with_font(layout.label, layout.labelX, y, 0, textColor, font);
