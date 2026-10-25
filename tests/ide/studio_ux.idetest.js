@@ -79,21 +79,27 @@ t.assert(audio.kind === 'aem_editor' && audio.tree.rows.length > 0, 'the shipped
 t.assert(audio.workingCopy.resource.path === 'res/data/events.aem.yaml', 'the audio map lost its actual resource identity');
 const audioSource = audio.workingCopy.buffer.getText();
 await matrix('audio-events', audio);
-t.command('gameView.togglePanel');
+t.command('resources');
 await t.frames(3);
-await matrix('audio-events-game-panel', audio);
+const audioSash = { x: audio.layout.left, y: (audio.layout.top + audio.layout.bottom) / 2 };
+t.controlInput([{ type: 'pointer', ...audioSash }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+t.controlInput([{ type: 'pointer', x: (audioSash.x + audio.layout.right) / 2, y: audioSash.y }]); await t.frames(2);
+t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+await matrix('audio-events-files', audio);
 await press('ControlLeft', 'ShiftLeft', 'KeyT');
 // Take real content focus before using keyboard disclosure/feedback navigation.
 const audioTree = audio.tree;
 await click(audioTree.layout.contentRight - 8, audioTree.layout.contentTop + audioTree.layout.rowHeight / 2);
-const fullKey = audioTree.rows.findIndex(row => row.element.label === 'music_transition');
+const transitionPath = ['events', 'story', 'rules', 0, 'go', 'music_transition'];
+const authoredTransition = audio.document.getIn(transitionPath, true);
+const fullKey = audioTree.rows.findIndex(row => row.element.node === authoredTransition);
 t.assert(fullKey >= 0, 'the actual authored audio transition key is missing');
 await press('Home');
 for (let row = 0; row < fullKey; row++) await press('ArrowDown');
 const transition = audioTree.rows[audioTree.selectionIndex].element;
-t.assert(transition.label === 'music_transition' && transition.value === '2 properties', 'keyboard selection lost the authored audio transition');
-t.assert(transition.displayLabel !== transition.label, 'the narrow MSX case did not exercise clipped-name feedback');
-await capture('audio-events-msx-narrow-full-name-feedback');
+t.assert(transition.node === authoredTransition && transition.path.length === transitionPath.length
+	&& transition.path.every((part, index) => part === transitionPath[index]), 'keyboard selection lost the authored audio transition');
+await capture('audio-events-msx-files-authored-transition');
 const audioMore = audio.actionBar.overflow.button;
 t.assert(audioMore.visible, 'the narrow audio toolbar has no overflow affordance');
 await click((audioMore.bounds.left + audioMore.bounds.right) / 2, (audioMore.bounds.top + audioMore.bounds.bottom) / 2);
@@ -115,7 +121,7 @@ const audioCode = t.activeWorkbenchTab();
 t.assert(audioCode.kind === 'code_editor' && audioCode.workingCopy === audio.workingCopy,
 	'overflow Source did not target the original authored audio working copy');
 t.assert(audio.workingCopy.buffer.getText() === audioSource, 'feedback or overflow actions edited the authored audio source');
-t.command('gameView.closePanel');
+t.command('resources');
 await t.frames(3);
 await press('ControlLeft', 'ShiftLeft', 'KeyT');
 
@@ -125,8 +131,9 @@ const scenarios = t.activeWorkbenchTab();
 t.assert(scenarios.kind === 'scenario_lab' && scenarios.view.testPane.rows.some(row => row.kind === 'test'),
 	'the packaged Scenario Lab test cases did not open');
 const scenarioModules = scenarios.view.testPane.rows.filter(row => row.kind === 'module');
-t.assert(scenarioModules.some(row => row.caption === 'bel_encounter') && scenarioModules.some(row => row.caption === 'cinematic_flow'),
-	'the module captions still repeat the actual owning project namespace');
+const encounterModule = scenarioModules.find(row => row.module.resource.path === 'tests/carts/nemesis_s/nemesis_s_bel_encounter_assert.lua');
+t.assert(encounterModule !== undefined && scenarioModules.some(row => row.module.resource.path === 'tests/carts/nemesis_s/nemesis_s_cinematic_flow_assert.lua'),
+	'the actual authored scenario modules are absent from the current catalog');
 t.assert(scenarioModules.every(row => row.identity.includes(row.module.resource.path)
 	&& row.id === row.module.id && row.root.id === row.module.parentId), 'compact captions replaced full source membership');
 // Scenario Lab stores its font/layout with the view, not the editor input.
@@ -137,22 +144,26 @@ t.command('scenarioLab.debug');
 for (let frame = 0; frame < 1200 && !scenarios.view.debugger?.stopped; frame++) await t.frames(1);
 t.assert(scenarios.view.debugger?.stopped, 'the selected real test never reached its debugger entry stop');
 await matrix('scenario-debug-entry', scenarios, scenarios.view.layout);
-t.command('gameView.togglePanel');
+t.command('resources');
 await t.frames(3);
-await matrix('scenario-debug-game-panel', scenarios, scenarios.view.layout);
+const scenarioSash = { x: scenarios.view.layout.left, y: (scenarios.view.layout.top + scenarios.view.layout.bottom) / 2 };
+t.controlInput([{ type: 'pointer', ...scenarioSash }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+t.controlInput([{ type: 'pointer', x: (scenarioSash.x + scenarios.view.layout.right) / 2, y: scenarioSash.y }]); await t.frames(2);
+t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+await matrix('scenario-debug-files', scenarios, scenarios.view.layout);
 await press('ControlLeft', 'ShiftLeft', 'KeyT');
 // Full membership belongs to the retained row, available through normal focus and hover.
 const scenarioTests = scenarios.view.testPane;
 const originalDebugCaseId = scenarioTests.rows[scenarioTests.selectionIndex].id;
-const disclosureModuleIndex = scenarioTests.rows.findIndex(row => row.kind === 'module' && row.caption === 'bel_encounter');
+const disclosureModuleIndex = scenarioTests.rows.findIndex(row => row.kind === 'module' && row.id === encounterModule.id);
 t.assert(disclosureModuleIndex >= 0, 'the actual encounter module is no longer in the current catalog');
 await click(scenarioTests.rows[0].textLeft + 2, scenarioTests.layout.contentTop + scenarioTests.layout.rowHeight / 2);
 await press('Home');
 for (let row = 0; row < disclosureModuleIndex; row++) await press('ArrowDown');
 const scenarioModule = scenarioTests.rows[scenarioTests.selectionIndex];
-t.assert(scenarioModule.kind === 'module' && scenarioModule.caption === 'bel_encounter'
-	&& scenarioModule.text !== scenarioModule.fullText.toUpperCase(), 'narrow MSX selection did not retain the clipped semantic module caption');
-await capture('scenario-msx-narrow-module-full-identity-keyboard');
+t.assert(scenarioModule.kind === 'module' && scenarioModule.id === encounterModule.module.id
+	&& scenarioModule.module === encounterModule.module, 'keyboard navigation lost the authored scenario module identity');
+await capture('scenario-msx-module-full-identity-keyboard');
 await press('ArrowDown');
 const scenarioCase = scenarioTests.rows[scenarioTests.selectionIndex];
 t.assert(scenarioCase.kind === 'test' && scenarioCase.caption === scenarioCase.test.caseName
@@ -206,6 +217,7 @@ await press('Enter');
 await press('End');
 t.assert(scenarios.view.resultPane.selectionIndex === scenarios.view.resultPane.rows.length - 1
 	&& scenarios.view.resultPane.selectionIndex > 0, 'target overflow Close did not restore the originating result pane');
+t.command('resources');
 t.command('gameView.closePanel');
 await t.frames(3);
 await press('ControlLeft', 'ShiftLeft', 'KeyT');

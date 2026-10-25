@@ -30,10 +30,12 @@ export function projectAemSource(input: AemEditorInput): void {
 		container?: StructuredCollection, index?: number): void => {
 		const collection = isMap(node) || isSeq(node);
 		const key = JSON.stringify(path);
-		const value = collection ? `${node.items.length} ${isMap(node) ? 'properties' : 'entries'}` : input.source.slice(node.range![0], node.range![1]);
+		let value = '';
+		if (!collection) value = input.source.slice(node.range![0], node.range![1]);
+		else if (node.items.length === 0) value = isMap(node) ? '{}' : '[]';
 		const element: AemProperty = { kind: collection ? 'group' : 'property', label, key, path, node, parent: container, index,
 			value, inlineEditable: isScalar(node) && !/[\r\n]/.test(value),
-			description: `/${path.join('/')} / ${node.range![0]}..${node.range![1]}`, warning: false,
+			description: '', warning: false,
 			displayLabel: '', displayValue: '', displayValueLeft: 0 };
 		const row = appendWorkbenchTreeNode(tree, parent, element, collapsed.has(key));
 		if (key === selectedKey) selected = row;
@@ -47,8 +49,8 @@ export function projectAemSource(input: AemEditorInput): void {
 			if (child !== null) append(child, [...path, i], `[${i + 1}]`, row, node as StructuredCollection, i);
 		}
 	};
-	if (input.document.contents !== null) append(input.document.contents, [], 'AUDIO EVENT MAP', null);
+	if (input.document.contents !== null) append(input.document.contents, [], 'Map', null);
 	rebuildWorkbenchTreeRows(tree, selected);
 	tree.textDirty = true;
-	input.status = 'Authored audio events / Save validates and applies through the AEM owner';
+	input.status = '';
 }

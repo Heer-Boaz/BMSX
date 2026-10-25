@@ -17,6 +17,7 @@ export abstract class AbstractEditorInput<
 	private readonly labelListeners = new Set<() => void>();
 	private inputTitle: string;
 	private inputDescription = '';
+	private inputShortDescription = '';
 
 	/** Only inputs with a registered resource opener can outlive closing their tab. */
 	public toResourceEditor?(): ResourceEditorIdentity;
@@ -25,13 +26,15 @@ export abstract class AbstractEditorInput<
 	public onDidChangeDirty?(listener: () => void): () => void;
 
 	public get title(): string { return this.inputTitle; }
-	public set title(value: string) { this.setLabel(value, this.inputDescription); }
+	public set title(value: string) { this.setLabel(value, this.inputDescription, this.inputShortDescription); }
 	public get description(): string { return this.inputDescription; }
+	public get shortDescription(): string { return this.inputShortDescription; }
 
-	public setLabel(title: string, description: string): void {
-		if (title === this.inputTitle && description === this.inputDescription) return;
+	public setLabel(title: string, description: string, shortDescription = description): void {
+		if (title === this.inputTitle && description === this.inputDescription && shortDescription === this.inputShortDescription) return;
 		this.inputTitle = title;
 		this.inputDescription = description;
+		this.inputShortDescription = shortDescription;
 		for (const listener of this.labelListeners) listener();
 	}
 

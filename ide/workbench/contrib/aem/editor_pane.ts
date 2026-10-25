@@ -30,9 +30,7 @@ import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { AemEditorController } from './controller';
 import type { AemEditorInput } from './editor_input';
-import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { clamp } from '../../../../machine/ts/common/clamp';
-import { truncateMeasuredText } from '../../../common/text';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { projectAemSource } from './source';
 import * as colors from '../../../common/constants';
@@ -51,11 +49,6 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly edit: WorkbenchPropertyEdit<EditorTextEdit>;
 	private readonly actionTooltip = new WorkbenchTooltip();
-	private captionFont: BFont | undefined;
-	private captionSource = '';
-	private captionWidth = 0;
-	private captionRevision = -1;
-	private caption = '';
 	public constructor(private readonly controller: AemEditorController, private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super();
@@ -89,7 +82,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 	}
 	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); }
 	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.update(); }
-	public override clearInput(): void { this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); this.captionRevision = -1; super.clearInput(); }
+	public override clearInput(): void { this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); super.clearInput(); }
 	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
 	private editProperty(): void {
 		this.pointer.hideFeedback();
@@ -106,15 +99,8 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		projectAemSource(this.input); updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);
 		const { layout, actionBar, tree } = this.input;
 		const font = editorViewState.font.renderFont();
-		if (this.captionFont !== font || this.captionSource !== this.input.title) {
-			this.captionFont = font; this.captionSource = this.input.title; this.captionWidth = measureText(this.input.title); this.captionRevision = -1;
-		}
 		const left = clamp(layout.left + 4, layout.left, layout.right), right = clamp(layout.right - 4, left, layout.right);
-		layoutWorkbenchActionBar(actionBar, right, layout.top, Math.min(layout.bottom, layout.top + layout.rowHeight + 4), measureText, font, layout.left + this.captionWidth + 12);
-		if (this.captionRevision !== actionBar.layoutRevision) {
-			this.captionRevision = actionBar.layoutRevision;
-			this.caption = truncateMeasuredText(this.input.title, actionBar.bounds.left - layout.left - 8, measureTextRange);
-		}
+		layoutWorkbenchActionBar(actionBar, right, layout.top, Math.min(layout.bottom, layout.top + layout.rowHeight + 4), measureText, font, left);
 		layoutWorkbenchPropertyTree(tree, font, measureTextRange, left,
 			Math.min(layout.bottom, layout.top + layout.rowHeight + 7), right, layout.bottom);
 		if (tree.layout.visibleRowCount === 0) { this.pointer.clear(); this.focusTarget.release(); }
@@ -134,7 +120,6 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		const input = this.input;
 		if (input.layout.left === input.layout.right || input.layout.top === input.layout.bottom) return;
 		api.fill_rect(input.layout.left, input.layout.top, input.layout.right, input.layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
-		drawEditorText(editorViewState.font, this.caption, input.layout.left + 4, input.layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
 		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		drawWorkbenchPropertyTree(input.tree);
 	}

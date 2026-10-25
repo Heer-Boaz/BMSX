@@ -11,7 +11,7 @@ export const WORKBENCH_TEXT_EDITOR_ID = 'workbench.editor.text';
 export class CodeEditorInput extends WorkingCopyEditorInput<CodeEditorTabId, 'code_editor'> {
 	public constructor(public context: CodeTabContext) {
 		super(context.id, 'code_editor', context.title, true);
-		this.setLabel(context.title, sourceTabDescription(context.model.resource));
+		this.setLabel(context.title, sourceTabDescription(context.model.resource), 'Source');
 	}
 
 	public get workingCopy(): EditorTextModel {

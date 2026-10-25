@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { ClipboardContents } from '../../hosts/common/clipboard';
@@ -79,20 +80,77 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	return { ide, editor, host, sources, input, model, view, source, edited, version, cycles, key, resource, clipboard };
 }
 
-function openAemFixture(f: ReturnType<typeof fixture>) {
-	const path = 'events.aem.yaml', source = 'events:\n  story:\n    channel: music\n    rules: []\n';
+function openAemFixture(f: ReturnType<typeof fixture>, source = 'events:\n  story:\n    channel: music\n    rules: []\n', path = 'events.aem.yaml') {
 	registerWorkspaceTextSources(f.sources, -1, [{ type: 'aem', resid: 'events', source_path: path }]);
 	const resource = f.sources.resourceByIdentity.get(resourceIdentityKeyFromParts(-1, path))!;
 	const model = editorTextModelService.retain(resource, 'aem', source), input = new AemEditorInput(model);
 	openEditorTab(f.editor.editorPanes, input); f.editor.update(0);
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["events","story","channel"]');
-	assert.ok(input.tree.selectionIndex >= 0);
 	return { input, model, source };
+}
+
+for (const format of ['yaml', 'json'] as const) {
+	test(`AEM ${format} Source opens its selected AST position in the same undoable working copy`, async t => {
+		const f = fixture(t), source = format === 'yaml'
+			? '# authored map\nevents:\n  story:\n    channel: music # keep this comment\n    rules: []\n'
+			: '{\n  "events": { "story": { "channel": "music", "rules": [] } }\n}\n';
+		const aem = openAemFixture(f, source, `res/audio/events.aem.${format}`);
+		assert.ok(aem.input.tree.selectionIndex >= 0);
+		const selectedKey = aem.input.tree.rows[aem.input.tree.selectionIndex].element.key;
+		const range = aem.input.tree.rows[aem.input.tree.selectionIndex].element.node.range!;
+		f.key('Enter'); const field = f.editor.textTarget!;
+		assert.ok(field !== undefined); assert.equal(field.replaceText(0, field.readText().text.length, '"audiofx"'), true);
+		f.key('Enter');
+		const edited = source.slice(0, range[0]) + '"audiofx"' + source.slice(range[1]), version = aem.model.version;
+		assert.equal(aem.model.buffer.getText(), edited); assert.equal(aem.model.canUndo, true);
+		const position = { row: 0, column: 0 };
+		aem.model.buffer.positionAt(aem.input.tree.rows[aem.input.tree.selectionIndex].element.node.range![0], position);
+		f.editor.commands.execute('aem.source'); await setImmediate(); f.editor.update(0);
+		const code = getActiveTab()!; assert.ok(code.kind === 'code_editor');
+		assert.ok(code.workingCopy === aem.model && code.resource === aem.input.resource && activeCodeEditor.model === aem.model);
+		assert.notEqual(code.id, aem.input.id);
+		assert.equal(activeCodeEditor.view!.cursorRow, position.row); assert.equal(activeCodeEditor.view!.cursorColumn, position.column);
+		assert.equal(aem.model.version, version); assert.equal(aem.model.buffer.getText(), edited); assert.equal(aem.model.canUndo, true);
+		f.key('KeyZ', KeyModifier.ctrl);
+		assert.equal(aem.model.buffer.getText(), source); assert.equal(aem.model.canRedo, true);
+		setActiveTab(f.editor.editorPanes, aem.input.id); f.editor.update(0);
+		assert.ok(getActiveTab() === aem.input && aem.input.workingCopy === aem.model);
+		assert.equal(aem.input.tree.rows[aem.input.tree.selectionIndex].element.key, selectedKey);
+		assert.equal(aem.model.buffer.getText(), source); assert.equal(aem.model.canRedo, true);
+		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+		assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+	});
+
+	test(`AEM ${format} Add with no selection edits the actual empty root collection through Quick Input`, async t => {
+		const f = fixture(t), source = format === 'yaml' ? '# authored empty map\n{}\n' : ' {\n}\n';
+		const aem = openAemFixture(f, source, `res/audio/empty.aem.${format}`);
+		assert.equal(aem.input.tree.selectionIndex, -1);
+		const root = aem.input.tree.roots[0].element, range = root.node.range!;
+		assert.deepEqual(root.path, []); assert.ok(root.node === aem.input.document!.contents);
+		assert.equal(f.editor.commands.isEnabled('aem.add'), true);
+		f.editor.commands.execute('aem.add');
+		const picker = f.editor.quickInput; assert.equal(picker.visible, true); assert.equal(picker.inputBox, false);
+		// The selection is the authored property key, not the Quick Input's display wording.
+		picker.model.list.selectionIndex = picker.model.list.rows.findIndex(row => row.item.label === 'events');
+		assert.ok(picker.model.list.selectionIndex >= 0); await picker.accept();
+		assert.equal(picker.visible, true); assert.equal(picker.inputBox, true);
+		await picker.accept(); f.editor.update(0);
+		assert.equal(picker.visible, false); assert.deepEqual(aem.input.document!.toJS(), { events: {} });
+		const edited = aem.model.buffer.getText();
+		assert.ok(edited.startsWith(source.slice(0, range[0])) && edited.endsWith(source.slice(range[1])), 'structured insertion preserves the authored bytes outside the root range');
+		assert.equal(aem.model.canUndo, true);
+		f.key('KeyZ', KeyModifier.ctrl);
+		assert.equal(aem.model.buffer.getText(), source); assert.equal(aem.model.canRedo, true);
+		assert.ok(getActiveTab() === aem.input && aem.input.workingCopy === aem.model);
+		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+		assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+	});
 }
 
 for (const control of ['tree', 'actions'] as const) {
 	test(`concealing the actual AEM ${control} revokes its source mutation commands without discarding its working copy`, t => {
 		const f = fixture(t), aem = openAemFixture(f);
+		assert.ok(aem.input.tree.selectionIndex >= 0);
 		f.key('Enter');
 		assert.ok(f.editor.textTarget !== undefined);
 		assert.equal(f.editor.textTarget!.replaceText(0, 'music'.length, 'audiofx'), true);
@@ -130,6 +188,7 @@ for (const control of ['tree', 'actions'] as const) {
 
 test('the independently presented AEM property edit retains its own input above an unavailable main tree', t => {
 	const f = fixture(t), aem = openAemFixture(f);
+	assert.ok(aem.input.tree.selectionIndex >= 0);
 	f.key('Enter');
 	const field = f.editor.textTarget!;
 	assert.ok(field !== undefined);

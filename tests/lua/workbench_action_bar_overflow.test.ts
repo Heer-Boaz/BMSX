@@ -26,9 +26,7 @@ import { WORKBENCH_MENUS } from '../../ide/workbench/ui/menu/registry';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 const PRIMARY = PointerButton.Primary;
-const CAPTIONS = {
-	'aem.title': 'AUDIO EVENTS', 'scenarioLab.title': 'SCENARIO LAB', 'scenarioLab.target': 'TEST',
-} as const;
+const ACTION_MENUS = ['aem.title', 'scenarioLab.title', 'scenarioLab.target'] as const;
 const SCENARIO_STATES: readonly (readonly EditorCommandId[])[] = [
 	['scenarioLab.play', 'scenarioLab.run', 'scenarioLab.debug', 'scenarioLab.rerun', 'scenarioLab.revealRun'],
 	['scenarioLab.continue', 'scenarioLab.breakpoints', 'scenarioLab.inspectStop', 'scenarioLab.revealRun', 'scenarioLab.cancel'],
@@ -55,7 +53,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const domain of ['gpu', 'gt
 	});
 }
 
-for (const variant of ['tiny', 'msx'] as const) for (const menu of Object.keys(CAPTIONS) as (keyof typeof CAPTIONS)[]) {
+for (const variant of ['tiny', 'msx'] as const) for (const menu of ACTION_MENUS) {
 	test(`${menu} retains a bounded ordered primary prefix and reachable secondary commands in ${variant}`, () => {
 		const state = createWorkbenchActionBar(menu, true), font = new Font({ variant });
 		let measurements = 0;
@@ -64,8 +62,8 @@ for (const variant of ['tiny', 'msx'] as const) for (const menu of Object.keys(C
 		for (const visible of visibility) {
 			for (const item of state.items) item.visible = visible.includes(item.command);
 			const authored = state.items.filter(item => item.visible);
-			for (const width of [384, 192, 128, 80, 512]) {
-				const left = font.measure(CAPTIONS[menu]) + 12;
+			// The layout contract is the supplied free interval, not a particular pane's caption text.
+			for (const width of [384, 192, 128, 80, 512]) for (const left of [4, 96]) {
 				layoutWorkbenchActionBar(state, width - 4, 2, font.lineHeight + 6, measure, font, left);
 				const primary = state.items.filter(item => item.visible && !item.overflowed), secondary = state.overflow!.items;
 				assert.deepEqual([...primary.map(item => item.command), ...secondary.filter(item => item.type === 'command').map(item => item.command)], authored.map(item => item.command));

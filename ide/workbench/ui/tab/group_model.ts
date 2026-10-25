@@ -150,8 +150,22 @@ export class EditorTabGroupModel {
 	private updateLabels(): void {
 		const counts = new Map<string, number>();
 		for (const tab of this.editorTabs) counts.set(tab.title, (counts.get(tab.title) || 0) + 1);
+		const shortDescriptions = new Map<string, Set<string>>();
 		for (const tab of this.editorTabs) {
-			const label = counts.get(tab.title)! > 1 && tab.description.length > 0 ? `${tab.title} - ${tab.description}` : tab.title;
+			if (counts.get(tab.title)! === 1) continue;
+			let descriptions = shortDescriptions.get(tab.title);
+			if (descriptions === undefined) {
+				descriptions = new Set();
+				shortDescriptions.set(tab.title, descriptions);
+			}
+			descriptions.add(tab.shortDescription);
+		}
+		for (const tab of this.editorTabs) {
+			const descriptions = shortDescriptions.get(tab.title);
+			// Escalate the whole duplicate-name group together; mixing short and full descriptions can create new collisions.
+			const description = descriptions !== undefined && descriptions.size === counts.get(tab.title) && !descriptions.has('')
+				? tab.shortDescription : tab.description;
+			const label = counts.get(tab.title)! > 1 && description.length > 0 ? `${tab.title} - ${description}` : tab.title;
 			this.labels.set(tab, tab === this.previewEditor ? `PREVIEW: ${label}` : label);
 		}
 		this.emitChanged();
