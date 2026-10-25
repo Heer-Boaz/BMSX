@@ -4,6 +4,7 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
+import { clamp } from '../../../../machine/ts/common/clamp';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import { inputFocus } from '../../../input/focus';
@@ -63,9 +64,12 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		private readonly frameNavigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
 		super();
+		this.focusTarget.canFocus = () => this.hasInput && (this.input.liveVisible ? this.input.live : this.input.tree).layout.visibleRowCount > 0;
 		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
+		this.actions.focusTarget.canFocus = () => this.hasInput && this.input.actionBar.bounds.left < this.input.actionBar.bounds.right
+			&& this.input.actionBar.bounds.top < this.input.actionBar.bounds.bottom;
 		this.actions.onDidOpenOverflow = lifetime => {
 			const input = this.input;
 			input.running = false; this.pointer.hideFeedback(); this.actionTooltip.hide();
@@ -124,6 +128,11 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	public override get runtimeControlContext() { return this.input.liveVisible ? this.focusTarget : undefined; }
 	public override setRuntimeCaptureRunning(running: boolean): void { if (this.input.liveVisible) this.input.running = running; }
 	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
+	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.update(); }
+	public override focus(): void {
+		if (this.focusTarget.canFocus!()) this.focusTarget.focus();
+		else this.actions.focusTarget.focus();
+	}
 	public override clearInput(): void { this.input.running = false; this.input.invalidateProjection(); this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); super.clearInput(); }
 	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
 	private selected() { return this.input.liveVisible ? undefined : this.input.tree.rows[this.input.tree.selectionIndex]?.element; }
@@ -154,16 +163,27 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		let secondary = 0;
 		for (const item of WORKBENCH_MENUS['luaProgram.context']) if (item.type === 'separator' || this.commands.isEnabled(item.command, this.focusTarget)) input.secondaryActions[secondary++] = item;
 		input.secondaryActions.length = secondary;
-		const actionLeft = Math.min(input.layout.left + this.headerNaturalWidth + 12, input.layout.right - 8 - Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, input.layout.rowHeight + 4));
-		layoutWorkbenchActionBar(input.actionBar, input.layout.right - 4, input.layout.top, input.layout.top + input.layout.rowHeight + 4, measureText, editorViewState.font.renderFont(), actionLeft);
+		const left = clamp(input.layout.left + 4, input.layout.left, input.layout.right), right = clamp(input.layout.right - 4, left, input.layout.right);
+		const actionLeft = clamp(input.layout.left + this.headerNaturalWidth + 12, left, Math.max(left, right - 4 - Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, input.layout.rowHeight + 4)));
+		layoutWorkbenchActionBar(input.actionBar, right, input.layout.top, Math.min(input.layout.bottom, input.layout.top + input.layout.rowHeight + 4), measureText, editorViewState.font.renderFont(), actionLeft);
 		const headerWidth = input.actionBar.bounds.left - input.layout.left - 8;
 		if (changed || this.headerWidth !== headerWidth) {
 			this.headerSource = header; this.headerLive = input.liveVisible; this.headerWidth = headerWidth; this.headerFont = editorViewState.font;
 			this.headerLabel = truncateMeasuredText(input.liveVisible ? `${header} / RUNTIME` : header, headerWidth, measureTextRange);
 		}
-		layoutWorkbenchPropertyTree(input.liveVisible ? input.live : input.tree, editorViewState.font.renderFont(), measureTextRange,
-			input.layout.left + 4, input.layout.top + input.layout.rowHeight + 7, input.layout.right - 4, input.layout.bottom);
-		this.pointer.updateFeedback(input.liveVisible ? input.live : input.tree);
+		const tree = input.liveVisible ? input.live : input.tree;
+		layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), measureTextRange,
+			left, Math.min(input.layout.bottom, input.layout.top + input.layout.rowHeight + 7), right, input.layout.bottom);
+		if (tree.layout.visibleRowCount === 0) {
+			if (this.edit.active) this.edit.close();
+			this.pointer.clear(); this.focusTarget.release();
+		}
+		if (!this.actions.focusTarget.canFocus!()) {
+			pointerCapture.cancelTarget(this.actions);
+			pointerHover.release(this.actions);
+			this.actions.focusTarget.release();
+		}
+		this.pointer.updateFeedback(tree);
 		this.edit.update();
 		this.actions.update();
 		const hint = this.actions.tooltipItem;

@@ -30,10 +30,23 @@ export class SceneOptionEditor {
 			const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
 			control.setValue({ edit: { offset: span.start, deleteLength: span.end - span.start, text: property.sourceText },
 				fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span) });
-			control.field.readOnly = model.readOnly || !property.editable;
 			control.field.focusTarget.previous = null;
 			control.field.focusTarget.next = null;
-			if (control.field.readOnly) control.field.focusTarget.release();
+		}
+		this.updateControlAdmission(input);
+	}
+
+	public updateControlAdmission(input: SceneEditorInput): void {
+		const bounds = input.details.bounds;
+		const available = input.layout.mode !== 'outline' && input.outline.selectionIndex >= 0
+			&& bounds.left < bounds.right && bounds.top < bounds.bottom;
+		for (let index = 0; index < this.controls.length; index += 1) {
+			const control = this.controls[index];
+			control.field.readOnly = input.workingCopy.readOnly || !input.optionProperties[index].editable;
+			if (control.field.readOnly || !available) {
+				control.cancel();
+				control.field.focusTarget.release();
+			}
 		}
 	}
 
@@ -49,7 +62,8 @@ export class SceneOptionEditor {
 			format: value => value.edit.text,
 			parse: text => parseLuaFieldValueEdit(this.input!.workingCopy.buffer, this.input!.document.analysis.chunk.locations, this.input!.optionProperties[index].field, text),
 		}, value => { this.input!.workingCopy.pushEditOperations([value.edit]); }, this.beforeCommit);
-		control.field.focusTarget.canFocus = () => this.input !== undefined && this.input.layout.mode !== 'outline' && !control.field.readOnly;
+		control.field.focusTarget.canFocus = () => this.input !== undefined && this.input.layout.mode !== 'outline' && this.input.outline.selectionIndex >= 0
+			&& this.input.details.bounds.left < this.input.details.bounds.right && this.input.details.bounds.top < this.input.details.bounds.bottom && !control.field.readOnly;
 		control.field.focusTarget.registerCommand('sceneEditor.details', this.sectionCommands.details);
 		control.field.focusTarget.registerCommand('sceneEditor.outline', this.sectionCommands.outline);
 		this.unbindFocus.push(control.field.focusTarget.onDidFocus(() => this.reveal(this.input!.optionProperties[index])));

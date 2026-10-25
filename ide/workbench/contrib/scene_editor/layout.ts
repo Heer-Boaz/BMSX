@@ -1,4 +1,5 @@
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
+import { clamp } from '../../../../machine/ts/common/clamp';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { write_rect_bounds } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
@@ -52,10 +53,12 @@ export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boole
 		const caption = input.sourceCaption;
 		const iconWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, rowHeight);
 		const actionWidth = mode === 'split' ? iconWidth : iconWidth * 2 + WORKBENCH_ACTION_BAR_ITEM_SPACING;
-		const actionLeft = Math.min(layout.left + measureText(caption) + PADDING * 3, layout.right - PADDING - actionWidth);
-		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + rowHeight, measureText, editorViewState.font.renderFont(), actionLeft);
+		const left = clamp(layout.left + PADDING, layout.left, layout.right), right = clamp(layout.right - PADDING, left, layout.right);
+		const actionLeft = clamp(layout.left + measureText(caption) + PADDING * 3, left, Math.max(left, right - actionWidth));
+		const actionBottom = Math.min(layout.bottom, layout.top + rowHeight);
+		layoutWorkbenchActionBar(input.actionBar, right, layout.top, actionBottom, measureText, editorViewState.font.renderFont(), actionLeft);
 		input.sourceText = truncateTextToWidth(caption, input.actionBar.bounds.left - layout.left - PADDING * 2);
-		write_rect_bounds(layout.sourceBounds, layout.left + PADDING, layout.top, input.actionBar.bounds.left - PADDING, layout.top + rowHeight);
+		write_rect_bounds(layout.sourceBounds, left, layout.top, Math.max(left, input.actionBar.bounds.left - PADDING), actionBottom);
 		layout.outlineTitle = mode === 'details' ? '' : 'Scenes';
 		layout.detailsTitle = mode === 'outline' ? '' : 'Details';
 		if (mode === 'outline') input.details.layout(layout.left, contentTop, layout.left, contentTop, input.details.contentHeight);
