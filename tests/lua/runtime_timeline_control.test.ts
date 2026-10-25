@@ -98,19 +98,36 @@ test('available paused transport does not request Timeline; explicit reveal, hid
 	timeline.hide(); assert.equal(inputFocus.target, sibling, 'hiding an unfocused part cannot steal another client');
 	timeline.focus(); timeline.setContext(undefined, undefined);
 	assert.equal(timeline.available, false); assert.equal(timeline.requested, true); assert.equal(timeline.visible, false);
+	assert.equal(timeline.canHide, true, 'unavailable presentation does not revoke the retained view command');
 	timeline.setContext(content, transport);
 	assert.equal(timeline.visible, true, 'part availability does not erase retained explicit view intent');
+	timeline.setContext(undefined, undefined); timeline.hide(); timeline.setContext(content, transport);
+	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
 });
 
-test('actual review reveals Timeline without explicit intent; Present retires the row before height publication', async t => {
+test('recorded review never overrides Timeline visibility intent, and Present does not close an explicitly requested view', async t => {
 	const f = await fixture(t), { timeline, content, transport, navigation } = f;
 	await f.settle(navigation.step(1, 8));
 	assert.equal(timeline.visible, false, 'paused live execution still does not request chrome');
 	await f.settle(navigation.step(-1, 2));
 	timeline.setContext(content, transport); timeline.update();
-	assert.equal(timeline.visible, true); assert.equal(timeline.requested, false); assert.equal(timeline.canHide, false);
+	assert.equal(f.rewind.active, true);
+	assert.equal(timeline.visible, false); assert.equal(timeline.requested, false); assert.equal(timeline.height, 0);
+	timeline.focus();
+	assert.equal(timeline.canHide, true);
+	const position = f.rewind.positionCycles, cycles = f.runtime.machine.scheduler.nowCycles;
+	timeline.hide();
+	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false); assert.equal(timeline.height, 0);
+	const measure = t.mock.method(editorViewState.font.renderFont(), 'measure');
+	for (let frameIndex = 0; frameIndex < 1000; frameIndex++) { timeline.setContext(content, transport); timeline.update(); }
+	assert.equal(measure.mock.callCount(), 0, 'hidden history review does not arrange a transport row');
+	assert.equal(f.rewind.active, true); assert.equal(f.rewind.positionCycles, position);
+	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles);
+	timeline.focus();
 	await f.settle(navigation.finishReview('present'));
 	timeline.setContext(content, transport);
+	assert.equal(timeline.requested, true); assert.equal(timeline.visible, true);
+	timeline.hide();
 	assert.equal(timeline.visible, false); assert.equal(timeline.height, 0);
 	assert.equal(f.execution.paused, true, 'ending review does not imply resuming gameplay');
 });
@@ -121,34 +138,35 @@ test('hiding explicit intent preserves a pending and owned slider seek until the
 	timeline.focus(); timeline.update(); inputFocus.moveFocus(false);
 	assert.equal(inputFocus.target!.parent!.scope, timeline.focusScope, 'Tab entered the actual range control');
 	inputFocus.handleKeyboard(new KeyInputEvent('Home', KeyModifier.none));
-	assert.equal(timeline.canHide, false, 'queued range intent has physical navigation authority');
+	assert.equal(timeline.canHide, true, 'physical navigation does not own view visibility');
 	const cancel = t.mock.method(navigation, 'cancel');
 	timeline.hide();
-	assert.equal(timeline.requested, false); assert.equal(timeline.visible, true);
+	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false); assert.equal(timeline.height, 0);
 	timeline.update();
 	const operation = navigation.active!;
 	assert.equal(operation.request.kind, 'seek'); assert.equal(timeline.canHide, false);
 	timeline.hide(); assert.equal(cancel.mock.callCount(), 0, 'presentation changes never cancel an owned seek');
 	assert.equal((await f.settle(operation)).status, 'completed');
-	timeline.update(); assert.equal(timeline.visible, true, 'selected recorded history owns the review row');
+	timeline.update(); assert.equal(timeline.visible, false, 'selected recorded history cannot reopen a hidden view');
 	await f.settle(navigation.finishReview('present'));
 	timeline.setContext(content, transport);
 	assert.equal(timeline.visible, false); assert.equal(inputFocus.target, content);
 	assert.equal(cancel.mock.callCount(), 0);
 });
 
-test('auto-hidden Timeline retires only an invoking control popup and returns focus through the owning pane', async t => {
+test('hiding Timeline retires only an invoking control popup and returns focus through the owning pane', async t => {
 	const f = await fixture(t), { timeline, navigation, menu, content, transport, commands } = f;
 	await f.settle(navigation.step(1, 8)); await f.settle(navigation.step(-1, 2));
-	timeline.setContext(content, transport); timeline.focus(); timeline.update(); timeline.hide();
+	timeline.setContext(content, transport); timeline.focus(); timeline.update();
 	const actions = inputFocus.target!;
 	menu.show(0, 0, [{ type: 'command', command: 'pause' }], commands,
 		{ invocationOrigin: actions, returnFocus: actions, commandTarget: content, selectFirst: true });
 	assert.equal(menu.visible, true);
-	await f.settle(navigation.finishReview('present'));
-	timeline.setContext(content, transport);
+	timeline.hide();
 	assert.equal(menu.visible, false); assert.equal(timeline.visible, false); assert.equal(inputFocus.target, content);
 	assert.equal(f.focusReturns(), 1);
+	assert.equal(f.rewind.active, true, 'hiding chrome does not accept or abandon the selected history');
+	await f.settle(navigation.finishReview('present')); timeline.setContext(content, transport);
 
 	timeline.focus(); timeline.update();
 	const sibling = inputFocus.createTarget(null, timeline.focusScope); sibling.bindKeyboard(() => {}); sibling.focus();
@@ -187,5 +205,5 @@ test('concrete client context changes on the same physical transport retain queu
 	timeline.setContext(content, transport);
 	assert.equal(navigation.active, operation); assert.equal(cancel.mock.callCount(), 0);
 	assert.equal((await f.settle(operation)).status, 'completed');
-	timeline.update(); assert.equal(timeline.visible, true); assert.equal(timeline.canHide, false);
+	timeline.update(); assert.equal(timeline.visible, true); assert.equal(timeline.canHide, true);
 });

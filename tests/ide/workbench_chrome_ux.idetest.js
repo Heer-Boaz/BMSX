@@ -10,6 +10,13 @@ const click = async (x, y) => {
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 };
 const capture = async label => { await t.frames(2); t.log(`VISUAL ${label}`); t.capture(label); };
+const hideTimelineContext = async input => {
+	const x = (input.layout.left + input.layout.right) / 2;
+	const y = input.layout.bottom + input.layout.font.lineHeight / 2 + 2;
+	t.controlInput([{ type: 'pointer', x, y }, { type: 'button', button: 'secondary', down: true }]); await t.frames(1);
+	t.controlInput([{ type: 'button', button: 'secondary', down: false }]); await t.frames(2);
+	await press('Home'); await press('Enter'); await t.frames(3);
+};
 
 await t.waitForCart(); await t.frames(90); t.openLuaSource('cart.lua'); await t.frames(3);
 let input = t.activeWorkbenchTab();
@@ -118,17 +125,16 @@ for (const font of ['tiny', 'msx']) {
 	await capture(`chrome-timeline-${font}-ordinary-paused`);
 	t.command('runtime.focusTimeline'); await t.frames(3);
 	await capture(`chrome-timeline-${font}-explicit`);
-	// The last Timeline action sits immediately below the published primary client.
-	// Calibrate this actual Close hit before using it against mandatory review.
-	await click(actor.layout.right - 6, actor.layout.bottom + 3);
+	// Timeline visibility belongs to its actual strip context menu, not an X.
+	await hideTimelineContext(actor);
 	const selectedMember = actor.outline.rows[actor.outline.selectionIndex].element.node;
 	const followingMember = actor.outline.rows[actor.outline.selectionIndex + 1].element.node;
 	await press('ArrowDown');
 	t.assert(actor.outline.rows[actor.outline.selectionIndex].element.node === followingMember,
-		'the actual Timeline Close action did not return keyboard focus to the Actor tree');
+		'the actual Timeline context Hide did not return keyboard focus to the Actor tree');
 	await press('ArrowUp');
 	t.assert(actor.outline.rows[actor.outline.selectionIndex].element.node === selectedMember,
-		'Timeline Close changed the selected Actor member');
+		'Timeline context Hide changed the selected Actor member');
 	t.assert(transport.runtime.machine.scheduler.nowCycles === pausedCycles && actor.actorHashId === actorHashId && !actor.running,
 		'revealing or hiding the timeline changed the physical target, position or capture latch');
 	await capture(`chrome-timeline-${font}-explicitly-closed`);
@@ -141,10 +147,17 @@ for (const font of ['tiny', 'msx']) {
 	t.assert(transport.navigation.active === undefined && transport.rewind.active && !transport.rewind.seeking
 		&& transport.runtime.machine.scheduler.nowCycles === earliestCycles && actor.actorHashId === actorHashId,
 		'the actual timeline slider did not review the selected target at its retained history boundary');
-	await click(actor.layout.right - 6, actor.layout.bottom + 3);
-	t.assert(transport.rewind.active && transport.runtime.machine.scheduler.nowCycles === earliestCycles,
-		'the blocked timeline Hide action committed, cancelled or resumed the active historical review');
-	await capture(`chrome-timeline-${font}-review-hide-blocked`);
+	const shownBottom = actor.layout.bottom;
+	await hideTimelineContext(actor);
+	t.assert(actor.layout.bottom > shownBottom && transport.rewind.active
+		&& transport.runtime.machine.scheduler.nowCycles === earliestCycles,
+		'the actual context Hide failed or committed, cancelled or resumed historical review');
+	await capture(`chrome-timeline-${font}-review-hidden`);
+	t.command('runtime.focusTimeline'); await t.frames(3);
+	t.assert(actor.layout.bottom === shownBottom && transport.rewind.active
+		&& transport.runtime.machine.scheduler.nowCycles === earliestCycles,
+		'revealing Timeline lost the retained historical position');
+	await capture(`chrome-timeline-${font}-review-reshown`);
 	t.command('runtime.present');
 	for (let frame = 0; frame < 400 && (transport.navigation.active !== undefined || transport.rewind.active || transport.rewind.seeking); frame++) await t.frames(1);
 	await t.frames(3);
@@ -155,7 +168,7 @@ for (const font of ['tiny', 'msx']) {
 		&& !model.dirty && t.sourceState().currentBlua32Media === executable,
 		'timeline presentation or review replaced the Actor input or canonical installed source');
 	await capture(`chrome-timeline-${font}-returned-explicit`);
-	t.command('runtime.hideTimeline'); await t.frames(3);
+	await hideTimelineContext(actor);
 	await press('Home');
 	const nextMember = actor.outline.rows[1].element.node;
 	await press('ArrowDown');

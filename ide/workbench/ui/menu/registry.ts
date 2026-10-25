@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.view'
 	| 'menubar.tools';
 
-export type WorkbenchContextMenuId = 'play.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'play.context' | 'gamePanel.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
 export type WorkbenchActionMenuId = 'buildLog.title' | 'window.title' | 'play.title' | 'animation.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
@@ -86,7 +86,10 @@ const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'play.title': [{ type: 'command', command: 'play.stop' }, { type: 'command', command: 'play.more' }],
+	'gamePanel.context': [{ type: 'command', command: 'runtime.toggleTimeline' }],
 	'play.context': [
+		{ type: 'command', command: 'runtime.toggleTimeline' },
+		{ type: 'separator' },
 		{ type: 'command', command: 'play.actors' },
 		{ type: 'command', command: 'play.reset' },
 		{ type: 'command', command: 'play.source' },
@@ -352,7 +355,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'pause' },
 		{ type: 'command', command: 'stepFrameBack' },
 		{ type: 'command', command: 'stepFrame' },
-		{ type: 'command', command: 'runtime.focusTimeline' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'debugEvaluation' },
 		{ type: 'command', command: 'debugContinue' },
@@ -369,6 +371,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'resources' },
 		{ type: 'command', command: 'problems' },
+		{ type: 'command', command: 'runtime.toggleTimeline' },
 		{ type: 'command', command: 'terminal' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'assistant' },
@@ -447,7 +450,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'stepFrame', icon: 'stepForward' },
 		{ type: 'command', command: 'runtime.resume', icon: 'accept' },
 		{ type: 'command', command: 'runtime.present', icon: 'present' },
-		{ type: 'command', command: 'runtime.hideTimeline', icon: 'close' },
 	],
 	'editorTabs.title': [
 		{ type: 'command', command: 'tabs.scrollLeft' },

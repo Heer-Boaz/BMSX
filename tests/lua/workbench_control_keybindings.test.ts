@@ -245,6 +245,94 @@ test('the real Menu icon remains pointer-accessible with ordinary, overflowing a
 	}
 });
 
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} game chrome and Timeline menus retain visibility intent without stealing guest secondary input`, t => {
+	const f = menuFixture(t), game = new GameViewInput();
+	openEditorTab(f.editor.editorPanes, game); configureFontVariant(f.host.clock, variant, null); f.editor.update(0);
+	const content = inputFocus.target!, version = f.model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;
+	const x = game.layout.left + 1, y = game.layout.top + 1;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
+	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
+		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 }); f.editor.update(0);
+	const menu = f.editor.contextMenu, timeline = f.editor.runtimeTimeline;
+	assert.equal(menu.visible, true); assert.ok(menu.invocationOrigin === content && menu.returnFocus === content);
+	assert.equal(menu.model.rows[0].command, 'runtime.toggleTimeline'); assert.equal(menu.model.rows[0].enabled, true);
+	f.key('Escape'); f.key('Escape', KeyModifier.none, false); assert.ok(inputFocus.target === content);
+	f.key('ContextMenu'); f.key('ContextMenu', KeyModifier.none, false);
+	assert.equal(menu.visible, true); assert.ok(menu.invocationOrigin === content);
+	f.key('Home'); f.key('Home', KeyModifier.none, false); f.key('Enter'); f.key('Enter', KeyModifier.none, false);
+	assert.equal(timeline.requested, true); assert.equal(timeline.visible, true);
+	const timelineFocus = inputFocus.target!;
+	f.key('ContextMenu'); f.key('ContextMenu', KeyModifier.none, false);
+	assert.equal(menu.visible, true); assert.ok(menu.invocationOrigin === timelineFocus && menu.returnFocus === timelineFocus);
+	assert.equal(menu.model.rows[0].active, true);
+	f.key('Escape'); f.key('Escape', KeyModifier.none, false); assert.ok(inputFocus.target === timelineFocus);
+	f.key('ContextMenu'); f.key('ContextMenu', KeyModifier.none, false);
+	f.key('Home'); f.key('Home', KeyModifier.none, false); f.key('Enter'); f.key('Enter', KeyModifier.none, false);
+	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false); assert.ok(inputFocus.target === content);
+	const frameX = (game.frameBounds.left + game.frameBounds.right) / 2, frameY = (game.frameBounds.top + game.frameBounds.bottom) / 2;
+	f.editor.dispatchPointer({ x: frameX, y: frameY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
+	f.editor.dispatchPointer({ x: frameX, y: frameY, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
+	const guest = inputFocus.target!, binding = guest.guestInput;
+	assert.ok(binding !== undefined);
+	f.editor.dispatchPointer({ x: frameX, y: frameY, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
+	assert.equal(menu.visible, false); assert.ok(pointerCapture.guestBinding === binding && inputFocus.target === guest);
+	f.editor.dispatchPointer({ x: frameX, y: frameY, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
+		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
+	assert.equal(menu.visible, false); assert.ok(inputFocus.target === guest);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.version, version); assert.equal(f.model.canUndo, false);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+test('a requested primary GamePanel supplies Timeline beside Source without coupling its transport to admitted preview geometry', t => {
+	const f = menuFixture(t), timeline = f.editor.runtimeTimeline, version = f.model.version;
+	const cycles = f.host.runtime.machine.scheduler.nowCycles;
+	f.editor.updateViewport({ width: 700, height: 288 });
+	f.editor.commands.execute('gameView.togglePanel'); f.editor.update(0);
+	assert.equal(f.editor.gamePanel.visible, true); assert.equal(f.editor.gamePanel.enabled, true);
+	assert.ok(f.editor.gamePanel.runtimeTransport === f.editor.commands.transport);
+	assert.ok(f.editor.gamePanel.runtimeTransport!.navigation === f.editor.commands.transport.navigation);
+	assert.equal(timeline.available, true); assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
+	const bounds = getWorkbenchEditorBounds(), x = bounds.right + 6, y = bounds.top + 1;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
+	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
+		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 }); f.editor.update(0);
+	assert.equal(f.editor.contextMenu.visible, true);
+	assert.equal(f.editor.contextMenu.model.rows[0].command, 'runtime.toggleTimeline');
+	assert.equal(f.editor.contextMenu.model.rows[0].enabled, true);
+	f.key('Home'); f.key('Home', KeyModifier.none, false); f.key('Enter'); f.key('Enter', KeyModifier.none, false);
+	assert.equal(timeline.requested, true); assert.equal(timeline.visible, true);
+	// The offered height withholds the preview; it must not alternate the logical
+	// target and Timeline inset on subsequent composition passes.
+	f.editor.updateViewport({ width: 700, height: 100 });
+	for (let frame = 0; frame < 20; frame++) {
+		f.editor.update(0);
+		assert.equal(f.editor.gamePanel.visible, false); assert.equal(f.editor.gamePanel.enabled, true);
+		assert.equal(timeline.available, true); assert.equal(timeline.visible, true);
+		assert.equal(editorChromeState.runtimeTimelineHeight, timeline.height);
+		assert.ok(f.editor.gamePanel.runtimeTransport === f.editor.commands.transport);
+	}
+	f.editor.commands.execute('runtime.toggleTimeline'); f.editor.update(0);
+	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
+	f.editor.updateViewport({ width: 700, height: 288 }); f.editor.update(0);
+	assert.equal(f.editor.gamePanel.visible, true); assert.equal(timeline.visible, false);
+	const game = new GameViewInput(); openEditorTab(f.editor.editorPanes, game); f.editor.update(0);
+	assert.equal(f.editor.gamePanel.enabled, true); assert.equal(f.editor.gamePanel.visible, false);
+	assert.equal(f.editor.gamePanel.runtimeControlContext, undefined); assert.equal(f.editor.gamePanel.runtimeTransport, undefined);
+	assert.ok(f.editor.editorPanes.activePane!.runtimeTransport === f.editor.commands.transport);
+	assert.equal(timeline.available, true, 'the selected Game view owns its own target rather than borrowing a hidden companion');
+	const source = getTabs().find(tab => tab.kind === 'code_editor')!;
+	setActiveTab(f.editor.editorPanes, source.id); f.editor.update(0);
+	f.editor.commands.execute('gameView.closePanel'); f.editor.update(0);
+	assert.equal(timeline.available, false); assert.equal(timeline.requested, false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.version, version); assert.equal(f.model.canUndo, false);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
 function fixture(t: TestContext, scope = new InputFocusScope(Symbol('control')), focusReturn: InputFocusTarget | null = null) {
 	const parent = inputFocus.createTarget(focusReturn, scope);
 	parent.bindKeyboard(() => {});

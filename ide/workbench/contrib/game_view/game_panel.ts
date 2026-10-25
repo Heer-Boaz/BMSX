@@ -24,6 +24,8 @@ import { editorChromeState } from '../../ui/chrome_state';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { WorkbenchSplitView } from '../../ui/split_view';
 import { GameInputControl } from './game_input';
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
 const SPLIT_GAP = 4;
 
@@ -46,8 +48,16 @@ export class GamePanel {
 	private minimumWidth = 0;
 	private minimumHeight = 0;
 	private headerBottom = 0;
+	/** The requested primary scanout part retains its physical target while presentation is constrained. */
+	public get runtimeControlContext() {
+		return this.enabled && this.panes.activePane?.companionGameMinimumWidth !== undefined ? this.focusTarget : undefined;
+	}
+	public get runtimeTransport() {
+		return this.enabled && this.panes.activePane?.companionGameMinimumWidth !== undefined ? this.commands.transport : undefined;
+	}
 
-	public constructor(private readonly panes: EditorPanes, commands: IdeCommandController, recipient: InputRecipient, presenter: VideoPresenter) {
+	public constructor(private readonly panes: EditorPanes, private readonly commands: IdeCommandController,
+		private readonly contextMenu: ContextMenuController, recipient: InputRecipient, presenter: VideoPresenter) {
 		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focusTarget.focus());
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {
@@ -61,6 +71,9 @@ export class GamePanel {
 		this.gameInput.focusTarget.previous = this.actions.focusTarget;
 		this.gameInput.focusTarget.next = this.focusTarget;
 		this.focusTarget.previous = this.gameInput.focusTarget;
+		this.focusTarget.canFocus = () => this.visible;
+		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.visible,
+			run: () => this.openContextMenu(this.bounds.left, this.bounds.top, true) });
 	}
 
 	public toggle(): void { if (this.enabled) this.close(); else this.enabled = true; }
@@ -136,14 +149,24 @@ export class GamePanel {
 
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		if (!this.visible) return false;
+		const inside = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds);
+		if (inside && (snapshot.justPressedButtons & PointerButton.Secondary) !== 0
+			&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.frame)) {
+			this.openContextMenu(snapshot.viewportX, snapshot.viewportY, false);
+			return true;
+		}
 		if (this.sash.handlePointer(snapshot) || this.actions.handlePointer(snapshot)) {
 			return true;
 		}
-		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) return false;
+		if (!inside) return false;
 		if (this.gameInput.handlePointer(snapshot)) return true;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
 			this.focusTarget.focus();
 		}
 		return true;
+	}
+	private openContextMenu(x: number, y: number, keyboard: boolean): void {
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['gamePanel.context'], this.commands,
+			{ invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget.commandContext, selectFirst: keyboard });
 	}
 }

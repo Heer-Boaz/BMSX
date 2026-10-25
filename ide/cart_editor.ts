@@ -531,7 +531,7 @@ export class RuntimeCartEditor implements CartEditor {
 			lua_program: () => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, workArea),
 			behavior_lens: () => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, frameNavigation, this.surfaces, this.paneSurface, workArea),
 			actor_lab: () => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea),
-			game_view: () => new GameViewEditorPane(this.commands, runtime, input, presenter),
+			game_view: () => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter),
 			cart_map: () => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, this.paneSurface, workArea),
 			scene_editor: () => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, this.paneSurface, workArea),
 			scenario_lab: () => new ScenarioLabEditorPane(
@@ -545,7 +545,7 @@ export class RuntimeCartEditor implements CartEditor {
 			if (this.quickInput.visible && this.editorOriginRetired(this.quickInput.invocationOrigin)) this.quickInput.hide(false);
 			if (this.contextMenu.visible && this.editorOriginRetired(this.contextMenu.invocationOrigin)) this.contextMenu.hide(false);
 		});
-		this.gamePanel = new GamePanel(this.editorPanes, this.commands, input, presenter);
+		this.gamePanel = new GamePanel(this.editorPanes, this.commands, this.contextMenu, input, presenter);
 		this.gamePanel.focusScope.surfaceScope = this.chromeScope;
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.editorPanes, this.quickInput, this.clipboard);
@@ -835,7 +835,9 @@ export class RuntimeCartEditor implements CartEditor {
 		this.menubar.update();
 		layoutTabBar(this.chromeRenderContext);
 		this.tabBar.update();
-		this.runtimeTimeline.setContext(this.editorPanes.activePane?.runtimeControlContext, this.editorPanes.activePane?.runtimeTransport);
+		const pane = this.editorPanes.activePane;
+		if (pane?.runtimeControlContext !== undefined) this.runtimeTimeline.setContext(pane.runtimeControlContext, pane.runtimeTransport);
+		else this.runtimeTimeline.setContext(this.gamePanel.runtimeControlContext, this.gamePanel.runtimeTransport);
 		editorChromeState.runtimeTimelineHeight = this.runtimeTimeline.height;
 		let layoutChanged = refreshWorkbenchLayout();
 		if (this.resourcePanel.refresh()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;

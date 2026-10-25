@@ -24,6 +24,8 @@ import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control'
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { describePlaySession, type PlayDetailsProperty } from './details';
+import { point_in_rect } from '../../../../machine/ts/common/rect';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 
 /** A completed bitmap and physical input recipient from the same independent Play target. */
 export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
@@ -36,7 +38,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	private titleSource = '';
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly details = new WorkbenchPropertyInspector<PlayDetailsProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
-	public constructor(commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
+	public constructor(private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		navigation: EditorNavigationController) {
 		super();
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
@@ -53,6 +55,9 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 					{ row: item.location!.line - 1, startColumn: item.location!.column - 1, endColumn: item.location!.column - 1 }),
 			});
 		} });
+		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput
+			&& this.contentBounds.left < this.contentBounds.right && this.contentBounds.top < this.contentBounds.bottom,
+			run: () => this.openContextMenu(this.contentBounds.left, this.contentBounds.top, true) });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => this.session?.transport.playbackEnabled === true,
 			run: () => { this.session!.transport.togglePlayback(); } });
 		for (const [command, direction] of [['stepFrame', 1], ['stepFrameBack', -1]] as const) {
@@ -100,6 +105,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 		else this.gameInput?.clearInput();
 		const stop = session?.debugger.source.stop;
 		const state = stop !== undefined ? stop.reason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step'
+			: session?.rewind.active === true ? 'history review'
 			: session?.ready === true && session.execution.paused ? 'paused' : this.input.handle.state;
 		const tick = session === undefined ? -1 : session.target.runtime.frameScheduler.lastTickSequence;
 		if (state !== this.state || tick !== this.tick) {
@@ -124,9 +130,19 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number,): boolean {
 		if (this.details.visible) return this.details.handlePointer(snapshot);
+		if (snapshot.valid && snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Secondary) !== 0
+			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.contentBounds)
+			&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.frame)) {
+			this.openContextMenu(snapshot.viewportX, snapshot.viewportY, false);
+			return true;
+		}
 		if (this.actions.handlePointer(snapshot)) return true;
 		if (this.gameInput?.handlePointer(snapshot)) return false;
 		return super.handleViewPointer(snapshot, justPressed, now);
+	}
+	private openContextMenu(x: number, y: number, keyboard: boolean): void {
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['play.context'], this.commands,
+			{ invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget, selectFirst: keyboard });
 	}
 	public handleKeyboard(): void {}
 	public handleWheel(event: WheelInputSnapshot): void {

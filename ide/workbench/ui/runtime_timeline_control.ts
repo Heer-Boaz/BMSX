@@ -17,9 +17,12 @@ import { WorkbenchTooltip } from './tooltip';
 import type { WorkbenchSurfaceService } from '../services/windows/service';
 import type { WorkbenchSurface } from '../services/windows/model';
 import type { RectBounds } from '../../../machine/ts/common/rect';
+import { point_in_rect } from '../../../machine/ts/common/rect';
 import { measureText, measureTextRange } from '../../editor/common/text/layout';
 import { editorCommandTitle } from '../../commands/catalog';
 import type { ContextMenuController } from '../services/context_menu/controller';
+import { WORKBENCH_MENUS } from './menu/registry';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 
 /** Docked host timeline. Ordinary controls feed the existing finite navigation owner. */
 export class RuntimeTimelineControl {
@@ -45,18 +48,16 @@ export class RuntimeTimelineControl {
 			value => this.requestSeek(value), () => { this.requestedCycles = undefined; });
 		this.actions.focusTarget.next = this.slider.focusTarget;
 		this.slider.focusTarget.previous = this.actions.focusTarget;
+		for (const target of [this.actions.focusTarget, this.slider.focusTarget]) target.registerCommand('contextMenu', {
+			isEnabled: () => this.presented,
+			run: () => this.openContextMenu(this.layout.bounds.left, this.layout.bounds.top, target, true),
+		});
 	}
 	public get available(): boolean { return this.context !== undefined; }
 	public get requested(): boolean { return this.requestedValue; }
 	public get height(): number { return this.presented ? RuntimeTimelineLayout.height(editorViewState.font.renderFont()) : 0; }
 	public get visible(): boolean { return this.presented; }
-	/** Review decisions remain available until their physical navigation has settled. */
-	public get canHide(): boolean { return this.available && this.requestedValue && !this.reviewRequired; }
-	private get reviewRequired(): boolean {
-		return this.transport!.rewind.active || this.requestedCycles !== undefined
-			|| this.seekOperation !== undefined && this.seekOperation.result === undefined
-				&& this.transport!.navigation.active === this.seekOperation;
-	}
+	public get canHide(): boolean { return this.requestedValue; }
 	public focus(): void {
 		if (!this.available) return;
 		this.requestedValue = true;
@@ -81,11 +82,11 @@ export class RuntimeTimelineControl {
 			}
 			this.context = context; this.transport = transport;
 		}
-		// Composition publishes height before update; review can end on an unchanged target.
+		// Composition publishes the requested view's admitted height before update.
 		this.updatePresentation();
 	}
 	private updatePresentation(): void {
-		const visible = this.available && (this.requestedValue || this.reviewRequired);
+		const visible = this.available && this.requestedValue;
 		if (visible === this.presented) return;
 		if (visible) {
 			this.presented = true;
@@ -155,7 +156,18 @@ export class RuntimeTimelineControl {
 		else this.tooltip.hide();
 	}
 	public handlePointer(snapshot: PointerSnapshot): boolean {
-		return this.presented && (this.slider.handlePointer(snapshot) || this.actions.handlePointer(snapshot));
+		if (!this.presented) return false;
+		if (snapshot.valid && snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Secondary) !== 0
+			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layout.bounds)) {
+			this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.actions.focusTarget, false);
+			return true;
+		}
+		return this.slider.handlePointer(snapshot) || this.actions.handlePointer(snapshot);
+	}
+	private openContextMenu(x: number, y: number, origin: InputFocusTarget, keyboard: boolean): void {
+		this.tooltip.hide();
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['gamePanel.context'], this.commands,
+			{ invocationOrigin: origin, returnFocus: origin, commandTarget: this.context!, selectFirst: keyboard });
 	}
 	public draw(): void {
 		if (this.presented) drawRuntimeTimeline(this.layout, this.actionState, this.range,

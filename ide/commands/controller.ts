@@ -213,6 +213,10 @@ export class IdeCommandController {
 				return;
 			case 'runtime.focusTimeline': this.editor.runtimeTimeline.focus(); return;
 			case 'runtime.hideTimeline': this.editor.runtimeTimeline.hide(); return;
+			case 'runtime.toggleTimeline':
+				if (this.editor.runtimeTimeline.requested) this.editor.runtimeTimeline.hide();
+				else this.editor.runtimeTimeline.focus();
+				return;
 			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
 			case 'runtime.pause':
 				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(false);
@@ -395,6 +399,7 @@ export class IdeCommandController {
 				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
 			case 'runtime.focusTimeline': return this.editor.isActive && this.editor.runtimeTimeline.available;
 			case 'runtime.hideTimeline': return this.editor.isActive && this.editor.runtimeTimeline.canHide;
+			case 'runtime.toggleTimeline': return this.editor.isActive && (this.editor.runtimeTimeline.available || this.editor.runtimeTimeline.requested);
 			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
 			case 'runtime.pause': return this.selectedTransport.playbackEnabled;
 			case 'runtime.present':
@@ -482,6 +487,7 @@ export class IdeCommandController {
 
 	public isActive(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'runtime.toggleTimeline': return this.editor.runtimeTimeline.requested;
 			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
 			case 'romInspector.hold': {
 				const input = getActiveTab();
