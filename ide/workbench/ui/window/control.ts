@@ -23,6 +23,7 @@ export type WorkbenchWindowOptions = {
 	readonly actionBar: WorkbenchActionBarState;
 	readonly lifetimeOwner: WorkbenchSurface;
 	readonly presentationParent?: WorkbenchSurface;
+	/** Current concrete return control within the same owning focus scope. */
 	readonly focusReturn: InputFocusTarget;
 	/** Borrowed layout extent; its owner updates this same rectangle in place. */
 	readonly workArea: Readonly<RectBounds>;

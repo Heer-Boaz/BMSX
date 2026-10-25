@@ -68,7 +68,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		input.detailsScroll = this.detailsScroll;
 		input.details!.restoreSubject(admitted ? this.detailsSubject : undefined, admitted && this.detailsLocked,
 			admitted ? this.detailsSubjectPath : '', admitted ? this.detailsSubjectName : '', admitted && this.detailsRetired);
-		input.split.resize(this.splitRatio);
+		input.split.ratio = this.splitRatio;
 	}
 
 	/** Restore scroll after the pane lays out the reacquired rows and diagram. */

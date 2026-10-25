@@ -91,6 +91,12 @@ These interaction patterns inform the view; they do not require guest tracing.
   distinguishing suffixes; the selected full identifier remains in the status
   bar. This uses the common text
   layout owner, following [VS Code's middle truncation](https://github.com/microsoft/vscode/blob/main/src/vs/base/common/strings.ts).
+- The hierarchy or graph is the primary client. Its current-font reading budget
+  and a useful game image must both fit after reserving the visible timeline;
+  otherwise the primary client receives the complete area. The withheld preview
+  and sash leave pointer admission and keyboard navigation until they fit again.
+  Reflow retains the requested split ratio, selected subject and playback mode;
+  Details remains available independently of preview visibility.
 - Follow observes only the completed history position. Missing historical
   instances are visibly unavailable and cannot receive actions; live-branch
   admission and heap replacement retire invalid bookmarks. Timeline **Scrub**
@@ -309,12 +315,11 @@ decision; this design introduces no docking or split compatibility mode.
 
 #### Placement and size
 
-Initially align Details near the lower-right of its own preview, inset by the
-existing four-logical-pixel content margin. This establishes an obvious
-relationship to Actor Lab without
-binding the window to the preview's clip. Constrain the resulting frame to the
-root work area so its titlebar actions remain reachable. If its requested size
-extends beyond the preview, it can extend over adjacent workbench content.
+Initially align Details near the lower-right of the root work area, inset by
+the existing four-logical-pixel content margin. Initial placement is independent
+of whether the game preview fits. Constrain the resulting frame to that work
+area so its titlebar actions remain reachable; the window can extend over
+adjacent workbench content rather than inheriting a pane or preview clip.
 
 Thereafter the retained requested position/size takes precedence over initial
 placement. The window may move across the root work area, including over another
@@ -399,7 +404,8 @@ separate meanings in the property content; switching fonts does not change the
 icon geometry or introduce a new capitalisation policy.
 
 Escape first cancels a local interaction or dismisses a property popup, consuming
-that key once. Otherwise Escape in Details returns focus to the Actor Lab tree.
+that key once. Otherwise Escape in Details returns focus to the current Actor
+Lab primary control: the tree or its open state graph.
 Details remains open, with subject, lock, property selection, scroll and collapse
 state unchanged. It is not a Close shortcut and does not reserve Escape while
 the game has focus. Tab traverses Details' eligible client and titlebar controls;
@@ -415,8 +421,8 @@ tree target from Details focus. Property and pin commands keep the Details
 subject as their origin.
 
 Close clears the Details open intent through the admitted close path and returns
-focus to the tree only when the Details family owned focus. It preserves the
-instance model for reopening. Source navigation, game input and runtime
+focus to that primary control only when the Details family owned focus. It
+preserves the instance model for reopening. Source navigation, game input and runtime
 transport continue through their existing owners; none depends on the window
 remaining visible.
 

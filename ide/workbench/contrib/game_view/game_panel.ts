@@ -13,7 +13,7 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
-import { layoutGameFrame } from '../../common/game_frame';
+import { GAME_FRAME_MINIMUM_WIDTH, GAME_FRAME_MINIMUM_HEIGHT, layoutGameFrame } from '../../common/game_frame';
 import { topMargin } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { drawWorkbenchSplit } from '../../render/split_view';
@@ -25,9 +25,6 @@ import { WorkbenchSplitControl } from '../../ui/split_control';
 import { WorkbenchSplitView } from '../../ui/split_view';
 import { GameInputControl } from './game_input';
 
-// A companion must show a useful image, not merely a nonzero aspect-fit result.
-const MINIMUM_FRAME_WIDTH = 160;
-const MINIMUM_FRAME_HEIGHT = 120;
 const SPLIT_GAP = 4;
 
 /** A workbench part displaying the existing scanout, never another editor or runtime. */
@@ -91,8 +88,8 @@ export class GamePanel {
 		if (minimumClientWidth !== undefined && this.minimumFont !== font) {
 			this.minimumFont = font;
 			const actionWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, font.lineHeight + 2);
-			this.minimumWidth = Math.max(MINIMUM_FRAME_WIDTH + 8, measureText('GAME') + actionWidth + 12);
-			this.minimumHeight = font.lineHeight + 14 + MINIMUM_FRAME_HEIGHT;
+			this.minimumWidth = Math.max(GAME_FRAME_MINIMUM_WIDTH + 8, measureText('GAME') + actionWidth + 12);
+			this.minimumHeight = font.lineHeight + 14 + GAME_FRAME_MINIMUM_HEIGHT;
 		}
 		// Temporary constraints change presentation, not the user's open/placement intent.
 		const visible = this.enabled && pane !== null && minimumClientWidth !== undefined

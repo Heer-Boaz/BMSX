@@ -54,7 +54,7 @@ export class AnimationInputSerializer implements EditorInputSerializer<Animation
 		input.publishModels(); this.controller.refresh(input);
 		if ('version' in state) {
 			input.activeClient = state.client;
-			input.columnSplit.resize(state.columnRatio); input.rowSplit.resize(state.rowRatio);
+			input.columnSplit.ratio = state.columnRatio; input.rowSplit.ratio = state.rowRatio;
 		}
 		if (sameSource && state.view !== undefined) { input.keys.setView(state.view.minimum, state.view.maximum); input.keys.setCursor(state.cursor); input.keys.snap = state.view.snap; }
 		return input;

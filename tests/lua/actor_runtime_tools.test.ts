@@ -10,6 +10,7 @@ import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import { ActorLabController } from '../../ide/workbench/contrib/actor_lab/controller';
+import { layoutActorLab, measureActorLab } from '../../ide/workbench/contrib/actor_lab/layout';
 import { RuntimeTransport } from '../../ide/runtime/transport';
 import { captureActorDetailsSelection } from '../../ide/workbench/contrib/actor_lab/details';
 import { ActorProjection, readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
@@ -164,6 +165,36 @@ test('Actor Lab history restores the typed member and Details after choosing ano
 	assert.equal(f.runtime.machine.cpu.luaHeap.usedBytes(), heap);
 	assert.equal(input.running, false);
 	saved.dispose(); second.dispose();
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history restores requested split intent while the preview is withheld`, t => {
+	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	controller.refresh(input);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	const font = editorViewState.font, measured = measureActorLab(font);
+	const bounds = { left: 23, top: 31, right: 923, bottom: 431 };
+	const arrange = (width: number) => {
+		bounds.right = bounds.left + width; updateFullWidthWorkbenchLayout(input.layout, bounds); layoutActorLab(input);
+	};
+	arrange(900); input.split.resize(0.55); layoutActorLab(input);
+	const primaryRight = input.layout.primaryRight, selected = controller.selected(input);
+	const saved = controller.captureSelection(input); t.after(() => saved.dispose());
+	const cycles = f.runtime.machine.scheduler.nowCycles, heap = f.runtime.machine.cpu.luaHeap.usedBytes();
+	const narrow = measured.outlineMinimumWidth + 4 + measured.previewMinimumWidth - 1;
+	arrange(narrow); assert.equal(input.layout.previewVisible, false);
+	controller.restoreSelection(input, saved, font.renderFont());
+	assert.equal(input.split.ratio, 0.55, 'restoring view intent must not apply current interactive sash limits');
+	assert.equal(controller.selected(input), selected);
+	const roundTrip = controller.captureSelection(input); t.after(() => roundTrip.dispose());
+	arrange(900); input.split.resize(0.7); layoutActorLab(input);
+	arrange(narrow); controller.restoreSelection(input, roundTrip, font.renderFont());
+	assert.equal(input.split.ratio, 0.55, 'a history round-trip while withheld retains the same requested placement');
+	arrange(900);
+	assert.equal(input.layout.previewVisible, true); assert.equal(input.layout.primaryRight, primaryRight);
+	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles); assert.equal(f.runtime.machine.cpu.luaHeap.usedBytes(), heap);
 });
 
 test('Actor Lab pin action enablement uses retained membership without guest reads or identity capture churn', t => {

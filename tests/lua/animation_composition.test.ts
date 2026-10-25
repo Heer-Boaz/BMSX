@@ -256,7 +256,7 @@ test('animation recovery restores the native cursor after the document admits it
 		const input = new AnimationEditorInput(model);
 		controller.refresh(input); controller.selectTrack(input, 1);
 		input.keys.setView(0.2, 0.8); input.keys.setCursor(0.625); input.keys.snap = false;
-		input.activeClient = 'keys'; input.columnSplit.resize(0.45); input.rowSplit.resize(0.4);
+		input.activeClient = 'keys'; input.columnSplit.ratio = 0.9; input.rowSplit.ratio = 0.1;
 		const serializer = new AnimationInputSerializer(sources, controller);
 		const restored = await serializer.deserialize(serializer.serialize(input));
 		assert.equal(restored.keys.unit, unit);
@@ -264,7 +264,8 @@ test('animation recovery restores the native cursor after the document admits it
 		assert.equal(restored.keys.range.minimum, 0.2); assert.equal(restored.keys.range.maximum, 0.8);
 		assert.equal(restored.keys.snap, false);
 		assert.equal(restored.activeClient, 'keys');
-		assert.equal(restored.columnSplit.ratio, 0.45); assert.equal(restored.rowSplit.ratio, 0.4);
+		assert.equal(restored.columnSplit.ratio, 0.9); assert.equal(restored.rowSplit.ratio, 0.1,
+			'recovery consumes saved requested intent rather than applying current interactive sash limits');
 		assert.equal(restored.workingCopy, model); assert.equal(model.undo(), null);
 		restored.dispose(); input.dispose(); editorTextModelService.clear();
 	}

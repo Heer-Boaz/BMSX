@@ -1,6 +1,6 @@
 import { WorkbenchSplitView } from '../../ui/split_view';
 import { ReadonlyEditorInput } from '../../common/editor_input';
-import type { FullWidthWorkbenchLayout } from '../../common/layout';
+import type { ActorLabLayout } from './layout';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
 import { ActorRuntimeTree } from './runtime';
@@ -47,8 +47,9 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public readonly previewBounds = create_rect_bounds();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
 	public readonly stateGraphActions = createWorkbenchActionBar('actorLab.stateGraph.title');
-	public readonly layout: FullWidthWorkbenchLayout = {
+	public readonly layout: ActorLabLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
+		primaryRight: 0, previewVisible: false,
 	};
 	public constructor(public readonly controller: ActorLabController, id: ActorLabTabId, title: string,
 		public override readonly serializable: boolean) {

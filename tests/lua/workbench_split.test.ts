@@ -81,3 +81,18 @@ test('vertical split uses its height for drag, limits and focused keyboard resiz
 	view.resize(view.defaultRatio);
 	assert.equal(view.position, 500);
 });
+
+test('requested split intent survives constrained placement while user resizing still obeys client limits', () => {
+	const view = new WorkbenchSplitView(0.4);
+	view.minimumFirstSize = 300; view.minimumSecondSize = 100;
+	view.layout(23, 31, 623, 431);
+	view.ratio = 0.2;
+	assert.equal(view.ratio, 0.2); assert.equal(view.position, 323);
+	const revision = view.revision;
+	view.ratio = 0.2; assert.equal(view.revision, revision, 'equal intent does not invalidate composition');
+	view.layout(23, 31, 2023, 431);
+	assert.equal(view.ratio, 0.2); assert.equal(view.position, 423); assert.equal(view.revision, revision);
+	view.layout(23, 31, 623, 431);
+	view.resize(0.2); assert.equal(view.ratio, 0.5); assert.equal(view.position, 323);
+	view.resize(0.99); assert.equal(view.ratio, 1 - 100 / 600); assert.equal(view.position, 523);
+});

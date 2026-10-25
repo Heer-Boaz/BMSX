@@ -25,6 +25,7 @@ import { createTestRuntimeSourceState, createTestSystemImageRuntimeSourceState, 
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { linkTestSystemBlua32, type TestBlua32Image } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
 import { RemoteInput } from '../../hosts/common/input/remote';
@@ -53,6 +54,8 @@ import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/
 import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
 import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
+import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
+import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 
 function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: LuaSourceRegistry }) {
 	const host = createHostFrameFixture(authored === undefined ? undefined : createTestRuntime(authored.image.romBytes));
@@ -85,8 +88,158 @@ function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: 
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	const extent = { left: 0, top: 0, right: 384, bottom: 288 };
-	return { editor, host, pointer, extent, sources };
+	return { ide, editor, host, pointer, extent, sources };
 }
+
+/** Compiled guest membership and the production Actor pane, not a substituted input/focus control. */
+function actorFixture(t: TestContext) {
+	const source = "local world<const> = require('cartlib/world/world'); return world";
+	const modules = [{ path: 'cartlib/world/world', source: `local fsm<const> = require('cartlib/fsm/fsm_component')
+local state<const> = { definition = { on = {} }, states = {}, state_ids = {}, data = { answer = 42 } }
+local machine<const> = { localdef_id = 'flight', definition = { on = {} }, states = { idle = state }, state_ids = { 'idle' }, current_id = 'idle' }
+local component<const> = { id = 'states', enabled = true, _parent_component_index = 1, _started = true, _machines = { machine }, _machines_by_id = { flight = machine } }
+local actor<const> = { id = 1, active = true, _components = { component }, _components_by_class = { [fsm] = { component } } }
+local other<const> = { id = 2, active = true, _components = {}, _components_by_class = {} }
+component.parent = actor
+return { _objects = { actor, other } }` },
+		{ path: 'cartlib/fsm/fsm_component', source: 'return {}' },
+		{ path: 'cartlib/timeline/timeline_component', source: 'return {}' },
+		{ path: 'cartlib/actioneffects/actioneffect_component', source: 'return {}' }]
+		.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`) }));
+	const chunk = parseLuaChunk(source, 'actor-reflow.lua');
+	const image = linkTestSystemBlua32(compileLuaChunkToProgram(chunk, selectLuaProgramModules(chunk, modules, []),
+		{ entrySource: source, programDomain: 'system', optLevel: 0 }));
+	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: 'actor-reflow.lua',
+		projectRootPath: '', can_boot_from_source: true, revision: 0 };
+	registerLuaSourceRecord(registry, { resid: 'actor-reflow', type: 'lua', src: source, base_src: source,
+		source_path: 'actor-reflow.lua', normalized_source_path: 'actor-reflow.lua', module_path: 'actor-reflow',
+		update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
+	const f = fixture(t, { image, registry });
+	const sourceModel = f.ide.models.retain(f.sources.luaResources[0], 'lua', source);
+	f.host.runtime.machine.cpu.runUntilDepth(0, 100_000);
+	f.host.execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
+	f.ide.inspection.pause();
+	const controller = f.editor.actorLab, input = controller.resolveInput();
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, controller.guest, -1)[0].hashId;
+	f.editor.updateViewport({ width: 640, height: 360 });
+	openEditorTab(f.editor.editorPanes, input); f.editor.update(0);
+	const pane = f.editor.editorPanes.activePane;
+	assert.ok(pane instanceof ActorLabEditorPane);
+	return { ...f, controller, input, pane, sourceModel };
+}
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview retirement drains a real guest hold without migrating it into the expanded primary client`, t => {
+	const { editor, host, pointer, input, pane } = actorFixture(t);
+	configureFontVariant(host.clock, variant, null); editor.update(0); pane.focus();
+	const primary = inputFocus.target!, selected = input.outline.rows[input.outline.selectionIndex];
+	const center = () => ({ x: (input.previewBounds.left + input.previewBounds.right) / 2,
+		y: (input.previewBounds.top + input.previewBounds.bottom) / 2 });
+	const sample = createInputControllerSnapshot();
+	let point = center(); pointer(point.x, point.y, PointerButton.Primary);
+	const preview = inputFocus.target!, binding = preview.guestInput!;
+	assert.notEqual(preview, primary); assert.equal(binding.recipient, host.input);
+	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
+	assert.equal(sample.pointerButtons, 1); assert.equal(pointerCapture.guestBinding, binding);
+	editor.updateViewport({ width: 256, height: 360 }); editor.update(0);
+	assert.ok(preview.guestInput === undefined, 'withheld preview retires its actual input attachment');
+	assert.equal(inputFocus.target, primary); assert.equal(editor.guestInputRecipient, null);
+	preview.focus(); assert.equal(inputFocus.target, primary, 'a withheld preview is not a direct focus destination');
+	assert.equal(pointerCapture.guestBinding, undefined); assert.equal(pointerCapture.draining, true);
+	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 0);
+	const otherRow = input.outline.selectionIndex === 0 ? 1 : 0;
+	pointer((input.outline.layout.contentLeft + input.outline.layout.contentRight) / 2,
+		input.outline.layout.contentTop + (otherRow + 0.5) * input.outline.layout.rowHeight,
+		PointerButton.Primary | PointerButton.Secondary);
+	assert.equal(input.outline.rows[input.outline.selectionIndex], selected, 'the interrupted guest hold cannot select the newly expanded tree');
+	editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
+	assert.equal(preview.guestInput, binding, 'reappearance reuses the same viewport binding');
+	assert.equal(inputFocus.target, primary, 'reappearance does not steal primary keyboard focus');
+	point = center(); pointer(point.x, point.y, PointerButton.Primary | PointerButton.Secondary | PointerButton.Auxiliary);
+	assert.equal(inputFocus.target, primary); assert.equal(pointerCapture.guestBinding, undefined);
+	assert.equal(input.outline.rows[input.outline.selectionIndex], selected);
+	pointer(point.x, point.y, 0); assert.equal(pointerCapture.draining, false);
+	pointer(point.x, point.y, PointerButton.Primary);
+	assert.equal(inputFocus.target, preview); assert.equal(pointerCapture.guestBinding, binding);
+	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 1);
+	pointer(point.x, point.y, 0);
+});
+
+test('Actor reflow retires the real sash while retaining primary, graph and locked Details owners in both fonts', t => {
+	const { ide, editor, host, pointer, input, pane, sourceModel } = actorFixture(t);
+	const authored = sourceModel.buffer.getText(), version = sourceModel.version, cycles = host.runtime.machine.scheduler.currentNowCycles();
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	const selected = input.outline.rows[input.outline.selectionIndex], path = input.selectionPath;
+	for (const variant of ['tiny', 'msx'] as const) {
+		configureFontVariant(host.clock, variant, null); editor.update(0); pane.focus();
+		const primary = inputFocus.target!;
+		assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.moveFocus(false), true);
+		const sash = inputFocus.target!;
+		assert.notEqual(sash, primary); assert.equal(sash.guestInput, undefined);
+		pane.focus();
+		const y = (input.split.bounds.top + input.split.bounds.bottom) / 2;
+		const x = input.split.position;
+		pointer(x, y, PointerButton.Primary);
+		assert.equal(pointerCapture.active, true); assert.equal(inputFocus.target, primary);
+		pointer(x + 12, y); editor.update(0);
+		const ratio = input.split.ratio;
+		editor.updateViewport({ width: 256, height: 360 }); editor.update(0);
+		assert.equal(pointerCapture.active, false, 'withholding the split retires its captured control');
+		assert.equal(pointerCapture.draining, true); assert.equal(sash.canFocus!(), false);
+		assert.equal(inputFocus.target, primary);
+		for (const backward of [false, true]) {
+			const visited = new Set<typeof primary>();
+			do {
+				assert.ok(!visited.has(inputFocus.target!), 'the visible focus ring returns to the actual primary client');
+				visited.add(inputFocus.target!);
+				assert.notEqual(inputFocus.target, sash); assert.equal(inputFocus.target!.guestInput, undefined);
+				assert.equal(inputFocus.moveFocus(backward), true);
+			} while (inputFocus.target !== primary);
+		}
+		pane.focus(); pointer(220, y, PointerButton.Primary | PointerButton.Secondary); pointer(220, y, 0);
+		assert.equal(input.split.ratio, ratio); assert.equal(input.outline.rows[input.outline.selectionIndex], selected);
+		assert.equal(input.selectionPath, path);
+		editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
+		assert.equal(sash.canFocus!(), true); assert.equal(input.split.ratio, ratio); assert.equal(inputFocus.target, primary);
+	}
+	editor.commands.execute('actorLab.stateGraph'); editor.update(0);
+	const graph = input.stateGraph!, graphFocus = inputFocus.target!, selection = graph.viewport.selection;
+	const viewport = graph.viewport;
+	viewport.setZoom(0.5); viewport.scrollX = -17; viewport.scrollY = -9;
+	const viewState = { zoom: viewport.zoom, x: viewport.scrollX, y: viewport.scrollY };
+	editor.commands.execute('actorLab.details'); editor.update(0);
+	editor.commands.execute('actorLab.lockDetails', pane.inspector.focusTarget);
+	const details = input.details!, subject = details.subject!, detailsModel = input.detailsWindow;
+	assert.equal(details.locked, true); assert.ok(subject);
+	const detailsFocus = inputFocus.target!;
+	for (const variant of ['tiny', 'msx'] as const) {
+		configureFontVariant(host.clock, variant, null); editor.update(0);
+		const model = graph.viewport.model;
+		for (const width of [256, 640]) {
+			editor.updateViewport({ width, height: 360 }); editor.update(0);
+			assert.equal(inputFocus.target, detailsFocus, 'preview retirement does not blur an independently focused Details client');
+			assert.equal(input.stateGraph, graph); assert.equal(graph.viewport.model, model); assert.equal(graph.viewport.selection, selection);
+			assert.ok(graph.viewport === viewport);
+			assert.deepEqual({ zoom: viewport.zoom, x: viewport.scrollX, y: viewport.scrollY }, viewState);
+			assert.equal(input.detailsWindow, detailsModel); assert.equal(details.subject, subject); assert.equal(details.locked, true);
+			assert.equal(pane.runtimeControlContext, graphFocus, 'compact composition retains the real graph command origin');
+		}
+		pane.focus(); assert.equal(inputFocus.target, graphFocus);
+		editor.updateViewport({ width: 256, height: 360 }); editor.update(0);
+		assert.equal(inputFocus.target, graphFocus);
+		pane.inspector.focusTarget.focus();
+	}
+	pane.detailsWindow.focusTarget.focus(); inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
+	assert.ok(inputFocus.target === graphFocus, 'Details Escape returns to the actual graph client, not a pane alias outside its focus ring');
+	assert.equal(inputFocus.moveFocus(true), true); assert.equal(inputFocus.target!.guestInput, undefined);
+	assert.equal(inputFocus.moveFocus(false), true); assert.ok(inputFocus.target === graphFocus);
+	editor.commands.execute('actorLab.details'); editor.update(0);
+	assert.ok(inputFocus.target === pane.inspector.focusTarget);
+	editor.commands.execute('window.hide');
+	assert.ok(inputFocus.target === graphFocus, 'hiding Details restores the same actual graph client');
+	assert.equal(sourceModel.buffer.getText(), authored); assert.equal(sourceModel.version, version); assert.equal(sourceModel.canUndo, false);
+	assert.equal(host.runtime.machine.scheduler.currentNowCycles(), cycles);
+	assert.equal(ide.inspection.status().paused, true);
+});
 
 test('the real Assistant transcript owns only its selected-message actions for the attached input lifetime', async t => {
 	class TranscriptProducer extends AssistantConversation {

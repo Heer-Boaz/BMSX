@@ -51,9 +51,11 @@ export function drawActorLab(input: ActorLabInput, sliderFocused: boolean, graph
 		api.popClipRect();
 		outline.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
-	const preview = input.previewBounds;
-	if (viewport.kind === 'direct') api.drawFrame(preview.left, preview.top, preview.right, preview.bottom);
-	else if (viewport.frames.bitmap !== undefined) api.drawBitmap(viewport.frames.bitmap, preview.left, preview.top, preview.right, preview.bottom);
+	if (layout.previewVisible) {
+		const preview = input.previewBounds;
+		if (viewport.kind === 'direct') api.drawFrame(preview.left, preview.top, preview.right, preview.bottom);
+		else if (viewport.frames.bitmap !== undefined) api.drawBitmap(viewport.frames.bitmap, preview.left, preview.top, preview.right, preview.bottom);
+	}
 	const timeline = input.timeline;
 	if (timeline.visible) {
 		const { top, durationLeft, labelTop } = input.timelineLayout;
