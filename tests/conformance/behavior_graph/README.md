@@ -530,7 +530,7 @@ and remaining command/fold/live-install gates are in
 
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/state_machine_drag.test.ts tests/lua/workbench_source_edit_review.test.ts
+  tests/lua/state_machine_drag.test.ts tests/lua/workspace_edit_review_pane.test.ts
 node tests/conformance/runtime_replay/browser.mjs --studio-fsm-retarget \
   dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-fsm-drag/review.png
 npx tsx --tsconfig tsconfig.base.json tests/conformance/behavior_graph/profile_fsm_drag.ts
@@ -548,13 +548,10 @@ state patches. A separate single-use direct path commits on drop. The final
 capture shows a real, unapplied reverse proposal at the IDE's tiny-font size.
 
 `profile_fsm_drag.ts` uses real source/index owners and native-worker geometry.
-It separates capability (10,000 operations/batch), first candidate (100), repeated
-movement inside the same header (1,000), impact construction/open/layout (10),
-retained review layout (1,000) and review/overlay-quad emission (1,000). Ten warmups
-and median of 25 batches; run in isolation after tests/builds. No parser, layout
-worker timing, full pointer dispatch, GPU raster, guest/Hot Resume, heap/GC or
-complete-frame measurement is claimed. Review rows/text and quad storage are
-retained between unchanged frames. See `docs/state_machine_connection_edit_design.md`.
+It separates capability, first candidate, movement within the same header and
+construction of the exact edit proposal and recognized-use evidence. Run in
+isolation after tests/builds. It does not measure the retained review pane,
+pointer dispatch, GPU raster, guest/Hot Resume, heap/GC or complete-frame cost.
 
 ## BT reparent: dedicated live installation flow
 

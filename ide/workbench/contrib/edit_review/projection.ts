@@ -3,12 +3,13 @@ import { writeWrappedSourceLine, type TextRangeMeasure } from '../../../common/t
 import type { TextEditPreviewHunk } from '../../../editor/text/edit_preview';
 import type { WorkspaceEditPreviewFile } from '../../services/working_copy/workspace_edit';
 import type { WorkspaceEditReviewInput } from './editor_input';
+import type { SourceReviewEvidence } from '../../common/source_review';
 
 /** Immutable display/source correspondence, produced once from the proposal's exact preview. */
 export type EditReviewLine = {
-	readonly file: WorkspaceEditPreviewFile;
+	readonly file: WorkspaceEditPreviewFile | undefined;
 	readonly hunk: TextEditPreviewHunk | undefined;
-	readonly part: 'file' | 'hunk' | 'before' | 'after';
+	readonly part: 'file' | 'hunk' | 'before' | 'after' | 'impacts' | 'evidence';
 	readonly sourceOffset: number;
 	readonly text: string;
 	readonly sourceToDisplay: readonly number[];
@@ -25,7 +26,7 @@ export type EditReviewRow = {
 	endDecoration: number;
 };
 
-export function createEditReviewLines(files: readonly WorkspaceEditPreviewFile[]): readonly EditReviewLine[] {
+export function createEditReviewLines(files: readonly WorkspaceEditPreviewFile[], evidence?: SourceReviewEvidence): readonly EditReviewLine[] {
 	const lines: EditReviewLine[] = [];
 	for (const file of files) {
 		lines.push(createEditReviewLine(file, undefined, 'file', 0,
@@ -33,20 +34,33 @@ export function createEditReviewLines(files: readonly WorkspaceEditPreviewFile[]
 		for (const hunk of file.hunks) {
 			lines.push(createEditReviewLine(file, hunk, 'hunk', 0, `@@ line ${hunk.line} @@`, false));
 			for (const part of ['before', 'after'] as const) {
-				const sourceLines = hunk[part].split('\n');
-				let sourceOffset = 0;
-				for (let index = 0; index < sourceLines.length; index++) {
-					const source = sourceLines[index], terminated = index < sourceLines.length - 1;
-					lines.push(createEditReviewLine(file, hunk, part, sourceOffset, source, terminated));
-					sourceOffset += source.length + (terminated ? 1 : 0);
-				}
+				appendReviewText(lines, file, hunk, part, hunk[part]);
 			}
+		}
+	}
+	if (evidence !== undefined && evidence.items.length > 0) {
+		appendReviewText(lines, undefined, undefined, 'impacts', evidence.summary);
+		for (const item of evidence.items) {
+			appendReviewText(lines, undefined, undefined, 'evidence', '');
+			appendReviewText(lines, undefined, undefined, 'evidence', `${item.label}: ${item.value}`);
+			appendReviewText(lines, undefined, undefined, 'evidence', item.description);
 		}
 	}
 	return lines;
 }
 
-function createEditReviewLine(file: WorkspaceEditPreviewFile, hunk: TextEditPreviewHunk | undefined,
+function appendReviewText(lines: EditReviewLine[], file: WorkspaceEditPreviewFile | undefined, hunk: TextEditPreviewHunk | undefined,
+	part: EditReviewLine['part'], text: string): void {
+	const sourceLines = text.split('\n');
+	let sourceOffset = 0;
+	for (let index = 0; index < sourceLines.length; index++) {
+		const source = sourceLines[index], terminated = index < sourceLines.length - 1;
+		lines.push(createEditReviewLine(file, hunk, part, sourceOffset, source, terminated));
+		sourceOffset += source.length + (terminated ? 1 : 0);
+	}
+}
+
+function createEditReviewLine(file: WorkspaceEditPreviewFile | undefined, hunk: TextEditPreviewHunk | undefined,
 	part: EditReviewLine['part'], sourceOffset: number, source: string, terminated: boolean): EditReviewLine {
 	const decorated = part === 'before' || part === 'after';
 	let text = decorated ? part === 'before' ? '- ' : '+ ' : '';
@@ -56,7 +70,7 @@ function createEditReviewLine(file: WorkspaceEditPreviewFile, hunk: TextEditPrev
 		text += decorated && char === '\t' ? ' '.repeat(TAB_SPACES) : decorated && char === '\r' ? ' [CR]' : char;
 		sourceToDisplay.push(text.length);
 	}
-	if (terminated) { text += ' [LF]'; sourceToDisplay.push(text.length); }
+	if (terminated && decorated) { text += ' [LF]'; sourceToDisplay.push(text.length); }
 	return { file, hunk, part, sourceOffset, text, sourceToDisplay };
 }
 

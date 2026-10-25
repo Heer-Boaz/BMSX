@@ -20,6 +20,16 @@ export class EditReviewReadingState {
 		}
 	}
 
+	/** Explicit navigation names an immutable evidence/source line, even before it can be laid out. */
+	public goToLine(line: EditReviewLine): void {
+		this.edge = undefined;
+		this.line = line;
+		this.offset = line.sourceOffset;
+		this.decoration = 0;
+		this.fraction = 0;
+		this.projectedScroll = undefined;
+	}
+
 	public capture(view: WorkbenchScrollViewport, rows: readonly EditReviewRow[]): void {
 		if (this.edge !== undefined || this.rowHeight === 0 || rows.length === 0 || this.projectedScroll === view.scrollTop) return;
 		// Layout alone cannot choose a new source position in a covered body; admitted input can.
@@ -37,6 +47,11 @@ export class EditReviewReadingState {
 	}
 
 	public restore(view: WorkbenchScrollViewport, rows: readonly EditReviewRow[], rowHeight: number): void {
+		if (rows.length === 0) {
+			this.rowHeight = rowHeight;
+			this.projectedScroll = view.scrollTop;
+			return;
+		}
 		let top = 0;
 		if (this.edge === 'end') top = view.contentHeight - view.height;
 		else if (this.line !== undefined) {

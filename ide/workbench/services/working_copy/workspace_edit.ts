@@ -52,6 +52,9 @@ export class WorkspaceEditProposal {
 			this.files = [...this.edits].map(([model, edit]) => ({ kind: 'edit', identity: model.identity, model,
 				version: edit.version, hunks: createTextEditPreview(model.buffer, edit.edits) }));
 		}
+		for (const model of this.edits.keys()) this.lifetime.add({ dispose: model.onDidChangeReadOnly(() => {
+			if (model.readOnly) this.invalidate(`Source is read-only: ${model.resource.path}`);
+		}) });
 		this.lifetime.add({ dispose: context.onDidInvalidate(() => this.invalidate(context.reason!)) });
 		this.lifetime.add(context);
 	}

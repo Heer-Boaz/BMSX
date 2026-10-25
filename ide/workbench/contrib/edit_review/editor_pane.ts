@@ -1,4 +1,5 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
+import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
@@ -19,32 +20,62 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { WorkspaceEditReviewInput } from './editor_input';
 import { layoutEditReviewRows } from './projection';
+import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { QuickInputController } from '../../services/quick_input/controller';
+import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import { WorkbenchTooltip } from '../../ui/tooltip';
+import { resolveCodeEditorInput, retainModelCodeTabContext } from '../../ui/code_tab/contexts';
+import { openEditorTab } from '../../ui/tabs';
+import { sourceTabDescription } from '../../ui/tab/titles';
+import type { PointerHoverTarget } from '../../../input/pointer/hover';
+import type { DisposableStore } from '../../../common/lifecycle';
 
 // Keep a short source line readable beside the preview, rather than wrapping a diff into fragments.
 const REVIEW_READING_COLUMNS = 48;
 
 /** Source review shares the ordinary authoring pause, without borrowing guest state. */
-export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEditReviewInput> {
+export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEditReviewInput> implements PointerHoverTarget {
 	public override get companionGameMinimumWidth(): number {
 		return editorViewState.charAdvance * REVIEW_READING_COLUMNS + colors.SCROLLBAR_WIDTH + 8;
 	}
-	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
+	private readonly actions: WorkbenchActionBarControl;
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
-	public constructor(private readonly reveal: (models: readonly EditorTextModel[]) => void) {
+	private readonly tooltip = new WorkbenchTooltip();
+	private readonly headingBounds = create_rect_bounds();
+	private headingHovered = false;
+	private sourcePicker: DisposableStore | undefined;
+	public constructor(private readonly panes: EditorPanes, private readonly quickInput: QuickInputController,
+		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
+		private readonly workArea: Readonly<RectBounds>) {
 		super();
+		this.focusTarget.canFocus = this.scroll.focusTarget.canFocus = () => this.hasInput
+			&& this.input.viewport.bounds.left < this.input.viewport.bounds.right && this.input.viewport.height > 0;
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
+		this.actions.focusTarget.canFocus = () => this.hasInput && this.input.actionBar.bounds.left < this.input.actionBar.bounds.right
+			&& this.input.actionBar.bounds.top < this.input.actionBar.bounds.bottom;
+		this.actions.onDidOpenOverflow = lifetime => {
+			this.tooltip.hide();
+			lifetime.add({ dispose: this.input.proposal.onDidSettle(() => contextMenu.hide()) });
+		};
+		this.tooltip.attach(surfaces, owner, workArea);
 		this.scroll.onWillScroll = edge => this.input.reading.noteUserScroll(edge);
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		this.scroll.focusTarget.next = this.actions.focusTarget;
-		this.actions.focusTarget.previous = this.scroll.focusTarget;
-		this.actions.focusTarget.next = this.scroll.focusTarget;
+		this.actions.focusTarget.previous = this.actions.focusTarget.next = () => this.focus();
 		this.scroll.focusTarget.previous = this.actions.focusTarget;
-		for (const command of ['workspaceEditReview.apply', 'workspaceEditReview.discard'] as const) {
+		for (const command of ['workspaceEditReview.apply', 'workspaceEditReview.discard', 'workspaceEditReview.source', 'workspaceEditReview.impacts'] as const) {
 			const implementation = { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) };
 			this.focusTarget.registerCommand(command, implementation);
 			this.scroll.focusTarget.registerCommand(command, implementation);
 		}
 	}
-	public override focus(): void { this.scroll.focusTarget.focus(); }
+	public override focus(): void {
+		if (this.scroll.focusTarget.canFocus!()) this.scroll.focusTarget.focus();
+		else this.actions.focusTarget.focus();
+	}
 	protected override activate(): void {
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.scroll.setInput(this.input.viewport);
@@ -52,27 +83,57 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 	}
 	public override clearInput(): void {
 		if (this.hasInput) this.input.reading.capture(this.input.viewport, this.input.rows);
+		if (this.sourcePicker !== undefined) this.quickInput.hide();
+		this.tooltip.hide(); pointerHover.release(this); this.headingHovered = false;
 		this.actions.clearInput(); this.scroll.clearInput(); super.clearInput();
 	}
 	public override dispose(): void {
 		if (this.hasInput) this.input.reading.capture(this.input.viewport, this.input.rows);
+		if (this.sourcePicker !== undefined) this.quickInput.hide();
+		this.tooltip.detach(); pointerHover.release(this);
 		this.actions.dispose(); this.scroll.dispose(); super.dispose();
 	}
 	public isEnabled(command: EditorCommandId): boolean {
-		return this.hasInput && (command === 'workspaceEditReview.apply' || command === 'workspaceEditReview.discard') && this.input.proposal.state === 'pending';
+		if (!this.hasInput) return false;
+		if (command === 'workspaceEditReview.impacts') return this.input.evidence.items.length > 0;
+		return this.input.proposal.state === 'pending' && (command === 'workspaceEditReview.apply' || command === 'workspaceEditReview.discard'
+			|| command === 'workspaceEditReview.source' && this.input.evidence.items.length > 0);
 	}
 	public execute(command: EditorCommandId): void {
 		if (!this.isEnabled(command)) return;
 		if (command === 'workspaceEditReview.discard') { this.input.proposal.dispose(); return; }
+		if (command === 'workspaceEditReview.source') { this.openImpactSource(this.input); return; }
+		if (command === 'workspaceEditReview.impacts') {
+			this.input.reading.goToLine(this.input.lines.find(line => line.part === 'impacts')!);
+			this.input.reading.restore(this.input.viewport, this.input.rows, this.input.layout.rowHeight);
+			this.focus(); return;
+		}
 		// Reveal the shared working copies; Apply and Save are separate user operations.
 		void this.apply(this.input);
 	}
+	private openImpactSource(input: WorkspaceEditReviewInput): void {
+		this.quickInput.pick('Impact Source', input.evidence.summary, () => {
+			return new TextQuickPickProvider(input.evidence.items.map(item => ({ label: item.label, description: item.value,
+				detail: `${sourceTabDescription(item.location.model.identity)} / v${item.location.version}\n${item.description}`, location: item.location })));
+		}, item => {
+			const { model, offset } = item.location, position = { row: 0, column: 0 };
+			model.buffer.positionAt(offset, position);
+			openEditorTab(this.panes, resolveCodeEditorInput(retainModelCodeTabContext(model)), {
+				selection: { row: position.row, startColumn: position.column, endColumn: position.column },
+			});
+		}, lifetime => {
+			this.sourcePicker = lifetime;
+			lifetime.add({ dispose: () => { if (this.sourcePicker === lifetime) this.sourcePicker = undefined; } });
+			lifetime.add({ dispose: input.proposal.onDidSettle(() => this.quickInput.hide()) });
+		});
+	}
+	private reveal(models: readonly EditorTextModel[]): void {
+		for (const model of models) openEditorTab(this.panes, resolveCodeEditorInput(retainModelCodeTabContext(model)));
+	}
 	private async apply(input: WorkspaceEditReviewInput): Promise<void> {
-		if (input.proposal.kind === 'edit') this.reveal(input.proposal.files.flatMap(file => file.kind === 'edit' ? [file.model] : []));
 		try {
 			const models = await input.proposal.apply();
-			// Creating a file is an explicit filesystem edit; editing an existing file is not.
-			if (input.proposal.kind === 'create') this.reveal(models);
+			if (this.hasInput && this.input === input) this.reveal(models);
 		} catch (error) {
 			showEditorMessage(error instanceof Error ? error.message : String(error), 'warning', 4);
 		}
@@ -91,19 +152,30 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 		}
 		if (changed) {
 			this.input.reading.capture(viewport, this.input.rows);
-			layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont(), layout.left + 4);
-			this.input.heading = truncateMeasuredText(this.input.proposal.title, actionBar.items[0].bounds.left - layout.left - 8, measureTextRange);
+			layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, Math.min(layout.bottom, layout.top + layout.rowHeight + 4), measureText, editorViewState.font.renderFont(), layout.left + 4);
+			this.input.heading = truncateMeasuredText(this.input.proposal.title, actionBar.bounds.left - layout.left - 8, measureTextRange);
+			write_rect_bounds(this.headingBounds, layout.left + 4, layout.top, actionBar.bounds.left - 4, Math.min(layout.bottom, layout.top + layout.rowHeight + 4));
 			const textWidth = width - colors.SCROLLBAR_WIDTH - 8;
-			if (this.input.projectedWidth !== textWidth || this.input.projectedFont !== layout.font) {
+			const top = Math.min(layout.bottom, layout.top + layout.rowHeight * 2 + 12);
+			if (textWidth > 0 && layout.bottom > top && (this.input.projectedWidth !== textWidth || this.input.projectedFont !== layout.font)) {
 				layoutEditReviewRows(this.input, textWidth, measureTextRange);
 				this.input.projectedWidth = textWidth;
 				this.input.projectedFont = layout.font;
 			}
-			viewport.layout(layout.left + 4, Math.min(layout.bottom, layout.top + layout.rowHeight * 2 + 12), layout.right, layout.bottom, this.input.rows.length * layout.rowHeight);
+			viewport.layout(layout.left + 4, top, layout.right, layout.bottom, this.input.rows.length * layout.rowHeight);
 			this.input.reading.restore(viewport, this.input.rows, layout.rowHeight);
 			this.scroll.lineStep = layout.rowHeight;
 		}
+		if (!this.scroll.focusTarget.canFocus!()) { this.scroll.cancelPointer(); this.scroll.focusTarget.release(); this.focusTarget.release(); }
+		if (!this.actions.focusTarget.canFocus!()) {
+			pointerCapture.cancelTarget(this.actions); pointerHover.release(this.actions); this.actions.focusTarget.release();
+		}
 		this.actions.update();
+		const hint = this.actions.tooltipItem, font = editorViewState.font.renderFont();
+		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, font, measureTextRange, measureText, this.workArea);
+		else if (this.headingHovered && this.input.heading !== proposal.title)
+			this.tooltip.show(proposal.title, this.headingBounds, font, measureTextRange, measureText, this.workArea);
+		else this.tooltip.hide();
 	}
 	public draw(): void {
 		const { layout, actionBar, viewport, rows } = this.input;
@@ -131,8 +203,12 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 			bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
-		return this.actions.handlePointer(snapshot) || this.scroll.handlePointer(snapshot);
+		if (this.actions.handlePointer(snapshot)) { pointerHover.release(this); return true; }
+		this.headingHovered = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.headingBounds);
+		if (this.headingHovered) pointerHover.visit(this); else pointerHover.release(this);
+		return this.headingHovered || this.scroll.handlePointer(snapshot);
 	}
+	public onPointerLeave(): void { this.headingHovered = false; this.tooltip.hide(); }
 	public handleKeyboard(): void {}
 	public handleWheel(event: WheelInputSnapshot): void {
 		this.scroll.handleWheel(event, event.deltaY * this.input.layout.rowHeight);

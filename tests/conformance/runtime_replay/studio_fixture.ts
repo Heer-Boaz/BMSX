@@ -221,7 +221,9 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	const runMenuCommand = async (command: EditorCommandId) => {
 		check(ide.editor.isActive, 'Run-menu commands require editor focus');
-		if (ide.editor.menubar.activeMenu !== 'run') await click(editorChromeState.menuEntryBounds.run);
+		if (!ide.editor.menubar.expanded) await click(editorChromeState.menuButtonBounds);
+		movePointer(editorChromeState.menuEntryBounds.run);
+		await frame();
 		check(ide.editor.menubar.activeMenu === 'run', 'Run menu opens through its visible pointer target');
 		const item = ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
 		check(item.enabled, `Run-menu command must be enabled: ${command}`);

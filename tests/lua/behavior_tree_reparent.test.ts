@@ -2,18 +2,46 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { beginBehaviorTreeDrag, type BehaviorTreeTransferDrop } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_drag';
-import { transferBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { createBehaviorTreeTransferEdit } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { behaviorTreeTransferImpacts } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_review';
 import { acceptBehaviorGraphSelection } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 import type { BehaviorGraphNode } from '../../ide/workbench/contrib/behavior_lens/graph_model';
 import { BT_REPARENT_SOURCE } from '../helpers/behavior_reparent_fixture';
 import { createBehaviorTreeEditFixture as fixture } from '../helpers/behavior_tree_edit_fixture';
+import { behaviorSourceEditState, captureBehaviorSourceBookmark } from '../../ide/workbench/contrib/behavior_lens/source_bookmark';
 
 function targetPoint(f: ReturnType<typeof fixture>, node: BehaviorGraphNode, placement: 'before' | 'after' | 'inside') {
 	f.viewport.reveal(node);
 	return [f.viewport.graphToViewportX(node.bounds.left + (node.bounds.right - node.bounds.left) * (placement === 'before' ? 0.2 : placement === 'after' ? 0.8 : 0.5)),
 		f.viewport.graphToViewportY(node.bounds.top + node.headerHeight / 2)] as const;
 }
+
+test('transfer preparation retains exact edits and typed selection without changing source or reading later graph selection', t => {
+	const f = fixture(t, BT_REPARENT_SOURCE);
+	f.select(0);
+	const root = () => f.viewport.model.nodes[0].children[0];
+	let drop: Parameters<BehaviorTreeTransferDrop> | undefined;
+	const drag = beginBehaviorTreeDrag(f.model, f.view, (...result) => { drop = result; })!;
+	drag.dragOver(...targetPoint(f, root().children[2], 'inside')); drag.drop();
+	const [analysis, insertion, check] = drop!, version = f.model.version;
+	const before = captureBehaviorSourceBookmark(f.view, f.view.selection!);
+	const plan = createBehaviorTreeTransferEdit(f.model, f.view, analysis.member, check, insertion);
+	assert.equal(f.model.buffer.getText(), BT_REPARENT_SOURCE);
+	assert.equal(f.model.version, version); assert.equal(f.model.canUndo, false); assert.equal(f.model.dirty, false);
+	assert.equal(plan.version, version); assert.ok(plan.beforeEditState!.is(behaviorSourceEditState));
+	assert.deepEqual(plan.beforeEditState!.value, before);
+	const expected = plan.edits.reduceRight((source, edit) => source.slice(0, edit.offset) + edit.text
+		+ source.slice(edit.offset + edit.deleteLength), BT_REPARENT_SOURCE);
+	f.select(1);
+	f.model.history.applyEdits(new Map([[f.model, plan]])); f.refresh();
+	assert.equal(f.model.buffer.getText(), expected); assert.equal(f.model.version, version + 1);
+	assert.ok(f.viewport.selection === root().children[1].children.at(-1));
+	f.model.undo(); f.refresh();
+	assert.equal(f.model.buffer.getText(), BT_REPARENT_SOURCE); assert.equal(f.model.canUndo, false);
+	assert.ok(f.viewport.selection === root().children[0]);
+	f.model.redo(); f.refresh(); assert.equal(f.model.buffer.getText(), expected);
+	assert.ok(f.viewport.selection === root().children[1].children.at(-1));
+});
 
 test('a drop into deeper and empty parents proposes source, then one Undo/Redo preserves the moved occurrence', t => {
 	for (const targetIndex of [1, 2]) for (const edge of [false, true]) {
@@ -31,8 +59,8 @@ test('a drop into deeper and empty parents proposes source, then one Undo/Redo p
 		assert.equal(f.model.buffer.getText(), BT_REPARENT_SOURCE);
 		const [analysis, insertion, check] = proposal!;
 		const impacts = behaviorTreeTransferImpacts(f.view, analysis, insertion, check);
-		assert.ok(impacts.every(item => item.range.path === f.model.resource.path));
-		transferBehaviorTreeChild(f.model, f.view, analysis.member, check, insertion);
+		assert.ok(impacts.every(item => item.location.model === f.model && item.location.version === f.model.version));
+		f.model.history.applyEdits(new Map([[f.model, createBehaviorTreeTransferEdit(f.model, f.view, analysis.member, check, insertion)]]));
 		f.refresh();
 		const destination = root().children[targetIndex - 1];
 		const moved = destination.children[destination.children.length - 1];
@@ -60,7 +88,7 @@ test('an only child moves upward before a sibling and leaves its written list em
 	f.viewport.selection = root().children[1].children[0].children[0];
 	acceptBehaviorGraphSelection(f.view, f.graph);
 	const drag = beginBehaviorTreeDrag(f.model, f.view, (analysis, insertion, check) => {
-		transferBehaviorTreeChild(f.model, f.view, analysis.member, check, insertion);
+		f.model.history.applyEdits(new Map([[f.model, createBehaviorTreeTransferEdit(f.model, f.view, analysis.member, check, insertion)]]));
 	})!;
 	drag.dragOver(...targetPoint(f, root().children[2], 'before'));
 	assert.equal(drag.feedback.accepted, true);
@@ -87,7 +115,7 @@ trees.register('weighted', { root={type='sequence',children={
 		f.viewport.selection = edge ? f.viewport.model.edges.find(edge => edge.child === node)! : node;
 		acceptBehaviorGraphSelection(f.view, f.graph);
 		const drag = beginBehaviorTreeDrag(f.model, f.view, (analysis, insertion, check) => {
-			transferBehaviorTreeChild(f.model, f.view, analysis.member, check, insertion);
+			f.model.history.applyEdits(new Map([[f.model, createBehaviorTreeTransferEdit(f.model, f.view, analysis.member, check, insertion)]]));
 		})!;
 		drag.dragOver(...targetPoint(f, root().children[1], 'inside'));
 		assert.equal(drag.feedback.accepted, true);
@@ -124,7 +152,7 @@ trees.register('shared', {root={type='sequence',children={shared,shared,{type='s
 	acceptBehaviorGraphSelection(f.view, f.graph);
 	const drag = beginBehaviorTreeDrag(f.model, f.view, (analysis, insertion, check) => {
 		assert.equal(analysis.sourceUses.length, 2);
-		transferBehaviorTreeChild(f.model, f.view, analysis.member, check, insertion);
+		f.model.history.applyEdits(new Map([[f.model, createBehaviorTreeTransferEdit(f.model, f.view, analysis.member, check, insertion)]]));
 	})!;
 	drag.dragOver(...targetPoint(f, root().children[2], 'inside'));
 	assert.equal(drag.feedback.accepted, true);

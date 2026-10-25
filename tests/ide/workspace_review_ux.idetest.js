@@ -187,51 +187,44 @@ t.assert(input.viewport.scrollbar.getMaximumScroll() > 0 && input.viewport.scrol
 	'physical End while all content fits did not reveal the new bottom after narrowing');
 await capture('workspace-review-fit-end-restored-msx'); unchanged(input);
 
-await scrollToRow(input, 3);
-await resizeAboveProblems(input, input.layout.top + 1);
-t.assert(input.viewport.height === 0, 'the physical zero-height Home case requires a fully covered Review body');
-await press('Home');
-await resizeAboveProblems(input, reviewBottom);
-t.assert(input.viewport.scrollTop === 0, 'physical Home in a zero-height Review did not replace the old middle-source intent');
-await capture('workspace-review-zero-home-restored-msx'); unchanged(input);
-
-await scrollToRow(input, 3);
-await resizeAboveProblems(input, input.layout.top + 1);
-t.assert(input.viewport.height === 0, 'the physical zero-height End case requires a fully covered Review body');
-await press('End');
-await resizeAboveProblems(input, reviewBottom);
-t.assert(input.viewport.scrollbar.getMaximumScroll() > 0 && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(),
-	'physical End in a zero-height Review did not reveal its actual final source rows after restoring the body');
-await capture('workspace-review-zero-end-restored-msx'); unchanged(input);
-
-// Relative navigation after an absolute edge has a real source-row origin even while hidden.
-await scrollToRow(input, 3);
-await resizeAboveProblems(input, input.layout.top + 1);
-t.assert(input.viewport.height === 0, 'the physical End-then-Up case requires a fully covered Review body');
-await press('End'); await press('ArrowUp');
-const endUpRow = input.rows[Math.trunc(input.viewport.scrollTop / input.layout.rowHeight)];
-const endUpOrigin = { line: endUpRow.line, offset: endUpRow.start, decoration: endUpRow.decoration };
-await resizeAboveProblems(input, reviewBottom);
-t.assert(input.reading.edge === undefined && input.reading.line === endUpOrigin.line
-	&& input.reading.offset === endUpOrigin.offset && input.reading.decoration === endUpOrigin.decoration,
-	'physical End then Up at zero height did not retain its actual original-source row');
-t.assert(input.viewport.scrollbar.getMaximumScroll() > 0 && input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll(),
-	'the actual End-then-Up source row did not clamp to the restored positive viewport bottom');
-await capture('workspace-review-zero-end-up-restored-msx'); unchanged(input);
-
-await scrollToRow(input, 3);
-await resizeAboveProblems(input, input.layout.top + 1);
-t.assert(input.viewport.height === 0, 'the physical Home-then-Down case requires a fully covered Review body');
-await press('Home'); await press('ArrowDown');
-const homeDownRow = input.rows[Math.trunc(input.viewport.scrollTop / input.layout.rowHeight)];
-const homeDownOrigin = { line: homeDownRow.line, offset: homeDownRow.start, decoration: homeDownRow.decoration };
-await resizeAboveProblems(input, reviewBottom);
-t.assert(input.reading.edge === undefined && input.reading.line === homeDownOrigin.line
-	&& input.reading.offset === homeDownOrigin.offset && input.reading.decoration === homeDownOrigin.decoration,
-	'physical Home then Down at zero height did not retain its actual original-source row');
-t.assert(input.viewport.scrollTop === input.layout.rowHeight,
-	'physical Home then Down at zero height did not reveal the actual second row after restoring the body');
-await capture('workspace-review-zero-home-down-restored-msx'); unchanged(input);
+// A covered read-only client retains reading intent, not hidden keyboard admission.
+for (const [phase, keys] of [
+	['home', ['Home']], ['end', ['End']], ['end-up', ['End', 'ArrowUp']], ['home-down', ['Home', 'ArrowDown']],
+]) {
+	await scrollToRow(input, 3);
+	const retained = bookmark(input);
+	await resizeAboveProblems(input, input.layout.top + 1);
+	t.assert(input.viewport.height === 0, 'the hidden-input case requires the actual Problems sash to cover Review');
+	const reading = input.reading, edge = reading.edge;
+	for (const key of keys) await press(key);
+	t.assert(reading.line === retained.line && reading.offset === retained.offset && reading.decoration === retained.decoration
+		&& reading.fraction === retained.fraction && reading.edge === edge,
+		'keyboard input without an admitted Review client changed its retained immutable reading intent');
+	unchanged(input);
+	await resizeAboveProblems(input, reviewBottom); sameIntent(input, retained);
+	// Recovery alone must not silently reclaim the outgoing keyboard focus.
+	await press('Home'); sameIntent(input, retained);
+	await capture(`workspace-review-zero-${phase}-retained-msx`); unchanged(input);
+	await focusContent(input);
+	if (phase === 'home') {
+		await press('Home');
+		t.assert(input.viewport.scrollTop === 0 && input.reading.edge === 'start',
+			'a fresh positive-body focus did not admit actual Home navigation');
+	} else if (phase === 'end') {
+		await press('End');
+		t.assert(input.viewport.scrollTop === input.viewport.scrollbar.getMaximumScroll() && input.reading.edge === 'end',
+			'a fresh positive-body focus did not admit actual End navigation');
+	} else if (phase === 'end-up') {
+		await press('End'); const bottom = input.viewport.scrollTop; await press('ArrowUp');
+		t.assert(input.viewport.scrollTop === bottom - input.layout.rowHeight && input.reading.edge === undefined,
+			'a fresh positive-body End then Up did not move one actual source row from the displayed bottom');
+	} else {
+		await press('Home'); await press('ArrowDown');
+		t.assert(input.viewport.scrollTop === input.layout.rowHeight && input.reading.edge === undefined,
+			'a fresh positive-body Home then Down did not reveal the actual second source row');
+	}
+	await capture(`workspace-review-fresh-${phase}-navigation-msx`); unchanged(input);
+}
 
 await press('ControlLeft', 'KeyW');
 t.assert(input.proposal.state === 'discarded' && model.buffer.getText() === source && model.version === version && !model.dirty && !model.canUndo,

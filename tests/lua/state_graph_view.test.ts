@@ -21,7 +21,7 @@ import { selectStateMachineSource } from '../../ide/workbench/contrib/behavior_l
 import { FSM_DIAGRAM_SOURCE, FSM_PROOF_SOURCE } from '../helpers/fsm_source_fixture';
 import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
 import { createStateMachineInitialEdits, stateMachineInitialTarget } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
-import { retargetStateMachineTransition } from '../../ide/workbench/contrib/behavior_lens/state_machine_edit';
+import { createStateMachineRetargetEdit } from '../../ide/workbench/contrib/behavior_lens/state_machine_edit';
 import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import { FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
 
@@ -186,7 +186,7 @@ test('retarget edit history republishes the exact selected graph proof after wor
 			const target = new StateMachineRetargetAnalysis(f.view.document, selection.transition, selection.outcome)
 				.checkTarget(scope.children.get('other')!);
 			assert.ok(target.kind === 'available');
-			retargetStateMachineTransition(f.model, f.view, selection, target);
+			f.model.history.applyEdits(new Map([[f.model, createStateMachineRetargetEdit(f.model, f.view, selection, target)]]));
 			assert.equal(f.graph.viewport.model.edges.length, 0, 'no old endpoint or hit region survives the edit');
 			f.refresh(); await f.settle();
 			for (const action of ['edit', 'undo', 'redo']) {

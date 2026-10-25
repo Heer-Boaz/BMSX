@@ -79,7 +79,7 @@ for (const outcome of ['applied', 'discarded', 'stale', 'conflict', 'failed'] as
 		else if (outcome === 'discarded') f.proposal.dispose();
 		else if (outcome === 'stale') f.a.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- later\n' }]);
 		else if (outcome === 'conflict') {
-			f.b.refreshResource({ ...f.b.resource, source: { ...f.b.resource.source, generated: true } });
+			f.models.history.applyEdits = () => { throw new EditorWorkspaceEditConflict(f.b); };
 			assert.throws(() => f.proposal.apply(), EditorWorkspaceEditConflict);
 		} else {
 			f.models.history.applyEdits = () => { throw new Error('Injected history failure'); };
@@ -129,13 +129,21 @@ test('replacing a socket source catalog retires an accepted proposal at apply ad
 	assert.equal(f.a.canUndo, false);
 });
 
-test('new read-only rights reject the whole operation before any source notifications or writes', t => {
+test('new read-only rights retire the proposal immediately without reviving on writable restoration', t => {
 	const f = fixture(t);
 	let notifications = 0;
+	let settlements = 0;
+	const preview = f.proposal.files;
+	f.proposal.onDidSettle(() => settlements++);
 	f.a.onWillChangeContent(() => notifications++);
 	f.b.refreshResource({ ...f.b.resource, source: { ...f.b.resource.source, generated: true } });
-	assert.throws(() => f.proposal.apply(), EditorWorkspaceEditConflict);
 	assert.equal(f.proposal.state, 'stale');
+	assert.equal(settlements, 1);
+	f.b.refreshResource({ ...f.b.resource, source: { ...f.b.resource.source, generated: false } });
+	assert.equal(f.proposal.state, 'stale');
+	assert.equal(f.proposal.files, preview, 'retiring edit rights keeps the reviewed evidence');
+	assert.throws(() => f.proposal.apply());
+	assert.equal(settlements, 1);
 	assert.equal(notifications, 0);
 	assert.equal(f.a.canUndo, false);
 });

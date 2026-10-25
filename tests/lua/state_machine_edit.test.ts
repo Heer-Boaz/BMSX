@@ -5,10 +5,11 @@ import { createLuaStringValueEdit, luaSourceRangeToTextRange, readLuaSourceRange
 import { selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { selectedBehaviorLensSourceRange } from '../../ide/workbench/contrib/behavior_lens/navigation';
 import { behaviorSourceEditState, captureBehaviorSourceBookmark, copyBehaviorSourceBookmark, mapBehaviorSourceBookmark } from '../../ide/workbench/contrib/behavior_lens/source_bookmark';
-import { retargetStateMachineTransition } from '../../ide/workbench/contrib/behavior_lens/state_machine_edit';
+import { createStateMachineRetargetEdit } from '../../ide/workbench/contrib/behavior_lens/state_machine_edit';
 import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import { selectStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 import { FSM_RETARGET_SOURCE, FSM_RETARGET_IMPORTED_SOURCE, FSM_RETARGET_BRANCH_SOURCE, FSM_RETARGET_CALLBACK_SOURCE } from '../helpers/fsm_retarget_fixture';
+import { EditorWorkspaceEditConflict } from '../../ide/editor/model/undo_redo_service';
 
 function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex = 0, branch = 'right', slot = 'direct', outcomeIndex = 0,
 	imports: Readonly<Record<string, string>> = {}) {
@@ -44,8 +45,35 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex =
 	};
 	const model = view.source.models.get(target.file.chunk.locations.range(target.literal.span).path)!;
 	return { ...f, anchor: f.model, model, selection, target, refresh, checkSelection,
-		edit: () => retargetStateMachineTransition(model, view, selection, target) };
+		edit: () => model.history.applyEdits(new Map([[model, createStateMachineRetargetEdit(model, view, selection, target)]])) };
 }
+
+test('retarget preparation captures exact source and typed proof before Source navigation changes the live selection', t => {
+	const f = fixture(t), original = f.model.buffer.getText(), version = f.model.version;
+	const before = captureBehaviorSourceBookmark(f.view, f.selection);
+	const plan = createStateMachineRetargetEdit(f.model, f.view, f.selection, f.target);
+	assert.equal(f.model.buffer.getText(), original); assert.equal(f.model.version, version);
+	assert.equal(f.model.canUndo, false); assert.equal(f.model.dirty, false);
+	assert.equal(plan.version, version); assert.ok(plan.beforeEditState!.is(behaviorSourceEditState));
+	assert.deepEqual(plan.beforeEditState!.value, before);
+	const [edit] = plan.edits, expected = original.slice(0, edit.offset) + edit.text + original.slice(edit.offset + edit.deleteLength);
+	f.view.selection = null;
+	f.model.history.applyEdits(new Map([[f.model, plan]])); f.refresh(); f.checkSelection('../other');
+	assert.equal(f.model.buffer.getText(), expected); assert.equal(f.model.version, version + 1);
+	f.model.undo(); f.refresh(); f.checkSelection('../active');
+	assert.equal(f.model.buffer.getText(), original); assert.equal(f.model.canUndo, false);
+	f.model.redo(); f.refresh(); f.checkSelection('../other'); assert.equal(f.model.buffer.getText(), expected);
+});
+
+test('retarget preparation retains its source version rather than accepting a later generation', t => {
+	const f = fixture(t), plan = createStateMachineRetargetEdit(f.model, f.view, f.selection, f.target);
+	assert.equal(f.model.canUndo, false);
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- later source\n' }]);
+	const changed = f.model.buffer.getText(), version = f.model.version;
+	assert.throws(() => f.model.history.applyEdits(new Map([[f.model, plan]])), EditorWorkspaceEditConflict);
+	assert.equal(f.model.buffer.getText(), changed); assert.equal(f.model.version, version);
+	f.model.undo(); assert.equal(f.model.buffer.getText(), FSM_RETARGET_SOURCE); assert.equal(f.model.canUndo, false);
+});
 
 test('imported transition edits and source bookmarks belong to the literal, not the registration or callback binding', t => {
 	for (const [slot, outcome] of [['direct', 0], ['wrapped', 0], ['update', 0], ['update', 1]] as const) {

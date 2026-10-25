@@ -1,31 +1,27 @@
 import { semanticSnapshot } from '../../lua/semantic_test_harness';
-import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
-import { EditorTextModel } from '../../../ide/editor/model/text_model';
+import { EditorTextModelService } from '../../../ide/editor/model/model_service';
 import { EditorFont } from '../../../ide/editor/ui/view/font';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { measureText, measureTextRange } from '../../../ide/editor/common/text/layout';
+import { measureTextRange } from '../../../ide/editor/common/text/layout';
 import { NodeGraphLayoutEngine } from '../../../ide/node/graph_layout';
-import { InputFocusService } from '../../../ide/input/focus';
-import { PointerCaptureService } from '../../../ide/input/pointer/capture';
-import { WorkbenchSourceEditReview } from '../../../ide/workbench/ui/source_edit_review/control';
-import { drawWorkbenchSourceEditReview } from '../../../ide/workbench/render/source_edit_review';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { selectBehaviorLensDefinition } from '../../../ide/workbench/contrib/behavior_lens/layout';
 import { selectStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 import { beginStateMachineDrag, stateMachineConnectionEnds, type StateMachineRetargetDrop } from '../../../ide/workbench/contrib/behavior_lens/state_machine_drag';
 import { stateMachineRetargetImpacts } from '../../../ide/workbench/contrib/behavior_lens/state_machine_review';
+import { createStateMachineRetargetEdit } from '../../../ide/workbench/contrib/behavior_lens/state_machine_edit';
 import { BehaviorLensInput } from '../../../ide/workbench/contrib/behavior_lens/editor_input';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
-import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/quad_stream';
-import { api } from '../../../ide/runtime/overlay_api';
-import { createHostOverlayFixture } from '../../helpers/host_overlay';
 import { medianMilliseconds } from '../../helpers/performance';
-import { ContextMenuController } from '../../../ide/workbench/services/context_menu/controller';
-import { WorkbenchSurfaceService } from '../../../ide/workbench/services/windows/service';
+import { WorkspaceEditProposal } from '../../../ide/workbench/services/working_copy/workspace_edit';
+import { WorkspaceSourceContext } from '../../../ide/workbench/services/working_copy/source_context';
+import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
+import { layoutEditReviewRows } from '../../../ide/workbench/contrib/edit_review/projection';
+import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../../helpers/scenario_sources';
 
 async function main() {
 	const imported = process.argv.includes('--imported');
@@ -33,9 +29,12 @@ async function main() {
 		const source = `local machines<const> = require('cartlib/fsm/library')
 local shared<const> = ${imported ? "require('provider')" : "{ on={go=function() return 'idle' end}, initial='idle', states={idle={},active={}} }"}
 ${Array.from({ length: registrations }, (_, index) => `machines.register('fixture.${index}',shared)`).join('\n')}`;
-		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
-		const provider = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'provider.lua' }, domain: 0, path: 'provider.lua', source: { type: 'lua', resid: 'provider' } }, 'lua',
-			"return { on={go=function() return 'idle' end}, initial='idle', states={idle={},active={}} }");
+		const providerSource = "return { on={go=function() return 'idle' end}, initial='idle', states={idle={},active={}} }";
+		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('profile.lua', 1, source),
+			createScenarioTestSourceRecord('provider.lua', 1, providerSource)]);
+		const models = new EditorTextModelService();
+		const model = models.retain(sources.luaResources.find(resource => resource.path === 'profile.lua')!, 'lua', source);
+		const provider = models.retain(sources.luaResources.find(resource => resource.path === 'provider.lua')!, 'lua', providerSource);
 		const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path),
 			buildLuaFileSemanticData(provider.buffer.getText(), provider.resource.path)));
 		editorViewState.font = new EditorFont('tiny');
@@ -44,13 +43,6 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 		selectBehaviorLensDefinition(view, document.definitions[0].rowKey);
 		const graph = view.presentation; assert.ok(graph.kind === 'state-graph');
 		const input = new BehaviorLensInput(model, view, () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
-		const focus = new InputFocusService();
-		const capture = new PointerCaptureService(), parent = focus.createTarget();
-		const menu = new ContextMenuController(focus, capture), surfaces = new WorkbenchSurfaceService();
-		const area = { left: 0, top: 0, right: 384, bottom: 288 };
-		const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope,
-			getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });
-		const review = new WorkbenchSourceEditReview(focus, capture, new PointerHoverService(), parent, menu, surfaces, owner, area);
 		try {
 			input.updatePresentation(font); await input.graphLayout.settled; input.updatePresentation(font);
 			const viewport = graph.viewport;
@@ -80,35 +72,32 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 				for (let i = 0; i < 1000; i += 1) gesture.dragOver(x + (i & 1), y);
 			});
 			gesture.drop();
-			const proposal = dropped![1];
-			assert.equal(proposal.uses.length, registrations);
-			let measurements = 0;
-			const measure = (text: string, start: number, end: number) => { measurements += 1; return measureTextRange(text, start, end); };
-			const layout = () => review.layout(font, measure, measureText, viewport.bounds);
-			const open = () => review.show({ model: view.source.models.get(proposal.file.file)!, title: 'RETARGET FSM', summary: `${registrations} RECOGNIZED USES: idle -> active`,
-				items: stateMachineRetargetImpacts(view, proposal), apply() { throw new Error('Profile must not edit source.'); }, openSource() {} });
-			const impactOpenLayoutMicroseconds = medianMilliseconds(() => {
-				for (let i = 0; i < 10; i += 1) { open(); layout(); review.clear(); }
+			const [selection, target] = dropped!;
+			assert.equal(target.uses.length, registrations);
+			const targetModel = view.source.models.get(target.file.file)!;
+			let reviewRows = 0;
+			const reviewPreparationProjectionMicroseconds = medianMilliseconds(() => {
+				for (let i = 0; i < 10; i += 1) {
+					const context = new WorkspaceSourceContext(models, sources);
+					for (const source of view.source.models.values()) context.read(source);
+					const edit = createStateMachineRetargetEdit(targetModel, view, selection, target);
+					const evidence = { summary: `${target.uses.length} RECOGNIZED USES: ${target.literal.value} -> ${target.text}`,
+						items: stateMachineRetargetImpacts(view, target) };
+					const proposal = new WorkspaceEditProposal('Retarget FSM', context, { kind: 'edit', edits: new Map([[targetModel, edit]]) });
+					const review = new WorkspaceEditReviewInput(proposal, evidence);
+					layoutEditReviewRows(review, viewport.bounds.right - viewport.bounds.left - 8, measureTextRange);
+					reviewRows = review.rows.length;
+					review.dispose();
+				}
 			}) * 100;
-			open(); layout();
-			const formatted = measurements;
-			const rows = review.tree.rows;
-			const retainedReviewLayoutMicroseconds = medianMilliseconds(() => { for (let i = 0; i < 1000; i += 1) layout(); });
-			const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
-			const stream = new HostOverlayQuadStream();
-			const draw = () => {
-				renderer.beginFrame(presenter); api.beginFrame(renderer); drawWorkbenchSourceEditReview(review); renderer.endFrame();
-				const frame = queue.consumeOverlayFrame(); stream.reset(384, 288);
-				for (let i = 0; i < frame.commandCount; i += 1) stream.appendEntry(frame.commandKinds[i], frame.commandRefs[i]);
-			};
-			draw(); const storage = stream.floatData;
-			const reviewAndQuadsMicroseconds = medianMilliseconds(() => { for (let i = 0; i < 1000; i += 1) draw(); });
-			assert.equal(measurements, formatted); assert.equal(review.tree.rows, rows); assert.equal(stream.floatData, storage);
-			assert.equal(model.version, 1); assert.ok(observed > 0);
+			assert.ok(reviewRows > 0); assert.ok(observed > 0);
+			assert.equal(model.version, 1); assert.equal(provider.version, 1);
+			assert.equal(model.buffer.getText(), source); assert.equal(provider.buffer.getText(), providerSource);
+			assert.equal(model.canUndo, false); assert.equal(provider.canUndo, false);
 			console.log(JSON.stringify({ imported, registrations, capabilityMicroseconds, firstCandidateMicroseconds, movingInsideTargetMicroseconds,
-				impactOpenLayoutMicroseconds, retainedReviewLayoutMicroseconds, reviewAndQuadsMicroseconds,
-				boundary: 'Actual source index and native-worker geometry retained before timing. 10 warmups / median of 25 batches. No parser, layout-worker timing, complete pointer dispatch, GPU raster, guest, Hot Resume, heap/GC or complete Studio frame.' }));
-		} finally { review.dispose(); menu.dispose(); surfaces.dispose(); input.dispose(); model.dispose(); provider.dispose(); }
+				reviewPreparationProjectionMicroseconds, reviewRows,
+				boundary: 'Actual source index and native-worker geometry retained before timing. Review timing includes captured workspace context, exact retarget edit, immutable evidence, unified proposal/input projection and disposal. 10 warmups / median of 25 batches. No parser, layout-worker timing, retained pane layout/render, quads, complete pointer dispatch, GPU raster, guest, Hot Resume, heap/GC or complete Studio frame.' }));
+		} finally { input.dispose(); models.clear(); }
 	}
 }
 void main().catch(error => { console.error(error); process.exitCode = 1; });

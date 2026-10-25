@@ -744,9 +744,9 @@ Retarget analysis preserves the chosen absolute/relative anchor, widens it only
 when necessary, binds all recognized uses of the same literal and retains only
 the current candidate's evidence. It does not edit shared aliases, normalize
 unaddressable keys, invent state entry for a zero-step plan or cache a quadratic
-set of candidate-by-consumer plans. `state_machine_edit.ts` applies admitted
+set of candidate-by-consumer plans. `state_machine_edit.ts` prepares admitted
 current-source evidence as one literal edit with before/after proof bookmarks
-in the existing document history. The selection owner exposes input-independent
+for the existing document history. The selection owner exposes input-independent
 slot/entry and binding/function/return-start coordinates; history retains no AST
 or graph references. A direct literal replacement explicitly selects its new
 token; ordinary replacement still clears correspondence. Hidden views map a
@@ -758,18 +758,19 @@ Physical target-end dragging consumes this capability, creates one analysis at
 the gesture threshold and retains its current candidate. Initial/concurrent
 edges and aliases do not become writable transition ports.
 
-Shared source uses enter `WorkbenchSourceEditReview`, an editor-local control
-built from the existing property tree, action bar and focus routing. The
-contribution supplies impact text and exact source navigation. Source changes
-synchronously dispose its proposal; readonly revokes Apply; input detachment
-clears it. Palette focus can return to the still-current review. Apply detaches
-listeners before one normal source edit; Source/Discard never apply. The pane
-registers document Undo/Redo on the review focus like its other source controls;
-an external edit invalidates the review instead of rebasing it. Review rows
-cannot opt out individual uses of the same literal. There is no new modal router,
-autosave input, working copy, guest patch or history stack. The complete physical
-and live-install contract is in
-[`../docs/state_machine_connection_edit_design.md`](../docs/state_machine_connection_edit_design.md).
+Cross-list BT transfers and shared FSM retargets enter the retained
+`WorkspaceEditReviewInput` through the existing `WorkspaceEditProposal` owner.
+The contribution prepares the exact edits and immutable recognized-use evidence
+once. The proposal captures all consulted source models, previews the same edits
+it applies, and permanently revokes authority when source or write access changes.
+`source_review.ts` carries canonical model/version/offset locations, not callbacks
+into a live graph. The review pane owns diff reading, responsive actions and
+Source navigation; source models and shared document history own accepted changes.
+Source navigation or closing the graph leaves the review and evidence readable;
+settlement retires executable edits and stale navigation. Apply reveals changed
+working copies only after success and does not Save or install them. Direct,
+single-use FSM retargets consume the same prepared edit without a review. Neither
+path introduces a separate working copy, undo stack or guest patch.
 
 FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible
@@ -848,9 +849,10 @@ over an item preserves selection and never starts its source-edit gesture.
 Shift + wheel selects the horizontal axis; Space is not a gameplay binding.
 Explicit zoom is another viewport operation: Ctrl + wheel anchors at the mapped
 pointer, while focused Graph commands and view-title actions anchor at the
-canvas center. They share the viewport's canonical pixel scales
-`1/4, 1/3, 1/2, 1, 2, 3, 4`, following Aseprite and Godot's pixel-art zoom;
-opposite steps revisit exactly the same levels, including 100% after a limit.
+canvas center. Wheel zoom is continuous and exponential; commands step through
+the canonical pixel scales `1/4, 1/3, 1/2, 1, 2, 3, 4`, following Aseprite and
+Godot's pixel-art zoom. Opposite command steps revisit exactly the same levels,
+including 100% after a limit.
 `1:1` resets to 100%; the range is 25–400%. Target context menus contain source/
 details/edit/history operations, not view zoom. Scroll offsets are
 viewport pixels, layout coordinates remain unchanged, and Source/Back carries

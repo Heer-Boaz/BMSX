@@ -29,17 +29,24 @@ import type { BehaviorKind, BehaviorRegistrationSource } from './model';
 import { buildBehaviorQuickPickItems } from './quick_access';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from './view_model';
-import { selectStateMachineSource } from './state_machine_selection';
+import { selectStateMachineSource, type StateMachineSourceSelection } from './state_machine_selection';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engine';
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
 import type { BehaviorInspectionProperty } from './inspection';
-import { behaviorTreeEditTarget, behaviorTreeMoveTarget, createBehaviorTreeChildDuplicateEdits, createBehaviorTreeChildMoveEdits, createBehaviorTreeChildRemovalEdits } from './behavior_tree_edit';
-import type { StateMachinePathUse } from './state_machine_retarget';
+import { behaviorTreeEditTarget, behaviorTreeMoveTarget, createBehaviorTreeChildDuplicateEdits, createBehaviorTreeChildMoveEdits, createBehaviorTreeChildRemovalEdits, createBehaviorTreeTransferEdit } from './behavior_tree_edit';
+import type { StateMachineRetargetCheck } from './state_machine_retarget';
 import { createStateMachineInitialEdits, stateMachineInitialTarget } from './state_machine_initial';
 import { beginBehaviorTreeDrag, type BehaviorTreeTransferDrop } from './behavior_tree_drag';
 import type { WorkbenchGraphDragSession } from '../../ui/graph/drag';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
+import type { BehaviorTreeTransferAnalysis, BehaviorTreeTransferCheck } from './behavior_tree_transfer';
+import { createStateMachineRetargetEdit } from './state_machine_edit';
+import { behaviorTreeTransferImpacts } from './behavior_tree_review';
+import { stateMachineRetargetImpacts } from './state_machine_review';
+import { WorkspaceSourceContext } from '../../services/working_copy/source_context';
+import { WorkspaceEditProposal } from '../../services/working_copy/workspace_edit';
+import { WorkspaceEditReviewInput } from '../edit_review/editor_input';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { canOpenBehaviorInspectionSource } from './inspection_source';
 import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
@@ -129,16 +136,37 @@ export class BehaviorLensController {
 		if (sourceChanged && navigationSelection === undefined) finishBehaviorLensNavigation(view);
 	}
 
-	/** Review navigation keeps the actual consumer/return, not just the shared literal. */
-	public openStateMachineUseSource(input: BehaviorLensInput, use: StateMachinePathUse): void {
-		const target = input.view.definitionRowKey === use.definition.rowKey ? input
-			: this.openDefinition(this.documents.registrations.getRegistrations(input.view.resource.domain)
-				.find(candidate => candidate.rowKey === use.definition.rowKey)!);
-		const view = target.view;
-		view.selection = selectStateMachineSource({ kind: 'state-outcome', rowKey: use.transition.slot.source.rowKey,
-			transition: use.transition, outcome: use.outcome }, view.source.models);
-		finishBehaviorLensNavigation(view);
-		this.openSelectedSource(view);
+	/** A shared literal is one versioned source edit, not one edit per recognized consumer. */
+	public retargetStateMachineTransition(input: BehaviorLensInput,
+		selection: Extract<StateMachineSourceSelection, { kind: 'state-outcome' }>,
+		target: Extract<StateMachineRetargetCheck, { kind: 'available' }>,
+	): void {
+		const view = input.view, model = view.source.models.get(target.file.file)!;
+		if (target.uses.length === 1) {
+			model.history.applyEdits(new Map([[model, createStateMachineRetargetEdit(model, view, selection, target)]]));
+			return;
+		}
+		const context = new WorkspaceSourceContext(editorTextModelService, this.sources);
+		for (const source of view.source.models.values()) context.read(source);
+		const edit = createStateMachineRetargetEdit(model, view, selection, target);
+		const evidence = { summary: `${target.uses.length} recognized uses: ${target.literal.value} -> ${target.text}\nRecognized in ${view.resource.path}; other registration files and dynamic calls are not enumerated.`,
+			items: stateMachineRetargetImpacts(view, target) };
+		const proposal = new WorkspaceEditProposal('Retarget FSM', context, { kind: 'edit', edits: new Map([[model, edit]]) });
+		openEditorTab(this.editorPanes, new WorkspaceEditReviewInput(proposal, evidence));
+	}
+
+	/** Capture the exact transfer and its source caveats before leaving the graph. */
+	public reviewTreeTransfer(input: BehaviorLensInput, analysis: BehaviorTreeTransferAnalysis,
+		insertion: number, check: Extract<BehaviorTreeTransferCheck, { kind: 'available' }>,
+	): void {
+		const view = input.view, model = view.source.models.get(analysis.member.file.file)!;
+		const context = new WorkspaceSourceContext(editorTextModelService, this.sources);
+		for (const source of view.source.models.values()) context.read(source);
+		const edit = createBehaviorTreeTransferEdit(model, view, analysis.member, check, insertion);
+		const evidence = { summary: `${analysis.member.branch.role} -> ${check.target.role} position ${insertion + 1}\nRecognized source uses only; dynamic consumers are not enumerated.`,
+			items: behaviorTreeTransferImpacts(view, analysis, insertion, check) };
+		const proposal = new WorkspaceEditProposal('Move BT source', context, { kind: 'edit', edits: new Map([[model, edit]]) });
+		openEditorTab(this.editorPanes, new WorkspaceEditReviewInput(proposal, evidence));
 	}
 
 	public openSource(): void {

@@ -66,6 +66,7 @@ export class EditorTextModel {
 	private readonly contentChangeListeners = new Set<ContentChangeListener>();
 	private readonly beforeContentChangeListeners = new Set<WorkingCopyListener>();
 	private readonly dirtyChangeListeners = new Set<WorkingCopyListener>();
+	private readonly readOnlyChangeListeners = new Set<WorkingCopyListener>();
 	private readonly saveListeners = new Set<WorkingCopyListener>();
 	private readonly revertListeners = new Set<WorkingCopyListener>();
 	private readonly disposeListeners = new Set<WorkingCopyListener>();
@@ -149,7 +150,14 @@ export class EditorTextModel {
 	}
 
 	public refreshResource(resource: RuntimeResource): void {
+		const readOnly = this.readOnly;
 		this.resourceValue = resource;
+		if (readOnly !== this.readOnly) for (const listener of this.readOnlyChangeListeners) listener();
+	}
+
+	public onDidChangeReadOnly(listener: WorkingCopyListener): () => void {
+		this.readOnlyChangeListeners.add(listener);
+		return () => this.readOnlyChangeListeners.delete(listener);
 	}
 
 	/** One pre-edit boundary for model observers that track positions in the old buffer. */
@@ -456,6 +464,7 @@ export class EditorTextModel {
 		this.contentChangeListeners.clear();
 		this.beforeContentChangeListeners.clear();
 		this.dirtyChangeListeners.clear();
+		this.readOnlyChangeListeners.clear();
 		this.saveListeners.clear();
 		this.revertListeners.clear();
 		this.trackedRangeSets.clear();

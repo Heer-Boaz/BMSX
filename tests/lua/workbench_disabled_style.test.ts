@@ -73,7 +73,7 @@ for (const theme of ['dark', 'light']) {
 	});
 	for (const variant of ['tiny', 'msx'] as const) {
 		test(`${theme}/${variant} painted action labels remain readable in every enabled interaction state`, t => {
-			const f = fixture(t, theme, variant), state = createWorkbenchActionBar('sourceEditReview.title');
+			const f = fixture(t, theme, variant), state = createWorkbenchActionBar('aem.title');
 			for (const item of state.items) item.enabled = true;
 			const item = state.items.find(action => action.icon === undefined)!;
 			layoutWorkbenchActionBar(state, 360, 10, 10 + f.font.lineHeight + 6, text => f.font.measure(text), f.font.renderFont(), 4);
@@ -124,7 +124,7 @@ for (const theme of ['dark', 'light']) {
 			for (const rect of pattern) assert.equal(rect.color, resolveThemeTokenColor(colors.COLOR_DESCRIPTION_TEXT));
 		});
 		test(`${theme}/${variant} actual action labels stay neutral when disabled, checked and hovered`, t => {
-			const f = fixture(t, theme, variant), state = createWorkbenchActionBar('sourceEditReview.title');
+			const f = fixture(t, theme, variant), state = createWorkbenchActionBar('aem.title');
 			for (const item of state.items) item.enabled = true;
 			const disabled = state.items[0], enabled = state.items[1];
 			disabled.enabled = false; disabled.checked = true; state.hoveredCommand = disabled.command;

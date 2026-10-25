@@ -1,6 +1,6 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
-import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
+import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_REPARENT_SOURCE, BT_REPARENT_MODULE_SOURCE } from '../../helpers/behavior_reparent_fixture';
@@ -36,9 +36,6 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT reparent requires its graph input');
 	const viewport = lens.view.presentation.viewport;
-	const pane = ide.editor.editorPanes.activePane;
-	if (!(pane instanceof BehaviorLensEditorPane)) throw new Error('BT reparent requires the Behavior Lens pane');
-	const review = pane.sourceEditReview;
 	await runPaletteCommand('Graph: Zoom Out');
 	const root = () => viewport.model.nodes[0].children[0];
 	const point = (node: BehaviorGraphNode, fraction: number) => {
@@ -55,19 +52,26 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 		setPointerButton('pointer_primary', true); await frame();
 		movePointer(point(target, fraction)); await frame();
 		setPointerButton('pointer_primary', false); await frame();
-		check(review.visible, 'reparent: dropping a compatible list move opens source review');
+		const review = getActiveTab();
+		if (!(review instanceof WorkspaceEditReviewInput)) throw new Error('reparent: physical drop must open the unified review tab');
+		check(review.proposal.state === 'pending', 'reparent: compatible list move opens pending source review');
+		return review;
 	};
 	let version = model.version;
-	await drop(root().children[0], root().children[2], 0.5);
+	let review = await drop(root().children[0], root().children[2], 0.5);
 	check(model.version === version, 'reparent: preview/drop does not edit before Apply');
-	check(review.tree.rows.some(row => row.element.value === 'leaf'),
+	check(review.evidence.items.some(item => item.value === 'leaf'),
 		'reparent: review identifies the written reference and eager read');
 	console.info('STUDIO: BT reparent review ready for visual inspection');
-	await press('Escape');
-	check(!review.visible && model.version === version, 'reparent: Escape discards the proposal without edits');
-	await drop(root().children[0], root().children[2], 0.5);
-	await click(review.actionBar.items.find(item => item.command === 'sourceEditReview.apply')!.bounds, 6);
-	check(!review.visible && model.version === version + 1 && root().children.length === 2,
+	await runPaletteCommand('Review: Discard Workspace Edit');
+	check(review.proposal.state === 'discarded' && getActiveTab() === review && model.version === version, 'reparent: Discard retains evidence without edits');
+	await test.clickTab(lens.id);
+	review = await drop(root().children[0], root().children[2], 0.5);
+	await click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds, 6);
+	check(review.proposal.state === 'applied' && getActiveTab().kind === 'code_editor' && model.version === version + 1,
+		'reparent: accepted source opens its working copy and retains review evidence');
+	await test.clickTab(lens.id);
+	check(root().children.length === 2,
 		'reparent: held Apply commits one source operation');
 	const moved = root().children[1].children[0];
 	check(viewport.selection === moved && readLuaSourceRange(model.buffer, moved.source.occurrenceRange) === 'leaf',
@@ -86,16 +90,18 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 		'reparent: graph Redo restores both destination and selection');
 	await press('ControlLeft', 'KeyZ');
 	await drop(root().children[1].children[0].children[0], root().children[2], 0.8);
-	await runPaletteCommand('Review: Apply Source Edit');
+	await runPaletteCommand('Review: Apply Workspace Edit');
+	await test.clickTab(lens.id);
 	check(root().children.length === 4 && root().children[1].children[0].children.length === 0
 		&& viewport.selection === root().children[3], 'reparent: an only child moves upward, leaving its authored list empty');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'reparent: upward source move is also one Undo');
 	version = model.version;
-	await drop(root().children[0], root().children[2], 0.5);
+	review = await drop(root().children[0], root().children[2], 0.5);
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- new generation' }]);
 	await frame();
-	check(!review.visible && model.version === version + 1, 'reparent: changed source revokes the pending proposal');
+	check(review.proposal.state === 'stale' && getActiveTab() === review && model.version === version + 1, 'reparent: changed source revokes the pending proposal');
+	await test.clickTab(lens.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'reparent: Undo restores the fixture, not the expired proposal');
 	harness.openLuaSource(model.resource.path);

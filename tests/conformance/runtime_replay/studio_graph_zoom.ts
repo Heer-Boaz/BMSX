@@ -1,10 +1,14 @@
 import { editorPointerState } from '../../../ide/input/pointer/state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
+import { editorFeedbackState } from '../../../ide/common/feedback_state';
 
 /** Real menu, palette, pointer and source-navigation flows on either diagram kind. */
 export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	const { frame, click, press, runPaletteCommand, movePointer, setKey, ide } = test;
+	// Expiring authoring feedback changes the canvas extent. Test zoom anchoring
+	// after that unrelated presentation has retired, not across two layouts.
+	await test.until(() => !editorFeedbackState.message.visible, 'zoom: preceding authoring feedback retired');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || (lens.view.presentation.kind !== 'graph' && lens.view.presentation.kind !== 'state-graph')) throw new Error('zoom probe requires an actual Studio diagram');
 	const graph = lens.view.presentation;
@@ -41,7 +45,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	setKey('ControlLeft', true);
 	test.remote.apply([{ type: 'wheel', deltaY: 1 }]); await frame();
 	setKey('ControlLeft', false); await frame();
-	check(viewport.zoom === 2 && Math.abs(viewport.viewportToGraphX(pointer.viewportX) - pointerX) < 1e-7
+	check(viewport.zoom === 1.5 && Math.abs(viewport.viewportToGraphX(pointer.viewportX) - pointerX) < 1e-7
 		&& Math.abs(viewport.viewportToGraphY(pointer.viewportY) - pointerY) < 1e-7, 'zoom: Ctrl-wheel uses the actual pointer, not the canvas center');
 	const zoom = viewport.zoom, x = viewport.scrollX, y = viewport.scrollY;
 	await runPaletteCommand('Behavior Lens: Open Source');

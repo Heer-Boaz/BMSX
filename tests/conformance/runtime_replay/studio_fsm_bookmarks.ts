@@ -2,7 +2,7 @@ import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
-import { retargetStateMachineTransition } from '../../../ide/workbench/contrib/behavior_lens/state_machine_edit';
+import { createStateMachineRetargetEdit } from '../../../ide/workbench/contrib/behavior_lens/state_machine_edit';
 import { StateMachineRetargetAnalysis } from '../../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
@@ -66,7 +66,7 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 			.checkTarget(branch.children.get('other')!);
 		if (target.kind !== 'available') throw new Error('FSM bookmark: fixture target must be admitted');
 		let version = model.version;
-		retargetStateMachineTransition(model, view, selection, target);
+		model.history.applyEdits(new Map([[model, createStateMachineRetargetEdit(model, view, selection, target)]]));
 		check(model.version === version + 1 && graph.viewport.model.edges.length === 0 && (!imported || main.version === mainVersion), 'FSM bookmark: one edit immediately revokes obsolete endpoints');
 		await ready();
 		const changed = model.buffer.getText();

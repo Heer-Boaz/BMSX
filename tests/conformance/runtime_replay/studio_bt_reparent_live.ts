@@ -1,5 +1,5 @@
 import { BT_REPARENT_LIVE_SOURCE } from '../../helpers/behavior_reparent_live_fixture';
-import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
+import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
@@ -38,11 +38,10 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.live');
 	const lens = getActiveTab();
-	const pane = ide.editor.editorPanes.activePane;
-	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph' || !(pane instanceof BehaviorLensEditorPane)) {
+	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') {
 		throw new Error('BT live: actual BT graph and contribution pane required');
 	}
-	const viewport = lens.view.presentation.viewport, review = pane.sourceEditReview;
+	const viewport = lens.view.presentation.viewport;
 	await runPaletteCommand('Graph: Zoom Out');
 	const root = () => viewport.model.nodes[0].children[0];
 	const source = root().children[0], target = root().children[1];
@@ -57,9 +56,14 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 	const version = model.version;
 	movePointer(point(source)); await frame(); setPointerButton('pointer_primary', true); await frame();
 	movePointer(point(target)); await frame(); setPointerButton('pointer_primary', false); await frame();
-	check(review.visible && model.version === version, 'BT live: cross-depth release offers review without applying source');
-	await click(review.actionBar.items.find(item => item.command === 'sourceEditReview.apply')!.bounds, 6);
-	check(!review.visible && model.version === version + 1 && root().children.length === 2 && root().children[0].children.length === 2,
+	const review = getActiveTab();
+	if (!(review instanceof WorkspaceEditReviewInput)) throw new Error('BT live: drop must open a unified review tab');
+	check(review.proposal.state === 'pending' && model.version === version, 'BT live: cross-depth release offers review without applying source');
+	await click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds, 6);
+	check(review.proposal.state === 'applied' && getActiveTab().kind === 'code_editor' && model.version === version + 1,
+		'BT live: acceptance opens the working copy while retaining the exact preview');
+	await test.clickTab(lens.id);
+	check(root().children.length === 2 && root().children[0].children.length === 2,
 		'BT live: accepted physical drop moves one authored child into the nested sequence');
 	const moved = root().children[0].children[1];
 	check(viewport.selection === moved && readLuaSourceRange(model.buffer, moved.source.occurrenceRange) === 'first',

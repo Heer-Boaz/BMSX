@@ -1,7 +1,7 @@
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import type { BehaviorTreeSourceMember } from './behavior_tree_model';
 import type { BehaviorLensViewState } from './view_model';
-import type { EditorTextEdit, EditorTextModel } from '../../../editor/model/text_model';
+import type { EditorModelEdit, EditorTextEdit, EditorTextModel } from '../../../editor/model/text_model';
 import { createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../../language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits } from '../../../language/lua/table_field_insertion';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
@@ -43,9 +43,9 @@ export function createBehaviorTreeChildMoveEdits(buffer: TextBuffer, member: Beh
 		fields.indexOf(member.branch.entries[member.index].field), fields.indexOf(member.branch.entries[destination].field));
 }
 
-/** One admitted write resource and one history element, with the destination occurrence selected. */
-export function transferBehaviorTreeChild(model: EditorTextModel, view: BehaviorLensViewState,
-	member: BehaviorTreeSourceMember, check: Extract<BehaviorTreeTransferCheck, { kind: 'available' }>, insertion: number): void {
+/** Exact source operations and typed history state, captured before review or navigation. */
+export function createBehaviorTreeTransferEdit(model: EditorTextModel, view: BehaviorLensViewState,
+	member: BehaviorTreeSourceMember, check: Extract<BehaviorTreeTransferCheck, { kind: 'available' }>, insertion: number): EditorModelEdit {
 	const field = member.branch.entries[member.index].field;
 	const { target, table } = check;
 	const destination = insertion === target.entries.length ? table.fields.length : table.fields.indexOf(target.entries[insertion].field);
@@ -55,10 +55,11 @@ export function transferBehaviorTreeChild(model: EditorTextModel, view: Behavior
 	const fieldStart = model.buffer.offsetAt(member.file.chunk.locations.range(field.span).start.line - 1, member.file.chunk.locations.range(field.span).start.column - 1);
 	let prefixLength = before.path.length;
 	for (let key = view.selection!.rowKey; key !== member.branch.source.rowKey; key = view.source.parentByRowKey.get(key)!) prefixLength -= 1;
-	const suffix = before.path.slice(prefixLength);
-	model.pushEditOperations(transfer.edits, behaviorSourceEditState.of(before), changes => {
-		mapBehaviorSourceBookmark(after, model.resource, changes);
-		return behaviorSourceEditState.of({ ...after, path: [...after.path, ...suffix.map(step => ({ ...step,
-			start: transfer.fieldRange.start + step.start - fieldStart, end: transfer.fieldRange.start + step.end - fieldStart }))] });
-	});
+	const movedPath = before.path.slice(prefixLength).map(step => ({ ...step,
+		start: transfer.fieldRange.start + step.start - fieldStart, end: transfer.fieldRange.start + step.end - fieldStart }));
+	const resource = model.identity;
+	return { version: model.version, edits: transfer.edits, beforeEditState: behaviorSourceEditState.of(before), computeAfterEditState: changes => {
+		mapBehaviorSourceBookmark(after, resource, changes);
+		return behaviorSourceEditState.of({ ...after, path: [...after.path, ...movedPath] });
+	} };
 }

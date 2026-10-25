@@ -10,14 +10,11 @@ import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 
 import type { WorkbenchGraphConnectionHandles } from '../../ui/graph/connection';
-import type { WorkbenchSourceEditReview } from '../../ui/source_edit_review/control';
-import { drawWorkbenchSourceEditReview } from '../../render/source_edit_review';
 
 const EMPTY_LENS_TEXT = 'NO STATIC BEHAVIOR REGISTRATIONS';
 
 /** Draws the retained presentation; source recognition and layout generation run elsewhere. */
-export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback, handles?: WorkbenchGraphConnectionHandles, review?: WorkbenchSourceEditReview): void {
-	if (review !== undefined) { drawWorkbenchSourceEditReview(review); return; }
+export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback, handles?: WorkbenchGraphConnectionHandles): void {
 	const layout = state.layout;
 	if (state.presentation.kind === 'outline') api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);

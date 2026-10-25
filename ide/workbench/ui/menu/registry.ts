@@ -10,7 +10,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'play.context' | 'gamePanel.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'buildLog.title' | 'window.title' | 'play.title' | 'animation.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'buildLog.title' | 'window.title' | 'play.title' | 'animation.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -34,7 +34,6 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'problems.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'window.title': readonly WorkbenchMenuCommandItem[];
-	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.reader.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.reader.content': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.title': readonly WorkbenchMenuCommandItem[];
@@ -46,6 +45,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'gte.inspector.content': readonly WorkbenchMenuCommandItem[];
 	readonly 'assistant.turn': readonly WorkbenchMenuCommandItem[];
 	readonly 'workspaceEditReview.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'workspaceEditReview.evidence.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'menubar.file': readonly WorkbenchMenuItem[];
 	readonly 'menubar.edit': readonly WorkbenchMenuItem[];
 	readonly 'menubar.run': readonly WorkbenchMenuItem[];
@@ -243,11 +243,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
 	],
 	'behaviorLens.canvas.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
-	'sourceEditReview.title': [
-		{ type: 'command', command: 'sourceEditReview.apply' },
-		{ type: 'command', command: 'sourceEditReview.source' },
-		{ type: 'command', command: 'sourceEditReview.discard' },
-	],
 	'romInspector.reader.title': [
 		{ type: 'command', command: 'romInspector.hold', icon: 'pin', checkedIcon: 'unpin' },
 		{ type: 'command', command: 'window.collapse', icon: 'collapse', checkedIcon: 'expand' },
@@ -319,8 +314,14 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'assistant.review' },
 	],
 	'workspaceEditReview.title': [
-		{ type: 'command', command: 'workspaceEditReview.apply' },
-		{ type: 'command', command: 'workspaceEditReview.discard' },
+		{ type: 'command', command: 'workspaceEditReview.apply', icon: 'accept' },
+		{ type: 'command', command: 'workspaceEditReview.discard', icon: 'close' },
+	],
+	'workspaceEditReview.evidence.title': [
+		{ type: 'command', command: 'workspaceEditReview.apply', icon: 'accept' },
+		{ type: 'command', command: 'workspaceEditReview.source', icon: 'source' },
+		{ type: 'command', command: 'workspaceEditReview.impacts', icon: 'info' },
+		{ type: 'command', command: 'workspaceEditReview.discard', icon: 'close' },
 	],
 	'menubar.file': [
 		{ type: 'command', command: 'createResource' },

@@ -64,9 +64,9 @@ new connection protocol through the real editor pane, pointer capture and
 
 The concrete FSM slice now connects current-source/read-only capability,
 proven literal/return selection, shared-consumer review and existing edit/history.
-Its physical drag, Source, Undo/Redo and Save/Hot Resume proof is separate from
-this domain-free control proof; see
-[`state_machine_connection_edit_design.md`](state_machine_connection_edit_design.md).
+Its physical drag, Source, Undo/Redo and Save/Hot Resume workflow is separate
+from this domain-free control proof; see the executable workflows in
+[`../tests/conformance/behavior_graph/README.md`](../tests/conformance/behavior_graph/README.md#fsm-endpoint-authoring-and-impact-review).
 
 ## Validation — 10 September 2026
 

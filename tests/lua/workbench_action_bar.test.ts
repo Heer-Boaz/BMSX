@@ -27,7 +27,7 @@ function fixture(t: TestContext) {
 	const hover = new PointerHoverService();
 	const content = focus.createTarget();
 	content.bindKeyboard(() => {});
-	const state = createWorkbenchActionBar('sourceEditReview.title');
+	const state = createWorkbenchActionBar('workspaceEditReview.evidence.title');
 	layoutWorkbenchActionBar(state, 240, 10, 22, text => text.length * 4, null, 0);
 	const enabled = new Set(state.items.map(item => item.command));
 	const calls: EditorCommandId[] = [];
@@ -175,18 +175,18 @@ test('blur, capture replacement, blocking, lost input and input detach cancel wi
 
 test('toolbar is one focus stop, with roving enabled actions and content Escape', t => {
 	const f = fixture(t);
-	f.enabled.delete(f.state.items[1].command);
+	for (const item of f.state.items.slice(1, -1)) f.enabled.delete(item.command);
 	assert.equal(f.focus.moveFocus(false), true);
 	assert.equal(f.state.hasFocus, true);
 	assert.equal(f.state.focusedIndex, 0);
-	f.press('ArrowRight'); assert.equal(f.state.focusedIndex, 2);
+	f.press('ArrowRight'); assert.equal(f.state.focusedIndex, f.state.items.length - 1);
 	f.press('ArrowRight'); assert.equal(f.state.focusedIndex, 0);
-	f.press('End'); assert.equal(f.state.focusedIndex, 2);
+	f.press('End'); assert.equal(f.state.focusedIndex, f.state.items.length - 1);
 	f.press('Home'); assert.equal(f.state.focusedIndex, 0);
-	f.press('ArrowLeft'); assert.equal(f.state.focusedIndex, 2);
+	f.press('ArrowLeft'); assert.equal(f.state.focusedIndex, f.state.items.length - 1);
 	f.press('Escape'); assert.equal(f.focus.target, f.content);
 	assert.equal(f.state.hasFocus, false);
-	f.focus.moveFocus(true); assert.equal(f.state.focusedIndex, 2, 're-entry remembers the last focused action');
+	f.focus.moveFocus(true); assert.equal(f.state.focusedIndex, f.state.items.length - 1, 're-entry remembers the last focused action');
 	f.focus.moveFocus(true); assert.equal(f.focus.target, f.content);
 });
 
@@ -454,15 +454,15 @@ test('action hover leaves on an exclusive route or detach, independently of pres
 });
 
 test('hidden actions occupy no layout and cannot be focused, pressed or released after hiding', t => {
-	const f = fixture(t), first = f.state.items[0], middle = f.state.items[1], last = f.state.items[2];
+	const f = fixture(t), first = f.state.items[0], last = f.state.items[f.state.items.length - 1];
 	const oldLeft = first.bounds.left;
-	middle.visible = false;
+	for (const item of f.state.items.slice(1, -1)) item.visible = false;
 	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => text.length * 4, null, 0);
 	assert.ok(first.bounds.left > oldLeft);
 	assert.equal(first.bounds.right + 2, last.bounds.left);
-	f.bar.focusTarget.focus(); f.press('ArrowRight'); assert.equal(f.state.focusedIndex, 2);
+	f.bar.focusTarget.focus(); f.press('ArrowRight'); assert.equal(f.state.focusedIndex, f.state.items.length - 1);
 	f.pointer(0, PRIMARY, PRIMARY); first.visible = false; f.bar.update();
-	assert.equal(f.capture.active, false); assert.equal(f.state.focusedIndex, 2);
+	assert.equal(f.capture.active, false); assert.equal(f.state.focusedIndex, f.state.items.length - 1);
 	f.pointer(0, 0, 0, PRIMARY); assert.deepEqual(f.calls, []);
 	f.key('Space', true); last.visible = false; f.bar.update(); last.visible = true; f.key('Space', false);
 	assert.deepEqual(f.calls, [], 'hiding cancels keyboard activation even after reappearance');

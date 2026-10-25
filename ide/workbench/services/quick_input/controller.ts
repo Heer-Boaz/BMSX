@@ -82,6 +82,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		placeholder: string,
 		provide: (origin: InputFocusTarget | null, disposables: DisposableStore) => QuickPickProvider<T>,
 		accept: (item: T) => void,
+		onWillShow?: (lifetime: DisposableStore) => void,
 	): void {
 		const session: QuickInputSession = {
 			kind: 'pick', returnFocus: null, disposables: new DisposableStore(),
@@ -93,7 +94,7 @@ export class QuickInputController implements PointerCaptureTarget {
 				accept(item);
 			},
 		};
-		if (!this.show(session)) return;
+		if (!this.show(session, onWillShow)) return;
 		// Catalogs observe the invoking control after ordinary blur has published
 		// its draft. Reentrant focus/provider callbacks may replace this session.
 		const provider = provide(session.returnFocus, session.disposables);

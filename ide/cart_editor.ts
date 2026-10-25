@@ -174,8 +174,6 @@ import type { ChromeRenderContext } from './workbench/render/chrome_context';
 import { createResourceEditorResolver } from './workbench/contrib/resources/editor_contributions';
 import type { ResourceEditorResolver } from './workbench/services/editor/resource_editor_resolver';
 import { EditorPanes } from './workbench/services/editor/editor_panes';
-import { openEditorTab } from './workbench/ui/tabs';
-import { resolveCodeEditorInput, retainModelCodeTabContext } from './workbench/ui/code_tab/contexts';
 import { CodeEditorPane } from './workbench/contrib/code_editor/editor_pane';
 import { ResourceViewerEditorPane } from './workbench/contrib/resources/editor_pane';
 import { BehaviorLensEditorPane } from './workbench/contrib/behavior_lens/editor_pane';
@@ -514,9 +512,7 @@ export class RuntimeCartEditor implements CartEditor {
 			conversation_observer: () => new ConversationObserverPane(decodeImage, this.surfaces, this.paneSurface, this.commands),
 			assistant: () => new AssistantPane(this.clipboard, this.editorPanes, this.assistantCommands, decodeImage,
 				this.surfaces, this.paneSurface, this.commands, this.contextMenu, workArea),
-			workspace_edit_review: () => new WorkspaceEditReviewPane(models => {
-				for (const model of models) openEditorTab(this.editorPanes, resolveCodeEditorInput(retainModelCodeTabContext(model)));
-			}),
+			workspace_edit_review: () => new WorkspaceEditReviewPane(this.editorPanes, this.quickInput, this.contextMenu, this.surfaces, this.paneSurface, workArea),
 			code_editor: () => new CodeEditorPane(
 				this,
 				this.clipboard,
