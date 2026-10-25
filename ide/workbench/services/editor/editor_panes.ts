@@ -60,6 +60,7 @@ export class EditorPanes {
 		const pane = this.getOrCreatePane(input);
 		this.activePaneValue = pane;
 		pane.setInput(input, this.contentBounds, selection, navigationSelection);
+		pane.layout(this.contentBounds);
 		pane.focus();
 	}
 

@@ -1,24 +1,19 @@
 import { pointerHover } from './hover';
-import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
-import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, problemsPanel, setProblemsPanelHeightFromViewportY } from '../../workbench/contrib/problems/panel/controller';
-import { editorChromeState } from '../../workbench/ui/chrome_state';
+import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, problemsPanel } from '../../workbench/contrib/problems/panel/controller';
 import { clearEditorPointerSelectionState } from './state';
 import type { EditorPanes } from '../../workbench/services/editor/editor_panes';
 
 export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
-	if (editorChromeState.problemsPanelResizing) {
-		updateProblemsPanelResize(snapshot);
-		return true;
-	}
 	if (!justPressed) {
 		return false;
 	}
-	if (!problemsPanel.isVisible || !isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+	const bounds = getProblemsPanelBounds();
+	if (bounds === null || !isPointerOverProblemsPanelDivider(bounds, snapshot.viewportX, snapshot.viewportY)) {
 		return false;
 	}
-	editorChromeState.problemsPanelResizing = true;
+	problemsPanel.beginResize(snapshot, bounds.bottom - bounds.top);
 	clearEditorPointerSelectionState();
 	return true;
 }
@@ -47,13 +42,4 @@ export function handleProblemsPanelPointer(
 	}
 	clearEditorPointerSelectionState();
 	return true;
-}
-
-function updateProblemsPanelResize(snapshot: PointerSnapshot): void {
-	if (!snapshot.valid || (snapshot.pressedButtons & PointerButton.Primary) === 0) {
-		editorChromeState.problemsPanelResizing = false;
-		return;
-	}
-	setProblemsPanelHeightFromViewportY(snapshot.viewportY);
-	clearEditorPointerSelectionState();
 }

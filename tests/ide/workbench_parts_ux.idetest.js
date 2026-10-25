@@ -58,6 +58,36 @@ await capture('parts-new-resource-admitted'); unchanged();
 t.command('gpuDebugger'); await t.frames(3);
 const gpu = t.activeWorkbenchTab();
 t.assert(gpu.kind === 'gpu_debugger', 'the actual GPU inspector did not open');
+// New-resource diagnostic publication may change the part's automatic height.
+// Let that real producer settle before targeting its published sash edge.
+await t.frames(90);
+
+// Escape cancels the physical sash gesture. Hiding/reopening its owner cannot
+// let the old held move consume a later, genuinely fresh source press.
+const cancelledDivider = { x: gpu.layout.left + 12, y: gpu.layout.bottom, outside: gpu.layout.top - 1 };
+await focusTab(cart.input); await press('ControlLeft', 'Home');
+const initialCaret = t.activeEditorDocument().nativeCaret;
+const freshSourcePoint = { x: initialCaret.x + initialCaret.width / 2, y: initialCaret.y + initialCaret.height / 2 };
+t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'the sash cancellation fixture did not begin in Source');
+t.controlInput([{ type: 'pointer', x: cancelledDivider.x, y: cancelledDivider.y }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+await press('Escape');
+t.controlInput([{ type: 'pointer', x: cancelledDivider.x, y: cancelledDivider.outside }]); await t.frames(2);
+await capture('parts-problems-cancelled-held-move'); unchanged();
+t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+t.command('problems'); await t.frames(2); t.command('problems'); await t.frames(3);
+t.controlInput([{ type: 'pointer', x: freshSourcePoint.x, y: freshSourcePoint.y }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+await capture('parts-problems-reopened-fresh-source-press');
+t.assert(t.activeWorkbenchTab() === cart.input && t.activeEditorDocument().model === cart.model
+	&& t.activeEditorDocument().focusTarget.hasFocus, 'a cancelled Problems sash consumed the fresh Source press after hide/reopen');
+await press('ArrowDown');
+t.assert(cart.input.context.view.cursorRow === 1, 'the fresh Source press did not return ordinary source navigation'); unchanged();
+// Explicit Problems close/reopen starts a new selection lifetime. Establish its
+// intended marker through real list input before testing passive editor switches.
+t.command('problems.coverage'); await t.frames(2); await press('Tab'); await press('Home'); await press('ArrowDown'); await press('Enter');
+t.assert(t.activeWorkbenchTab() === intro.input && t.activeEditorDocument().model === intro.model,
+	'the explicitly reopened Problems list did not establish its intended diagnostic owner');
+
 for (const font of ['tiny', 'msx']) {
 	for (const theme of ['light', 'dark']) {
 		await focusTab(gpu);
@@ -88,6 +118,51 @@ for (const font of ['tiny', 'msx']) {
 			&& gpu.view === retainedView && gpu.projection === retainedProjection,
 			'temporary body concealment replaced the inspector input or its selected observation');
 		await capture(`parts-${font}-${theme}-body-recovered`); unchanged();
+
+		// A pre-focused Source loses text/clipboard admission when the actual
+		// Problems sash consumes its body, without detaching the working copy.
+		const sourceDivider = { x: gpu.layout.left + 12, bottom: gpu.layout.bottom, concealed: gpu.layout.top - 1 };
+		await focusTab(cart.input); await press('ControlLeft', 'Home'); await press('ShiftLeft', 'ArrowRight');
+		await press('ControlLeft', 'KeyC'); // Seed the real host clipboard from authored Source.
+		t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'Source did not own the initial text/clipboard context');
+			const readingView = cart.input.context.view, visibleCaret = t.activeEditorDocument().nativeCaret;
+			// This is a real visible cell now; after scrolling it is not the offscreen caret.
+			const readingPoint = { x: visibleCaret.x + visibleCaret.width / 2, y: visibleCaret.y + visibleCaret.height / 2 };
+			t.controlInput([{ type: 'pointer', x: readingPoint.x, y: readingPoint.y }, { type: 'wheel', deltaY: 12.375 }]); await t.frames(3);
+			const readingScroll = readingView.scrollRow;
+			t.assert(readingScroll > 0 && readingView.cursorRow === 0 && readingView.cursorColumn === 1
+				&& readingView.selectionAnchor !== null && readingView.selectionAnchor.row === 0 && readingView.selectionAnchor.column === 0,
+				'the real wheel did not establish manual reading away from the retained source selection');
+		t.controlInput([{ type: 'pointer', x: sourceDivider.x, y: sourceDivider.bottom }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: sourceDivider.x, y: sourceDivider.concealed }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+		await capture(`parts-${font}-${theme}-source-body-concealed`);
+		t.assert(t.activeWorkbenchTab() === cart.input && t.activeEditorDocument().model === cart.model
+			&& !t.activeEditorDocument().focusTarget.hasFocus, 'zero-body Source retained its text/clipboard focus instead of its working copy alone');
+			t.assert(readingView.scrollRow === readingScroll && readingView.cursorRow === 0 && readingView.cursorColumn === 1
+				&& readingView.selectionAnchor !== null && readingView.selectionAnchor.row === 0 && readingView.selectionAnchor.column === 0,
+				'zero-body painting replaced the actual manual reading position or retained source selection');
+		await press('KeyZ'); unchanged();
+		await press('ControlLeft', 'KeyX'); unchanged();
+		await press('ControlLeft', 'KeyV'); unchanged();
+		t.controlInput([{ type: 'pointer', x: sourceDivider.x, y: sourceDivider.concealed }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'pointer', x: sourceDivider.x, y: sourceDivider.bottom }]); await t.frames(2);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+		t.assert(!t.activeEditorDocument().focusTarget.hasFocus, 'recovering Source geometry stole focus without a fresh user action');
+			t.assert(readingView.scrollRow === readingScroll && readingView.cursorRow === 0 && readingView.cursorColumn === 1
+				&& readingView.selectionAnchor !== null && readingView.selectionAnchor.row === 0 && readingView.selectionAnchor.column === 0,
+				'Source recovery followed its offscreen caret instead of retaining the real reading viewport');
+			t.controlInput([{ type: 'pointer', x: readingPoint.x, y: readingPoint.y },
+			{ type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+		t.assert(t.activeEditorDocument().model === cart.model && t.activeEditorDocument().focusTarget.hasFocus,
+			'a fresh Source press did not re-admit the same working copy after recovery');
+			const clickedRow = readingView.cursorRow, clickedColumn = readingView.cursorColumn;
+		await press('ArrowDown');
+			// Wrapped rows may advance within the same buffer line in the MSX font.
+			t.assert(readingView.cursorRow > clickedRow || readingView.cursorRow === clickedRow && readingView.cursorColumn > clickedColumn,
+				'recovered Source did not receive ordinary downward cursor input'); unchanged();
+		await capture(`parts-${font}-${theme}-source-fresh-focus`);
 
 		// Establish this exact reading bookmark only after legitimate layout changes settle.
 		await focusTab(cart.input);

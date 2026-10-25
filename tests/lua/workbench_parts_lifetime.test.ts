@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import type { ClipboardContents } from '../../hosts/common/clipboard';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { resourceIdentityKeyFromParts } from '../../ide/common/resource';
@@ -10,8 +11,10 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { activeCodeEditor } from '../../ide/editor/ui/code_editor_state';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
+import { getCodeAreaBounds } from '../../ide/editor/ui/view/view';
 import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 import { runtimeErrorState } from '../../ide/editor/contrib/runtime_error/state';
+import { PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN } from '../../ide/common/constants';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture, WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { api } from '../../ide/runtime/overlay_api';
@@ -49,9 +52,10 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports,
 		captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
 	const unused = (): never => { throw new Error('Part lifetime does not request external domain work.'); };
+	const clipboard = new HeadlessClipboard();
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
-		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
+		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	t.after(async () => {
@@ -69,7 +73,7 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	const edited = model.buffer.getText(), version = model.version, cycles = host.runtime.machine.scheduler.nowCycles;
 	assert.equal(model.canUndo, true);
 	const resource = (index: number) => sources.resourceByIdentity.get(resourceIdentityKeyFromParts(-1, `directory_${index}/child.lua`))!;
-	return { ide, editor, host, sources, input, model, view, source, edited, version, cycles, key, resource };
+	return { ide, editor, host, sources, input, model, view, source, edited, version, cycles, key, resource, clipboard };
 }
 
 test('actual inspector and source attachments preserve user-opened Files and Problems reading state', t => {
@@ -175,6 +179,176 @@ test('source presentation clears on workbench retirement and last-input close, t
 	closeTab(f.editor.editorPanes, f.input.id);
 	assert.equal(getActiveTab(), null); assert.equal(activeCodeEditor.model, null);
 	assert.equal(runtimeErrorState.activeOverlay, null); assert.equal(runtimeErrorState.executionStopRow, null);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('an already-focused Source loses native editing admission and pending Paste when its entire body is withheld', async t => {
+	const f = fixture(t);
+	activeCodeEditor.focusTarget.focus();
+	assert.ok(f.editor.textTarget !== undefined && f.editor.clipboardTarget !== undefined);
+	const pending = Promise.withResolvers<ClipboardContents>();
+	const read = t.mock.method(f.clipboard, 'read', () => pending.promise), execute = t.mock.method(f.clipboard, 'execute');
+	f.key('KeyV', KeyModifier.ctrl); assert.equal(read.mock.callCount(), 1);
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	pending.resolve({ text: 'late asynchronous paste', images: [] }); await pending.promise;
+	assert.ok(f.editor.textTarget === undefined, 'zero-body Source must not publish a native editing target');
+	assert.ok(f.editor.clipboardTarget === undefined, 'zero-body Source must not publish its clipboard capability');
+	assert.ok(inputFocus.admittedTarget !== activeCodeEditor.focusTarget);
+	f.key('Backspace'); f.key('KeyX', KeyModifier.ctrl); f.key('KeyV', KeyModifier.ctrl); f.key('KeyZ', KeyModifier.ctrl);
+	assert.equal(read.mock.callCount(), 1); assert.equal(execute.mock.callCount(), 0);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	problemsPanel.hide(); f.editor.update(0);
+	assert.ok(f.editor.textTarget === undefined, 'recovering layout does not silently steal keyboard focus');
+	activeCodeEditor.focusTarget.focus();
+	assert.ok(f.editor.textTarget !== undefined && f.editor.clipboardTarget !== undefined);
+	assert.ok(activeCodeEditor.model === f.model && getActiveTab() === f.input);
+	f.key('KeyZ', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canRedo, true);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('withholding Source body retains its authored reading position, cursor and selection until fresh focus', t => {
+	const f = fixture(t, '-- retained reading context\n'.repeat(100) + 'return 42');
+	f.key('End', KeyModifier.ctrl); f.key('ArrowUp', KeyModifier.shift);
+	const scroll = f.view.scrollRow, row = f.view.cursorRow, column = f.view.cursorColumn;
+	const anchor = { ...f.view.selectionAnchor! };
+	assert.ok(scroll > 0 && f.view.selectionAnchor !== null, 'real source navigation established a scrolled selection near EOF');
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	assert.equal(f.view.scrollRow, scroll, 'zero-body layout cannot replace retained reading intent with a one-row viewport');
+	assert.equal(f.view.cursorRow, row); assert.equal(f.view.cursorColumn, column); assert.deepEqual(f.view.selectionAnchor, anchor);
+	problemsPanel.hide(); f.editor.update(0);
+	assert.equal(f.view.scrollRow, scroll); assert.equal(f.view.cursorRow, row); assert.equal(f.view.cursorColumn, column);
+	assert.deepEqual(f.view.selectionAnchor, anchor); assert.ok(f.editor.textTarget === undefined);
+	assert.ok(activeCodeEditor.model === f.model && activeCodeEditor.view === f.view);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	f.editor.editorPanes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canRedo, true);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('ordinary inspector return preserves manual Source reading away from its retained caret', t => {
+	const f = fixture(t, '-- retained reading context\n'.repeat(100) + 'return 42');
+	f.key('ArrowRight', KeyModifier.shift);
+	const bounds = getCodeAreaBounds();
+	f.editor.dispatchWheel({ x: (bounds.codeLeft + bounds.codeRight) / 2, y: (bounds.codeTop + bounds.codeBottom) / 2,
+		deltaX: 0, deltaY: 12, attachmentDeltaY: 12, modifiers: KeyModifier.none, timestamp: 1 });
+	f.editor.update(0);
+	const scroll = f.view.scrollRow, column = f.view.cursorColumn, anchor = { ...f.view.selectionAnchor! };
+	assert.ok(scroll > 0 && f.view.cursorRow === 0 && f.view.selectionAnchor !== null,
+		'physical wheel scrolling moved the reading viewport away from its retained source selection');
+	f.editor.commands.execute('gpuDebugger'); f.editor.update(0);
+	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0);
+	assert.ok(activeCodeEditor.model === f.model && activeCodeEditor.view === f.view && getActiveTab() === f.input);
+	assert.equal(f.view.scrollRow, scroll, 'reattaching the same source geometry is not a request to reveal its offscreen caret');
+	assert.equal(f.view.cursorRow, 0); assert.equal(f.view.cursorColumn, column); assert.deepEqual(f.view.selectionAnchor, anchor);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version); assert.equal(f.model.canUndo, true);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('the actual Problems sash preserves automatic sizing until motion and commits relative movement through final release', t => {
+	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(0); f.editor.update(0);
+	let bounds = getProblemsPanelBounds()!, x = (bounds.left + bounds.right) / 2;
+	let y = bounds.top + PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+	const automatic = problemsPanel.visibleHeight;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
+	assert.equal(pointerCapture.active, true);
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
+	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
+	assert.equal(pointerCapture.active, false); assert.equal(problemsPanel.visibleHeight, automatic);
+	for (let index = 0; index < 20; index++) resolveLuaTextFileModel(editorTextModelService, f.sources, f.resource(index));
+	f.editor.diagnostics.computePending(); f.editor.update(0);
+	assert.ok(problemsPanel.visibleHeight > automatic, 'a stationary sash click must not pin the automatic content-size owner');
+	problemsPanel.setFixedHeightPx(73); f.editor.update(0);
+	bounds = getProblemsPanelBounds()!; x = (bounds.left + bounds.right) / 2;
+	y = bounds.top - PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 4 });
+	assert.equal(pointerCapture.active, true);
+	assert.equal(problemsPanel.visibleHeight, 73, 'grabbing the divider margin cannot jump the requested part size');
+	f.editor.dispatchPointer({ x, y: y - 12, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 5 });
+	assert.equal(problemsPanel.visibleHeight, 85, 'continuous drag changes the explicit size by its pointer displacement');
+	f.editor.dispatchPointer({ x, y: y - 19, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 6 });
+	assert.equal(problemsPanel.visibleHeight, 92, 'the release occurrence contributes its final movement');
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
+	problemsPanel.setFixedHeightPx(1000000); f.editor.update(0);
+	bounds = getProblemsPanelBounds()!; const presented = bounds.bottom - bounds.top;
+	x = (bounds.left + bounds.right) / 2; y = bounds.top + PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 7 });
+	assert.equal(pointerCapture.active, true); assert.equal(problemsPanel.visibleHeight, 1000000);
+	f.editor.dispatchPointer({ x, y: y + 12, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 8 });
+	assert.equal(problemsPanel.visibleHeight, presented - 12, 'drag begins at the displayed size, not an occluded larger request');
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as const) test(`Problems sash ${retirement} retires and drains before a fresh Source click`, t => {
+	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(73); f.editor.update(0);
+	f.ide.overlayRenderer.beginFrame(f.host.presenter); api.beginFrame(f.ide.overlayRenderer);
+	f.editor.draw(); f.ide.overlayRenderer.endFrame();
+	const caret = { ...f.editor.textTarget!.caretRect() };
+	problemsPanel.setFocused(true);
+	const bounds = getProblemsPanelBounds()!, x = (bounds.left + bounds.right) / 2;
+	const y = bounds.top + PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+	// The physical producer is down before the corresponding native editor occurrence.
+	f.host.input.inputButton('pointer:0', 'pointer_primary', true, 1, 1, 1);
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
+	assert.equal(pointerCapture.active, true, 'Problems must own a captured control, not a global resize flag');
+	if (retirement === 'input-cancel') f.editor.cancelInput();
+	else if (retirement === 'deactivate') { f.editor.deactivate(); f.editor.activate(); f.editor.update(0); }
+	else if (retirement === 'hide') { problemsPanel.hide(); problemsPanel.show(); f.editor.update(0); }
+	else { f.editor.updateViewport({ width: 0, height: 288 }); f.editor.updateViewport({ width: 384, height: 288 }); f.editor.update(0); }
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
+	const sourceX = caret.x + caret.width / 2, sourceY = caret.y + caret.height / 2;
+	f.editor.dispatchPointer({ x: sourceX, y: sourceY, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
+	assert.equal(problemsPanel.visibleHeight, 73, 'the retired hold cannot resize a recovered part');
+	f.host.input.inputButton('pointer:0', 'pointer_primary', false, 0, 3, 1);
+	f.editor.dispatchPointer({ x: sourceX, y: sourceY, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
+	problemsPanel.setFocused(true);
+	f.host.input.inputButton('pointer:0', 'pointer_primary', true, 1, 4, 2);
+	f.editor.dispatchPointer({ x: sourceX, y: sourceY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 4 });
+	f.host.input.inputButton('pointer:0', 'pointer_primary', false, 0, 5, 2);
+	f.editor.dispatchPointer({ x: sourceX, y: sourceY, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 5 });
+	assert.equal(activeCodeEditor.focusTarget.hasFocus, true, 'the next fresh Source click must not be stolen by the retired sash');
+	assert.equal(problemsPanel.visibleHeight, 73);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('retiring Problems does not cancel the actual sibling tab-strip scrollbar gesture', t => {
+	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(73);
+	for (let index = 40; index < 48; index++) openEditorTab(f.editor.editorPanes,
+		createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(index))));
+	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0);
+	const thumb = editorChromeState.tabScrollbar.getThumb()!; assert.ok(thumb !== null);
+	const x = (thumb.left + thumb.right) / 2, y = (thumb.top + thumb.bottom) / 2;
+	const scroll = editorChromeState.tabScrollbar.getScroll();
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
+	assert.equal(pointerCapture.active, true);
+	problemsPanel.hide(); f.editor.update(0);
+	assert.equal(pointerCapture.active, true); assert.equal(pointerCapture.draining, false);
+	f.editor.dispatchPointer({ x: x + 32, y, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
+	assert.ok(editorChromeState.tabScrollbar.getScroll() > scroll);
+	f.editor.dispatchPointer({ x: x + 32, y, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });

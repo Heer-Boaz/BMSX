@@ -859,6 +859,7 @@ export class RuntimeCartEditor implements CartEditor {
 		refreshWorkbenchLayout();
 		if (this.resourcePanel.refresh()) refreshWorkbenchLayout();
 		if (this.gamePanel.update()) refreshWorkbenchLayout();
+		problemsPanel.update();
 		this.editorPanes.layout(getWorkbenchEditorBounds());
 		this.surfaces.changed();
 	}
@@ -1119,6 +1120,8 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.isAvailable) {
 			return;
 		}
+		refreshWorkbenchLayout();
+		this.editorPanes.layout(getWorkbenchEditorBounds());
 		const entry = retainEntryTabContext(this.sources);
 		initializeTabs(entry, this.editorPanes);
 		this.resourcePanel.queuePendingSelection(entry.model.resource.domain === SYSTEM_RESOURCE_DOMAIN ? null : entry.model.resource);

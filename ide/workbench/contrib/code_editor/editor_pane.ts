@@ -21,7 +21,9 @@ import { showEditorMessage } from '../../../common/feedback_state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { getCodeAreaBounds, measureGutterWidth, scrollRows, scrollHorizontally, refreshViewportLayout, handlePointerAutoScroll } from '../../../editor/ui/view/view';
+import { getCodeAreaBounds, measureGutterWidth, scrollRows, scrollHorizontally, handlePointerAutoScroll } from '../../../editor/ui/view/view';
+import { resolveCodeAreaViewport } from '../../../editor/ui/code/area_viewport';
+import { rewrapRuntimeErrorOverlays } from '../../../runtime_error/navigation';
 import { renderCodeArea } from '../../../editor/render/code_area/area';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
@@ -69,6 +71,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	}
 
 	private readonly nativeText = new CodeEditorTextInput();
+	private layoutWidth = -1;
 	private textTop = -1;
 	private textBottom = -1;
 	private selectionPointerX = 0;
@@ -89,7 +92,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		},
 	});
 	private readonly unbindBlur = activeCodeEditor.focusTarget.onDidBlur(() => {
-		this.cancelPointer(); activeCodeEditor.model.breakUndoSequence();
+		pointerCapture.cancelTarget(this); activeCodeEditor.model.breakUndoSequence();
 	});
 	public constructor(
 		private readonly editor: CartEditor,
@@ -101,6 +104,9 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		private readonly debuggerState: RuntimeDebuggerState,
 	) {
 		super();
+		activeCodeEditor.focusTarget.canFocus = () => this.hasInput && this.contentBounds.left < this.contentBounds.right
+			&& editorViewState.cachedContentWidth > 0
+			&& editorViewState.codeAreaTop < editorViewState.codeAreaBottom;
 		activeCodeEditor.focusTarget.registerCommand('contextMenu', {
 			isEnabled: () => true,
 			run: () => openCodeContextMenuAtCursor(this.editor),
@@ -120,17 +126,19 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	}
 
 	public dispose(): void {
-		this.cancelPointer();
+		pointerCapture.cancelTarget(this);
+		activeCodeEditor.focusTarget.canFocus = undefined;
 		this.unbindKeyboard(); this.unbindClipboard();
 		this.unbindBlur();
 	}
 
 	protected activate(): void {
 		activateCodeEditorTab(this.input);
+		this.layoutWidth = this.contentBounds.right - this.contentBounds.left;
 		activeCodeEditor.focusTarget.textInput = this.nativeText;
 		setActiveDiagnostics(this.input.context.model, this.editor.diagnostics.diagnostics);
 		this.unsubscribeBeforeContentChange = this.input.context.model.onWillChangeContent(() => {
-			this.cancelPointer();
+			pointerCapture.cancelTarget(this);
 			activeCodeEditor.clearInlineEdit(); activeCodeEditor.clearVisualCursor();
 		});
 		this.unsubscribeContentChange = this.input.context.model.onDidChangeContent(event => {
@@ -150,7 +158,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 
 	public override clearInput(): void {
 		storeCodeTabContext(this.input.context);
-		this.cancelPointer();
+		pointerCapture.cancelTarget(this);
 		this.editor.completion.clearInput();
 		activeCodeEditor.focusTarget.release();
 		activeCodeEditor.focusTarget.textInput = undefined;
@@ -170,17 +178,31 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	public override layout(bounds: Readonly<RectBounds>): void {
 		super.layout(bounds);
 		this.textTop = editorViewState.codeAreaTop; this.textBottom = editorViewState.codeAreaBottom;
-		refreshViewportLayout();
+		if (bounds.left < bounds.right && this.textTop < this.textBottom) {
+			activeCodeEditor.clearVisualCursor();
+			const width = bounds.right - bounds.left;
+			if (width !== this.layoutWidth) editorViewState.layout.markVisualLinesDirty();
+			this.layoutWidth = width;
+			resolveCodeAreaViewport();
+			rewrapRuntimeErrorOverlays();
+		}
 		layoutInlineWidgets();
-		if (bounds.left === bounds.right || this.textTop === this.textBottom) this.cancelPointer();
+		if (!activeCodeEditor.focusTarget.canFocus!()) {
+			pointerCapture.cancelTarget(this);
+			activeCodeEditor.focusTarget.release();
+			pointerHover.release(codeAreaHover);
+		}
 		this.editor.completion.layoutPopup(bounds.bottom - bounds.top, editorViewState.lineHeight);
 	}
 
 	public override update(deltaSeconds: number): void {
 		if (this.textTop !== editorViewState.codeAreaTop || this.textBottom !== editorViewState.codeAreaBottom) {
 			this.textTop = editorViewState.codeAreaTop; this.textBottom = editorViewState.codeAreaBottom;
-			if (this.textTop === this.textBottom) this.cancelPointer();
-			else if (!editorCaretState.cursorRevealSuspended) ensureCursorVisible();
+			if (this.textTop === this.textBottom) {
+				pointerCapture.cancelTarget(this);
+				activeCodeEditor.focusTarget.release();
+				pointerHover.release(codeAreaHover);
+			} else if (!editorCaretState.cursorRevealSuspended) ensureCursorVisible();
 		}
 		layoutInlineWidgets();
 		this.editor.completion.processPending(deltaSeconds);
@@ -209,6 +231,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	public draw(): void {
 		this.editor.completion.layoutPopup(this.contentBounds.bottom - this.contentBounds.top, editorViewState.lineHeight);
 		renderInlineWidgets();
+		if (!activeCodeEditor.focusTarget.canFocus!()) return;
 		const renameActive = renameController.isActive();
 		renderCodeArea(
 			this.editor.completion,
@@ -284,7 +307,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	}
 
 	public cancelPointer(): void {
-		pointerCapture.cancelTarget(this);
+		pointerCapture.release(this);
 		if (editorPointerState.pointerSelecting) editorPointerState.lastPointerSnapshot = null;
 		editorPointerState.pointerSelecting = false;
 		editorPointerState.lastPointerRowResolution = null;

@@ -1,6 +1,8 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
+import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
+import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
 import type { EditorDiagnostic, PointerSnapshot } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
@@ -18,6 +20,7 @@ import {
 	type ProblemsPanelItemLayout,
 	type PanelLayout,
 	getProblemsPanelBounds,
+	clampProblemsPanelHeight,
 } from './layout';
 import { drawProblemsPanelSurface } from './render';
 import { handleProblemsPanelKeyboardInput } from './keyboard';
@@ -36,12 +39,11 @@ import { WorkbenchTooltip } from '../../../ui/tooltip';
 export {
 	getProblemsPanelBounds,
 	isPointerOverProblemsPanelDivider,
-	setProblemsPanelHeightFromViewportY,
 } from './layout';
 
 const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 
-export class ProblemsPanelController implements PointerHoverTarget {
+export class ProblemsPanelController implements PointerHoverTarget, PointerCaptureTarget {
 	public onPointerLeave(): void { this.hoverIndex = -1; this.header.onPointerLeave(); this.feedback.hide(); }
 	private visible = false;
 	public readonly focusTarget = inputFocus.createTarget();
@@ -57,6 +59,9 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	private readonly itemLayouts = new ScratchBuffer<ProblemsPanelItemLayout>(createProblemsPanelItemLayout);
 	private cachedLayout: PanelLayout = null;
 	private fixedHeightPx: number = null;
+	private resizeStartY = 0;
+	private resizeStartHeight = 0;
+	private resizeLastY = 0;
 	private lastAvailableWidth = 1;
 	private readonly feedback = new WorkbenchTooltip();
 	private feedbackArea: Readonly<RectBounds> | undefined;
@@ -74,6 +79,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	}
 
 	public detach(): void {
+		pointerCapture.cancelTarget(this);
 		this.feedback.detach(); this.feedbackArea = undefined;
 		this.unbindFeedbackBlur?.(); this.unbindFeedbackBlur = undefined;
 		this.header.detach();
@@ -118,6 +124,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	}
 
 	public hide(): void {
+		pointerCapture.cancelTarget(this);
 		pointerHover.release(this);
 		if (!this.visible) {
 			return;
@@ -207,7 +214,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 
 	public update(): void {
 		const bounds = getProblemsPanelBounds();
-		if (bounds === null) return;
+		if (bounds === null) { pointerCapture.cancelTarget(this); return; }
 		this.prepareLayout(bounds);
 		this.header.updateFeedback();
 		this.updateFeedback(bounds);
@@ -271,6 +278,26 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	}
 
 	public setFixedHeightPx(height: number): void { this.fixedHeightPx = height > 0 ? height : null; this.cachedLayout = null; }
+
+	public beginResize(snapshot: PointerSnapshot, presentedHeight: number): void {
+		this.resizeStartY = this.resizeLastY = snapshot.viewportY;
+		this.resizeStartHeight = presentedHeight;
+		pointerCapture.capture(this);
+		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
+	}
+
+	public handleCapturedPointer(snapshot: PointerSnapshot): void {
+		if (snapshot.viewportY === this.resizeLastY) return;
+		this.resizeLastY = snapshot.viewportY;
+		this.setFixedHeightPx(clampProblemsPanelHeight(this.resizeStartHeight + this.resizeStartY - snapshot.viewportY));
+	}
+
+	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
+		pointerCapture.release(this);
+		this.handleCapturedPointer(snapshot);
+	}
+
+	public cancelPointer(): void { pointerCapture.release(this); }
 
 	public resolvePanelWidth(width = this.lastAvailableWidth): number { return width; }
 

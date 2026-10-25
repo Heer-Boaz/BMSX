@@ -184,6 +184,27 @@ function createEditorPanes() {
 	};
 }
 
+test('an attached input receives its current layout before its control can acquire focus', t => {
+	const harness = createEditorPanes();
+	t.after(() => { harness.editorPanes.dispose(); inputFocus.setTarget(null); });
+	const presented = new WeakMap<object, EditorInput>();
+	t.mock.method(RecordingEditorPane.prototype, 'layout', function (this: RecordingEditorPane<EditorInput>, bounds: Readonly<RectBounds>) {
+		EditorPane.prototype.layout.call(this, bounds);
+		presented.set(this, this.input);
+	});
+	t.mock.method(RecordingEditorPane.prototype, 'focus', function (this: RecordingEditorPane<EditorInput>) {
+		assert.equal(presented.get(this), this.input, 'focus admission must consume the attached input\'s published layout');
+		this.focusTarget.focus();
+	});
+	harness.editorPanes.layout({ left: 0, top: 10, right: 384, bottom: 270 });
+	harness.editorPanes.openEditor(codeInput('code:0\0a.lua'));
+	assert.equal(harness.codePane().focusTarget.hasFocus, true);
+	harness.editorPanes.openEditor(resourceInput());
+	assert.equal(harness.resourcePane().focusTarget.hasFocus, true);
+	harness.editorPanes.openEditor(codeInput('code:0\0b.lua'));
+	assert.equal(harness.codePane().focusTarget.hasFocus, true);
+});
+
 test('Build Output opens the actual request identity once, retains its document, and never reuses a closed transient input', async t => {
 	const harness = createEditorPanes();
 	editorTabGroup.clear();

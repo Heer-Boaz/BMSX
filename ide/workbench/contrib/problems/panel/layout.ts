@@ -7,7 +7,6 @@ import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
 import { getVisibleProblemsPanelHeight, statusAreaHeight } from '../../../common/layout';
 import * as constants from '../../../../common/constants';
-import { problemsPanel } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 import { computeSourceLabel } from '../../../../common/paths';
@@ -168,31 +167,24 @@ export function getProblemsPanelBounds(): RectBounds | null {
 	const statusHeight = statusAreaHeight();
 	const bottom = editorViewState.viewportHeight - statusHeight;
 	const top = bottom - panelHeight;
-	if (bottom <= top) {
+	if (editorViewState.viewportWidth <= 0 || bottom <= top) {
 		return null;
 	}
 	write_rect_bounds(panelBoundsScratch, 0, top, editorViewState.viewportWidth, bottom);
 	return panelBoundsScratch;
 }
 
-export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean {
-	const bounds = getProblemsPanelBounds();
-	if (!bounds) {
-		return false;
-	}
+export function isPointerOverProblemsPanelDivider(bounds: Readonly<RectBounds>, x: number, y: number): boolean {
 	const margin = constants.PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
 	return y >= bounds.top - margin && y <= bounds.top + margin && x >= bounds.left && x <= bounds.right;
 }
 
-export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
+export function clampProblemsPanelHeight(requestedHeight: number): number {
 	const statusHeight = statusAreaHeight();
 	const bottom = editorViewState.viewportHeight - statusHeight;
 	const minTop = editorChromeState.menuBarHeight + editorViewState.tabBarTotalHeight + 1;
 	const minHeight = problemsPanelHeaderHeight()
 		+ constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2
-		+ Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * editorViewState.lineHeight;
-	const maxTop = Math.max(minTop, bottom - minHeight);
-	const top = clamp(viewportY, minTop, maxTop);
-	const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));
-	problemsPanel.setFixedHeightPx(height);
+		+ constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS * editorViewState.lineHeight;
+	return clamp(requestedHeight, minHeight, Math.max(minHeight, bottom - minTop));
 }
