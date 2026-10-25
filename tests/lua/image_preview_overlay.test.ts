@@ -2,13 +2,11 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import type { CartEditor } from '../../ide/cart_editor';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
-import { handleEditorInput } from '../../ide/input/keyboard/dispatch';
 import { api } from '../../ide/runtime/overlay_api';
 import { ImagePreviewCache } from '../../ide/workbench/ui/image_preview';
 import { ImagePreviewOverlay } from '../../ide/workbench/ui/image_preview_overlay';
@@ -22,6 +20,20 @@ import { decodeImage, encodePngImage } from '../../hosts/node/headless/screensho
 import type { ImageDecoder } from '../../hosts/common/image';
 import type { HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
 import { ELLIPSIS } from '../../ide/common/text';
+import { RuntimeIdeState } from '../../ide/workbench/state';
+import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
+import { createHostFrameFixture } from '../helpers/host_frame';
+import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
+import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
+import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
+import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
+import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { parseLuaChunk } from './cpu_test_harness';
+import { getActiveTab, getTabs, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
+import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 
 const pixels = { width: 2, height: 1, pixels: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]) };
 const bounds = { left: 0, top: 10, right: 140, bottom: 100 };
@@ -60,62 +72,98 @@ function fixture(t: TestContext, commands: EditorCommandRunner = { isEnabled: ()
 		changes: () => changes, wheel: () => wheel, selections: () => selections, decodes: () => decodes };
 }
 
-test('the isolated lightbox admits only explicit tab commands, closing and returning focus before their actual workbench runner', t => {
-	const order: string[] = [], executed: EditorCommandId[] = [];
-	const commands: EditorCommandRunner = {
-		isEnabled: (_command, target) => { assert.equal(target, f.origin); return true; },
-		execute(command, target) {
-			assert.equal(f.preview.visible, false, 'the image must close before a tab action changes its owner');
-			assert.equal(inputFocus.target, f.origin, 'the actual originating control must regain focus before execution');
-			assert.equal(target, f.origin, 'the tab action must keep its captured origin, not the retired modal');
-			assert.equal(inputFocus.commandRunner, commands);
-			executed.push(command); order.push(command);
-		},
-	};
-	const f = fixture(t, commands);
-	f.origin.onDidFocus(() => {
-		assert.equal(f.preview.visible, false, 'return-focus publication cannot expose an open lightbox');
-		order.push('return origin');
+/** A real workbench is required when the contract includes application shortcut admission. */
+function workbenchFixture(t: TestContext) {
+	const source = 'return 42', path = 'lightbox.lua';
+	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, path), [],
+		{ entrySource: source, programDomain: 'system', optLevel: 0 }));
+	const host = createHostFrameFixture(createTestRuntime(image.romBytes)); host.runtime.boot();
+	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: path,
+		projectRootPath: '', can_boot_from_source: true, revision: 0 };
+	registerLuaSourceRecord(registry, { resid: 'lightbox', type: 'lua', src: source, base_src: source,
+		source_path: path, normalized_source_path: path, module_path: 'lightbox', update_timestamp: 0,
+		base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
+	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports,
+		captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
+	const unused = (): never => { throw new Error('Lightbox keyboard routing does not request domain work.'); };
+	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
+		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
+		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
+	const editor = ide.editor;
+	editorRuntimeState.active = true; editor.update(0);
+	const cache = new ImagePreviewCache(async () => pixels);
+	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.paneSurface, editor.commands);
+	preview.layout(bounds, 6);
+	t.after(async () => {
+		preview.dispose(); cache.dispose(); inputFocus.setTarget(null);
+		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
-	// Exercise the production dispatcher; its command route comes from the real focus service.
-	const editor = { surfaces: f.surfaces, clipboardTarget: undefined } as CartEditor;
+	return { editor, preview };
+}
+
+test('the isolated lightbox admits only explicit tab commands, closing and returning focus before their actual workbench runner', t => {
+	const { editor, preview } = workbenchFixture(t), sourceTab = getActiveTab()!;
+	openEditorTab(editor.editorPanes, new GameViewInput()); openEditorTab(editor.editorPanes, new HostErrorInput('Diagnostic'));
+	setActiveTab(editor.editorPanes, sourceTab.id); editor.update(0);
+	const order: string[] = [], executed: EditorCommandId[] = [];
+	let origin = inputFocus.target!;
+	const execute = editor.commands.execute;
+	t.mock.method(editor.commands, 'execute', (command, target) => {
+		assert.equal(preview.visible, false, 'the image must close before a tab action changes its owner');
+		assert.ok(inputFocus.target === origin, 'the actual originating control must regain focus before execution');
+		assert.ok(target === origin, 'the tab action keeps its captured origin, not the retired modal');
+		assert.equal(inputFocus.commandRunner, editor.commands);
+		executed.push(command); order.push(command);
+		execute.call(editor.commands, command, target);
+	});
 	for (const [code, modifiers, command] of [
 		['KeyW', KeyModifier.ctrl, 'tabs.close'],
 		['Tab', KeyModifier.ctrl, 'tabs.next'],
 		['Tab', KeyModifier.ctrl | KeyModifier.shift, 'tabs.previous'],
 	] as const) {
-		f.preview.open('image');
+		origin = inputFocus.target!;
+		const before = getTabs().slice(), active = getActiveTab();
+		const unbind = origin.onDidFocus(() => {
+			assert.equal(preview.visible, false, 'return-focus publication cannot expose an open lightbox');
+			order.push('return origin');
+		});
+		preview.open('image');
 		const modal = inputFocus.target;
 		assert.equal(inputFocus.commandRunner, undefined, 'the modal must not inherit the application command route');
 		for (const [blockedCode, blockedModifiers] of [
 			['KeyS', KeyModifier.ctrl], ['KeyP', KeyModifier.ctrl | KeyModifier.shift],
 		] as const) {
 			const event = new KeyInputEvent(blockedCode, blockedModifiers);
-			handleEditorInput(event, editor);
-			assert.equal(f.preview.visible, true); assert.equal(inputFocus.target, modal);
+			editor.dispatchKey(event);
+			assert.equal(preview.visible, true); assert.ok(inputFocus.target === modal);
+			assert.equal(editor.quickInput.visible, false);
 			assert.deepEqual(order, [], 'Save or Palette borrowed the underlying application command route');
 		}
 		const event = new KeyInputEvent(code, modifiers);
-		handleEditorInput(event, editor);
+		editor.dispatchKey(event); unbind(); editor.update(0);
 		assert.equal(event.consumed, true);
 		assert.deepEqual(order, ['return origin', command]);
+		assert.notEqual(getActiveTab(), active, 'the real workbench performs the admitted tab operation');
+		if (command === 'tabs.close') { assert.equal(getTabs().length, before.length - 1); assert.ok(!getTabs().includes(active!)); }
+		else assert.deepEqual(getTabs(), before);
 		order.length = 0;
 	}
 	assert.deepEqual(executed, ['tabs.close', 'tabs.next', 'tabs.previous']);
 });
 
 test('a disabled explicit tab command is consumed without closing or escaping the isolated lightbox', t => {
-	let executed = 0;
-	const commands: EditorCommandRunner = { isEnabled: () => false, execute() { executed++; } };
-	const f = fixture(t, commands);
-	const editor = { surfaces: f.surfaces, clipboardTarget: undefined } as CartEditor;
-	f.preview.open('image');
+	const { editor, preview } = workbenchFixture(t), active = getActiveTab();
+	assert.equal(getTabs().length, 1); assert.equal(editor.commands.isEnabled('tabs.next'), false);
+	const execute = t.mock.method(editor.commands, 'execute');
+	preview.open('image');
 	const modal = inputFocus.target;
 	assert.equal(inputFocus.commandRunner, undefined);
-	const event = new KeyInputEvent('KeyW', KeyModifier.ctrl);
-	handleEditorInput(event, editor);
-	assert.equal(event.consumed, true); assert.equal(executed, 0);
-	assert.equal(f.preview.visible, true); assert.equal(inputFocus.target, modal);
+	const event = new KeyInputEvent('Tab', KeyModifier.ctrl);
+	editor.dispatchKey(event);
+	assert.equal(event.consumed, true); assert.equal(execute.mock.callCount(), 0);
+	assert.equal(preview.visible, true); assert.ok(inputFocus.target === modal); assert.ok(getActiveTab() === active);
 });
 
 test('the shared lightbox owns local pointer and wheel admission rather than asking each pane to block', t => {

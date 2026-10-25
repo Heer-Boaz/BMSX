@@ -22,6 +22,10 @@ import { drawContextMenu } from '../../ide/workbench/services/context_menu/rende
 import { MenubarController } from '../../ide/workbench/ui/top_bar/controller';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
+import { layoutTabBar } from '../../ide/workbench/ui/tab/layout';
+import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
+import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 function fixture(t: TestContext) {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
@@ -38,10 +42,8 @@ function fixture(t: TestContext) {
 		isEnabled(command: EditorCommandId) { queries++; return !disabled.has(command); },
 		execute(command: EditorCommandId) { assert.equal(focus.target, origin); executed.push(command); },
 	};
-	const menubar = new MenubarController(popup, commands);
 	const context = {
 		get viewportWidth() { return editorViewState.viewportWidth; },
-		get headerHeight() { return editorViewState.headerHeight; },
 		get tabBarHeight() { return editorViewState.tabBarHeight; },
 		get lineHeight() { return editorViewState.lineHeight; },
 		measureText(text: string) { measurements++; return editorViewState.font.measure(text); },
@@ -49,8 +51,15 @@ function fixture(t: TestContext) {
 			api.blit_text_inline_with_font(text, x, y, z, color, editorViewState.font.renderFont());
 		},
 	};
+	const menubar = new MenubarController(popup, commands, context);
+	const surfaces = new WorkbenchSurfaceService();
+	const root = { left: 0, top: 0, right: 384, bottom: 288 };
+	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('chrome'), isVisible: () => true,
+		getBounds: () => root, getClip: () => root, draw() {} });
+	refreshWorkbenchLayout(); menubar.attach(surfaces, owner, getWorkbenchWorkArea());
 	const layout = () => {
-		layoutTopBar(context); menubar.update(); popup.update();
+		root.right = editorViewState.viewportWidth; root.bottom = editorViewState.viewportHeight;
+		layoutTopBar(context, menubar.expanded); layoutTabBar(context); refreshWorkbenchLayout(); menubar.update(); popup.update();
 		if (popup.visible) popup.model.layout(editorViewState.viewportWidth, editorViewState.viewportHeight, context.lineHeight,
 			editorViewState.font.renderFont(), context.measureText);
 	};
@@ -60,16 +69,76 @@ function fixture(t: TestContext) {
 		overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	};
 	const pointer = (id: MenuId, pressed = true) => {
+		if (!menubar.expanded) {
+			const button = editorChromeState.menuButtonBounds;
+			menubar.handlePointer({ valid: true, insideViewport: true, viewportX: (button.left + button.right) / 2,
+				viewportY: (button.top + button.bottom) / 2, pressedButtons: PointerButton.Primary,
+				justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }); layout();
+			if (menubar.activeMenu === id) return;
+		}
 		const bounds = editorChromeState.menuEntryBounds[id];
 		menubar.handlePointer({ valid: true, insideViewport: true, viewportX: bounds.left + 2, viewportY: bounds.top + 2,
 			pressedButtons: 0, justPressedButtons: pressed ? PointerButton.Primary : 0, justReleasedButtons: 0 });
 		layout();
 	};
-	t.after(() => { popup.dispose(); editorFeedbackState.message.visible = false; });
+	t.after(() => { menubar.dispose(); popup.dispose(); surfaces.dispose(); editorTabGroup.clear(); editorFeedbackState.message.visible = false; });
 	layout();
 	return { layout, paint, context, popup, menubar, focus, origin, active, disabled, executed, pointer,
 		measured: () => measurements, queried: () => queries };
 }
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} Menu is one accessible tab-chrome control and reserves category rows only while expanded`, t => {
+	const f = fixture(t);
+	configureFontVariant(new VirtualHeadlessClock(), variant, null); f.layout();
+	const menu = editorChromeState.menuButtonBounds, button = { ...menu };
+	assert.equal(editorTabGroup.tabs.length, 0);
+	assert.equal(editorChromeState.menuBarHeight, 0, 'ordinary workbench layout has no permanent menu row');
+	assert.equal(editorChromeState.tabBarBounds.top, 0);
+	assert.ok(menu.right > menu.left && menu.bottom > menu.top);
+	assert.ok(menu.bottom <= editorChromeState.tabBarBounds.bottom);
+	assert.ok(editorChromeState.tabViewportBounds.left >= menu.right, 'even the empty tab viewport excludes the Menu control');
+	const body = getWorkbenchEditorBounds(), before = { ...body };
+	const tab = new GameViewInput(); editorTabGroup.add(tab); editorTabGroup.activate(tab); f.layout();
+	const groupRevision = editorTabGroup.revision, tabIntent = editorTabGroup.activeTab;
+	f.menubar.toggleFocus(); f.layout();
+	assert.equal(f.menubar.expanded, true); assert.ok(editorChromeState.menuBarHeight > 0);
+	assert.equal(editorChromeState.tabBarBounds.top, editorChromeState.menuBarHeight);
+	assert.deepEqual(menu, button, 'the Menu target stays at its root-chrome anchor as the real category part expands');
+	assert.equal(getWorkbenchEditorBounds(), body); assert.equal(body.top, before.top + editorChromeState.menuBarHeight);
+	assert.equal(editorTabGroup.activeTab, tabIntent); assert.equal(editorTabGroup.revision, groupRevision);
+	f.focus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); f.layout();
+	assert.equal(editorChromeState.menuBarHeight, 0); assert.deepEqual(body, before); assert.equal(f.focus.target, f.origin);
+});
+
+test('a narrow expanded menubar wraps every category into its owned extent instead of discarding commands', t => {
+	const f = fixture(t);
+	for (const variant of ['tiny', 'msx'] as const) {
+		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		editorViewState.viewportWidth = 96; f.layout(); f.menubar.toggleFocus(); f.layout();
+		const extent = editorChromeState.topBarBounds;
+		for (const entry of TOP_BAR_MENU_ENTRIES) {
+			const bounds = editorChromeState.menuEntryBounds[entry.id];
+			assert.ok(bounds.right > bounds.left && bounds.bottom > bounds.top);
+			assert.ok(bounds.left >= extent.left && bounds.right <= extent.right && bounds.top >= extent.top && bounds.bottom <= extent.bottom);
+		}
+		f.focus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); f.layout();
+		for (const entry of TOP_BAR_MENU_ENTRIES) {
+			f.pointer(entry.id); assert.equal(f.menubar.activeMenu, entry.id);
+			f.focus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); f.layout();
+		}
+	}
+});
+
+test('closed Menu hover belongs to its real control without opening a session or taking focus', t => {
+	const f = fixture(t), button = editorChromeState.menuButtonBounds;
+	const pointer = { valid: true, insideViewport: true, viewportX: (button.left + button.right) / 2,
+		viewportY: (button.top + button.bottom) / 2, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
+	assert.equal(f.menubar.handlePointer(pointer), true); f.layout(); f.paint();
+	assert.equal(f.menubar.hovered, true); assert.equal(f.menubar.expanded, false); assert.equal(f.popup.visible, false);
+	assert.equal(f.focus.target, f.origin);
+	f.menubar.dispose();
+	assert.equal(f.menubar.hovered, false); assert.equal(f.popup.visible, false); assert.equal(f.focus.target, f.origin);
+});
 
 test('menubar uses the popup focus and layout; painting consumes dynamic command presentation', t => {
 	const f = fixture(t);
@@ -88,11 +157,11 @@ test('menubar uses the popup focus and layout; painting consumes dynamic command
 	assert.deepEqual(f.popup.model.rows.map(row => ({ label: row.label, top: row.top, bottom: row.bottom })), geometry);
 	f.active.clear(); f.disabled.clear(); f.layout();
 	assert.equal(pause.active, false); assert.equal(step.enabled, true);
-	f.pointer('file', false);
+	f.pointer('view', false);
 	const files = f.popup.model.rows.find(row => row.command === 'resources')!;
-	const label = files.label;
+	assert.equal(files.active, false);
 	f.active.add('resources'); f.layout();
-	assert.notEqual(files.label, label);
+	assert.equal(files.active, true);
 });
 
 test('menu switching retains source context; Escape, outside click and command execution return focus', t => {
@@ -101,7 +170,8 @@ test('menu switching retains source context; Escape, outside click and command e
 	assert.equal(f.menubar.activeMenu, 'edit'); assert.equal(f.focus.target, f.popup.focusTarget);
 	assert.equal(f.popup.focusTarget.commandContext, f.origin);
 	f.focus.handleKeyboard(new KeyInputEvent('ArrowRight', KeyModifier.none)); f.layout();
-	assert.equal(f.menubar.activeMenu, 'run'); assert.ok(f.popup.model.selectedIndex >= 0);
+	assert.equal(f.menubar.activeMenu, TOP_BAR_MENU_ENTRIES[TOP_BAR_MENU_ENTRIES.findIndex(entry => entry.id === 'edit') + 1].id);
+	assert.ok(f.popup.model.selectedIndex >= 0);
 	f.focus.handleKeyboard(new KeyInputEvent('ArrowLeft', KeyModifier.none)); f.layout();
 	assert.equal(f.menubar.activeMenu, 'edit');
 	f.focus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
@@ -147,23 +217,25 @@ test('a non-menubar popup retains outside-click ownership over blank chrome and 
 	assert.equal(f.popup.visible, false); assert.equal(f.focus.target, f.origin);
 });
 
-test('menu geometry clamps to viewport; retained labels do not remeasure on unchanged frames', t => {
+test('menu layout retires stale popup geometry on viewport/font changes without repeated label measurement', t => {
 	const f = fixture(t); f.pointer('view');
-	const width = f.popup.model.bounds.right - f.popup.model.bounds.left;
 	const measured = f.measured();
 	for (let index = 0; index < 100; index++) { f.layout(); f.paint(); }
 	assert.equal(f.measured(), measured);
 	editorViewState.viewportWidth = 256; f.layout();
 	assert.equal(f.measured(), measured);
+	assert.equal(f.popup.visible, false); assert.equal(f.focus.target, f.origin);
+	f.pointer('view');
 	assert.ok(f.popup.model.bounds.right <= 256);
 	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); f.layout();
 	assert.ok(f.measured() > measured);
-	assert.ok(f.popup.model.bounds.right - f.popup.model.bounds.left > width);
+	assert.equal(f.popup.visible, false); assert.equal(f.focus.target, f.origin);
+	f.pointer('view'); assert.ok(f.popup.model.bounds.right <= 256);
 	for (const entry of TOP_BAR_MENU_ENTRIES) {
 		const bounds = editorChromeState.menuEntryBounds[entry.id];
 		if (bounds.right !== 0) assert.equal(bounds.right - bounds.left, editorViewState.font.measure(entry.label) + HEADER_BUTTON_PADDING_X * 2);
 	}
-	editorViewState.viewportWidth = 12; f.layout();
+	f.focus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); f.layout();
 	assert.equal(f.popup.visible, false); assert.equal(f.focus.target, f.origin);
 });
 

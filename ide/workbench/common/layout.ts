@@ -42,7 +42,6 @@ export type WorkbenchStatusLayout = {
 
 export type WorkbenchChromeLayout = {
 	readonly viewportWidth: number;
-	readonly headerHeight: number;
 	readonly lineHeight: number;
 	readonly tabBarHeight: number;
 	measureText(text: string): number;
@@ -134,7 +133,7 @@ let statusMessageCachedMaxWidth = -1;
 let statusMessageCachedFont: EditorFont | undefined;
 
 export function topMargin(): number {
-	return editorViewState.headerHeight + editorViewState.tabBarTotalHeight + 2;
+	return editorChromeState.menuBarHeight + editorViewState.tabBarTotalHeight + 2;
 }
 
 export function getStatusMessageLines(): string[] {
@@ -201,7 +200,7 @@ export function getVisibleProblemsPanelHeight(): number {
 	if (planned <= 0) {
 		return 0;
 	}
-	const maxAvailable = editorViewState.viewportHeight - statusAreaHeight() - (editorViewState.headerHeight + editorViewState.tabBarTotalHeight);
+	const maxAvailable = editorViewState.viewportHeight - statusAreaHeight() - (editorChromeState.menuBarHeight + editorViewState.tabBarTotalHeight);
 	if (maxAvailable <= 0) {
 		return 0;
 	}

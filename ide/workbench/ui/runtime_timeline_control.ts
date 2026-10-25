@@ -19,6 +19,7 @@ import type { WorkbenchSurface } from '../services/windows/model';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { measureText, measureTextRange } from '../../editor/common/text/layout';
 import { editorCommandTitle } from '../../commands/catalog';
+import type { ContextMenuController } from '../services/context_menu/controller';
 
 /** Docked host timeline. Ordinary controls feed the existing finite navigation owner. */
 export class RuntimeTimelineControl {
@@ -32,6 +33,9 @@ export class RuntimeTimelineControl {
 	private workArea!: Readonly<RectBounds>;
 	private context: InputFocusTarget | undefined;
 	private transport: RuntimeTransport | undefined;
+	private contextMenu!: ContextMenuController;
+	private requestedValue = false;
+	private presented = false;
 	private requestedCycles: number | undefined;
 	private seekOperation: FrameNavigationOperation | undefined;
 	public constructor(private readonly commands: EditorCommandRunner, private readonly focusContent: () => void) {
@@ -42,25 +46,70 @@ export class RuntimeTimelineControl {
 		this.actions.focusTarget.next = this.slider.focusTarget;
 		this.slider.focusTarget.previous = this.actions.focusTarget;
 	}
-	public get height(): number { return this.context === undefined ? 0 : RuntimeTimelineLayout.height(editorViewState.font.renderFont()); }
-	public get visible(): boolean { return this.context !== undefined; }
-	public focus(): void { this.actions.focusTarget.focus(); }
-	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>): void {
+	public get available(): boolean { return this.context !== undefined; }
+	public get requested(): boolean { return this.requestedValue; }
+	public get height(): number { return this.presented ? RuntimeTimelineLayout.height(editorViewState.font.renderFont()) : 0; }
+	public get visible(): boolean { return this.presented; }
+	/** Review decisions remain available until their physical navigation has settled. */
+	public get canHide(): boolean { return this.available && this.requestedValue && !this.reviewRequired; }
+	private get reviewRequired(): boolean {
+		return this.transport!.rewind.active || this.requestedCycles !== undefined
+			|| this.seekOperation !== undefined && this.seekOperation.result === undefined
+				&& this.transport!.navigation.active === this.seekOperation;
+	}
+	public focus(): void {
+		if (!this.available) return;
+		this.requestedValue = true;
+		this.update();
+		this.actions.focusTarget.focus();
+	}
+	/** Presentation intent is independent of the attached target and its owned seek. */
+	public hide(): void { this.requestedValue = false; this.updatePresentation(); }
+	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, contextMenu: ContextMenuController): void {
 		this.workArea = workArea;
+		this.contextMenu = contextMenu;
 		this.tooltip.attach(surfaces, owner, workArea);
 	}
 	public setContext(context: InputFocusTarget | undefined, transport: RuntimeTransport | undefined): void {
-		if (context === this.context && transport === this.transport) return;
-		this.slider.clearInput(); this.actions.clearInput(); this.tooltip.hide(); this.requestedCycles = undefined;
-		if (this.seekOperation !== undefined) this.transport!.navigation.cancel(this.seekOperation);
-		this.seekOperation = undefined; this.context = context; this.transport = transport;
-		if (context !== undefined) {
-			this.actions.setInput(this.actionState, context);
+		if (context !== this.context || transport !== this.transport) {
+			this.clearPresentation();
+			// Outline/graph are concrete command clients of the same physical transport.
+			if (transport !== this.transport) {
+				this.requestedCycles = undefined;
+				if (this.seekOperation !== undefined) this.transport!.navigation.cancel(this.seekOperation);
+				this.seekOperation = undefined;
+			}
+			this.context = context; this.transport = transport;
+		}
+		// Composition publishes height before update; review can end on an unchanged target.
+		this.updatePresentation();
+	}
+	private updatePresentation(): void {
+		const visible = this.available && (this.requestedValue || this.reviewRequired);
+		if (visible === this.presented) return;
+		if (visible) {
+			this.presented = true;
+			this.actions.setInput(this.actionState, this.context!);
 			this.actions.focusTarget.previous = this.focusContent;
-			this.slider.focusTarget.commandContext = context;
+			this.slider.focusTarget.commandContext = this.context!;
 			this.slider.focusTarget.next = this.focusContent;
 			this.slider.setInput(this.range);
-		} else { this.actions.focusTarget.previous = null; this.slider.focusTarget.next = null; }
+		} else this.clearPresentation();
+	}
+	private clearPresentation(): void {
+		if (!this.presented) return;
+		const actions = this.actions.focusTarget, slider = this.slider.focusTarget;
+		const menu = this.contextMenu;
+		const invokingMenu = menu.visible && (menu.invocationOrigin === actions || menu.invocationOrigin === slider);
+		const ownsFocus = actions.hasFocus || slider.hasFocus || invokingMenu
+			&& (menu.returnFocus === actions || menu.returnFocus === slider)
+			&& (menu.focusTarget.hasFocus || inputFocus.pendingTarget === menu.focusTarget);
+		this.presented = false;
+		if (invokingMenu) menu.hide(false);
+		pointerCapture.cancelTarget(this.slider); pointerCapture.cancelTarget(this.actions);
+		this.slider.clearInput(); this.actions.clearInput(); this.tooltip.hide();
+		this.actions.focusTarget.previous = null; this.slider.focusTarget.next = null;
+		if (ownsFocus) this.focusContent();
 	}
 	private requestSeek(cycles: number): void {
 		if (this.seekOperation === undefined) this.commands.execute('runtime.pause', this.context);
@@ -85,6 +134,8 @@ export class RuntimeTimelineControl {
 				this.seekOperation = navigation.seek(cycles);
 			}
 		}
+		this.updatePresentation();
+		if (!this.presented) return;
 		const playing = !rewind.stopped && (this.transport!.state === 'LIVE' || this.transport!.state === 'REPLAY');
 		this.actionState.items[1].icon = playing ? 'pause' : 'play';
 		this.actions.update();
@@ -104,10 +155,10 @@ export class RuntimeTimelineControl {
 		else this.tooltip.hide();
 	}
 	public handlePointer(snapshot: PointerSnapshot): boolean {
-		return this.context !== undefined && (this.slider.handlePointer(snapshot) || this.actions.handlePointer(snapshot));
+		return this.presented && (this.slider.handlePointer(snapshot) || this.actions.handlePointer(snapshot));
 	}
 	public draw(): void {
-		if (this.context !== undefined) drawRuntimeTimeline(this.layout, this.actionState, this.range,
+		if (this.presented) drawRuntimeTimeline(this.layout, this.actionState, this.range,
 			this.slider.focusTarget.hasFocus, editorViewState.font.renderFont());
 	}
 	public dispose(): void { this.setContext(undefined, undefined); this.tooltip.detach(); this.slider.dispose(); this.actions.dispose(); }

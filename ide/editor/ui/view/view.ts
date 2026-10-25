@@ -248,7 +248,6 @@ export function configureFontVariant(
 	editorViewState.spaceAdvance = editorViewState.font.advance(' ');
 	editorInlineFieldMetrics.spaceAdvance = editorViewState.spaceAdvance;
 	editorViewState.inlineFieldMetricsRef = editorInlineFieldMetrics;
-	editorViewState.headerHeight = editorViewState.lineHeight + 4;
 	editorViewState.tabBarHeight = editorViewState.lineHeight + 3;
 	editorViewState.tabBarTotalHeight = editorViewState.tabBarHeight;
 	editorViewState.baseBottomMargin = editorViewState.lineHeight + 6;

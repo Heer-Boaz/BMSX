@@ -356,7 +356,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unbindSourceStop: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext & WorkbenchChromeLayout = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
-		get headerHeight(): number { return editorViewState.headerHeight; },
 		get lineHeight(): number { return editorViewState.lineHeight; },
 		get tabBarHeight(): number { return editorViewState.tabBarHeight; },
 		measureText,
@@ -454,7 +453,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
 		this.surfaces = new WorkbenchSurfaceService(this.onSurfaceChange);
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture, this.attachContextMenuSession);
-		this.menubar = new MenubarController(this.contextMenu, this.commands);
+		this.menubar = new MenubarController(this.contextMenu, this.commands, this.chromeRenderContext);
 		this.quickInput = new QuickInputController(this.contextMenu, () => this.surfaces.changed(),
 			next => next !== null && this.surfaces.isInContext(next.scope.surfaceScope, this.quickInput.pointerScope));
 		const chromeSurface = this.surfaces.attach({
@@ -466,7 +465,8 @@ export class RuntimeCartEditor implements CartEditor {
 			onRetire: () => pointerCapture.cancelScope(this.chromeScope),
 		});
 		const workArea = getWorkbenchWorkArea();
-		this.runtimeTimeline.attach(this.surfaces, chromeSurface, workArea);
+		this.runtimeTimeline.attach(this.surfaces, chromeSurface, workArea, this.contextMenu);
+		this.menubar.attach(this.surfaces, chromeSurface, workArea);
 		this.paneSurface = this.surfaces.attach({
 			role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true,
 			getBounds: getWorkbenchEditorBounds, getClip: getWorkbenchEditorBounds,
@@ -674,6 +674,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 	public dispatchPointer(event: PointerInputEvent): void {
 		if (!this.acceptsInput) return;
+		if (event.pressedButtons !== 0) this.menubar.cancelAlt();
 		editorRuntimeState.currentTimeMs = event.timestamp;
 		projectEditorPointerEvent(this.display, event, this.pointerSnapshot);
 		if (event.cancelledButtons !== 0) pointerCapture.cancelButtons(event.cancelledButtons);
@@ -694,6 +695,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public cancelInput(): void {
+		this.menubar.cancelAlt();
 		this.cancelPointerInput();
 		inputFocus.cancelInput();
 	}
@@ -714,6 +716,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public get fontVariant(): Parameters<typeof setFontVariant>[1] { return editorViewState.fontVariant; }
 
 	public activate(): void {
+		this.menubar.cancelAlt();
 		const wasActive = this.isActive;
 		const runtime = this.runtime;
 		const activeSlot = runtime.machine.cpu.activeCartridgeSlot();
@@ -780,6 +783,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public deactivate(): void {
+		this.menubar.cancelAlt();
 		pointerCapture.cancel();
 		this.input.setPointerAdmissionMode('physical');
 		this.guest.invalidate();
@@ -829,6 +833,8 @@ export class RuntimeCartEditor implements CartEditor {
 		editorRuntimeState.currentTimeMs = this.clock.now();
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
+		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
+		this.menubar.update();
 		layoutTabBar(this.chromeRenderContext);
 		this.tabBar.update();
 		this.runtimeTimeline.setContext(this.editorPanes.activePane?.runtimeControlContext, this.editorPanes.activePane?.runtimeTransport);
@@ -841,8 +847,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorPanes.activePane?.update(deltaSeconds);
 		problemsPanel.update();
 		this.runtimeTimeline.update();
-		layoutTopBar(this.chromeRenderContext);
-		this.menubar.update();
 		this.quickInput.update();
 		this.actionPrompt.update();
 		this.contextMenu.update();
@@ -851,6 +855,8 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public updateViewport(viewport: Viewport): void {
 		applyViewportSize(viewport);
+		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
+		this.menubar.update();
 		layoutTabBar(this.chromeRenderContext);
 		refreshWorkbenchLayout();
 		if (this.gamePanel.update()) refreshWorkbenchLayout();
@@ -899,8 +905,8 @@ export class RuntimeCartEditor implements CartEditor {
 	};
 
 	private drawWorkbenchChrome(): void {
-		renderTopBar(this.chromeRenderContext, this.menubar);
 		renderTabBar(this.chromeRenderContext);
+		renderTopBar(this.chromeRenderContext, this.menubar);
 		drawResourcePanel(this.resourcePanel);
 		this.gamePanel.draw();
 		this.runtimeTimeline.draw();
@@ -934,7 +940,7 @@ export class RuntimeCartEditor implements CartEditor {
 		pointerCapture.cancel();
 		this.contextMenu.dispose();
 		this.tabBar.dispose();
-		this.runtimeTimeline.dispose();
+		this.runtimeTimeline.dispose(); this.menubar.dispose();
 		this.gamePanel.dispose();
 		this.quickInput.dispose();
 		this.unbindQuickInputFields();

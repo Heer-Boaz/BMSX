@@ -5,7 +5,8 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.file'
 	| 'menubar.edit'
 	| 'menubar.run'
-	| 'menubar.view';
+	| 'menubar.view'
+	| 'menubar.tools';
 
 export type WorkbenchContextMenuId = 'play.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
@@ -49,6 +50,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'menubar.edit': readonly WorkbenchMenuItem[];
 	readonly 'menubar.run': readonly WorkbenchMenuItem[];
 	readonly 'menubar.view': readonly WorkbenchMenuItem[];
+	readonly 'menubar.tools': readonly WorkbenchMenuItem[];
 	readonly 'scenarioLab.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'scenarioLab.target': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.graph.title': readonly WorkbenchMenuCommandItem[];
@@ -320,10 +322,13 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'menubar.file': [
 		{ type: 'command', command: 'createResource' },
 		{ type: 'command', command: 'projects.createCartridge' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'resourceSearch' },
 		{ type: 'command', command: 'resources.import' },
+		{ type: 'separator' },
 		{ type: 'command', command: 'save' },
-		{ type: 'command', command: 'resources' },
 		{ type: 'command', command: 'keepEditor' },
+		{ type: 'command', command: 'tabs.close' },
 	],
 	'menubar.edit': [
 		{ type: 'command', command: 'undo' },
@@ -332,12 +337,23 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'cut' },
 		{ type: 'command', command: 'copy' },
 		{ type: 'command', command: 'paste' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'findLocal' },
+		{ type: 'command', command: 'findGlobal' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'rename' },
+		{ type: 'command', command: 'renamePreview' },
 	],
 	'menubar.run': [
 		{ type: 'command', command: 'play.reveal' },
+		{ type: 'command', command: 'runCurrentFile' },
+		{ type: 'command', command: 'runProject' },
+		{ type: 'separator' },
 		{ type: 'command', command: 'pause' },
 		{ type: 'command', command: 'stepFrameBack' },
 		{ type: 'command', command: 'stepFrame' },
+		{ type: 'command', command: 'runtime.focusTimeline' },
+		{ type: 'separator' },
 		{ type: 'command', command: 'debugEvaluation' },
 		{ type: 'command', command: 'debugContinue' },
 		{ type: 'command', command: 'debugStepOver' },
@@ -346,33 +362,39 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'hot-resume' },
 		{ type: 'command', command: 'reboot' },
-		{ type: 'command', command: 'runCurrentFile' },
-		{ type: 'command', command: 'runProject' },
 	],
 	'menubar.view': [
-		{ type: 'command', command: 'hostError' },
 		{ type: 'command', command: 'commandPalette' },
+		{ type: 'command', command: 'openEditors' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'resources' },
+		{ type: 'command', command: 'problems' },
+		{ type: 'command', command: 'terminal' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'assistant' },
 		{ type: 'command', command: 'conversations' },
-		{ type: 'command', command: 'terminal' },
-		{ type: 'command', command: 'events' },
-		{ type: 'command', command: 'romInspector' },
-		{ type: 'command', command: 'gteDebugger' },
-		{ type: 'command', command: 'gpuDebugger' },
+		{ type: 'separator' },
 		{ type: 'command', command: 'gameView' },
 		{ type: 'command', command: 'gameView.togglePanel' },
-		{ type: 'command', command: 'runtime.focusTimeline' },
-		{ type: 'command', command: 'actorLab' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'wrap' },
+		{ type: 'command', command: 'filter' },
+		{ type: 'command', command: 'theme-toggle' },
+	],
+	'menubar.tools': [
 		{ type: 'command', command: 'sceneEditor' },
 		{ type: 'command', command: 'animation' },
 		{ type: 'command', command: 'cartMap' },
 		{ type: 'command', command: 'behaviorLens' },
-		{ type: 'command', command: 'scenarioLab' },
-		{ type: 'command', command: 'problems' },
 		{ type: 'separator' },
-		{ type: 'command', command: 'wrap' },
-		{ type: 'command', command: 'filter' },
+		{ type: 'command', command: 'scenarioLab' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'actorLab' },
+		{ type: 'command', command: 'events' },
+		{ type: 'command', command: 'romInspector' },
+		{ type: 'command', command: 'gteDebugger' },
+		{ type: 'command', command: 'gpuDebugger' },
+		{ type: 'command', command: 'hostError' },
 	],
 	'scenarioLab.target': [
 		...TEST_DEBUG_ACTIONS,
@@ -425,6 +447,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'stepFrame', icon: 'stepForward' },
 		{ type: 'command', command: 'runtime.resume', icon: 'accept' },
 		{ type: 'command', command: 'runtime.present', icon: 'present' },
+		{ type: 'command', command: 'runtime.hideTimeline', icon: 'close' },
 	],
 	'editorTabs.title': [
 		{ type: 'command', command: 'tabs.scrollLeft' },

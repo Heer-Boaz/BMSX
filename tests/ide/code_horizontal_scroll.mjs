@@ -83,11 +83,14 @@ test('code horizontal pixelscroll reaches Unicode line end through real Studio u
 		assert.equal(await copyAll(), line, 'clipboard paste did not retain the complete Unicode source fixture'); await press('Home');
 		await palette('Word Wrap'); await wait(160);
 		for (const metrics of [
-			{ variant: 'tiny', left: 20, top: 21, height: 6, advance: 4, barY: 274 },
-			{ variant: 'msx', left: 26, top: 25, height: 8, advance: 6, barY: 272 },
+			{ variant: 'tiny', left: 20, height: 6, advance: 4, barY: 274 },
+			{ variant: 'msx', left: 26, height: 8, advance: 6, barY: 272 },
 		]) {
 			await t.test(`${metrics.variant} full client: thumb maximum, visible EOF caret and exact last-glyph hit`, async () => {
-				const { variant, left, top, height, advance, barY } = metrics;
+				const { variant, left, height, advance, barY } = metrics;
+				// This fixture has a collapsed menu and one short tab: one font-height
+				// tab row (+3 chrome), then the source gap (+2), without tab overflow.
+				const top = height + 3 + 2;
 				await action({ execute: 'click', x: left + 1, y: top + 2 }); await press('Home'); await wait(3);
 				const start = await capture(`${variant}-start`), startImage = PNG.sync.read(await fs.readFile(start.path));
 				const right = start.width;

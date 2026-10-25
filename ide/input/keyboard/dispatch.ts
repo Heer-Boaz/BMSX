@@ -12,14 +12,17 @@ export function handleEditorInput(
 ): void {
 	const focused = inputFocus.admittedTarget;
 	if (focused === null && (editor.surfaces.topBlockingSurface !== null || inputFocus.target !== null)) {
+		editor.menubar.cancelAlt();
 		// A blocked retained focus is not permission to dispatch root shortcuts.
 		playerInput.consumed = true;
 		return;
 	}
 	if (focused?.guestInput !== undefined) {
+		editor.menubar.cancelAlt();
 		focused!.handleKeyboard(playerInput);
 		return;
 	}
+	if (editor.menubar.handleKeyboard(playerInput, focused)) return;
 	if (handleClipboardBindings(playerInput, editor.clipboard, focused)) return;
 	const commands = inputFocus.commandRunner;
 	if (pointerCapture.active && isKeyJustPressed('Escape', playerInput)) {

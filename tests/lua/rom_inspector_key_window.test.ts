@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import type { CartEditor } from '../../ide/cart_editor';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import * as colors from '../../ide/common/constants';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
-import { handleEditorInput } from '../../ide/input/keyboard/dispatch';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { api } from '../../ide/runtime/overlay_api';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
@@ -62,8 +60,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	inputFocus.workbenchScope.commands = commands; origin.focus();
 	let key = new RomMapKeyWindow(input, commands, surfaces, owner, origin, area);
-	const overlay = createHostOverlayFixture(384, 288), editor = { surfaces, clipboardTarget: undefined } as CartEditor;
-	const press = (code: string, modifiers = KeyModifier.none) => handleEditorInput(new KeyInputEvent(code, modifiers), editor);
+	const overlay = createHostOverlayFixture(384, 288);
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], rects: RectRenderSubmission[] = [];
@@ -83,7 +80,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 	};
 	t.after(() => { key.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); unbind(); surfaces.dispose(); input.dispose();
 		inputFocus.workbenchScope.commands = previousCommands; colors.setIdeThemeVariant(previousTheme); });
-	return { input, surfaces, owner, origin, unrelated, commands, press, draw, clickAction, get key() { return key; },
+	return { input, surfaces, owner, origin, unrelated, commands, draw, clickAction, get key() { return key; },
 		recreate() { key.dispose(); key = new RomMapKeyWindow(input, commands, surfaces, owner, origin, area); } };
 }
 
@@ -92,7 +89,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const f = fixture(t, variant, theme); f.key.show();
 		const seen = new Set(), model = f.input.model;
 		for (const code of ['Home', 'End']) {
-			f.press(code); const frame = f.draw(), view = f.input.keyViewport;
+			inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none)); const frame = f.draw(), view = f.input.keyViewport;
 			for (const entry of model.keyEntries) {
 				const label = frame.glyphs.find(glyph => glyph.items === entry.category.label);
 				if (label === undefined) continue;
@@ -114,7 +111,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const up = point(bounds.left + 2, bounds.top + 2, 0, 0, 1);
 		pointerCapture.dispatch(up, false, 1, f.key.window.scope.surfaceScope); pointerCapture.endRoute(up);
 		assert.equal(f.input.keyWindow.bounds.right - f.input.keyWindow.bounds.left, f.input.keyWindow.minimumWidth);
-		f.key.scroll.focusTarget.focus(); f.press('Home');
+		f.key.scroll.focusTarget.focus(); inputFocus.handleKeyboard(new KeyInputEvent('Home', KeyModifier.none));
 		const narrow = f.draw();
 		for (const entry of model.keyEntries) {
 			const label = narrow.glyphs.find(glyph => glyph.items === entry.category.label); if (label === undefined) continue;
@@ -127,21 +124,21 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 test('key scrolling is passive, its actual Tab ring is complete and Escape returns to the original ROM list without closing', t => {
 	const f = fixture(t); f.key.show();
 	const selection = f.input.model.selection, range = f.input.model.selection?.ranges[0], view = f.input.keyViewport;
-	f.press('End'); assert.equal(view.scrollTop, view.scrollbar.getMaximumScroll());
-	f.press('Home'); assert.equal(view.scrollTop, 0);
+	inputFocus.handleKeyboard(new KeyInputEvent('End', KeyModifier.none)); assert.equal(view.scrollTop, view.scrollbar.getMaximumScroll());
+	inputFocus.handleKeyboard(new KeyInputEvent('Home', KeyModifier.none)); assert.equal(view.scrollTop, 0);
 	const client = f.key.window.clientSurface!;
 	assert.equal(client.handleWheel!({ valid: true, insideViewport: true, viewportX: view.bounds.left + 4, viewportY: view.bounds.top + 4,
 		deltaX: 0, deltaY: 1, modifiers: KeyModifier.none }), true);
 	assert.ok(view.scrollTop > 0); assert.equal(f.input.model.selection, selection); assert.equal(f.input.model.selection?.ranges[0], range);
 	for (const target of [f.key.window.focusTarget, f.key.window.actionFocusTarget, f.key.scroll.focusTarget]) {
-		f.press('Tab'); assert.equal(inputFocus.target, target);
+		assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.target, target);
 	}
-	f.press('Tab', KeyModifier.shift); assert.equal(inputFocus.target, f.key.window.actionFocusTarget);
-	f.press('Escape'); assert.equal(inputFocus.target, f.origin); assert.equal(f.input.keyWindow.open, true);
+	assert.equal(inputFocus.moveFocus(true), true); assert.equal(inputFocus.target, f.key.window.actionFocusTarget);
+	inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); assert.equal(inputFocus.target, f.origin); assert.equal(f.input.keyWindow.open, true);
 });
 
 test('client-owned window commands collapse and close the captured client without replacing its snapshot or viewport', t => {
-	const f = fixture(t); f.key.show(); f.press('End');
+	const f = fixture(t); f.key.show(); inputFocus.handleKeyboard(new KeyInputEvent('End', KeyModifier.none));
 	const context = f.key.scroll.focusTarget;
 	for (const command of ['window.collapse', 'window.hide'] as const) {
 		assert.equal(context.getCommand(command), f.key.window.focusTarget.getCommand(command));
@@ -183,7 +180,7 @@ test('controller recreation retains placement/open/collapse per snapshot and nev
 	const up = point(down.viewportX - 20, down.viewportY - 10, 0, 0, 1);
 	pointerCapture.dispatch(up, false, 1, f.key.window.scope.surfaceScope); pointerCapture.endRoute(up); f.key.update();
 	assert.notDeepEqual(model.requestedBounds, original, 'the actual key title drag must change retained placement');
-	f.key.scroll.focusTarget.focus(); f.press('End');
+	f.key.scroll.focusTarget.focus(); inputFocus.handleKeyboard(new KeyInputEvent('End', KeyModifier.none));
 	const requested = { ...model.requestedBounds }, scroll = f.input.keyViewport.scrollTop;
 	f.key.window.setCollapsed(true); f.key.update(); f.unrelated.focus();
 	f.recreate(); assert.equal(model.open, true); assert.equal(model.collapsed, true);

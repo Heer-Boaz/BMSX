@@ -2,8 +2,9 @@
 
 The host rewind timeline is the runtime transport, not a collection of
 per-module playback buttons. Studio docks the same retained view above its
-status bar while a runtime inspection editor is active. Authoring/test actions
-remain in the editor. Actor/ActionEffect program timelines are guest timelines,
+status bar when explicitly requested or required by an active history review.
+An ordinary pause or available history does not reserve a row. Authoring/test
+actions remain in the editor. Actor/ActionEffect program timelines are guest timelines,
 not substitutes for the machine history.
 
 In a live inspector this is navigation through recorded machine state, not a
@@ -11,6 +12,15 @@ claim that the game image is visible. Game View shows that image; Actor Lab
 already pairs its inspection with a game preview. The optional Game panel pairs
 any other editor with that same completed scanout. Source-only editors and chat
 do not reserve space for the runtime transport.
+
+**View: Show Runtime Timeline** reveals and focuses the controls for the
+current physical inspection target. **Hide Runtime Timeline** removes an
+explicitly requested row when no review or owned seek requires it. Hiding is
+not Present, Resume Here or a cancellation of physical navigation. Review
+decisions remain available while that operation is active. Returning to Present
+removes an automatically revealed row; an explicitly requested row stays until
+hidden. Switching concrete clients of the same transport, such as an Actor
+outline and graph, does not replace or cancel the physical seek.
 
 ## Game panel and live behavior inspection
 

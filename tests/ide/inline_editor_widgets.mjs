@@ -101,10 +101,13 @@ test('inline source widgets share visible geometry and pointer ownership in both
 	for (const theme of ['light', 'dark']) {
 		if (theme === 'dark') await palette('Toggle Theme');
 		for (const metrics of [
-			{ variant: 'tiny', advance: 4, height: 6, top: 21, textLeft: 28, hyphenY: 2 },
-			{ variant: 'msx', advance: 6, height: 8, top: 25, textLeft: 38, hyphenY: 3 },
+			{ variant: 'tiny', advance: 4, height: 6, textLeft: 28, hyphenY: 2 },
+			{ variant: 'msx', advance: 6, height: 8, textLeft: 38, hyphenY: 3 },
 		]) {
-			const { variant, advance, height, top, textLeft, hyphenY } = metrics;
+			const { variant, advance, height, textLeft, hyphenY } = metrics;
+			// The collapsed menu adds no row. These short tabs fit beside its fixed
+			// affordance: font-height tab chrome (+3), then the source gap (+2).
+			const top = height + 3 + 2;
 			await sourceUnchanged();
 			const baseline = PNG.sync.read(await fs.readFile((await capture(`${theme}-${variant}-source-origin-baseline`)).path));
 			const caretOffset = ((top + height - 1) * baseline.width + textLeft) * 4;

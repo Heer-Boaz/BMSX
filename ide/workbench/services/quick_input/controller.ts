@@ -35,7 +35,7 @@ export class QuickInputController implements PointerCaptureTarget {
 	public readonly textViewport = new SingleLineFieldViewport();
 	public readonly layout = {
 		bounds: create_rect_bounds(), field: create_rect_bounds(),
-		width: -1, height: -1, headerHeight: -1, font: null as object | null,
+		width: -1, height: -1, font: null as object | null,
 		projectionRevision: -1, textRevision: 0, preparedStart: -1, preparedEnd: -1,
 		renderRows: [] as QuickPickRenderRow[],
 		messageLines: [] as string[],

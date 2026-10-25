@@ -68,7 +68,7 @@ function updateTabDrag(snapshot: PointerSnapshot, now: number, scroll: boolean):
 		state.markerX = (insertion === tabs.length ? bounds.right : bounds.left) + Math.round(scrollbar.getScroll());
 		state.targetIndex = to;
 	}
-	if (scroll) scrollbar.setScroll(scrollbar.getScroll() + dragScrollSpeed(x, 0, editorChromeState.tabViewportBounds.right) * elapsed);
+	if (scroll) scrollbar.setScroll(scrollbar.getScroll() + dragScrollSpeed(x, editorChromeState.tabViewportBounds.left, editorChromeState.tabViewportBounds.right) * elapsed);
 }
 
 export function endTabDrag(): void {

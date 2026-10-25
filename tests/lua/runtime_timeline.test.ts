@@ -18,7 +18,7 @@ import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submi
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} runtime transport shares one compact row without title or pseudo-icon labels`, t => {
 	const font = new Font({ variant }), actions = createWorkbenchActionBar('runtime.title');
 	const layout = new RuntimeTimelineLayout(), range = new WorkbenchSlider();
-	assert.deepEqual(actions.items.map(item => item.icon), ['stepBack', 'play', 'stepForward', 'accept', 'present']);
+	assert.deepEqual(actions.items.map(item => item.icon), ['stepBack', 'play', 'stepForward', 'accept', 'present', 'close']);
 	for (const width of [192, 320, 384]) {
 		layout.update(actions, range, font, 0, 240, width, 0, 150);
 		assert.equal(layout.bounds.bottom - layout.bounds.top, RuntimeTimelineLayout.height(font));

@@ -117,7 +117,7 @@ position displays its offset from the retained present.
 
 Review decision slots and the offset column retain their geometry while a seek
 changes position, so entering review or changing the displayed digits cannot
-cancel a captured scrub. **View: Focus Runtime Timeline** enters the controls
+cancel a captured scrub. **View: Show Runtime Timeline** reveals and enters the controls
 without a pointer or a new gameplay shortcut. Tab moves through eligible
 transport controls and back to the owning content; an unavailable range is
 skipped. Escape returns to that content through the normal focus owner.

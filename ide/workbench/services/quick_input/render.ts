@@ -14,16 +14,15 @@ export function layoutQuickInput(input: QuickInputController): void {
 	const model = input.model;
 	const labelsChanged = input.labelsDirty || layout.width !== view.viewportWidth || layout.font !== view.font;
 	const layoutChanged = labelsChanged || layout.projectionRevision !== model.revision
-		|| layout.height !== view.viewportHeight || layout.headerHeight !== view.headerHeight;
+		|| layout.height !== view.viewportHeight;
 	if (layoutChanged) {
 		layout.width = view.viewportWidth;
 		layout.height = view.viewportHeight;
-		layout.headerHeight = view.headerHeight;
 		layout.font = view.font;
 		layout.projectionRevision = model.revision;
 		const left = 8;
 		const right = view.viewportWidth - 8;
-		const top = view.headerHeight + 4;
+		const top = 4;
 		const fieldTop = top + view.lineHeight + 6;
 		const fieldBottom = fieldTop + view.lineHeight + 4;
 		const rowsTop = fieldBottom + 4;

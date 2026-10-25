@@ -9,6 +9,7 @@ import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { renderTabBar } from '../../ide/workbench/render/tab_bar';
 import { layoutTabBar, tabBarItems } from '../../ide/workbench/ui/tab/layout';
+import { layoutTopBar } from '../../ide/workbench/ui/top_bar/layout';
 import { beginTabDrag, endTabDrag } from '../../ide/workbench/ui/tab/drag';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../ide/input/pointer/capture';
@@ -39,7 +40,6 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384) 
 	let measuredLabels = 0, drawnLabels = 0;
 	const context = {
 		get viewportWidth() { return editorViewState.viewportWidth; },
-		get headerHeight() { return editorViewState.headerHeight; },
 		get tabBarHeight() { return editorViewState.tabBarHeight; },
 		get lineHeight() { return editorViewState.lineHeight; },
 		measureText(text: string) { if (text !== 'x') measuredLabels += 1; return editorViewState.font.measure(text); },
@@ -48,7 +48,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384) 
 			api.blit_text_inline_with_font(text, x, y, z, color, editorViewState.font.renderFont());
 		},
 	};
-	const layout = () => layoutTabBar(context);
+	const layout = () => { layoutTopBar(context, false); layoutTabBar(context); };
 	const paint = () => {
 		drawnLabels = 0;
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
@@ -90,7 +90,7 @@ test('tab layout publishes height and hits before paint; paint cannot measure or
 	f.paint();
 	assert.equal(f.bar.getScroll(), scroll);
 	f.layout();
-	assert.equal(editorChromeState.tabButtonBounds.get(first.id)!.left, 0);
+	assert.equal(editorChromeState.tabButtonBounds.get(first.id)!.left, editorChromeState.tabViewportBounds.left);
 	assert.equal(tabBarItems.peek(0).active, true);
 	t.after(() => { editorChromeState.tabHoverId = null; });
 });
@@ -127,8 +127,8 @@ test('tab layout invalidates measured labels on rename, font and viewport change
 	f.layout();
 	assert.ok(f.measured() > renamedMeasurements);
 	const fontMeasurements = f.measured();
-	assert.equal(bounds.top, f.context.headerHeight + 1);
-	assert.equal(bounds.bottom, f.context.headerHeight + f.context.tabBarHeight - 1);
+	assert.equal(bounds.top, editorChromeState.menuBarHeight + 1);
+	assert.equal(bounds.bottom, editorChromeState.menuBarHeight + f.context.tabBarHeight - 1);
 	editorViewState.viewportWidth = 128;
 	f.layout();
 	const resizedMeasurements = f.measured();
@@ -185,7 +185,7 @@ test('tab capture previews its insertion and commits only an accepted physical d
 	assert.deepEqual(editorTabGroup.tabs, [b, c, a]); assert.equal(pointerCapture.active, false);
 	f.draw();
 	beginTabDrag(a.id, pointer(bounds.left + 2, y, primary, primary), 50);
-	pointerCapture.dispatch(pointer(0, y, primary), false, 60); f.draw();
+	pointerCapture.dispatch(pointer(editorChromeState.tabViewportBounds.left + 1, y, primary), false, 60); f.draw();
 	assert.equal(editorChromeState.tabDragState!.targetIndex, 0);
 	pointerCapture.cancel();
 	assert.deepEqual(editorTabGroup.tabs, [b, c, a], 'Escape/capture loss needs no rollback');
@@ -198,16 +198,17 @@ test('a tab drag pins its preview, scrolls in host time and cancels on model/lif
 	const bounds = editorChromeState.tabButtonBounds.get(preview.id)!;
 	const y = bounds.top + 1;
 	beginTabDrag(preview.id, pointer(bounds.left + 2, y, primary, primary), 0);
-	pointerCapture.dispatch(pointer(1, y, primary), false, 10); f.draw();
+	const edge = editorChromeState.tabViewportBounds.left + 1;
+	pointerCapture.dispatch(pointer(edge, y, primary), false, 10); f.draw();
 	assert.equal(editorTabGroup.previewTab, null);
 	const scroll = f.bar.getScroll();
-	pointerCapture.dispatch(pointer(1, y, primary), false, 1010); f.draw();
+	pointerCapture.dispatch(pointer(edge, y, primary), false, 1010); f.draw();
 	assert.ok(f.bar.getScroll() < scroll - 100, 'holding the edge scrolls while the machine can remain paused');
 	const order = [...editorTabGroup.tabs];
-	pointerCapture.dispatch(pointer(1, y, primary), true, 1020);
+	pointerCapture.dispatch(pointer(edge, y, primary), true, 1020);
 	assert.equal(pointerCapture.active, false); assert.deepEqual(editorTabGroup.tabs, order);
 	beginTabDrag(preview.id, pointer(200, y, primary, primary), 1100);
 	editorTabGroup.removeAt(editorTabGroup.indexOf(preview));
-	pointerCapture.dispatch(pointer(1, y, 0, 0, primary), false, 1120);
+	pointerCapture.dispatch(pointer(edge, y, 0, 0, primary), false, 1120);
 	assert.equal(pointerCapture.active, false); assert.equal(editorChromeState.tabDragState, null);
 });

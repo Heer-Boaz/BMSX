@@ -15,7 +15,7 @@ export function renderTabBar(context: ChromeRenderContext): void {
 	const scrollbar = editorChromeState.tabScrollbar;
 	api.fill_rect(0, barTop, viewportWidth, barBottom, 0, constants.COLOR_TAB_BAR_BACKGROUND);
 	const tabsRight = editorChromeState.tabViewportBounds.right;
-	api.pushClipRect(0, barTop, tabsRight, rowBottom);
+	api.pushClipRect(editorChromeState.tabViewportBounds.left, barTop, tabsRight, rowBottom);
 	for (let index = 0; index < tabBarItems.length; index++) {
 		const entry = tabBarItems.peek(index), { bounds, closeBounds } = entry;
 		if (bounds.right <= 0 || bounds.left >= tabsRight) continue;

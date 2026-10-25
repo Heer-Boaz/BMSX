@@ -212,6 +212,7 @@ export class IdeCommandController {
 				}
 				return;
 			case 'runtime.focusTimeline': this.editor.runtimeTimeline.focus(); return;
+			case 'runtime.hideTimeline': this.editor.runtimeTimeline.hide(); return;
 			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
 			case 'runtime.pause':
 				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(false);
@@ -392,7 +393,8 @@ export class IdeCommandController {
 			case 'stepFrame':
 			case 'stepFrameBack':
 				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
-			case 'runtime.focusTimeline': return this.editor.isActive && this.editor.runtimeTimeline.visible;
+			case 'runtime.focusTimeline': return this.editor.isActive && this.editor.runtimeTimeline.available;
+			case 'runtime.hideTimeline': return this.editor.isActive && this.editor.runtimeTimeline.canHide;
 			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
 			case 'runtime.pause': return this.selectedTransport.playbackEnabled;
 			case 'runtime.present':

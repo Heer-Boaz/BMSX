@@ -461,7 +461,7 @@ inside Studio scopes; a gameplay Escape remains gameplay input.
 
 Concrete region activation commands name their owner. **Actor Lab: Inspect
 Instance** activates the retained Details instance, including a collapsed or
-unavailable locked subject. **View: Focus Runtime Timeline** enters the shared
+unavailable locked subject. **View: Show Runtime Timeline** reveals and enters the shared
 transport controls. Its local Tab order returns to the owning content and
 skips an unavailable range; it does not splice or restore a pane's internal
 focus ring. Neither command introduces a global gameplay key reservation.

@@ -62,6 +62,8 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 	}
 	const { width: markerWidth, height: markerHeight } = constants.TAB_DIRTY_MARKER_METRICS;
 	const viewportWidth = context.viewportWidth;
+	const tabsLeft = editorChromeState.menuBarHeight === 0 ? editorChromeState.menuButtonBounds.right : 0;
+	const availableStrip = viewportWidth - tabsLeft;
 	let contentWidth = constants.TAB_DIRTY_LEFT_MARGIN;
 	let activeLeft = 0, activeRight = 0;
 	let itemsChanged = previousCount !== tabs.length;
@@ -71,7 +73,7 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 		const closeWidth = closable ? closeButtonWidth + constants.TAB_CLOSE_BUTTON_PADDING_X * 2 : 0;
 		const indicatorWidth = closable ? closeWidth : dirty ? markerWidth + constants.TAB_DIRTY_MARKER_SPACING : 0;
 		const label = editorTabGroup.getLabel(tab);
-		const availableWidth = viewportWidth - constants.TAB_DIRTY_LEFT_MARGIN - constants.TAB_DIRTY_RIGHT_MARGIN
+		const availableWidth = availableStrip - constants.TAB_DIRTY_LEFT_MARGIN - constants.TAB_DIRTY_RIGHT_MARGIN
 			- constants.TAB_BUTTON_PADDING_X * 2 - indicatorWidth;
 		let measured = measuredLabels.get(tab);
 		if (measured === undefined || measured.label !== label || measured.font !== font) {
@@ -96,13 +98,13 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 		if (index + 1 < tabs.length) contentWidth += constants.TAB_BUTTON_SPACING;
 	}
 	contentWidth += constants.TAB_DIRTY_RIGHT_MARGIN;
-	const barTop = context.headerHeight, rowBottom = barTop + context.tabBarHeight;
-	const overflow = contentWidth > viewportWidth;
+	const barTop = editorChromeState.menuBarHeight, rowBottom = barTop + context.tabBarHeight;
+	const overflow = contentWidth > availableStrip;
 	const actions = editorChromeState.tabActions;
 	for (const item of actions.items) item.visible = overflow;
 	let tabsRight = viewportWidth;
 	if (overflow) {
-		layoutWorkbenchActionBar(actions, viewportWidth - 1, barTop + 1, rowBottom - 1, context.measureText, font, 0);
+		layoutWorkbenchActionBar(actions, viewportWidth - 1, barTop + 1, rowBottom - 1, context.measureText, font, tabsLeft);
 		tabsRight = actions.items[0].bounds.left - constants.TAB_BUTTON_SPACING;
 	}
 	// Overflow actions own real strip space. Truncate against that final viewport,
@@ -110,7 +112,7 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 	contentWidth = constants.TAB_DIRTY_LEFT_MARGIN;
 	for (let index = 0; index < tabs.length; index++) {
 		const metric = tabBarItems.peek(index), measured = measuredLabels.get(tabs[index])!;
-		const availableWidth = tabsRight - constants.TAB_DIRTY_LEFT_MARGIN - constants.TAB_DIRTY_RIGHT_MARGIN
+		const availableWidth = tabsRight - tabsLeft - constants.TAB_DIRTY_LEFT_MARGIN - constants.TAB_DIRTY_RIGHT_MARGIN
 			- constants.TAB_BUTTON_PADDING_X * 2 - metric.indicatorWidth;
 		if (measured.availableWidth !== availableWidth) {
 			measured.availableWidth = availableWidth;
@@ -129,11 +131,11 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 	editorViewState.tabBarTotalHeight = totalHeight;
 	const barBottom = barTop + totalHeight;
 	write_rect_bounds(editorChromeState.tabBarBounds, 0, barTop, viewportWidth, barBottom);
-	write_rect_bounds(editorChromeState.tabViewportBounds, 0, barTop, tabsRight, rowBottom);
-	write_rect_bounds(tabTrack, 0, rowBottom, tabsRight, barBottom);
+	write_rect_bounds(editorChromeState.tabViewportBounds, tabsLeft, barTop, tabsRight, rowBottom);
+	write_rect_bounds(tabTrack, tabsLeft, rowBottom, tabsRight, barBottom);
 	const scrollbar = editorChromeState.tabScrollbar;
 	const previousScrollbarRevision = scrollbar.revision;
-	scrollbar.layout(tabTrack, contentWidth, tabsRight, scrollbar.getScroll());
+	scrollbar.layout(tabTrack, contentWidth, tabsRight - tabsLeft, scrollbar.getScroll());
 	if (revealedGroupRevision !== editorTabGroup.revision || revealedScrollbarRevision !== scrollbar.revision) {
 		if (!editorChromeState.tabDragState?.hasDragged) scrollbar.reveal(activeLeft, activeRight);
 		revealedGroupRevision = editorTabGroup.revision;
@@ -144,11 +146,11 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 	// Dirty/active presentation is still observed above, independent of group revision.
 	if (!itemsChanged && previousScrollbarRevision === scrollbar.revision && laidOutScroll === scroll) return;
 	laidOutScroll = scroll;
-	let cursor = constants.TAB_DIRTY_LEFT_MARGIN - scroll;
+	let cursor = tabsLeft + constants.TAB_DIRTY_LEFT_MARGIN - scroll;
 	for (let index = 0; index < tabBarItems.length; index++) {
 		const item = tabBarItems.peek(index), right = cursor + item.tabWidth;
 		write_rect_bounds(item.bounds, cursor, barTop + 1, right, rowBottom - 1);
-		if (right > 0 && cursor < tabsRight && item.closable && item.hovered) {
+		if (right > tabsLeft && cursor < tabsRight && item.closable && item.hovered) {
 			write_rect_bounds(item.closeBounds, right - item.closeWidth, barTop + 1, right, rowBottom - 1);
 		} else clear_rect_bounds(item.closeBounds);
 		cursor = right + constants.TAB_BUTTON_SPACING;

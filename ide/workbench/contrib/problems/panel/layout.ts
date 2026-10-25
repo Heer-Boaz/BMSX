@@ -12,6 +12,7 @@ import { editorViewState } from '../../../../editor/ui/view/state';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 import { computeSourceLabel } from '../../../../common/paths';
 import { sourceTabDescription } from '../../../ui/tab/titles';
+import { editorChromeState } from '../../../ui/chrome_state';
 
 export type PanelLayout = {
 	headerTop: number;
@@ -186,7 +187,7 @@ export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean
 export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
 	const statusHeight = statusAreaHeight();
 	const bottom = editorViewState.viewportHeight - statusHeight;
-	const minTop = editorViewState.headerHeight + editorViewState.tabBarTotalHeight + 1;
+	const minTop = editorChromeState.menuBarHeight + editorViewState.tabBarTotalHeight + 1;
 	const minHeight = problemsPanelHeaderHeight()
 		+ constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2
 		+ Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * editorViewState.lineHeight;

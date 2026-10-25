@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { FrameBitmap } from '../../hosts/common/frame_bitmap';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -15,11 +16,188 @@ import { handleEditorCommandBindings } from '../../ide/input/keyboard/global_bin
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/view';
-import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { getWorkbenchEditorBounds, refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
+import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
+import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
+import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
+import { editorViewState } from '../../ide/editor/ui/view/state';
+import { RuntimeIdeState } from '../../ide/workbench/state';
+import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
+import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
+import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { parseLuaChunk } from './cpu_test_harness';
+import { createHostFrameFixture } from '../helpers/host_frame';
+import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
+import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
+import { closeTab, getTabs, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
+import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+
+/** Native key dispatch and real menu/popup owners in a source-backed workbench. */
+function menuFixture(t: TestContext) {
+	const source = 'local value = 42\nreturn value';
+	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'menu-source.lua'), [],
+		{ entrySource: source, programDomain: 'system', optLevel: 0 }));
+	const host = createHostFrameFixture(createTestRuntime(image.romBytes)); host.runtime.boot();
+	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: 'menu-source.lua',
+		projectRootPath: '', can_boot_from_source: true, revision: 0 };
+	registerLuaSourceRecord(registry, { resid: 'menu-source', type: 'lua', src: source, base_src: source,
+		source_path: 'menu-source.lua', normalized_source_path: 'menu-source.lua', module_path: 'menu-source',
+		update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
+	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports,
+		captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
+	const unused = (): never => { throw new Error('Menu navigation does not request domain work.'); };
+	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
+		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
+		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
+		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
+	const editor = ide.editor;
+	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
+	const origin = inputFocus.target!, model = activeCodeEditor.model!, view = activeCodeEditor.view!;
+	view.cursorRow = 1; view.cursorColumn = 6;
+	const key = (code: string, modifiers = KeyModifier.none, down = true, repeat = false) => {
+		const event = new KeyInputEvent(code, modifiers, repeat, down); editor.dispatchKey(event); editor.update(0); return event;
+	};
+	t.after(async () => { inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
+	return { editor, host, origin, model, view, source, key };
+}
+
+test('clean AltLeft release and F10 use the real menu session and return the source caret without editing it', t => {
+	const { editor, origin, model, view, source, key } = menuFixture(t);
+	const version = model.version;
+	key('AltLeft', KeyModifier.alt);
+	assert.equal(editor.contextMenu.visible, false, 'Alt down alone does not move source focus');
+	assert.ok(inputFocus.target === origin);
+	const release = key('AltLeft', KeyModifier.none, false);
+	assert.equal(release.consumed, true); assert.equal(editor.contextMenu.visible, true);
+	assert.ok(inputFocus.target === editor.contextMenu.focusTarget); assert.ok(editor.contextMenu.model.selectedIndex >= 0);
+	key('ArrowRight'); assert.equal(editor.contextMenu.visible, true);
+	key('Escape'); assert.equal(editor.contextMenu.visible, false); assert.ok(inputFocus.target === origin);
+	const f10 = key('F10'); assert.equal(f10.consumed, true); assert.equal(editor.contextMenu.visible, true);
+	key('F10', KeyModifier.none, false); assert.equal(editor.contextMenu.visible, true);
+	key('F10'); assert.equal(editor.contextMenu.visible, false); assert.ok(inputFocus.target === origin);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.canUndo, false);
+	assert.ok(activeCodeEditor.view === view); assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 6);
+});
+
+test('F10 preserves the concrete step-over binding while closed and dismisses only an admitted menu', t => {
+	const { editor, origin, key } = menuFixture(t);
+	let enabled = true, steps = 0;
+	assert.equal(origin.getCommand('debugStepOver'), undefined);
+	// This is the actual source focus owner. The contract is action admission,
+	// not CPU stepping, so its concrete capability records whether it was run.
+	origin.registerCommand('debugStepOver', { isEnabled: () => enabled, run: () => { steps++; } });
+	t.after(() => origin.unregisterCommand('debugStepOver'));
+	assert.equal(key('F10').consumed, true);
+	assert.equal(steps, 1); assert.equal(editor.contextMenu.visible, false); assert.equal(editor.menubar.expanded, false);
+	assert.ok(inputFocus.target === origin);
+	enabled = false;
+	assert.equal(key('F10').consumed, true);
+	assert.equal(steps, 1); assert.equal(editor.contextMenu.visible, false, 'a disabled concrete binding is not permission to borrow Main Menu');
+	key('AltLeft', KeyModifier.alt); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, true);
+	assert.equal(key('F10').consumed, true);
+	assert.equal(steps, 1); assert.equal(editor.contextMenu.visible, false); assert.ok(inputFocus.target === origin);
+});
+
+test('AltRight, modifier chords, repeats and cancelled AltLeft candidates never activate the real menu', t => {
+	const { editor, host, origin, key } = menuFixture(t);
+	for (const code of ['AltRight', 'AltLeft'] as const) {
+		key(code, KeyModifier.ctrl | KeyModifier.alt); key(code, KeyModifier.ctrl, false);
+		assert.equal(editor.contextMenu.visible, false); assert.ok(inputFocus.target === origin);
+	}
+	key('AltRight', KeyModifier.alt); key('AltRight', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, false);
+	key('AltLeft', KeyModifier.alt, true, true); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, false, 'a repeat without a fresh down cannot start a menu gesture');
+	key('AltLeft', KeyModifier.alt); key('KeyQ', KeyModifier.alt); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, false, 'an ordinary Alt chord is not a clean release');
+	const consumed = new KeyInputEvent('AltLeft', KeyModifier.alt); consumed.consumed = true; editor.dispatchKey(consumed);
+	key('AltLeft', KeyModifier.none, false); assert.equal(editor.contextMenu.visible, false);
+	key('AltLeft', KeyModifier.alt);
+	const bounds = getWorkbenchEditorBounds(), x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+	editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.alt, spaceDown: false, timestamp: 0 });
+	editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+		cancelledButtons: 0, modifiers: KeyModifier.alt, spaceDown: false, timestamp: 0 });
+	key('AltLeft', KeyModifier.none, false); assert.equal(editor.contextMenu.visible, false, 'a pointer gesture disqualifies the pending Alt release');
+	key('AltLeft', KeyModifier.alt); editor.cancelInput(); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, false, 'native input cancellation retires the candidate');
+	key('AltLeft', KeyModifier.alt); host.input.resetInput('keyboard:0'); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, false, 'physical keyboard retirement retires the same candidate');
+	key('AltLeft', KeyModifier.alt); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, true, 'a fresh clean press remains available after cancellation');
+	editor.cancelInput(); assert.equal(editor.contextMenu.visible, true, 'internal text-owner blur cancels input, not the admitted menu session');
+	key('Escape'); assert.ok(inputFocus.target === origin);
+});
+
+test('physical menu gestures remain guest input while a real scanout client has focus', t => {
+	const { editor, host, origin, key } = menuFixture(t);
+	const game = new GameInputControl(origin, host.input, { kind: 'direct', presenter: host.presenter });
+	game.setInput({ left: 80, top: 32, right: 320, bottom: 240 }); game.focusTarget.focus();
+	t.after(() => game.dispose());
+	const binding = game.focusTarget.guestInput!;
+	for (const event of [key('F10'), key('AltLeft', KeyModifier.alt), key('AltLeft', KeyModifier.none, false),
+		key('AltRight', KeyModifier.alt), key('AltRight', KeyModifier.none, false)]) {
+		assert.equal(event.consumed, false); assert.equal(editor.contextMenu.visible, false);
+		assert.ok(inputFocus.target === game.focusTarget); assert.ok(game.focusTarget.guestInput === binding);
+	}
+	game.clearInput(); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, false, 'a guest Alt down never arms a later Studio release');
+	key('AltLeft', KeyModifier.alt); game.setInput(binding.bounds); game.focusTarget.focus();
+	key('AltLeft', KeyModifier.none, false); game.clearInput(); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, false, 'changing focus into a guest retires a Studio-only candidate');
+});
+
+test('empty-group Studio retirement and blocked admission cannot carry an Alt candidate into a later session', t => {
+	const { editor, origin, key } = menuFixture(t);
+	key('AltLeft', KeyModifier.alt);
+	const extent = { left: 0, top: 0, right: 384, bottom: 288 };
+	const blocker = editor.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('blocking menu admission'),
+		isVisible: () => true, getBounds: () => extent, getClip: () => extent, draw() {} });
+	assert.ok(inputFocus.target === origin); assert.equal(inputFocus.admittedTarget, null);
+	key('ShiftLeft', KeyModifier.alt | KeyModifier.shift);
+	blocker.dispose(); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, false, 'a temporarily blocked owner does not retain an armed gesture');
+	for (const tab of [...getTabs()]) closeTab(editor.editorPanes, tab.id);
+	assert.equal(inputFocus.target, null);
+	key('AltLeft', KeyModifier.alt); editor.deactivate(); editor.activate(); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, false, 'empty-group retirement cancels Alt even without a focused control to blur');
+	key('AltLeft', KeyModifier.alt); key('AltLeft', KeyModifier.none, false);
+	assert.equal(editor.contextMenu.visible, true, 'the next clean empty-group gesture is admitted normally');
+});
+
+test('the real Menu icon remains pointer-accessible with ordinary, overflowing and empty editor groups', t => {
+	const { editor, host, origin, key } = menuFixture(t);
+	const sourceTab = getTabs()[0];
+	for (const group of ['ordinary', 'overflow', 'empty'] as const) {
+		if (group === 'overflow') {
+			openEditorTab(editor.editorPanes, new GameViewInput()); setActiveTab(editor.editorPanes, sourceTab.id);
+			editor.updateViewport({ width: 96, height: 288 });
+		} else if (group === 'empty') for (const tab of [...getTabs()]) closeTab(editor.editorPanes, tab.id);
+		for (const variant of ['tiny', 'msx'] as const) {
+			configureFontVariant(host.clock, variant, null); editor.update(0);
+			if (group === 'overflow') assert.equal(editorChromeState.tabScrollbar.isVisible(), true);
+			const bounds = editorChromeState.menuButtonBounds;
+			assert.ok(bounds.right > bounds.left && bounds.bottom > bounds.top, 'Menu retains an actual pointer target without an editor');
+			const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+			editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+				releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
+			editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+				cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 }); editor.update(0);
+			assert.equal(editor.contextMenu.visible, true);
+			key('Escape'); assert.equal(editor.contextMenu.visible, false);
+			if (group !== 'empty') assert.ok(inputFocus.target === origin);
+			else assert.equal(editor.editorPanes.activePane, null);
+		}
+	}
+});
 
 function fixture(t: TestContext, scope = new InputFocusScope(Symbol('control')), focusReturn: InputFocusTarget | null = null) {
 	const parent = inputFocus.createTarget(focusReturn, scope);

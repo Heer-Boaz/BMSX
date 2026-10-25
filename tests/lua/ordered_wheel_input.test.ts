@@ -14,6 +14,7 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import { WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { editorPointerState } from '../../ide/input/pointer/state';
 import { inputFocus } from '../../ide/input/focus';
+import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { getWorkbenchEditorBounds, refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { FrameBitmap } from '../../hosts/common/frame_bitmap';
@@ -70,7 +71,7 @@ test('public wheel router delivers each occurrence to its current pane using sup
 	inputFocus.setTarget(null);
 	editorViewState.viewportWidth = 400;
 	editorViewState.viewportHeight = 300;
-	editorViewState.headerHeight = 20;
+	editorChromeState.menuBarHeight = 20;
 	editorViewState.tabBarTotalHeight = 10;
 	refreshWorkbenchLayout();
 	const firstPane: WheelInputSnapshot[] = [], secondPane: WheelInputSnapshot[] = [];
