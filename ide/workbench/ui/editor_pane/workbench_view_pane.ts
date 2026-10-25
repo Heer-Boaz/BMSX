@@ -1,14 +1,7 @@
-import { clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
 import type { PointerInputSnapshot } from '../../../common/models';
-import { editorCaretState } from '../../../editor/ui/view/caret/state';
-import { editorViewState } from '../../../editor/ui/view/state';
 import { editorPointerState, clearEditorPointerSelectionState } from '../../../input/pointer/state';
-import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
-import { problemsPanel } from '../../contrib/problems/panel/controller';
-import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
 import { EditorPane } from '../../services/editor/editor_pane';
 import type { EditorInput } from '../tab/model';
-import { editorChromeState } from '../chrome_state';
 import { inputFocus } from '../../../input/focus';
 
 type WorkbenchViewInput = Exclude<EditorInput, { kind: 'code_editor' }>;
@@ -56,25 +49,5 @@ export abstract class WorkbenchViewEditorPane<
 	): boolean {
 		if (justPressed) this.focusTarget.focus();
 		return false;
-	}
-}
-
-/** Shared chrome lifecycle for workbench views that own the complete editor area. */
-export abstract class FullWidthWorkbenchEditorPane<
-	TInput extends WorkbenchViewInput,
-> extends WorkbenchViewEditorPane<TInput> {
-	public constructor(private readonly resourcePanel: ResourcePanelController) {
-		super();
-	}
-
-	protected activate(): void {
-		this.resourcePanel.hide();
-		problemsPanel.hide();
-		editorChromeState.resourcePanelResizing = false;
-		editorChromeState.problemsPanelResizing = false;
-		editorViewState.scrollbarController.cancel();
-		editorCaretState.cursorRevealSuspended = false;
-		clearRuntimeErrorOverlay();
-		runtimeErrorState.executionStopRow = null;
 	}
 }

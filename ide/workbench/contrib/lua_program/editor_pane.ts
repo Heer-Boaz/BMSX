@@ -16,7 +16,7 @@ import { drawEditorText } from '../../../editor/render/text_renderer';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { readLuaSourceRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchPropertyTree, measureWorkbenchPropertyTreeMinimumWidth } from '../../ui/property_tree';
 import { drawWorkbenchPropertyTree } from '../../render/property_tree';
@@ -27,7 +27,6 @@ import { scrollWorkbenchList } from '../../ui/list_view';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ui/action_bar';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { LuaProgramController } from './controller';
 import type { LuaProgramInput } from './editor_input';
 import * as colors from '../../../common/constants';
@@ -42,7 +41,7 @@ const PROPERTY_NAME_READING_COLUMNS = 12;
 const SOURCE_VALUE_READING_COLUMNS = 20;
 const RUNTIME_VALUE_READING_COLUMNS = 24;
 
-export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgramInput> {
+export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInput> {
 	// A root property keeps a meaningful source name and expression, including its tree/control lanes.
 	public override get companionGameMinimumWidth(): number {
 		return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(), PROPERTY_NAME_READING_COLUMNS,
@@ -59,11 +58,11 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 	private headerNaturalWidth = 0;
 	private readonly actionTooltip = new WorkbenchTooltip();
 	private headerFont: typeof editorViewState.font | undefined;
-	public constructor(resources: ResourcePanelController, private readonly controller: LuaProgramController,
+	public constructor(private readonly controller: LuaProgramController,
 		private readonly commands: IdeCommandController, private readonly tester: ActionStringTester,
 		private readonly frameNavigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
@@ -124,7 +123,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.input.liveVisible ? this.focusTarget : undefined; }
 	public override setRuntimeCaptureRunning(running: boolean): void { if (this.input.liveVisible) this.input.running = running; }
-	protected override activate(): void { super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
+	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
 	public override clearInput(): void { this.input.running = false; this.input.invalidateProjection(); this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); super.clearInput(); }
 	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
 	private selected() { return this.input.liveVisible ? undefined : this.input.tree.rows[this.input.tree.selectionIndex]?.element; }

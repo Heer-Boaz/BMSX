@@ -7,8 +7,7 @@ import { RuntimeDebuggerStopReason } from '../../../runtime/source_debugger';
 import { layoutGameFrame } from '../../common/game_frame';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import type { PlaySession } from '../../services/play/session';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import type { ResourcePanelController } from '../resources/panel/controller';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { EditorNavigationController } from '../resources/navigation';
 import { GameInputControl } from '../game_view/game_input';
 import type { PlayEditorInput } from './editor_input';
@@ -27,7 +26,7 @@ import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { describePlaySession, type PlayDetailsProperty } from './details';
 
 /** A completed bitmap and physical input recipient from the same independent Play target. */
-export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput> {
+export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	private session: PlaySession | undefined;
 	private gameInput: GameInputControl | undefined;
 	private status = '';
@@ -37,9 +36,9 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 	private titleSource = '';
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly details = new WorkbenchPropertyInspector<PlayDetailsProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
-	public constructor(resourcePanel: ResourcePanelController, commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
+	public constructor(commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		navigation: EditorNavigationController) {
-		super(resourcePanel);
+		super();
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
@@ -65,7 +64,7 @@ export class PlayEditorPane extends FullWidthWorkbenchEditorPane<PlayEditorInput
 	public override get suspendsRuntime(): boolean { return false; }
 	public override get runtimeControlContext() { return this.session?.ready === true ? this.focusTarget : undefined; }
 	public override get runtimeTransport() { return this.session?.ready === true ? this.session.transport : undefined; }
-	protected override activate(): void { super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.titleSource = ''; this.update(); }
+	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.titleSource = ''; this.update(); }
 	public override clearInput(): void {
 		this.details.hide(); this.actions.clearInput();
 		this.gameInput?.dispose(); this.gameInput = undefined; this.session = undefined;

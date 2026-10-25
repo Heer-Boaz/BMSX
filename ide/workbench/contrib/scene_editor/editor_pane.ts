@@ -15,14 +15,13 @@ import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { createLuaTableFieldNumberEdits } from '../../../language/lua/source_edits';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { SceneEditorController } from './controller';
 import { POSITION_AXES, type SceneEditorInput, type SceneEditorSection } from './editor_input';
 import { drawSceneEditor } from './render';
@@ -38,7 +37,7 @@ import { measureText, measureTextRange } from '../../../editor/common/text/layou
 import { SceneOutlineFeedback } from './feedback';
 
 /** Concrete editable view: document history here, draft history in each field. */
-export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInput> {
+export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 	public override get companionGameMinimumWidth(): number { return measureSceneEditorMinimumWidth(); }
 	public override getSelection(): SceneEditorNavigationSelection {
 		this.controller.refresh(this.input);
@@ -56,14 +55,14 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	private readonly identityFeedback: SceneOutlineFeedback;
 	private sourceHovered = false;
 
-	public constructor(resourcePanel: ResourcePanelController,
+	public constructor(
 		private readonly controller: SceneEditorController,
 		commands: IdeCommandController,
 		private readonly sources: RuntimeSourceState,
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>,
 	) {
-		super(resourcePanel);
+		super();
 		this.identityFeedback = new SceneOutlineFeedback(surfaces, paneSurface, workArea, this.focusTarget);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
@@ -116,7 +115,6 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	}
 
 	protected override activate(): void {
-		super.activate();
 		this.actionBar.setInput(this.input.actionBar, this.focusTarget);
 		this.details.setInput(this.input.details);
 		this.boundVersion = -1;

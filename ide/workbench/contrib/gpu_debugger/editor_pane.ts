@@ -25,11 +25,10 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { WorkbenchTooltip } from '../../ui/tooltip';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { GpuDebuggerInput } from './editor_input';
 import { gpuOperationName } from './presentation';
 import { drawGpuDebugger, type GpuOperationRow } from './render';
@@ -43,7 +42,7 @@ const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']
 const OPERATION_READING_COLUMNS = 32;
 
 /** History selection and shared transport; optional observation decoding belongs to Details. */
-export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInput> {
+export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 	public override get companionGameMinimumWidth(): number { return editorViewState.charAdvance * OPERATION_READING_COLUMNS + SCROLLBAR_WIDTH + 12; }
 
 	private readonly actions: WorkbenchActionBarControl;
@@ -68,11 +67,11 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	private reachable = false;
 	private status = '';
 	private emptyFiltered: boolean | undefined;
-	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
+	public constructor(private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
 		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
 		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = lifetime => { this.input.following = false; this.ownMenu(lifetime); };
 		this.list.onWillScroll = () => { this.input.following = false; };
@@ -95,7 +94,7 @@ export class GpuDebuggerPane extends FullWidthWorkbenchEditorPane<GpuDebuggerInp
 	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }
 	public override focus(): void { this.list.focusTarget.focus(); }
 	protected override activate(): void {
-		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.selectedRevision = -1;
+		this.freshLayout = true; this.historyRevision = -1; this.selectedRevision = -1;
 		this.actions.setInput(this.input.actions, this.focusTarget); this.list.setInput(this.input.list);
 		this.tooltip.attach(this.surfaces, this.paneSurface, this.workArea);
 		const details = this.details = new GpuDetailsWindow(this.input, this.commands, this.quickInput, this.contextMenu,

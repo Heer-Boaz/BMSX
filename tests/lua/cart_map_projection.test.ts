@@ -8,7 +8,6 @@ import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input
 import { CartMapPane } from '../../ide/workbench/contrib/cart_maps/editor_pane';
 import { projectCartMap, selectCartMapRow, createCartMapMove } from '../../ide/workbench/contrib/cart_maps/source_projection';
 import { captureCartMapView, restoreCartMapView, CartMapNavigationSelection } from '../../ide/workbench/contrib/cart_maps/view_snapshot';
-import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { inputFocus } from '../../ide/input/focus';
 import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
 import { pointerCapture } from '../../ide/input/pointer/capture';
@@ -189,7 +188,7 @@ test('accepted map moves and focused history reveal the restored member in both 
 	}, () => {}, pointerCapture);
 	const bounds = { left: 0, top: 0, right: 320, bottom: 200 }, surfaces = new WorkbenchSurfaceService();
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('map fixture'), getBounds: () => bounds, getClip: () => bounds, isVisible: () => true, draw() {} });
-	const pane = new CartMapPane({ hide() {} } as ResourcePanelController, null!,
+	const pane = new CartMapPane(null!,
 		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, bounds);
 	t.after(() => {
 		inputFocus.setTarget(null);

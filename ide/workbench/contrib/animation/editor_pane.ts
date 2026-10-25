@@ -17,7 +17,7 @@ import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { drawWorkbenchSplit } from '../../render/split_view';
@@ -29,7 +29,6 @@ import { workbenchListRowIndexAtPosition, scrollWorkbenchList, revealWorkbenchLi
 import { navigateWorkbenchTree } from '../../ui/tree_view';
 import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AnimationEditorController } from './controller';
 import type { AnimationClient, AnimationEditorInput } from './editor_input';
 import { AnimationKeyControl } from './key_control';
@@ -45,7 +44,7 @@ const ANIMATION_AUTHORING_COMMANDS = ['animation.addTrack', 'animation.addKey', 
 	'animation.addProperty', 'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.openClip',
 	'animation.fit', 'animation.snap', 'animation.remove', 'animation.source', 'animation.producerSource', 'animation.edit', 'animation.more'] as const;
 
-export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationEditorInput> {
+export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditorInput> {
 	public override get companionGameMinimumWidth(): number { return measureAnimationEditor(editorViewState.font).compactWidth; }
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly clients: WorkbenchActionBarControl;
@@ -69,10 +68,10 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 	private rowRevision = -1;
 	private client: AnimationClient | undefined;
 	private keysAvailable = false;
-	public constructor(resources: ResourcePanelController, private readonly controller: AnimationEditorController,
+	public constructor(private readonly controller: AnimationEditorController,
 		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, workArea);
 		this.propertyPointer.attachFeedback(surfaces, paneSurface, workArea, this.detailsFocus);
 		this.keys = new AnimationKeyControl(this.focusTarget, controller, controller.authoring);
@@ -174,7 +173,7 @@ export class AnimationEditorPane extends FullWidthWorkbenchEditorPane<AnimationE
 			this.columnSash.focusTarget, this.rowSash.focusTarget, this.actions.focusTarget, this.clients.focusTarget];
 	}
 	protected override activate(): void {
-		super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.keys.setInput(this.input); this.lanes.setInput(this.input);
+		this.actions.setInput(this.input.actionBar, this.focusTarget); this.keys.setInput(this.input); this.lanes.setInput(this.input);
 		this.clients.setInput(this.input.clientBar, this.focusTarget); this.columnSash.setInput(this.input.columnSplit); this.rowSash.setInput(this.input.rowSplit);
 		this.unbindProjection = this.input.onDidInvalidateProjection(() => this.edit.close()); this.version = -1; this.update();
 	}

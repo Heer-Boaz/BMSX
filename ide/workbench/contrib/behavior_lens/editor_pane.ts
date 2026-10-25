@@ -17,9 +17,8 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { BehaviorLensInput } from '../../ui/tab/model';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { BehaviorLensController } from './controller';
 import {
 	handleBehaviorLensGamepadInput,
@@ -54,7 +53,7 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { addActionEffectProperty, editableActionEffect, removeActionEffectProperty } from './action_effect_authoring';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 
-export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
+export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLensInput> {
 	public override get companionGameMinimumWidth(): number { return measureBehaviorLensMinimumWidth(this.input.view); }
 
 	public override get suspendsRuntime(): boolean { return this.input.runtimeInspection?.running !== true; }
@@ -115,14 +114,13 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	});
 
 	public constructor(
-		resourcePanel: ResourcePanelController,
 		private readonly controller: BehaviorLensController,
 		private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController,
 		private readonly frameNavigation: RuntimeFrameNavigation,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, workArea: Readonly<RectBounds>,
 	) {
-		super(resourcePanel);
+		super();
 		this.sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, pointerHover, this.graph.focusTarget,
 			contextMenu, surfaces, paneSurface, workArea);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
@@ -207,7 +205,6 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	}
 
 	protected override activate(): void {
-		super.activate();
 		const presentation = this.input.view.presentation;
 		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.graphDragSource);
 		else if (presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport, this.stateMachineDragSource);

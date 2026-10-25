@@ -14,7 +14,6 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { BuildLogInput } from '../../ide/workbench/contrib/builds/editor_input';
 import { BuildLogPane } from '../../ide/workbench/contrib/builds/editor_pane';
-import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
@@ -40,7 +39,7 @@ async function fixture(t: TestContext, failed = true) {
 	const surfaces = new WorkbenchSurfaceService();
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('build log pane'), getBounds: () => bounds,
 		getClip: () => bounds, isVisible: () => true, draw() {} });
-	const pane = new BuildLogPane({ hide() {} } as ResourcePanelController, clipboard, menu, surfaces, owner, bounds);
+	const pane = new BuildLogPane(clipboard, menu, surfaces, owner, bounds);
 	await input.refresh(); pane.setInput(input, bounds); pane.focus();
 	t.after(() => {
 		pane.clearInput(); inputFocus.setTarget(null); pane.dispose(); menu.dispose(); input.dispose();

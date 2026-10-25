@@ -17,17 +17,16 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchTextViewControl } from '../../ui/text_view/control';
 import type { WorkbenchTextViewModel } from '../../ui/text_view/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { BuildLogInput } from './editor_input';
 
 const ACTIONS = ['buildLog.error', 'buildLog.output', 'buildLog.refresh', 'buildLog.copyAll'] as const;
 
 /** Captured stdout/stderr and a failure diagnostic are separate documents of the same request. */
-export class BuildLogPane extends FullWidthWorkbenchEditorPane<BuildLogInput> {
+export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 	public override get companionGameMinimumWidth(): number { return this.reading.minimumWidth; }
 	private readonly reading = new WorkbenchTextViewControl(this.focusTarget);
 	private readonly actions: WorkbenchActionBarControl;
@@ -41,9 +40,9 @@ export class BuildLogPane extends FullWidthWorkbenchEditorPane<BuildLogInput> {
 	private statusWidth = -1;
 	private statusText = '';
 
-	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, contextMenu: ContextMenuController,
+	public constructor(private readonly clipboard: Clipboard, contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = () => this.tooltip.hide();
 		this.tooltip.attach(surfaces, owner, workArea);
@@ -60,7 +59,6 @@ export class BuildLogPane extends FullWidthWorkbenchEditorPane<BuildLogInput> {
 
 	public override focus(): void { this.reading.focusTarget.focus(); }
 	protected override activate(): void {
-		super.activate();
 		this.actions.setInput(this.input.actions, this.focusTarget);
 		this.update();
 	}

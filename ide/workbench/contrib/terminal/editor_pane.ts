@@ -9,23 +9,22 @@ import type { BiosTerminal } from '../../../runtime/bios_terminal';
 import { api } from '../../../runtime/overlay_api';
 import { layoutGameFrame } from '../../common/game_frame';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { GameInputControl } from '../game_view/game_input';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { TerminalInput } from './editor_input';
 
 /** The physical BIOS terminal, not a host REPL or a second line editor. */
-export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
+export class TerminalPane extends WorkbenchViewEditorPane<TerminalInput> {
 	private readonly gameInput: GameInputControl;
-	public constructor(resources: ResourcePanelController, private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter) {
-		super(resources); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
+	public constructor(private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter) {
+		super(); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 	}
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	public override focus(): void {
 		if (this.terminal.active) this.gameInput.focusTarget.focus();
 		else super.focus();
 	}
-	protected override activate(): void { super.activate(); this.terminal.resume(); this.update(); }
+	protected override activate(): void { this.terminal.resume(); this.update(); }
 	public override clearInput(): void {
 		this.gameInput.clearInput(); this.terminal.suspend(); super.clearInput();
 	}

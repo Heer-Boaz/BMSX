@@ -228,3 +228,46 @@ for (const theme of ['light', 'dark']) test(`${theme} diagnostic severity uses i
 	f.controller.setSelectionIndex(1);
 	assert.equal(markers()[1].color, resolveThemeTokenColor(colors.COLOR_SELECTION_TEXT));
 });
+
+test('pending diagnostic projection retains semantic selection and reading intent without exposing stale actions', t => {
+	const f = fixture(t), records = Array.from({ length: 20 }, (_, row) => diagnostic(f.models[row & 1], row, 0));
+	f.controller.setDiagnostics(records, { ready: 2, pending: 0, unsupported: 0, failed: 0 });
+	f.controller.setSelectionIndex(15); f.controller.setFocused(true); f.controller.prepareLayout(f.bounds);
+	f.controller.handlePointerWheel(30, f.bounds); const scroll = f.controller.getScrollIndex(); assert.ok(scroll > 0);
+	f.controller.setDiagnostics([], { ready: 0, pending: 2, unsupported: 0, failed: 0 });
+	assert.equal(f.controller.selectedDiagnostic, null); assert.equal(f.controller.focusTarget.clipboard!.copy(), null);
+	assert.equal(f.controller.handleKeyboardCommand(f.panes, 'activate'), false); assert.equal(f.panes.activePane, null);
+	assert.equal(f.controller.getScrollIndex(), 0, 'an empty projection presents no nonexistent reading row');
+	// Freshness changes independently of marker identity; projection order can change too.
+	f.models[1].pushEditOperations([{ offset: f.models[1].buffer.length, deleteLength: 0, text: ' ' }]);
+	const fresh = records.map(record => ({ ...record, version: record.model.version })).reverse();
+	f.controller.setDiagnostics(fresh, { ready: 2, pending: 0, unsupported: 0, failed: 0 });
+	assert.ok(f.controller.selectedDiagnostic === fresh[4], 'the fresh semantic marker, not an index or stale object, owns selection');
+	assert.equal(f.controller.getScrollIndex(), scroll, 'pending projection cannot erase the owned reading position');
+});
+
+test('explicit selection during pending coverage replaces the old semantic marker intent', t => {
+	const f = fixture(t), a = diagnostic(f.models[0]), b = diagnostic(f.models[1]);
+	f.controller.setDiagnostics([a, b], { ready: 2, pending: 0, unsupported: 0, failed: 0 }); f.controller.setSelectionIndex(1);
+	const currentA = { ...a };
+	f.controller.setDiagnostics([currentA], { ready: 1, pending: 1, unsupported: 0, failed: 0 });
+	assert.equal(f.controller.selectedDiagnostic, null, 'unresolved selection cannot silently jump to another fresh row');
+	f.controller.setSelectionIndex(0);
+	const fresh = [{ ...b }, { ...a }];
+	f.controller.setDiagnostics(fresh, { ready: 2, pending: 0, unsupported: 0, failed: 0 });
+	assert.ok(f.controller.selectedDiagnostic === fresh[1], 'a later publication cannot undo the user choosing a different live marker');
+});
+
+test('settled marker deletion and explicit reopening retire prior pending selection intent', t => {
+	const f = fixture(t), a = diagnostic(f.models[0]), b = diagnostic(f.models[1]);
+	f.controller.setDiagnostics([a, b], { ready: 2, pending: 0, unsupported: 0, failed: 0 }); f.controller.setSelectionIndex(1);
+	f.controller.setDiagnostics([], { ready: 0, pending: 2, unsupported: 0, failed: 0 });
+	f.controller.setDiagnostics([a], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
+	assert.ok(f.controller.selectedDiagnostic === a, 'settled deletion uses the normal first-error selection policy');
+	f.controller.setDiagnostics([b, a], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
+	assert.ok(f.controller.selectedDiagnostic === a, 'a deleted marker cannot resurrect its retired intent');
+	f.controller.setSelectionIndex(0); f.controller.setDiagnostics([], { ready: 0, pending: 2, unsupported: 0, failed: 0 });
+	f.controller.hide(); f.controller.show();
+	f.controller.setDiagnostics([a, b], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
+	assert.ok(f.controller.selectedDiagnostic === a, 'explicit reopening starts a fresh selection instead of reviving pending intent');
+});

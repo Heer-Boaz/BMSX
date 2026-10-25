@@ -27,7 +27,6 @@ import { measureAnimationEditor } from '../../ide/workbench/contrib/animation/la
 import type { IdeCommandController } from '../../ide/commands/controller';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import type { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
-import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -322,7 +321,7 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	const root = { ...bounds, right: 384 };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('animation pane'), isVisible: () => true,
 		getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	const pane = new AnimationEditorPane({ hide() {} } as ResourcePanelController, controller, commands as IdeCommandController, menu, surfaces, owner, root);
+	const pane = new AnimationEditorPane(controller, commands as IdeCommandController, menu, surfaces, owner, root);
 	t.after(() => {
 		menu.dispose(); pane.dispose(); input.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear();
 		editorTextModelService.clear(); editorViewState.scrollbarController = oldScrollbars;

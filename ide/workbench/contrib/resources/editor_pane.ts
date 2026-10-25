@@ -1,13 +1,10 @@
 import * as constants from '../../../common/constants';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import { clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ResourceViewerNavigationSelection } from './navigation_selection';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
-import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
@@ -35,9 +32,6 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 	}
 
 	protected activate(): void {
-		editorCaretState.cursorRevealSuspended = false;
-		clearRuntimeErrorOverlay();
-		runtimeErrorState.executionStopRow = null;
 		clampResourceViewerScroll(
 			this.input.view,
 			this.contentBounds,
@@ -48,11 +42,6 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		if (navigationSelection === undefined) return;
 		navigationSelection.restore(this.input.view);
 		clampResourceViewerScroll(this.input.view, this.contentBounds, editorViewState.lineHeight);
-	}
-
-	public override clearInput(): void {
-		editorViewState.scrollbarController.cancel();
-		super.clearInput();
 	}
 
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {

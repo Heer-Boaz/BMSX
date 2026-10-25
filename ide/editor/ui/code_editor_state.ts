@@ -33,7 +33,7 @@ export type CodeEditorViewState = {
 	selectionAnchorScratch: Position;
 	desiredColumn: number;
 	desiredDisplayOffset: number;
-	/** Continuous viewport position, projected to a visual row at layout/render boundaries. */
+	/** Continuous position in wrapped visual rows, not source buffer rows. */
 	scrollRow: number;
 	/** Horizontal viewport origin in pixels, including subpixel scroll intent. */
 	scrollLeft: number;
@@ -120,7 +120,6 @@ export class ActiveCodeEditorState {
 		view.cursorRow = clamp(view.cursorRow, 0, lastRow);
 		const lineLength = buffer.getLineEndOffset(view.cursorRow) - buffer.getLineStartOffset(view.cursorRow);
 		view.cursorColumn = clamp(view.cursorColumn, 0, lineLength);
-		view.scrollRow = clamp(view.scrollRow, 0, lastRow);
 		const anchor = view.selectionAnchor;
 		if (anchor !== null) {
 			anchor.row = clamp(anchor.row, 0, lastRow);

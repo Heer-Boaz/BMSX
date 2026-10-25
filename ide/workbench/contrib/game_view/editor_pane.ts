@@ -9,19 +9,18 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
 import { layoutGameFrame } from '../../common/game_frame';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import type { ResourcePanelController } from '../resources/panel/controller';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { GameViewInput } from './editor_input';
 import { GameInputControl } from './game_input';
 
 /** A large game viewport; transport commands share host execution and rewind. */
-export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInput> {
+export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 	private readonly gameInput: GameInputControl;
 	private shownFrame = -1;
 	private frameLabel = '';
-	public constructor(resourcePanel: ResourcePanelController, private readonly commands: IdeCommandController,
+	public constructor(private readonly commands: IdeCommandController,
 		private readonly runtime: Runtime, recipient: InputRecipient, presenter: VideoPresenter) {
-		super(resourcePanel);
+		super();
 		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { commands.transport.togglePlayback(); } });
 		this.focusTarget.next = this.gameInput.focusTarget;
@@ -32,7 +31,6 @@ export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInp
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	protected override activate(): void {
-		super.activate();
 		this.update();
 		this.gameInput.setInput(this.input.frameBounds);
 	}

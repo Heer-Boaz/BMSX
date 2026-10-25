@@ -47,9 +47,11 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	public readonly focusTarget = inputFocus.createTarget();
 	public readonly header = new ProblemsPanelHeader(this.focusTarget);
 	private diagnostics: readonly EditorDiagnostic[] = EMPTY_DIAGNOSTICS;
+	/** Marker identity survives pending coverage; version belongs only to fresh published rows. */
+	private selectionIntent: Omit<EditorDiagnostic, 'version'> | undefined;
 	private selectionIndex = -1;
 	private hoverIndex = -1;
-	/** Continuous diagnostic-row position; item lookup uses getScrollIndex(). */
+	/** Requested diagnostic-row position; pending projection cannot erase the reading intent. */
 	private scrollPosition = 0;
 	private readonly layout = createProblemsPanelLayout();
 	private readonly itemLayouts = new ScratchBuffer<ProblemsPanelItemLayout>(createProblemsPanelItemLayout);
@@ -111,6 +113,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		this.scrollPosition = 0; // open at top
 		this.hoverIndex = -1;
 		this.selectionIndex = -1; // no implicit selection on open
+		this.selectionIntent = undefined;
 		this.cachedLayout = null;
 	}
 
@@ -139,6 +142,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 
 	public setSelectionIndex(index: number): void {
 		this.selectionIndex = index;
+		this.selectionIntent = this.diagnostics[index];
 	}
 
 	public getSelectionIndex(): number {
@@ -150,7 +154,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	}
 
 	public getScrollIndex(): number {
-		return this.scrollPosition | 0;
+		return clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length) | 0;
 	}
 
 
@@ -183,7 +187,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 				: coverage.ready === 0 ? 'No resources checked.'
 					: 'No problems in checked resources. Unopened files are not checked.';
 		this.itemLayouts.clear();
-		this.ensureSelectionValidity();
+		this.ensureSelectionValidity(coverage.pending > 0);
 		this.hoverIndex = -1;
 		this.cachedLayout = null;
 	}
@@ -237,8 +241,9 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	public handlePointerWheel(deltaRows: number, bounds: RectBounds): boolean {
 		if (!this.visible || this.diagnostics.length === 0) return false;
 		this.prepareLayout(bounds);
-		let index = this.getScrollIndex();
-		let offset = (this.scrollPosition - index) * this.getItemLayout(index).height + deltaRows * editorViewState.lineHeight;
+		const projectedPosition = clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length);
+		let index = projectedPosition | 0;
+		let offset = (projectedPosition - index) * this.getItemLayout(index).height + deltaRows * editorViewState.lineHeight;
 		while (offset < 0 && index > 0) {
 			index -= 1;
 			offset += this.getItemLayout(index).height;
@@ -314,9 +319,24 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		if (nextScrollIndex !== this.getScrollIndex()) this.scrollPosition = clampProblemsPanelScrollIndex(nextScrollIndex, this.diagnostics.length);
 	}
 
-	private ensureSelectionValidity(): void {
-		this.selectionIndex = findProblemsPanelPreferredSelection(this.diagnostics, this.selectionIndex);
-		this.scrollPosition = clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length);
+	private ensureSelectionValidity(pending: boolean): void {
+		const intent = this.selectionIntent;
+		let index = -1;
+		if (intent !== undefined) {
+			for (let candidateIndex = 0; candidateIndex < this.diagnostics.length; candidateIndex++) {
+				const candidate = this.diagnostics[candidateIndex];
+				if (candidate.model === intent.model && candidate.row === intent.row && candidate.startColumn === intent.startColumn
+					&& candidate.endColumn === intent.endColumn && candidate.message === intent.message && candidate.severity === intent.severity) {
+					index = candidateIndex;
+					break;
+				}
+			}
+		}
+		// Settled deletion uses the normal first-error policy; pending absence is not deletion.
+		if (index < 0 && !pending) index = findProblemsPanelPreferredSelection(this.diagnostics, -1);
+		this.selectionIndex = index;
+		if (index >= 0 || !pending) this.selectionIntent = this.diagnostics[index];
+		if (!pending) this.scrollPosition = clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length);
 	}
 }
 

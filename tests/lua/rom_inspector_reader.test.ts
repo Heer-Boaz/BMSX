@@ -13,7 +13,6 @@ import { api } from '../../ide/runtime/overlay_api';
 import { resolveRuntimeResourceForContext } from '../../ide/runtime/sources';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import { RomInspectorPane } from '../../ide/workbench/contrib/rom_inspector/editor_pane';
-import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import type { RomInspectorSnapshot } from '../../ide/workbench/contrib/rom_inspector/model';
 import { RomEntryInspectorWindow } from '../../ide/workbench/contrib/rom_inspector/reader_window';
 import type { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
@@ -77,7 +76,7 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('a.lua', 1), createScenarioTestSourceRecord('b.lua', 2)]);
 	const opened: { domain: number; path: string }[] = [];
 	const navigation = { openResource: async (resource: { domain: number; path: string }) => { opened.push(resource); return 1; } } as EditorNavigationController;
-	const pane = new RomInspectorPane({ hide() {} } as ResourcePanelController, commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area);
+	const pane = new RomInspectorPane(commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area);
 	t.after(() => { pane.clearInput(); pane.dispose(); quickInput.dispose(); contextMenu.dispose(); inputFocus.setTarget(null);
 		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); editorViewState.scrollbarController = previousScrollbars; });
 	pane.setInput(input, area); pane.focus();

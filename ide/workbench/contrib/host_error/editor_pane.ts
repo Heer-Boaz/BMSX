@@ -9,29 +9,27 @@ import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { HostErrorInput } from './editor_input';
 
 // Keep exception names and stack frames readable before their ordinary line wrapping.
 const HOST_STACK_READING_COLUMNS = 48;
 
 /** Read-only host text, with ordinary document scrolling and the original clipboard bytes. */
-export class HostErrorPane extends FullWidthWorkbenchEditorPane<HostErrorInput> {
+export class HostErrorPane extends WorkbenchViewEditorPane<HostErrorInput> {
 	public override get companionGameMinimumWidth(): number {
 		return editorViewState.charAdvance * HOST_STACK_READING_COLUMNS + colors.SCROLLBAR_WIDTH + 8;
 	}
 
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 
-	public constructor(resourcePanel: ResourcePanelController) {
-		super(resourcePanel);
+	public constructor() {
+		super();
 		this.scroll.focusTarget.clipboard = { readOnly: true, copy: () => this.input.stack };
 	}
 	public override focus(): void { this.scroll.focusTarget.focus(); }
 	protected override activate(): void {
-		super.activate();
 		this.scroll.setInput(this.input.viewport);
 		this.update();
 	}

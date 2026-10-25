@@ -26,11 +26,10 @@ import type { EditorPanes } from '../../services/editor/editor_panes';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { ContextMenuController } from '../../services/context_menu/controller';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import { WorkspaceEditReviewInput } from '../edit_review/editor_input';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AssistantInput } from './editor_input';
 import { isAssistantCommand, type AssistantChatCommands } from './chat_commands';
 import { AssistantTurnToolbar } from './turn_toolbar';
@@ -40,7 +39,7 @@ const SPINNER = ['|', '/', '-', '\\'];
 const COMMANDS = ['assistant.queue', 'assistant.direct', 'assistant.send', 'assistant.review', 'assistant.copy'] as const;
 
 /** Host-only conversation work continues under the ordinary workbench game pause. */
-export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> {
+export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 	public override get companionGameMinimumWidth(): number { return this.transcriptView.minimumWidth; }
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
@@ -53,10 +52,10 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
 	private unbindAttachmentClipboard: (() => void) | undefined;
-	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
+	public constructor(private readonly clipboard: Clipboard, private readonly panes: EditorPanes, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner,
 		contextMenu: ContextMenuController, workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.turnToolbar = new AssistantTurnToolbar(this, this.focusTarget, () => this.focus(), contextMenu, surfaces, owner, workArea);
 		this.previews = new ImagePreviewCache(decodeImage);
 		this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner, commands);
@@ -68,7 +67,6 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	}
 	public override focus(): void { this.input.draft.focusTarget.focus(); }
 	protected override activate(): void {
-		super.activate();
 		this.turnToolbar.setInput(this.input, this.focusTarget);
 		this.transcriptView.setInput(this.input);
 		this.attachments.setInput(this.input.attachments);

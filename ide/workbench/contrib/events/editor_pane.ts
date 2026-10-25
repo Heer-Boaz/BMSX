@@ -22,7 +22,7 @@ import { drawWorkbenchPropertyInspector } from '../../render/property_inspector'
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
@@ -31,7 +31,6 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { HistoricalEvent } from '../../../runtime/event_history';
 import type { DisposableStore } from '../../../common/lifecycle';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { EventViewerInput } from './editor_input';
 import { EVENT_HISTORY_LABEL, EventViewerPresentation, eventClipboardText, eventProperties } from './presentation';
 import { layoutEventViewer, EVENT_READING_COLUMNS } from './layout';
@@ -41,7 +40,7 @@ const COMMANDS = ['events.clear', 'events.filter', 'events.details', 'events.goT
 const CLIENT_COMMANDS = [...COMMANDS, 'pause', 'stepFrameBack', 'stepFrame'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'] as const;
 
-export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInput> {
+export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 	public override get companionGameMinimumWidth(): number { return editorViewState.charAdvance * EVENT_READING_COLUMNS + SCROLLBAR_WIDTH + 4; }
 
 	private readonly actions: WorkbenchActionBarControl;
@@ -70,10 +69,10 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 	private selectedReachable = false;
 	private running = false;
 	private filterSession: DisposableStore | undefined;
-	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
+	public constructor(private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
 		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = () => { this.tooltip.hide(); this.keyboardFeedback = false; };
 		this.tooltip.attach(surfaces, owner, workArea);
@@ -113,7 +112,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 	public override setRuntimeCaptureRunning(running: boolean): void { this.running = running; }
 	public override focus(): void { (this.inspector.visible ? this.inspector : this.scroll).focusTarget.focus(); }
 	protected override activate(): void {
-		super.activate(); this.presentation.reset(); this.historyRevision = -1;
+		this.presentation.reset(); this.historyRevision = -1;
 		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.viewport);
 	}
 	public override clearInput(): void {

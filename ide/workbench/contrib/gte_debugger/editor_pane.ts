@@ -27,12 +27,11 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { GteDebuggerInput } from './editor_input';
 import { gteCommandName } from './presentation';
 import { GteDetailsWindow } from './details_window';
@@ -44,7 +43,7 @@ const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']
 // Keep a command identity and sequence readable beside the observed scanout.
 const COMMAND_READING_COLUMNS = 32;
 
-export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInput> {
+export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 	public override get companionGameMinimumWidth(): number { return editorViewState.charAdvance * COMMAND_READING_COLUMNS + SCROLLBAR_WIDTH + 12; }
 
 	private readonly actions: WorkbenchActionBarControl;
@@ -71,12 +70,12 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	private firstSequence = -1;
 	private labelGeneration = -1;
 	private freshLayout = true;
-	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
+	public constructor(private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
 		private readonly contextMenu: ContextMenuController, sources: RuntimeSourceState,
 		private readonly sourceNavigation: EditorNavigationController, private readonly surfaces: WorkbenchSurfaceService,
 		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.source = new CapturedLuaSourceBinding(editorTextModelService, sources);
 		this.unbindSource = this.source.onDidChange(() => this.retireContextMenu());
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
@@ -109,7 +108,7 @@ export class GteDebuggerPane extends FullWidthWorkbenchEditorPane<GteDebuggerInp
 	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }
 	public override focus(): void { this.scroll.focusTarget.focus(); }
 	protected override activate(): void {
-		super.activate(); this.freshLayout = true; this.historyRevision = -1; this.labels.clear();
+		this.freshLayout = true; this.historyRevision = -1; this.labels.clear();
 		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.list);
 		this.unbindSelection = this.input.onWillChangeSelection(() => { this.retireContextMenu(); this.actions.cancelCommand('gte.details'); });
 		this.tooltip.attach(this.surfaces, this.paneSurface, this.workArea);

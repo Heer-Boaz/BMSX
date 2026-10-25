@@ -17,7 +17,7 @@ import { drawEditorText } from '../../../editor/render/text_renderer';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { createStructuredValueEdit } from '../../../language/yaml/structured_edits';
 import { aemDocumentFormat } from '../../../../toolchain/ts/rompack/aem';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchPropertyTree, measureWorkbenchPropertyTreeMinimumWidth } from '../../ui/property_tree';
 import { drawWorkbenchPropertyTree } from '../../render/property_tree';
@@ -28,7 +28,6 @@ import { scrollWorkbenchList } from '../../ui/list_view';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AemEditorController } from './controller';
 import type { AemEditorInput } from './editor_input';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
@@ -41,7 +40,7 @@ import { api } from '../../../runtime/overlay_api';
 const PROPERTY_NAME_READING_COLUMNS = 12;
 const EXPRESSION_READING_COLUMNS = 20;
 
-export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> {
+export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 	// A root property keeps a meaningful source name and expression, including its tree/control lanes.
 	public override get companionGameMinimumWidth(): number {
 		return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(), PROPERTY_NAME_READING_COLUMNS, EXPRESSION_READING_COLUMNS) + 8;
@@ -56,9 +55,9 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 	private captionWidth = 0;
 	private captionRevision = -1;
 	private caption = '';
-	public constructor(resources: ResourcePanelController, private readonly controller: AemEditorController, private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
+	public constructor(private readonly controller: AemEditorController, private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
@@ -84,7 +83,7 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 			run: () => executeTextHistoryCommand(this.input.workingCopy, direction),
 		});
 	}
-	protected override activate(): void { super.activate(); this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
+	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
 	public override clearInput(): void { this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); this.captionRevision = -1; super.clearInput(); }
 	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
 	private editProperty(): void {

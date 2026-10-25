@@ -18,9 +18,8 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { IdeCommandController } from '../../../commands/controller';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { ScenarioLabInput } from '../../ui/tab/model';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { ScenarioLabController } from './controller';
 import {
 	handleScenarioLabGamepadInput,
@@ -40,7 +39,7 @@ import { editorTextModelService } from '../../../editor/model/model_service';
 import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense/model_lifetime';
 import { ScenarioLabRowFeedback } from './feedback';
 
-export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<ScenarioLabInput> {
+export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabInput> {
 	public override get companionGameMinimumWidth(): number { return measureScenarioLabMinimumWidth(this.input.view); }
 	public override getSelection(): ScenarioLabNavigationSelection {
 		this.controller.updateView(this.input.view);
@@ -81,7 +80,6 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	private readonly rowFeedback: ScenarioLabRowFeedback;
 
 	public constructor(
-		resourcePanel: ResourcePanelController,
 		private readonly controller: ScenarioLabController,
 		private readonly commands: IdeCommandController,
 		contextMenu: ContextMenuController,
@@ -89,7 +87,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>,
 	) {
-		super(resourcePanel);
+		super();
 		this.targetInspection = new ScenarioTargetInspection(this.resultsFocus, commands, contextMenu, surfaces, paneSurface, workArea);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.rowFeedback = new ScenarioLabRowFeedback(surfaces, paneSurface, workArea, this.focusTarget, this.resultsFocus);
@@ -128,7 +126,6 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	}
 
 	protected override activate(): void {
-		super.activate();
 		this.actionBar.setInput(this.input.view.actionBar, this.resultsFocus);
 		this.split.setInput(this.input.view.split);
 	}

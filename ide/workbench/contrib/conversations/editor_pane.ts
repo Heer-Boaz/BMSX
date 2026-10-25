@@ -10,30 +10,29 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { ImagePreviewCache } from '../../ui/image_preview';
 import { ImagePreviewOverlay } from '../../ui/image_preview_overlay';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { AssistantTranscriptControl } from '../assistant/transcript_control';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { ConversationObserverInput } from './editor_input';
 
 /** Deliberately no composer, account controls, stop button or agent-tool authority. */
-export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<ConversationObserverInput> {
+export class ConversationObserverPane extends WorkbenchViewEditorPane<ConversationObserverInput> {
 	public override get companionGameMinimumWidth(): number { return this.transcriptView.minimumWidth; }
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly transcriptView: AssistantTranscriptControl;
-	public constructor(resources: ResourcePanelController, decodeImage: ImageDecoder, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner) {
-		super(resources);
+	public constructor(decodeImage: ImageDecoder, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner) {
+		super();
 		this.previews = new ImagePreviewCache(decodeImage); this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner, commands);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview);
 		this.focusTarget.registerCommand('conversations.older', { isEnabled: () => this.hasInput && !this.input.conversation.pending && this.input.conversation.olderCursor !== null,
 			run: () => { void this.input.conversation.older(); } });
 		this.transcriptView.scroll.focusTarget.registerCommand('conversations.older', this.focusTarget.getCommand('conversations.older')!);
 	}
-	protected override activate(): void { super.activate(); this.transcriptView.setInput(this.input); this.update(); }
+	protected override activate(): void { this.transcriptView.setInput(this.input); this.update(); }
 	public override focus(): void { this.transcriptView.scroll.focusTarget.focus(); }
 	public override clearInput(): void { this.preview.close(); this.previews.dispose(); this.transcriptView.clearInput(); super.clearInput(); }
 	public override dispose(): void { this.clearInput(); this.preview.dispose(); this.transcriptView.dispose(); super.dispose(); }

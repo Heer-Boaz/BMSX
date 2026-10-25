@@ -19,13 +19,12 @@ import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { WorkbenchSliderControl } from '../../ui/slider_control';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { actorDetailsPropertiesEqual, actorDetailsPropertyMatchesSelection, captureActorDetailsSelection, type ActorDetailsProperty } from './details';
 import { ActorLabController } from './controller';
@@ -44,7 +43,7 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WorkbenchFloatingWindow } from '../../ui/window/control';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 
-export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInput> {
+export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private gameInput!: GameInputControl;
 	private controller!: ActorLabController;
 	private readonly actions: WorkbenchActionBarControl;
@@ -68,10 +67,10 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public detailsWindow!: WorkbenchFloatingWindow;
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, player => this.handleGraphKeyboard(player), this.focusTarget);
 	private boundGraph: ActorStateGraph | undefined;
-	public constructor(resourcePanel: ResourcePanelController, private readonly commands: EditorCommandRunner,
+	public constructor(private readonly commands: EditorCommandRunner,
 		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
 		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super(resourcePanel);
+		super();
 		this.focusTarget.scope.surfaceScope = paneSurface.captureScope;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
@@ -258,7 +257,6 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	protected override activate(): void {
 		this.controller = this.input.controller;
 		this.gameInput = new GameInputControl(this.focusTarget, this.controller.viewport.recipient, this.controller.viewport);
-		super.activate();
 		this.createDetailsWindow();
 		this.renderedTopology = -1;
 		this.actionTooltip.attach(this.surfaces, this.paneSurface, this.workArea);

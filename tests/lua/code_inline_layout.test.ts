@@ -22,6 +22,18 @@ function fixture(t: TestContext, source: string, variant: FontVariant = 'tiny', 
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
+	test(`${variant} source reattachment preserves a measured visual viewport beyond the buffer row count`, t => {
+		const f = fixture(t, '-- ' + 'wrapped_viewport_'.repeat(24) + '\nreturn 1', variant);
+		f.layout.ensureVisualLines(f.model.buffer, true, 0, 20);
+		const count = f.layout.getVisualLineCount(), view = f.widget.view!;
+		view.scrollRow = f.layout.clampVisualScroll(count - 2.5, count, 2);
+		const position = view.scrollRow;
+		assert.ok(position > f.model.buffer.getLineCount(), 'the real wrap projection supplies more viewport rows than buffer rows');
+		f.widget.detach(); f.widget.attach(f.model, view);
+		assert.ok(f.widget.model === f.model && f.widget.view === view);
+		assert.equal(view.scrollRow, position, 'buffer attachment cannot clamp a visual viewport against source line count');
+	});
+
 	test(`${variant} replacement projects the surviving source, tab stops and UTF16 offsets without changing its highlight`, t => {
 		const source = '\tretur_dead😀tail\t(😀)', f = fixture(t, source, variant, 80);
 		const { model, widget, layout } = f, buffer = model.buffer;

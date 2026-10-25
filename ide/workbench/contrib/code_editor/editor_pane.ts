@@ -6,7 +6,7 @@ import { isCtrlDown, isMetaDown, isShiftDown } from '../../../input/keyboard/key
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { getClipboardText, cutClipboardText, pasteText } from '../../../editor/editing/text_editing_and_selection';
-import { runtimeErrorOverlayPointer } from '../../../editor/contrib/runtime_error/pointer';
+import { clearExecutionStopHighlight, clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
 import { pointerHover } from '../../../input/pointer/hover';
 import { codeAreaHover, updateCodeAreaPointerFeedback } from '../../../input/pointer/code/feedback';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
@@ -37,7 +37,6 @@ import { renameController } from './rename/controller';
 import { referenceState } from '../../../editor/contrib/references/state';
 import { editorSearchState } from './find/widget_state';
 import { openCodeContextMenuAtCursor } from './context_menu';
-import { editorChromeState } from '../../ui/chrome_state';
 import {
 	activateCodeEditorTab,
 	applyActiveCodeTabSelection,
@@ -127,8 +126,6 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	}
 
 	protected activate(): void {
-		this.editor.resourcePanel.hide();
-		editorChromeState.resourcePanelResizing = false;
 		activateCodeEditorTab(this.input);
 		activeCodeEditor.focusTarget.textInput = this.nativeText;
 		setActiveDiagnostics(this.input.context.model, this.editor.diagnostics.diagnostics);
@@ -152,6 +149,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	}
 
 	public override clearInput(): void {
+		storeCodeTabContext(this.input.context);
 		this.cancelPointer();
 		this.editor.completion.clearInput();
 		activeCodeEditor.focusTarget.release();
@@ -159,11 +157,11 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		this.editor.search.closeSearch(false);
 		closeLineJump(false);
 		pointerHover.release(codeAreaHover);
-		pointerHover.release(runtimeErrorOverlayPointer);
-		editorViewState.scrollbarController.cancel();
 		this.unsubscribeBeforeContentChange();
 		this.unsubscribeContentChange();
-		storeCodeTabContext(this.input.context);
+		clearRuntimeErrorOverlay();
+		clearExecutionStopHighlight();
+		editorCaretState.cursorRevealSuspended = false;
 		activeCodeEditor.detach();
 		setActiveDiagnostics(null, []);
 		super.clearInput();

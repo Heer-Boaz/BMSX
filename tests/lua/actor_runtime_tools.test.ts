@@ -30,7 +30,6 @@ import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
-import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { InputFocusScope, inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -333,7 +332,7 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'), viewerVertical: new Scrollbar('vertical'),
 		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'),
 	}, () => {}, pointerCapture);
-	const pane = new ActorLabEditorPane({ hide() {} } as ResourcePanelController, commands, contextMenu, surfaces, owner, bounds);
+	const pane = new ActorLabEditorPane(commands, contextMenu, surfaces, owner, bounds);
 	t.after(() => {
 		inputFocus.setTarget(null); pane.dispose(); surfaces.dispose(); input.dispose();
 		editorViewState.font = previousFont; editorViewState.lineHeight = previousLineHeight;

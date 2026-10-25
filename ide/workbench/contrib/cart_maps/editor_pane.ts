@@ -18,11 +18,10 @@ import { api } from '../../../runtime/overlay_api';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { CartMapController } from './controller';
 import type { CartMapInput, CartMapLayoutMode, CartMapSection } from './editor_input';
 import { projectCartMap, selectCartMapRow, createCartMapMove } from './source_projection';
@@ -38,7 +37,7 @@ import type { EditorFont } from '../../../editor/ui/view/font';
 /** Display seeds carry coordinates; an accepted draft carries a versioned source proposal. */
 export type CartMapCoordinateEdit = { readonly coordinate: number; readonly edit?: EditorModelEdit };
 
-export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
+export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 	public override get companionGameMinimumWidth(): number { return measureCartMapMinimumWidth(this.input); }
 	public readonly controls: readonly ValueInput<CartMapCoordinateEdit>[];
 	private readonly actions: WorkbenchActionBarControl;
@@ -69,9 +68,9 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		else if (mode === 'outline') this.gridFocus.cancelInput();
 	};
 	private readonly beforeFieldHide = (axis: number): void => { this.controls[axis].field.focusTarget.cancelInput(); };
-	public constructor(resources: ResourcePanelController, controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
+	public constructor(controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.tooltip.attach(surfaces, paneSurface, workArea);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'map';
 		this.gridFocus.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline';
@@ -124,7 +123,6 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	}
 	public override getSelection(): CartMapNavigationSelection { return new CartMapNavigationSelection(this.input); }
 	protected override activate(): void {
-		super.activate();
 		this.boundRevision = -1;
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 	}

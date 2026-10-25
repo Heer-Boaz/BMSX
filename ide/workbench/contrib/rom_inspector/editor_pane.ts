@@ -25,11 +25,10 @@ import type { QuickInputController } from '../../services/quick_input/controller
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { RomInspectorInput } from './editor_input';
 import type { RomInspectorRow, RomInspectorSort } from './model';
 import { drawRomInspector, RomInspectorPresentation } from './presentation';
@@ -51,7 +50,7 @@ const SORTS: { label: string; description: string; detail: string; sort: RomInsp
 const ENTRY_READING_COLUMNS = 36;
 
 /** Native workbench controls over one immutable packed-image input. */
-export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorInput> {
+export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput> {
 	public override get companionGameMinimumWidth(): number { return editorViewState.charAdvance * ENTRY_READING_COLUMNS + SCROLLBAR_WIDTH + 12; }
 
 	private readonly actions: WorkbenchActionBarControl;
@@ -77,12 +76,12 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	private unbindFilterChange!: () => void;
 	private boundRevision = -1;
 	private freshLayout = true;
-	public constructor(resources: ResourcePanelController, private readonly commands: EditorCommandRunner,
+	public constructor(private readonly commands: EditorCommandRunner,
 		private readonly sources: RuntimeSourceState, private readonly navigation: EditorNavigationController,
 		private readonly quickInput: QuickInputController, private readonly contextMenu: ContextMenuController,
 		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>) {
-		super(resources);
+		super();
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionTooltip.attach(surfaces, owner, workArea);
 		this.actions.onDidOpenOverflow = () => this.actionTooltip.hide();
@@ -104,7 +103,6 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	}
 	public override focus(): void { this.list.focusTarget.focus(); }
 	protected override activate(): void {
-		super.activate();
 		this.boundRevision = -1; this.freshLayout = true; this.presentation.reset();
 		this.lastClickRow = undefined; this.lastClickTime = 0;
 		this.key = new RomMapKeyWindow(this.input, this.commands, this.surfaces, this.owner, this.list.focusTarget, this.workArea);

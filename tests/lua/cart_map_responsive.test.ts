@@ -15,7 +15,6 @@ import { handleEditorCommandBindings } from '../../ide/input/keyboard/global_bin
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import { CartMapPane } from '../../ide/workbench/contrib/cart_maps/editor_pane';
 import { projectCartMap, selectCartMapRow } from '../../ide/workbench/contrib/cart_maps/source_projection';
-import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -48,7 +47,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
-	const pane = new CartMapPane({ hide() {} } as ResourcePanelController, null!, commands,
+	const pane = new CartMapPane(null!, commands,
 		createScenarioTestSourceState([]), surfaces, surface, bounds);
 	pane.setInput(input, bounds); pane.update();
 	const layout = (nextWidth = bounds.right - bounds.left, nextVariant: 'tiny' | 'msx' = editorViewState.font.variant) => {

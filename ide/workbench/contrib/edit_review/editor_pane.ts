@@ -14,10 +14,9 @@ import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
+import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
-import type { ResourcePanelController } from '../resources/panel/controller';
 import type { WorkspaceEditReviewInput } from './editor_input';
 import { layoutEditReviewRows } from './projection';
 
@@ -25,14 +24,14 @@ import { layoutEditReviewRows } from './projection';
 const REVIEW_READING_COLUMNS = 48;
 
 /** Source review shares the ordinary authoring pause, without borrowing guest state. */
-export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<WorkspaceEditReviewInput> {
+export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEditReviewInput> {
 	public override get companionGameMinimumWidth(): number {
 		return editorViewState.charAdvance * REVIEW_READING_COLUMNS + colors.SCROLLBAR_WIDTH + 8;
 	}
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus());
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
-	public constructor(resourcePanel: ResourcePanelController, private readonly reveal: (models: readonly EditorTextModel[]) => void) {
-		super(resourcePanel);
+	public constructor(private readonly reveal: (models: readonly EditorTextModel[]) => void) {
+		super();
 		this.scroll.onWillScroll = edge => this.input.reading.noteUserScroll(edge);
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		this.scroll.focusTarget.next = this.actions.focusTarget;
@@ -47,7 +46,6 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 	}
 	public override focus(): void { this.scroll.focusTarget.focus(); }
 	protected override activate(): void {
-		super.activate();
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.scroll.setInput(this.input.viewport);
 		this.update();
