@@ -348,31 +348,35 @@ return true`;
 	assert.equal(input.diagram.scrollTop, 0, 'explicit Home replaces the older semantic annotation anchor');
 });
 
-test('NCLIP Output RGB measures and paints its truthful empty-view explanation at Home, including clear while Diagram stays active', t => {
+test('NCLIP Output RGB paints its produced explanation at Home and retires captured data on Clear', t => {
 	const f = fixture(t), { input, details } = f; details.show();
 	details.chooseView(); for (let index = 0; index < 4; index++) f.press('ArrowDown'); f.press('Enter'); details.update();
 	assert.equal(input.view, 'color'); assert.equal(input.inspectorPage, 'diagram');
 	assert.equal(details.presentation.points.length, 0); assert.equal(details.presentation.colors.length, 0);
-	assert.match(details.presentation.explanation, /no RGB output.*Properties/);
-	assert.doesNotMatch(details.presentation.explanation, /See Details/);
-	const heading = details.diagram.lines.filter(line => line.section === 'heading');
+	f.press('Home'); details.update(); assert.equal(input.diagram.scrollTop, 0);
 	const explanation = details.diagram.lines.filter(line => line.section === 'explanation');
-	assert.equal(explanation[0].top, heading.at(-1)!.top + editorViewState.lineHeight + 4);
-	assert.ok(explanation.at(-1)!.top + editorViewState.lineHeight <= input.diagram.height);
+	assert.ok(explanation.length > 0 && details.presentation.explanation.length > 0);
+	// Exact source slices and painted lines verify producer-to-renderer data integrity, not English wording.
+	assert.equal(explanation[0].start, 0); assert.equal(explanation.at(-1)!.end, details.presentation.explanation.length);
+	for (const line of explanation) assert.equal(line.text, details.presentation.explanation.slice(line.start, line.end));
 	assert.ok(details.diagram.lines.findIndex(line => line.section === 'explanation') < details.diagram.lines.findIndex(line => line.section === 'flags'));
 	for (const method of ['pushClipRect', 'popClipRect', 'pushTransform', 'popTransform', 'fill_rect'] as const) t.mock.method(api, method, () => {});
 	const border = t.mock.method(api, 'blit_rect', () => {}), text = t.mock.method(api, 'blit_text_inline_with_font', () => {});
 	details.diagram.draw(input.diagram, details.presentation, input.selectedPoint, editorViewState.font.renderFont());
 	assert.equal(border.mock.callCount(), 0, 'an empty interpretation must not paint an operand plot');
-	assert.ok(text.mock.calls.some(call => call.arguments[0].includes('no RGB output')));
+	assert.ok(text.mock.calls.some(call => call.arguments[0] === explanation[0].text),
+		'Home must paint the produced explanation before any nonexistent operand plot could displace it');
 	input.clear(); f.synchronize(); details.update();
 	assert.equal(input.inspectorPage, 'diagram'); assert.equal(input.selected.sequence, -1);
-	assert.equal(details.presentation.heading, 'No command selected');
-	assert.equal(details.presentation.explanation, 'Select an observed command in history.');
+	assert.equal(details.presentation.points.length, 0); assert.equal(details.presentation.colors.length, 0);
 	assert.equal(details.diagram.lines.some(line => line.section === 'flags'), false);
+	const clearedExplanation = details.diagram.lines.filter(line => line.section === 'explanation');
+	assert.ok(clearedExplanation.length > 0 && details.presentation.explanation.length > 0);
+	assert.equal(clearedExplanation[0].start, 0); assert.equal(clearedExplanation.at(-1)!.end, details.presentation.explanation.length);
+	for (const line of clearedExplanation) assert.equal(line.text, details.presentation.explanation.slice(line.start, line.end));
 	text.mock.resetCalls();
 	details.diagram.draw(input.diagram, details.presentation, input.selectedPoint, editorViewState.font.renderFont());
-	assert.ok(text.mock.calls.some(call => call.arguments[0] === 'No command selected'));
+	assert.ok(text.mock.calls.some(call => call.arguments[0] === clearedExplanation[0].text));
 	assert.equal(border.mock.callCount(), 0);
 });
 

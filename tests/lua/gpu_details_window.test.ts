@@ -99,17 +99,20 @@ test('GPU Details preserves one observation through expiry and shows explicit em
 	const word = input.selected.words[0], rows = details.inspector.model.rows, first = rows[0].element;
 	f.emit(0x44); f.emit(0x55); input.update(); details.update();
 	assert.equal(input.selected.sequence, 0); assert.equal(input.selected.words[0], word);
-	assert.match(input.detailsWindow.title, /expired/);
+	assert.ok(input.selected.sequence < input.history.firstSequence);
 	assert.equal(f.formats(), 1, 'ring retirement does not re-copy or format an owned pinned observation');
 	assert.equal(details.inspector.model.rows[0].element, first);
 	input.select(input.history.firstSequence); details.update();
 	assert.equal(f.formats(), 2); assert.notEqual(input.selected.words[0], word);
 	assert.equal(details.inspector.model.rows, rows, 'client retirement preserves the model owner, not its obsolete row identity');
-	assert.notEqual(details.inspector.model.rows[0].element, first); assert.doesNotMatch(input.detailsWindow.title, /expired/);
+	assert.notEqual(details.inspector.model.rows[0].element, first);
+	assert.ok(input.selected.sequence >= input.history.firstSequence && input.selected.sequence < input.history.endSequence);
+	assert.notEqual(details.words.focusTarget.clipboard!.copy(), null);
+	const properties = new Set(details.inspector.model.rows.map(row => row.element));
 	input.clear(); input.update(); details.update();
 	assert.equal(input.detailsWindow.open, true); assert.equal(input.selected.sequence, -1); assert.equal(input.selected.wordCount, 0);
-	assert.equal(input.detailsWindow.title, 'GPU Inspector');
-	assert.deepEqual(details.inspector.model.rows.map(row => row.element.label), ['No operation selected']);
+	assert.ok(details.inspector.model.rows.every(row => !properties.has(row.element)), 'Clear retires every property element owned by the old observation');
+	assert.equal(details.words.focusTarget.clipboard!.copy(), null, 'Clear revokes operand copying, not merely its displayed selection');
 	assert.equal(f.formats(), 2, 'an absent operation is its own document, not decoded stale packet words');
 	inputFocus.executeCommand('window.hide', details.inspector.focusTarget);
 	assert.equal(input.detailsWindow.open, false); assert.equal(details.inspector.visible, false);
@@ -324,11 +327,12 @@ for (const variant of ['tiny', 'msx'] as const) test(`GPU ${variant} untextured 
 	assert.equal(input.selected.sequence, -1); assert.equal(input.detailsWindow.open, true);
 });
 
-test('GPU Clear keeps the Words page open with an explicit absent-observation message', t => {
+test('GPU Clear keeps the Words page open without rendering or copying its retired operand', t => {
 	const f = fixture(t), { input, details } = f;
 	f.write([0xa0000000, 0, 0x0001008c, ...Array.from({ length: 70 }, (_, index) => 0x11110000 | index)]);
 	input.update(); input.select(input.history.endSequence - 1); input.inspectorPage = 'words'; details.show();
 	f.press('End'); details.update(); assert.equal(input.selectedWord, 72);
+	const retiredOperand = details.words.focusTarget.clipboard!.copy(); assert.ok(retiredOperand !== null);
 	input.clear(); input.update(); details.update();
 	const overlay = createHostOverlayFixture(384, 288);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
@@ -336,7 +340,6 @@ test('GPU Clear keeps the Words page open with an explicit absent-observation me
 	for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
 		glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
 	assert.equal(input.inspectorPage, 'words'); assert.equal(input.selected.sequence, -1); assert.equal(input.selected.wordCount, 0);
-	assert.ok(glyphs.some(run => run.items === 'No operation selected'));
-	assert.equal(glyphs.some(run => run.items === '000048h  11110045h'), false, 'Clear cannot paint the retired final payload word');
+	assert.equal(glyphs.some(run => run.items.includes(retiredOperand)), false, 'Clear cannot paint the exact raw operand previously supplied by Copy');
 	assert.equal(details.words.focusTarget.clipboard!.copy(), null);
 });

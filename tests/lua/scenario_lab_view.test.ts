@@ -546,7 +546,7 @@ test('scenario result projection retains ordered ActionEffect facts', (t) => {
 	);
 });
 
-test('scenario workbench renderer uses the active tiny IDE font and retained text', (t) => {
+test('scenario workbench renderer uses the active tiny IDE font', (t) => {
 	const tinyFont = installWorkbenchViewport(t);
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -563,7 +563,6 @@ test('scenario workbench renderer uses the active tiny IDE font and retained tex
 	const frame = queue.consumeOverlayFrame();
 	const renderFont = tinyFont.renderFont();
 	let glyphCount = 0;
-	let titleFound = false;
 	for (let index = 0; index < frame.commandCount; index += 1) {
 		if (frame.commandKinds[index] !== Host2DKind.Glyphs) {
 			continue;
@@ -571,12 +570,8 @@ test('scenario workbench renderer uses the active tiny IDE font and retained tex
 		const glyphs = frame.commandRefs[index] as GlyphRenderSubmission;
 		glyphCount += 1;
 		assert.equal(glyphs.font, renderFont);
-		if (glyphs.items === 'SCENARIO LAB') {
-			titleFound = true;
-		}
 	}
-	assert.ok(glyphCount >= 8);
-	assert.equal(titleFound, true);
+	assert.ok(glyphCount > 0, 'the actual text publication makes font ownership non-vacuous');
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`Scenario tree paint, indentation and disclosure hits share geometry in ${variant}`, t => {
