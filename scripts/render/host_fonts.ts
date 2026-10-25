@@ -5,11 +5,16 @@ import type { ImageResource, Resource } from '../rompacker/rompacker.rompack';
 export async function addHostFontResources(resources: Resource[]): Promise<void> {
 	for (const dotName of ['msx_6b_font_dot', 'tiny_3b_font_code_0x2e']) {
 		const dot = resources.find((resource): resource is ImageResource => resource.type === 'image' && resource.name === dotName)!;
+		const prefix = dotName.startsWith('msx_') ? 'msx_6b_font' : 'tiny_3b_font';
 		const canvas = createCanvas(6, dot.img!.height), context = canvas.getContext('2d');
 		context.fillStyle = '#ffffff';
 		for (let x = 0; x < 6; x += 2) context.fillRect(x, canvas.height - 2, 1, 1);
-		resources.push({ ...dot, name: dotName.startsWith('msx_') ? 'msx_6b_font_ellipsis' : 'tiny_3b_font_ellipsis',
+		resources.push({ ...dot, name: `${prefix}_ellipsis`,
 			img: await loadImage(canvas.toBuffer('image/png')) });
+		const middleDot = createCanvas(dot.img!.width, dot.img!.height), middleContext = middleDot.getContext('2d');
+		middleContext.fillStyle = '#ffffff';
+		middleContext.fillRect((middleDot.width - 1) >> 1, (middleDot.height - 2) >> 1, 1, 1);
+		resources.push({ ...dot, name: `${prefix}_middle_dot`, img: await loadImage(middleDot.toBuffer('image/png')) });
 	}
 	const count = resources.length;
 	for (let index = 0; index < count; index++) {

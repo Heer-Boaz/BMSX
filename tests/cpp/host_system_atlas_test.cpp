@@ -45,6 +45,8 @@ int main() {
 	}
 	require(missingImageRejected, "host system atlas lookup should reject missing image ids");
 	for (auto variant : {bmsx::FontVariant::Msx, bmsx::FontVariant::Tiny}) {
+		bmsx::Font normal(variant);
+		const auto& cell = normal.getGlyph(static_cast<bmsx::u32>('.'));
 		for (auto style : {bmsx::FontStyle::Normal, bmsx::FontStyle::Italic}) {
 			bmsx::Font symbols(variant, style);
 			const auto& ellipsis = symbols.getGlyph(0x2026u);
@@ -60,8 +62,34 @@ int main() {
 				}
 			}
 			require(opaque == 3, "one ellipsis glyph contains three single-pixel dots");
+			const auto& middleDot = symbols.getGlyph(0x00b7u);
+			const auto& fallback = symbols.getGlyph(static_cast<bmsx::u32>('?'));
+			require(middleDot.imgid != fallback.imgid, "middle dot must not use the fallback glyph");
+			require(middleDot.width == cell.width + (style == bmsx::FontStyle::Italic ? (cell.height - 1) >> 2 : 0), "middle dot uses the period cell and italic extent");
+			require(middleDot.height == cell.height && middleDot.height == symbols.lineHeight(), "middle dot preserves the font baseline");
+			require(middleDot.advance == symbols.advance('.'), "middle dot advances one period cell");
+			// The bitmap contract is independent of atlas packing and UI placement.
+			const int dotY = (cell.height - 2) >> 1;
+			const int dotX = ((cell.width - 1) >> 1) + (style == bmsx::FontStyle::Italic ? (cell.height - 1 - dotY) >> 2 : 0);
+			for (int y = 0; y < middleDot.height; ++y) {
+				for (int x = 0; x < middleDot.width; ++x) {
+					const std::size_t offset = ((middleDot.rect.v + y) * bmsx::HOST_SYSTEM_ATLAS.width + middleDot.rect.u + x) * 4u;
+					const bool dot = x == dotX && y == dotY;
+					require(bmsx::HOST_SYSTEM_ATLAS.pixels[offset + 3u] == (dot ? 255 : 0), "middle dot raster contains one centered opaque pixel through glyph UV");
+					if (dot) require(bmsx::HOST_SYSTEM_ATLAS.pixels[offset] == 255 && bmsx::HOST_SYSTEM_ATLAS.pixels[offset + 1u] == 255
+						&& bmsx::HOST_SYSTEM_ATLAS.pixels[offset + 2u] == 255, "middle dot raster pixel is white");
+				}
+			}
+			require(symbols.measure("\xc2\xb7") == middleDot.advance, "UTF-8 text measures one middle dot glyph");
+			require(symbols.measure("A\xc2\xb7" "B") == symbols.advance('A') + middleDot.advance + symbols.advance('B'), "UTF-8 middle dot advances once between surrounding glyphs");
+			require(&symbols.getGlyph(0x00b7u) == &middleDot, "middle dot geometry is retained across text measurement");
+			const auto& unknown = symbols.getGlyph(0x2603u);
+			require(unknown.imgid == fallback.imgid && unknown.advance == fallback.advance, "unmapped Unicode still resolves the ordinary question glyph");
+			require(unknown.rect.u == fallback.rect.u && unknown.rect.v == fallback.rect.v && unknown.rect.w == fallback.rect.w && unknown.rect.h == fallback.rect.h,
+				"unmapped Unicode preserves fallback atlas UV");
+			require(symbols.measure("A\xe2\x98\x83" "B") == symbols.advance('A') + fallback.advance + symbols.advance('B'), "unmapped UTF-8 still advances once through fallback");
 		}
-		bmsx::Font normal(variant), font(variant, bmsx::FontStyle::Italic);
+		bmsx::Font font(variant, bmsx::FontStyle::Italic);
 		require(font.lineHeight() == normal.lineHeight(), "italic fonts preserve the baseline");
 		for (bmsx::u32 code = 32; code <= 126; ++code) {
 			const auto& base = normal.getGlyph(code);

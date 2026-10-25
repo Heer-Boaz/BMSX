@@ -45,6 +45,31 @@ test('both host fonts have a compact native ellipsis glyph, including italic tex
 	}
 });
 
+for (const variant of ['msx', 'tiny'] as const) for (const style of ['normal', 'italic'] as const) {
+	test(`${variant} ${style} middle dot resolves one centered native atlas pixel without changing unknown fallback`, () => {
+		const normal = new Font({ variant }), cell = normal.getGlyph('.');
+		const font = new Font({ variant, style }), glyph = font.getGlyph('·'), fallback = font.getGlyph('?');
+		assert.notEqual(glyph.imgid, fallback.imgid);
+		assert.equal(glyph.width, cell.width + (style === 'italic' ? (cell.height - 1) >> 2 : 0));
+		assert.equal(glyph.height, cell.height); assert.equal(glyph.height, font.lineHeight);
+		assert.equal(glyph.advance, font.advance('.'));
+		// This is the native bitmap contract, independent of atlas packing or UI placement.
+		const dotY = (cell.height - 2) >> 1;
+		const dotX = ((cell.width - 1) >> 1) + (style === 'italic' ? (cell.height - 1 - dotY) >> 2 : 0);
+		for (let y = 0; y < glyph.height; y++) for (let x = 0; x < glyph.width; x++) {
+			const offset = ((glyph.rect.v + y) * HOST_SYSTEM_ATLAS.width + glyph.rect.u + x) * 4;
+			assert.equal(HOST_SYSTEM_ATLAS.pixels[offset + 3], x === dotX && y === dotY ? 255 : 0);
+			if (x === dotX && y === dotY) assert.deepEqual(Array.from(HOST_SYSTEM_ATLAS.pixels.subarray(offset, offset + 3)), [255, 255, 255]);
+		}
+		assert.equal(font.measure('·'), glyph.advance);
+		assert.equal(font.measure('A·B'), font.advance('A') + glyph.advance + font.advance('B'));
+		assert.ok(font.getGlyph('·') === glyph, 'middle-dot atlas geometry is retained across text measurement');
+		const unknown = font.getGlyph('☃');
+		assert.equal(unknown.imgid, fallback.imgid); assert.deepEqual(unknown.rect, fallback.rect); assert.equal(unknown.advance, fallback.advance);
+		assert.equal(font.measure('A☃B'), font.advance('A') + fallback.advance + font.advance('B'));
+	});
+}
+
 
 test('host italic glyphs preserve the baseline and contain the sheared source pixels in both variants', () => {
 	for (const variant of ['msx', 'tiny'] as const) {
