@@ -89,9 +89,14 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	ide.editor.editorGroup.openEditor(viewer); await test.frame();
 	if (viewer.kind !== 'resource_view') throw new Error('session: source viewer required');
 	viewer.view.scroll = 2;
-	const viewerState = viewer.view, oldContent = viewerState.content;
-	check(await ide.editor.resourceEditors.resolveEditorInput(resource, WORKBENCH_RESOURCE_VIEWER_ID) === viewer, 'session: repeated resource resolution returns its retained input');
-	check(viewer.view === viewerState && viewer.view.scroll === 2 && viewer.view.content !== oldContent,
+	await test.frame();
+	const viewerState = viewer.view, scroll = viewerState.scroll, oldContent = viewerState.content;
+	const candidate = await ide.editor.resourceEditors.resolveEditorInput(resource, WORKBENCH_RESOURCE_VIEWER_ID);
+	let retiredCandidate = false;
+	candidate.onWillDispose(() => { retiredCandidate = true; });
+	ide.editor.editorGroup.openEditor(candidate); await test.frame();
+	check(ide.editor.editorGroup.model.activeTab === viewer && retiredCandidate, 'session: group admission retains its resource view and retires the duplicate candidate');
+	check(viewer.view === viewerState && viewer.view.scroll === scroll && viewer.view.content !== oldContent,
 		'session: refreshed resource content does not reset the viewer position');
 	const code = await ide.editor.resourceEditors.resolveEditorInput(resource, WORKBENCH_TEXT_EDITOR_ID);
 	ide.editor.editorGroup.openEditor(code, { pinned: false }); await test.frame();
@@ -148,8 +153,10 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 	check(workspaceState.localGeneration!.dirtyRecords.size === 1, 'session: one backup regardless of visual input count');
 	// Shutdown ends normal focus first, then checkpoints the still-live inputs.
 	const topology = ide.editor.editorGroup.model.serialize(ide.editor.editorInputSerializers);
-	const root = workspaceState.projectRootPath!;
-	const statePath = joinWorkspacePaths(root, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE);
+	const context = workspaceState.context!;
+	const root = context.projectRoot;
+	const recoveryIdentity = workspaceState.recoveryIdentity!;
+	const statePath = joinWorkspacePaths(root, WORKSPACE_METADATA_DIR, 'studio', recoveryIdentity, WORKSPACE_STATE_FILE);
 	await ide.editor.shutdown();
 	check(model.version === version && model.buffer.getText() === expected.source, 'session: invalid draft is not promoted on shutdown');
 	const record = readLocalWorkspaceRecord(localStorage, root, statePath)!;

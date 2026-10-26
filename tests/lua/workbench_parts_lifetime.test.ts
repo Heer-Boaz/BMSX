@@ -940,11 +940,11 @@ test('a stationary captured tab drag advances from the actual host frame without
 
 test('Home is an ordinary retained workspace editor and closing all editors leaves the group empty', async t => {
 	const f = fixture(t);
-	openHome(f.editor.editorGroup, '/workspace/current'); f.editor.update(0);
+	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
 	const home = f.editor.editorGroup.model.activeTab!;
 	assert.equal(home.kind, 'home');
 	if (home.kind !== 'home') throw new Error('Home contribution');
-	assert.equal(home.workspaceRoot, '/workspace/current');
+	assert.deepEqual(home.workspaceContext, { id: 'home-source-context', projectRoot: '/workspace/current' });
 	assert.equal(home.resource, undefined);
 	assert.equal(home.isDirty(), false);
 	assert.ok(f.editor.editorGroup.panes.activePane!.input === home);
@@ -952,7 +952,7 @@ test('Home is an ordinary retained workspace editor and closing all editors leav
 	const serialized = f.editor.editorInputSerializers.home.serialize(home);
 	assert.equal(serialized, '', 'the attached workspace, not saved cartridge identity, supplies the Home subject');
 	f.editor.editorGroup.activate(f.input.id);
-	openHome(f.editor.editorGroup, '/workspace/current'); f.editor.update(0);
+	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
 	assert.ok(f.editor.editorGroup.model.activeTab === home);
 	assert.equal(f.editor.editorGroup.model.tabs.filter(input => input.kind === 'home').length, 1);
 	assert.ok(f.editor.editorGroup.model.tabs.includes(f.input));
@@ -970,7 +970,7 @@ test('Home is an ordinary retained workspace editor and closing all editors leav
 	assert.equal(f.editor.editorGroup.model.activeTab, null);
 	assert.equal(f.editor.editorGroup.panes.activePane, null);
 	assert.equal(inputFocus.target, null);
-	openHome(f.editor.editorGroup, '/workspace/current'); f.editor.update(0);
+	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
 	assert.equal(f.editor.editorGroup.model.activeTab!.kind, 'home');
 	assert.ok(f.editor.editorGroup.model.activeTab !== home);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
@@ -978,7 +978,7 @@ test('Home is an ordinary retained workspace editor and closing all editors leav
 
 test('Home publishes action geometry before accepting a fresh pointer release', t => {
 	const f = fixture(t);
-	openHome(f.editor.editorGroup, '/workspace/current'); f.editor.update(0);
+	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
 	const home = f.editor.editorGroup.model.activeTab!;
 	if (home.kind !== 'home') throw new Error('Home contribution');
 	const bounds = home.sections[0].actions.items[1].bounds;
@@ -996,7 +996,7 @@ test('Home publishes action geometry before accepting a fresh pointer release', 
 
 test('Home cover revokes both a held action and keyboard admission before the next frame', t => {
 	const f = fixture(t);
-	openHome(f.editor.editorGroup, '/workspace/current'); f.editor.update(0);
+	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
 	const home = f.editor.editorGroup.model.activeTab!;
 	if (home.kind !== 'home') throw new Error('Home contribution');
 	const focused = inputFocus.target!, bounds = home.sections[0].actions.items[0].bounds;
@@ -1027,7 +1027,7 @@ test('Home cover revokes both a held action and keyboard admission before the ne
 test('Home keyboard scroll retires a pointer action before a same-poll release', t => {
 	const f = fixture(t); f.editor.resourcePanel.show();
 	f.editor.updateViewport({ width: 256, height: 160 }); // Exercise a client that genuinely requires scrolling.
-	openHome(f.editor.editorGroup, '/workspace/current'); f.editor.update(0);
+	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
 	const home = f.editor.editorGroup.model.activeTab!;
 	if (home.kind !== 'home') throw new Error('Home contribution');
 	f.key('Escape'); // The actual Home action bar returns focus to its scroll view.

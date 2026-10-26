@@ -1,4 +1,5 @@
 import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
+import type { StudioSourceContext } from '../../hosts/common/studio_projects';
 import { GameCaptureService } from '../../hosts/common/game_capture';
 import type { RenderPresentationState } from '../../hosts/common/presentation_state';
 import type { ImageDecoder, PngImageEncoder } from '../../hosts/common/image';
@@ -13,7 +14,7 @@ import type { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { createRuntimeSourceState } from '../runtime/sources';
 import type { RuntimeIdeState } from './state';
-import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
+import type { RomToolingMedia } from '../../toolchain/ts/rompack/media';
 import * as workbenchMode from './mode';
 import type { Clipboard } from '../../hosts/common/clipboard';
 import type { MicrotaskQueue } from '../common/microtask_queue';
@@ -28,8 +29,7 @@ import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 
 export async function prepareWorkbenchRuntime(
-	systemRom: Uint8Array,
-	cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null],
+	media: RomToolingMedia,
 	runtime: Runtime,
 	presenter: VideoPresenter,
 	presentation: RenderPresentationState,
@@ -43,6 +43,8 @@ export async function prepareWorkbenchRuntime(
 	rewind: HostRewind,
 	hostMenu: HostOverlayMenu,
 	storage: KeyValueStorage,
+	workspaceContext: StudioSourceContext,
+	recoverySessionId: string,
 	workspaceFiles: WorkspaceRecordProvider,
 	clock: HostClock,
 	clipboard: Clipboard,
@@ -54,10 +56,6 @@ export async function prepareWorkbenchRuntime(
 	observeConversation?: ConversationObserverFactory,
 	startupSource: 'workspace' | 'installed' = 'workspace',
 ): Promise<RuntimeIdeState> {
-	const media = await loadRomToolingMedia(
-		systemRom,
-		cartridgeSlots,
-	);
 	const sources = createRuntimeSourceState(
 		media.system,
 		media.cartridgeSlots,
@@ -75,6 +73,8 @@ export async function prepareWorkbenchRuntime(
 		execution,
 		rewind,
 		storage,
+		workspaceContext,
+		recoverySessionId,
 		workspaceFiles,
 		clock,
 		clipboard,

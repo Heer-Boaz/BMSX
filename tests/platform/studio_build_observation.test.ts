@@ -5,14 +5,18 @@ import { once } from 'node:events';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import type { StudioBuildJob, StudioBuildRequest } from '../../hosts/common/studio_builds';
+import type { StudioProjectAdmission } from '../../hosts/common/studio_projects';
+import type { RomArtifact, RomBuildUnit } from '../../toolchain/ts/rompack/build_manifest';
+import { loadPublishedBuild } from '../../ide/browser/published_media';
+import { StudioHttpSession } from '../../ide/browser/http_session';
 import type { PublishedBuildOpenResult } from '../../ide/workbench/services/builds';
 
 // Exercise browser storage and independently ordered HTTP/stream observations, not UI copy.
-test('published navigation reports browser policy denial and an allowed gesture opens an isolated exact-artifact tab', { timeout: 30000 }, async t => {
-	const artifact = 'a'.repeat(64);
+test('published navigation reports browser policy denial and an allowed gesture opens an isolated exact-build tab', { timeout: 30000 }, async t => {
+	const requestId = '00000000-0000-4000-8000-000000000001';
 	const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
 		import { openPublishedBuild } from './ide/browser/published_media';
-		const open = () => { globalThis.result = openPublishedBuild('${artifact}'); };
+		const open = () => { globalThis.result = openPublishedBuild('${requestId}'); };
 		document.querySelector('button').onclick = open;
 		if (location.search.includes('blocked=1')) open();
 	` }, bundle: true, platform: 'browser', format: 'iife', write: false });
@@ -29,7 +33,7 @@ test('published navigation reports browser policy denial and an allowed gesture 
 	const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	const context = await browser.newContext(), page = await context.newPage();
 	const original = `${address}/studio.debug.html?rom=original.debug.rom#original`;
-	const published = `${address}/studio.debug.html?artifact=${artifact}`;
+	const published = `${address}/studio.debug.html?build=${requestId}`;
 	await page.goto(`${address}/studio.debug.html?rom=original.debug.rom&blocked=1`);
 	const denied: PublishedBuildOpenResult = await page.evaluate(() => (globalThis as any).result);
 	assert.deepEqual(denied, { status: 'blocked', url: published });
@@ -42,6 +46,67 @@ test('published navigation reports browser policy denial and an allowed gesture 
 	assert.equal(await child.evaluate(() => window.opener), null);
 	assert.equal(page.url(), original);
 	assert.deepEqual(await page.evaluate(() => (globalThis as any).result), { status: 'opened', url: published });
+});
+
+test('published build admission retains the exact receipt project even when artifact bytes are shared', { timeout: 30000 }, async t => {
+	const firstId = '00000000-0000-4000-8000-000000000001', secondId = '00000000-0000-4000-8000-000000000002';
+	const archiveId = '00000000-0000-4000-8000-000000000003', pendingId = '00000000-0000-4000-8000-000000000004';
+	const unknownId = '00000000-0000-4000-8000-000000000006';
+	const firstProject: StudioProjectAdmission = { target: 'cpu_soak',
+		system: { id: '10000000-0000-4000-8000-000000000001', projectRoot: 'bios' },
+		cartridge: { id: '10000000-0000-4000-8000-000000000002', projectRoot: 'carts/cpu_soak' } };
+	// The source roots and bytes can be identical without making these the same admitted contexts.
+	const secondProject: StudioProjectAdmission = { target: 'cpu_soak',
+		system: { ...firstProject.system, id: '20000000-0000-4000-8000-000000000001' },
+		cartridge: { ...firstProject.cartridge, id: '20000000-0000-4000-8000-000000000002' } };
+	const system: RomBuildUnit = { key: 'system-key', name: 'bios',
+		recipe: { domain: 'system', debug: true, optLevel: 0, projectRoot: 'bios', toolchain: 'test' },
+		inputs: 'system-inputs', outputs: [{ file: 'system.rom', digest: 'system-digest' }] };
+	const artifact: RomArtifact = { id: 'a'.repeat(64), target: 'cpu_soak', system,
+		cart: { key: 'cart-key', name: 'cpu_soak',
+			recipe: { domain: 'cart', debug: true, optLevel: 0, projectRoot: 'carts/cpu_soak', toolchain: 'test' },
+			inputs: 'cart-inputs', outputs: [{ file: 'cart.rom', digest: 'cart-digest' }] } };
+	const firstJob: StudioBuildJob = { request: { requestId: firstId, target: 'cpu_soak', debug: true, optLevel: 0 },
+		state: 'completed', phase: 'Published', acceptedAt: 1, updatedAt: 2,
+		version: { generation: 1, sequence: 1 }, artifact: artifact.id, project: firstProject };
+	const secondJob: StudioBuildJob = { ...firstJob, request: { ...firstJob.request, requestId: secondId }, project: secondProject };
+	const jobs = new Map<string, StudioBuildJob>([
+		[firstId, firstJob], [secondId, secondJob],
+		[archiveId, { ...firstJob, request: { ...firstJob.request, requestId: archiveId }, project: undefined }],
+		[pendingId, { ...firstJob, request: { ...firstJob.request, requestId: pendingId }, state: 'publishing' }],
+	]);
+	const requests: string[] = [];
+	const artifactPath = `/__bmsx__/builds/artifacts/${artifact.id}`;
+	const server = createServer((req, res) => {
+		if (req.url === '/__bmsx__/session') { res.end(JSON.stringify({ workspaceToken: 'test' })); return; }
+		requests.push(req.url!);
+		if (req.url!.startsWith('/__bmsx__/builds/jobs/')) {
+			const job = jobs.get(req.url!.split('/').pop()!);
+			if (job === undefined) { res.writeHead(404).end('Build not found'); return; }
+			res.end(JSON.stringify(job)); return;
+		}
+		if (req.url === artifactPath) { res.end(JSON.stringify(artifact)); return; }
+		if (req.url === `${artifactPath}/system.rom`) { res.end(Buffer.from([1, 3, 5])); return; }
+		if (req.url === `${artifactPath}/cart.rom`) { res.end(Buffer.from([2, 4, 6])); return; }
+		res.writeHead(404).end();
+	});
+	server.listen(0, '127.0.0.1'); await once(server, 'listening');
+	t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+	const session = new StudioHttpSession(address);
+	for (const [requestId, project] of [[firstId, firstProject], [secondId, secondProject]] as const) {
+		requests.length = 0;
+		const opened = await loadPublishedBuild(session, requestId);
+		assert.deepEqual(opened.project, project);
+		assert.deepEqual(opened.media, { systemRom: new Uint8Array([1, 3, 5]), cartridgeSlots: [new Uint8Array([2, 4, 6]), null] });
+		assert.deepEqual(requests.slice(0, 2), [`/__bmsx__/builds/jobs/${requestId}`, artifactPath]);
+		assert.deepEqual(requests.slice(2).sort(), [`${artifactPath}/cart.rom`, `${artifactPath}/system.rom`]);
+	}
+	for (const requestId of [unknownId, pendingId, archiveId]) {
+		requests.length = 0;
+		await assert.rejects(loadPublishedBuild(session, requestId));
+		assert.deepEqual(requests, [`/__bmsx__/builds/jobs/${requestId}`], 'rejected admission never reads artifact metadata or media');
+	}
 });
 
 test('build receipts survive multiple windows and HTTP/stream reordering', { timeout: 30000 }, async t => {

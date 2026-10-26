@@ -1,6 +1,6 @@
 # Workspace builds, publication and recovery
 
-Implemented 2026-09-29. This covers the offline producer/package workflow,
+This covers the offline producer/package workflow,
 server-owned jobs, and the Studio window connection. It does **not** implement
 full-media replacement inside a running emulator or change embedded chat lifetime.
 
@@ -37,13 +37,17 @@ full-media replacement inside a running emulator or change embedded chat lifetim
   picker into a selected cartridge's workspace. It preserves bytes and never
   overwrites existing paths. [Import](studio_file_import.md), build and opening
   the published media are separate operations; import does not hot-install assets.
-- A completed job offers **Open published build in new Studio window**. That
-  window loads both ROMs from the exact immutable artifact through the authorized
+- A completed job with source-project admission offers **Open published build in new Studio window**.
+  The URL retains its build request UUID, so opening resolves both its exact
+  source admission and published artifact. Equal artifact bytes do not establish
+  source-context identity. That window loads both ROMs through the authorized
   API, without first exporting anything to `dist`. Its initial boot runs installed
   media even if newer saved files or recovered drafts exist. They remain visible
   as pending source changes; explicit **Reboot** applies them. The original window
   and its machine/drafts remain untouched. This is cold startup, not in-place
-  full-media replacement or Hot Resume. The artifact URL contains no credential.
+  full-media replacement or Hot Resume. The build URL contains no credential.
+  Artifact-only historical receipts remain inspectable, but do not authorize
+  an authoring Studio; create a new project build before opening one.
 - External agents use the same server's MCP tools: `studio_build_targets`,
   `studio_build_cart`, `studio_list_builds`, `studio_read_build`,
   `studio_cancel_build`, `studio_read_artifact`. They need neither a browser tool

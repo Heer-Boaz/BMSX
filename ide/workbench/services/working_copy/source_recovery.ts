@@ -3,7 +3,7 @@ import { LogLevel, type LogOutput } from '../../../../hosts/common/log';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import { resolveRuntimeResource, runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
-import { buildWorkspaceDirtyEntryPath, buildWorkspaceDirtyRecordPath } from '../../../workspace/files';
+import { buildWorkspaceDirtyEntryPath } from '../../../workspace/files';
 import { joinWorkspacePaths } from '../../../workspace/path';
 import { createWorkspaceRecord, WORKSPACE_METADATA_DIR, workspaceRecords, type WorkspaceRecord } from '../../../workspace/records';
 import { loadWorkspaceDirtySources, publishWorkspaceDirtySources, pruneWorkspaceDirtySources, type PersistedDirtyEntry } from '../../../workspace/source_recovery_store';
@@ -13,7 +13,7 @@ export type WorkingCopyRecoveryEntry = PersistedDirtyEntry & { savedSource: stri
 
 export function captureWorkspaceDirtySources(models: EditorTextModelService, sources: RuntimeSourceState,
 	clock: HostClock, previous: ReadonlyMap<string, WorkspaceRecord>,
-	write?: (projectRoot: string, path: string, record: WorkspaceRecord) => void,
+	write?: (projectRoot: string, entry: PersistedDirtyEntry, record: WorkspaceRecord) => void,
 ): { dirtyFiles: WorkingCopyRecoveryEntry[]; dirtyRecords: Map<string, WorkspaceRecord> } {
 	const dirtyFiles: WorkingCopyRecoveryEntry[] = [], dirtyRecords = new Map<string, WorkspaceRecord>();
 	for (const model of models.models) {
@@ -21,13 +21,13 @@ export function captureWorkspaceDirtySources(models: EditorTextModelService, sou
 		const resource = model.resource, root = runtimeSourceProjectRootPath(sources, resource.domain);
 		const path = buildWorkspaceDirtyEntryPath(root, resource.domain, resource.path);
 		const text = getTextSnapshot(model.buffer);
-		let record = previous.get(path);
-		if (record === undefined || record.contents !== text) {
-			record = createWorkspaceRecord(clock, text);
-			write?.(root, buildWorkspaceDirtyRecordPath(path, record.updatedAt), record);
-		}
-		dirtyFiles.push({ domain: resource.domain, path: resource.path, updatedAt: record.updatedAt,
-			savedSource: model.lastSavedSource, persistedBaseline: model.persistedBaseline });
+		const previousRecord = previous.get(path);
+		const record = previousRecord === undefined || previousRecord.contents !== text
+			? createWorkspaceRecord(clock, text) : previousRecord;
+		const entry = { domain: resource.domain, path: resource.path, updatedAt: record.updatedAt,
+			savedSource: model.lastSavedSource, persistedBaseline: model.persistedBaseline };
+		if (record !== previousRecord) write?.(root, entry, record);
+		dirtyFiles.push(entry);
 		dirtyRecords.set(path, record);
 	}
 	return { dirtyFiles, dirtyRecords };

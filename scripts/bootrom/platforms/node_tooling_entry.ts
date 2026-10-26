@@ -1,4 +1,5 @@
 import { HostAudioDevice } from '../../../hosts/common/audio_device';
+import { randomUUID } from 'node:crypto';
 import { decodeImage, encodePngImage } from '../../../hosts/node/headless/screenshot';
 import { runGuestTests } from './hostrunner/test_runner';
 import { Worker } from 'node:worker_threads';
@@ -70,6 +71,9 @@ import {
 	parseNodeToolingOptions,
 } from './node_tooling_options';
 import { DiskWorkspaceRecordProvider } from '../../../ide/node/workspace_records';
+import { WorkspaceProjects } from '../../../hosts/node/workspace/projects';
+import type { RuntimeIdeState } from '../../../ide/workbench/state';
+import type { StudioSourceContext } from '../../../hosts/common/studio_projects';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 import { RemoteInput } from '../../../hosts/common/input/remote';
 import { HostControlServer } from '../../../hosts/node/control/server';
@@ -178,9 +182,12 @@ async function main(): Promise<void> {
 	);
 	console.log(`[bootrom:headless] TTL set to ${options.ttlMs}ms.`);
 
+	const sourceMedia = options.cpuProfile || options.mode.kind === 'ide-test'
+		|| (options.mode.kind === 'control' && options.mode.workspaceRoot !== undefined)
+		? await loadRomToolingMedia(systemRom, [slot0Rom, slot1Rom]) : undefined;
 	let profile: CpuProfilerSession | null = null;
 	if (options.cpuProfile) {
-		const media = await loadRomToolingMedia(systemRom, [slot0Rom, slot1Rom]);
+		const media = sourceMedia!;
 		const systemLayer = media.system;
 		const cartridgeImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [null, null];
 		for (let slot = 0; slot < media.cartridgeSlots.length; slot += 1) {
@@ -208,13 +215,21 @@ async function main(): Promise<void> {
 		case 'control': {
 			const clipboard = new HeadlessClipboard();
 			const workspaceRoot = options.mode.workspaceRoot;
-			const ide = workspaceRoot === undefined ? undefined : await prepareWorkbenchRuntime(
-				systemRom, [slot0Rom, slot1Rom], runtime, presenter, presentation, encodePngImage, decodeImage, videoOutput, input, audioOutput,
-				runtimeTasks, execution, rewind, hostOverlayMenu,
-				new MemoryStorage(), new DiskWorkspaceRecordProvider(workspaceRoot), clock,
-				clipboard, new IdeMicrotaskQueue(), logOutput, RESOURCE_PANEL_DEFAULT_RATIO,
-				() => new NodeGraphLayoutEngine(new Worker(path.join(__dirname, 'graph-layout.node-worker.cjs'))),
-			);
+			let ide: RuntimeIdeState | undefined;
+			if (workspaceRoot !== undefined) {
+				const media = sourceMedia!;
+				const projects = new WorkspaceProjects(workspaceRoot, path.join(workspaceRoot, '.bmsx/studio'));
+				let context: StudioSourceContext;
+				try { context = await projects.resolveSource((media.cartridgeSlots[0] ?? media.cartridgeSlots[1] ?? media.system).index.projectRootPath); }
+				finally { await projects.close(); }
+				ide = await prepareWorkbenchRuntime(
+					media, runtime, presenter, presentation, encodePngImage, decodeImage, videoOutput, input, audioOutput,
+					runtimeTasks, execution, rewind, hostOverlayMenu,
+					new MemoryStorage(), context, randomUUID(), new DiskWorkspaceRecordProvider(workspaceRoot), clock,
+					clipboard, new IdeMicrotaskQueue(), logOutput, RESOURCE_PANEL_DEFAULT_RATIO,
+					() => new NodeGraphLayoutEngine(new Worker(path.join(__dirname, 'graph-layout.node-worker.cjs'))),
+				);
+			}
 			if (ide) {
 				systemOutput.flush(runtime, logOutput);
 				audioOutput.device.select(audioOutput);
@@ -260,6 +275,11 @@ async function main(): Promise<void> {
 		case 'ide-test': {
 				const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-ide-test-'));
 				try {
+					const media = sourceMedia!;
+					const projects = new WorkspaceProjects(workspaceRoot, path.join(workspaceRoot, '.bmsx/studio'));
+					let context: StudioSourceContext;
+					try { context = await projects.resolveSource((media.cartridgeSlots[0] ?? media.cartridgeSlots[1] ?? media.system).index.projectRootPath); }
+					finally { await projects.close(); }
 					const microtasks = new IdeMicrotaskQueue();
 					const storage = new MemoryStorage();
 					const capture = new HeadlessCaptureCoordinator(
@@ -271,8 +291,7 @@ async function main(): Promise<void> {
 						`[bootrom:headless:input] [capture] screenshots -> ${capture.outputDir}`,
 					);
 					const ide = await prepareWorkbenchRuntime(
-						systemRom,
-						[slot0Rom, slot1Rom],
+						media,
 						runtime,
 						presenter,
 						presentation,
@@ -286,6 +305,8 @@ async function main(): Promise<void> {
 						rewind,
 						hostOverlayMenu,
 						storage,
+						context,
+						randomUUID(),
 						new DiskWorkspaceRecordProvider(workspaceRoot),
 						clock,
 						new HeadlessClipboard(),

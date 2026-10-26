@@ -60,7 +60,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 
 export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId, group: EditorGroupView): void {
 	switch (command) {
-		case 'home': openHome(group, workspaceState.projectRootPath); return;
+		case 'home': openHome(group, workspaceState.context); return;
 		case 'animation': editor.animations.open(); return;
 		case 'hostError': openHostError(group, fault.hostFrameFailure!); return;
 		case 'romInspector': openRomInspector(group, editor.quickInput, sources); return;

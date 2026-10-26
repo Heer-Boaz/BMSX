@@ -1,4 +1,5 @@
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import type { StudioSourceContext } from '../../../../hosts/common/studio_projects';
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorGroupView } from '../../services/editor/editor_group';
@@ -33,11 +34,11 @@ export class HomeInput extends ReadonlyEditorInput<'home', 'home'> {
 		return { title: section.title, actions, bounds: create_rect_bounds(), labels: actions.items.map(item => item.label), visibleCount: 0 };
 	});
 
-	public constructor(public readonly workspaceRoot: string | null) {
+	public constructor(public readonly workspaceContext: StudioSourceContext | null) {
 		super('home', 'home', 'Home', true);
 	}
 }
 
-export function openHome(group: EditorGroupView, workspaceRoot: string | null): void {
-	group.openEditor(group.model.findById('home') ?? new HomeInput(workspaceRoot));
+export function openHome(group: EditorGroupView, workspaceContext: StudioSourceContext | null): void {
+	group.openEditor(group.model.findById('home') ?? new HomeInput(workspaceContext));
 }

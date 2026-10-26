@@ -30,7 +30,7 @@ import { workspaceState } from '../../../ide/workbench/workspace/state';
 // Capture-only probe: real contribution serializers, no resolver, renderer, worker or storage IO.
 // Run with node --expose-gc --import tsx --import ./tests/lua/test_setup.ts <this file>.
 const serializers: EditorInputSerializers = {
-	home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.projectRootPath) },
+	home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.context) },
 	animation: new AnimationInputSerializer(null, null),
 	aem_editor: new AemEditorInputSerializer(null),
 	cart_map: new CartMapInputSerializer(null),

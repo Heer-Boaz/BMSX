@@ -1,4 +1,5 @@
 import { openHome } from './contrib/home/editor_input';
+import type { StudioSourceContext } from '../../hosts/common/studio_projects';
 import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
 import type { GameImageCapture, ImageDecoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
@@ -26,7 +27,6 @@ import {
 } from '../../hosts/common/input/shortcuts';
 import { api as overlay_api } from '../runtime/overlay_api';
 import {
-	developmentCartridgeSource,
 	runtimeSourcesSupportIde,
 	type RuntimeSourceState,
 } from '../runtime/sources';
@@ -61,6 +61,8 @@ export async function initializeIdeFeatures(
 	execution: HostExecutionControl,
 	rewind: HostRewind,
 	storage: KeyValueStorage,
+	workspaceContext: StudioSourceContext,
+	recoverySessionId: string,
 	workspaceFiles: WorkspaceRecordProvider,
 	clock: HostClock,
 	clipboard: Clipboard,
@@ -80,11 +82,11 @@ export async function initializeIdeFeatures(
 	let workspacePayload = null;
 	let observedSources: ReadonlyMap<string, WorkspaceRecord> | undefined;
 	if (editorAvailable) {
-		const cartridge = developmentCartridgeSource(sources);
 		workspacePayload = await initializeWorkspaceStorage(
 			storage,
 			clock,
-			cartridge ? cartridge.projectRootPath : sources.systemProjectRootPath,
+			workspaceContext,
+			recoverySessionId,
 			sources,
 			workspaceFiles,
 			logOutput,
@@ -135,7 +137,7 @@ export async function initializeIdeFeatures(
 		workspacePayload,
 		rejectedDirtyPaths,
 	);
-	if (state.editor.editorGroup.model.tabs.length === 0) openHome(state.editor.editorGroup, workspaceState.projectRootPath);
+	if (state.editor.editorGroup.model.tabs.length === 0) openHome(state.editor.editorGroup, workspaceState.context);
 	registerRuntimeShortcuts(state, runtime, input, audioOutput);
 	return state;
 }

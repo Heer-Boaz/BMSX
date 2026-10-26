@@ -8,6 +8,7 @@ import { HOST_SUPERVISOR_KEY_CODE } from '../../../hosts/common/input/shortcuts'
 import { decodeImage, encodePngImage } from '../../../hosts/browser/image';
 import type { AssistantConnectionFactory } from '../../../hosts/common/assistant_protocol';
 import { HttpWorkspaceRecordProvider } from '../../../ide/browser/workspace_records';
+import { loadRomToolingMedia } from '../../../toolchain/ts/rompack/media';
 import { stripProjectRootPrefix } from '../../../ide/workspace/path';
 import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
 import { getCodeAreaBounds, resolveTextPositionBounds } from '../../../ide/editor/ui/view/view';
@@ -98,8 +99,10 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution, keyboardInteraction);
 	const browserClipboard = nativeClipboard ? new BrowserClipboard() : undefined;
 	const clipboard = nativeClipboard ? browserClipboard! : new HeadlessClipboard();
-	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, screen, encodePngImage, decodeImage, display, input,
-		audio, tasks, execution, rewind, menu, localStorage, new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
+	const media = await loadRomToolingMedia(bios, [cart, null]);
+	const context = { id: 'runtime-replay-source-context', projectRoot: media.cartridgeSlots[0]!.index.projectRootPath };
+	const ide = await prepareWorkbenchRuntime(media, runtime, presenter, screen, encodePngImage, decodeImage, display, input,
+		audio, tasks, execution, rewind, menu, localStorage, context, 'runtime-replay-session', new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
 	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input),
 		event => ide.editor.dispatchPointer(event), event => ide.editor.dispatchWheel(event));
 	let textInput: BrowserTextInput | undefined;

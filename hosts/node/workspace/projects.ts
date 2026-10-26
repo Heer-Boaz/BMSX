@@ -16,10 +16,12 @@ export class WorkspaceProjects {
 	private readonly selectSystem: StatementSync;
 	private readonly selectCartridge: StatementSync;
 	private readonly readTargets: StatementSync;
+	private readonly readSource: StatementSync;
+	private readonly selectSource: StatementSync;
 	private readonly creations = new Set<Promise<StudioCartridgeProject>>();
 	private closing: Promise<void> | undefined;
 
-	public constructor(private readonly root: string, stateDirectory: string) {
+	public constructor(public readonly root: string, stateDirectory: string) {
 		mkdirSync(stateDirectory, { recursive: true });
 		this.database = new DatabaseSync(join(stateDirectory, 'source-contexts.sqlite'));
 		try {
@@ -28,6 +30,8 @@ export class WorkspaceProjects {
 				CREATE TABLE IF NOT EXISTS system_selection(singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
 					context_id TEXT NOT NULL REFERENCES source_contexts(id));
 				CREATE TABLE IF NOT EXISTS cartridge_selections(target TEXT PRIMARY KEY,
+					context_id TEXT NOT NULL REFERENCES source_contexts(id));
+				CREATE TABLE IF NOT EXISTS source_open_selections(project_root TEXT PRIMARY KEY,
 					context_id TEXT NOT NULL REFERENCES source_contexts(id));`);
 			this.readSystem = this.database.prepare('SELECT c.id, c.project_root AS projectRoot FROM system_selection s JOIN source_contexts c ON c.id = s.context_id WHERE s.singleton = 1');
 			this.readCartridge = this.database.prepare('SELECT c.id, c.project_root AS projectRoot FROM cartridge_selections s JOIN source_contexts c ON c.id = s.context_id WHERE s.target = ?');
@@ -35,7 +39,26 @@ export class WorkspaceProjects {
 			this.selectSystem = this.database.prepare('INSERT INTO system_selection(singleton, context_id) VALUES (1, ?)');
 			this.selectCartridge = this.database.prepare('INSERT INTO cartridge_selections(target, context_id) VALUES (?, ?)');
 			this.readTargets = this.database.prepare('SELECT target FROM cartridge_selections');
+			this.readSource = this.database.prepare('SELECT c.id, c.project_root AS projectRoot FROM source_open_selections s JOIN source_contexts c ON c.id = s.context_id WHERE s.project_root = ?');
+			this.selectSource = this.database.prepare('INSERT INTO source_open_selections(project_root, context_id) VALUES (?, ?)');
 		} catch (error) { this.database.close(); throw error; }
+	}
+
+	/** A source-folder open has its own persisted admission, not a guessed build/project binding. */
+	public async resolveSource(projectRoot: string): Promise<StudioSourceContext> {
+		this.database.exec('BEGIN IMMEDIATE');
+		try {
+			const selected = this.readSource.get(projectRoot);
+			const context: StudioSourceContext = selected === undefined
+				? { id: randomUUID(), projectRoot }
+				: { id: selected.id as string, projectRoot: selected.projectRoot as string };
+			if (selected === undefined) {
+				this.writeContext.run(context.id, context.projectRoot);
+				this.selectSource.run(projectRoot, context.id);
+			}
+			this.database.exec('COMMIT');
+			return context;
+		} catch (error) { this.database.exec('ROLLBACK'); throw error; }
 	}
 
 	/** Listing source projects does not admit contexts or assign identities. */

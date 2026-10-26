@@ -125,14 +125,14 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 		const { layout, sections, viewport } = this.input, font = layout.font!;
 		this.actionHeight = Math.max(font.lineHeight, WORKBENCH_ICON_SIZE) + 6;
 		this.sectionHeadingHeight = font.lineHeight + 8;
-		this.headingHeight = PADDING + font.lineHeight + (this.input.workspaceRoot === null ? 0 : font.lineHeight + 4) + GAP;
+		this.headingHeight = PADDING + font.lineHeight + (this.input.workspaceContext === null ? 0 : font.lineHeight + 4) + GAP;
 		const width = Math.max(0, layout.right - layout.left - colors.SCROLLBAR_WIDTH - PADDING * 2);
 		let minimumCardWidth = 0;
 		for (const section of sections) for (const item of section.actions.items)
 			if (item.visible) minimumCardWidth = Math.max(minimumCardWidth, item.width + CARD_PADDING * 2 + WORKBENCH_ICON_SIZE + ICON_GAP + 4);
 		const columns = width >= minimumCardWidth * 2 + GAP ? 2 : 1;
 		const cardWidth = Math.trunc((width - (columns - 1) * GAP) / columns);
-		this.caption = this.input.workspaceRoot === null ? '' : truncateTextToWidth(this.input.workspaceRoot, width);
+		this.caption = this.input.workspaceContext === null ? '' : truncateTextToWidth(this.input.workspaceContext.projectRoot, width);
 		let column = 0, top = this.headingHeight, rowHeight = 0;
 		for (const section of sections) {
 			if (section.visibleCount === 0) { clear_rect_bounds(section.bounds); continue; }
@@ -191,7 +191,7 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);
 		api.blit_text_inline_with_font('BMSX STUDIO', viewport.bounds.left + PADDING, viewport.offsetTop + PADDING, 0, colors.COLOR_TEXT_STRONG, font);
-		if (this.input.workspaceRoot !== null) api.blit_text_inline_with_font(this.caption, viewport.bounds.left + PADDING,
+		if (this.input.workspaceContext !== null) api.blit_text_inline_with_font(this.caption, viewport.bounds.left + PADDING,
 			viewport.offsetTop + PADDING + editorViewState.lineHeight + 4, 0, colors.COLOR_DESCRIPTION_TEXT, font);
 		for (const section of sections) if (section.visibleCount !== 0) this.drawSection(section);
 		api.popClipRect();

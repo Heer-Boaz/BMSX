@@ -1,7 +1,10 @@
 import { HttpWorkspaceBuilds } from './builds';
 import { HttpWorkspaceProjects } from './projects';
+import { resolveBrowserSourceContext } from './source_contexts';
+import { openBrowserWorkspaceSession } from './workspace_session';
 import { importWorkspaceFiles } from './file_import';
-import { loadPublishedMedia, openPublishedBuild } from './published_media';
+import { loadPublishedBuild, openPublishedBuild } from './published_media';
+import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { showEditorMessage } from '../common/feedback_state';
 import { HttpConversationObserver } from './conversation_observer';
 import { decodeImage, encodePngImage } from '../../hosts/browser/image';
@@ -62,12 +65,28 @@ async function startBrowserStudio(): Promise<void> {
 			if (session === undefined) { session = new StudioHttpSession(baseUrl); sessions.set(baseUrl, session); }
 			return session;
 		};
-		const artifact = new URL(location.href).searchParams.get('artifact');
-		if (artifact !== null && !configuration.server?.builds) throw new Error('Opening a published build requires the workspace build service.');
-		const media = artifact === null
+		const parameters = new URL(location.href).searchParams;
+		if (parameters.has('artifact')) throw new Error('An artifact does not identify a source project. Open the completed request from Studio Build Jobs.');
+		const buildRequest = parameters.get('build');
+		if (buildRequest !== null && !configuration.server?.builds) throw new Error('Opening a published build requires the workspace build service.');
+		const published = buildRequest === null ? undefined : await loadPublishedBuild(httpSession(configuration.server!.baseUrl), buildRequest);
+		const media = buildRequest === null
 			? await loadBrowserMedia(document.body.dataset.systemRom, document.body.dataset.defaultRom)
-			: await loadPublishedMedia(httpSession(configuration.server!.baseUrl), artifact);
+			: published!.media;
 		const options = await prepareBrowserStartup(BMSX_BROWSER_DEBUG, media, 'fit');
+		const sourceMedia = await loadRomToolingMedia(options.systemRom, options.cartridgeSlots);
+		const workspace = configuration.workspace;
+		// A raw-media open admits its selected source folder. Only a build receipt
+		// can supply the named project's identity; matching filesystem roots cannot.
+		const sourceRoot = (sourceMedia.cartridgeSlots[0] ?? sourceMedia.cartridgeSlots[1] ?? sourceMedia.system).index.projectRootPath;
+		const workspaceContext = buildRequest !== null ? published!.project.cartridge
+			: workspace.kind === 'browser' ? await resolveBrowserSourceContext(sourceRoot)
+				: await new HttpWorkspaceProjects(httpSession(workspace.baseUrl)).resolveSource(sourceRoot);
+		const browserSession = await openBrowserWorkspaceSession();
+		if (workspace.kind === 'browser') browserFiles = await IndexedDbWorkspaceRecordProvider.open();
+		const workspaceFiles = workspace.kind === 'browser' ? browserFiles! : new HttpWorkspaceRecordProvider(httpSession(workspace.baseUrl));
+		const storage = workspace.kind === 'browser'
+			? new ScopedKeyValueStorage(window.localStorage, 'bmsx.standalone:') : window.localStorage;
 		const runtime = initializeMachineRuntime(
 			options.systemRom,
 			options.cartridgeSlots,
@@ -113,15 +132,9 @@ async function startBrowserStudio(): Promise<void> {
 		options.browserInput.setHostControls(new BrowserHostControls(
 			document, hostOverlayMenu.requestToggleKeyboard, hostOverlayMenu.requestToggleMenu,
 		));
-		const workspace = configuration.workspace;
-		if (workspace.kind === 'browser') browserFiles = await IndexedDbWorkspaceRecordProvider.open();
-		const workspaceFiles = workspace.kind === 'browser' ? browserFiles! : new HttpWorkspaceRecordProvider(httpSession(workspace.baseUrl));
-		const storage = workspace.kind === 'browser'
-			? new ScopedKeyValueStorage(window.localStorage, 'bmsx.standalone:') : window.localStorage;
 		const clipboard = new BrowserClipboard();
 		const ide = await prepareWorkbenchRuntime(
-			options.systemRom,
-			options.cartridgeSlots,
+			sourceMedia,
 			runtime,
 			presenter,
 			presentation,
@@ -135,6 +148,8 @@ async function startBrowserStudio(): Promise<void> {
 			rewind,
 			hostOverlayMenu,
 			storage,
+			workspaceContext,
+			browserSession.identity,
 			workspaceFiles,
 			options.clock,
 			clipboard,
@@ -144,7 +159,7 @@ async function startBrowserStudio(): Promise<void> {
 			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
 			configuration.assistant === undefined ? undefined : (signal, onEvent) => AssistantHttpConnection.open(httpSession(configuration.assistant), signal, onEvent),
 			configuration.conversations === undefined ? undefined : (signal, onEvent) => HttpConversationObserver.open(httpSession(configuration.conversations), signal, onEvent),
-			artifact === null ? 'workspace' : 'installed',
+			buildRequest === null ? 'workspace' : 'installed',
 		);
 		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
 		const textInput = new BrowserTextInput(document.getElementById('gamescreen') as HTMLCanvasElement, ide.editor);
@@ -177,6 +192,9 @@ async function startBrowserStudio(): Promise<void> {
 				browserFiles?.close();
 			}
 		});
+		// Keep the lease for this document's lifetime, including a cached page.
+		// The browser releases it when the document dies, not merely on pagehide.
+		window.addEventListener('pageshow', event => { if (event.persisted) browserSession.activate(); });
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {
 			options.browserInput.poll(currentTime);
@@ -201,8 +219,7 @@ async function startBrowserStudio(): Promise<void> {
 				}
 			}
 		});
-		const projects = ide.sources.cartridgeSlots.filter(slot => slot !== null).map(slot => slot.projectRootPath);
-		document.title = `${projects.length === 0 ? ide.sources.systemProjectRootPath : projects.join(' + ')}${artifact === null ? '' : ` [opened ${artifact.slice(0, 12)}]`} - BMSX Studio`;
+		document.title = `${workspaceContext.projectRoot}${buildRequest === null ? '' : ` [opened ${buildRequest.slice(0, 12)}]`} - BMSX Studio`;
 		const server = configuration.server;
 		if (server !== undefined) {
 			if (server.projects) ide.editor.projects = new HttpWorkspaceProjects(httpSession(server.baseUrl));
@@ -216,7 +233,8 @@ async function startBrowserStudio(): Promise<void> {
 					const job = await builds.get(requestId);
 					signal?.throwIfAborted();
 					if (job === undefined || job.state !== 'completed') throw new Error('Only a completed workspace build can be opened.');
-					return openPublishedBuild(job.artifact!);
+					if (job.project === undefined) throw new Error('This build has no source project admission. Rebuild the project before opening Studio.');
+					return openPublishedBuild(job.request.requestId);
 				};
 			}
 			const connection = new StudioServerConnection(httpSession(server.baseUrl),

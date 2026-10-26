@@ -170,7 +170,7 @@ export type CartEditor = TextInputHost & {
 	builds: WorkspaceBuilds | undefined;
 	projects: WorkspaceProjects | undefined;
 	importFiles: ImportWorkspaceFiles | undefined;
-	openPublishedBuild: ((artifact: string) => PublishedBuildOpenResult) | undefined;
+	openPublishedBuild: ((requestId: string) => PublishedBuildOpenResult) | undefined;
 	serverConnectionState: StudioServerConnectionState;
 	serverConnectionDetail: string;
 	retryServerConnection: (() => void) | undefined;
@@ -334,7 +334,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public builds: WorkspaceBuilds | undefined;
 	public projects: WorkspaceProjects | undefined;
 	public importFiles: ImportWorkspaceFiles | undefined;
-	public openPublishedBuild: ((artifact: string) => PublishedBuildOpenResult) | undefined;
+	public openPublishedBuild: ((requestId: string) => PublishedBuildOpenResult) | undefined;
 	public serverConnectionState: StudioServerConnectionState = 'standalone';
 	public serverConnectionDetail = 'No workspace server is configured.';
 	public retryServerConnection: (() => void) | undefined;
@@ -563,7 +563,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.luaPrograms = new LuaProgramController(sources, guest, this.editorGroup, this.navigation, this.quickInput, rewind);
 		this.actionStrings = new ActionStringTester(sources, clock, this.quickInput, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {
-			home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.projectRootPath) },
+			home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.context) },
 			animation: new AnimationInputSerializer(sources, this.animations),
 			aem_editor: new AemEditorInputSerializer(sources),
 			lua_program: new LuaProgramInputSerializer(sources, this.luaPrograms),

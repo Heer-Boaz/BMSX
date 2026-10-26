@@ -68,13 +68,13 @@ function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, job: Stud
 	];
 	if (job.artifact !== undefined && job.state === 'completed') {
 		const artifact = job.artifact, openBuild = editor.openPublishedBuild;
-		if (openBuild !== undefined) choices.unshift({ label: 'Open published build in new Studio window',
+		if (openBuild !== undefined && job.project !== undefined) choices.unshift({ label: 'Open published build in new Studio window',
 			description: 'Exact cartridge and matching BIOS', detail: 'Current runtime and unsaved files stay in this window. Reboot applies workspace edits.', run: async () => {
-				const opened = openBuild(artifact);
+				const opened = openBuild(id);
 				if (opened.status === 'blocked') {
 					const recovery: BuildAction[] = [
 						{ label: 'Retry opening published build', description: job.request.target, detail: opened.url, run: async () => {
-							if (openBuild(artifact).status === 'blocked') reportBuildError('Browser still blocks the tab. Allow pop-ups or copy its URL.');
+							if (openBuild(id).status === 'blocked') reportBuildError('Browser still blocks the tab. Allow pop-ups or copy its URL.');
 						} },
 						{ label: 'Copy published build URL', description: 'Open in a normal browser tab', detail: opened.url,
 							run: async () => { await editor.clipboard.writeText(opened.url); } },

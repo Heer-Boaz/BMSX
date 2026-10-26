@@ -1,4 +1,5 @@
 import type { HostClock } from '../../../hosts/common/clock';
+import type { StudioSourceContext } from '../../../hosts/common/studio_projects';
 import { LogLevel, type LogOutput } from '../../../hosts/common/log';
 import { showEditorWarningBanner } from '../../common/feedback_state';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
@@ -6,7 +7,6 @@ import type { WorkspaceRecordProvider } from '../../workspace/record_provider';
 import { clearWorkspaceSourceCaches } from '../../workspace/cache';
 import {
 	buildWorkspaceDirtyEntryPath,
-	buildWorkspaceDirtyRecordPath,
 	loadWorkspaceSourceFile,
 } from '../../workspace/files';
 import {
@@ -45,7 +45,7 @@ import {
 	type WorkspaceAutosavePayload,
 } from './models';
 import { editorTextModelService } from '../../editor/model/model_service';
-import { loadWorkspaceDirtySources } from '../../workspace/source_recovery_store';
+import { loadWorkspaceDirtySources, workspaceRecoveryRecordPath } from '../../workspace/source_recovery_store';
 
 const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
 let editor: CartEditor = null;
@@ -82,7 +82,8 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 				commitRequestedWorkspaceSessionLocally();
 			}
 		} finally {
-			workspaceState.projectRootPath = null;
+			workspaceState.context = null;
+			workspaceState.recoveryIdentity = null;
 			workspaceState.requestedRevision = 0;
 			workspaceState.localRevision = 0;
 			workspaceState.remoteRevision = -1;
@@ -120,7 +121,8 @@ async function readWorkspaceRecordVersion(
 export async function initializeWorkspaceStorage(
 	workspaceStorage: KeyValueStorage,
 	workspaceClock: HostClock,
-	projectRootPath: string,
+	context: StudioSourceContext,
+	recoverySessionId: string,
 	runtimeSources: RuntimeSourceState,
 	workspaceFiles: WorkspaceRecordProvider,
 	workspaceLogOutput: LogOutput,
@@ -129,11 +131,16 @@ export async function initializeWorkspaceStorage(
 	storage = workspaceStorage;
 	clock = workspaceClock;
 	logOutput = workspaceLogOutput;
-	workspaceState.projectRootPath = projectRootPath;
+	workspaceState.context = context;
+	const recoveryIdentity = joinWorkspacePaths(context.id, recoverySessionId);
+	workspaceState.recoveryIdentity = recoveryIdentity;
+	const projectRootPath = context.projectRoot;
 	await openWorkspaceRecords(workspaceFiles);
 	const statePath = joinWorkspacePaths(
 		projectRootPath,
 		WORKSPACE_METADATA_DIR,
+		'studio',
+		recoveryIdentity,
 		WORKSPACE_STATE_FILE,
 	);
 	const localRecord = readLocalWorkspaceRecord(storage, projectRootPath, statePath);
@@ -153,7 +160,7 @@ export async function initializeWorkspaceStorage(
 	const payload = record === null ? null : record === remoteRecord ? remotePayload : localPayload;
 	// An incomplete generation is an error, not permission to discard unsaved edits or rewrite the manifest.
 	const generationDirtyRecords = payload ? await loadWorkspaceDirtySources(runtimeSources, payload.dirtyFiles,
-		(root, path) => readWorkspaceRecordVersion(storage, root, path)) : new Map<string, WorkspaceRecord>();
+		(root, path) => readWorkspaceRecordVersion(storage, root, path), recoveryIdentity) : new Map<string, WorkspaceRecord>();
 	const replacedLocalPayload = record === remoteRecord && localRecord ? localPayload : null;
 	const obsoleteLocalDirtyRecords: Array<readonly [string, string]> = [];
 	if (replacedLocalPayload) {
@@ -169,7 +176,7 @@ export async function initializeWorkspaceStorage(
 			}
 			obsoleteLocalDirtyRecords.push([
 				dirtyProjectRootPath,
-				buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
+				workspaceRecoveryRecordPath(runtimeSources, entry, recoveryIdentity),
 			]);
 		}
 	}

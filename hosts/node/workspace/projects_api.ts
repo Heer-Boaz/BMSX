@@ -1,6 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { relative, sep } from 'node:path';
 import type { WorkspaceProjects } from './projects';
+import { resolveRootedPath } from '../../../scripts/dev/rooted_path.mjs';
+import { HttpError } from '../../../scripts/dev/http_security.mjs';
 
 /** Untrusted HTTP and tool arguments enter through the same project-name boundary. */
 export function decodeCartridgeTarget(target: unknown): string {
@@ -10,6 +13,17 @@ export function decodeCartridgeTarget(target: unknown): string {
 
 export async function handleProjectRequest(projects: WorkspaceProjects, request: IncomingMessage, response: ServerResponse, url: URL): Promise<void> {
 	response.setHeader('Cache-Control', 'no-store');
+	if (request.method === 'POST' && url.pathname === '/__bmsx__/projects/source') {
+		try {
+			const directory = await resolveRootedPath(projects.root, url.searchParams.get('root'));
+			const context = await projects.resolveSource(relative(projects.root, directory).split(sep).join('/'));
+			response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(context));
+		} catch (error) {
+			if (error instanceof HttpError) response.writeHead(error.status).end(error.message);
+			else throw error;
+		}
+		return;
+	}
 	if (request.method !== 'PUT') { response.writeHead(405, { Allow: 'PUT' }).end(); return; }
 	let target: string;
 	try { target = decodeCartridgeTarget(decodeURIComponent(url.pathname.slice('/__bmsx__/projects/'.length))); }

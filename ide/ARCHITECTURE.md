@@ -46,11 +46,15 @@ or install a cartridge. Project selection belongs at workspace attachment, not
 inside Home or a tool pane. Physical execution remains with the workbench's
 execution services and their explicit targets.
 
-The Node workspace project owner retains admitted source-context identities.
-Build receipts bind that admission to immutable artifact generations; native
-Studio recovery consumes the admitted project and its context/session namespace.
-Artifact identity, source-context identity and recovery-session identity are
-separate owners.
+Platform composition supplies an admitted source context before workspace
+attachment. Node workspace metadata and browser-owned metadata retain those
+opaque identities. A source-folder open has its own selection; matching paths
+do not select an arbitrary named project. Build receipts retain their exact
+project admission independently of immutable artifact generations. Browser
+published-build navigation preserves that receipt, not merely an artifact ID.
+Frontend and native source recovery consume explicit context/session namespaces;
+canonical file Save addresses remain separate from
+[recovery storage](../docs/studio_source_recovery_design.md).
 
 ## Documents, inputs and panes
 

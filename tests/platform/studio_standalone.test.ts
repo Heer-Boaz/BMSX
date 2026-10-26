@@ -31,6 +31,43 @@ async function standalone(t: TestContext) {
 	return { page, address, requests, errors };
 }
 
+test('browser source admission commits stable identities across connections and respects explicit selections', async t => {
+	const { page, address, requests, errors } = await standalone(t);
+	await page.goto(address);
+	const bundle = await build({ stdin: { contents: `export { resolveBrowserSourceContext } from './ide/browser/source_contexts';`, resolveDir: process.cwd() },
+		bundle: true, platform: 'browser', format: 'iife', globalName: 'sourceContexts', write: false });
+	await page.addScriptTag({ content: bundle.outputFiles[0].text });
+	const initial = await page.evaluate(async () => {
+		const { resolveBrowserSourceContext: admit } = (globalThis as any).sourceContexts;
+		const [first, second, system] = await Promise.all([admit('carts/alpha'), admit('carts/alpha'), admit('machine/bios')]);
+		return { first, second, system };
+	});
+	assert.deepEqual(initial.first, initial.second);
+	assert.notEqual(initial.first.id, initial.system.id);
+	await page.reload();
+	await page.addScriptTag({ content: bundle.outputFiles[0].text });
+	assert.deepEqual(await page.evaluate(() => (globalThis as any).sourceContexts.resolveBrowserSourceContext('carts/alpha')), initial.first);
+	const selected = await page.evaluate(async () => {
+		const replacement = { id: crypto.randomUUID(), projectRoot: 'carts/alpha' };
+		await new Promise<void>((resolve, reject) => {
+			const open = indexedDB.open('bmsx-studio-source-contexts');
+			open.onerror = () => reject(open.error);
+			open.onsuccess = () => {
+				const database = open.result, transaction = database.transaction(['contexts', 'sourceOpenSelections'], 'readwrite');
+				transaction.objectStore('contexts').add(replacement);
+				transaction.objectStore('sourceOpenSelections').put(replacement.id, replacement.projectRoot);
+				transaction.oncomplete = () => { database.close(); resolve(); };
+				transaction.onabort = () => { database.close(); reject(transaction.error); };
+			};
+		});
+		return replacement;
+	});
+	assert.notEqual(selected.id, initial.first.id);
+	assert.deepEqual(await page.evaluate(() => (globalThis as any).sourceContexts.resolveBrowserSourceContext('carts/alpha')), selected);
+	assert.deepEqual(requests, []);
+	assert.deepEqual(errors, []);
+});
+
 test('browser workspace: committed CRUD, exclusive cross-connection create and directory discovery', async t => {
 	const { page, address, requests, errors } = await standalone(t);
 	await page.goto(address);

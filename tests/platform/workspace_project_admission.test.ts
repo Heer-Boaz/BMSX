@@ -67,6 +67,39 @@ test('target discovery assigns no source identities', async t => {
 	} finally { database.close(); }
 });
 
+test('source-folder admission retains an explicit selection without borrowing a named project context', async t => {
+	const f = await fixture(t);
+	const projects = f.open();
+	const named = await projects.resolveCartridge('alpha');
+	const source = await projects.resolveSource(named.cartridge.projectRoot);
+	assert.notEqual(source.id, named.cartridge.id);
+	assert.equal(source.projectRoot, named.cartridge.projectRoot);
+	assert.deepEqual(await f.open().resolveSource(source.projectRoot), source);
+	const replacement = { id: randomUUID(), projectRoot: source.projectRoot };
+	const database = new DatabaseSync(f.databasePath);
+	try {
+		database.prepare('INSERT INTO source_contexts(id, project_root) VALUES (?, ?)').run(replacement.id, replacement.projectRoot);
+		database.prepare('UPDATE source_open_selections SET context_id = ? WHERE project_root = ?').run(replacement.id, source.projectRoot);
+	} finally { database.close(); }
+	assert.deepEqual(await projects.resolveSource(source.projectRoot), replacement);
+	assert.deepEqual(await projects.resolveCartridge('alpha'), named);
+	await projects.close();
+	assert.deepEqual(await f.open().resolveSource(source.projectRoot), replacement);
+});
+
+test('independent owners serialize source-open admission without dropping another folder selection', async t => {
+	const f = await fixture(t);
+	const a = f.open(), b = f.open();
+	const [first, second, other] = await Promise.all([
+		a.resolveSource('carts/alpha'), b.resolveSource('carts/alpha'), b.resolveSource('machine/bios'),
+	]);
+	assert.deepEqual(first, second);
+	assert.notEqual(first.id, other.id);
+	const restarted = f.open();
+	assert.deepEqual(await restarted.resolveSource('carts/alpha'), first);
+	assert.deepEqual(await restarted.resolveSource('machine/bios'), other);
+});
+
 test('concurrent project admissions share the selected BIOS and retain distinct cartridge identities', async t => {
 	const f = await fixture(t);
 	const projects = f.open();
