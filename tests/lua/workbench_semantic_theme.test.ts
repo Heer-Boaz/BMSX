@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as colors from '../../ide/common/constants';
 import { editorFeedbackState, showEditorMessage } from '../../ide/common/feedback_state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { RuntimeLuaEvaluation } from '../../ide/runtime/lua_evaluation';

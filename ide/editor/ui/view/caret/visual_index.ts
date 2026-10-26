@@ -1,10 +1,9 @@
-import { activeCodeEditor } from '../../code_editor_state';
-import { editorViewState } from '../state';
+import type { CodeEditorControl } from '../../code_editor_control';
 
-export function resolveCursorVisualIndex(): number {
-	const override = activeCodeEditor.visualCursor;
+export function resolveCursorVisualIndex(code: CodeEditorControl): number {
+	const override = code.visualCursor;
 	if (override) {
 		return override.visualIndex;
 	}
-	return editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	return code.layout.positionToVisualIndex(code.view.cursorRow, code.view.cursorColumn);
 }

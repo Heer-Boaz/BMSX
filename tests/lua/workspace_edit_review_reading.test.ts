@@ -4,7 +4,7 @@ import { TAB_SPACES } from '../../ide/common/constants';
 import { measureTextRange } from '../../ide/editor/common/text/layout';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import { layoutEditReviewRows } from '../../ide/workbench/contrib/edit_review/projection';
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';

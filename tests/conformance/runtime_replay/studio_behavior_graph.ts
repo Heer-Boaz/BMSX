@@ -1,11 +1,11 @@
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { testStudioGraphNavigation } from './studio_graph_navigation';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../../helpers/behavior_source_fixture';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Physical controls on the independent Lua fixture, in the real Studio composition. */
 export async function testStudioBehaviorGraphControls(test: StudioFixture, view: BehaviorLensViewState): Promise<void> {
@@ -29,8 +29,8 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 		'BT controls: full inspector includes decorator policy without a source-choice popup');
 	for (let index = 0; index < detailIndex; index += 1) await press('ArrowDown');
 	await press('Enter');
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === detail.range.start.line - 1
-		&& activeCodeEditor.view.cursorColumn === detail.range.start.column - 1, 'BT controls: detail activation opens its exact Lua value');
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === detail.range.start.line - 1
+		&& sourcePane(test).code.view.cursorColumn === detail.range.start.column - 1, 'BT controls: detail activation opens its exact Lua value');
 	await test.clickTab(lens.id);
 	await press('ArrowDown');
 	const first = viewport.selection;
@@ -80,7 +80,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await click({ left: x, right: x + 1, top: y, bottom: y + 1 });
 	check(viewport.selection === edge, 'BT controls: physical pointer selects the incoming connection');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.view.cursorRow === edge.range.start.line - 1 && activeCodeEditor.view.cursorColumn === edge.range.start.column - 1,
+	check(sourcePane(test).code.view.cursorRow === edge.range.start.line - 1 && sourcePane(test).code.view.cursorColumn === edge.range.start.column - 1,
 		'BT controls: connection Source opens this occurrence, not the shared initializer');
 	await test.clickTab(lens.id);
 	// Continue through weighted members without a separate expansion gesture.
@@ -103,7 +103,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	const weightIndex = inspector.model.rows.findIndex(row => row.element.source?.range === weight.range);
 	for (let index = 0; index < weightIndex; index += 1) await press('ArrowDown');
 	await press('Enter');
-	check(activeCodeEditor.view.cursorRow === weight.range.start.line - 1 && activeCodeEditor.view.cursorColumn === weight.range.start.column - 1,
+	check(sourcePane(test).code.view.cursorRow === weight.range.start.line - 1 && sourcePane(test).code.view.cursorColumn === weight.range.start.column - 1,
 		'BT controls: choice detail opens the actual weight expression');
 	await test.clickTab(lens.id);
 	await press('ArrowUp');
@@ -116,7 +116,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 /** Final screenshot state, using the same real picker and independent authored Lua. */
 export async function presentBehaviorTreeGraph(test: StudioFixture): Promise<void> {
 	await test.ide.editor.navigation.openResource(resolveRuntimeResource(test.ide.sources, { domain: 0, path: 'cart.lua' })!);
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	await test.runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await test.clipboard.writeText('BT fixture.tree');

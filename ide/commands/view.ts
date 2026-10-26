@@ -12,7 +12,6 @@ import { openAssistant } from '../workbench/contrib/assistant/editor_input';
 import { openTerminal } from '../workbench/contrib/terminal/editor_input';
 import type { CartEditor } from '../cart_editor';
 import { toggleProblemsPanel } from '../workbench/contrib/problems/panel/controller';
-import { toggleWordWrap } from '../editor/ui/view/view';
 import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { openSourceView } from '../workbench/contrib/source_views/quick_access';
@@ -53,7 +52,6 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'sceneEditor.source':
 		case 'behaviorLens.source':
 		case 'filter':
-		case 'wrap':
 			return true;
 		default:
 			return false;
@@ -126,9 +124,6 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			return;
 		case 'filter':
 			editor.resourcePanel.toggleFilterMode();
-			return;
-		case 'wrap':
-			toggleWordWrap();
 			return;
 	}
 }

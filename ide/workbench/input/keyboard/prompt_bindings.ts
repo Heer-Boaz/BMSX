@@ -1,69 +1,69 @@
-import type { CartEditor } from '../../../cart_editor';
+import type { EditorCommandRunner } from '../../../common/commands';
+import type { CodeEditorControl } from '../../../editor/ui/code_editor_control';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor/state';
 import { revealCursor, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
-import { resetBlink } from '../../../editor/render/caret';
+import { resetBlinkState } from '../../../editor/ui/view/caret/blink';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
-import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 
-function handleGlobalFindBinding(playerInput: KeyInputEvent, editor: CartEditor): boolean {
+function handleGlobalFindBinding(playerInput: KeyInputEvent, commands: EditorCommandRunner): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isShiftDown(playerInput) || isAltDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
 	}
 	consumeIdeKey('KeyF', playerInput);
-	editor.commands.execute('findGlobal');
+	commands.execute('findGlobal');
 	return true;
 }
 
-function handleLocalFindBinding(playerInput: KeyInputEvent, editor: CartEditor): boolean {
+function handleLocalFindBinding(playerInput: KeyInputEvent, commands: EditorCommandRunner): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || isShiftDown(playerInput) || isAltDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
 	}
 	consumeIdeKey('KeyF', playerInput);
-	editor.commands.execute('findLocal');
+	commands.execute('findLocal');
 	return true;
 }
 
-function handleDefinitionAndReferenceBinding(playerInput: KeyInputEvent, editor: CartEditor): boolean {
+function handleDefinitionAndReferenceBinding(playerInput: KeyInputEvent, commands: EditorCommandRunner): boolean {
 	if (!isKeyJustPressed('F12', playerInput)) {
 		return false;
 	}
 	consumeIdeKey('F12', playerInput);
 	if (isShiftDown(playerInput)) {
-		editor.commands.execute('referenceSearch');
+		commands.execute('referenceSearch');
 		return true;
 	}
-	editor.commands.execute('goToDefinition');
+	commands.execute('goToDefinition');
 	return true;
 }
 
-function handleSelectAllBinding(playerInput: KeyInputEvent): boolean {
+function handleSelectAllBinding(code: CodeEditorControl, playerInput: KeyInputEvent): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyA', playerInput)) {
 		return false;
 	}
 	consumeIdeKey('KeyA', playerInput);
-	const lastRowIndex = activeCodeEditor.model.buffer.getLineCount() - 1;
-	const lastColumn = activeCodeEditor.model.buffer.getLineEndOffset(lastRowIndex) - activeCodeEditor.model.buffer.getLineStartOffset(lastRowIndex);
-	selectAllSingleCursor(activeCodeEditor.view, lastRowIndex, lastColumn);
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
+	const lastRowIndex = code.model.buffer.getLineCount() - 1;
+	const lastColumn = code.model.buffer.getLineEndOffset(lastRowIndex) - code.model.buffer.getLineStartOffset(lastRowIndex);
+	selectAllSingleCursor(code.view, lastRowIndex, lastColumn);
+	updateDesiredColumn(code);
+	resetBlinkState(code.caret);
+	revealCursor(code);
 	return true;
 }
 
-function handleLineJumpBinding(playerInput: KeyInputEvent, editor: CartEditor): boolean {
+function handleLineJumpBinding(playerInput: KeyInputEvent, commands: EditorCommandRunner): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyL', playerInput)) {
 		return false;
 	}
 	consumeIdeKey('KeyL', playerInput);
-	editor.commands.execute('lineJump');
+	commands.execute('lineJump');
 	return true;
 }
 
-export function handleEditorPromptBindings(playerInput: KeyInputEvent, editor: CartEditor): boolean {
-	return handleGlobalFindBinding(playerInput, editor)
-		|| handleLocalFindBinding(playerInput, editor)
-		|| handleDefinitionAndReferenceBinding(playerInput, editor)
-		|| handleSelectAllBinding(playerInput)
-		|| handleLineJumpBinding(playerInput, editor);
+export function handleEditorPromptBindings(code: CodeEditorControl, playerInput: KeyInputEvent, commands: EditorCommandRunner): boolean {
+	return handleGlobalFindBinding(playerInput, commands)
+		|| handleLocalFindBinding(playerInput, commands)
+		|| handleDefinitionAndReferenceBinding(playerInput, commands)
+		|| handleSelectAllBinding(code, playerInput)
+		|| handleLineJumpBinding(playerInput, commands);
 }

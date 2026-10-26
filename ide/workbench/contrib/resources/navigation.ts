@@ -8,7 +8,6 @@ import {
 	withNavigationCaptureSuspended,
 	type NavigationHistoryEntry,
 } from '../../../navigation/navigation_history';
-import { prepareEditorForSourceFocus, releaseResourcePanelFocus } from '../../../navigation/source_focus';
 import {
 	resolveRuntimeResource,
 	resolveRuntimeResourceForContext,
@@ -18,7 +17,6 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import type { ResourcePanelController } from './panel/controller';
 import type { ResourceEditorResolver } from '../../services/editor/resource_editor_resolver';
 import type { EditorGroupView } from '../../services/editor/editor_group';
-import type { EditorSearchController } from '../code_editor/find/search';
 
 export class EditorNavigationController {
 	public constructor(
@@ -26,7 +24,6 @@ export class EditorNavigationController {
 		private readonly resourcePanel: ResourcePanelController,
 		private readonly editorResolver: ResourceEditorResolver,
 		private readonly group: EditorGroupView,
-		private readonly search: EditorSearchController,
 	) {
 	}
 
@@ -39,12 +36,11 @@ export class EditorNavigationController {
 		if (this.resourcePanel.isVisible()) {
 			this.resourcePanel.applyPendingSelection();
 		}
-		releaseResourcePanelFocus(this.resourcePanel);
+		this.resourcePanel.focusTarget.release();
 		return result.generation;
 	}
 
 	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): Promise<number | undefined> {
-		prepareEditorForSourceFocus(this.search);
 		return this.openResource(resolveRuntimeResource(this.sources, identity)!, selection);
 	}
 
@@ -53,7 +49,6 @@ export class EditorNavigationController {
 		path: string,
 		selection?: EditorTextSelection,
 	): void {
-		prepareEditorForSourceFocus(this.search);
 		const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
 		void this.openResource(resource, selection);
 	}
@@ -99,7 +94,7 @@ export class EditorNavigationController {
 					preserveFocus });
 				});
 			}
-			if (!preserveFocus) releaseResourcePanelFocus(this.resourcePanel);
+			if (!preserveFocus) this.resourcePanel.focusTarget.release();
 		} finally {
 			target.dispose();
 		}

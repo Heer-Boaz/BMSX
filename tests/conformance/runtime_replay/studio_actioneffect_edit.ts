@@ -1,9 +1,9 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { api } from '../../../ide/runtime/overlay_api';
 import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { inputFocus } from '../../../ide/input/focus';
 
@@ -12,7 +12,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	const { ide, harness, frame, press, click, runPaletteCommand, clipboard, cycles, until } = test;
 	console.info('STUDIO: ActionEffect authored value / draft / Save / Undo');
 	harness.openLuaSource('cart.lua');
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText(), position = cycles(), media = ide.sources.currentBlua32Media;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
@@ -87,7 +87,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	check(view.definitionRowKey === view.document.definitions[1].rowKey && view.source.nodesByRowKey.get(view.selection!.rowKey)!.label.startsWith('period_ms'),
 		'effect: the source operation keeps the selected property in the chosen shared-definition use');
 	await press('Enter');
-	check(activeCodeEditor.model === model, 'effect: Source returns to the same edited text model');
+	check(sourcePane(test).code.model === model, 'effect: Source returns to the same edited text model');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === ACTIONEFFECT_SOURCE, 'effect: one code Undo restores the authored value and trivia');
 	await test.clickTab(lens.id); await press('ControlLeft', 'ShiftLeft', 'KeyZ');
@@ -109,8 +109,8 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	await press('ControlLeft', 'KeyZ');
 	const handler = await select('handler');
 	await runPaletteCommand('Behavior Lens: Edit Authored Property');
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model
-		&& activeCodeEditor.view.cursorRow === handler.source.occurrenceRange.start.line - 1 && !editor.active,
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model
+		&& sourcePane(test).code.view.cursorRow === handler.source.occurrenceRange.start.line - 1 && !editor.active,
 		'effect: multiline code uses the full source editor, not a flattened cell');
 	await press('AltLeft', 'ArrowLeft');
 	await select('period_ms'); await open(); await paste('45');

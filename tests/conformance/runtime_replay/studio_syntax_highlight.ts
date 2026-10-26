@@ -1,5 +1,6 @@
+import { sourcePane } from './studio_fixture';
 import { COLOR_SYNTAX_HIGHLIGHTS } from '../../../ide/common/constants';
-import { editorViewState } from '../../../ide/editor/ui/view/state';
+
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Test actual semantic publication, retained paint data and document Undo together. */
@@ -14,7 +15,7 @@ export async function testStudioSyntaxHighlight(test: StudioFixture): Promise<vo
 	await clipboard.writeText(prefix);
 	await press('ControlLeft', 'KeyV');
 	check(model.buffer.getText() === prefix + original, 'syntax: physical paste authors the independent string-key fixture');
-	const layout = editorViewState.layout;
+	const layout = sourcePane(test).code.layout;
 	for (const [phase, key] of ["'idle'", "'walkBack'", "'idle'"].entries()) {
 		if (phase === 1) model.pushEditOperations([{ offset: prefix.indexOf('idle'), deleteLength: 4, text: 'walkBack' }]);
 		if (phase === 2) await press('ControlLeft', 'KeyZ');

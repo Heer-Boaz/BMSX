@@ -1,6 +1,6 @@
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
-import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
-import { check, type StudioFixture } from './studio_fixture';
+
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Independent authored fixture; acceptance, history and conflicts use real focused controls. */
 export async function testStudioWorkspaceRename(test: StudioFixture): Promise<void> {
@@ -24,7 +24,7 @@ export async function testStudioWorkspaceRename(test: StudioFixture): Promise<vo
 	await test.clickTab(mainTab.id);
 	await press('ControlLeft', 'End'); await press('ArrowLeft');
 	await runPaletteCommand('Edit: Rename Symbol');
-	check(renameController.isActive() && renameController.getOriginalName() === 'fixture_rename', 'workspace rename: actual semantic reference opens the prompt');
+	check(sourcePane(test).rename.isActive() && sourcePane(test).rename.getOriginalName() === 'fixture_rename', 'workspace rename: actual semantic reference opens the prompt');
 	await test.clipboard.writeText('fixture_renamed');
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	check(main.buffer.getText() === mainText.replaceAll('fixture_rename', 'fixture_renamed')
@@ -46,7 +46,7 @@ export async function testStudioWorkspaceRename(test: StudioFixture): Promise<vo
 	await press('ControlLeft', 'End'); await press('ArrowLeft');
 	await runPaletteCommand('Edit: Rename Symbol');
 	provider.pushEditOperations([{ offset: provider.buffer.length, deleteLength: 0, text: '\n-- external edit' }]);
-	check(!renameController.isActive() && !renameController.isVisible() && main.buffer.getText() === mainText,
+	check(!sourcePane(test).rename.isActive() && !sourcePane(test).rename.isVisible() && main.buffer.getText() === mainText,
 		'workspace rename: changing a workspace source dismisses the retained semantic proposal');
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyZ'); await press('ControlLeft', 'KeyZ');
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'KeyZ');

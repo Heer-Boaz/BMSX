@@ -80,21 +80,21 @@ trees.register('leaf', { root = { type = 'wait', children = { { type = 'wait' } 
 
 test('concrete graph retains layout, source-backed edge selection and its screen anchor through edits', t => {
 	const previous = { font: editorViewState.font, viewportWidth: editorViewState.viewportWidth, viewportHeight: editorViewState.viewportHeight,
-		lineHeight: editorViewState.lineHeight, codeAreaTop: editorViewState.codeAreaTop, codeAreaBottom: editorViewState.codeAreaBottom };
+		lineHeight: editorViewState.lineHeight, editorAreaTop: editorViewState.editorAreaTop, editorAreaBottom: editorViewState.editorAreaBottom };
 	t.after(() => Object.assign(editorViewState, previous));
-	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
+	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, editorAreaTop: 24, editorAreaBottom: 276 });
 	const f = fixture();
 	const view = createBehaviorLensViewState(f.document, f.model, 'graph', assert.fail);
 	f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, f.model.resource, event));
 	selectBehaviorLensDefinition(view, f.definition.rowKey);
-	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(view.presentation.kind, 'graph');
 	assert.ok(view.presentation.kind === 'graph');
 	const graph = view.presentation;
 	const viewport = graph.viewport;
 	assert.ok(!('rows' in graph), 'graph must not retain or navigate an invisible outline');
 	const initial = viewport.model;
-	for (let index = 0; index < 100; index += 1) prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	for (let index = 0; index < 100; index += 1) prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(viewport.model, initial);
 	executeBehaviorLensNavigation(view, 'down');
 	executeBehaviorLensNavigation(view, 'down');
@@ -111,7 +111,7 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	const insertion = luaSourceRangeToTextRange(f.model.buffer, initial.nodes[0].children[0].children[0].source.occurrenceRange);
 	f.model.pushEditOperations([{ offset: insertion.start, deleteLength: 0, text: "{ type = 'wait' }, " }]);
 	installBehaviorLensDocument(view, f.project());
-	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.ok(viewport.selection?.kind === 'edge');
 	assert.notEqual(viewport.selection, edge);
 	assert.equal(viewport.selection.child.member?.index, 2);
@@ -121,12 +121,12 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	const span = luaSourceRangeToTextRange(f.model.buffer, viewport.selection.range);
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
 	installBehaviorLensDocument(view, f.project());
-	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(view.selection, null);
 	assert.equal(viewport.selection, null);
 	const secondDefinition = view.document.definitions[1];
 	selectBehaviorLensDefinition(view, secondDefinition.rowKey);
-	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(view.presentation, graph, 'another registration updates the retained graph presentation');
 	assert.equal(graph.viewport, viewport, 'input-owned viewport survives an explicit topic change');
 	assert.equal(viewport.selection, viewport.model.nodes[0]);

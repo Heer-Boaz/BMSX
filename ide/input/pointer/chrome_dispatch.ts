@@ -1,11 +1,9 @@
 import { getWorkbenchConnectionBounds } from '../../workbench/common/layout';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import { handleEditorScrollbarPointer } from './scrollbar';
 import type { CartEditor } from '../../cart_editor';
 import type { PointerSnapshot } from '../../common/models';
 import { handleEditorPanelResizePointer } from './panel';
 
-const RESOURCE_SCROLLBARS = ['resourceVertical', 'resourceHorizontal'] as const;
 
 export function handleEditorChromePointerDispatch(
 	editor: CartEditor,
@@ -18,7 +16,7 @@ export function handleEditorChromePointerDispatch(
 	if (editor.gamePanel.handlePointer(snapshot)) {
 		return true;
 	}
-	if (editor.resourcePanel.isVisible() && handleEditorScrollbarPointer(snapshot, RESOURCE_SCROLLBARS)) return true;
+	if (editor.resourcePanel.handleScrollbarPointer(snapshot)) return true;
 	if (handleEditorPanelResizePointer(editor.resourcePanel, snapshot, justPressed)) {
 		return true;
 	}

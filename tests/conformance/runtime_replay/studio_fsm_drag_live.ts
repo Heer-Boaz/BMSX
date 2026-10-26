@@ -3,10 +3,10 @@ import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { FSM_RETARGET_CART_SOURCE, FSM_RETARGET_CART_CALLBACK_SOURCE, fsmRetargetImportedCartSource } from '../../helpers/fsm_retarget_fixture';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Physical authoring, review and real source installation. No host Lua calls or patched guest tables. */
 export async function runStudioFsmDragLive(test: StudioFixture, imported = false) {
@@ -123,9 +123,9 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	await runPaletteCommand('Review: Open Impact Source');
 	check(ide.editor.quickInput.visible, 'FSM drag: Source offers captured written locations');
 	await press('Home'); await press('ArrowDown'); await press('Enter');
-	check(ide.editor.editorGroup.model.activeTab === code && review.proposal.state === 'pending' && !hasSelection(), 'FSM drag: captured Source navigates without discarding or selection leak');
-	check(activeCodeEditor.model === location.model && activeCodeEditor.view.cursorRow === positionAt.row
-		&& activeCodeEditor.view.cursorColumn === positionAt.column, 'FSM drag: Source reaches the captured UTF-16 position');
+	check(ide.editor.editorGroup.model.activeTab === code && review.proposal.state === 'pending' && !hasSelection(sourcePane(test).code), 'FSM drag: captured Source navigates without discarding or selection leak');
+	check(sourcePane(test).code.model === location.model && sourcePane(test).code.view.cursorRow === positionAt.row
+		&& sourcePane(test).code.view.cursorColumn === positionAt.column, 'FSM drag: Source reaches the captured UTF-16 position');
 	unchanged(version, 'FSM drag: impact Source does not dirty source');
 	await test.clickTab(review.id); await runPaletteCommand('Review: Discard Workspace Edit');
 	await test.clickTab(lens.id); await ready();
@@ -151,7 +151,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	await test.clickTab(lens.id); await ready();
 	check(viewport.selection?.kind === 'edge' && viewport.selection.link.target.source.label === 'other', 'FSM drag: new layout selects the exact changed proof');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(), 'FSM drag: post-edit Source is read-only navigation');
+	check(ide.editor.editorGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code), 'FSM drag: post-edit Source is read-only navigation');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'FSM drag: one hidden code Undo restores source');
 	await test.clickTab(lens.id); await ready();

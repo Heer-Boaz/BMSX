@@ -4,7 +4,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { RuntimeResource } from '../../ide/common/resource';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import type { QuickPickProjection } from '../../ide/workbench/services/quick_input/provider';

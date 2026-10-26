@@ -33,21 +33,19 @@ import { testSceneMemberMoves } from './studio_scene_moves';
 import { testSceneFieldInsertion } from './studio_scene_insertion';
 import { testScenePlacementIdentity } from './studio_scene_identity';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
-import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
 import { IO_INP_KEYS, IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { HostPauseReason } from '../../../hosts/common/execution_control';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
 import { testSceneSourceEdits } from './studio_scene_source';
 import { testSourceFormatting } from './studio_source_formatting';
 import { testStudioSyntaxHighlight } from './studio_syntax_highlight';
 import { testStudioFocus } from './studio_focus';
 import { testStudioQuickPick } from './studio_quick_pick';
-import { editorSearchState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
+
 import { testAemSourceApplication, testCapturedSourceApply, testSourceUndoAfterApply, testSourceViewsBeforeApply } from './studio_source_workflows';
 
 /** The same developer loop runs on every renderer, without backend-specific tests. */
@@ -122,11 +120,11 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	const oldMedia = ide.sources.currentBlua32Media;
 	await press('ControlLeft', 'KeyF');
 	await press('KeyQ');
-	const pendingQuery = editorSearchState.field.text;
+	const pendingQuery = sourcePane(test).find.state.field.text;
 	await press('ControlLeft', 'ShiftLeft', 'KeyS');
 	check(test.ide.editor.actionPrompt.visible, 'real command opens dirty-source prompt');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === firstInstalledSource && editorSearchState.field.text === pendingQuery,
+	check(model.buffer.getText() === firstInstalledSource && sourcePane(test).find.state.field.text === pendingQuery,
 		'focus: modal keyboard scope blocks both document and field history');
 	await click(editorChromeState.menuEntryBounds.edit);
 	check(test.ide.editor.menubar.activeMenu === undefined && test.ide.editor.actionPrompt.visible,
@@ -244,7 +242,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	rewind.seekTo(history.earliestCycles);
 	await settle();
 	check(ide.debugger.source.stop === undefined && !ide.debugger.stopPresentationPending, 'restore invalidates the old stop');
-	check(hoverState.tooltip === null, 'restore invalidates cached inspection');
+	check(sourcePane(test).code.hoverTooltip === null, 'restore invalidates cached inspection');
 	check(title() !== oldActor, 'inspection reacquires objects from restored heap');
 	check(execution.userPaused, 'explicit rewind is allowed without lifting user pause');
 	await press('ControlRight', 'ShiftRight');
@@ -317,7 +315,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 		&& history.checkpointCount !== 0, 'fault repair follows existing supervisor return and init route');
 	check(title() === faultActor, 'fault repair keeps the retained actor');
 	check(ide.fault.lastLuaCallStack.length === 0 && ide.fault.faultSnapshot === null, 'repair clears obsolete fault inspection');
-	check(runtimeErrorState.activeOverlay === null, 'repair removes the active error adornment');
+	check(sourcePane(test).code.runtimeError.activeOverlay === null, 'repair removes the active error adornment');
 	for (const input of ide.editor.editorGroup.model.tabs) {
 		if (input.kind !== 'code_editor') continue;
 		check(input.context.runtimeErrorOverlay === null, 'repair removes error adornments from all retained code views');

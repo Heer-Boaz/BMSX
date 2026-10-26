@@ -1,10 +1,10 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import type { EditorViewCommandId } from '../../../ide/common/commands';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 
 async function openView(test: StudioFixture, command: EditorViewCommandId): Promise<void> {
@@ -31,10 +31,10 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	const bios = ide.sources.luaResources.find(resource => resource.domain === -1 && resource.path === 'main.lua')!;
 	await ide.editor.navigation.openResource(bios);
 	await press('ControlLeft', 'Home');
-	const lines = activeCodeEditor.model.buffer.getText().split('\n');
+	const lines = sourcePane(test).code.model.buffer.getText().split('\n');
 	const row = lines.findIndex(line => line.startsWith("os = require('os')"));
 	check(row >= 0, 'navigation: actual BIOS global assignment is present');
-	const bounds = getCodeAreaBounds();
+	const bounds = getCodeAreaBounds(sourcePane(test).code);
 	const x = bounds.textLeft + editorViewState.font.advance('o') / 2;
 	const y = bounds.codeTop + (row + 0.5) * editorViewState.lineHeight;
 	await click({ left: x, right: x + 1, top: y, bottom: y + 1 }, 1, 'pointer_secondary');
@@ -42,7 +42,7 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 		'navigation: actual secondary click on global os opens the source menu');
 	check(ide.editor.contextMenu.model.rows.some(entry => entry.command === 'goToDefinition'),
 		'navigation: builtin spelling does not hide source navigation');
-	check(ide.editor.contextMenu.model.rows.find(entry => entry.command === 'rename')!.enabled === !activeCodeEditor.model.readOnly,
+	check(ide.editor.contextMenu.model.rows.find(entry => entry.command === 'rename')!.enabled === !sourcePane(test).code.model.readOnly,
 		'navigation: Rename follows the actual source model admission, not BIOS/cart classification');
 	await press('Escape');
 
@@ -59,8 +59,8 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 		'navigation: tool title and exact source identity are separate');
 	const selected = scene.outline.rows[scene.outline.selectionIndex].element.source;
 	await click(scene.actionBar.items[0].bounds);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === scene.workingCopy
-		&& activeCodeEditor.view.cursorRow === selected.start.line - 1,
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === scene.workingCopy
+		&& sourcePane(test).code.view.cursorRow === selected.start.line - 1,
 		'navigation: Source reveals the selected scene syntax in root.lua, not cart.lua');
 	await openView(test, 'sceneEditor');
 	await openView(test, 'behaviorLens');
@@ -72,8 +72,8 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	const sourceRange = selectedBehaviorLensSourceRange(lens.view)!;
 	await click(lens.view.presentation.actionBar.items[0].bounds);
 	const code = ide.editor.editorGroup.model.activeTab;
-	check(code.kind === 'code_editor' && activeCodeEditor.model === lens.workingCopy
-		&& activeCodeEditor.view.cursorRow === sourceRange.start.line - 1,
+	check(code.kind === 'code_editor' && sourcePane(test).code.model === lens.workingCopy
+		&& sourcePane(test).code.view.cursorRow === sourceRange.start.line - 1,
 		'navigation: visible Lens Source action reveals the selected FSM source range');
 	await openView(test, 'behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');

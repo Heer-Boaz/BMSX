@@ -1,5 +1,4 @@
 import type { PointerInputSnapshot } from '../../../common/models';
-import { editorPointerState, clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { EditorPane } from '../../services/editor/editor_pane';
 import type { EditorInput } from '../tab/model';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
@@ -46,8 +45,6 @@ export abstract class WorkbenchViewEditorPane<
 		_gotoModifierActive: boolean,
 	): void {
 		this.handleViewPointer(snapshot, justPressed, now);
-		clearEditorPointerSelectionState();
-		editorPointerState.lastPointerRowResolution = null;
 	}
 
 	protected handleViewPointer(

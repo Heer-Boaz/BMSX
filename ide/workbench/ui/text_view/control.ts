@@ -9,7 +9,7 @@ import { applyInlineFieldEditing, applyInlineFieldPointer, selectAll, setFieldTe
 import { TextField } from '../../../editor/ui/inline/text_field_model';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { resetBlink } from '../../../editor/render/caret';
+import { resetInlineBlink } from '../../../editor/render/caret';
 import { inputFocus, InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyDown, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
@@ -72,7 +72,7 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 			if (isKeyJustPressed('Escape', event)) { consumeIdeKey('Escape', event); this.closeFind(); }
 			else if (isKeyJustPressed('Enter', event) || isKeyJustPressed('NumpadEnter', event)) {
 				consumeIdeKey(event.code, event); this.model!.nextMatch((event.modifiers & KeyModifier.shift) !== 0 ? -1 : 1);
-			} else if (applyInlineFieldEditing(event, this.findField)) resetBlink();
+			} else if (applyInlineFieldEditing(event, this.findField)) resetInlineBlink();
 		});
 		this.unbindChange = this.findField.onDidChangeText(() => { if (this.model !== undefined) this.model.setQuery(this.findField.text); });
 		const find = { isEnabled: () => this.model !== undefined, run: () => this.openFind() };
@@ -103,7 +103,7 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 		this.update(this.bounds, this.font, this.lineHeight);
 		selectAll(this.findField);
 		this.findViewport.layout(this.findField, this.findBounds, editorViewState.inlineFieldMetricsRef, this.font);
-		this.findField.focusTarget.focus(); resetBlink();
+		this.findField.focusTarget.focus(); resetInlineBlink();
 	}
 	public closeFind(): void {
 		this.cancelPointer(); this.removeFind();
@@ -233,7 +233,7 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 		const options = this.fieldPointer; options.metrics = editorViewState.inlineFieldMetricsRef;
 		options.textLeft = this.findBounds.left + 3 - this.findViewport.offset; options.pointerX = snapshot.viewportX;
 		options.justPressed = pressed; options.pointerPressed = true;
-		if (applyInlineFieldPointer(this.findField, options).requestBlinkReset) resetBlink();
+		if (applyInlineFieldPointer(this.findField, options).requestBlinkReset) resetInlineBlink();
 	}
 	public handleWheel(snapshot: WheelInputSnapshot, delta = snapshot.deltaY * this.lineHeight): boolean { return this.scroll.handleWheel(snapshot, delta); }
 

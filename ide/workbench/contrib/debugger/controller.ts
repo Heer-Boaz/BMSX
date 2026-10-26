@@ -4,7 +4,7 @@ import {
 } from '../../../runtime/debugger_state';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { CartEditor } from '../../../cart_editor';
-import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
+import type { CodeEditorControl } from '../../../editor/ui/code_editor_control';
 import {
 	blua32SourceRangeAtPc,
 } from '../../../../toolchain/ts/rompack/blua32_symbols';
@@ -15,19 +15,15 @@ import { focusExecutionStop } from '../../../runtime_error/navigation';
 export class BreakpointController {
 	public constructor(private readonly state: RuntimeDebuggerState) {}
 
-	public toggleBreakpointForEditorRow(row: number = activeCodeEditor.view.cursorRow): boolean {
-		const context = activeCodeEditor;
+	public toggleBreakpointForEditorRow(code: CodeEditorControl, row: number = code.view.cursorRow): boolean {
+		const context = code;
 		if (context.model.mode !== 'lua') {
 			return false;
 		}
-		if (row < 0 || row >= activeCodeEditor.model.buffer.getLineCount()) {
+		if (row < 0 || row >= code.model.buffer.getLineCount()) {
 			return false;
 		}
 		const resource = context.model.resource;
-		if (!resource.path) {
-			showEditorMessage('No active path available for breakpoints.', 'warning', 1.6);
-			return false;
-		}
 		const lineNumber = row + 1;
 		const added = this.state.breakpoints.toggle(resource, lineNumber);
 		const binding = added ? this.state.breakpoints.read(resource).find(point => point.line === lineNumber)! : undefined;

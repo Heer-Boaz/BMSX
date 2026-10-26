@@ -1,9 +1,5 @@
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
-import type { ScrollbarKind } from '../../../common/models';
 import type { InlineFieldMetrics } from '../inline/text_field';
-import type { Scrollbar } from '../../../workbench/ui/scrollbar';
-import type { ScrollbarController } from '../scrollbar_controller';
-import { CodeLayout } from '../code/layout';
 import { EditorFont } from './font';
 
 export type EditorViewState = {
@@ -14,24 +10,14 @@ export type EditorViewState = {
 	lineHeight: number;
 	charAdvance: number;
 	spaceAdvance: number;
-	gutterWidth: number;
 	tabBarHeight: number;
 	tabBarTotalHeight: number;
 	baseBottomMargin: number;
-	codeAreaLeft: number;
-	codeAreaTop: number;
-	codeAreaBottom: number;
+	editorAreaLeft: number;
+	editorAreaTop: number;
+	editorAreaBottom: number;
 	inlineFieldMetricsRef: InlineFieldMetrics;
-	scrollbars: Record<ScrollbarKind, Scrollbar>;
-	scrollbarController: ScrollbarController;
-	layout: CodeLayout;
-	codeVerticalScrollbarVisible: boolean;
-	codeHorizontalScrollbarVisible: boolean;
-	cachedVisibleRowCount: number;
-	cachedContentWidth: number;
-	cachedMaxScrollLeft: number;
 	dimCrtInEditor: boolean;
-	wordWrapEnabled: boolean;
 };
 
 export const editorViewState: EditorViewState = {
@@ -42,22 +28,12 @@ export const editorViewState: EditorViewState = {
 	lineHeight: 0,
 	charAdvance: 0,
 	spaceAdvance: 0,
-	gutterWidth: 0,
 	tabBarHeight: 0,
 	tabBarTotalHeight: 0,
 	baseBottomMargin: 0,
-	codeAreaLeft: 0,
-	codeAreaTop: 0,
-	codeAreaBottom: 0,
+	editorAreaLeft: 0,
+	editorAreaTop: 0,
+	editorAreaBottom: 0,
 	inlineFieldMetricsRef: undefined!,
-	scrollbars: undefined!,
-	scrollbarController: undefined!,
-	layout: undefined!,
-	codeVerticalScrollbarVisible: false,
-	codeHorizontalScrollbarVisible: false,
-	cachedVisibleRowCount: 1,
-	cachedContentWidth: 1,
-	cachedMaxScrollLeft: 0,
 	dimCrtInEditor: true,
-	wordWrapEnabled: true,
 };

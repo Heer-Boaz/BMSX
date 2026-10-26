@@ -3,7 +3,7 @@ import test from 'node:test';
 import { semanticSnapshot } from './semantic_test_harness';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
@@ -187,49 +187,49 @@ for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 	test(`scene details measure and scroll in ${font}, ${width}px, independent of pane height`, t => {
 		configureFontVariant(font);
 		editorViewState.viewportWidth = width; editorViewState.viewportHeight = 288;
-		editorViewState.codeAreaTop = 31; editorViewState.codeAreaBottom = 275;
+		editorViewState.editorAreaTop = 31; editorViewState.editorAreaBottom = 275;
 		const input = scene(); input.section = 'details';
 		t.after(() => { input.dispose(); input.workingCopy.dispose(); });
-		layoutSceneEditor(input, true, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+		layoutSceneEditor(input, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.deepEqual(input.properties.map(property => property.value), [11, -22, 33]);
 		const height = input.details.contentHeight;
 		assert.ok(height > 0);
 		for (const line of input.detailsText) assert.ok(editorViewState.font.measure(line.text) <= input.details.bounds.right - input.details.bounds.left - 8);
-		editorViewState.codeAreaBottom = 120;
-		assert.equal(layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom }), true);
+		editorViewState.editorAreaBottom = 120;
+		assert.equal(layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom }), true);
 		assert.equal(input.details.contentHeight, height, 'content extent is independent of viewport height');
 		assert.equal(input.details.scrollbar.isVisible(), true);
 		const row = input.properties[2];
 		input.details.scrollbar.reveal(row.contentBounds.top, row.contentBounds.bottom, 2);
-		layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+		layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.ok(row.bounds.top >= input.details.bounds.top && row.bounds.bottom <= input.details.bounds.bottom);
 		const option = input.optionProperties.at(-1)!;
 		input.details.scrollbar.reveal(option.contentBounds.top, option.contentBounds.bottom, 2);
-		layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+		layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.ok(option.bounds.top >= input.details.bounds.top && option.bounds.bottom <= input.details.bounds.bottom);
 		const runs = input.detailsText.slice();
 		const contentBounds = row.contentBounds;
 		const screenBounds = row.bounds;
 		const revision = input.details.revision;
 		const advance = t.mock.method(editorViewState.font, 'advance', () => assert.fail('scroll/stable layout remeasured text'));
-		input.details.scrollbar.setScroll(height); layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+		input.details.scrollbar.setScroll(height); layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		const note = input.detailsText.at(-1)!;
 		assert.ok(input.details.offsetTop + note.top + editorViewState.lineHeight <= input.details.bounds.bottom);
-		for (let index = 0; index < 100; index += 1) assert.equal(layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom }), false);
+		for (let index = 0; index < 100; index += 1) assert.equal(layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom }), false);
 		advance.mock.restore();
 		assert.deepEqual(input.detailsText, runs); assert.equal(input.detailsText[0], runs[0]);
 		assert.equal(input.details.revision, revision); assert.equal(row.contentBounds, contentBounds); assert.equal(row.bounds, screenBounds);
 		const tree = input.outline.layout;
 		assert.equal(workbenchListRowIndexAtPosition(input.outline, tree.contentLeft, tree.contentBottom), -1);
-		editorViewState.codeAreaBottom = editorViewState.codeAreaTop; layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+		editorViewState.editorAreaBottom = editorViewState.editorAreaTop; layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.equal(input.details.height, 0); assert.equal(input.details.scrollbar.isVisible(), false);
 		assert.equal(input.outline.layout.visibleRowCount, 0);
-		editorViewState.codeAreaBottom = 275; layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
-		selectSceneOutlineRow(input, 2); layoutSceneEditor(input, false, true, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+		editorViewState.editorAreaBottom = 275; layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		selectSceneOutlineRow(input, 2); layoutSceneEditor(input, false, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.deepEqual(input.properties.map(property => property.value), [null, 2, null]);
-		selectSceneOutlineRow(input, 0); layoutSceneEditor(input, false, true, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+		selectSceneOutlineRow(input, 0); layoutSceneEditor(input, false, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.ok(input.details.contentHeight < height);
-		selectSceneOutlineRow(input, -1); layoutSceneEditor(input, false, true, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+		selectSceneOutlineRow(input, -1); layoutSceneEditor(input, false, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		if (input.layout.mode === 'split') {
 			assert.equal(input.details.contentHeight, 0); assert.equal(input.details.scrollTop, 0); assert.equal(input.detailsText.length, 0);
 		} else {
@@ -244,8 +244,8 @@ for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 test('scene painting publishes nested content clips and reuses quad storage on stable frames', t => {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	editorViewState.codeAreaTop = 31; editorViewState.codeAreaBottom = 98;
-	const input = scene(); layoutSceneEditor(input, true, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	editorViewState.editorAreaTop = 31; editorViewState.editorAreaBottom = 98;
+	const input = scene(); layoutSceneEditor(input, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	const parent = inputFocus.createTarget();
 	const controls = input.properties.map(property => {
 		const field = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => assert.fail('paint accepted a value'));
@@ -281,7 +281,7 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 	}
 	for (let index = 0; index < 100; index += 1) draw();
 	assert.equal(stream.floatData, storage);
-	input.details.scrollbar.setScroll(input.details.contentHeight); layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom }); draw();
+	input.details.scrollbar.setScroll(input.details.contentHeight); layoutSceneEditor(input, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom }); draw();
 	const text = input.detailsText[0];
 	const theme = colors.getActiveIdeThemeVariant();
 	t.after(() => colors.setIdeThemeVariant(theme));

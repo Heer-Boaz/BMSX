@@ -1,3 +1,6 @@
+import { createTestCodeControl } from '../helpers/code_control';
+import { EditorFont } from '../../ide/editor/ui/view/font';
+import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
@@ -5,9 +8,9 @@ import { editorFeedbackState } from '../../ide/common/feedback_state';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
-import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus, type InputFocusTarget } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { api } from '../../ide/runtime/overlay_api';
@@ -27,7 +30,7 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
-	const { models, documents } = createTestCodeDocuments(t);
+	const { models, documents, clock } = createTestCodeDocuments(t);
 	configureFontVariant(variant);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	editorFeedbackState.message.visible = false; problemsPanel.hide();
@@ -35,9 +38,9 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const sources = createScenarioTestSourceState([record]);
 	const resource = sources.resourceByIdentity.get(resourceIdentityKey({ domain: 0, path: 'status.lua' }))!;
 	const model = models.retain(resource, 'lua', record.src);
-	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
-	editorViewState.layout.attach(documents.get(model));
-	activeCodeEditor.focusTarget.focus();
+	const view = createCodeEditorViewState();
+	const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(variant));
+	code.focusTarget.focus();
 	const filesFocus = inputFocus.createTarget(), state = { visible: true, mode: 'resources' as 'resources' | 'command' };
 	const mode = t.mock.fn(() => state.mode), filter = t.mock.fn(() => 'lua_only' as const);
 	const resources: Parameters<typeof renderStatusBar>[0] = {
@@ -45,7 +48,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	};
 	const overlay = createHostOverlayFixture(384, 288), fault = createRuntimeFaultState();
 	const evaluation = new RuntimeLuaEvaluation(null, null, null, null, fault, null, null, null);
-	const status = t.mock.fn(() => { buildStatusLeftInfo(); });
+	const status = t.mock.fn(() => { buildStatusLeftInfo(code); });
 	const pane: NonNullable<Parameters<typeof renderStatusBar>[2]> = { drawStatusBar: status };
 	const lineCount = t.mock.method(model.buffer, 'getLineCount');
 	const menu = new ContextMenuController(inputFocus, pointerCapture), quick = new QuickInputController(menu);
@@ -56,20 +59,20 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	};
 	t.after(() => {
 		quick.dispose(); menu.dispose(); problemsPanel.hide(); problemsPanel.setDiagnostics([], { ready: 0, pending: 0, unsupported: 0, failed: 0 });
-		inputFocus.setTarget(null); activeCodeEditor.detach(); editorViewState.layout.dispose(); pointerCapture.cancel();
+		inputFocus.setTarget(null); pointerCapture.cancel();
 	});
-	return { model, view, filesFocus, state, mode, filter, status, lineCount, menu, quick, paint };
+	return { code, model, view, filesFocus, state, mode, filter, status, lineCount, menu, quick, paint };
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} visible side panels do not replace the active source status owner`, t => {
 		const f = fixture(t, variant);
 		problemsPanel.show();
-		f.paint(activeCodeEditor.focusTarget);
+		f.paint(f.code.focusTarget);
 		assert.equal(f.status.mock.callCount(), 1);
 		assert.equal(f.lineCount.mock.callCount(), 1, 'source status consumes the actual source document despite visible Problems');
 		assert.equal(f.mode.mock.callCount(), 0); assert.equal(f.filter.mock.callCount(), 0);
-		assert.equal(activeCodeEditor.model, f.model); assert.equal(activeCodeEditor.view, f.view);
+		assert.equal(f.code.model, f.model); assert.equal(f.code.view, f.view);
 	});
 
 	test(`${variant} the explicit Files or Problems owner selects that context without touching source status`, t => {
@@ -121,8 +124,8 @@ for (const variant of ['tiny', 'msx'] as const) {
 		editorRuntimeState.active = true; editorFeedbackState.message.visible = false;
 		await editor.navigation.openResource(sources.resourceByIdentity.get(resourceIdentityKey({ domain: 0, path: 'status.lua' }))!);
 		editor.setFontVariant(variant);
-		const pane = editor.editorGroup.panes.activePane!, status = t.mock.method(pane, 'drawStatusBar');
-		const model = activeCodeEditor.model, view = activeCodeEditor.view;
+		const pane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane, status = t.mock.method(pane, 'drawStatusBar');
+		const model = pane.code.model, view = pane.code.view;
 		const draw = () => {
 			editor.update(0); ide.overlayRenderer.beginFrame(host.presenter); api.beginFrame(ide.overlayRenderer);
 			editor.draw(); ide.overlayRenderer.endFrame(); host.presenter.hostOverlayQueue.consumeOverlayFrame();
@@ -133,7 +136,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		editor.contextMenu.show(30, 40, [], editor.commands);
 		assert.equal(inputFocus.target, editor.contextMenu.focusTarget);
 		assert.equal(editor.contextMenu.invocationOrigin, editor.quickInput.field.focusTarget);
-		assert.equal(editor.quickInput.invocationOrigin, activeCodeEditor.focusTarget);
+		assert.equal(editor.quickInput.invocationOrigin, pane.code.focusTarget);
 		draw(); assert.equal(status.mock.callCount(), 2);
 		editor.contextMenu.hide(); editor.quickInput.hide();
 		editor.resourcePanel.setFocused(true);
@@ -144,7 +147,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const prompt = editor.actionPrompt.show('close');
 		editor.contextMenu.show(30, 40, [], editor.commands);
 		assert.equal(editor.contextMenu.invocationOrigin, editor.actionPrompt.focusTarget);
-		assert.equal(editor.actionPrompt.invocationOrigin, activeCodeEditor.focusTarget);
+		assert.equal(editor.actionPrompt.invocationOrigin, pane.code.focusTarget);
 		draw(); assert.equal(status.mock.callCount(), 3);
 		editor.contextMenu.hide(); editor.actionPrompt.close(); await prompt;
 		problemsPanel.show();
@@ -159,6 +162,6 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.equal(editor.quickInput.invocationOrigin!.commandContext, problemsPanel.focusTarget);
 		draw(); assert.equal(status.mock.callCount(), 3, 'a picker invoked by the header keeps the selected diagnostic context');
 		editor.quickInput.hide();
-		assert.equal(activeCodeEditor.model, model); assert.equal(activeCodeEditor.view, view);
+		assert.equal(pane.code.model, model); assert.equal(pane.code.view, view);
 	});
 }

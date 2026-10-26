@@ -3,9 +3,7 @@ import { point_in_rect } from '../../../machine/ts/common/rect';
 import { problemsPanel, getProblemsPanelBounds } from '../../workbench/contrib/problems/panel/controller';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { WheelInputSnapshot } from '../../common/models';
-import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../editor/ui/hover_tooltip';
 import { isShiftDown } from '../keyboard/key_input';
-import { hoverState } from '../../editor/contrib/hover/state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { inputFocus } from '../focus';
 import type { WheelInputEvent } from '../../../hosts/common/input/pointer_event';
@@ -37,21 +35,10 @@ export function handleWorkbenchChromeWheel(editor: CartEditor, event: WheelInput
 }
 
 export function handleWorkbenchPaneWheel(editor: CartEditor, event: WheelInputSnapshot): boolean {
-	if (handleHoverTooltipWheel(event)) return true;
 	const guest = inputFocus.admittedTarget?.guestInput;
 	if (guest !== undefined && point_in_rect(event.viewportX, event.viewportY, guest.bounds)) return false;
 	editor.editorGroup.panes.activePane?.handleWheel(event);
 	return true;
-}
-
-function handleHoverTooltipWheel(event: WheelInputSnapshot): boolean {
-	const tooltip = hoverState.tooltip;
-	if (tooltip === null) return false;
-	const inside = isPointInHoverTooltip(event.viewportX, event.viewportY);
-	if (inside || pointerHitsHoverTarget(event, tooltip)) {
-		return adjustHoverTooltipScroll(event.deltaY) || inside;
-	}
-	return false;
 }
 
 function handleResourcePanelWheel(resourcePanel: ResourcePanelController, event: WheelInputSnapshot): boolean {

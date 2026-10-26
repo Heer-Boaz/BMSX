@@ -1,3 +1,4 @@
+import type { CodeEditorControl } from '../ui/code_editor_control';
 /**
  * Comprehensive text editing and selection module for the runtime cart editor.
  * Handles ALL text manipulation, selection state, clipboard operations, and editing commands.
@@ -17,15 +18,14 @@ import type { EditContext, Position } from '../../common/models';
 import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import { currentLine } from '../common/text/layout';
 import { markTextMutated } from '../common/text/runtime';
-import { resetBlink } from '../render/caret';
+import { resetBlinkState } from '../ui/view/caret/blink';
 import { formatLuaDocument } from '../../language/lua/formatter';
 import { extractErrorMessage } from '../../common/errors';
 import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
 import { extractIndentation, countLeadingIndent } from '../text/indentation';
-import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';
+import type { MutableTextPosition } from '../text/text_buffer';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';
 import { formatAemDocument } from '../../language/aem/editor';
-import { activeCodeEditor } from '../ui/code_editor_state';
 import {
 	clearSingleCursorSelection,
 	collapseSingleCursorSelection,
@@ -37,16 +37,9 @@ import {
 } from './cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor/words';
 
-const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
-const wordPositionScratch: MutableTextPosition = { row: 0, column: 0 };
 
-function bufferCharAtOffset(buffer: TextBuffer, offset: number): string {
-	const code = buffer.charCodeAt(offset);
-	return Number.isNaN(code) ? '' : String.fromCharCode(code);
-}
-
-function editorAllowsMutation(): boolean {
-	return !activeCodeEditor.model.readOnly;
+function editorAllowsMutation(code: CodeEditorControl): boolean {
+	return !code.model.readOnly;
 }
 
 // ============================================================================
@@ -56,16 +49,16 @@ function editorAllowsMutation(): boolean {
 /**
  * Clears the current selection by removing the anchor.
  */
-export function clearSelection(): void {
-	clearSingleCursorSelection(activeCodeEditor.view);
+export function clearSelection(code: CodeEditorControl): void {
+	clearSingleCursorSelection(code.view);
 }
 
 /**
  * Checks if there is an active selection.
  * @returns true if a selection exists (anchor differs from cursor)
  */
-export function hasSelection(): boolean {
-	return getSelectionRange() !== null;
+export function hasSelection(code: CodeEditorControl): boolean {
+	return getSelectionRange(code) !== null;
 }
 
 /**
@@ -80,20 +73,20 @@ export { comparePositions };
  * Gets the current selection range with normalized start/end positions.
  * @returns The selection range with start <= end, or null if no selection
  */
-export function getSelectionRange(): { start: Position; end: Position } {
-	return getSingleCursorSelectionRange(activeCodeEditor.view);
+export function getSelectionRange(code: CodeEditorControl): { start: Position; end: Position } {
+	return getSingleCursorSelectionRange(code.view);
 }
 
 /**
  * Gets the text content of the current selection.
  * @returns The selected text, or null if no selection
  */
-export function getSelectionText(): string {
-	const range = getSelectionRange();
+export function getSelectionText(code: CodeEditorControl): string {
+	const range = getSelectionRange(code);
 	if (!range) {
 		return null;
 	}
-	const buffer = activeCodeEditor.model.buffer;
+	const buffer = code.model.buffer;
 	const start = range.start;
 	const end = range.end;
 	const startOffset = buffer.offsetAt(start.row, start.column);
@@ -105,14 +98,14 @@ export function getSelectionText(): string {
  * Collapses the selection to either its start or end position.
  * @param target 'start' to move cursor to selection start, 'end' for selection end
  */
-export function collapseSelectionTo(target: 'start' | 'end'): void {
-	if (!collapseSingleCursorSelection(activeCodeEditor.view, target)) {
+export function collapseSelectionTo(code: CodeEditorControl, target: 'start' | 'end'): void {
+	if (!collapseSingleCursorSelection(code.view, target)) {
 		return;
 	}
-	activeCodeEditor.emitCursorMoved();
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
+	code.emitCursorMoved();
+	updateDesiredColumn(code);
+	resetBlinkState(code.caret);
+	revealCursor(code);
 }
 
 /**
@@ -121,8 +114,8 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
  * @param row The row containing the word
  * @param column The column within the word
  */
-export function selectWordAtPosition(row: number, column: number): void {
-	const buffer = activeCodeEditor.model.buffer;
+export function selectWordAtPosition(code: CodeEditorControl, row: number, column: number): void {
+	const buffer = code.model.buffer;
 	const lineCount = buffer.getLineCount();
 	let targetRow = row;
 	if (targetRow < 0) {
@@ -132,21 +125,21 @@ export function selectWordAtPosition(row: number, column: number): void {
 	}
 	const line = buffer.getLineContent(targetRow);
 	if (line.length === 0) {
-		clearSingleCursorSelection(activeCodeEditor.view);
-		setSingleCursorPosition(activeCodeEditor.view, targetRow, 0);
-		activeCodeEditor.emitCursorMoved();
-		updateDesiredColumn();
-		resetBlink();
-		revealCursor();
+		clearSingleCursorSelection(code.view);
+		setSingleCursorPosition(code.view, targetRow, 0);
+		code.emitCursorMoved();
+		updateDesiredColumn(code);
+		resetBlinkState(code.caret);
+		revealCursor(code);
 		return;
 	}
 	const bounds = findWordBoundsInLine(line, column);
-	setSingleCursorSelectionAnchor(activeCodeEditor.view, targetRow, bounds.start);
-	setSingleCursorPosition(activeCodeEditor.view, targetRow, bounds.end);
-	activeCodeEditor.emitCursorMoved();
-	updateDesiredColumn();
-	resetBlink();
-	revealCursor();
+	setSingleCursorSelectionAnchor(code.view, targetRow, bounds.start);
+	setSingleCursorPosition(code.view, targetRow, bounds.end);
+	code.emitCursorMoved();
+	updateDesiredColumn(code);
+	resetBlinkState(code.caret);
+	revealCursor(code);
 }
 
 /**
@@ -154,11 +147,11 @@ export function selectWordAtPosition(row: number, column: number): void {
  * @param position The position to clamp, or null
  * @returns The clamped position, or null if input was null
  */
-export function clampSelectionPosition(position: Position): Position {
+export function clampSelectionPosition(code: CodeEditorControl, position: Position): Position {
 	if (!position) {
 		return null;
 	}
-	return activeCodeEditor.model.clampPosition(position);
+	return code.model.clampPosition(position);
 }
 
 // ============================================================================
@@ -171,8 +164,8 @@ export function clampSelectionPosition(position: Position): Position {
  * @param column Current column
  * @returns The new position, or null if at the start of the document
  */
-export function charAt(row: number, column: number): string {
-	const buffer = activeCodeEditor.model.buffer;
+export function charAt(code: CodeEditorControl, row: number, column: number): string {
+	const buffer = code.model.buffer;
 	const lineCount = buffer.getLineCount();
 	if (row < 0 || row >= lineCount) {
 		return '';
@@ -184,7 +177,7 @@ export function charAt(row: number, column: number): string {
 		return '';
 	}
 	const offset = lineStart + column;
-	return bufferCharAtOffset(buffer, offset);
+	return String.fromCharCode(buffer.charCodeAt(offset));
 }
 
 /**
@@ -193,8 +186,8 @@ export function charAt(row: number, column: number): string {
  * @param column Current column
  * @returns The position of the word start
  */
-export function findWordLeft(row: number, column: number, out: MutableTextPosition = wordPositionScratch): Position {
-	const buffer = activeCodeEditor.model.buffer;
+export function findWordLeft(code: CodeEditorControl, row: number, column: number, out: MutableTextPosition = code.scratch.wordPosition): Position {
+	const buffer = code.model.buffer;
 	const offset = buffer.offsetAt(row, column);
 	const targetOffset = findWordLeftOffset(offset, index => buffer.charCodeAt(index));
 	buffer.positionAt(targetOffset, out);
@@ -207,8 +200,8 @@ export function findWordLeft(row: number, column: number, out: MutableTextPositi
  * @param column Current column
  * @returns The position of the word end
  */
-export function findWordRight(row: number, column: number, out: MutableTextPosition = wordPositionScratch): Position {
-	const buffer = activeCodeEditor.model.buffer;
+export function findWordRight(code: CodeEditorControl, row: number, column: number, out: MutableTextPosition = code.scratch.wordPosition): Position {
+	const buffer = code.model.buffer;
 	const offset = buffer.offsetAt(row, column);
 	const targetOffset = findWordRightOffset(buffer.length, offset, index => buffer.charCodeAt(index));
 	buffer.positionAt(targetOffset, out);
@@ -223,11 +216,11 @@ export function findWordRight(row: number, column: number, out: MutableTextPosit
  * Deletes the current selection if one exists.
  * @returns true if a selection was deleted, false if no selection existed
  */
-function deleteSelectionIfPresent(): boolean {
-	if (!hasSelection()) {
+function deleteSelectionIfPresent(code: CodeEditorControl): boolean {
+	if (!hasSelection(code)) {
 		return false;
 	}
-	replaceSelectionWith('');
+	replaceSelectionWith(code, '');
 	return true;
 }
 
@@ -235,12 +228,12 @@ function deleteSelectionIfPresent(): boolean {
  * Deletes the selection with undo support.
  * This is the high-level version that prepares undo.
  */
-export function deleteSelection(): void {
-	if (!editorAllowsMutation() || !hasSelection()) {
+export function deleteSelection(code: CodeEditorControl): void {
+	if (!editorAllowsMutation(code) || !hasSelection(code)) {
 		return;
 	}
-	prepareUndo('delete-selection', false);
-	replaceSelectionWith('');
+	prepareUndo(code, 'delete-selection', false);
+	replaceSelectionWith(code, '');
 }
 
 /**
@@ -248,30 +241,30 @@ export function deleteSelection(): void {
  * If no selection exists, this function does nothing.
  * @param text The text to insert in place of the selection
  */
-export function replaceSelectionWith(text: string): void {
-	const range = getSelectionRange();
+export function replaceSelectionWith(code: CodeEditorControl, text: string): void {
+	const range = getSelectionRange(code);
 	if (!range) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	replaceTextRange(buffer.offsetAt(range.start.row, range.start.column), buffer.offsetAt(range.end.row, range.end.column), text);
+	const buffer = code.model.buffer;
+	replaceTextRange(code, buffer.offsetAt(range.start.row, range.start.column), buffer.offsetAt(range.end.row, range.end.column), text);
 }
 
 /** Applies a prepared source-range edit and commits its insertion-relative UTF16 caret with the text. */
-export function replaceTextRange(startOffset: number, endOffset: number, text: string, cursorOffset = text.length): void {
-	if (!editorAllowsMutation()) {
+export function replaceTextRange(code: CodeEditorControl, startOffset: number, endOffset: number, text: string, cursorOffset = text.length): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	applyUndoableReplace(startOffset, endOffset - startOffset, text);
-	buffer.positionAt(startOffset + cursorOffset, tmpPosition);
-	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
+	const buffer = code.model.buffer;
+	applyUndoableReplace(code, startOffset, endOffset - startOffset, text);
+	buffer.positionAt(startOffset + cursorOffset, code.scratch.editPosition);
+	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
 
-	recordEditContext(text.length === 0 ? 'delete' : startOffset === endOffset ? 'insert' : 'replace', text);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	recordEditContext(code, text.length === 0 ? 'delete' : startOffset === endOffset ? 'insert' : 'replace', text);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 // ============================================================================
@@ -283,62 +276,62 @@ export function replaceTextRange(startOffset: number, endOffset: number, text: s
  * If there's a selection, it will be replaced.
  * @param text The text to insert
  */
-export function insertText(text: string): void {
-	if (!editorAllowsMutation() || text.length === 0) {
+export function insertText(code: CodeEditorControl, text: string): void {
+	if (!editorAllowsMutation(code) || text.length === 0) {
 		return;
 	}
 	const coalesce = text.length === 1;
-	prepareUndo('insert-text', coalesce);
-	if (hasSelection()) {
-		replaceSelectionWith(text);
+	prepareUndo(code, 'insert-text', coalesce);
+	if (hasSelection(code)) {
+		replaceSelectionWith(code, text);
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	const startRow = activeCodeEditor.view.cursorRow;
-	const offset = buffer.offsetAt(startRow, activeCodeEditor.view.cursorColumn);
-	applyUndoableReplace(offset, 0, text);
+	const buffer = code.model.buffer;
+	const startRow = code.view.cursorRow;
+	const offset = buffer.offsetAt(startRow, code.view.cursorColumn);
+	applyUndoableReplace(code, offset, 0, text);
 	const newOffset = offset + text.length;
-	buffer.positionAt(newOffset, tmpPosition);
-	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
-	recordEditContext('insert', text);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	buffer.positionAt(newOffset, code.scratch.editPosition);
+	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
+	recordEditContext(code, 'insert', text);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 /**
  * Inserts a line break at the current cursor position.
  * Auto-indents the new line based on the previous line's indentation.
  */
-export function insertLineBreak(): void {
-	if (!editorAllowsMutation()) {
+export function insertLineBreak(code: CodeEditorControl): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	const range = getSelectionRange();
-	const sourceRow = range === null ? activeCodeEditor.view.cursorRow : range.start.row;
-	const sourceColumn = range === null ? activeCodeEditor.view.cursorColumn : range.start.column;
+	const buffer = code.model.buffer;
+	const range = getSelectionRange(code);
+	const sourceRow = range === null ? code.view.cursorRow : range.start.row;
+	const sourceColumn = range === null ? code.view.cursorColumn : range.start.column;
 	const line = buffer.getLineContent(sourceRow);
 	const before = line.slice(0, sourceColumn);
 	const indentation = extractIndentation(before);
 	const insertion = `\n${indentation}`;
-	prepareUndo('insert-line-break', false);
+	prepareUndo(code, 'insert-line-break', false);
 	if (range !== null) {
-		replaceSelectionWith(insertion);
+		replaceSelectionWith(code, insertion);
 		return;
 	}
 	const offset = buffer.offsetAt(sourceRow, sourceColumn);
-	applyUndoableReplace(offset, 0, insertion);
+	applyUndoableReplace(code, offset, 0, insertion);
 	const newOffset = offset + insertion.length;
-	buffer.positionAt(newOffset, tmpPosition);
-	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
+	buffer.positionAt(newOffset, code.scratch.editPosition);
+	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
 
-	recordEditContext('insert', '\n');
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	recordEditContext(code, 'insert', '\n');
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 /**
@@ -346,23 +339,23 @@ export function insertLineBreak(): void {
  * Handles multi-line text properly.
  * @param text The clipboard text to insert
  */
-export function insertClipboardText(text: string): void {
-	if (!editorAllowsMutation()) {
+export function insertClipboardText(code: CodeEditorControl, text: string): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	const startRow = activeCodeEditor.view.cursorRow;
-	const offset = buffer.offsetAt(startRow, activeCodeEditor.view.cursorColumn);
-	applyUndoableReplace(offset, 0, text);
+	const buffer = code.model.buffer;
+	const startRow = code.view.cursorRow;
+	const offset = buffer.offsetAt(startRow, code.view.cursorColumn);
+	applyUndoableReplace(code, offset, 0, text);
 	const newOffset = offset + text.length;
-	buffer.positionAt(newOffset, tmpPosition);
-	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
+	buffer.positionAt(newOffset, code.scratch.editPosition);
+	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
 
-	recordEditContext('insert', text);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	recordEditContext(code, 'insert', text);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 // ============================================================================
@@ -373,131 +366,131 @@ export function insertClipboardText(text: string): void {
  * Deletes the character before the cursor (backspace).
  * If there's a selection, deletes the selection instead.
  */
-export function backspace(): void {
-	if (!editorAllowsMutation()) {
+export function backspace(code: CodeEditorControl): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	const cursorOffset = buffer.offsetAt(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-	if (!hasSelection() && cursorOffset === 0) {
+	const buffer = code.model.buffer;
+	const cursorOffset = buffer.offsetAt(code.view.cursorRow, code.view.cursorColumn);
+	if (!hasSelection(code) && cursorOffset === 0) {
 		return;
 	}
-	prepareUndo('backspace', true);
-	if (deleteSelectionIfPresent()) {
+	prepareUndo(code, 'backspace', true);
+	if (deleteSelectionIfPresent(code)) {
 		return;
 	}
 
 	const deleteOffset = cursorOffset - 1;
 	const removed = buffer.getTextRange(deleteOffset, cursorOffset);
-	applyUndoableReplace(deleteOffset, 1, '');
-	buffer.positionAt(deleteOffset, tmpPosition);
-	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
-	recordEditContext('delete', removed);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	applyUndoableReplace(code, deleteOffset, 1, '');
+	buffer.positionAt(deleteOffset, code.scratch.editPosition);
+	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
+	recordEditContext(code, 'delete', removed);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 /**
  * Deletes the character after the cursor (delete key).
  * If there's a selection, deletes the selection instead.
  */
-export function deleteForward(): void {
-	if (!editorAllowsMutation()) {
+export function deleteForward(code: CodeEditorControl): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	const cursorOffset = buffer.offsetAt(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-	if (!hasSelection() && cursorOffset >= buffer.length) {
+	const buffer = code.model.buffer;
+	const cursorOffset = buffer.offsetAt(code.view.cursorRow, code.view.cursorColumn);
+	if (!hasSelection(code) && cursorOffset >= buffer.length) {
 		return;
 	}
-	prepareUndo('delete-forward', true);
-	if (deleteSelectionIfPresent()) {
+	prepareUndo(code, 'delete-forward', true);
+	if (deleteSelectionIfPresent(code)) {
 		return;
 	}
 
 	const removed = buffer.getTextRange(cursorOffset, cursorOffset + 1);
-	applyUndoableReplace(cursorOffset, 1, '');
-	buffer.positionAt(cursorOffset, tmpPosition);
-	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
-	recordEditContext('delete', removed);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	applyUndoableReplace(code, cursorOffset, 1, '');
+	buffer.positionAt(cursorOffset, code.scratch.editPosition);
+	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
+	recordEditContext(code, 'delete', removed);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 /**
  * Deletes from the cursor to the start of the previous word.
  */
-export function deleteWordBackward(): void {
-	if (!editorAllowsMutation()) {
+export function deleteWordBackward(code: CodeEditorControl): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	const cursorOffset = buffer.offsetAt(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-	if (!hasSelection() && cursorOffset === 0) {
+	const buffer = code.model.buffer;
+	const cursorOffset = buffer.offsetAt(code.view.cursorRow, code.view.cursorColumn);
+	if (!hasSelection(code) && cursorOffset === 0) {
 		return;
 	}
-	if (hasSelection()) {
-		prepareUndo('delete-word-backward', false);
-		deleteSelectionIfPresent();
+	if (hasSelection(code)) {
+		prepareUndo(code, 'delete-word-backward', false);
+		deleteSelectionIfPresent(code);
 		return;
 	}
-	const target = findWordLeft(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	const target = findWordLeft(code, code.view.cursorRow, code.view.cursorColumn);
 	const targetOffset = buffer.offsetAt(target.row, target.column);
 	if (targetOffset === cursorOffset) {
-		backspace();
+		backspace(code);
 		return;
 	}
 
-	prepareUndo('delete-word-backward', false);
+	prepareUndo(code, 'delete-word-backward', false);
 	const removed = buffer.getTextRange(targetOffset, cursorOffset);
-	applyUndoableReplace(targetOffset, cursorOffset - targetOffset, '');
-	buffer.positionAt(targetOffset, tmpPosition);
-	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
-	recordEditContext('delete', removed);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	applyUndoableReplace(code, targetOffset, cursorOffset - targetOffset, '');
+	buffer.positionAt(targetOffset, code.scratch.editPosition);
+	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
+	recordEditContext(code, 'delete', removed);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 /**
  * Deletes from the cursor to the end of the next word.
  */
-export function deleteWordForward(): void {
-	if (!editorAllowsMutation()) {
+export function deleteWordForward(code: CodeEditorControl): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	const cursorOffset = buffer.offsetAt(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-	if (!hasSelection() && cursorOffset >= buffer.length) {
+	const buffer = code.model.buffer;
+	const cursorOffset = buffer.offsetAt(code.view.cursorRow, code.view.cursorColumn);
+	if (!hasSelection(code) && cursorOffset >= buffer.length) {
 		return;
 	}
-	if (hasSelection()) {
-		prepareUndo('delete-word-forward', false);
-		deleteSelectionIfPresent();
+	if (hasSelection(code)) {
+		prepareUndo(code, 'delete-word-forward', false);
+		deleteSelectionIfPresent(code);
 		return;
 	}
-	const destination = findWordRight(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	const destination = findWordRight(code, code.view.cursorRow, code.view.cursorColumn);
 	const destinationOffset = buffer.offsetAt(destination.row, destination.column);
 	if (destinationOffset === cursorOffset) {
-		deleteForward();
+		deleteForward(code);
 		return;
 	}
 
-	prepareUndo('delete-word-forward', false);
+	prepareUndo(code, 'delete-word-forward', false);
 	const removed = buffer.getTextRange(cursorOffset, destinationOffset);
-	applyUndoableReplace(cursorOffset, destinationOffset - cursorOffset, '');
-	buffer.positionAt(cursorOffset, tmpPosition);
-	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
-	recordEditContext('delete', removed);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	applyUndoableReplace(code, cursorOffset, destinationOffset - cursorOffset, '');
+	buffer.positionAt(cursorOffset, code.scratch.editPosition);
+	moveSingleCursor(code.view, code.scratch.editPosition.row, code.scratch.editPosition.column, false);
+	recordEditContext(code, 'delete', removed);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 // ============================================================================
@@ -508,17 +501,17 @@ export function deleteWordForward(): void {
  * Deletes the currently active line(s).
  * If there's a selection spanning multiple lines, deletes all selected lines.
  */
-export function deleteActiveLines(): void {
-	if (!editorAllowsMutation()) {
+export function deleteActiveLines(code: CodeEditorControl): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
 
-	const buffer = activeCodeEditor.model.buffer;
+	const buffer = code.model.buffer;
 	const lineCount = buffer.getLineCount();
-	const range = getSelectionRange();
+	const range = getSelectionRange(code);
 
-	let deletionStartRow = activeCodeEditor.view.cursorRow;
-	let deletionEndRow = activeCodeEditor.view.cursorRow;
+	let deletionStartRow = code.view.cursorRow;
+	let deletionEndRow = code.view.cursorRow;
 	let recordText = '\n';
 	if (range) {
 		deletionStartRow = range.start.row;
@@ -555,16 +548,16 @@ export function deleteActiveLines(): void {
 		return;
 	}
 
-	prepareUndo('delete-active-lines', false);
-	applyUndoableReplace(startOffset, deleteLength, '');
-	activeCodeEditor.view.cursorRow = activeCodeEditor.model.clampRow(deletionStartRow);
-	activeCodeEditor.view.cursorColumn = 0;
-	activeCodeEditor.view.selectionAnchor = null;
-	recordEditContext('delete', recordText);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	prepareUndo(code, 'delete-active-lines', false);
+	applyUndoableReplace(code, startOffset, deleteLength, '');
+	code.view.cursorRow = code.model.clampRow(deletionStartRow);
+	code.view.cursorColumn = 0;
+	code.view.selectionAnchor = null;
+	recordEditContext(code, 'delete', recordText);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 /**
@@ -572,10 +565,10 @@ export function deleteActiveLines(): void {
  * If there's a selection, returns the full line range of the selection.
  * Otherwise, returns just the current line.
  */
-export function getLineRangeForMovement(): { startRow: number; endRow: number } {
-	const range = getSelectionRange();
+export function getLineRangeForMovement(code: CodeEditorControl): { startRow: number; endRow: number } {
+	const range = getSelectionRange(code);
 	if (!range) {
-		return { startRow: activeCodeEditor.view.cursorRow, endRow: activeCodeEditor.view.cursorRow };
+		return { startRow: code.view.cursorRow, endRow: code.view.cursorRow };
 	}
 	let endRow = range.end.row;
 	if (range.end.column === 0 && endRow > range.start.row) {
@@ -588,16 +581,16 @@ export function getLineRangeForMovement(): { startRow: number; endRow: number } 
  * Moves the selected line(s) up or down by the specified delta.
  * @param delta Number of lines to move (negative for up, positive for down)
  */
-export function moveSelectionLines(delta: number): void {
-	if (!editorAllowsMutation()) {
+export function moveSelectionLines(code: CodeEditorControl, delta: number): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
 	if (delta === 0) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
+	const buffer = code.model.buffer;
 	const lineCount = buffer.getLineCount();
-	const range = getLineRangeForMovement();
+	const range = getLineRangeForMovement(code);
 	if (delta < 0 && range.startRow === 0) {
 		return;
 	}
@@ -633,36 +626,36 @@ export function moveSelectionLines(delta: number): void {
 		replacementText += '\n';
 	}
 
-	prepareUndo('move-lines', false);
-	applyUndoableReplace(regionStartOffset, regionEndOffset - regionStartOffset, replacementText);
-	activeCodeEditor.view.cursorRow += delta;
-	const anchor = activeCodeEditor.view.selectionAnchor;
+	prepareUndo(code, 'move-lines', false);
+	applyUndoableReplace(code, regionStartOffset, regionEndOffset - regionStartOffset, replacementText);
+	code.view.cursorRow += delta;
+	const anchor = code.view.selectionAnchor;
 	if (anchor) {
 		anchor.row += delta;
 	}
-	const cursorRow = activeCodeEditor.model.clampRow(activeCodeEditor.view.cursorRow);
-	activeCodeEditor.view.cursorRow = cursorRow;
-	activeCodeEditor.view.cursorColumn = activeCodeEditor.model.clampColumn(cursorRow, activeCodeEditor.view.cursorColumn);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	const cursorRow = code.model.clampRow(code.view.cursorRow);
+	code.view.cursorRow = cursorRow;
+	code.view.cursorColumn = code.model.clampColumn(cursorRow, code.view.cursorColumn);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 /**
  * Copies the current line or selected lines above/below without moving the originals.
  * @param delta Negative to copy upward, positive to copy downward.
  */
-export function copySelectionLines(delta: number): void {
-	if (!editorAllowsMutation()) {
+export function copySelectionLines(code: CodeEditorControl, delta: number): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
 	if (delta === 0) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
+	const buffer = code.model.buffer;
 	const lineCount = buffer.getLineCount();
-	const lineRange = getLineRangeForMovement();
+	const lineRange = getLineRangeForMovement(code);
 	const insertionStart = delta < 0 ? lineRange.startRow : lineRange.endRow + 1;
 	const rowOffset = insertionStart - lineRange.startRow;
 	const blockLines: string[] = [];
@@ -678,26 +671,26 @@ export function copySelectionLines(delta: number): void {
 	}
 	const insertionOffset = insertionStart < lineCount ? buffer.getLineStartOffset(insertionStart) : buffer.length;
 
-	prepareUndo('copy-lines', false);
-	applyUndoableReplace(insertionOffset, 0, insertionText);
+	prepareUndo(code, 'copy-lines', false);
+	applyUndoableReplace(code, insertionOffset, 0, insertionText);
 
-	const anchor = activeCodeEditor.view.selectionAnchor;
-	if (anchor && (anchor.row !== activeCodeEditor.view.cursorRow || anchor.column !== activeCodeEditor.view.cursorColumn)) {
-			const cursorRow = activeCodeEditor.view.cursorRow + rowOffset;
+	const anchor = code.view.selectionAnchor;
+	if (anchor && (anchor.row !== code.view.cursorRow || anchor.column !== code.view.cursorColumn)) {
+			const cursorRow = code.view.cursorRow + rowOffset;
 			anchor.row += rowOffset;
-			activeCodeEditor.view.cursorRow = cursorRow;
-			activeCodeEditor.view.cursorColumn = activeCodeEditor.model.clampColumn(cursorRow, activeCodeEditor.view.cursorColumn);
+			code.view.cursorRow = cursorRow;
+			code.view.cursorColumn = code.model.clampColumn(cursorRow, code.view.cursorColumn);
 	} else {
-		const targetRow = activeCodeEditor.model.clampRow(activeCodeEditor.view.cursorRow + rowOffset);
-		activeCodeEditor.view.cursorRow = targetRow;
-		activeCodeEditor.view.cursorColumn = activeCodeEditor.model.clampColumn(targetRow, activeCodeEditor.view.cursorColumn);
-		activeCodeEditor.view.selectionAnchor = null;
+		const targetRow = code.model.clampRow(code.view.cursorRow + rowOffset);
+		code.view.cursorRow = targetRow;
+		code.view.cursorColumn = code.model.clampColumn(targetRow, code.view.cursorColumn);
+		code.view.selectionAnchor = null;
 	}
-	recordEditContext('insert', blockLines.join('\n'));
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	recordEditContext(code, 'insert', blockLines.join('\n'));
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 // ============================================================================
@@ -707,55 +700,55 @@ export function copySelectionLines(delta: number): void {
 /**
  * Indents the current line or selected lines by adding one document indentation unit.
  */
-export function indentSelectionOrLine(): void {
-	if (!editorAllowsMutation()) {
+export function indentSelectionOrLine(code: CodeEditorControl): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	const unit = activeCodeEditor.model.language.indentationUnit;
-	prepareUndo('indent', false);
-	const range = getSelectionRange();
+	const buffer = code.model.buffer;
+	const unit = code.model.language.indentationUnit;
+	prepareUndo(code, 'indent', false);
+	const range = getSelectionRange(code);
 	if (!range) {
-		const row = activeCodeEditor.view.cursorRow;
+		const row = code.view.cursorRow;
 		const offset = buffer.getLineStartOffset(row);
-		applyUndoableReplace(offset, 0, unit);
-		moveSingleCursor(activeCodeEditor.view, row, activeCodeEditor.view.cursorColumn + unit.length, false);
-		recordEditContext('insert', unit);
-		markTextMutated();
-		resetBlink();
-		updateDesiredColumn();
-		revealCursor();
+		applyUndoableReplace(code, offset, 0, unit);
+		moveSingleCursor(code.view, row, code.view.cursorColumn + unit.length, false);
+		recordEditContext(code, 'insert', unit);
+		markTextMutated(code);
+		resetBlinkState(code.caret);
+		updateDesiredColumn(code);
+		revealCursor(code);
 		return;
 	}
 	for (let row = range.end.row; row >= range.start.row; row -= 1) {
 		const offset = buffer.getLineStartOffset(row);
-		applyUndoableReplace(offset, 0, unit);
+		applyUndoableReplace(code, offset, 0, unit);
 	}
-	const anchor = activeCodeEditor.view.selectionAnchor;
+	const anchor = code.view.selectionAnchor;
 	if (anchor) {
 		anchor.column += unit.length;
 	}
-	activeCodeEditor.view.cursorColumn += unit.length;
-	recordEditContext('insert', unit);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	code.view.cursorColumn += unit.length;
+	recordEditContext(code, 'insert', unit);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 /**
  * Unindents the current line or selected lines by removing up to one document indentation unit.
  */
-export function unindentSelectionOrLine(): void {
-	if (!editorAllowsMutation()) {
+export function unindentSelectionOrLine(code: CodeEditorControl): void {
+	if (!editorAllowsMutation(code)) {
 		return;
 	}
-	const buffer = activeCodeEditor.model.buffer;
-	const unitLength = activeCodeEditor.model.language.indentationUnit.length;
-	const range = getSelectionRange();
+	const buffer = code.model.buffer;
+	const unitLength = code.model.language.indentationUnit.length;
+	const range = getSelectionRange(code);
 	if (!range) {
-		const row = activeCodeEditor.view.cursorRow;
-		const line = currentLine();
+		const row = code.view.cursorRow;
+		const line = currentLine(code);
 		if (line.length === 0) {
 			return;
 		}
@@ -763,18 +756,18 @@ export function unindentSelectionOrLine(): void {
 		if (length === 0) {
 			return;
 		}
-		prepareUndo('unindent', false);
+		prepareUndo(code, 'unindent', false);
 		const offset = buffer.getLineStartOffset(row);
-		applyUndoableReplace(offset, length, '');
-		moveSingleCursor(activeCodeEditor.view, row, Math.max(0, activeCodeEditor.view.cursorColumn - length), false);
-		recordEditContext('delete', line.slice(0, length));
-		markTextMutated();
-		resetBlink();
-		updateDesiredColumn();
-		revealCursor();
+		applyUndoableReplace(code, offset, length, '');
+		moveSingleCursor(code.view, row, Math.max(0, code.view.cursorColumn - length), false);
+		recordEditContext(code, 'delete', line.slice(0, length));
+		markTextMutated(code);
+		resetBlinkState(code.caret);
+		updateDesiredColumn(code);
+		revealCursor(code);
 		return;
 	}
-	const anchor = activeCodeEditor.view.selectionAnchor;
+	const anchor = code.view.selectionAnchor;
 	let changed = false;
 	for (let row = range.end.row; row >= range.start.row; row -= 1) {
 		const line = buffer.getLineContent(row);
@@ -786,24 +779,24 @@ export function unindentSelectionOrLine(): void {
 			continue;
 		}
 		if (!changed) {
-			prepareUndo('unindent', false);
+			prepareUndo(code, 'unindent', false);
 			changed = true;
 		}
 		const offset = buffer.getLineStartOffset(row);
-		applyUndoableReplace(offset, length, '');
+		applyUndoableReplace(code, offset, length, '');
 		if (anchor?.row === row) anchor.column = Math.max(0, anchor.column - length);
-		if (activeCodeEditor.view.cursorRow === row) {
-			activeCodeEditor.view.cursorColumn = Math.max(0, activeCodeEditor.view.cursorColumn - length);
+		if (code.view.cursorRow === row) {
+			code.view.cursorColumn = Math.max(0, code.view.cursorColumn - length);
 		}
 	}
 	if (!changed) {
 		return;
 	}
-	recordEditContext('delete', activeCodeEditor.model.language.indentationUnit);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	recordEditContext(code, 'delete', code.model.language.indentationUnit);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 // ============================================================================
@@ -811,47 +804,47 @@ export function unindentSelectionOrLine(): void {
 // ============================================================================
 
 /** Source editors copy/cut the current line when no text is selected. */
-export function getClipboardText(): string {
-	const selected = getSelectionText();
+export function getClipboardText(code: CodeEditorControl): string {
+	const selected = getSelectionText(code);
 	if (selected !== null) return selected;
-	const line = currentLine();
-	return activeCodeEditor.view.cursorRow < activeCodeEditor.model.buffer.getLineCount() - 1 ? `${line}\n` : line;
+	const line = currentLine(code);
+	return code.view.cursorRow < code.model.buffer.getLineCount() - 1 ? `${line}\n` : line;
 }
 
 /** Called only after the platform admitted a synchronous Cut. */
-export function cutClipboardText(): void {
-	if (hasSelection()) deleteSelection();
-	else deleteActiveLines();
+export function cutClipboardText(code: CodeEditorControl): void {
+	if (hasSelection(code)) deleteSelection(code);
+	else deleteActiveLines(code);
 }
 
 /**
  * Pastes admitted clipboard text through the ordinary editor and Undo owner.
  */
-export function pasteText(text: string): void {
+export function pasteText(code: CodeEditorControl, text: string): void {
 	if (text.length === 0) {
 		showEditorMessage('Editor clipboard is empty', 'warning', 1.5);
 		return;
 	}
-	if (!editorAllowsMutation()) {
+	if (!editorAllowsMutation(code)) {
 		showEditorMessage('Tab is read-only', 'warning', 1.5);
 		return;
 	}
-	prepareUndo('paste', false);
-	if (hasSelection()) {
-		replaceSelectionWith(text);
+	prepareUndo(code, 'paste', false);
+	if (hasSelection(code)) {
+		replaceSelectionWith(code, text);
 	} else {
-		insertClipboardText(text);
+		insertClipboardText(code, text);
 	}
 	showEditorMessage('Pasted text', 'success', 1.5);
 }
 
-export function applyDocumentFormatting(): void {
-	const buffer = activeCodeEditor.model.buffer;
+export function applyDocumentFormatting(code: CodeEditorControl): void {
+	const buffer = code.model.buffer;
 	const originalSource = getTextSnapshot(buffer);
 	const originalLines = getLinesSnapshot(buffer);
 	try {
 		let formatted: string;
-		switch (activeCodeEditor.model.mode) {
+		switch (code.model.mode) {
 			case 'yaml':
 				showEditorMessage('YAML formatting is not available', 'info', 2.0);
 				return;
@@ -861,7 +854,7 @@ export function applyDocumentFormatting(): void {
 			case 'aem':
 				formatted = formatAemDocument(
 					originalSource,
-					activeCodeEditor.model.resource.path,
+					code.model.resource.path,
 					originalLines,
 				);
 				break;
@@ -870,19 +863,19 @@ export function applyDocumentFormatting(): void {
 			showEditorMessage('Document already formatted', 'info', 1.5);
 			return;
 		}
-		const cursorOffset = buffer.offsetAt(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-		prepareUndo('format-document', false);
-		recordEditContext('replace', formatted);
-		applyUndoableReplace(0, buffer.length, formatted);
-		const restoredOffset = activeCodeEditor.model.clampOffset(cursorOffset);
-		buffer.positionAt(restoredOffset, tmpPosition);
-		activeCodeEditor.view.cursorRow = tmpPosition.row;
-		activeCodeEditor.view.cursorColumn = tmpPosition.column;
-		activeCodeEditor.view.selectionAnchor = null;
-		updateDesiredColumn();
-		resetBlink();
-		revealCursor();
-		markTextMutated();
+		const cursorOffset = buffer.offsetAt(code.view.cursorRow, code.view.cursorColumn);
+		prepareUndo(code, 'format-document', false);
+		recordEditContext(code, 'replace', formatted);
+		applyUndoableReplace(code, 0, buffer.length, formatted);
+		const restoredOffset = code.model.clampOffset(cursorOffset);
+		buffer.positionAt(restoredOffset, code.scratch.editPosition);
+		code.view.cursorRow = code.scratch.editPosition.row;
+		code.view.cursorColumn = code.scratch.editPosition.column;
+		code.view.selectionAnchor = null;
+		updateDesiredColumn(code);
+		resetBlinkState(code.caret);
+		revealCursor(code);
+		markTextMutated(code);
 		showEditorMessage('Document formatted', 'success', 1.6);
 	} catch (error) {
 		const message = extractErrorMessage(error);

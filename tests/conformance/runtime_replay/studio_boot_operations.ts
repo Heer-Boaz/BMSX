@@ -1,6 +1,6 @@
+import { sourcePane } from './studio_fixture';
 import { check, type StudioFixture } from './studio_fixture';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
-import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 
 /** Actual commands, firmware and debugger; automated evidence, not UI-only authoring. */
@@ -81,7 +81,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === captured && model.dirty,
 		'boot: only the admitted revision is installed; later edits remain authored and unsaved');
 	check((await initializer.completion).status === 'cancelled' && !ide.debugger.plans.mutationActive && ide.debugger.source.stop === undefined
-		&& runtimeErrorState.activeOverlay === null, 'boot: accepted reset retires real init work and stale debugger/error projections');
+		&& sourcePane(test).code.runtimeError.activeOverlay === null, 'boot: accepted reset retires real init work and stale debugger/error projections');
 	ide.debugger.breakpoints.toggle(model.resource, initLine);
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'boot: captured source executes after reset');
 	await reachNemesisTitle(test);

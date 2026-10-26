@@ -20,14 +20,9 @@ import type { LogOutput } from '../../hosts/common/log';
 import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId } from '../common/commands';
 import type { EditorActionRequest } from './action_request';
-import { renameController } from '../workbench/contrib/code_editor/rename/controller';
-import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './search';
-import { executeEditorSymbolNavigationCommand, isEditorSymbolNavigationCommand } from './symbol_navigation';
 import { executeEditorViewCommand, isEditorViewCommand } from './view';
-import { editorViewState } from '../editor/ui/view/state';
 import { problemsPanel } from '../workbench/contrib/problems/panel/controller';
-import { isActiveLuaCodeTab } from '../workbench/ui/code_tab/contexts';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
 import { TextEditorInput } from '../workbench/common/editor_input';
@@ -259,16 +254,8 @@ export class IdeCommandController {
 				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
 				return;
 		}
-		if (isEditorSymbolNavigationCommand(command)) {
-			executeEditorSymbolNavigationCommand(
-				this.editor,
-				this.sources,
-				command,
-			);
-			return;
-		}
 		if (isEditorSearchCommand(command)) {
-			executeEditorSearchCommand(this.editor, this.sources, renameController, command);
+			executeEditorSearchCommand(this.editor, this.sources, command, group);
 			return;
 		}
 		if (isEditorViewCommand(command)) {
@@ -433,12 +420,6 @@ export class IdeCommandController {
 				return this.textFileSaves.acceptingSaves && activeInput instanceof TextEditorInput
 					&& (activeInput.canSave() || !activeInput.readOnly && focus?.edit?.pending === true);
 			}
-			case 'symbolSearch':
-			case 'symbolSearchGlobal':
-			case 'referenceSearch':
-			case 'goToDefinition':
-			case 'callHierarchy':
-				return isActiveLuaCodeTab(group);
 			case 'aem.testEvent': {
 				const input = group.model.activeTab;
 				if (input?.kind !== 'aem_editor') return false;
@@ -469,19 +450,11 @@ export class IdeCommandController {
 				return group.model.activeTab?.kind === 'scene_editor';
 			case 'behaviorLens.source':
 				return group.model.activeTab?.kind === 'behavior_lens';
-			case 'rename':
-			case 'renamePreview':
-				return isActiveLuaCodeTab(group) && !activeCodeEditor.model.readOnly;
-			case 'findGlobal':
-			case 'findLocal':
-			case 'lineJump':
-			case 'wrap':
-				return (group.model.activeTab?.kind === 'code_editor');
 			case 'filter':
 				return this.editor.resourcePanel.isVisible()
 					&& this.editor.resourcePanel.getMode() === 'resources';
 			default:
-				return isEditorSymbolNavigationCommand(command) || isEditorSearchCommand(command)
+				return isEditorSearchCommand(command)
 					|| isEditorViewCommand(command) || isEditorWorkspaceCommand(command);
 		}
 	}
@@ -490,6 +463,8 @@ export class IdeCommandController {
 		const originGroup = findEditorGroup(target);
 		if (originGroup === null) return false;
 		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
+		const implementation = target?.getCommand(command);
+		if (implementation !== undefined) return implementation.isChecked?.() === true;
 		switch (command) {
 			case 'runtime.toggleTimeline': return this.editor.runtimeTimeline.requested;
 			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
@@ -520,8 +495,6 @@ export class IdeCommandController {
 				return (group.model.activeTab?.kind === 'scenario_lab');
 			case 'filter':
 				return this.editor.resourcePanel.getFilterMode() === 'lua_only';
-			case 'wrap':
-				return editorViewState.wordWrapEnabled;
 			default:
 				return false;
 		}

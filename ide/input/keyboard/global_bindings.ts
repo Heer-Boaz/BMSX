@@ -1,17 +1,8 @@
 import type { EditorCommandRunner } from '../../common/commands';
 import { inputFocus, type InputFocusTarget } from '../focus';
 import { resolveEditorCommandKeybinding } from './command_keybindings';
-import { consumeIdeKey, isKeyJustPressed } from './key_input';
-import { handleEscapeKey } from './modal_input';
-import { ESCAPE_KEY } from '../../common/constants';
+import { consumeIdeKey } from './key_input';
 import type { KeyInputEvent } from '../../../hosts/common/input/text';
-import type { EditorSearchController } from '../../workbench/contrib/code_editor/find/search';
-
-export function handleEscapeBinding(event: KeyInputEvent, search: EditorSearchController): boolean {
-	if (!isKeyJustPressed(ESCAPE_KEY, event) || !handleEscapeKey(search)) return false;
-	consumeIdeKey(ESCAPE_KEY, event);
-	return true;
-}
 
 export function handleEditorCommandBindings(event: KeyInputEvent, commands: EditorCommandRunner | undefined, target: InputFocusTarget | null = inputFocus.target): boolean {
 	if (!event.down || event.consumed) return false;

@@ -69,8 +69,10 @@ separate from serialized view state and explicit navigation selections.
 Text history retains source selections and inert editing origins, not viewport
 coordinates or control references. Source history commands name their invoking
 view; sibling views track the canonical text changes independently.
-The Source widget, native text input and code-layout state belong to the primary
-frontend control; independent Source inputs are not multiple attached controls.
+Each Source pane owns a concrete `CodeEditorControl`: native text input, focus,
+selection gestures, viewport, caret and render caches belong to that instance.
+Find, Rename, Suggest and hover are pane-bound contributions. Source actions
+retain that pane and its group; they do not resolve through a primary editor.
 `workbench/services/editor/` owns editor-kind resolution and pane attachment:
 a pane is a reusable control
 bound to one input, not the lifetime owner of that input or its source.

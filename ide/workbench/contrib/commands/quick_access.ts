@@ -15,7 +15,7 @@ export function buildCommandQuickPickItems(commands: Pick<IdeCommandController, 
 		const binding = EDITOR_COMMAND_KEYBINDING_LABELS.get(command);
 		items.push({
 			command,
-			label: `${presentation.category}: ${editorCommandTitle(command, commands.isActive(command))}`,
+			label: `${presentation.category}: ${editorCommandTitle(command, commands.isActive(command, origin))}`,
 			description: '',
 			detail: binding === undefined ? '' : binding,
 		});

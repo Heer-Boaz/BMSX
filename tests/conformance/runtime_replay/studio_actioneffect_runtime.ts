@@ -1,10 +1,10 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behavior_lens/quick_access';
 import type { RuntimeInspectionProperty } from '../../../ide/workbench/contrib/behavior_lens/runtime_properties';
 import type { InspectedPropertyRow } from '../../../ide/workbench/ui/property_inspector/model';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Deliberately open the never-executed same-id registration, not the actual definition producer. */
 export async function openRuntimeEffectLens(test: StudioFixture) {
@@ -82,8 +82,8 @@ export async function testRuntimeEffectSource(test: StudioFixture): Promise<void
 	check(inspector.isEnabled('propertyInspector.source'), 'runtime effect: actual closure identity offers its own source');
 	await test.click(inspector.actionBar.items[0].bounds, 6);
 	const row = original.split('\n').findIndex(line => line.includes('handler = function'));
-	check(activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === row
-		&& activeCodeEditor.view.cursorColumn === original.split('\n')[row].indexOf('function'), 'runtime effect: held Source opens the actual callback, not the never-executed registration');
+	check(sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === row
+		&& sourcePane(test).code.view.cursorColumn === original.split('\n')[row].indexOf('function'), 'runtime effect: held Source opens the actual callback, not the never-executed registration');
 	check(model.version === version && cycles() === position, 'runtime effect: Source is navigation, not a source/guest edit');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- pending source\n' }]);
 	const changed = await openRuntimeEffectInspector(test, 'first', 20);

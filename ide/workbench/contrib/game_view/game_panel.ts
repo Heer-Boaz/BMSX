@@ -106,8 +106,8 @@ export class GamePanel {
 		}
 		// Temporary constraints change presentation, not the user's open/placement intent.
 		const visible = this.enabled && pane !== null && minimumClientWidth !== undefined
-			&& editorViewState.viewportWidth - editorViewState.codeAreaLeft >= minimumClientWidth + this.minimumWidth + SPLIT_GAP
-			&& editorViewState.codeAreaBottom - topMargin() >= this.minimumHeight;
+			&& editorViewState.viewportWidth - editorViewState.editorAreaLeft >= minimumClientWidth + this.minimumWidth + SPLIT_GAP
+			&& editorViewState.editorAreaBottom - topMargin() >= this.minimumHeight;
 		if (visible !== this.visible) {
 			if (visible) { this.sash.setInput(this.split); this.actions.setInput(this.actionBar, this.focusTarget); this.gameInput.setInput(this.frame); }
 			else this.detach();
@@ -120,7 +120,7 @@ export class GamePanel {
 		this.focusTarget.commandContext = pane.runtimeControlContext ?? this.focusTarget;
 		this.sash.focusTarget.commandContext = this.focusTarget.commandContext;
 		this.actions.setInput(this.actionBar, this.focusTarget.commandContext);
-		this.split.layout(editorViewState.codeAreaLeft, topMargin(), editorViewState.viewportWidth, editorViewState.codeAreaBottom);
+		this.split.layout(editorViewState.editorAreaLeft, topMargin(), editorViewState.viewportWidth, editorViewState.editorAreaBottom);
 		const left = this.split.position + SPLIT_GAP / 2, top = this.split.bounds.top;
 		const right = this.split.bounds.right, bottom = this.split.bounds.bottom;
 		editorChromeState.editorRightInset = editorViewState.viewportWidth - (this.split.position - SPLIT_GAP / 2);

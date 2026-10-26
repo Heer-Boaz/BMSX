@@ -1,10 +1,6 @@
-import { activeSearchMatchCount, jumpToNextMatch, jumpToPreviousMatch, searchPageSize, stepSearchSelection } from '../../../workbench/contrib/code_editor/find/search';
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, isKeyDown } from '../../keyboard/key_input';
-import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
-import { editorSearchState } from '../../../workbench/contrib/code_editor/find/widget_state';
-import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { EditorSearchController } from '../../../workbench/contrib/code_editor/find/search';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 
 type SearchSelectionOptions = {
@@ -12,94 +8,79 @@ type SearchSelectionOptions = {
 	keepSearchActive?: boolean;
 };
 
-function openSelectedGlobalMatch(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	options?: SearchSelectionOptions,
-): void {
-	if (editorSearchState.scope !== 'global' || options?.preview) {
-		return;
-	}
-	const match = editorSearchState.globalMatches[editorSearchState.currentIndex];
-	if (match) {
-		openGlobalSearchMatch(editor.editorGroup, sources, match);
-	}
-}
-
-function stepSearchSelectionFromInput(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	delta: number,
-	options?: SearchSelectionOptions & { wrap?: boolean },
-): void {
-	stepSearchSelection(delta, options);
-	openSelectedGlobalMatch(editor, sources, options);
+function stepSearchSelectionFromInput(search: EditorSearchController, delta: number,
+	options?: SearchSelectionOptions & { wrap?: boolean }): void {
+	search.stepSearchSelection(delta, options);
+	if (!options?.preview) search.openSelectedGlobalMatch();
 }
 
 export function handleSearchInput(
 	playerInput: KeyInputEvent,
-	editor: CartEditor,
-	sources: RuntimeSourceState,
+	search: EditorSearchController,
 ): void {
-	const search = editor.search;
+	if (isKeyJustPressed('Escape', playerInput)) {
+		consumeIdeKey('Escape', playerInput);
+		search.closeSearch(false);
+		return;
+	}
 	const shiftDown = isShiftDown(playerInput);
 	const ctrlDown = isCtrlDown(playerInput);
 	const metaDown = isMetaDown(playerInput);
 	const altDown = isAltDown(playerInput);
 	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF', playerInput)) {
 		consumeIdeKey('KeyF', playerInput);
-		search.openSearch(false, 'global');
+		search.switchScope('global');
 		return;
 	}
 	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('KeyF', playerInput)) {
 		consumeIdeKey('KeyF', playerInput);
-		search.openSearch(false, 'local');
+		search.switchScope('local');
 		return;
 	}
-	const hasResults = activeSearchMatchCount() > 0;
-	const previewLocal = editorSearchState.scope === 'local';
+	const hasResults = search.activeSearchMatchCount() > 0;
+	const previewLocal = search.state.scope === 'local';
 	if (isKeyJustPressed('Enter', playerInput)) {
 		consumeIdeKey('Enter', playerInput);
 		if (hasResults) {
-			stepSearchSelectionFromInput(editor, sources, shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
+			stepSearchSelectionFromInput(search, shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
 		} else if (shiftDown) {
-			jumpToPreviousMatch();
+			search.jumpToPreviousMatch();
 		} else {
-			jumpToNextMatch();
+			search.jumpToNextMatch();
 		}
 		return;
 	}
 	if (isKeyJustPressed('F3', playerInput)) {
 		consumeIdeKey('F3', playerInput);
 		if (shiftDown) {
-			jumpToPreviousMatch();
+			search.jumpToPreviousMatch();
 		} else {
-			jumpToNextMatch();
+			search.jumpToNextMatch();
 		}
 		return;
 	}
 	if (hasResults) {
 		if (isKeyDown('ArrowUp', playerInput)) {
 			consumeIdeKey('ArrowUp', playerInput);
-			stepSearchSelectionFromInput(editor, sources, -1, { preview: previewLocal });
+			stepSearchSelectionFromInput(search, -1, { preview: previewLocal });
 			return;
 		}
 		if (isKeyDown('ArrowDown', playerInput)) {
 			consumeIdeKey('ArrowDown', playerInput);
-			stepSearchSelectionFromInput(editor, sources, 1, { preview: previewLocal });
+			stepSearchSelectionFromInput(search, 1, { preview: previewLocal });
 			return;
 		}
 		if (isKeyDown('PageUp', playerInput)) {
 			consumeIdeKey('PageUp', playerInput);
-			stepSearchSelectionFromInput(editor, sources, -searchPageSize(), { preview: previewLocal });
+			stepSearchSelectionFromInput(search, -search.searchPageSize(), { preview: previewLocal });
 			return;
 		}
 		if (isKeyDown('PageDown', playerInput)) {
 			consumeIdeKey('PageDown', playerInput);
-			stepSearchSelectionFromInput(editor, sources, searchPageSize(), { preview: previewLocal });
+			stepSearchSelectionFromInput(search, search.searchPageSize(), { preview: previewLocal });
 			return;
 		}
 
 	}
-	applyInlineFieldEditing(playerInput, editorSearchState.field);
+	applyInlineFieldEditing(playerInput, search.state.field);
 }

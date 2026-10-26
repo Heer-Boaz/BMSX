@@ -33,12 +33,10 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { InputFocusScope, inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
-import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
@@ -330,17 +328,14 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const previousFont = editorViewState.font, previousLineHeight = editorViewState.lineHeight,
-		previousAdvance = editorViewState.charAdvance, previousScrollbar = editorViewState.scrollbarController;
+		previousAdvance = editorViewState.charAdvance;
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	editorViewState.scrollbarController = new ScrollbarController({
-		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'), resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'),
-	}, () => {}, pointerCapture);
 	const pane = new ActorLabEditorPane(commands, contextMenu, surfaces, owner, bounds, inputFocus.workbenchScope);
 	t.after(() => {
 		inputFocus.setTarget(null); pane.dispose(); surfaces.dispose(); input.dispose();
 		editorViewState.font = previousFont; editorViewState.lineHeight = previousLineHeight;
-		editorViewState.charAdvance = previousAdvance; editorViewState.scrollbarController = previousScrollbar;
+		editorViewState.charAdvance = previousAdvance;
 	});
 	const choices = readActorChoices(f.sources, f.guest, -1);
 	input.domain = -1;

@@ -1,8 +1,8 @@
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 const SOURCE = `local trees<const> = require('cartlib/behaviour_tree/library')
 local tasks<const> = {}
@@ -20,7 +20,7 @@ ${Array.from({ length: 70 }, (_, n) => `\towner.finished_${n} = ${n}`).join('\n'
 export async function testStudioBehaviorInspector(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, click, frame, runPaletteCommand, cycles } = test;
 	harness.openLuaSource('cart.lua');
-	const model = activeCodeEditor.model, original = model.buffer.getText(), position = cycles();
+	const model = sourcePane(test).code.model, original = model.buffer.getText(), position = cycles();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.inspection');
@@ -61,7 +61,7 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	for (let n = 0; n < targetIndex; n += 1) await press('ArrowDown');
 	await click(inspector.actionBar.items[0].bounds, 30);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === property.element.source!.range.start.line - 1
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === property.element.source!.range.start.line - 1
 		&& model.version === version && cycles() === position, 'inspection: held Source opens the property, never inserts text or runs the guest');
 	await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorGroup.model.activeTab === lens && viewport.model === geometry, 'inspection: ordinary navigation Back restores the retained diagram');

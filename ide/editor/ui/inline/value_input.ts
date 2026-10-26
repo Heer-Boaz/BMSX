@@ -4,7 +4,7 @@ import type { InlineInputOptions } from '../../../common/models';
 import type { InputEdit, InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
-import { resetBlink } from '../../render/caret';
+import { resetInlineBlink } from '../../render/caret';
 import { TextField } from './text_field_model';
 import { applyInlineFieldEditing, applyInlineFieldPointer, selectAll, setFieldText } from './text_field';
 import { SingleLineFieldViewport } from './single_line_viewport';
@@ -37,8 +37,8 @@ export class ValueInput<Value> implements InputEdit {
 		this.field = new TextField(parent, format.options);
 		this.field.focusTarget.edit = this;
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
-		this.field.focusTarget.onDidFocus(() => { selectAll(this.field); resetBlink(); });
-		this.field.onDidChangeText(() => { this.error = ''; resetBlink(); });
+		this.field.focusTarget.onDidFocus(() => { selectAll(this.field); resetInlineBlink(); });
+		this.field.onDidChangeText(() => { this.error = ''; resetInlineBlink(); });
 		this.field.focusTarget.onDidBlur(() => {
 			if (!this.commit()) {
 				showEditorMessage(this.format.invalidBlurMessage, 'warning', 4);
@@ -94,7 +94,7 @@ export class ValueInput<Value> implements InputEdit {
 		this.pointer.pointerX = x;
 		this.pointer.justPressed = justPressed;
 		this.pointer.pointerPressed = pressed;
-		if (applyInlineFieldPointer(this.field, this.pointer).requestBlinkReset) resetBlink();
+		if (applyInlineFieldPointer(this.field, this.pointer).requestBlinkReset) resetInlineBlink();
 	}
 
 	private handleKeyboard(input: KeyInputEvent): void {

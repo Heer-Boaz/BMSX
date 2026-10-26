@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus } from '../../ide/input/focus';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneOptionEditor } from '../../ide/workbench/contrib/scene_editor/option_editor';

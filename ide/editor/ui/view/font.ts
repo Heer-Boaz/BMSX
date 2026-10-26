@@ -1,5 +1,6 @@
 import { DEFAULT_FONT_VARIANT, Font, type FontVariant, type FontStyle } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { FontGlyph } from 'bmsx/render/shared/bitmap_font';
+import { TAB_SPACES } from '../../../common/constants';
 
 export class EditorFont {
 	private font: Font | null = null;
@@ -35,6 +36,17 @@ export class EditorFont {
 	public get lineHeight(): number {
 		return this.renderFontOwner().lineHeight;
 	}
+
+	/** Text-editor width uses fixed tab expansion and no advance for line separators. */
+	public readonly measureTextRange = (text: string, start: number, end: number): number => {
+		let width = 0;
+		for (let index = start; index < end; index++) {
+			const char = text.charAt(index);
+			if (char === '\t') width += this.advance(' ') * TAB_SPACES;
+			else if (char !== '\n') width += this.advance(char);
+		}
+		return width;
+	};
 
 	public measure(text: string): number {
 		return this.renderFontOwner().measure(text);

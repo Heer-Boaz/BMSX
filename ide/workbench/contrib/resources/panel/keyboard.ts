@@ -1,7 +1,7 @@
 import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../../input/keyboard/key_input';
-import { resetBlink } from '../../../../editor/render/caret';
+import { resetInlineBlink } from '../../../../editor/render/caret';
 import type { ResourcePanelController } from './controller';
 
 export function handleResourcePanelKeyboardInput(playerInput: KeyInputEvent, controller: ResourcePanelController): void {
@@ -30,7 +30,7 @@ export function handleResourcePanelKeyboardInput(playerInput: KeyInputEvent, con
 	if (isKeyJustPressed('Tab', playerInput)) {
 		consumeIdeKey('Tab', playerInput);
 		controller.setFocused(false);
-		resetBlink();
+		resetInlineBlink();
 		return;
 	}
 	if (controller.getMode() !== 'resources') {

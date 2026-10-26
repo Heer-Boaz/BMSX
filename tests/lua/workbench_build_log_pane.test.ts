@@ -4,9 +4,8 @@ import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import type { StudioBuildJob } from '../../hosts/common/studio_builds';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
-import { editorViewState } from '../../ide/editor/ui/view/state';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
+
 import { inputFocus } from '../../ide/input/focus';
 import { resolveEditorCommandKeybinding } from '../../ide/input/keyboard/command_keybindings';
 import { pointerCapture } from '../../ide/input/pointer/capture';
@@ -16,12 +15,10 @@ import { BuildLogPane } from '../../ide/workbench/contrib/builds/editor_pane';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
-import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 
 const ERROR = 'compiler: first\r\n\t' + 'a_real_long_authored_path/'.repeat(15) + ':1:48: unexpected )\n';
 
 async function fixture(t: TestContext, failed = true) {
-	const oldScrollbar = editorViewState.scrollbarController;
 	configureFontVariant('tiny');
 	const job: StudioBuildJob = { request: { requestId: 'actual-request-identity', target: 'cpu_soak', debug: true, optLevel: 0 },
 		state: failed ? 'failed' : 'completed', phase: 'Done', version: { generation: 1, sequence: 1 }, acceptedAt: 0, updatedAt: 1,
@@ -30,8 +27,6 @@ async function fixture(t: TestContext, failed = true) {
 	const builds: WorkspaceBuilds = { jobs: [job], pending: [], targets: async () => ['cpu_soak'], submit: async () => job,
 		get: async () => { reads++; return job; }, cancel: async () => job, forget() {}, log: async () => '' };
 	const input = new BuildLogInput(job, builds), clipboard = new HeadlessClipboard();
-	const vertical = input.document.viewport.scrollbar, horizontal = new Scrollbar('horizontal');
-	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: vertical, resourceVertical: vertical, codeHorizontal: horizontal, resourceHorizontal: horizontal }, () => {}, pointerCapture);
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
 	const bounds = { left: 13, top: 21, right: 333, bottom: 241 };
 	const surfaces = new WorkbenchSurfaceService();
@@ -41,7 +36,7 @@ async function fixture(t: TestContext, failed = true) {
 	await input.refresh(); pane.setInput(input, bounds); pane.focus();
 	t.after(() => {
 		pane.clearInput(); inputFocus.setTarget(null); pane.dispose(); menu.dispose(); input.dispose();
-		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); editorViewState.scrollbarController = oldScrollbar;
+		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose();
 	});
 	return { input, pane, clipboard, bounds, reads: () => reads };
 }

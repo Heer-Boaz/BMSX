@@ -1,3 +1,5 @@
+import { createTestCodeControl } from '../helpers/code_control';
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -5,14 +7,13 @@ import type { WheelInputSnapshot } from '../../ide/common/models';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { drawCompletionPopupWithRenderer } from '../../ide/editor/render/completion';
-import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { api } from '../../ide/runtime/overlay_api';
 import { CompletionController } from '../../ide/workbench/contrib/code_editor/suggest/completion_controller';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 test('completion wheel scrolls continuously without changing selection; keyboard navigation reveals its selection', t => {
 	t.after(() => {
-		activeCodeEditor.detach();
 		resetSemanticProjects(editorTextModelService);
 		editorTextModelService.clear();
 	});
@@ -21,12 +22,14 @@ test('completion wheel scrolls continuously without changing selection; keyboard
 	for (let index = 0; index < 30; index += 1) editorTextModelService.retain(resource(`carts/example/authoring/module_${index}.lua`), 'lua', 'return {}');
 	const view = createCodeEditorViewState();
 	view.cursorColumn = importer.buffer.getText().indexOf("')");
-	activeCodeEditor.attach(importer, view);
+	const { documents, clock } = createTestCodeDocuments(t, editorTextModelService);
+	const code = createTestCodeControl(t, importer, documents, clock, view);
 	class ReadyCompletionController extends CompletionController {
 		protected override isCompletionReady() { return true; }
 		protected override isCompletionContextActive() { return true; }
 	}
-	const controller = new ReadyCompletionController(createScenarioTestSourceState([]), null, null, null);
+	const controller = new ReadyCompletionController(code, createScenarioTestSourceState([]), null, null, null);
+	t.after(() => controller.clearInput());
 	controller.handleKeybindings(new KeyInputEvent('Space', KeyModifier.ctrl));
 	const session = controller.session!;
 	assert.ok(session);

@@ -1,10 +1,10 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behavior_lens/quick_access';
 import { inspectBehaviorTreeInstance, readBehaviorTreeInstances } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_runtime';
 import { medianMilliseconds } from '../../helpers/performance';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Open the unexecuted same-id registration: its wait node is not the running program. */
 export async function openRuntimeTreePicker(test: StudioFixture, expectedCount = 4): Promise<void> {
@@ -78,7 +78,7 @@ export async function testRuntimeTreeSource(test: StudioFixture): Promise<void> 
 	const version = model.version, source = model.buffer.getText();
 	check(inspector.isEnabled('propertyInspector.source'), 'runtime BT: blackboard callback Source enabled');
 	await test.click(inspector.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === source.split('\n').findIndex(line => line.startsWith('function callbacks.tree_tick')),
+	check(sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === source.split('\n').findIndex(line => line.startsWith('function callbacks.tree_tick')),
 		'runtime BT: Source opens the actual callback module, not the written wait node');
 	check(model.version === version, 'runtime BT: held Source does not edit text');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- pending BT callback\n' }]);

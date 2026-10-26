@@ -1,3 +1,6 @@
+import type { CodeEditorContext } from '../../ui/code_editor_state';
+import type { CodeEditorControl } from '../../ui/code_editor_control';
+import { resetBlinkState } from '../../ui/view/caret/blink';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { editorTextModelService } from '../../model/model_service';
@@ -15,9 +18,6 @@ import { resolveRuntimeLuaSourceForContext } from '../../../runtime/sources';
 import { readRuntimeLuaValue } from '../../../runtime/lua_inspection';
 import type { LuaDefinitionLocation, LuaMemberCompletion, LuaSymbolEntry } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
-import { editorCaretState } from '../../ui/view/caret/state';
-import { intellisenseUiState } from './ui_state';
-import { resetBlink } from '../../render/caret';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
@@ -26,15 +26,12 @@ import { getOrCreateSemanticProject } from './semantic/workspace/state';
 import { semanticSymbolKindToLuaSymbolKind } from '../../../../toolchain/ts/lua/semantic/common';
 import { getLuaTextContext, LuaTextContext } from '../../../common/text';
 import type { EditorContextToken, LuaCompletionItem } from '../../../common/models';
-import type { CodeEditorContext } from '../../ui/code_editor_state';
 import {
 	type ResourceDomain,
 } from '../../../common/resource';
 import { KEYWORDS, isLuaTrivia, LuaTokenType, type LuaToken } from '../../../../toolchain/ts/lua/syntax/token';
 import type { TextBuffer } from '../../text/text_buffer';
-import { activeCodeEditor } from '../../ui/code_editor_state';
 import { clearSingleCursorSelection } from '../../editing/cursor/state';
-import { referenceState } from '../references/state';
 import { queryDefinitionsAt } from '../definitions/query';
 import { definitionLocationFromSourceRange } from '../../navigation/source_range';
 import { createEditorSemanticFrontend } from './frontend';
@@ -80,7 +77,7 @@ export function buildMemberCompletionItems(
 	return items;
 }
 
-function extractIdentifierExpression(buffer: TextBuffer, row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
+function extractIdentifierExpression(code: CodeEditorControl, buffer: TextBuffer, row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
 	if (row < 0 || row >= buffer.getLineCount()) {
 		return null;
 	}
@@ -92,7 +89,7 @@ function extractIdentifierExpression(buffer: TextBuffer, row: number, column: nu
 	if (line.length === 0) {
 		return null;
 	}
-	const tokenMatch = findContextMenuTokenMatch(row, safeColumn, path, buffer);
+	const tokenMatch = findContextMenuTokenMatch(code, row, safeColumn, path, buffer);
 	if (tokenMatch && tokenMatch.token.type === LuaTokenType.String) {
 		return null;
 	}
@@ -237,8 +234,8 @@ type ContextMenuTokenMatch = {
 	chunk: LuaChunk;
 };
 
-function findContextMenuTokenMatch(row: number, column: number, path: string, buffer: TextBuffer): ContextMenuTokenMatch {
-	const chunk = getOrCreateSemanticProject(editorTextModelService, activeCodeEditor.model.resource.domain)
+function findContextMenuTokenMatch(code: CodeEditorControl,row: number, column: number, path: string, buffer: TextBuffer): ContextMenuTokenMatch {
+	const chunk = getOrCreateSemanticProject(editorTextModelService, code.model.resource.domain)
 		.analyzeDocument(path, buffer).chunk;
 	const { tokens, locations } = chunk;
 	const targetLine = row + 1;
@@ -289,7 +286,7 @@ function findContextMenuTokenMatch(row: number, column: number, path: string, bu
 	return adjacent;
 }
 
-function resolveIdentifierExpressionForKeyword(row: number, match: ContextMenuTokenMatch, path: string): { expression: string; startColumn: number; endColumn: number; } {
+function resolveIdentifierExpressionForKeyword(code: CodeEditorControl,row: number, match: ContextMenuTokenMatch, path: string): { expression: string; startColumn: number; endColumn: number; } {
 	if (match.token.type !== LuaTokenType.Local && match.token.type !== LuaTokenType.Function) {
 		return null;
 	}
@@ -305,7 +302,7 @@ function resolveIdentifierExpressionForKeyword(row: number, match: ContextMenuTo
 		if (token.type !== LuaTokenType.Identifier) {
 			continue;
 		}
-		return extractIdentifierExpression(activeCodeEditor.model.buffer, row, position.column - 1, path);
+		return extractIdentifierExpression(code, code.model.buffer, row, position.column - 1, path);
 	}
 	return null;
 }
@@ -330,8 +327,8 @@ function buildContextMenuToken(
 	};
 }
 
-export function resolveContextMenuToken(row: number, column: number, path: string): EditorContextToken {
-	const buffer = activeCodeEditor.model.buffer;
+export function resolveContextMenuToken(code: CodeEditorControl,row: number, column: number, path: string): EditorContextToken {
+	const buffer = code.model.buffer;
 	if (row < 0 || row >= buffer.getLineCount()) {
 		return null;
 	}
@@ -343,7 +340,7 @@ export function resolveContextMenuToken(row: number, column: number, path: strin
 	if (getLuaTextContext(buffer, row, safeColumn) === LuaTextContext.Comment) {
 		return null;
 	}
-	const expression = extractIdentifierExpression(buffer, row, safeColumn, path);
+	const expression = extractIdentifierExpression(code, buffer, row, safeColumn, path);
 	if (expression) {
 		const segmentText = line.slice(expression.startColumn, expression.endColumn);
 		const isKeyword = KEYWORDS.has(segmentText);
@@ -359,11 +356,11 @@ export function resolveContextMenuToken(row: number, column: number, path: strin
 			);
 		}
 	}
-	const match = findContextMenuTokenMatch(row, safeColumn, path, buffer);
+	const match = findContextMenuTokenMatch(code, row, safeColumn, path, buffer);
 	if (!match) {
 		return null;
 	}
-	const keywordExpression = resolveIdentifierExpressionForKeyword(row, match, path);
+	const keywordExpression = resolveIdentifierExpressionForKeyword(code, row, match, path);
 	if (keywordExpression) {
 		const keywordText = line.slice(keywordExpression.startColumn, keywordExpression.endColumn);
 		return buildContextMenuToken(
@@ -397,28 +394,27 @@ export function resolveContextMenuToken(row: number, column: number, path: strin
 	);
 }
 
-export function refreshGotoHoverHighlight(
+export function refreshGotoHoverHighlight(code: CodeEditorControl,
 	sources: RuntimeSourceState,
 	row: number,
 	column: number,
-	context: CodeEditorContext,
 ): void {
-	switch (context.model.mode) {
+	switch (code.model.mode) {
 		case 'lua':
 			break;
 		case 'yaml':
 		case 'aem':
-			clearGotoHoverHighlight();
+			code.gotoHoverHighlight = null;
 			return;
 	}
-	const query = queryDefinitionsAt(sources, context, row, column);
+	const query = queryDefinitionsAt(sources, code, row, column);
 	if (!query) {
-		clearGotoHoverHighlight();
+		code.gotoHoverHighlight = null;
 		return;
 	}
 	const highlightStart = query.origin.start.column - 1;
 	const highlightEnd = query.origin.end.column;
-	const existing = intellisenseUiState.gotoHoverHighlight;
+	const existing = code.gotoHoverHighlight;
 	if (existing
 		&& existing.row === row
 		&& column >= existing.startColumn
@@ -426,20 +422,12 @@ export function refreshGotoHoverHighlight(
 		&& existing.expression === query.label) {
 		return;
 	}
-	intellisenseUiState.gotoHoverHighlight = {
+	code.gotoHoverHighlight = {
 		row,
 		startColumn: highlightStart,
 		endColumn: highlightEnd,
 		expression: query.label,
 	};
-}
-
-export function clearGotoHoverHighlight(): void {
-	intellisenseUiState.gotoHoverHighlight = null;
-}
-
-export function clearReferenceHighlights(): void {
-	referenceState.clear();
 }
 
 export type LuaRuntimeInspection = {
@@ -695,19 +683,19 @@ export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlyS
 	return entry;
 }
 
-export function applyDefinitionSelection(range: LuaDefinitionLocation['range']): void {
-	activeCodeEditor.clearVisualCursor();
-	const lastRowIndex = activeCodeEditor.model.buffer.getLineCount() - 1;
+export function applyDefinitionSelection(code: CodeEditorControl,range: LuaDefinitionLocation['range']): void {
+	code.clearVisualCursor();
+	const lastRowIndex = code.model.buffer.getLineCount() - 1;
 	const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
-	const startLine = activeCodeEditor.model.buffer.getLineContent(startRow);
+	const startLine = code.model.buffer.getLineContent(startRow);
 	const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
-	activeCodeEditor.view.cursorRow = startRow;
-	activeCodeEditor.view.cursorColumn = startColumn;
-	clearSingleCursorSelection(activeCodeEditor.view);
-	clearEditorPointerSelectionState();
-	activeCodeEditor.emitCursorMoved();
-	updateDesiredColumn();
-	resetBlink();
-	editorCaretState.cursorRevealSuspended = false;
-	ensureCursorVisible();
+	code.view.cursorRow = startRow;
+	code.view.cursorColumn = startColumn;
+	clearSingleCursorSelection(code.view);
+	clearEditorPointerSelectionState(code);
+	code.emitCursorMoved();
+	updateDesiredColumn(code);
+	resetBlinkState(code.caret);
+	code.caret.cursorRevealSuspended = false;
+	ensureCursorVisible(code);
 }

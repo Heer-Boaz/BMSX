@@ -1,29 +1,13 @@
+import type { CodeEditorControl } from '../../ui/code_editor_control';
 import type { CursorScreenInfo } from '../../../common/models';
 import { drawHoverTooltip } from '../../ui/hover_tooltip';
 import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from '../error_overlay';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { drawCompletionPopup, drawParameterHintOverlay, type CompletionPresentation, type CompletionRenderBounds } from '../completion';
-import type { RectBounds } from '../../../../machine/ts/common/rect';
-import { editorViewState } from '../../ui/view/state';
-import { activeCodeEditor } from '../../ui/code_editor_state';
 import type { CodeAreaViewport } from '../../ui/code/area_viewport';
 
-const verticalTrackScratch: RectBounds = {
-	left: 0,
-	top: 0,
-	right: 0,
-	bottom: 0,
-};
-
-const horizontalTrackScratch: RectBounds = {
-	left: 0,
-	top: 0,
-	right: 0,
-	bottom: 0,
-};
-
-function drawRuntimeErrorOverlayIndicator(
+function drawRuntimeErrorOverlayIndicator(code: CodeEditorControl,
 	direction: 'above' | 'below',
 	codeTop: number,
 	codeRight: number,
@@ -33,7 +17,7 @@ function drawRuntimeErrorOverlayIndicator(
 	const indicatorWidth = 16;
 	const indicatorHeight = 5;
 	const margin = 4;
-	const scrollbarOffset = editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
+	const scrollbarOffset = code.geometry.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
 	const rightEdge = codeRight - scrollbarOffset - constants.CODE_AREA_RIGHT_MARGIN;
 	const left = Math.max(textLeft, rightEdge - indicatorWidth);
 	const top = direction === 'above'
@@ -51,46 +35,46 @@ function drawRuntimeErrorOverlayIndicator(
 	api.blit_rect(left, top, left + indicatorWidth, bottom, 0, constants.ERROR_OVERLAY_TEXT_COLOR);
 }
 
-export function finalizeCodeAreaRender(
+export function finalizeCodeAreaRender(code: CodeEditorControl,
 	viewport: CodeAreaViewport & CompletionRenderBounds,
 	cursorInfo: CursorScreenInfo,
 	completion: CompletionPresentation,
 ): void {
 	const verticalTrackLeft = viewport.codeRight - constants.SCROLLBAR_WIDTH;
-	verticalTrackScratch.left = verticalTrackLeft;
-	verticalTrackScratch.top = viewport.codeTop;
-	verticalTrackScratch.right = verticalTrackLeft + constants.SCROLLBAR_WIDTH;
-	verticalTrackScratch.bottom = viewport.contentBottom;
+	code.scratch.verticalTrack.left = verticalTrackLeft;
+	code.scratch.verticalTrack.top = viewport.codeTop;
+	code.scratch.verticalTrack.right = verticalTrackLeft + constants.SCROLLBAR_WIDTH;
+	code.scratch.verticalTrack.bottom = viewport.contentBottom;
 
-	editorViewState.scrollbars.codeVertical.layout(verticalTrackScratch, viewport.visualCount, viewport.rows, activeCodeEditor.view.scrollRow);
-	activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollbars.codeVertical.getScroll(), viewport.visualCount, viewport.rows);
-	editorViewState.codeVerticalScrollbarVisible = editorViewState.scrollbars.codeVertical.isVisible();
+	code.scrollbars.codeVertical.layout(code.scratch.verticalTrack, viewport.visualCount, viewport.rows, code.view.scrollRow);
+	code.setScrollPosition(code.layout.clampVisualScroll(code.scrollbars.codeVertical.getScroll(), viewport.visualCount, viewport.rows), code.view.scrollLeft);
+	code.geometry.codeVerticalScrollbarVisible = code.scrollbars.codeVertical.isVisible();
 
 	if (!viewport.wrapEnabled) {
-		horizontalTrackScratch.left = viewport.codeLeft;
-		horizontalTrackScratch.top = viewport.contentBottom;
-		horizontalTrackScratch.right = viewport.trackRight;
-		horizontalTrackScratch.bottom = viewport.contentBottom + constants.SCROLLBAR_WIDTH;
-		editorViewState.scrollbars.codeHorizontal.layout(horizontalTrackScratch, viewport.contentWidth + viewport.maxScrollLeft, viewport.contentWidth, activeCodeEditor.view.scrollLeft);
-		activeCodeEditor.view.scrollLeft = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), viewport.maxScrollLeft);
-		editorViewState.codeHorizontalScrollbarVisible = editorViewState.scrollbars.codeHorizontal.isVisible();
+		code.scratch.horizontalTrack.left = viewport.codeLeft;
+		code.scratch.horizontalTrack.top = viewport.contentBottom;
+		code.scratch.horizontalTrack.right = viewport.trackRight;
+		code.scratch.horizontalTrack.bottom = viewport.contentBottom + constants.SCROLLBAR_WIDTH;
+		code.scrollbars.codeHorizontal.layout(code.scratch.horizontalTrack, viewport.contentWidth + viewport.maxScrollLeft, viewport.contentWidth, code.view.scrollLeft);
+		code.setScrollPosition(code.view.scrollRow, code.layout.clampHorizontalScroll(code.scrollbars.codeHorizontal.getScroll(), viewport.maxScrollLeft));
+		code.geometry.codeHorizontalScrollbarVisible = code.scrollbars.codeHorizontal.isVisible();
 	} else {
-		activeCodeEditor.view.scrollLeft = 0;
-		editorViewState.codeHorizontalScrollbarVisible = false;
+		code.setScrollPosition(code.view.scrollRow, 0);
+		code.geometry.codeHorizontalScrollbarVisible = false;
 	}
 
-	const runtimeOverlayState: RuntimeErrorOverlayRenderResult = renderRuntimeErrorOverlay(viewport.codeTop, viewport.codeRight, viewport.textLeft, viewport.contentBottom);
+	const runtimeOverlayState: RuntimeErrorOverlayRenderResult = renderRuntimeErrorOverlay(code, viewport.codeTop, viewport.codeRight, viewport.textLeft, viewport.contentBottom);
 	if (runtimeOverlayState === 'above' || runtimeOverlayState === 'below') {
-		drawRuntimeErrorOverlayIndicator(runtimeOverlayState, viewport.codeTop, viewport.codeRight, viewport.textLeft, viewport.contentBottom);
+		drawRuntimeErrorOverlayIndicator(code, runtimeOverlayState, viewport.codeTop, viewport.codeRight, viewport.textLeft, viewport.contentBottom);
 	}
-	drawHoverTooltip(viewport.codeTop, viewport.contentBottom, viewport.textLeft);
+	drawHoverTooltip(code, viewport.codeTop, viewport.contentBottom, viewport.textLeft);
 
-	completion.popupBounds = drawCompletionPopup(completion.session, cursorInfo, editorViewState.lineHeight, viewport, completion.popupBoundsScratch);
-	drawParameterHintOverlay(completion.hint, cursorInfo, editorViewState.lineHeight, viewport, completion.popupBounds);
-	if (editorViewState.codeVerticalScrollbarVisible) {
-		editorViewState.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+	completion.popupBounds = drawCompletionPopup(code, completion.session, cursorInfo, code.lineHeight, viewport, completion.popupBoundsScratch);
+	drawParameterHintOverlay(code, completion.hint, cursorInfo, code.lineHeight, viewport, completion.popupBounds);
+	if (code.geometry.codeVerticalScrollbarVisible) {
+		code.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
-	if (editorViewState.codeHorizontalScrollbarVisible) {
-		editorViewState.scrollbars.codeHorizontal.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
+	if (code.geometry.codeHorizontalScrollbarVisible) {
+		code.scrollbars.codeHorizontal.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 }

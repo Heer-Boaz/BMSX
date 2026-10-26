@@ -1,9 +1,9 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Real source commands and focus/history, independent of the cart's behavior definitions. */
 export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
@@ -13,7 +13,7 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
@@ -49,8 +49,8 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const source = viewport.selection!;
 	if (source.kind !== 'node') throw new Error('BT moves: redo lost node selection');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === source.source.occurrenceRange.start.line - 1
-		&& activeCodeEditor.view.cursorColumn === source.source.occurrenceRange.start.column - 1 && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === source.source.occurrenceRange.start.line - 1
+		&& sourcePane(test).code.view.cursorColumn === source.source.occurrenceRange.start.column - 1 && !hasSelection(sourcePane(test).code),
 		'BT moves: Source opens the new exact location without transferring held input');
 	const document = view.document;
 	await press('ControlLeft', 'KeyZ');

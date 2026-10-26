@@ -1,11 +1,11 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
 import { BT_REPARENT_SOURCE, BT_REPARENT_MODULE_SOURCE } from '../../helpers/behavior_reparent_fixture';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Actual capture, review, source history and selection; independent of a game's tree definitions. */
 export async function testStudioBtReparent(test: StudioFixture): Promise<void> {
@@ -16,7 +16,7 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 	const { ide, harness, frame, press, click, movePointer, setPointerButton, runPaletteCommand, cycles } = test;
 	console.info(`STUDIO: BT ${imported ? 'imported' : 'local'} cross-depth drag / review / source / Undo`);
 	harness.openLuaSource('cart.lua');
-	const main = activeCodeEditor.model, originalMain = main.buffer.getText();
+	const main = sourcePane(test).code.model, originalMain = main.buffer.getText();
 	if (imported) {
 		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
 			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
@@ -24,7 +24,7 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 			text: `local trees<const> = require('cartlib/behaviour_tree/library')\ntrees.register('fixture.reparent', require('${record.module_path}'))` }]);
 		harness.openLuaSource(record.source_path);
 	}
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	const source = imported ? BT_REPARENT_MODULE_SOURCE : BT_REPARENT_SOURCE;
 	const position = cycles(), media = ide.sources.currentBlua32Media;
@@ -78,7 +78,7 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 	console.info('STUDIO: BT reparented canvas ready for visual inspection');
 	const changed = model.buffer.getText();
 	await press('Enter');
-	check(activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === moved.source.occurrenceRange.start.line - 1,
+	check(sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === moved.source.occurrenceRange.start.line - 1,
 		'reparent: Source navigates to the new occurrence');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'reparent: one code Undo restores all source bytes');

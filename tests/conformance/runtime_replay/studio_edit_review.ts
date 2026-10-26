@@ -2,9 +2,9 @@ import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { WorkspaceSourceTools } from '../../../ide/workbench/services/assistant/source_tools';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { reachNemesisTitle } from './studio_nemesis_navigation';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Automated setup; review/accept/discard/Undo use visible production controls. */
 export async function runStudioEditReview(test: StudioFixture) {
@@ -34,7 +34,7 @@ export async function runStudioEditReview(test: StudioFixture) {
 		await press('ControlLeft', 'KeyV'); await press('Enter');
 		const input = ide.editor.editorGroup.model.activeTab;
 		if (input.kind !== 'workspace_edit_review') throw new Error('edit review: production review pane expected');
-		check(activeCodeEditor.model === null && input.proposal.files.length === 2,
+		check(sourcePane(test).code.model === null && input.proposal.files.length === 2,
 			'edit review: resource-based pane detaches the code widget and shows both sources');
 		check(main.buffer.getText() === mainText && provider.buffer.getText() === providerText,
 			'edit review: preparing a proposal does not edit the source');

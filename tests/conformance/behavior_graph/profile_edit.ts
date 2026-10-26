@@ -12,7 +12,7 @@ import { behaviorTreeEditTarget, createBehaviorTreeChildDuplicateEdits, createBe
 import { createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
 
-Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
+Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, editorAreaTop: 24, editorAreaBottom: 276 });
 for (const siblings of [24, 1024]) {
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')\nlocal child<const> = { type = 'wait', duration_ticks = 2 }\ntrees.register('profile', { root = { type = 'sequence', children = {\n${'child, -- independent source occurrence\n'.repeat(siblings)} } } })`;
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'edit.lua' }, domain: 0, path: 'edit.lua', source: { type: 'lua', resid: 'edit' } }, 'lua', source);

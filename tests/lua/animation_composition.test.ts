@@ -30,9 +30,7 @@ import type { EditorNavigationController } from '../../ide/workbench/contrib/res
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
-import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
-import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -302,9 +300,6 @@ test('known unversioned animation recovery preserves source selections and histo
 function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=1},{time_ms=100,value=2}}},{kind='event',keys={{time_ms=25,event='other'}}}}}") {
 	configureFontVariant(variant);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const oldScrollbars = editorViewState.scrollbarController;
-	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
-		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, () => {}, pointerCapture);
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
 	const navigated: unknown[][] = [];
@@ -323,7 +318,7 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	const pane = new AnimationEditorPane(controller, commands as IdeCommandController, menu, surfaces, owner, root, inputFocus.workbenchScope);
 	t.after(() => {
 		menu.dispose(); pane.dispose(); input.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear();
-		editorTextModelService.clear(); editorViewState.scrollbarController = oldScrollbars;
+		editorTextModelService.clear();
 	});
 	pane.setInput(input, bounds); pane.focus();
 	const pointer = (x: number, y: number, secondary = true) => pane.handlePointer({ viewportX: x, viewportY: y, valid: true, insideViewport: true,

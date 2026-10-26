@@ -1,3 +1,5 @@
+import { createTestCodeControl } from '../helpers/code_control';
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import { Input } from '../../hosts/common/input/manager';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import assert from 'node:assert/strict';
@@ -5,11 +7,14 @@ import { test } from 'node:test';
 import { PointerInput } from '../../hosts/common/input/pointer';
 import { PlayerInput } from '../../hosts/common/input/player';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
-import { clearEditorPointerSelectionState, editorPointerState } from '../../ide/input/pointer/state';
+import { clearEditorPointerSelectionState } from '../../ide/input/pointer/state';
 import { readEditorPointerButtons } from '../../ide/input/pointer/buttons';
 import { PointerButton, type PointerButtons } from '../../hosts/common/input/pointer_event';
 
-test('editor button edges belong to the pointer producer, not view activation or gesture cancellation', () => {
+test('editor button edges belong to the pointer producer, not view activation or gesture cancellation', t => {
+	const { models, documents, clock } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace', path: 'pointer.lua' }, domain: 0, path: 'pointer.lua', source: { type: 'lua', resid: 'pointer' } }, 'lua', 'return 1');
+	const widget = createTestCodeControl(t, model, documents, clock);
 	const pointer = new PointerInput(new VirtualHeadlessClock());
 	const player = new PlayerInput(1, 20);
 	player.inputHandlers.pointer = pointer;
@@ -23,8 +28,8 @@ test('editor button edges belong to the pointer producer, not view activation or
 		pointer.pollInput();
 		readEditorPointerButtons(player, buttons);
 		assert.deepEqual(buttons, { pressedButtons: mask, justPressedButtons: mask, justReleasedButtons: 0 });
-		editorPointerState.pointerSelecting = true;
-		clearEditorPointerSelectionState();
+		widget.pointer.pointerSelecting = true;
+		clearEditorPointerSelectionState(widget);
 		assert.ok(pointer.getButtonState(code).pressed);
 		assert.ok(pointer.getButtonState(code).justpressed, 'cancelling selection does not change this frame\'s event');
 		pointer.pollInput();

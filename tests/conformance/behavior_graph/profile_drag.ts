@@ -19,7 +19,7 @@ import { drawWorkbenchGraph } from '../../../ide/workbench/render/graph';
 import { api } from '../../../ide/runtime/overlay_api';
 import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/quad_stream';
 
-Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
+Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, editorAreaTop: 24, editorAreaBottom: 276 });
 for (const siblings of [24, 1024]) {
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')\nlocal child<const> = { type = 'wait', duration_ticks = 2 }\ntrees.register('profile', { root = { type = 'sequence', children = { ${'child,'.repeat(siblings)} } } })`;
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'drag.lua' }, domain: 0, path: 'drag.lua', source: { type: 'lua', resid: 'drag' } }, 'lua', source);

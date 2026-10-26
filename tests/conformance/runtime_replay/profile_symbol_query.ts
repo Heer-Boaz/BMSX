@@ -7,7 +7,7 @@ import { buildSymbolQuickPickItems } from '../../../ide/workbench/contrib/code_e
 import { SymbolQuickPickProvider } from '../../../ide/workbench/contrib/code_editor/symbols/quick_pick_provider';
 import { TextQuickPickProvider } from '../../../ide/workbench/services/quick_input/text_provider';
 import { QuickInputController } from '../../../ide/workbench/services/quick_input/controller';
-import { configureFontVariant } from '../../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { medianMilliseconds } from '../../helpers/performance';
 

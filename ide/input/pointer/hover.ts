@@ -1,5 +1,8 @@
+import { KeyModifier } from '../../../hosts/common/input/text';
+
 export interface PointerHoverTarget {
 	onPointerEnter?(): void;
+	onPointerModifiersChanged?(modifiers: KeyModifier): void;
 	onPointerLeave(): void;
 }
 
@@ -7,6 +10,10 @@ export interface PointerHoverTarget {
 export class PointerHoverService {
 	private readonly targets = new Map<PointerHoverTarget, number>();
 	private dispatchId = 0;
+	private modifiers = KeyModifier.none;
+	private readonly updateModifiers = (_dispatchId: number, target: PointerHoverTarget): void => {
+		target.onPointerModifiersChanged?.(this.modifiers);
+	};
 	private readonly leaveUnvisited = (dispatchId: number, target: PointerHoverTarget): void => {
 		if (dispatchId !== this.dispatchId) this.release(target);
 	};
@@ -24,6 +31,12 @@ export class PointerHoverService {
 	}
 
 	public endDispatch(): void { this.targets.forEach(this.leaveUnvisited); }
+
+	/** Keyboard modifiers update the admitted hover path even while the pointer is stationary. */
+	public dispatchModifiers(modifiers: KeyModifier): void {
+		this.modifiers = modifiers;
+		this.targets.forEach(this.updateModifiers);
+	}
 
 	/** Detach/hide revokes hover immediately, without waiting for another poll. */
 	public release(target: PointerHoverTarget): void {

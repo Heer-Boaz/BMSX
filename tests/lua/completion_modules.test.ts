@@ -1,3 +1,5 @@
+import { createTestCodeControl } from '../helpers/code_control';
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -5,7 +7,7 @@ import { getLuaTextContext, LuaTextContext } from '../../ide/common/text';
 import { resolveModuleCompletionRange } from '../../ide/editor/contrib/suggest/completion_model';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { CompletionController } from '../../ide/workbench/contrib/code_editor/suggest/completion_controller';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
@@ -57,7 +59,6 @@ test('Lua completion context distinguishes escaped and multiline strings from co
 
 test('completion sees a newly created module without editing the importer or rebooting', t => {
 	t.after(() => {
-		activeCodeEditor.detach();
 		resetSemanticProjects(editorTextModelService);
 		editorTextModelService.clear();
 	});
@@ -65,13 +66,15 @@ test('completion sees a newly created module without editing the importer or reb
 	const importer = editorTextModelService.retain(resource('carts/example/main.lua'), 'lua', "local m = require('authoring/')");
 	const view = createCodeEditorViewState();
 	view.cursorColumn = importer.buffer.getText().indexOf("')");
-	activeCodeEditor.attach(importer, view);
+	const { documents, clock } = createTestCodeDocuments(t, editorTextModelService);
+	const code = createTestCodeControl(t, importer, documents, clock, view);
 	const sources = createScenarioTestSourceState([]);
 
 	class ReadyCompletionController extends CompletionController {
 		protected override isCompletionReady() { return true; }
 	}
-	const controller = new ReadyCompletionController(sources, null, null, null);
+	const controller = new ReadyCompletionController(code, sources, null, null, null);
+	t.after(() => controller.clearInput());
 	const version = importer.version;
 	assert.deepEqual(controller.listCompletionCandidates()!.filteredItems, []);
 	editorTextModelService.retain(resource('carts/example/authoring/palette.lua'), 'lua', 'return {}');

@@ -53,6 +53,11 @@ export class EditorPanes {
 		return this.activePaneValue;
 	}
 
+	/** Query an existing control without creating or activating an editor. */
+	public getPane<TKind extends EditorInputKind>(kind: TKind): EditorPane<Extract<EditorInput, { kind: TKind }>> | undefined {
+		return this.panes.get(kind) as EditorPane<Extract<EditorInput, { kind: TKind }>> | undefined;
+	}
+
 	public openEditor(input: EditorInput, options: EditorPaneOpenOptions = {}): void {
 		const { selection, navigationSelection, preserveFocus } = options;
 		this.openGenerationValue += 1;

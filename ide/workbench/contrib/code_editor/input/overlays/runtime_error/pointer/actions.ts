@@ -1,11 +1,11 @@
 import { rebuildRuntimeErrorOverlayView } from '../../../../../../../editor/contrib/runtime_error/overlay';
 import type { RuntimeErrorOverlay } from '../../../../../../../editor/contrib/runtime_error/model';
 import type { RuntimeErrorOverlayClickResult } from '../../../../../../../editor/render/error_overlay';
-import type { CartEditor } from '../../../../../../../cart_editor';
+import type { CodeEditorPane } from '../../../../editor_pane';
 import { navigateToRuntimeErrorFrameTarget } from '../../../../../../../runtime_error/navigation';
 
 export function handleRuntimeErrorOverlayPointerClick(
-	editor: CartEditor,
+	pane: CodeEditorPane,
 	overlay: RuntimeErrorOverlay,
 	hoverLine: number,
 ): void {
@@ -19,7 +19,7 @@ export function handleRuntimeErrorOverlayPointerClick(
 			return;
 		case 'navigate':
 			setRuntimeErrorOverlayExpanded(overlay, false);
-			navigateToRuntimeErrorFrameTarget(editor, clickResult.frame);
+			navigateToRuntimeErrorFrameTarget(pane, clickResult.frame);
 			return;
 	}
 }

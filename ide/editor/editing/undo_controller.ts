@@ -1,60 +1,59 @@
-import { editorRuntimeState } from '../common/runtime_state';
+import type { CodeEditorControl } from '../ui/code_editor_control';
 import { notifyReadOnlyEdit } from '../ui/view/view';
 import { updateDesiredColumn } from '../ui/view/caret/caret';
-import { resetBlink } from '../render/caret';
+import { resetBlinkState } from '../ui/view/caret/blink';
 import { ensureCursorVisible } from '../ui/view/caret/caret';
-import { editorCaretState } from '../ui/view/caret/state';
-import { activeCodeEditor, captureCodeEditorSelectionSnapshot, codeEditorEditState } from '../ui/code_editor_state';
+import { captureCodeEditorSelectionSnapshot, codeEditorEditState } from '../ui/code_editor_state';
 import { executeTextHistoryCommand } from './history_commands';
 
-export function prepareUndo(key: string, allowMerge: boolean): void {
-	const model = activeCodeEditor.model;
+export function prepareUndo(code: CodeEditorControl, key: string, allowMerge: boolean): void {
+	const model = code.model;
 	if (model.readOnly) {
 		return;
 	}
-	model.prepareUndo(key, allowMerge, editorRuntimeState.currentTimeMs, codeEditorEditState.of(captureCodeEditorSelectionSnapshot(activeCodeEditor.view), activeCodeEditor.view.editSource));
+	model.prepareUndo(key, allowMerge, code.clock.now(), codeEditorEditState.of(captureCodeEditorSelectionSnapshot(code.view), code.view.editSource));
 }
 
-export function applyUndoableReplace(offset: number, deleteLength: number, insertText: string): void {
-	activeCodeEditor.model.applyUndoableReplace(offset, deleteLength, insertText);
+export function applyUndoableReplace(code: CodeEditorControl, offset: number, deleteLength: number, insertText: string): void {
+	code.model.applyUndoableReplace(offset, deleteLength, insertText);
 }
 
-export function undo(): void {
-	const model = activeCodeEditor.model;
-	if (model.readOnly) {
-		notifyReadOnlyEdit();
-		return;
-	}
-	if (!executeTextHistoryCommand(model, 'undo', activeCodeEditor.view.editSource)) {
-		return;
-	}
-	refreshAfterHistoryChange();
-}
-
-export function redo(): void {
-	const model = activeCodeEditor.model;
+export function undo(code: CodeEditorControl): void {
+	const model = code.model;
 	if (model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
-	if (!executeTextHistoryCommand(model, 'redo', activeCodeEditor.view.editSource)) {
+	if (!executeTextHistoryCommand(model, 'undo', code.view.editSource)) {
 		return;
 	}
-	refreshAfterHistoryChange();
+	refreshAfterHistoryChange(code);
 }
 
-export function breakUndoSequence(): void {
-	activeCodeEditor.model.breakUndoSequence();
+export function redo(code: CodeEditorControl): void {
+	const model = code.model;
+	if (model.readOnly) {
+		notifyReadOnlyEdit();
+		return;
+	}
+	if (!executeTextHistoryCommand(model, 'redo', code.view.editSource)) {
+		return;
+	}
+	refreshAfterHistoryChange(code);
 }
 
-export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
-	activeCodeEditor.model.recordContentEdit(editorRuntimeState.currentTimeMs);
-	editorRuntimeState.pendingEditContext = { kind, text };
+export function breakUndoSequence(code: CodeEditorControl): void {
+	code.model.breakUndoSequence();
 }
 
-function refreshAfterHistoryChange(): void {
-	editorCaretState.cursorRevealSuspended = false;
-	updateDesiredColumn();
-	resetBlink();
-	ensureCursorVisible();
+export function recordEditContext(code: CodeEditorControl, kind: 'insert' | 'delete' | 'replace', text: string): void {
+	code.model.recordContentEdit(code.clock.now());
+	code.pendingEditContext = { kind, text };
+}
+
+function refreshAfterHistoryChange(code: CodeEditorControl): void {
+	code.caret.cursorRevealSuspended = false;
+	updateDesiredColumn(code);
+	resetBlinkState(code.caret);
+	ensureCursorVisible(code);
 }

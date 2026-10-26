@@ -1,23 +1,24 @@
+import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { expandTabs } from '../../ide/common/text';
 import { CodeLayout } from '../../ide/editor/ui/code/layout';
-import { ActiveCodeEditorState, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 
 function fixture(t: TestContext, source: string, variant: FontVariant = 'tiny', width = 8) {
-	const { models, documents } = createTestCodeDocuments(t);
+	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain({ location: { kind: 'workspace' as const, path: 'inline-layout.lua' }, domain: 0, path: 'inline-layout.lua',
 		source: { type: 'lua', resid: 'inline-layout' } }, 'lua', source);
-	const widget = new ActiveCodeEditorState(), font = new EditorFont(variant);
-	widget.attach(model, createCodeEditorViewState());
+	const font = new EditorFont(variant);
+	const widget = createTestCodeControl(t, model, documents, clock, undefined, font);
 	const layout = new CodeLayout(font, { inlineEdit: widget.inlineEdit,
 		computeWrapWidth: () => font.advance('M') * width });
 	layout.attach(documents.get(model));
 	t.after(() => { widget.detach(); layout.dispose(); });
-	return { model, widget, font, layout };
+	return { model, widget, font, layout, documents };
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
@@ -28,7 +29,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		view.scrollRow = f.layout.clampVisualScroll(count - 2.5, count, 2);
 		const position = view.scrollRow;
 		assert.ok(position > f.model.buffer.getLineCount(), 'the real wrap projection supplies more viewport rows than buffer rows');
-		f.widget.detach(); f.widget.attach(f.model, view);
+		f.widget.detach(); f.widget.attach(f.model, view, f.documents.get(f.model));
 		assert.ok(f.widget.model === f.model && f.widget.view === view);
 		assert.equal(view.scrollRow, position, 'buffer attachment cannot clamp a visual viewport against source line count');
 	});

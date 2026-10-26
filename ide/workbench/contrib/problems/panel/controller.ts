@@ -8,7 +8,7 @@ import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import * as constants from '../../../../common/constants';
 import type { DiagnosticsCoverage } from '../../../services/diagnostics/resource_diagnostics';
-import { resetBlink } from '../../../../editor/render/caret';
+import { resetInlineBlink } from '../../../../editor/render/caret';
 import {
 	clampProblemsPanelScrollIndex,
 	computeProblemsPanelVisibleHeight,
@@ -393,5 +393,5 @@ export function hideProblemsPanel(editorGroup: EditorGroupView): void {
 	const restoreEditorFocus = problemsPanel.isFocused;
 	problemsPanel.hide();
 	if (restoreEditorFocus) editorGroup.panes.activePane?.focus();
-	resetBlink();
+	resetInlineBlink();
 }

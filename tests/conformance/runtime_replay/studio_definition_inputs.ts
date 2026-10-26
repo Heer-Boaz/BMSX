@@ -1,5 +1,5 @@
 import { NAVIGATION_SOURCE } from '../../fixtures/studio/navigation';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { SCROLLBAR_WIDTH } from '../../../ide/common/constants';
@@ -7,7 +7,7 @@ import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { navigationState } from '../../../ide/navigation/navigation_history';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Independent definitions through real Save, palette, pointer, source and history owners. */
 export async function testStudioDefinitionInputs(test: StudioFixture): Promise<void> {
@@ -17,7 +17,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	const cycles = test.cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	const source = NAVIGATION_SOURCE + "\nmachines.register('navigation.same', states)\nmachines.register('navigation.same', states)\n";
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);

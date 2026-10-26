@@ -1,10 +1,10 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behavior_lens/quick_access';
 import { inspectStateMachineState, readStateMachineInstances, readStateMachineStates } from '../../../ide/workbench/contrib/behavior_lens/state_machine_runtime';
 import { medianMilliseconds } from '../../helpers/performance';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Source discovery is deliberately the unexecuted, structurally different same-id registration. */
 export async function openRuntimeStateMachineLens(test: StudioFixture) {
@@ -103,7 +103,7 @@ export async function testRuntimeStateSource(test: StudioFixture): Promise<void>
 		check(current.isEnabled('propertyInspector.source'), 'runtime FSM: retained update and compiled event closures expose their actual call target');
 		await test.click(current.actionBar.items[0].bounds, 6);
 		const line = source.split('\n').findIndex(text => text.includes(`function callbacks.${functionName}`));
-		check(activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === line && activeCodeEditor.view.cursorColumn === 0,
+		check(sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === line && sourcePane(test).code.view.cursorColumn === 0,
 			'runtime FSM: callback Source opens the other file at the actual function, not cart.lua or the same-id registration');
 		check(model.version === version && cycles() === position && guest.global('inspection_fsm_callback_count') === callbacks,
 			'runtime FSM: held Source is only navigation');

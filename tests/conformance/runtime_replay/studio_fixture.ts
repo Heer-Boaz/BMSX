@@ -1,3 +1,5 @@
+import { mapDisplayPointToViewport } from '../../../machine/ts/render/video_output';
+import { CodeEditorPane } from '../../../ide/workbench/contrib/code_editor/editor_pane';
 import { HostAudioDevice } from '../../../hosts/common/audio_device';
 import { BrowserInputHub } from '../../../hosts/browser/input';
 import { BrowserTextInput } from '../../../hosts/browser/text_input';
@@ -53,13 +55,13 @@ export function check(condition: boolean, message: string): void {
 }
 
 /** Pointer actionability consumes production text geometry rather than duplicating its projection. */
-export function codePositionBounds(row: number, column: number) {
+export function codePositionBounds(test: StudioFixture, row: number, column: number) {
 	const target = { left: 0, top: 0, right: 0, bottom: 0 };
-	resolveTextPositionBounds(row, column, target);
+	resolveTextPositionBounds(sourcePane(test).code, row, column, target);
 	target.top = (target.top + target.bottom) / 2;
 	target.right = target.left + 1;
 	target.bottom = target.top + 1;
-	const bounds = getCodeAreaBounds();
+	const bounds = getCodeAreaBounds(sourcePane(test).code);
 	check(target.left >= bounds.textLeft && target.right < bounds.codeRight
 		&& target.top >= bounds.codeTop && target.bottom < bounds.codeBottom, 'navigation pointer target must be visible');
 	return target;
@@ -159,10 +161,12 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const movePointer = (bounds: RectBounds) => {
 		const displayRect = display.measureDisplay();
 		const viewport = ide.overlayRenderer.viewportSize;
-		remote.apply([{ type: 'pointer',
-			x: displayRect.left + (bounds.left + bounds.right) * displayRect.width / (viewport.width * 2),
-			y: displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2),
-		}]);
+		const x = displayRect.left + (bounds.left + bounds.right) * displayRect.width / (viewport.width * 2);
+		const y = displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2);
+		remote.apply([{ type: 'pointer', x, y }]);
+		const point = { x: 0, y: 0 };
+		mapDisplayPointToViewport(displayRect, viewport.width, viewport.height, x, y, point);
+		return { viewportX: point.x, viewportY: point.y };
 	};
 	/** A preview click must hit its actual content surface, not an occluding tool window. */
 	const visiblePreviewPoint = (bounds: Readonly<RectBounds>): RectBounds => {
@@ -274,6 +278,12 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;
+
+/** The retained real Source pane belonging to this fixture's concrete editor group. */
+export function sourcePane(test: Pick<StudioFixture, 'ide'>): CodeEditorPane | undefined {
+	return test.ide.editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane | undefined;
+}
+
 
 /** Shared product file-creation flow; callers author bytes and choose Save/Reboot themselves. */
 export async function createStudioLuaSource(test: StudioFixture, path: string, source: string) {

@@ -9,7 +9,7 @@ import * as colors from '../../ide/common/constants';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { measureStyledText } from '../../ide/editor/render/markdown';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';

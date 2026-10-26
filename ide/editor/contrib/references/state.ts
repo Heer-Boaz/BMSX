@@ -47,5 +47,3 @@ export class ReferenceState {
 	}
 
 }
-
-export const referenceState = new ReferenceState();

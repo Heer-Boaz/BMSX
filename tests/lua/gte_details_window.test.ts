@@ -7,7 +7,7 @@ import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';

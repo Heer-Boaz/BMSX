@@ -1,4 +1,4 @@
-import { resetBlink } from '../../render/caret';
+import { resetInlineBlink } from '../../render/caret';
 import type { ClipboardImage } from '../../../../hosts/common/clipboard';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
@@ -21,7 +21,7 @@ export class MultilineFieldControl implements PointerCaptureTarget {
 	public setInput(field: TextField, view: MultilineFieldViewport, bounds: RectBounds, pasteImages?: (images: readonly ClipboardImage[]) => void): void {
 		this.clearInput(); this.input = { field, view, bounds };
 		field.pasteImages = pasteImages;
-		this.unbindChange = field.onDidChangeText(() => { this.verticalOffset = -1; resetBlink(); });
+		this.unbindChange = field.onDidChangeText(() => { this.verticalOffset = -1; resetInlineBlink(); });
 		this.unbindBlur = field.focusTarget.onDidBlur(() => this.cancelPointer());
 	}
 	public clearInput(): void {
@@ -51,7 +51,7 @@ export class MultilineFieldControl implements PointerCaptureTarget {
 					this.verticalOffset = getCursorOffset(field);
 				}
 			}
-			resetBlink(); return;
+			resetInlineBlink(); return;
 		}
 		applyInlineFieldEditing(input, field);
 		if (getCursorOffset(field) !== this.verticalOffset) this.verticalOffset = -1;
@@ -63,14 +63,14 @@ export class MultilineFieldControl implements PointerCaptureTarget {
 			field.focusTarget.focus(); clearSelection(field); this.verticalOffset = -1;
 			setCursorFromOffset(field, view.offsetAt(view.firstRow + Math.trunc((snapshot.viewportY - bounds.top - 2) / this.rowHeight), snapshot.viewportX - bounds.left - 3));
 			setSelectionAnchorFromOffset(field, getCursorOffset(field));
-			pointerCapture.capture(this); field.pointerSelecting = true; resetBlink();
+			pointerCapture.capture(this); field.pointerSelecting = true; resetInlineBlink();
 		}
 		return true;
 	}
 	public handleCapturedPointer(snapshot: PointerSnapshot): void {
 		const { field, view, bounds } = this.input!;
 		setCursorFromOffset(field, view.offsetAt(view.firstRow + Math.trunc((snapshot.viewportY - bounds.top - 2) / this.rowHeight), snapshot.viewportX - bounds.left - 3));
-		resetBlink();
+		resetInlineBlink();
 	}
 	public releaseCapturedPointer(snapshot: PointerSnapshot): void { this.handleCapturedPointer(snapshot); this.cancelPointer(); }
 	public cancelPointer(): void { pointerCapture.release(this); if (this.input) this.input.field.pointerSelecting = false; }

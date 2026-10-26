@@ -1,9 +1,9 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Real command/focus/capture/history routes over an independent authored Lua working copy. */
 export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> {
@@ -13,7 +13,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
@@ -47,8 +47,8 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	console.info('STUDIO: BT duplicated child ready for visual inspection');
 	const range = children()[2].source.occurrenceRange;
 	await click(sourceButton.bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && model.version === version + 1 && !hasSelection()
-		&& activeCodeEditor.view.cursorRow === range.start.line - 1 && activeCodeEditor.view.cursorColumn === range.start.column - 1,
+	check(ide.editor.editorGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code)
+		&& sourcePane(test).code.view.cursorRow === range.start.line - 1 && sourcePane(test).code.view.cursorColumn === range.start.column - 1,
 		'BT duplicate: held Source navigates to the second occurrence without another source edit');
 	check(!ide.editor.commands.isEnabled(duplicate), 'BT duplicate: code focus does not inherit graph commands');
 	await press('ControlLeft', 'KeyD');

@@ -1,13 +1,13 @@
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { inputFocus } from '../../../ide/input/focus';
 import { luaSourceRangeToTextRange } from '../../../ide/language/lua/source_edits';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { FSM_PROOF_SOURCE } from '../../helpers/fsm_source_fixture';
 import { revealLensOccurrence } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 function selectedProof(view: BehaviorLensViewState) {
 	const selection = view.selection;
@@ -23,7 +23,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_PROOF_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
@@ -52,8 +52,8 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	check(rows[0] === first && rows[1] === second, 'FSM proof: unchanged inspector frames retain measured content');
 	await press('ArrowDown');
 	await click(inspector.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === 4
-		&& activeCodeEditor.view.cursorColumn === FSM_PROOF_SOURCE.split('\n')[4].indexOf('return') && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === 4
+		&& sourcePane(test).code.view.cursorColumn === FSM_PROOF_SOURCE.split('\n')[4].indexOf('return') && !hasSelection(sourcePane(test).code),
 		'FSM proof: held picker acceptance opens the second return, not the binding, initializer or a dragged code selection');
 	check(selectedProof(view).transition === right && selectedProof(view).outcome === right.outcomes[1],
 		'FSM proof: the same callback return remains scoped to its right-hand use');
@@ -75,7 +75,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	await test.clickTab(lens.id);
 	check(selectedProof(view).outcome === selectedProof(view).transition.outcomes[2], 'FSM proof: correspondence follows the old return past a newly inserted identical return');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.view.cursorRow === 6 && !hasSelection(), 'FSM proof: Source consumes current parsed evidence after UTF-16 edits');
+	check(sourcePane(test).code.view.cursorRow === 6 && !hasSelection(sourcePane(test).code), 'FSM proof: Source consumes current parsed evidence after UTF-16 edits');
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);
 	check(selectedProof(view).outcome === selectedProof(view).transition.outcomes[1], 'FSM proof: ordinary Undo restores the selected occurrence, not an ordinal');

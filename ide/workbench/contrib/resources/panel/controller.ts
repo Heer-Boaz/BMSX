@@ -1,6 +1,7 @@
+import { ScrollbarController } from '../../../ui/scrollbar_controller';
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
+import { create_rect_bounds, write_rect_bounds, point_in_rect } from '../../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../../../common/models';
 import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
@@ -65,6 +66,8 @@ export type ResourcePanelItemMetrics = {
 	markerEndWidth: number;
 };
 
+const RESOURCE_SCROLLBARS = ['resourceVertical', 'resourceHorizontal'] as const;
+
 export type ResourcePanelScrollbars = {
 	resourceVertical: Scrollbar;
 	resourceHorizontal: Scrollbar;
@@ -125,6 +128,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	public readonly layout: ResourcePanelLayout = createResourcePanelLayout(this.bounds);
 	private readonly filesMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
 	private readonly callMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
+	private readonly scrollbarController: ScrollbarController<'resourceVertical' | 'resourceHorizontal'>;
 	public readonly resourceVertical: Scrollbar;
 	public readonly resourceHorizontal: Scrollbar;
 	private resizeStartX = 0;
@@ -140,8 +144,16 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		this.widthRatio = initialWidthRatio;
 		this.resourceVertical = scrollbars.resourceVertical;
 		this.resourceHorizontal = scrollbars.resourceHorizontal;
+		this.scrollbarController = new ScrollbarController(scrollbars, (kind, scroll) => {
+			if (kind === 'resourceVertical') this.setScroll(scroll); else this.setHScroll(scroll);
+		}, pointerCapture);
 		this.focusTarget.canFocus = () => this.isVisible();
 		this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
+	}
+
+	public handleScrollbarPointer(snapshot: PointerSnapshot): boolean {
+		return this.isVisible() && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)
+			&& this.scrollbarController.begin(RESOURCE_SCROLLBARS, snapshot, this.fontLineHeight);
 	}
 
 	public setFontMetrics(font: EditorFont): void {
@@ -219,6 +231,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	hide(): void {
+		this.scrollbarController.cancel();
 		pointerHover.release(this);
 		this.visible = false;
 		this.prepareLayout();
@@ -337,7 +350,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	public handleCapturedPointer(snapshot: PointerSnapshot): void {
 		const delta = snapshot.viewportX - this.resizeStartX;
 		const width = editorViewState.viewportWidth;
-		if (this.setRatioFromViewportX(this.resizeStartRatio * width + delta, width)) editorViewState.layout.markVisualLinesDirty();
+		this.setRatioFromViewportX(this.resizeStartRatio * width + delta, width);
 	}
 
 	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
@@ -357,7 +370,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	/** Publish the active view and its layout; Call Hierarchy changes only on explicit tree commands. */
 	public refresh(): boolean {
 		if (!this.visible) return false;
-		const previousInset = editorViewState.codeAreaLeft;
+		const previousInset = editorViewState.editorAreaLeft;
 		let reveal = false;
 		if (this.editor.isActive && this.mode === 'resources') {
 			const changed = this.files.sync(this.sources, this.filterMode);
@@ -370,7 +383,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 			if (changed || reveal) pointerHover.release(this);
 		}
 		if (this.prepareLayout() !== null && reveal) this.ensureSelectionVisible();
-		return editorViewState.codeAreaLeft !== previousInset;
+		return editorViewState.editorAreaLeft !== previousInset;
 	}
 
 	public navigateFiles(command: WorkbenchTreeNavigation): void {
@@ -450,7 +463,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		const layout = writeResourcePanelLayout(this.layout, this.itemCount, this.maxLineWidth, this.lineHeight);
 		this.resourceVertical.layout(layout.verticalTrack, this.itemCount, layout.capacity, this.scroll);
 		this.resourceHorizontal.layout(layout.horizontalTrack, Math.max(this.maxLineWidth, layout.availableWidth), layout.availableWidth, this.hscroll);
-		editorViewState.codeAreaLeft = this.bounds.right - this.bounds.left;
+		editorViewState.editorAreaLeft = this.bounds.right - this.bounds.left;
 		if (this.isVisible()) {
 			this.scroll = this.resourceVertical.getScroll();
 			this.hscroll = this.resourceHorizontal.getScroll();

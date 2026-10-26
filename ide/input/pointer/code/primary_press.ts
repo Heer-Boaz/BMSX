@@ -1,67 +1,62 @@
-import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { CodeAreaSelectionTarget } from './selection';
 import { setCursorPosition } from '../../../editor/ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
-import { focusPrimaryEditorSurface } from '../../../workbench/ui/focus';
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
 import { openDefinitionSearch } from '../../../workbench/contrib/code_editor/definitions/quick_access';
 import type { PointerSnapshot } from '../../../common/models';
 import * as TextEditing from '../../../editor/editing/text_editing_and_selection';
 import * as constants from '../../../common/constants';
-import { editorPointerState, clearEditorPointerSelectionState } from '../state';
-import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
-import type { CartEditor } from '../../../cart_editor';
+import { clearEditorPointerSelectionState } from '../state';
+import type { CodeEditorPane } from '../../../workbench/contrib/code_editor/editor_pane';
+import type { CodeEditorControl } from '../../../editor/ui/code_editor_control';
 
 export function handleCodeAreaPrimaryPressPointer(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
+	pane: CodeEditorPane,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	insideCodeArea: boolean,
 	gotoModifierActive: boolean,
 	bounds: CodeAreaBounds,
 	now: number,
-	selection: CodeAreaSelectionTarget,
 ): boolean {
+	const code = pane.code;
 	if (!justPressed || !insideCodeArea) {
 		return false;
 	}
-	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
+	const target = resolvePointerTextPosition(code, snapshot.viewportX, snapshot.viewportY, bounds);
 	const targetRow = target.row;
 	const targetColumn = target.column;
 	const injected = target.injected;
-	focusPrimaryEditorSurface(editor);
+	code.focusTarget.focus();
 	if (gotoModifierActive && !injected && openDefinitionSearch(
-		sources,
-		editor,
+		pane,
 		targetRow,
 		targetColumn,
 	)) {
-		clearEditorPointerSelectionState();
+		clearEditorPointerSelectionState(code);
 		return true;
 	}
-	if (registerCodePointerClick(targetRow, targetColumn, now)) {
-		TextEditing.selectWordAtPosition(targetRow, targetColumn);
-		editorPointerState.pointerSelecting = false;
+	if (registerCodePointerClick(code, targetRow, targetColumn, now)) {
+		TextEditing.selectWordAtPosition(code, targetRow, targetColumn);
+		code.pointer.pointerSelecting = false;
 		return true;
 	}
-	setSingleCursorSelectionAnchor(activeCodeEditor.view, targetRow, targetColumn);
-	setCursorPosition(targetRow, targetColumn);
-	selection.beginPointerSelection(snapshot);
+	setSingleCursorSelectionAnchor(code.view, targetRow, targetColumn);
+	setCursorPosition(code, targetRow, targetColumn);
+	code.beginPointerSelection(snapshot);
 	return true;
 }
 
-function registerCodePointerClick(row: number, column: number, now: number): boolean {
-	const interval = now - editorPointerState.lastPointerClickTimeMs;
-	const sameRow = row === editorPointerState.lastPointerClickRow;
-	const columnDelta = Math.abs(column - editorPointerState.lastPointerClickColumn);
-	const doubleClick = editorPointerState.lastPointerClickTimeMs > 0
+function registerCodePointerClick(code: CodeEditorControl, row: number, column: number, now: number): boolean {
+	const interval = now - code.pointer.lastPointerClickTimeMs;
+	const sameRow = row === code.pointer.lastPointerClickRow;
+	const columnDelta = Math.abs(column - code.pointer.lastPointerClickColumn);
+	const doubleClick = code.pointer.lastPointerClickTimeMs > 0
 		&& interval <= constants.DOUBLE_CLICK_MAX_INTERVAL_MS
 		&& sameRow
 		&& columnDelta <= 2;
-	editorPointerState.lastPointerClickTimeMs = now;
-	editorPointerState.lastPointerClickRow = row;
-	editorPointerState.lastPointerClickColumn = column;
+	code.pointer.lastPointerClickTimeMs = now;
+	code.pointer.lastPointerClickRow = row;
+	code.pointer.lastPointerClickColumn = column;
 	return doubleClick;
 }

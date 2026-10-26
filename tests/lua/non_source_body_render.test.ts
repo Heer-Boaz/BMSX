@@ -3,7 +3,7 @@ import test from 'node:test';
 import * as colors from '../../ide/common/constants';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus } from '../../ide/input/focus';
 import { api } from '../../ide/runtime/overlay_api';
 import { resolveRuntimeResource } from '../../ide/runtime/sources';
@@ -25,7 +25,7 @@ const source = `return {duration_ms=100,tracks={
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark'] as const) {
 	test(`${variant}/${theme} animation labels and retained curve evidence use their actual non-source body pair`, t => {
-		const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousTheme = colors.getActiveIdeThemeVariant();
+		const previousFont = editorViewState.font, previousTheme = colors.getActiveIdeThemeVariant();
 		configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 		const resource = { domain: 0 as const, path: 'body.lua', source: { type: 'lua' as const, resid: 'body.lua' } };
 		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
@@ -37,7 +37,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const keys = new AnimationKeyControl(inputFocus.createTarget(), controller, controller.authoring); keys.setInput(input);
 		t.after(() => {
 			keys.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null);
-			editorViewState.font = previousFont; editorViewState.layout = previousLayout; colors.setIdeThemeVariant(previousTheme);
+			editorViewState.font = previousFont; colors.setIdeThemeVariant(previousTheme);
 		});
 		// This renderer contract exercises overview and curve ink together, not a fixed physical viewport's layout mode.
 		const measured = measureAnimationEditor(editorViewState.font);

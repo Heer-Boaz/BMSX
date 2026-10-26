@@ -1,10 +1,10 @@
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import type { StateMachineSourceDefinition } from '../../../ide/workbench/contrib/behavior_lens/state_machine_model';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { FSM_BEHAVIOR_SOURCE } from '../../helpers/fsm_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 function definition(view: BehaviorLensViewState): StateMachineSourceDefinition {
 	const result = view.document.definitions[0];
@@ -20,7 +20,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_BEHAVIOR_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
@@ -35,7 +35,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	await click(outline.actionBar.items[0].bounds, 6);
 	const lines = FSM_BEHAVIOR_SOURCE.split('\n');
 	const row = lines.findIndex(line => line.includes('update = step'));
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
 		'FSM source: held Source gesture opens the callback binding without dragging code');
 	const oldDocument = view.document;
 	const prefix = '-- 🐉 moved FSM source\n';
@@ -55,7 +55,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	check(view.document === retained && definition(view).transitions === current.transitions,
 		'FSM source: unchanged frames reuse source structure and transition evidence');
 	await click(outline.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.view.cursorRow === row + 1 && !hasSelection(), 'FSM source: Source follows the new UTF-16 source coordinates');
+	check(sourcePane(test).code.view.cursorRow === row + 1 && !hasSelection(sourcePane(test).code), 'FSM source: Source follows the new UTF-16 source coordinates');
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);
 	const undone = definition(view).transitions.find(transition => transition.slot.kind === 'update')!;

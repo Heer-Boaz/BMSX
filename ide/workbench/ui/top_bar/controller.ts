@@ -3,7 +3,6 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { PointerSnapshot } from '../../../common/models';
-import { consumeChromePointerPress } from '../../../input/pointer/chrome_press';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { editorChromeState } from '../chrome_state';
 import { TOP_BAR_MENU_ENTRIES, type MenuId } from './menu';
@@ -92,7 +91,7 @@ export class MenubarController {
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) return false;
 		if (point_in_rect(snapshot.viewportX, snapshot.viewportY, editorChromeState.menuButtonBounds)) {
 			pointerHover.visit(this); this.buttonHovered = true;
-			if (pressed) { this.toggleFocus(); consumeChromePointerPress(); }
+			if (pressed) { this.toggleFocus(); }
 			return true;
 		}
 		pointerHover.release(this);
@@ -103,7 +102,6 @@ export class MenubarController {
 			if (pressed) {
 				if (this.activeIndex === index) this.popup.hide();
 				else this.open(index);
-				consumeChromePointerPress();
 			} else if (this.activeIndex >= 0 && this.activeIndex !== index) this.open(index);
 			return pressed || this.activeIndex >= 0 || !this.popup.visible;
 		}

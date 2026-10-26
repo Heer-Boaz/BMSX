@@ -4,7 +4,7 @@ import { setImmediate } from 'node:timers/promises';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
-import { activeCodeEditor } from '../../ide/editor/ui/code_editor_state';
+import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
@@ -62,7 +62,7 @@ function fixture(t: TestContext, source: string) {
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
-	const model = activeCodeEditor.model!;
+	const model = (editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code.model!;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	const version = model.version, cycles = host.runtime.machine.scheduler.nowCycles;
 	const press = (code: string, modifiers = KeyModifier.none) => {

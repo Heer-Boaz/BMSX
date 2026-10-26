@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { CartEditor } from '../../ide/cart_editor';
 import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';

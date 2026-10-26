@@ -5,8 +5,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
@@ -36,9 +35,6 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
 	const input = new CartMapInput(model, kind);
 	projectCartMap(input);
-	const previousScrollbarController = editorViewState.scrollbarController;
-	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: input.grid.vertical, codeHorizontal: input.grid.horizontal,
-		resourceVertical: input.tree.scrollbar, resourceHorizontal: input.grid.horizontal }, () => {}, pointerCapture);
 	const bounds = { left: 23, top: 31, right: 23 + width, bottom: 277 }, surfaces = new WorkbenchSurfaceService();
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('responsive map fixture'), getBounds: () => bounds,
 		getClip: () => bounds, isVisible: () => true, draw() {} });
@@ -66,7 +62,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 	};
 	t.after(() => {
 		pane.clearInput(); inputFocus.setTarget(null); pointerCapture.cancel(); pane.dispose(); surfaces.dispose(); input.dispose(); model.dispose();
-		editorViewState.scrollbarController = previousScrollbarController;
+
 	});
 	return { model, input, pane, bounds, layout, press, pointer };
 }

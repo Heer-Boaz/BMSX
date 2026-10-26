@@ -7,7 +7,7 @@ import type { RectBounds } from '../../machine/ts/common/rect';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { activeCodeEditor } from '../../ide/editor/ui/code_editor_state';
+import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -49,7 +49,8 @@ function fixture(t: TestContext) {
 	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	t.after(async () => { problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
-	const code = editor.editorGroup.model.activeTab!, model = activeCodeEditor.model!;
+	const sourcePane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane;
+	const code = editor.editorGroup.model.activeTab!, model = sourcePane.code.model!;
 	assert.ok(code.kind === 'code_editor');
 	const cycles = host.runtime.machine.scheduler.nowCycles;
 	const key = (code: string, down = true, modifiers = KeyModifier.none) => editor.dispatchKey(new KeyInputEvent(code, modifiers, false, down));
@@ -69,7 +70,7 @@ function fixture(t: TestContext) {
 		const input = new WorkspaceEditReviewInput(proposal, evidence);
 		editor.editorGroup.openEditor(input); editor.update(0); return input;
 	};
-	return { editor, host, sources, code, model, source, cycles, key, press, pointer, show };
+	return { sourcePane, editor, host, sources, code, model, source, cycles, key, press, pointer, show };
 }
 
 test('the retained review tab exposes exact pending bytes and captured Source without acquiring document history', async t => {
@@ -83,9 +84,9 @@ test('the retained review tab exposes exact pending bytes and captured Source wi
 	const picker = f.editor.quickInput;
 	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, review.evidence.items.length);
 	picker.model.list.selectionIndex = 17; await picker.accept(); await setImmediate(); f.editor.update(0);
-	assert.ok(f.editor.editorGroup.model.activeTab === f.code && activeCodeEditor.model === f.model);
+	assert.ok(f.editor.editorGroup.model.activeTab === f.code && f.sourcePane.code.model === f.model);
 	const position = { row: 0, column: 0 }; f.model.buffer.positionAt(location.offset, position);
-	assert.equal(activeCodeEditor.view!.cursorRow, position.row); assert.equal(activeCodeEditor.view!.cursorColumn, position.column);
+	assert.equal(f.sourcePane.code.view!.cursorRow, position.row); assert.equal(f.sourcePane.code.view!.cursorColumn, position.column);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 	assert.ok(f.editor.editorGroup.model.tabs.includes(review));
 	assert.equal(review.proposal.state, 'pending');

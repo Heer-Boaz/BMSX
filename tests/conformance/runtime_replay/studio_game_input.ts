@@ -71,7 +71,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	check(ide.editor.gamePanel.visible && ide.editor.executionSuspended, 'source editor owns the hold while its game panel is unfocused');
 	const panelCenter = { left: editorViewState.viewportWidth - editorChromeState.editorRightInset / 2,
 		right: editorViewState.viewportWidth - editorChromeState.editorRightInset / 2 + 1,
-		top: (view.layout.top + editorViewState.codeAreaBottom) / 2, bottom: (view.layout.top + editorViewState.codeAreaBottom) / 2 + 1 };
+		top: (view.layout.top + editorViewState.editorAreaBottom) / 2, bottom: (view.layout.top + editorViewState.editorAreaBottom) / 2 + 1 };
 	await click(panelCenter);
 	check(inputFocus.target?.guestInput?.bounds !== undefined && !ide.editor.executionSuspended && ide.editor.guestInputRecipient !== null,
 		'focused side panel releases only the workbench hold and routes game input');

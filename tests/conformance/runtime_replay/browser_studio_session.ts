@@ -5,7 +5,7 @@ import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend'
 import type { GPUBackend } from '../../../machine/ts/render/backend/backend';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { createStudioFixture, check, type StudioFixture } from './studio_fixture';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+import { sourcePane } from './studio_fixture';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { selectBehaviorLensDefinition } from '../../../ide/workbench/contrib/behavior_lens/layout';
 import { captureBehaviorLensView } from '../../../ide/workbench/contrib/behavior_lens/view_snapshot';
@@ -51,15 +51,15 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	await test.runPaletteCommand('Run: Pause');
 	ide.editor.setFontVariant('tiny');
 	test.harness.openLuaSource('cart.lua');
-	const model = activeCodeEditor.model!;
+	const model = sourcePane(test).code.model!;
 	// Persist a baseline distinct from both the ROM and the later recovery draft.
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- canonical session save\n' }]);
 	await test.press('ControlLeft', 'KeyS');
 	await test.until(() => !model.dirty, 'session: project acknowledges the canonical Lua baseline');
 	const savedSource = model.lastSavedSource;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SOURCE }]);
-	activeCodeEditor.view!.cursorRow = 2; activeCodeEditor.view!.cursorColumn = 9;
-	activeCodeEditor.view!.selectionAnchor = { row: 1, column: 4 };
+	sourcePane(test).code.view!.cursorRow = 2; sourcePane(test).code.view!.cursorColumn = 9;
+	sourcePane(test).code.view!.selectionAnchor = { row: 1, column: 4 };
 	const sourceInput = ide.editor.editorGroup.model.activeTab!;
 	if (sourceInput.kind !== 'code_editor') throw new Error('session: original source input required');
 	const sourceSelection = captureCodeEditorView(sourceInput);
@@ -98,7 +98,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	if (code.kind !== 'code_editor') throw new Error('session: clean source preview required');
 	code.context.view.cursorRow = 5; code.context.view.cursorColumn = 3;
 	ide.editor.editorGroup.openEditor(fsm); await test.frame();
-	check(activeCodeEditor.model === null && activeCodeEditor.view === null, 'session: visual input has no stale attached text widget');
+	check(sourcePane(test).code.model === null && sourcePane(test).code.view === null, 'session: visual input has no stale attached text widget');
 	check(!code.workingCopy.dirty && ide.editor.editorGroup.model.previewTab === code, 'session: clean preview is independent of dirty source backup');
 	check(JSON.stringify(captureCodeEditorView(sourceInput)) === JSON.stringify(sourceSelection), 'session: opening visual panes preserves code cursor and selection');
 	check(model.buffer.getText() === SOURCE, 'session: creating views never changes the canonical source');
@@ -120,7 +120,8 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 	check(siblings.every(tab => (tab.kind === 'behavior_lens' || tab.kind === 'scene_editor' || tab.kind === 'code_editor')
 		&& tab.workingCopy === model), 'session: views share one resource-owned working copy');
 	check([...editorTextModelService.models].filter(candidate => candidate.resource.path === model.resource.path).length === 1, 'session: no shadow editor model');
-	check(activeCodeEditor.model === null && activeCodeEditor.view === null, 'session: reload of active visual pane leaves code widget detached');
+	const source = sourcePane(test);
+	check(source === undefined || source.code.model === null && source.code.view === null, 'session: reload of an active visual pane does not attach a Source control');
 	test.execution.setPauseReason(HostPauseReason.Requested, true);
 	ide.editor.activate();
 	await test.until(() => active.view.presentation.kind === 'state-graph' && active.view.presentation.layoutState.kind === 'ready', 'session: cold restored FSM layout');

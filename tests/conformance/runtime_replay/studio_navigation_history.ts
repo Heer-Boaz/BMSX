@@ -1,10 +1,10 @@
 import { NAVIGATION_SOURCE } from '../../fixtures/studio/navigation';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { openSceneEditor, selectMember } from './studio_scene_source';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** The actual shared keybinding/palette, panes, source model and FSM worker. */
 export async function testStudioNavigationHistory(test: StudioFixture): Promise<void> {
@@ -14,7 +14,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	const cycles = test.cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua'); // Workspace transport only; all assertions use the independent fixture.
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: NAVIGATION_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
@@ -40,7 +40,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	const version = model.version;
 	const dirty = model.dirty;
 	await click(graph.actionBar.items[0].bounds, 5);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line - 1 && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === source.start.line - 1 && !hasSelection(sourcePane(test).code),
 		'A03: Source opens the selected proof without changing or selecting text');
 	await frame();
 	await test.capture?.('diagram-source');
@@ -48,15 +48,15 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await press('F12');
 	const expected = { row: 0, column: 0 };
 	model.buffer.positionAt(NAVIGATION_SOURCE.indexOf('next_path<const>'), expected);
-	check(activeCodeEditor.view.cursorRow === expected.row && activeCodeEditor.view.cursorColumn === expected.column,
+	check(sourcePane(test).code.view.cursorRow === expected.row && sourcePane(test).code.view.cursorColumn === expected.column,
 		'A03: Go to Definition resolves the canonical Lua constant');
 	check(model.version === version && model.dirty === dirty, 'A03: the whole forward navigation leaves text/dirty/version untouched');
 	const prefix = '-- 🐉 navigation prefix\n';
 	await press('ControlLeft', 'Home'); await test.clipboard.writeText(prefix); await press('ControlLeft', 'KeyV');
 	const editedVersion = model.version;
 	await press('AltLeft', 'ArrowLeft');
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line
-		&& activeCodeEditor.view.cursorColumn === source.start.column - 1 + 'return '.length, 'A03: Back restores the mapped source-use cursor');
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === source.start.line
+		&& sourcePane(test).code.view.cursorColumn === source.start.column - 1 + 'return '.length, 'A03: Back restores the mapped source-use cursor');
 	await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorGroup.model.activeTab === lens, 'A03: the second Back returns to the concrete visual input');
 	await lens.graphLayout.settled; await frame();
@@ -67,7 +67,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 		'A03: asynchronous geometry publication preserves the saved viewport instead of running initial reveal');
 	await test.capture?.('diagram-return');
 	await press('AltLeft', 'ArrowRight');
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line,
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === source.start.line,
 		'A03: Forward is a workbench binding, including from a graph');
 	check(model.version === editedVersion && model.buffer.getText() === prefix + NAVIGATION_SOURCE,
 		'A03: history restoration does not apply an undo snapshot or lose source edits');
@@ -137,11 +137,11 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	check(ide.editor.editorGroup.model.activeTab === scene && scene.selectionRange.start === member && scene.properties[0].value === 44,
 		'A03: Scene Source restores member identity and bound properties');
 	await press('AltLeft', 'ArrowRight');
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model, 'A03: Scene Forward returns to the shared source model');
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model, 'A03: Scene Forward returns to the shared source model');
 	// A closed text input remains a registered resource destination, not a disposed input.
 	await press('ControlLeft', 'KeyW');
 	await runPaletteCommand('Go: Back');
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model, 'A03: Back reopens a closed text resource through its registered editor');
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model, 'A03: Back reopens a closed text resource through its registered editor');
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: original }]);
 	await frame();
 	await runPaletteCommand('Scenario Lab: Open');

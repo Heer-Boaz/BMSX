@@ -10,7 +10,7 @@ import { CommandQuickPickProvider } from '../../ide/workbench/contrib/commands/q
 import type { QuickPickHighlight, QuickPickMatch, QuickPickProjection } from '../../ide/workbench/services/quick_input/provider';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { HighlightedLabel } from '../../ide/editor/ui/highlighted_label';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { api } from '../../ide/runtime/overlay_api';

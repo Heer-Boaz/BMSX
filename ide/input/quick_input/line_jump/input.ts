@@ -1,29 +1,23 @@
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
-import { applyLineJump, closeLineJump, openLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../keyboard/key_input';
-import { lineJumpState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
-import type { EditorSearchController } from '../../../workbench/contrib/code_editor/find/search';
+import type { CodeEditorLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
 
-export function handleLineJumpInput(playerInput: KeyInputEvent, search: EditorSearchController): void {
-	const shiftDown = isShiftDown(playerInput);
-	const ctrlDown = isCtrlDown(playerInput);
-	const metaDown = isMetaDown(playerInput);
-	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyL', playerInput)) {
-		consumeIdeKey('KeyL', playerInput);
-		openLineJump(search);
+export function handleLineJumpInput(input: KeyInputEvent, lineJump: CodeEditorLineJump): void {
+	if ((isCtrlDown(input) || isMetaDown(input)) && isKeyJustPressed('KeyL', input)) {
+		consumeIdeKey('KeyL', input);
+		lineJump.open();
 		return;
 	}
-	if (!shiftDown && (isKeyJustPressed('NumpadEnter', playerInput) || isKeyJustPressed('Enter', playerInput))) {
-		consumeIdeKey('NumpadEnter', playerInput);
-		consumeIdeKey('Enter', playerInput);
-		applyLineJump();
+	if (!isShiftDown(input) && (isKeyJustPressed('NumpadEnter', input) || isKeyJustPressed('Enter', input))) {
+		consumeIdeKey('NumpadEnter', input); consumeIdeKey('Enter', input);
+		lineJump.apply();
 		return;
 	}
-	if (isKeyJustPressed('Escape', playerInput)) {
-		consumeIdeKey('Escape', playerInput);
-		closeLineJump(false);
+	if (isKeyJustPressed('Escape', input)) {
+		consumeIdeKey('Escape', input);
+		lineJump.close(false);
 		return;
 	}
-	applyInlineFieldEditing(playerInput, lineJumpState.field);
+	applyInlineFieldEditing(input, lineJump.state.field);
 }

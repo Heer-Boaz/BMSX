@@ -2,9 +2,9 @@ import { AssistantHttpConnection } from '../../../ide/browser/assistant_connecti
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { ActorRuntimeInspection } from '../../../ide/workbench/contrib/actor_lab/runtime_inspection';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
-import { check, createStudioFixture } from './studio_fixture';
+import { sourcePane, check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
 
@@ -77,7 +77,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	check(ide.editor.editorGroup.model.activeTab === sourceTab && lab.detailsWindow.open && !inspector.visible,
 		'Details Source follows the installed callback without closing the retained Details view');
 	await frame();
-	check(activeCodeEditor.view.cursorRow === ACTOR_TOOLS_SOURCE.split('\n').findIndex(line => line.startsWith('local function callback')),
+	check(sourcePane(test).code.view.cursorRow === ACTOR_TOOLS_SOURCE.split('\n').findIndex(line => line.startsWith('local function callback')),
 		'Details Source opens the installed callback location');
 	await renderer.capture!('details-callback-source');
 	await press('AltLeft', 'ArrowLeft'); await frame();

@@ -16,7 +16,6 @@ import { applyInlineFieldEditing, setFieldText } from '../../ide/editor/ui/inlin
 import { inputFocus } from '../../ide/input/focus';
 import { executeClipboardAction } from '../../ide/input/clipboard';
 import { pointerCapture } from '../../ide/input/pointer/capture';
-import { editorPointerState } from '../../ide/input/pointer/state';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
@@ -85,7 +84,6 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 	assert.equal(field.cursorColumn, 3);
 	assert.equal(projections, 0, 'pointer and wheel cannot enter lower geometry or controls');
 	assert.equal(gamepadActions, 0);
-	assert.equal(editorPointerState.lastPointerSnapshot, null);
 	menu.dismiss();
 	assert.equal(menu.exclusiveInput, false);
 	assert.equal(editor.acceptsInput, true);

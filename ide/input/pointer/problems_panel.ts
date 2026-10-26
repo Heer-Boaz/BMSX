@@ -2,7 +2,6 @@ import { pointerHover } from './hover';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
 import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, problemsPanel } from '../../workbench/contrib/problems/panel/controller';
-import { clearEditorPointerSelectionState } from './state';
 import type { EditorGroupView } from '../../workbench/services/editor/editor_group';
 
 export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
@@ -14,7 +13,6 @@ export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, just
 		return false;
 	}
 	problemsPanel.beginResize(snapshot, bounds.bottom - bounds.top);
-	clearEditorPointerSelectionState();
 	return true;
 }
 
@@ -40,6 +38,5 @@ export function handleProblemsPanelPointer(
 	if (!problemsPanel.handlePointer(editorGroup, snapshot, justPressed, justReleased, problemsBounds)) {
 		return false;
 	}
-	clearEditorPointerSelectionState();
 	return true;
 }

@@ -1,11 +1,11 @@
+import type { CodeEditorControl } from '../../ui/code_editor_control';
 import { CodeTextDecoration } from '../../../common/models';
 import type { Font } from '../../../../machine/ts/render/shared/bmsx_font';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
-import { editorViewState } from '../../ui/view/state';
 import type { CodeRowDecorations } from './decorations';
 
-export function drawHighlightSlice(
+export function drawHighlightSlice(code: CodeEditorControl,
 	renderFont: Font,
 	renderText: string,
 	colors: readonly number[],
@@ -29,7 +29,7 @@ export function drawHighlightSlice(
 		const style = constants.CODE_TEXT_DECORATION_STYLES[role];
 		if (role !== CodeTextDecoration.None) {
 			api.fill_rect(cursorX, originY, cursorX + advancePrefix[roleEnd] - advancePrefix[index],
-				originY + editorViewState.lineHeight, z, style.background);
+				originY + code.lineHeight, z, style.background);
 		}
 		while (index < roleEnd) {
 			const color = role === CodeTextDecoration.None ? colors[index] : style.foreground;

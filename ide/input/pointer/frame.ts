@@ -1,11 +1,7 @@
-import { PointerButton } from '../../../hosts/common/input/pointer_event';
-import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
 import { mapDisplayPointToViewport, DisplayPointMappingResult } from '../../../machine/ts/render/video_output';
 import type { PointerInputEvent, WheelInputEvent } from '../../../hosts/common/input/pointer_event';
 import { editorViewState } from '../../editor/ui/view/state';
-import type { PointerInputSnapshot, WheelInputSnapshot, PointerPosition } from '../../common/models';
-import { editorPointerState } from './state';
-import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
+import type { PointerInputSnapshot, WheelInputSnapshot, PointerPosition, PointerSnapshot } from '../../common/models';
 import type { EditorDisplay } from '../../common/viewport';
 
 const mapped = { x: 0, y: 0 };
@@ -35,21 +31,13 @@ function projectEditorPointerPosition(display: EditorDisplay, x: number, y: numb
 	snapshot.valid = result !== DisplayPointMappingResult.Invalid;
 }
 
-export function prepareEditorPointerFrame(
-	snapshot: PointerInputSnapshot,
-	gotoModifierActive: boolean,
-	workbenchInputBlocked: boolean,
-): void {
-	if (!gotoModifierActive) {
-		clearGotoHoverHighlight();
-	}
-	editorPointerState.lastPointerSnapshot = snapshot.valid ? snapshot : null;
-	if (!snapshot.valid || workbenchInputBlocked) {
-		editorPointerState.lastPointerRowResolution = null;
-	}
-	if ((snapshot.pressedButtons & PointerButton.Primary) === 0) {
-		editorPointerState.pointerSelecting = false;
-		editorSearchState.field.pointerSelecting = false;
-		lineJumpState.field.pointerSelecting = false;
-	}
+/** Copy the event producer's mutable record into a retained gesture latch. */
+export function copyPointerSnapshot(target: PointerSnapshot, source: PointerSnapshot): void {
+	target.viewportX = source.viewportX;
+	target.viewportY = source.viewportY;
+	target.insideViewport = source.insideViewport;
+	target.valid = source.valid;
+	target.pressedButtons = source.pressedButtons;
+	target.justPressedButtons = source.justPressedButtons;
+	target.justReleasedButtons = source.justReleasedButtons;
 }

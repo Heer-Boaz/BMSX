@@ -8,7 +8,7 @@ import { measureText, measureTextRange } from '../../../editor/common/text/layou
 import { applyInlineFieldEditing, applyInlineFieldPointer, selectAll, setFieldText } from '../../../editor/ui/inline/text_field';
 import { TextField } from '../../../editor/ui/inline/text_field_model';
 import { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_viewport';
-import { resetBlink } from '../../../editor/render/caret';
+import { resetInlineBlink } from '../../../editor/render/caret';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
@@ -92,7 +92,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		this.list.focusTarget.commandContext = this.focusTarget;
 		this.list.focusTarget.registerCommand('list.find', {
 			isEnabled: () => this.hasInput,
-			run: () => { this.filter.focusTarget.focus(); selectAll(this.filter); resetBlink(); },
+			run: () => { this.filter.focusTarget.focus(); selectAll(this.filter); resetInlineBlink(); },
 		});
 		this.actions.focusTarget.next = this.filter.focusTarget;
 		this.filter.focusTarget.previous = this.actions.focusTarget;
@@ -122,7 +122,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 			input.model.filter = this.filter.text;
 			input.model.project();
 			input.list.scrollbar.setScroll(0);
-			resetBlink();
+			resetInlineBlink();
 		});
 		this.update();
 	}
@@ -231,7 +231,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 			this.filterPointer.pointerX = snapshot.viewportX;
 			this.filterPointer.justPressed = justPressed;
 			this.filterPointer.pointerPressed = (snapshot.pressedButtons & PointerButton.Primary) !== 0;
-			if (applyInlineFieldPointer(this.filter, this.filterPointer).requestBlinkReset) resetBlink();
+			if (applyInlineFieldPointer(this.filter, this.filterPointer).requestBlinkReset) resetInlineBlink();
 			return true;
 		}
 		if (!this.list.handlePointer(snapshot)) return false;

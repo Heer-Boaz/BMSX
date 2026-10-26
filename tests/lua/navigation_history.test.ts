@@ -1,5 +1,5 @@
 import { inputFocus } from '../../ide/input/focus';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -9,8 +9,6 @@ import {
 } from '../../ide/navigation/navigation_history';
 import { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
-import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
-import { renameController } from '../../ide/workbench/contrib/code_editor/rename/controller';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
@@ -189,12 +187,12 @@ test('history awaits the registered resource opener and restores a closed text i
 	const openGate = new Promise<void>(resolve => { finishOpen = resolve; });
 	const navigation = new EditorNavigationController(
 		{ resourceByIdentity: new Map([[`0\0${resource.path}`, resource]]) } as RuntimeSourceState,
-		{ isFocused: () => false } as ResourcePanelController,
+		{ focusTarget: inputFocus.createTarget(), isFocused: () => false } as ResourcePanelController,
 		new ResourceEditorResolver([{
 			id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async actual => {
 				assert.equal(actual, resource); await openGate; return reopened;
 			},
-		}]), group, new EditorSearchController({} as RuntimeSourceState, renameController),
+		}]), group,
 	);
 	t.after(() => { group.dispose(); });
 	const version = reopened.workingCopy.version;
@@ -220,8 +218,8 @@ test('Back activates a surviving visual preview without turning navigation into 
 	const target = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1), group);
 	navigationState.back.push(target);
 	const navigation = new EditorNavigationController(
-		{} as RuntimeSourceState, { isFocused: () => false } as ResourcePanelController,
-		new ResourceEditorResolver([]), group, new EditorSearchController({} as RuntimeSourceState, renameController),
+		{} as RuntimeSourceState, { focusTarget: inputFocus.createTarget(), isFocused: () => false } as ResourcePanelController,
+		new ResourceEditorResolver([]), group,
 	);
 	t.after(() => { group.dispose(); });
 	await navigation.goBackward();
@@ -244,13 +242,13 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 		const openGate = new Promise<void>(resolve => { finishOpen = resolve; });
 		const navigation = new EditorNavigationController(
 			{ resourceByIdentity: new Map([[`0\0${older.workingCopy.resource.path}`, older.workingCopy.resource]]) } as RuntimeSourceState,
-			{ queuePendingSelection() {}, isVisible: () => false, isFocused: () => false } as unknown as ResourcePanelController,
+			{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 			new ResourceEditorResolver([{
 				id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async resource => {
 					if (resource === older.workingCopy.resource) { await openGate; return older; }
 					return newer;
 				},
-			}]), group, new EditorSearchController({} as RuntimeSourceState, renameController),
+			}]), group,
 		);
 		t.after(() => { group.dispose(); });
 		const target = new NavigationHistoryEntry({ kind: 'resource', ...older.toResourceEditor() }, new CodeEditorNavigationSelection(older), group);
@@ -292,8 +290,8 @@ test('a debugger continuation cannot decorate a tab chosen after its source atta
 	const resource = stopped.workingCopy.resource;
 	const navigation = new EditorNavigationController(
 		{ resourceByIdentity: new Map([[`0\0${resource.path}`, resource]]) } as RuntimeSourceState,
-		{ queuePendingSelection() {}, isVisible: () => false, isFocused: () => false } as unknown as ResourcePanelController,
-		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => stopped }]), group, new EditorSearchController({} as RuntimeSourceState, renameController),
+		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => stopped }]), group,
 	);
 	t.after(() => { group.dispose(); });
 	const pending = focusExecutionStop({ navigation, editorGroup: group } as CartEditor, resource, 2, 7);
@@ -316,8 +314,8 @@ test('cancelled resolution disposes its fresh candidate without disturbing the r
 	input.onWillDispose(() => { retainedDisposals++; }); candidate.onWillDispose(() => { candidateDisposals++; });
 	const navigation = new EditorNavigationController(
 		{} as RuntimeSourceState,
-		{ queuePendingSelection() {}, isVisible: () => false, isFocused: () => false } as unknown as ResourcePanelController,
-		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => candidate }]), group, new EditorSearchController({} as RuntimeSourceState, renameController),
+		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => candidate }]), group,
 	);
 	t.after(() => { group.dispose(); });
 	const pending = navigation.openResource(input.workingCopy.resource);
@@ -342,7 +340,7 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 		{} as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async () => { await gate; return candidate; } }]),
-		group, new EditorSearchController({} as RuntimeSourceState, renameController),
+		group,
 	);
 	const pending = navigation.openResource(candidate.workingCopy.resource);
 	// A group-owned popup may take focus while its content resource is resolving.
@@ -371,10 +369,10 @@ test('async resource admission captures the departure before an in-control caret
 	const gate = new Promise<void>(resolve => { finish = resolve; });
 	const navigation = new EditorNavigationController(
 		{} as RuntimeSourceState,
-		{ queuePendingSelection() {}, isVisible: () => false, isFocused: () => false } as unknown as ResourcePanelController,
+		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async () => { await gate; return destination; } }]),
-		group, new EditorSearchController({} as RuntimeSourceState, renameController),
+		group,
 	);
 	const focused = inputFocus.target;
 	const pending = navigation.openResource(destination.workingCopy.resource);

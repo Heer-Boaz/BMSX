@@ -1,9 +1,9 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Same menu/focus/command path over actual source, graph selection and a suspended machine. */
 export async function testStudioContextMenu(test: StudioFixture): Promise<void> {
@@ -12,7 +12,7 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 	const position = cycles();
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	const dirty = model.dirty;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
@@ -40,7 +40,7 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 		'context menu: actual tiny-font popup fits workbench');
 	await press('Escape');
 	const graphFocus = inputFocus.target;
-	check(!menu.visible && graphFocus !== null && graphFocus !== activeCodeEditor.focusTarget, 'context menu: Escape restores graph focus');
+	check(!menu.visible && graphFocus !== null && graphFocus !== sourcePane(test).code.focusTarget, 'context menu: Escape restores graph focus');
 	await press('ShiftLeft', 'F10');
 	check(menu.visible && menu.model.rows[menu.model.selectedIndex].command === 'behaviorLens.source',
 		'context menu: keyboard opens on selected graph node with first enabled command');

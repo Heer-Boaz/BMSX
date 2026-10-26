@@ -7,7 +7,7 @@ import { buildLuaSemanticFrontendFromSnapshot } from '../../../toolchain/ts/lua/
 import { buildReferenceSources } from '../../../ide/editor/contrib/references/sources';
 import { createReferenceQuickPickProvider } from '../../../ide/workbench/contrib/code_editor/references/quick_access';
 import { QuickInputController } from '../../../ide/workbench/services/quick_input/controller';
-import { configureFontVariant } from '../../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { medianMilliseconds } from '../../helpers/performance';
 

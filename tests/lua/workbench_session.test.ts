@@ -60,7 +60,7 @@ function registry(root: string, text: string): LuaSourceRegistry {
 }
 
 function fixture(t: TestContext) {
-	Object.assign(editorViewState, { font: new EditorFont('tiny'), lineHeight: 6, viewportWidth: 384, viewportHeight: 288, codeAreaTop: 24, codeAreaBottom: 120 });
+	Object.assign(editorViewState, { font: new EditorFont('tiny'), lineHeight: 6, viewportWidth: 384, viewportHeight: 288, editorAreaTop: 24, editorAreaBottom: 120 });
 	const sources = createTestRuntimeSourceState(registry('system', '-- system'), [registry('game', SOURCE), registry('extension', '-- second slot')], 0);
 	const group = createTestEditorGroup();
 	const behavior = new BehaviorLensController(sources, null, group, null, new BehaviorSourceDocuments(editorTextModelService, sources), () => assert.fail('metadata must not start an FSM layout worker'), null, null);
@@ -97,7 +97,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const lenses = [0, 1].map(index => {
 		const input = f.behavior.createInput(f.model, 'graph');
 		selectBehaviorLensDefinition(input.view, input.view.document.definitions[index].rowKey);
-		input.updateDefinition(); prepareBehaviorLensLayout(input.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+		input.updateDefinition(); prepareBehaviorLensLayout(input.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.ok(input.view.presentation.kind === 'graph');
 		input.view.presentation.position = { scrollX: 37 + index, scrollY: 25 + index, zoom: 0.75 };
 		f.group.model.add(input); return input;
@@ -128,7 +128,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	assert.equal(first.workingCopy.buffer.getText(), dirtySource); assert.equal(first.workingCopy.dirty, true);
 	assert.equal(first.workingCopy.canUndo, false, 'source backup is not an Undo journal');
 	assert.equal(newClean.workingCopy.dirty, false); assert.equal([...editorTextModelService.models].length, 2);
-	prepareBehaviorLensLayout(second.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	prepareBehaviorLensLayout(second.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.ok(second.view.presentation.kind === 'graph');
 	assert.equal(second.view.presentation.viewport.scrollX, 38); assert.equal(second.view.presentation.viewport.zoom, 0.75);
 });
@@ -205,12 +205,12 @@ test('source fingerprint is retained by buffer version and shared by views, not 
 
 test('scene memento survives first layout and retains pending coordinates before its pane is attached', t => {
 	const f = fixture(t);
-	const old = new SceneEditorInput(f.model); f.scene.refresh(old); selectSceneOutlineRow(old, 1); layoutSceneEditor(old, true, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	const old = new SceneEditorInput(f.model); f.scene.refresh(old); selectSceneOutlineRow(old, 1); layoutSceneEditor(old, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	old.details.scrollbar.setScroll(17); old.outline.scroll = 1;
 	const snapshot = JSON.parse(JSON.stringify(captureSceneEditorView(old)));
 	const fresh = new SceneEditorInput(f.model); f.scene.refresh(fresh); restoreSceneEditorView(fresh, snapshot);
 	assert.deepEqual(captureSceneEditorView(fresh), snapshot, 'no hidden default geometry overwrites the pending memento');
-	layoutSceneEditor(fresh, true, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	layoutSceneEditor(fresh, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(fresh.position, undefined); assert.equal(fresh.details.scrollTop, old.details.scrollTop);
 	assert.equal(fresh.outline.selectionIndex, 1); assert.deepEqual(fresh.properties.map(p => p.value), [11, -22, 33]);
 	assert.equal(f.model.dirty, false); old.dispose(); fresh.dispose();

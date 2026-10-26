@@ -1,3 +1,4 @@
+import type { CodeEditorControl } from '../ui/code_editor_control';
 import type { color } from '../../../machine/ts/render/shared/submissions';
 import { invertThemeToken, resolveThemeTokenColor } from '../../theme/tokens';
 import type { OverlayApi as Api } from '../../runtime/overlay_api';
@@ -9,7 +10,6 @@ import { getCursorOffset } from '../ui/inline/text_field';
 import { api } from '../../runtime/overlay_api';
 import { resetBlinkState } from '../ui/view/caret/blink';
 import { editorCaretState } from '../ui/view/caret/state';
-import { editorViewState } from '../ui/view/state';
 import type { EditorFont } from '../ui/view/font';
 
 export function drawInlineCaret(
@@ -38,7 +38,7 @@ export function drawInlineCaret(
 	drawRectOutlineColor(left, top, right, bottom, 0, caretValue);
 }
 
-export function drawCursor(info: CursorScreenInfo, textX: number, active: boolean): void {
+export function drawCursor(code: CodeEditorControl, info: CursorScreenInfo, textX: number, active: boolean): void {
 	const cursorX = info.x;
 	const cursorY = info.y;
 	const caretLeft = Math.max(textX, cursorX - 1);
@@ -49,13 +49,13 @@ export function drawCursor(info: CursorScreenInfo, textX: number, active: boolea
 	const caretValue = resolveThemeTokenColor(constants.CARET_COLOR);
 	if (active) {
 		api.fill_rect_color(caretLeft, caretTop, caretRight, caretBottom, 0, caretValue);
-		drawEditorText(editorViewState.font, caretGlyph, cursorX, caretTop, 0, invertThemeToken(constants.CARET_COLOR), { preserveCase: true });
+		drawEditorText(code.font, caretGlyph, cursorX, caretTop, 0, invertThemeToken(constants.CARET_COLOR), { preserveCase: true });
 		return;
 	}
 	drawRectOutlineColor(caretLeft, caretTop, caretRight, caretBottom, 0, caretValue);
 }
 
-export function resetBlink(): void {
+export function resetInlineBlink(): void {
 	resetBlinkState(editorCaretState);
 }
 

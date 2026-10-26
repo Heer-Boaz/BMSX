@@ -1,11 +1,11 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { editorSearchState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
+
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { testStudioQuickInputInteraction } from './studio_quick_input_interaction';
 
@@ -24,11 +24,11 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	const x = pane.controls[0];
 	const picker = ide.editor.quickInput;
 	await click(scene.properties[0].bounds);
-	const codeTop = editorViewState.codeAreaTop;
+	const codeTop = editorViewState.editorAreaTop;
 	await press('ControlLeft', 'Comma');
 	check(picker.visible && picker.field.focusTarget.hasFocus && ide.editor.editorGroup.model.activeTab === scene,
 		'quick pick: workbench search does not activate a hidden code editor');
-	check(editorViewState.codeAreaTop === codeTop && picker.layout.bounds.right === editorViewState.viewportWidth - 8,
+	check(editorViewState.editorAreaTop === codeTop && picker.layout.bounds.right === editorViewState.viewportWidth - 8,
 		'quick pick: overlay has its own viewport, not a code inline bar');
 	await testStudioQuickInputInteraction(test);
 	for (const code of ['KeyR', 'KeyO', 'KeyO', 'KeyT']) await press(code);
@@ -93,7 +93,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'Comma');
 	for (const code of ['KeyR', 'KeyO', 'KeyO', 'KeyT']) await press(code);
 	await press('Enter');
-	await until(() => ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model,
+	await until(() => ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model,
 		'quick pick: Scenario Lab selection opens the exact retained root document through normal navigation');
 
 	// A lower code widget must not consume the popup's Escape.
@@ -101,7 +101,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	const findTarget = inputFocus.target;
 	await press('ControlLeft', 'Comma');
 	await press('Escape');
-	check(editorSearchState.visible && inputFocus.target === findTarget, 'quick pick: Escape dismisses the topmost input, not Find behind it');
+	check(sourcePane(test).find.state.visible && inputFocus.target === findTarget, 'quick pick: Escape dismisses the topmost input, not Find behind it');
 	await press('Escape');
 	await openSceneEditor(test);
 	await press('ControlLeft', 'Comma');
@@ -114,13 +114,13 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	const bounds = picker.model.viewport.bounds;
 	await click({ left: bounds.left, right: bounds.right,
 		top: bounds.top, bottom: bounds.top + picker.model.rowHeight }, 8);
-	await until(() => ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model,
+	await until(() => ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model,
 		'quick pick: held pointer acceptance opens once through the resource owner');
 	check(!picker.visible && model.buffer.getText() === original && cycles() === position,
 		'quick pick: the complete input loop preserves source and paused execution');
 
 	// Open the popup while a real lower scrollbar still captures a held mouse press.
-	const thumb = editorViewState.scrollbars.codeVertical.getThumb();
+	const thumb = sourcePane(test).code.scrollbars.codeVertical.getThumb();
 	check(thumb !== null, 'quick pick: the real root source exposes a vertical scrollbar');
 	await click(thumb);
 	setPointerButton('pointer_primary', true);
@@ -128,11 +128,11 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	check(pointerCapture.active, 'quick pick: real scrollbar drag is active before opening');
 	await press('ControlLeft', 'Comma');
 	check(picker.visible && !pointerCapture.active, 'quick pick: exclusive input ends the lower pointer capture');
-	const scroll = activeCodeEditor.view.scrollRow;
+	const scroll = sourcePane(test).code.view.scrollRow;
 	setPointerButton('pointer_primary', false);
 	await frame();
 	await press('Escape');
-	check(!pointerCapture.active && activeCodeEditor.view.scrollRow === scroll,
+	check(!pointerCapture.active && sourcePane(test).code.view.scrollRow === scroll,
 		'quick pick: release and dismissal do not revive a stale drag');
 }
 

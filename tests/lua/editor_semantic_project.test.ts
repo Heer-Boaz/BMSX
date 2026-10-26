@@ -1,6 +1,5 @@
-import { CodeLayout } from '../../ide/editor/ui/code/layout';
-import { ActiveCodeEditorState } from '../../ide/editor/ui/code_editor_state';
-import { EditorFont } from '../../ide/editor/ui/view/font';
+import { createTestCodeControl } from '../helpers/code_control';
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import { advanceLuaSourceRevision } from '../../ide/runtime/source_registry';
 import { CodeDocumentProjections } from '../../ide/editor/ui/code/document_projections';
 import { luaSyntaxSnapshot } from '../helpers/lua_syntax_snapshot';
@@ -452,23 +451,23 @@ test('actual editor frontend and context token queries consume queued model edit
 	const { resetSemanticProject, resetSemanticProjects } = await import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
 	const { buildEditorSemanticSnapshot } = await import('../../ide/editor/contrib/intellisense/frontend');
 	const { resolveContextMenuToken } = await import('../../ide/editor/contrib/intellisense/engine');
-	const { activeCodeEditor, createCodeEditorViewState } = await import('../../ide/editor/ui/code_editor_state');
 	const path = 'frontend_incremental.lua';
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = editorTextModelService.retain(resource(0, path), 'lua', source);
 	const project = resetSemanticProject(editorTextModelService, 0);
 	const sources = runtimeSources(sourceRegistry([['system.lua', 'return 0']]), sourceRegistry([[path, source]]));
 
-	t.after(() => { activeCodeEditor.detach(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
+	t.after(() => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	const initial = buildEditorSemanticSnapshot(sources, model.resource, model.buffer);
 	const retained = initial.getFileData(path)!.chunk.tokens.get(initial.getFileData(path)!.chunk.tokens.length - 2);
 	const explicit = t.mock.method(project, 'updateDocument');
-	activeCodeEditor.attach(model, createCodeEditorViewState());
+	const { documents, clock } = createTestCodeDocuments(t, editorTextModelService);
+	const code = createTestCodeControl(t, model, documents, clock);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- frontend\n' }]);
 	const next = buildEditorSemanticSnapshot(sources, model.resource, model.buffer);
 	assert.ok(Array.from(next.getFileData(path)!.chunk.tokens).includes(retained));
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- context\n' }]);
-	assert.equal(resolveContextMenuToken(2, 7, path)?.text, 'value_0');
+	assert.equal(resolveContextMenuToken(code, 2, 7, path)?.text, 'value_0');
 	assert.ok(Array.from(project.getFileData(path)!.chunk.tokens).includes(retained));
 	assert.equal(explicit.mock.callCount(), 0, 'model-backed frontend calls must not reset the incremental baseline');
 });
@@ -536,11 +535,10 @@ test('scheduled syntax highlighting consumes current model deltas and invalidate
 		getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }),
 	});
 	const document = documents.get(model);
-	const layout = new CodeLayout(new EditorFont('tiny'), { inlineEdit: new ActiveCodeEditorState().inlineEdit, computeWrapWidth: () => 320 });
+	const code = createTestCodeControl(t, model, documents, clock), layout = code.layout;
 	t.after(() => { layout.dispose(); documents.dispose(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	const explicit = t.mock.method(project, 'updateDocument');
 	const analyze = t.mock.method(project, 'analyzeDocument');
-	layout.attach(document);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- superseded\n' }]);
 	clock.advance(0);
 	assert.equal(analyze.mock.callCount(), 1, 'only the current model generation is analyzed after the queued request is superseded');

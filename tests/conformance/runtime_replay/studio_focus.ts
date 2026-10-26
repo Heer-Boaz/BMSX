@@ -1,12 +1,12 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { inputFocus } from '../../../ide/input/focus';
-import { editorSearchState, lineJumpState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
-import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
+
+
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { GX_REGISTER_SOURCE_PATH } from '../../../toolchain/ts/rompack/generated_modules';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 async function historyMenu(test: StudioFixture, command: 'undo' | 'redo'): Promise<void> {
 	await test.click(editorChromeState.menuEntryBounds.edit);
@@ -34,13 +34,13 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	const edited = original + '--focus';
 	check(model.buffer.getText() === edited, 'focus: physical code typing creates actual document history');
 	await press('ControlLeft', 'KeyF');
-	const field = editorSearchState.field;
+	const field = sourcePane(test).find.state.field;
 	check(inputFocus.target === field.focusTarget, 'focus: Find owns keyboard input, not merely a pane-local flag');
 	for (const key of ['KeyW', 'KeyO', 'KeyR', 'KeyL', 'KeyD']) await press(key);
-	check(field.text === 'world' && editorSearchState.query === 'world', 'focus: real Find input updates its query');
+	check(field.text === 'world' && sourcePane(test).find.state.query === 'world', 'focus: real Find input updates its query');
 	await test.capture?.('find-input');
 	await press('ControlLeft', 'KeyZ');
-	check(field.text === 'worl' && editorSearchState.query === 'worl' && model.buffer.getText() === edited,
+	check(field.text === 'worl' && sourcePane(test).find.state.query === 'worl' && model.buffer.getText() === edited,
 		'focus: field Undo publishes query change without document Undo');
 	await historyMenu(test, 'undo');
 	check(field.text === 'wor' && inputFocus.target === field.focusTarget, 'focus: pointer menu keeps the invoking field target');
@@ -50,7 +50,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyA');
 	await press('ControlLeft', 'KeyC');
 	await press('ControlLeft', 'KeyX');
-	check(field.text === '' && editorSearchState.query === '', 'focus: Cut changes the field through its content event');
+	check(field.text === '' && sourcePane(test).find.state.query === '', 'focus: Cut changes the field through its content event');
 	await press('ControlLeft', 'KeyV');
 	check(field.text === 'world', 'focus: Paste uses the host clipboard');
 	await press('ControlLeft', 'KeyZ');
@@ -74,7 +74,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === edited, 'focus: another Undo on empty field history remains local');
 	await press('Escape');
-	check(activeCodeEditor.focusTarget.hasFocus, 'focus: closing Find restores code text focus');
+	check(sourcePane(test).code.focusTarget.hasFocus, 'focus: closing Find restores code text focus');
 	await press('KeyX');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === edited, 'focus: typing after a focus detour is a new document undo group');
@@ -83,7 +83,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyS');
 	await until(() => !model.dirty, 'focus: restore the original source through physical Save');
 	for (const prompt of [
-		{ keys: ['ControlLeft', 'KeyL'], field: lineJumpState.field, value: () => lineJumpState.value },
+		{ keys: ['ControlLeft', 'KeyL'], field: sourcePane(test).lineJump.state.field, value: () => sourcePane(test).lineJump.state.value },
 		{ keys: ['ControlLeft', 'ShiftLeft', 'KeyO'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
 		{ keys: ['ControlLeft', 'Comma'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
 		{ keys: ['ControlLeft', 'KeyN'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
@@ -98,12 +98,12 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 		check(prompt.field.text === '1' && prompt.value() === '1' && model.buffer.getText() === original,
 			'focus: quick-input history publishes to its own query/path owner, never to source');
 		await press('Escape');
-		check(activeCodeEditor.focusTarget.hasFocus, 'focus: quick-input dismissal restores the concrete code target');
+		check(sourcePane(test).code.focusTarget.hasFocus, 'focus: quick-input dismissal restores the concrete code target');
 	}
 
 	// Open the existing Rename command through the actual source context menu.
 	await press('ControlLeft', 'Home');
-	const bounds = getCodeAreaBounds();
+	const bounds = getCodeAreaBounds(sourcePane(test).code);
 	const x = bounds.textLeft + editorViewState.font.measure('local c');
 	const y = bounds.codeTop + editorViewState.lineHeight / 2;
 	await click({ left: x, right: x + 1, top: y, bottom: y + 1 }, 1, 'pointer_secondary');
@@ -114,8 +114,8 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	const renameRow = menu.rows[renameIndex];
 	await click({ left: menu.viewport.bounds.left, right: menu.viewport.bounds.right,
 		top: menu.viewport.offsetTop + renameRow.top, bottom: menu.viewport.offsetTop + renameRow.bottom });
-	check(renameController.isActive(), 'focus: Rename control receives focus from the real context command');
-	const renameField = renameController.getField();
+	check(sourcePane(test).rename.isActive(), 'focus: Rename control receives focus from the real context command');
+	const renameField = sourcePane(test).rename.getField();
 	const originalName = renameField.text;
 	await press('ControlLeft', 'KeyV');
 	check(renameField.text === 'world', 'focus: Rename selects its input on focus and shares clipboard ownership with Find');
@@ -127,23 +127,23 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyY');
 	check(renameField.text === 'a' && model.buffer.getText() === original, 'focus: Rename Redo does not implicitly accept the refactor');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
-	check(!renameController.isVisible() && model.buffer.getText() === original,
+	check(!sourcePane(test).rename.isVisible() && model.buffer.getText() === original,
 		'focus: opening the palette dismisses the refactor context without accepting its draft');
 	await press('Escape');
-	check(activeCodeEditor.focusTarget.hasFocus && !renameController.isActive(),
+	check(sourcePane(test).code.focusTarget.hasFocus && !sourcePane(test).rename.isActive(),
 		'focus: cancelling the palette restores source focus, not the expired refactor');
 	await press('KeyX'); await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'focus: input and Undo after the refactor detour belong to the source');
 	await test.runPaletteCommand('Edit: Rename Symbol');
-	check(renameController.isActive() && renameField.text === originalName,
+	check(sourcePane(test).rename.isActive() && renameField.text === originalName,
 		'focus: an explicit new Rename binds a fresh reference context');
 	let blurOnOldInput = false;
 	const unbind = renameField.focusTarget.onDidBlur(() => {
-		blurOnOldInput = ide.editor.editorGroup.model.activeTab === titleTab && activeCodeEditor.model === model;
+		blurOnOldInput = ide.editor.editorGroup.model.activeTab === titleTab && sourcePane(test).code.model === model;
 	});
 	await test.clickTab(readonlyTab.id);
 	unbind();
-	check(blurOnOldInput && !renameController.isVisible() && activeCodeEditor.model === readonlyModel,
+	check(blurOnOldInput && !sourcePane(test).rename.isVisible() && sourcePane(test).code.model === readonlyModel,
 		'focus: tab switch notifies the departing control before changing the resource; unfinished Rename is dismissed');
 	const generated = readonlyModel.buffer.getText();
 	await press('KeyQ');
@@ -156,7 +156,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	check(field.text === 'x' && readonlyModel.buffer.getText() === generated, 'focus: Find remains editable over a readonly document');
 	await press('Escape');
 	await test.clickTab(titleTab.id);
-	check(activeCodeEditor.focusTarget.hasFocus && activeCodeEditor.model === model && cycles() === position,
+	check(sourcePane(test).code.focusTarget.hasFocus && sourcePane(test).code.model === model && cycles() === position,
 		'focus: returning to code restores its owner without executing the paused machine');
 	// Leave an empty query for subsequent independent source-application workflows.
 	await press('ControlLeft', 'KeyF');
@@ -167,7 +167,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await click(editorChromeState.menuEntryBounds.view);
 	const scenarioLabItem = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'scenarioLab')!;
 	await test.clickContextCommand(scenarioLabItem.command!);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'scenario_lab' && !activeCodeEditor.focusTarget.hasFocus && model.canRedo,
+	check(ide.editor.editorGroup.model.activeTab.kind === 'scenario_lab' && !sourcePane(test).code.focusTarget.hasFocus && model.canRedo,
 		'focus: real non-code view takes input ownership while the source retains redoable history');
 	const viewTarget = inputFocus.target;
 	await press('ControlLeft', 'KeyY');
@@ -180,7 +180,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	check(inputFocus.target === viewTarget && model.buffer.getText() === original,
 		'focus: closing Resources restores the actual non-code pane, not the old code editor');
 	await test.clickTab(titleTab.id);
-	check(activeCodeEditor.focusTarget.hasFocus && cycles() === position, 'focus: input tests leave the paused machine unchanged');
+	check(sourcePane(test).code.focusTarget.hasFocus && cycles() === position, 'focus: input tests leave the paused machine unchanged');
 
 	await test.runPaletteCommand('View: ROM Inspector');
 	await press('ArrowDown'); await press('Enter');
@@ -215,7 +215,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await click(rom.mapBounds);
 	check(rom.model.filter === '' && rom.model.mode === 'structure', 'focus: ROM map navigation clears the query once and opens the actual structure');
 	await test.clickTab(titleTab.id);
-	check(activeCodeEditor.focusTarget.hasFocus && model.buffer.getText() === original && cycles() === position,
+	check(sourcePane(test).code.focusTarget.hasFocus && model.buffer.getText() === original && cycles() === position,
 		'focus: ROM inspection leaves source and paused guest execution unchanged');
 }
 
@@ -225,6 +225,6 @@ export async function presentStudioFocus(test: StudioFixture): Promise<void> {
 	await test.press('ControlLeft', 'KeyA');
 	for (const key of ['KeyP', 'KeyO', 'KeyS']) await test.press(key);
 	await test.click(editorChromeState.menuEntryBounds.edit);
-	check(test.ide.editor.contextMenu.focusTarget.commandContext === editorSearchState.field.focusTarget && test.ide.editor.menubar.activeMenu === 'edit', 'focus: final menu preserves the real input target');
+	check(test.ide.editor.contextMenu.focusTarget.commandContext === sourcePane(test).find.state.field.focusTarget && test.ide.editor.menubar.activeMenu === 'edit', 'focus: final menu preserves the real input target');
 	await test.frame();
 }

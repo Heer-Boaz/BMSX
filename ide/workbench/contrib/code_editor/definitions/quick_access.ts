@@ -1,13 +1,10 @@
-import type { RuntimeSourceState } from '../../../../runtime/sources';
-import type { CartEditor } from '../../../../cart_editor';
+import type { CodeEditorPane } from '../editor_pane';
 import { queryDefinitionsAt, type LuaDefinitionTarget } from '../../../../editor/contrib/definitions/query';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { semanticSymbolKindToLuaSymbolKind } from '../../../../../toolchain/ts/lua/semantic/common';
 import { symbolKindLabel } from '../../../../../toolchain/ts/lua/semantic/model';
-import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
 import { subscribeToLuaModelChanges } from '../../../../editor/contrib/intellisense/model_lifetime';
 import { editorTextModelService } from '../../../../editor/model/model_service';
-import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { navigateToLuaDefinition } from '../../../ui/code_tab/activation';
 import { TextQuickPickProvider } from '../../../services/quick_input/text_provider';
 import type { QuickPickItem } from '../../../services/quick_input/provider';
@@ -21,22 +18,23 @@ export function buildDefinitionQuickPickItems(definitions: readonly LuaDefinitio
 	}));
 }
 
-export function openDefinitionSearch(sources: RuntimeSourceState, editor: CartEditor, row: number, column: number): boolean {
-	const context = getActiveCodeTabContext(editor.editorGroup);
+export function openDefinitionSearch(pane: CodeEditorPane, row: number, column: number): boolean {
+	const input = pane.input, context = input.context;
 	const resource = context.model.resource;
-	const query = queryDefinitionsAt(sources, context, row, column);
+	const query = queryDefinitionsAt(pane.sources, context, row, column);
 	if (!query) {
 		showEditorMessage('Definition not found', 'warning', 1.6);
 		return false;
 	}
 	if (query.definitions.length === 1) {
-		navigateToLuaDefinition(editor, resource.domain, query.definitions[0].location);
+		navigateToLuaDefinition(pane, resource.domain, query.definitions[0].location);
 		return true;
 	}
-	clearReferenceHighlights();
-	editor.quickInput.pick(`DEFINITIONS: ${query.label}`, 'Type to filter definitions', (_origin, lifetime) => {
-		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => editor.quickInput.hide()));
+	pane.code.references.clear();
+	pane.editor.quickInput.pick(`DEFINITIONS: ${query.label}`, 'Type to filter definitions', (_origin, lifetime) => {
+		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => pane.editor.quickInput.hide()));
 		return new TextQuickPickProvider(buildDefinitionQuickPickItems(query.definitions));
-	}, item => navigateToLuaDefinition(editor, resource.domain, item.target.location));
+	}, item => navigateToLuaDefinition(pane, resource.domain, item.target.location),
+		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));
 	return true;
 }

@@ -2,16 +2,16 @@ import type { PointerSnapshot, ScrollbarKind } from '../../common/models';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService } from '../../input/pointer/capture';
-import type { Scrollbar } from '../../workbench/ui/scrollbar';
-import { ScrollbarPointerControl } from '../../workbench/ui/scrollbar_pointer';
+import type { Scrollbar } from './scrollbar';
+import { ScrollbarPointerControl } from './scrollbar_pointer';
 
-export type ScrollbarMap = Record<ScrollbarKind, Scrollbar>;
+export type ScrollbarMap<Kind extends ScrollbarKind = ScrollbarKind> = Record<Kind, Scrollbar>;
 
 /** Chooses the active editor/resource axis and publishes its content-unit position. */
-export class ScrollbarController {
+export class ScrollbarController<Kind extends ScrollbarKind = ScrollbarKind> {
 	private readonly pointer: ScrollbarPointerControl;
 
-	constructor(private readonly scrollbars: ScrollbarMap, private readonly apply: (kind: ScrollbarKind, scroll: number) => void, capture: PointerCaptureService) {
+	constructor(private readonly scrollbars: ScrollbarMap<Kind>, private readonly apply: (kind: Kind, scroll: number) => void, capture: PointerCaptureService) {
 		this.pointer = new ScrollbarPointerControl(capture);
 	}
 
@@ -23,7 +23,7 @@ export class ScrollbarController {
 	 * Try to begin a drag on any visible scrollbar.
 	 * Returns true when a drag session starts. Invokes apply(kind, scroll) when paging via track clicks.
 	 */
-	public begin(kinds: readonly ScrollbarKind[], snapshot: PointerSnapshot, bottomMargin: number): boolean {
+	public begin(kinds: readonly Kind[], snapshot: PointerSnapshot, bottomMargin: number): boolean {
 		if (!snapshot.valid || !snapshot.insideViewport || (snapshot.justPressedButtons & PointerButton.Primary) === 0) return false;
 		const pointerX = snapshot.viewportX, pointerY = snapshot.viewportY;
 		for (let i = 0; i < kinds.length; i += 1) {

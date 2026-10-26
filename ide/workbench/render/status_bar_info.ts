@@ -1,5 +1,5 @@
-import { activeCodeEditor } from '../../editor/ui/code_editor_state';
+import type { CodeEditorControl } from '../../editor/ui/code_editor_control';
 
-export function buildStatusLeftInfo(): string {
-	return `LINE ${activeCodeEditor.view.cursorRow + 1}/${activeCodeEditor.model.buffer.getLineCount()} COL ${activeCodeEditor.view.cursorColumn + 1}`;
+export function buildStatusLeftInfo(code: CodeEditorControl): string {
+	return `LINE ${code.view.cursorRow + 1}/${code.model.buffer.getLineCount()} COL ${code.view.cursorColumn + 1}`;
 }

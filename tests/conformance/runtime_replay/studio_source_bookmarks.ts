@@ -1,10 +1,10 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { BehaviorTreeTransferAnalysis } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
 import { BT_TRANSFER_SOURCE, transferBehaviorFixtureSelection } from '../../helpers/behavior_transfer_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Language-command result/history integration; this does not pretend a reconnect gesture exists. */
 export async function testStudioSourceBookmarks(test: StudioFixture): Promise<void> {
@@ -15,7 +15,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
 	if (code.kind !== 'code_editor') throw new Error('bookmark: source code input required');
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_TRANSFER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
@@ -59,16 +59,16 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const transferred = model.buffer.getText();
 	version = model.version;
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && model.version === version && !hasSelection()
-		&& activeCodeEditor.view.cursorRow === range.start.line - 1 && activeCodeEditor.view.cursorColumn === range.start.column - 1,
+	check(ide.editor.editorGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
+		&& sourcePane(test).code.view.cursorRow === range.start.line - 1 && sourcePane(test).code.view.cursorColumn === range.start.column - 1,
 		'bookmark: held Source click is navigation, not a document edit or drag into the source editor');
 	await press('ArrowRight');
-	check(activeCodeEditor.view.cursorColumn === range.start.column && model.version === version, 'bookmark: source editor remains responsive');
+	check(sourcePane(test).code.view.cursorColumn === range.start.column && model.version === version, 'bookmark: source editor remains responsive');
 	await press('Home');
-	const typingRow = activeCodeEditor.view.cursorRow;
-	const typingColumn = activeCodeEditor.view.cursorColumn;
+	const typingRow = sourcePane(test).code.view.cursorRow;
+	const typingColumn = sourcePane(test).code.view.cursorColumn;
 	await press('Space');
-	check(activeCodeEditor.view.cursorColumn === typingColumn + 1, 'bookmark: physical typing produces code-owned edit state');
+	check(sourcePane(test).code.view.cursorColumn === typingColumn + 1, 'bookmark: physical typing produces code-owned edit state');
 	await test.clickTab(lens.id);
 	await runPaletteCommand('Edit: Undo');
 	check(ide.editor.editorGroup.model.activeTab === lens && code.context.view.cursorRow === typingRow && code.context.view.cursorColumn === typingColumn,
@@ -77,7 +77,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	check(code.context.view.cursorColumn === typingColumn + 1, 'bookmark: graph Redo restores the hidden code result too');
 	await runPaletteCommand('Edit: Undo');
 	await test.clickTab(code.id);
-	check(activeCodeEditor.view.cursorRow === typingRow && activeCodeEditor.view.cursorColumn === typingColumn
+	check(sourcePane(test).code.view.cursorRow === typingRow && sourcePane(test).code.view.cursorColumn === typingColumn
 		&& model.buffer.getText() === transferred, 'bookmark: reattaching the code widget consumes the retained restored cursor');
 	const hiddenDocument = view.document;
 	await press('ControlLeft', 'KeyZ');

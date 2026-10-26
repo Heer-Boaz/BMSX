@@ -8,90 +8,89 @@ import { InlineBarFieldPointer } from '../../ide/input/quick_input/pointer/field
 import { InlineBarFieldLayout } from '../../ide/workbench/contrib/code_editor/inline_bar/field';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { selectedText, setFieldText } from '../../ide/editor/ui/inline/text_field';
-import { configureFontVariant, getCodeAreaBounds } from '../../ide/editor/ui/view/view';
-import { editorViewState } from '../../ide/editor/ui/view/state';
-import { editorPointerState } from '../../ide/input/pointer/state';
+import { getCodeAreaBounds } from '../../ide/editor/ui/view/view';
+import { EditorFont } from '../../ide/editor/ui/view/font';
 import { handleCodeAreaSelectionPointer } from '../../ide/input/pointer/code/selection';
-import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
-import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
-import { layoutInlineWidgets } from '../../ide/quick_input/inline_widget';
-import { getSearchFieldLayout } from '../../ide/workbench/contrib/code_editor/inline_bar/layout';
-import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
+import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
+import { CodeEditorLineJump } from '../../ide/workbench/contrib/code_editor/find/line_jump';
+import { RenameController } from '../../ide/workbench/contrib/code_editor/rename/controller';
+import { CrossFileRenameManager } from '../../ide/workbench/contrib/code_editor/rename/operations';
+import { SourceInlineBars } from '../../ide/workbench/contrib/code_editor/inline_bar/source_inline_bars';
+import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { createTestCodeDocuments } from '../helpers/code_documents';
+import { createTestCodeControl } from '../helpers/code_control';
 
 const scope = WORKBENCH_POINTER_SCOPE;
 function pointer(x: number, pressedButtons: number = PointerButton.Primary, justPressedButtons = 0, justReleasedButtons = 0): PointerSnapshot {
 	return { valid: true, insideViewport: true, viewportX: x, viewportY: 42, pressedButtons, justPressedButtons, justReleasedButtons };
 }
 
-function fieldFixture(t: TestContext, variant: 'tiny' | 'msx') {
-	const field = new TextField(null, { singleLine: true, allowSpace: true });
-	const layout = new InlineBarFieldLayout(field);
-	const bar = { left: 73, top: 40, right: 151, bottom: 60 };
-	let available = true, lookups = 0;
-	// Construct before the font producer replaces its metrics reference.
-	const control = new InlineBarFieldPointer(field, () => {
-		assert.equal(available, true, 'a retired capture must not query an absent field rectangle');
-		lookups++; layout.layout(bar, '', '', 2); return layout;
-	});
-	configureFontVariant(variant);
-	setFieldText(field, 'abcdefghijklmnopqrstuvwxyz', true);
-	layout.layout(bar, '', '', 2); field.focusTarget.focus();
+function codeFixture(t: TestContext, variant: 'tiny' | 'msx', source = '-- source') {
+	const { models, documents, clock } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace', path: 'hold.lua' }, domain: 0, path: 'hold.lua',
+		source: { type: 'lua', resid: 'hold' } }, 'lua', source);
+	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
 	t.after(() => {
 		inputFocus.setTarget(null); pointerCapture.cancel();
 		const released = pointer(0, 0, 0, PointerButton.Primary);
-		pointerCapture.dispatch(released, false, 0, scope); pointerCapture.endRoute(released);
+		pointerCapture.dispatch(released, false, 0, code.focusTarget.scope.surfaceScope); pointerCapture.endRoute(released);
 	});
+	return code;
+}
+
+function fieldFixture(t: TestContext, variant: 'tiny' | 'msx') {
+	const code = codeFixture(t, variant);
+	const field = new TextField(code.focusTarget, { singleLine: true, allowSpace: true });
+	const layout = new InlineBarFieldLayout(code, field);
+	const control = new InlineBarFieldPointer(code, field, layout);
+	const bar = { left: 73, top: 40, right: 151, bottom: 60 };
+	field.focusTarget.canFocus = () => layout.visible;
+	setFieldText(field, 'abcdefghijklmnopqrstuvwxyz', true);
+	layout.layout(bar, '', '', 2); field.focusTarget.focus();
+	t.after(() => { layout.hide(); control.dispose(); });
 	const down = (x: number) => {
 		const sample = pointer(x, PointerButton.Primary, PointerButton.Primary);
-		pointerCapture.beginRoute(scope, sample); control.handlePointer(sample, true);
+		pointerCapture.beginRoute(code.focusTarget.scope.surfaceScope, sample); control.handlePointer(sample, true);
 		assert.equal(pointerCapture.active, true);
 	};
-	return { field, layout, down, lookupCount: () => lookups, remove: () => { layout.hide(); available = false; } };
+	return { code, field, layout, down, remove: () => layout.hide() };
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
-	test(`${variant} captured field uses its real inset and scrolled glyph origin through physical release`, t => {
+	test(`${variant} captured field uses its own scrolled glyph origin through physical release`, t => {
 		const f = fieldFixture(t, variant), start = f.layout.viewport.start;
 		assert.ok(start > 0);
-		const left = f.layout.bounds.left + 3, advance = editorViewState.font.advance('a');
+		const left = f.layout.bounds.left + 3, advance = f.code.font.advance('a');
 		f.down(left + 1); assert.equal(f.field.cursorColumn, start);
 		const release = pointer(left + 2 * advance + 1, 0, 0, PointerButton.Primary);
-		assert.equal(pointerCapture.dispatch(release, false, 1, scope), true);
+		assert.equal(pointerCapture.dispatch(release, false, 1, f.code.focusTarget.scope.surfaceScope), true);
 		assert.equal(f.field.cursorColumn, start + 2);
 		assert.equal(selectedText(f.field), f.field.text.slice(start, start + 2));
 		assert.equal(f.field.pointerSelecting, false); assert.equal(pointerCapture.active, false);
 		assert.equal(f.field.text, 'abcdefghijklmnopqrstuvwxyz');
 	});
 
-	test(`${variant} removing a captured field drains the hold before another geometry lookup`, t => {
+	test(`${variant} removing a captured field drains the hold without changing its retained selection`, t => {
 		const f = fieldFixture(t, variant);
 		f.down(f.layout.bounds.left + 4);
-		const lookups = f.lookupCount(); f.remove();
+		const cursor = f.field.cursorColumn, anchor = { ...f.field.selectionAnchor };
+		f.remove();
 		assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
-		assert.equal(pointerCapture.dispatch(pointer(200), false, 1, scope), true);
-		assert.equal(f.lookupCount(), lookups); assert.equal(f.field.pointerSelecting, false);
-		assert.equal(f.field.text, 'abcdefghijklmnopqrstuvwxyz');
+		assert.equal(pointerCapture.dispatch(pointer(200), false, 1, f.code.focusTarget.scope.surfaceScope), true);
+		assert.equal(f.field.cursorColumn, cursor); assert.deepEqual(f.field.selectionAnchor, anchor);
+		assert.equal(f.field.pointerSelecting, false); assert.equal(f.field.text, 'abcdefghijklmnopqrstuvwxyz');
 	});
 
-	test(`${variant} source endpoint consumes admitted motion in a primary-release sample`, t => {
-		configureFontVariant(variant);
-		const source = 'mmmmmm\nnnnnnn';
-		const { models, documents } = createTestCodeDocuments(t);
-		const model = models.retain({ location: { kind: 'workspace' as const, path: 'hold.lua' }, domain: 0, path: 'hold.lua', source: { type: 'lua', resid: 'hold' } }, 'lua', source);
-		const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
-		editorViewState.layout.attach(documents.get(model));
-		t.after(() => { editorPointerState.pointerSelecting = false; activeCodeEditor.detach(); editorViewState.layout.dispose(); });
-		editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; editorViewState.codeAreaLeft = 0;
-		refreshWorkbenchLayout();
+	test(`${variant} Source endpoint consumes admitted motion in a primary-release sample`, t => {
+		const source = 'mmmmmm\nnnnnnn', code = codeFixture(t, variant, source), view = code.view;
 		view.selectionAnchor = { row: 0, column: 1 }; view.cursorColumn = 1;
-		editorPointerState.pointerSelecting = true;
-		const bounds = getCodeAreaBounds();
-		const release = pointer(bounds.textLeft + 4 * editorViewState.font.advance('m') + 1, 0, 0, PointerButton.Primary);
+		code.pointer.pointerSelecting = true;
+		const bounds = getCodeAreaBounds(code);
+		const release = pointer(bounds.textLeft + 4 * code.font.advance('m') + 1, 0, 0, PointerButton.Primary);
 		release.viewportY = bounds.codeTop + 1;
-		handleCodeAreaSelectionPointer(release, bounds);
+		handleCodeAreaSelectionPointer(code, release, bounds);
 		assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, 4);
-		assert.deepEqual(view.selectionAnchor, { row: 0, column: 1 }); assert.equal(model.buffer.getText(), source);
+		assert.deepEqual(view.selectionAnchor, { row: 0, column: 1 }); assert.equal(code.model.buffer.getText(), source);
 	});
 }
 
@@ -110,27 +109,21 @@ test('retiring a target preserves a sibling capture and consumes the interrupted
 	assert.equal(service.draining, false); assert.equal(secondCancelled, 1);
 });
 
-test('an empty workbench budget retires the real Find field before its next captured move', t => {
-	configureFontVariant('tiny');
-	const { models, documents } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'budget.lua' }, domain: 0, path: 'budget.lua', source: { type: 'lua', resid: 'budget' } }, 'lua', '-- source');
-	activeCodeEditor.attach(model, createCodeEditorViewState());
-	editorViewState.layout.attach(documents.get(model));
-	t.after(() => {
-		inputFocus.setTarget(null); editorSearchState.visible = false; pointerCapture.cancel();
-		const released = pointer(0, 0, 0, PointerButton.Primary);
-		pointerCapture.dispatch(released, false, 0, scope); pointerCapture.endRoute(released);
-		activeCodeEditor.detach(); editorViewState.layout.dispose();
-	});
-	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	editorSearchState.visible = true; setFieldText(editorSearchState.field, 'retained_query', true);
-	refreshWorkbenchLayout(); layoutInlineWidgets(); editorSearchState.field.focusTarget.focus();
-	const fieldLayout = getSearchFieldLayout(), control = new InlineBarFieldPointer(editorSearchState.field, getSearchFieldLayout);
-	const down = pointer(fieldLayout.bounds.left + 4, PointerButton.Primary, PointerButton.Primary);
-	pointerCapture.beginRoute(scope, down); control.handlePointer(down, true);
+test('an empty Source budget retires its actual Find capture before the next held move', t => {
+	const code = codeFixture(t, 'tiny'), sources = {} as RuntimeSourceState;
+	const find = new EditorSearchController(code, sources), lineJump = new CodeEditorLineJump(code);
+	const rename = new RenameController(code, sources, new CrossFileRenameManager(sources));
+	const bars = new SourceInlineBars(code, find, rename, lineJump);
+	t.after(() => { find.dispose(); rename.dispose(); lineJump.dispose(); });
+	const client = { left: 0, top: 10, right: 384, bottom: 270 };
+	find.state.visible = true; setFieldText(find.state.field, 'retained_query', true);
+	bars.layout(client); find.focus();
+	const down = pointer(find.fieldLayout.bounds.left + 4, PointerButton.Primary, PointerButton.Primary);
+	down.viewportY = find.fieldLayout.bounds.top + 3;
+	pointerCapture.beginRoute(code.focusTarget.scope.surfaceScope, down); find.fieldPointer.handlePointer(down, true);
 	assert.equal(pointerCapture.active, true);
-	editorViewState.viewportHeight = 8; refreshWorkbenchLayout(); layoutInlineWidgets();
+	client.bottom = client.top; bars.layout(client);
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
-	assert.equal(pointerCapture.dispatch(pointer(200), false, 1, scope), true);
-	assert.equal(editorSearchState.field.text, 'retained_query'); assert.equal(model.buffer.getText(), '-- source');
+	assert.equal(pointerCapture.dispatch(pointer(200), false, 1, code.focusTarget.scope.surfaceScope), true);
+	assert.equal(find.state.field.text, 'retained_query'); assert.equal(code.model.buffer.getText(), '-- source');
 });

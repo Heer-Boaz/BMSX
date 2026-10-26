@@ -1,10 +1,10 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Physical capture/drop/source/history on the actual Studio, using independent authored Lua. */
 export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
@@ -14,7 +14,7 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
@@ -55,8 +55,8 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	const moved = model.buffer.getText();
 	const selected = children()[2];
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === selected.source.occurrenceRange.start.line - 1
-		&& activeCodeEditor.view.cursorColumn === selected.source.occurrenceRange.start.column - 1 && !hasSelection()
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === selected.source.occurrenceRange.start.line - 1
+		&& sourcePane(test).code.view.cursorColumn === selected.source.occurrenceRange.start.column - 1 && !hasSelection(sourcePane(test).code)
 		&& model.buffer.getText() === moved, 'BT drag: Source navigates to the moved occurrence without a leaked pointer or extra edit');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === BT_ORDER_SOURCE, 'BT drag: one code Undo restores the complete drag edit');

@@ -1,11 +1,11 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { buildCodeTabId } from '../../../ide/workbench/ui/tab/id';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { getProblemsPanelBounds, problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
 import { resolveTextFileModel } from '../../../ide/workbench/services/working_copy/text_file_model';
 import { runBackgroundTasks } from '../../../ide/common/background_tasks';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 
 /** Real visual/code/Problems projections and session teardown; authoring setup is automated. */
@@ -45,7 +45,7 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	for (let step = 0; step < index; step++) await press('ArrowDown');
 	check(problemsPanel.selectedDiagnostic === marker, 'resource context: keyboard selects the actual Problems row');
 	await press('Enter');
-	check(harness.getActiveEditorDocument().model === model && activeCodeEditor.view.cursorRow === marker.row,
+	check(harness.getActiveEditorDocument().model === model && sourcePane(test).code.view.cursorRow === marker.row,
 		'resource context: Problems navigation opens the shared source, not a private buffer');
 	await frame();
 	await test.capture?.('source-navigation');

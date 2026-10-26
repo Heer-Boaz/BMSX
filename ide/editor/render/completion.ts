@@ -1,3 +1,5 @@
+import type { CodeEditorControl } from '../ui/code_editor_control';
+import type { EditorFont } from '../ui/view/font';
 import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import {
@@ -6,11 +8,9 @@ import {
 	writeWrappedMeasuredText,
 	type TextRangeMeasure,
 } from '../../common/text';
-import { measureText, measureTextRange } from '../common/text/layout';
 import type { CompletionSession, CursorScreenInfo } from '../../common/models';
 import type { LuaSignatureHelp } from '../../../toolchain/ts/lua/semantic/signature_help';
 import { drawEditorText } from './text_renderer';
-import { editorViewState } from '../ui/view/state';
 
 export type CompletionRenderBounds = {
 	codeTop: number;
@@ -52,24 +52,32 @@ type ParameterHintLayout = {
 	descriptionColors: number[];
 };
 
-const parameterHintLayout: ParameterHintLayout = {
-	hint: null,
-	measure: measureText,
-	measureRange: measureTextRange,
-	maxTextWidth: -1,
-	signaturePrefix: '',
-	signatureActiveParameter: '',
-	signatureSuffix: '',
-	signaturePrefixWidth: 0,
-	signatureActiveParameterWidth: 0,
-	maxLineWidth: 0,
-	descriptionLines: [],
-	descriptionColors: [],
-};
-const parameterHintWrapScratch: string[] = [];
-
-function drawCompletionText(text: string, x: number, y: number, color: number): void {
-	drawEditorText(editorViewState.font, text, x, y, 0, color);
+/** Retained popup layout belongs to the control that supplies its hint and font. */
+export class CompletionRenderState {
+	public readonly parameterHintLayout: ParameterHintLayout;
+	public readonly parameterHintWrapScratch: string[] = [];
+	public readonly drawText: CompletionTextDraw;
+	public readonly measure: CompletionTextMeasure;
+	public readonly measureRange: TextRangeMeasure;
+	public constructor(font: EditorFont) {
+		this.drawText = (text, x, y, color) => drawEditorText(font, text, x, y, 0, color);
+		this.measure = text => font.measureTextRange(text, 0, text.length);
+		this.measureRange = font.measureTextRange;
+		this.parameterHintLayout = {
+			hint: null,
+			measure: this.measure,
+			measureRange: this.measureRange,
+			maxTextWidth: -1,
+			signaturePrefix: '',
+			signatureActiveParameter: '',
+			signatureSuffix: '',
+			signaturePrefixWidth: 0,
+			signatureActiveParameterWidth: 0,
+			maxLineWidth: 0,
+			descriptionLines: [],
+			descriptionColors: [],
+		};
+	}
 }
 
 function drawCompletionPopupCore(
@@ -147,14 +155,14 @@ function drawCompletionPopupCore(
 	return outBounds;
 }
 
-export function drawCompletionPopup(
+export function drawCompletionPopup(code: CodeEditorControl,
 	session: CompletionSession | null,
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
 	bounds: CompletionRenderBounds,
 	outBounds: CompletionPopupBounds,
 ): CompletionPopupBounds | null {
-	return drawCompletionPopupCore(session, cursorInfo, lineHeight, bounds, measureText, drawCompletionText, outBounds);
+	return drawCompletionPopupCore(session, cursorInfo, lineHeight, bounds, code.completionRender.measure, code.completionRender.drawText, outBounds);
 }
 
 export function drawCompletionPopupWithRenderer(
@@ -169,7 +177,7 @@ export function drawCompletionPopupWithRenderer(
 	return drawCompletionPopupCore(session, cursorInfo, lineHeight, bounds, measure, draw, outBounds);
 }
 
-function drawParameterHintOverlayCore(
+function drawParameterHintOverlayCore(state: CompletionRenderState,
 	hint: LuaSignatureHelp | null,
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
@@ -184,7 +192,7 @@ function drawParameterHintOverlayCore(
 	if (maxAllowedWidth <= 0) return;
 	const maxTextWidth = Math.max(0, maxAllowedWidth - constants.PARAMETER_HINT_PADDING_X * 2);
 	if (maxTextWidth <= 0) return;
-	const layout = resolveParameterHintLayout(hint, maxTextWidth, measure, measureRange);
+	const layout = resolveParameterHintLayout(state, hint, maxTextWidth, measure, measureRange);
 	const lineSpacing = 2;
 	const totalLines = 1 + layout.descriptionLines.length;
 	const popupWidth = Math.min(maxAllowedWidth, layout.maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2);
@@ -236,13 +244,13 @@ function drawParameterHintOverlayCore(
 	}
 }
 
-function resolveParameterHintLayout(
+function resolveParameterHintLayout(state: CompletionRenderState,
 	hint: LuaSignatureHelp,
 	maxTextWidth: number,
 	measure: CompletionTextMeasure,
 	measureRange: TextRangeMeasure,
 ): ParameterHintLayout {
-	const layout = parameterHintLayout;
+	const layout = state.parameterHintLayout;
 	if (layout.hint === hint
 		&& layout.measure === measure
 		&& layout.measureRange === measureRange
@@ -274,7 +282,7 @@ function resolveParameterHintLayout(
 	layout.signatureActiveParameterWidth = measure(layout.signatureActiveParameter);
 	layout.maxLineWidth = measure(clippedLabel);
 	if (signature.documentation !== undefined) {
-		appendParameterHintDescription(
+		appendParameterHintDescription(state,
 			layout,
 			signature.documentation,
 			constants.COLOR_PARAMETER_HINT_TEXT,
@@ -284,7 +292,7 @@ function resolveParameterHintLayout(
 	if (activeParameter >= 0) {
 		const parameterDocumentation = signature.parameters[activeParameter].documentation;
 		if (parameterDocumentation !== undefined) {
-			appendParameterHintDescription(
+			appendParameterHintDescription(state,
 				layout,
 				parameterDocumentation,
 				constants.COLOR_PARAMETER_HINT_ACTIVE,
@@ -295,7 +303,7 @@ function resolveParameterHintLayout(
 	return layout;
 }
 
-function appendParameterHintDescription(
+function appendParameterHintDescription(state: CompletionRenderState,
 	layout: ParameterHintLayout,
 	text: string,
 	color: number,
@@ -306,15 +314,15 @@ function appendParameterHintDescription(
 		return;
 	}
 	writeWrappedMeasuredText(
-		parameterHintWrapScratch,
+		state.parameterHintWrapScratch,
 		text,
 		maxTextWidth,
 		maxTextWidth,
 		remaining,
 		layout.measureRange,
 	);
-	for (let index = 0; index < parameterHintWrapScratch.length; index += 1) {
-		const line = parameterHintWrapScratch[index];
+	for (let index = 0; index < state.parameterHintWrapScratch.length; index += 1) {
+		const line = state.parameterHintWrapScratch[index];
 		layout.descriptionLines.push(line);
 		layout.descriptionColors.push(color);
 		const width = layout.measure(line);
@@ -324,26 +332,26 @@ function appendParameterHintDescription(
 	}
 }
 
-export function drawParameterHintOverlay(
+export function drawParameterHintOverlay(code: CodeEditorControl,
 	hint: LuaSignatureHelp | null,
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
 	bounds: CompletionRenderBounds,
 	completionBounds: CompletionPopupBounds | null = null,
 ): void {
-	drawParameterHintOverlayCore(
+	drawParameterHintOverlayCore(code.completionRender,
 		hint,
 		cursorInfo,
 		lineHeight,
 		bounds,
-		measureText,
-		measureTextRange,
-		drawCompletionText,
+		code.completionRender.measure,
+		code.completionRender.measureRange,
+		code.completionRender.drawText,
 		completionBounds,
 	);
 }
 
-export function drawParameterHintOverlayWithRenderer(
+export function drawParameterHintOverlayWithRenderer(state: CompletionRenderState,
 	hint: LuaSignatureHelp | null,
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
@@ -353,5 +361,5 @@ export function drawParameterHintOverlayWithRenderer(
 	draw: CompletionTextDraw,
 	completionBounds: CompletionPopupBounds | null = null,
 ): void {
-	drawParameterHintOverlayCore(hint, cursorInfo, lineHeight, bounds, measure, measureRange, draw, completionBounds);
+	drawParameterHintOverlayCore(state, hint, cursorInfo, lineHeight, bounds, measure, measureRange, draw, completionBounds);
 }

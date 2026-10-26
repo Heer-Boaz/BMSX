@@ -1,52 +1,12 @@
-import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { RenameController } from './controller';
-import type { EditorSearchController } from '../find/search';
-import { closeLineJump } from '../find/line_jump';
-import { notifyReadOnlyEdit } from '../../../../editor/ui/view/view';
-import { resetBlink } from '../../../../editor/render/caret';
-import { revealCursor } from '../../../../editor/ui/view/caret/caret';
-import { editorCaretState } from '../../../../editor/ui/view/caret/state';
-import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import type { EditorGroupView } from '../../../services/editor/editor_group';
-import { getRenameBarBounds } from '../../../common/layout';
-import { inputFocus } from '../../../../input/focus';
+import { notifyReadOnlyEdit } from '../../../../editor/ui/view/view';
 
-export function openRenamePrompt(sources: RuntimeSourceState, rename: RenameController, search: EditorSearchController, reviewGroup?: EditorGroupView): void {
-	if (activeCodeEditor.model === null || activeCodeEditor.model.readOnly) {
-		notifyReadOnlyEdit();
-		return;
-	}
-	search.closeSearch(false);
-	closeLineJump(false);
-	const context = activeCodeEditor;
-	switch (context.model.mode) {
-		case 'lua':
-			break;
-		case 'yaml':
-		case 'aem':
-			return;
-	}
-	const started = rename.begin(sources, {
-		buffer: activeCodeEditor.model.buffer,
-		cursorRow: activeCodeEditor.view.cursorRow,
-		cursorColumn: activeCodeEditor.view.cursorColumn,
-		identity: context.model.resource,
-	}, reviewGroup);
-	if (started) {
-		const bounds = getRenameBarBounds();
-		if (bounds === null) { rename.cancel(); return; }
-		rename.layoutField(bounds);
-		rename.getField().focusTarget.focus();
-		if (!rename.isActive()) { rename.cancel(); return; }
-		editorCaretState.cursorVisible = true;
-		resetBlink();
-	}
-}
-
-export function focusEditorFromRename(): void {
-	if (inputFocus.pendingTarget !== activeCodeEditor.focusTarget) return;
-	editorCaretState.cursorRevealSuspended = false;
-	resetBlink();
-	revealCursor();
-	editorCaretState.cursorVisible = true;
+/** Resolve this control's rename request; the pane arranges and focuses the actual field. */
+export function openRenamePrompt(rename: RenameController, reviewGroup?: EditorGroupView): boolean {
+	const code = rename.code;
+	if (code.model.readOnly) { notifyReadOnlyEdit(); return false; }
+	if (code.model.mode !== 'lua') return false;
+	return rename.begin({ buffer: code.model.buffer, cursorRow: code.view.cursorRow,
+		cursorColumn: code.view.cursorColumn, identity: code.model.resource }, reviewGroup);
 }

@@ -1,11 +1,11 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { createLuaTableFieldTransfer } from '../../../ide/language/lua/table_field_transfer';
 import { parseLuaChunk } from '../../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind } from '../../../toolchain/ts/lua/syntax/ast';
 import { LUA_TABLE_TRANSFER_SOURCE } from '../../helpers/lua_table_transfer_fixture';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Explicit language operation, not a synthetic graph gesture or a claimed reparent UI. */
 export async function testStudioTableTransfer(test: StudioFixture): Promise<void> {
@@ -14,7 +14,7 @@ export async function testStudioTableTransfer(test: StudioFixture): Promise<void
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: LUA_TABLE_TRANSFER_SOURCE }]);
 	await frame();
@@ -41,11 +41,11 @@ export async function testStudioTableTransfer(test: StudioFixture): Promise<void
 		ide.editor.navigation.focusChunkSourceForContext(model.resource.domain, model.resource.path,
 			{ row: cursor.row, startColumn: cursor.column, endColumn: cursor.column });
 		await frame();
-		check(activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === cursor.row
-			&& activeCodeEditor.view.cursorColumn === cursor.column && !hasSelection() && model.version === version,
+		check(sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === cursor.row
+			&& sourcePane(test).code.view.cursorColumn === cursor.column && !hasSelection(sourcePane(test).code) && model.version === version,
 			'transfer: normal source navigation consumes the result range without editing text or selecting a namesake');
 		await press('ArrowRight');
-		check(activeCodeEditor.view.cursorColumn === cursor.column + 1 && model.version === version,
+		check(sourcePane(test).code.view.cursorColumn === cursor.column + 1 && model.version === version,
 			'transfer: source remains responsive after navigation');
 		await runPaletteCommand('Edit: Undo');
 		check(model.buffer.getText() === LUA_TABLE_TRANSFER_SOURCE, 'transfer: palette Undo restores both constructors and every original byte');

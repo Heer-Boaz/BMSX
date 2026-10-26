@@ -1,13 +1,13 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { testStudioBehaviorGraphControls } from './studio_behavior_graph';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../../ide/language/lua/source_edits';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../../helpers/behavior_source_fixture';
 import { revealLensOccurrence } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 function fixtureChildren(view: BehaviorLensViewState) {
 	const definition = view.document.definitions[0];
@@ -28,7 +28,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	// The existing module is only a textmodel carrier. No fixture is compiled or installed in the machine.
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
@@ -64,8 +64,8 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	const sourceLines = BEHAVIOR_SOURCE_FIXTURE.split('\n');
 	const sourceRow = sourceLines.findIndex(line => line.includes('children = { leaf,'));
 	const sourceColumn = sourceLines[sourceRow].indexOf('leaf');
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === sourceRow
-		&& activeCodeEditor.view.cursorColumn === sourceColumn && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === sourceRow
+		&& sourcePane(test).code.view.cursorColumn === sourceColumn && !hasSelection(sourcePane(test).code),
 		'source graph: a held Source gesture opens the initializer reference without starting a code drag');
 	const oldDocument = view.document;
 	const insertion = luaSourceRangeToTextRange(model.buffer, entries[0].file.chunk.locations.range(entries[0].field.span));
@@ -91,8 +91,8 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	check(view.document === currentDocument && viewport.selection === retainedCard,
 		'source graph: idle frames neither reparse nor rebuild retained cards');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.view.cursorRow === sourceRow + 1 && activeCodeEditor.view.cursorColumn === sourceColumn
-		&& !hasSelection(), 'source graph: Source uses the new generation, including the UTF-16 insertion');
+	check(sourcePane(test).code.view.cursorRow === sourceRow + 1 && sourcePane(test).code.view.cursorColumn === sourceColumn
+		&& !hasSelection(sourcePane(test).code), 'source graph: Source uses the new generation, including the UTF-16 insertion');
 	const parsed = getOrCreateSemanticProject(editorTextModelService, model.resource.domain).getFileData(model.resource.path)!.chunk;
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.locations, parsed.tokens, nextEntries[2].field));
 	await test.clickTab(lens.id);

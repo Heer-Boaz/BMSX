@@ -2,7 +2,7 @@ import type { SuspendedGuestSession } from '../../../../runtime/suspended_guest'
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
-import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
+import type { CodeEditorControl } from '../../../../editor/ui/code_editor_control';
 import {
 	listGlobalLuaSymbols,
 	buildMemberCompletionItems,
@@ -38,7 +38,6 @@ import type { LuaSemanticFrontendFile } from '../../../../../toolchain/ts/lua/se
 import type { LuaSignatureHelp } from '../../../../../toolchain/ts/lua/semantic/signature_help';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
-import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import type { RuntimeFaultState } from '../../../../runtime/fault_state';
 
 type LocalCompletionCacheEntry = {
@@ -53,6 +52,7 @@ const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
 
 export class CompletionController {
 	public constructor(
+		public readonly code: CodeEditorControl,
 		protected readonly sources: RuntimeSourceState,
 		protected readonly guest: SuspendedGuestSession,
 		protected readonly fault: RuntimeFaultState,
@@ -68,17 +68,17 @@ export class CompletionController {
 	public readonly popupBoundsScratch = create_rect_bounds();
 
 	protected isCompletionContextActive(): boolean {
-		return (activeCodeEditor.model?.mode === 'lua');
+		return (this.code.model?.mode === 'lua');
 	}
 
 	protected isCompletionReady(): boolean {
-		if (!(activeCodeEditor.model?.mode === 'lua')) {
+		if (!(this.code.model?.mode === 'lua')) {
 			return false;
 		}
-		if (activeCodeEditor.model.readOnly) {
+		if (this.code.model.readOnly) {
 			return false;
 		}
-		if (!activeCodeEditor.focusTarget.hasFocus) {
+		if (!this.code.focusTarget.hasFocus) {
 			return false;
 		}
 		return true;
@@ -88,37 +88,37 @@ export class CompletionController {
 		if (!this.isCompletionReady()) {
 			return false;
 		}
-		const lastEditAt = activeCodeEditor.model.lastContentEditAtMs;
+		const lastEditAt = this.code.model.lastContentEditAtMs;
 		if (lastEditAt < 0) {
 			return false;
 		}
-		const now = editorRuntimeState.currentTimeMs;
+		const now = this.code.clock.now();
 		return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
 	}
 
 	protected getBuffer() {
-		return activeCodeEditor.model.buffer;
+		return this.code.model.buffer;
 	}
 
 	protected getTextVersion(): number {
-		return activeCodeEditor.model.version;
+		return this.code.model.version;
 	}
 
 	protected getActivePath(): string {
-		return activeCodeEditor.model.resource.path;
+		return this.code.model.resource.path;
 	}
 
 	protected getActiveDomain() {
-		return activeCodeEditor.model.resource.domain;
+		return this.code.model.resource.domain;
 	}
 
 	protected getCharAt(row: number, column: number): string {
-		return TextEditing.charAt(row, column);
+		return TextEditing.charAt(this.code, row, column);
 	}
 
 	protected getCursorPosition(): { row: number; column: number } {
-		this.cursorPositionScratch.row = activeCodeEditor.view.cursorRow;
-		this.cursorPositionScratch.column = activeCodeEditor.view.cursorColumn;
+		this.cursorPositionScratch.row = this.code.view.cursorRow;
+		this.cursorPositionScratch.column = this.code.view.cursorColumn;
 		return this.cursorPositionScratch;
 	}
 
@@ -159,7 +159,7 @@ export class CompletionController {
 
 	public closeSession(): void {
 		this.completionSession = null;
-		activeCodeEditor.clearInlineEdit();
+		this.code.clearInlineEdit();
 		this.popupBounds = null;
 		this.cancelPendingCompletion();
 	}
@@ -205,14 +205,14 @@ export class CompletionController {
 	private publishInlineEdit(): boolean {
 		const session = this.completionSession;
 		if (!session || session.trigger === 'manual') {
-			activeCodeEditor.clearInlineEdit();
+			this.code.clearInlineEdit();
 			return false;
 		}
 		const item = session.filteredItems[session.selectionIndex];
 		const addParentheses = item.kind === 'native_method';
 		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
 		const prefix = session.context.prefix;
-		return activeCodeEditor.setInlineEdit(session.context.row, session.context.replaceFromColumn + prefix.length,
+		return this.code.setInlineEdit(session.context.row, session.context.replaceFromColumn + prefix.length,
 			session.context.replaceToColumn, insertion.slice(prefix.length), session.context.kind === 'module');
 	}
 
@@ -477,7 +477,7 @@ export class CompletionController {
 				this.runtime,
 				namePath,
 				context.member.operator,
-				activeCodeEditor.model.resource.domain,
+				this.code.model.resource.domain,
 				this.ensureLocalCompletionCache().analysis,
 				context.row + 1,
 				context.replaceToColumn + 1,
@@ -539,11 +539,11 @@ export class CompletionController {
 	}
 
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
-		const key = resourceIdentityKey(activeCodeEditor.model.resource);
+		const key = resourceIdentityKey(this.code.model.resource);
 		const path = this.getActivePath();
 		const frontend = buildEditorSemanticFrontend(
 			this.sources,
-			activeCodeEditor.model.resource,
+			this.code.model.resource,
 			this.getBuffer(),
 		);
 		const cached = this.localCompletionCache.get(key);
@@ -759,7 +759,7 @@ export class CompletionController {
 			navigationCaptured: trigger === 'manual',
 		};
 		this.completionSession = session;
-		if (this.applyCompletionFilter(session)) revealInlineEdit();
+		if (this.applyCompletionFilter(session)) revealInlineEdit(this.code);
 	}
 
 	private refreshCompletionSessionFromContext(context: CompletionContext): void {
@@ -810,7 +810,7 @@ export class CompletionController {
 		if (index < 0) index = delta > 0 ? 0 : total - 1; else { index += delta; index = ((index % total) + total) % total; }
 		session.selectionIndex = index;
 		this.ensureCompletionSelectionVisible(session);
-		if (this.publishInlineEdit()) revealInlineEdit();
+		if (this.publishInlineEdit()) revealInlineEdit(this.code);
 	}
 
 	private handleNavigationKeys(playerInput: KeyInputEvent, session: CompletionSession, allowHomeEnd: boolean): boolean {
@@ -897,11 +897,11 @@ export class CompletionController {
 		const buffer = this.getBuffer();
 		const startOffset = buffer.offsetAt(context.row, context.replaceFromColumn);
 		const endOffset = buffer.offsetAt(context.row, context.replaceToColumn);
-		prepareUndo('completion', false);
+		prepareUndo(this.code, 'completion', false);
 		this.suppressNextAutoCompletion = true;
 		const insertion = addParentheses ? `${item.insertText}()` : item.insertText;
 		const cursorOffset = addParentheses || insertion.endsWith('[]') ? insertion.length - 1 : insertion.length;
-		TextEditing.replaceTextRange(startOffset, endOffset, insertion, cursorOffset);
+		TextEditing.replaceTextRange(this.code, startOffset, endOffset, insertion, cursorOffset);
 	}
 
 	private cancelPendingCompletion(): void {
@@ -968,7 +968,7 @@ export class CompletionController {
 		const cursor = this.getCursorPosition();
 		const frontend = buildEditorSemanticFrontend(
 			this.sources,
-			activeCodeEditor.model.resource,
+			this.code.model.resource,
 			this.getBuffer(),
 		);
 		return frontend.provideSignatureHelp(
@@ -983,10 +983,10 @@ export class EditorCompletionController extends CompletionController {
 	private readonly unsubscribeCursorMoved: () => void;
 	private readonly unsubscribeBlur: () => void;
 
-	public constructor(sources: RuntimeSourceState, guest: SuspendedGuestSession, fault: RuntimeFaultState, runtime: Runtime) {
-		super(sources, guest, fault, runtime);
-		this.unsubscribeCursorMoved = activeCodeEditor.onDidMoveCursor(() => this.onCursorMoved());
-		this.unsubscribeBlur = activeCodeEditor.focusTarget.onDidBlur(() => {
+	public constructor(code: CodeEditorControl, sources: RuntimeSourceState, guest: SuspendedGuestSession, fault: RuntimeFaultState, runtime: Runtime) {
+		super(code, sources, guest, fault, runtime);
+		this.unsubscribeCursorMoved = this.code.onDidMoveCursor(() => this.onCursorMoved());
+		this.unsubscribeBlur = this.code.focusTarget.onDidBlur(() => {
 			if (this.session?.trigger !== 'manual') this.closeSession();
 		});
 	}

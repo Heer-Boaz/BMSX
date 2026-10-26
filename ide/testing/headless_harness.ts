@@ -3,7 +3,8 @@ import type { BootOperation } from '../workbench/services/execution/boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
-import { activeCodeEditor, type CodeEditorContext } from '../editor/ui/code_editor_state';
+import type { CodeEditorContext } from '../editor/ui/code_editor_state';
+import type { CodeEditorPane } from '../workbench/contrib/code_editor/editor_pane';
 import { activateEditor } from '../workbench/overlay_modes';
 import { selectAllSingleCursor } from '../editor/editing/cursor/state';
 import { insertText } from '../editor/editing/text_editing_and_selection';
@@ -18,8 +19,7 @@ import type { EditorCommandId } from '../common/commands';
 import type { LuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
 import type { HotResumeOperation } from '../workbench/services/execution/hot_resume';
 import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
-import { updateHoverTooltip } from '../editor/contrib/hover/controller';
-import { hoverState, type CodeHoverTooltip } from '../editor/contrib/hover/state';
+import type { CodeHoverTooltip } from '../editor/contrib/hover/state';
 import type { CodeTabContext } from '../workbench/ui/code_tab/model';
 import type { EditorInput } from '../workbench/ui/tab/model';
 import type {
@@ -49,7 +49,7 @@ export type HeadlessIdeHarness = {
 	getHover(row: number, column: number): CodeHoverTooltip | null;
 	getActiveWorkbenchTab(): Readonly<EditorInput>;
 	getActiveCodeContext(): Readonly<CodeTabContext> | null;
-	getActiveEditorDocument(): Readonly<CodeEditorContext>;
+	getActiveEditorDocument(): Readonly<CodeEditorContext> | null;
 	getWorkbenchTabs(): readonly EditorInput[];
 	/** Full IDE operation: admission releases the queue; completion waits for physical init. */
 	performHotResume(): HotResumeOperation;
@@ -89,22 +89,23 @@ export function createHeadlessIdeHarness(
 		getLogMessageCount: () => logOutput.messages.length,
 		getLogMessage: index => logOutput.messages[index],
 		getFaultStack: () => ide.fault.lastLuaCallStack,
-		getSignatureHelp: () => ide.editor.completion.hint,
+		getSignatureHelp: () => {
+			const pane = ide.editor.editorGroup.panes.activePane;
+			return pane?.input.kind === 'code_editor' ? (pane as CodeEditorPane).completion.hint : null;
+		},
 		getActiveWorkbenchTab: () => ide.editor.editorGroup.model.activeTab,
 		getActiveCodeContext: () => getActiveCodeTabContext(ide.editor.editorGroup),
-		getActiveEditorDocument: () => activeCodeEditor,
+		getActiveEditorDocument: () => {
+			const pane = ide.editor.editorGroup.panes.activePane;
+			return pane?.input.kind === 'code_editor' ? (pane as CodeEditorPane).code : null;
+		},
 		getWorkbenchTabs: () => ide.editor.editorGroup.model.tabs,
 		getHover: (row, column) => {
-			updateHoverTooltip(
-				ide.sources,
-				ide.guest,
-				ide.fault,
-				runtime,
-				getActiveCodeTabContext(ide.editor.editorGroup),
-				row,
-				column,
-			);
-			return hoverState.tooltip;
+			const pane = ide.editor.editorGroup.panes.activePane;
+			if (pane?.input.kind !== 'code_editor') return null;
+			const source = pane as CodeEditorPane;
+			source.hover.update(row, column);
+			return source.code.hoverTooltip;
 		},
 		performHotResume: () => performHotResume(
 			ide.hotResumes, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, logOutput,
@@ -137,14 +138,15 @@ export function createHeadlessIdeHarness(
 			openLuaCodeTab(ide.editor.editorGroup, ide.sources, resource);
 		},
 		replaceActiveCodeSource: (source: string) => {
-			const buffer = activeCodeEditor.model.buffer;
+			const code = (ide.editor.editorGroup.panes.activePane as CodeEditorPane).code;
+			const buffer = code.model.buffer;
 			const lastRow = buffer.getLineCount() - 1;
 			selectAllSingleCursor(
-				activeCodeEditor.view,
+				code.view,
 				lastRow,
 				buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow),
 			);
-			insertText(source);
+			insertText(code, source);
 		},
 		debugStats: () => {
 			const cpu = runtime.machine.cpu;

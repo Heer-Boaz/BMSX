@@ -1,8 +1,6 @@
 import type { PointerInputSnapshot } from '../../common/models';
 import { PointerButton, type PointerInputEvent } from '../../../hosts/common/input/pointer_event';
-import { prepareEditorPointerFrame } from './frame';
 import { handleEditorPanelPointer, handleEditorPanelResizePointer } from './panel';
-import { clearEditorPointerSelectionState, editorPointerState } from './state';
 import { isCtrlDown, isMetaDown } from '../keyboard/key_input';
 import { handleEditorChromePointerDispatch } from './chrome_dispatch';
 import type { CartEditor } from '../../cart_editor';
@@ -25,7 +23,6 @@ export function handleTextEditorPointerInput(snapshot: PointerInputSnapshot, eve
 			&& (!snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, focused.guestInput.bounds))) {
 			focused.release();
 		}
-		editorPointerState.lastPointerSnapshot = snapshot.valid ? snapshot : null;
 		const routeScope = pointerCapture.routeScope;
 		const routed = routeScope === undefined ? undefined : editor.surfaces.findByScope(routeScope);
 		if (routeScope !== undefined && (!snapshot.valid || routed === undefined || !editor.surfaces.isAdmitted(routed))) {
@@ -35,8 +32,6 @@ export function handleTextEditorPointerInput(snapshot: PointerInputSnapshot, eve
 			: snapshot.valid && snapshot.insideViewport ? editor.surfaces.hitTest(snapshot.viewportX, snapshot.viewportY) : null;
 		const scope = target?.captureScope ?? WORKBENCH_POINTER_SCOPE;
 		if (pointerCapture.dispatch(snapshot, false, now, scope)) return;
-		const gotoModifierActive = isCtrlDown(snapshot) || isMetaDown(snapshot);
-		prepareEditorPointerFrame(snapshot, gotoModifierActive, target !== null && target !== undefined && target.role !== 'content');
 		if (target === null || target === undefined) return;
 		pointerCapture.beginRoute(scope, snapshot);
 		let guest = pointerCapture.guestBinding;
@@ -72,7 +67,6 @@ export function handleTextEditorPointerInput(snapshot: PointerInputSnapshot, eve
 export function handleWorkbenchChromePointer(editor: CartEditor, snapshot: PointerInputSnapshot): void {
 	const justPressed = (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 	if (editor.menubar.handlePointer(snapshot)) {
-		clearEditorPointerSelectionState();
 		return;
 	}
 	if (handleEditorChromePointerDispatch(editor, snapshot, justPressed)) return;

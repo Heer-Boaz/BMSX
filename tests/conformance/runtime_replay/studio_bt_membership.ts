@@ -1,10 +1,10 @@
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { BT_MEMBERSHIP_SOURCE } from '../../helpers/behavior_membership_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Partial source in the actual workbench, not a runtime-evaluated topology fixture. */
 export async function testStudioBtMembership(test: StudioFixture): Promise<void> {
@@ -14,7 +14,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_MEMBERSHIP_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
@@ -34,8 +34,8 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	check(opaque.member?.index === 1 && opaque.source.kind === 'dynamic' && opaque.children.length === 0,
 		'BT membership: physical navigation enters the opaque slot without inventing its result');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === opaque.source.occurrenceRange.start.line - 1
-		&& activeCodeEditor.view.cursorColumn === opaque.source.occurrenceRange.start.column - 1 && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === opaque.source.occurrenceRange.start.line - 1
+		&& sourcePane(test).code.view.cursorColumn === opaque.source.occurrenceRange.start.column - 1 && !hasSelection(sourcePane(test).code),
 		'BT membership: held Source opens the builder use, not its function or a code drag');
 	await test.clickTab(lens.id);
 	await press('ArrowRight');
@@ -58,9 +58,9 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	if (membership?.kind !== 'node') throw new Error('BT membership: nested list card not selected');
 	const membershipSource = membership.source;
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.view.cursorRow === membershipSource.occurrenceRange.start.line - 1
-		&& activeCodeEditor.view.cursorColumn === membershipSource.occurrenceRange.start.column - 1
-		&& readLuaSourceRange(model.buffer, membershipSource.occurrenceRange) === 'make_children()' && !hasSelection(),
+	check(sourcePane(test).code.view.cursorRow === membershipSource.occurrenceRange.start.line - 1
+		&& sourcePane(test).code.view.cursorColumn === membershipSource.occurrenceRange.start.column - 1
+		&& readLuaSourceRange(model.buffer, membershipSource.occurrenceRange) === 'make_children()' && !hasSelection(sourcePane(test).code),
 		'BT membership: nested Source opens the actual list builder without transferring held pointer to the code control');
 	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'KeyZ');
@@ -90,8 +90,8 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	check(viewport.selection === edge, 'BT membership: pointer selects the authored weighted connection');
 	console.info('STUDIO: BT partial choices ready for visual inspection');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.view.cursorRow === edge.range.start.line - 1 && activeCodeEditor.view.cursorColumn === edge.range.start.column - 1
-		&& readLuaSourceRange(model.buffer, edge.range) === '{ weight = 4, child = make_node() }' && !hasSelection(),
+	check(sourcePane(test).code.view.cursorRow === edge.range.start.line - 1 && sourcePane(test).code.view.cursorColumn === edge.range.start.column - 1
+		&& readLuaSourceRange(model.buffer, edge.range) === '{ weight = 4, child = make_node() }' && !hasSelection(sourcePane(test).code),
 		'BT membership: choice Source uses the full choice occurrence, not its opaque child');
 	await test.clickTab(lens.id);
 	await runPaletteCommand('Behavior Lens: Open Source Details');
@@ -101,7 +101,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	check(inspector.visible && detailIndex >= 0, 'BT membership: known weight remains inspectable');
 	for (let index = 0; index < detailIndex; index += 1) await press('ArrowDown');
 	await press('Enter');
-	check(activeCodeEditor.view.cursorRow === weight.range.start.line - 1 && activeCodeEditor.view.cursorColumn === weight.range.start.column - 1,
+	check(sourcePane(test).code.view.cursorRow === weight.range.start.line - 1 && sourcePane(test).code.view.cursorColumn === weight.range.start.column - 1,
 		'BT membership: Details opens the exact weight, not the source of another choice');
 	await test.clickTab(lens.id);
 	input.connectInputDevice({ id: 'gamepad:0', kind: 'gamepad', gamepadIndex: 0, label: 'BT MEMBERSHIP PAD',

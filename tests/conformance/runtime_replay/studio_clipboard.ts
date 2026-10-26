@@ -1,11 +1,11 @@
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { TextField } from '../../../ide/editor/ui/inline/text_field_model';
 import { inputFocus } from '../../../ide/input/focus';
-import { editorSearchState, lineJumpState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
-import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
+
+
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { createStudioFixture } from './studio_fixture';
+import { sourcePane, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer } from './studio_renderer';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { selectMember } from './studio_scene_source';
@@ -17,7 +17,7 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 	await test.until(() => test.cycles() > test.runtime.timing.cpuHz * 13, 'clipboard: boot');
 	await reachNemesisTitle(test);
 	test.harness.openLuaSource('cart.lua'); await test.frame();
-	const source = activeCodeEditor.model;
+	const source = sourcePane(test).code.model;
 	// Prepare a selection without granting browser user activation, to exercise denial first.
 	await test.press('ControlLeft', 'Home'); await test.press('ShiftLeft', 'End');
 	return {
@@ -32,7 +32,7 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 			test.ide.editor.commands.execute(command); await test.frame();
 		},
 		async source() {
-			test.ide.editor.quickInput.hide(); test.ide.editor.search.closeSearch(false); renameController.cancel();
+			test.ide.editor.quickInput.hide(); sourcePane(test).find.closeSearch(false); sourcePane(test).rename.cancel();
 			test.harness.openLuaSource('cart.lua'); await test.frame();
 		},
 		snapshot() {
@@ -45,8 +45,8 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 				images: tab.kind === 'assistant' ? tab.attachments.urls : [],
 				imagesReady: tab.kind === 'assistant' && tab.attachments.ready,
 				selection: target?.copy?.(), source: source.buffer.getText(), version: source.version,
-				query: editorSearchState.query, line: lineJumpState.value,
-				rename: renameController.getField().text, feedback: editorFeedbackState.message,
+				query: sourcePane(test).find.state.query, line: sourcePane(test).lineJump.state.value,
+				rename: sourcePane(test).rename.getField().text, feedback: editorFeedbackState.message,
 				propertySource: tab.kind === 'scene_editor' ? tab.workingCopy.buffer.getText() : undefined,
 			};
 		},

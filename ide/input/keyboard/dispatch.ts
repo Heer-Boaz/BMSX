@@ -1,5 +1,5 @@
 import type { CartEditor } from '../../cart_editor';
-import { handleEditorCommandBindings, handleEscapeBinding } from './global_bindings';
+import { handleEditorCommandBindings } from './global_bindings';
 import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { inputFocus } from '../focus';
 import { handleClipboardBindings } from '../clipboard';
@@ -32,7 +32,6 @@ export function handleEditorInput(
 	}
 	if (isKeyJustPressed('Escape', playerInput)) {
 		focused?.handleKeyboard(playerInput);
-		if (!playerInput.consumed && commands !== undefined) handleEscapeBinding(playerInput, editor.search);
 		return;
 	}
 	if (handleEditorCommandBindings(playerInput, commands, focused)) return;

@@ -10,7 +10,7 @@ import * as constants from '../../../common/constants';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { advanceQuickInputSelection } from '../../../editor/navigation/quick_input_navigation';
-import { resetBlink } from '../../../editor/render/caret';
+import { resetInlineBlink } from '../../../editor/render/caret';
 import { applyInlineFieldEditing, applyInlineFieldPointer, setFieldText } from '../../../editor/ui/inline/text_field';
 import { TextField } from '../../../editor/ui/inline/text_field_model';
 import { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_viewport';
@@ -77,7 +77,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			this.scrollbarPointer.cancelPointer();
 			if (this.session?.kind === 'pick') this.model.filter(this.field.text);
 			else { this.message = ''; this.labelsDirty = true; }
-			resetBlink();
+			resetInlineBlink();
 		});
 		this.field.focusTarget.onDidBlur(next => { if (!this.acceptsFocusTransfer(next)) this.hide(false); });
 	}
@@ -108,7 +108,7 @@ export class QuickInputController implements PointerCaptureTarget {
 				setFieldText(this.field, '', true);
 				if (this.session !== session) return;
 				this.update();
-				resetBlink();
+				resetInlineBlink();
 				this.onDidChangeVisibility();
 			},
 			accept: () => {
@@ -140,7 +140,7 @@ export class QuickInputController implements PointerCaptureTarget {
 				setFieldText(this.field, value, true);
 				if (this.session !== session) return;
 				this.update();
-				resetBlink();
+				resetInlineBlink();
 				this.onDidChangeVisibility();
 			},
 			accept: async () => {
@@ -241,7 +241,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		const list = this.model.list;
 		list.selectionIndex = advanceQuickInputSelection(list.selectionIndex, list.rows.length, delta);
 		this.model.revealSelection();
-		resetBlink();
+		resetInlineBlink();
 	}
 
 	private handleKeyboard(input: KeyInputEvent): void {
@@ -266,7 +266,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			const list = this.model.list;
 			list.selectionIndex = list.rows.length === 0 ? -1 : last ? list.rows.length - 1 : 0;
 			this.model.revealSelection();
-			resetBlink();
+			resetInlineBlink();
 			return;
 		}
 		for (const [code, delta] of NAVIGATION) {
@@ -291,7 +291,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			this.pointer.pointerX = snapshot.viewportX;
 			this.pointer.justPressed = justPressed;
 			this.pointer.pointerPressed = ((snapshot.pressedButtons & PointerButton.Primary) !== 0);
-			if (applyInlineFieldPointer(this.field, this.pointer).requestBlinkReset) resetBlink();
+			if (applyInlineFieldPointer(this.field, this.pointer).requestBlinkReset) resetInlineBlink();
 			return;
 		}
 		const index = this.inputBox ? -1 : this.model.rowIndexAtPosition(snapshot.viewportX, snapshot.viewportY);

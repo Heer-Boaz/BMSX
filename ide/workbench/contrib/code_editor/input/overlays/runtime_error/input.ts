@@ -2,8 +2,7 @@ import { writeClipboard } from '../../../../../../input/clipboard';
 import { buildRuntimeErrorOverlayCopyText } from '../../../../../../editor/contrib/runtime_error/overlay';
 import type { PointerSnapshot } from '../../../../../../common/models';
 import { handleRuntimeErrorOverlayPointerClick, setRuntimeErrorOverlayExpanded } from './pointer/actions';
-import { editorPointerState, resetPointerClickTracking } from '../../../../../../input/pointer/state';
-import { runtimeErrorState } from '../../../../../../editor/contrib/runtime_error/state';
+import { resetPointerClickTracking } from '../../../../../../input/pointer/state';
 import {
 	RUNTIME_ERROR_OVERLAY_POINTER_BODY,
 	RUNTIME_ERROR_OVERLAY_POINTER_COPY_BUTTON,
@@ -11,12 +10,10 @@ import {
 	RUNTIME_ERROR_OVERLAY_POINTER_OUTSIDE,
 	updateRuntimeErrorOverlayPointerHover,
 } from '../../../../../../editor/contrib/runtime_error/pointer';
-import type { CartEditor } from '../../../../../../cart_editor';
-import type { Clipboard } from '../../../../../../../hosts/common/clipboard';
+import type { CodeEditorPane } from '../../../editor_pane';
 
 export function processRuntimeErrorOverlayPointer(
-	clipboard: Clipboard,
-	editor: CartEditor,
+	pane: CodeEditorPane,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	codeTop: number,
@@ -24,11 +21,12 @@ export function processRuntimeErrorOverlayPointer(
 	textLeft: number,
 	contentBottom: number,
 ): boolean {
-	const pointerHit = updateRuntimeErrorOverlayPointerHover(snapshot, codeTop, codeRight, textLeft, contentBottom);
+	const code = pane.code;
+	const pointerHit = updateRuntimeErrorOverlayPointerHover(code, snapshot, codeTop, codeRight, textLeft, contentBottom);
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_NONE) {
 		return false;
 	}
-	const overlay = runtimeErrorState.activeOverlay;
+	const overlay = code.runtimeError.activeOverlay;
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_OUTSIDE) {
 		if (justPressed && overlay.expanded) {
 			setRuntimeErrorOverlayExpanded(overlay, false);
@@ -38,15 +36,15 @@ export function processRuntimeErrorOverlayPointer(
 	if (!justPressed) {
 		return true;
 	}
-	editorPointerState.pointerSelecting = false;
-	resetPointerClickTracking();
+	code.pointer.pointerSelecting = false;
+	resetPointerClickTracking(code);
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_COPY_BUTTON) {
 		const payload = buildRuntimeErrorOverlayCopyText(overlay);
-		void writeClipboard(clipboard, payload, 'Copied runtime error to clipboard');
+		void writeClipboard(pane.clipboard, payload, 'Copied runtime error to clipboard');
 		return true;
 	}
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_BODY) {
-		handleRuntimeErrorOverlayPointerClick(editor, overlay, overlay.hoverLine);
+		handleRuntimeErrorOverlayPointerClick(pane, overlay, overlay.hoverLine);
 	}
 	return true;
 }

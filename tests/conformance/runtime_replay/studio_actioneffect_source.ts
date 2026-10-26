@@ -1,10 +1,10 @@
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { inputFocus } from '../../../ide/input/focus';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Same canonical fixture as the compiled cartlib oracle, edited only in the paused source model. */
 export async function testStudioActionEffectSource(test: StudioFixture): Promise<void> {
@@ -14,7 +14,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
@@ -44,7 +44,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	check(inspector.visible && inspector.model.rows[0].element.value === "'blocked'",
 		'ActionEffect: full requirement inspection retains its field role and exact value');
 	await click(inspector.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === tag.authoredRange.start.line - 1 && model.version === version,
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === tag.authoredRange.start.line - 1 && model.version === version,
 		'ActionEffect: held inspector Source opens the individual tag without editing');
 	await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorGroup.model.activeTab === lens, 'ActionEffect: normal Back returns to the same retained properties');
@@ -101,18 +101,18 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	check(ide.editor.editorGroup.model.activeTab === lens, 'ActionEffect controls: palette focus interrupts a property double-click sequence');
 	await click(propertyBounds, 6);
 	const row = ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.includes('period_ms = 20'));
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
 		'ActionEffect controls: held property double-click opens its exact source without a code drag');
 	await test.clickTab(lens.id);
 	await click(properties.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
 		'ActionEffect source: held Source click opens the selected field without dragging code');
 	await test.clickTab(lens.id);
 	await click(propertyBounds, 1, 'pointer_secondary');
 	check(ide.editor.contextMenu.visible && view.selection?.rowKey === period.source.rowKey,
 		'ActionEffect context: right click targets the property without expanding or activating it');
 	await test.clickContextCommand('behaviorLens.source');
-	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
 		'ActionEffect context: shared menu opens exact field source without editing');
 	const oldDocument = view.document;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 effect source\n' }]);
@@ -127,7 +127,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	check(view.document === retained && properties.tree.rows === rows && lens.graphLayout.state.kind === 'idle',
 		'ActionEffect source: idle frames reuse source and property storage and never request a graph layout');
 	await click(properties.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.view.cursorRow === row + 1 && !hasSelection(), 'ActionEffect source: navigation follows UTF-16 source edits');
+	check(sourcePane(test).code.view.cursorRow === row + 1 && !hasSelection(sourcePane(test).code), 'ActionEffect source: navigation follows UTF-16 source edits');
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);
 	await click(properties.actionBar.items[0].bounds);
@@ -141,7 +141,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	check(ide.editor.editorGroup.model.activeTab === lens && view.definitionRowKey === view.document.definitions[0].rowKey,
 		'ActionEffect source: both registrations remain independently selectable with their own retained inputs');
 	await click(properties.actionBar.items[0].bounds);
-	check(activeCodeEditor.view.cursorRow === ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.startsWith("effects.register_effect('fixture.first'")),
+	check(sourcePane(test).code.view.cursorRow === ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.startsWith("effects.register_effect('fixture.first'")),
 		'ActionEffect source: definition Source opens its registration use, not the shared constructor');
 	model.pushEditOperations([{ offset: model.buffer.getText().indexOf("{ 'ready' }"), deleteLength: "{ 'ready' }".length,
 		text: "{ 'ready', 'aim', 'armed', 'visible', 'grounded', 'moving', 'awake' }" }]);
@@ -175,14 +175,14 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	await revealLensOccurrence(test, view, unknown.source.rowKey);
 	console.info('STUDIO: ActionEffect partial source ready for visual inspection');
 	await click(properties.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.view.cursorRow === 4 && activeCodeEditor.view.cursorColumn === 1 && !hasSelection(),
+	check(sourcePane(test).code.view.cursorRow === 4 && sourcePane(test).code.view.cursorColumn === 1 && !hasSelection(sourcePane(test).code),
 		'ActionEffect source: unknown-field Source navigates to its computed Lua key');
 	await test.clickTab(lens.id);
 	const required = partial.body!.fields[2];
 	if (required.kind !== 'list') throw new Error('ActionEffect source: expected authored requirement list');
 	await revealLensOccurrence(test, view, required.entries[1].node.rowKey);
 	await click(properties.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.view.cursorRow === 1 && activeCodeEditor.view.cursorColumn === ACTIONEFFECT_PARTIAL_SOURCE.split('\n')[1].indexOf("'fourth'") && !hasSelection(),
+	check(sourcePane(test).code.view.cursorRow === 1 && sourcePane(test).code.view.cursorColumn === ACTIONEFFECT_PARTIAL_SOURCE.split('\n')[1].indexOf("'fourth'") && !hasSelection(sourcePane(test).code),
 		'ActionEffect source: requirement entry opens its initializer expression, not the effect field or a guessed dense index');
 	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'KeyZ');

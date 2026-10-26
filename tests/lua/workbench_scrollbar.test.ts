@@ -1,4 +1,4 @@
-import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
+import { ScrollbarController } from '../../ide/workbench/ui/scrollbar_controller';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';

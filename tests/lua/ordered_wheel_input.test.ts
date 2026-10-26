@@ -12,7 +12,6 @@ import type { WheelInputSnapshot } from '../../ide/common/models';
 import { handleEditorWheelInput, handleWorkbenchPaneWheel } from '../../ide/input/pointer/wheel';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
-import { editorPointerState } from '../../ide/input/pointer/state';
 import { inputFocus } from '../../ide/input/focus';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { getWorkbenchEditorBounds, refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
@@ -84,8 +83,6 @@ test('public wheel router delivers each occurrence to its current pane using sup
 		getBounds: getWorkbenchEditorBounds, getClip: getWorkbenchEditorBounds,
 		handleWheel: event => handleWorkbenchPaneWheel(editor, event),
 	});
-	editorPointerState.lastPointerSnapshot = { viewportX: 0, viewportY: 0, valid: false, insideViewport: false,
-		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
 	const first: WheelInputSnapshot = {
 		viewportX: 100, viewportY: 100, valid: true, insideViewport: true,
 		deltaX: 0.125, deltaY: 0.25, modifiers: KeyModifier.shift,
@@ -102,7 +99,6 @@ test('public wheel router delivers each occurrence to its current pane using sup
 	assert.equal(secondPane[0].modifiers, KeyModifier.ctrl);
 	handleEditorWheelInput(editor, { ...first, viewportY: 5 }, { x: 100, y: 5, ...first, attachmentDeltaY: 0.25, timestamp: 0 });
 	assert.equal(secondPane.length, 1, 'wheel over non-scrolling chrome does not reach the active editor');
-	editorPointerState.lastPointerSnapshot = null;
 });
 
 test('wheel ownership follows exclusive UI surfaces and spatial guest hits, not keyboard focus', t => {

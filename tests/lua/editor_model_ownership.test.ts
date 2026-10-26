@@ -1,4 +1,9 @@
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { createTestCodeControl } from '../helpers/code_control';
+import { EditorFont } from '../../ide/editor/ui/view/font';
+import type { CodeEditorControl } from '../../ide/editor/ui/code_editor_control';
+import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
+import type { RuntimeSourceState } from '../../ide/runtime/sources';
+
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -10,24 +15,13 @@ import {
 	type EditorTextModelContentChangeEvent,
 } from '../../ide/editor/model/text_model';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
-import {
-	codeEditorEditState,
-	applyCodeEditorSelectionSnapshot,
-	ActiveCodeEditorState,
-	activeCodeEditor,
-	createCodeEditorViewState,
-	type CodeEditorViewState,
-	type CodeEditorSelectionSnapshot,
-} from '../../ide/editor/ui/code_editor_state';
+import { codeEditorEditState, applyCodeEditorSelectionSnapshot, createCodeEditorViewState, type CodeEditorViewState, type CodeEditorSelectionSnapshot } from '../../ide/editor/ui/code_editor_state';
 import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
-import { startSearchJob } from '../../ide/workbench/contrib/code_editor/find/search';
-import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
 import { backspace, deleteForward, deleteWordBackward, deleteWordForward, indentSelectionOrLine, insertLineBreak, insertText, pasteText, unindentSelectionOrLine } from '../../ide/editor/editing/text_editing_and_selection';
 import { getSingleCursorSelectionRange, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { undo as undoActiveEdit, redo as redoActiveEdit } from '../../ide/editor/editing/undo_controller';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 
 function luaResource(path: string): RuntimeResource {
@@ -277,8 +271,9 @@ test('retained code inputs track programmatic history independently of the activ
 	const input = new CodeEditorInput(model), view = input.context.view;
 	const other = new EditorTextModel(luaResource('active-code.lua'), 'lua', 'other');
 	const otherInput = new CodeEditorInput(other), otherView = otherInput.context.view;
-	activeCodeEditor.attach(other, otherView);
-	t.after(() => { activeCodeEditor.detach(); input.dispose(); otherInput.dispose(); model.dispose(); other.dispose(); });
+	const { documents, clock } = createTestCodeDocuments(t);
+	const code = createTestCodeControl(t, other, documents, clock, otherView);
+	t.after(() => { code.detach(); input.dispose(); otherInput.dispose(); model.dispose(); other.dispose(); });
 	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 3, selectionAnchor: { row: 0, column: 1 } }, view.editSource);
 	const after = codeEditorEditState.of({ ...before.value, cursorColumn: 4 }, view.editSource);
 	model.pushEditOperations([{ offset: 3, deleteLength: 0, text: 'x' }], before, () => after);
@@ -292,7 +287,7 @@ test('retained code inputs track programmatic history independently of the activ
 	model.redo();
 	assert.equal(view.cursorColumn, 3, 'marker affinity excludes text reinserted at the selected range edge');
 	assert.equal(view.selectionAnchor.column, 2, 'programmatic Redo maps the current selection instead of restoring a saved one');
-	assert.equal(activeCodeEditor.model, other);
+	assert.equal(code.model, other);
 	assert.equal(otherView.cursorColumn, 0, 'history does not mutate the active unrelated code widget');
 });
 
@@ -331,16 +326,17 @@ test('the model service enumerates dirty working copies independently of editor 
 	models.clear();
 });
 
-test('attaching a retained view validates its positions against the current model', () => {
+test('attaching a retained view validates its positions against the current model', t => {
+	const { documents, clock } = createTestCodeDocuments(t);
 	const model = new EditorTextModel(luaResource('reattach.lua'), 'lua', 'longIdentifier');
 	const view = createCodeEditorViewState();
 	view.cursorColumn = model.buffer.length;
 	view.selectionAnchor = { row: 0, column: model.buffer.length };
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'id' }]);
 
-	const editor = new ActiveCodeEditorState();
-	editor.attach(model, view);
+	const code = createTestCodeControl(t, model, documents, clock, view);
 
+	assert.equal(code.model, model);
 	assert.equal(view.cursorColumn, 2);
 	assert.deepEqual(view.selectionAnchor, { row: 0, column: 2 });
 });
@@ -356,56 +352,54 @@ test('applying a Source history selection does not lend its mutable anchor to th
 });
 
 test('backspace over a selection commits one model-owned undo element', t => {
-	const { models, documents } = createTestCodeDocuments(t);
+	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain(luaResource('selection-backspace.lua'), 'lua', 'root');
 	const input = new CodeEditorInput(model), view = input.context.view;
 	view.cursorColumn = 4;
 	view.selectionAnchor = { row: 0, column: 0 };
-	t.after(() => { activeCodeEditor.detach(); input.dispose(); });
-	activeCodeEditor.attach(model, view);
-	configureFontVariant(DEFAULT_FONT_VARIANT, documents.get(model));
+	t.after(() => { code.detach(); input.dispose(); });
+	const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(DEFAULT_FONT_VARIANT));
 
-	backspace();
+	backspace(code);
 	assert.equal(model.buffer.getText(), '');
 	assert.equal(model.version, 2);
 
-	undoActiveEdit();
+	undoActiveEdit(code);
 	assert.equal(model.buffer.getText(), 'root');
 	assert.equal(view.cursorColumn, 4);
 	assert.deepEqual(view.selectionAnchor, { row: 0, column: 0 });
 });
 
 test('backspace after Shift+End on an empty line publishes a collapsed caret when that line is removed', t => {
-	const { models, documents } = createTestCodeDocuments(t);
+	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain(luaResource('empty-selection.lua'), 'lua', 'head\n');
 	const input = new CodeEditorInput(model), view = input.context.view;
 	view.cursorRow = 1;
 	setSingleCursorSelectionAnchor(view, 1, 0);
-	activeCodeEditor.attach(model, view);
-	configureFontVariant(DEFAULT_FONT_VARIANT, documents.get(model));
-	t.after(() => { input.dispose(); activeCodeEditor.detach(); });
+	const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(DEFAULT_FONT_VARIANT));
+	t.after(() => { input.dispose(); code.detach(); });
 
-	backspace();
-	insertText('!');
+	backspace(code);
+	insertText(code, '!');
 	assert.equal(model.buffer.getText(), 'head!');
 	assert.equal(getSingleCursorSelectionRange(view), null);
-	undoActiveEdit();
+	undoActiveEdit(code);
 	assert.equal(model.buffer.getText(), 'head');
 	assert.equal(getSingleCursorSelectionRange(view), null);
-	undoActiveEdit();
+	undoActiveEdit(code);
 	assert.equal(model.buffer.getText(), 'head\n');
 	assert.equal(view.cursorRow, 1);
 	assert.equal(getSingleCursorSelectionRange(view), null);
-	redoActiveEdit(); redoActiveEdit();
+	redoActiveEdit(code); redoActiveEdit(code);
 	assert.equal(model.buffer.getText(), 'head!');
 	assert.equal(getSingleCursorSelectionRange(view), null);
 });
 
 test('ordinary text edits publish and retain a collapsed result selection, including an initially empty anchor', t => {
 	const cases = [
-		{ run: () => insertText('x'), source: 'abc', column: 1, result: 'axbc' },
+		{ run: (code: CodeEditorControl) => insertText(code, 'x'), source: 'abc', column: 1, result: 'axbc' },
 		{ run: insertLineBreak, source: 'abc', column: 1, result: 'a\nbc' },
-		{ run: () => pasteText('x\ny'), source: 'abc', column: 1, result: 'ax\nybc' },
+		{ run: (code: CodeEditorControl) => pasteText(code, 'x\ny'), source: 'abc', column: 1, result: 'ax\nybc' },
 		{ run: backspace, source: 'abc', column: 1, result: 'bc' },
 		{ run: deleteForward, source: 'a\nb', column: 1, result: 'ab' },
 		{ run: deleteWordBackward, source: 'one two', column: 4, result: 'two' },
@@ -414,52 +408,45 @@ test('ordinary text edits publish and retain a collapsed result selection, inclu
 		{ run: unindentSelectionOrLine, source: '\tabc', column: 2, result: 'abc' },
 	];
 	for (const entry of cases) {
-		const { models, documents } = createTestCodeDocuments(t);
+		const { models, documents, clock } = createTestCodeDocuments(t);
 		const model = models.retain(luaResource('edit-selection.lua'), 'lua', entry.source);
 		const input = new CodeEditorInput(model), view = input.context.view;
 		view.cursorColumn = entry.column;
 		setSingleCursorSelectionAnchor(view, 0, entry.column);
-		activeCodeEditor.attach(model, view);
-		configureFontVariant(DEFAULT_FONT_VARIANT, documents.get(model));
-		t.after(() => { input.dispose(); activeCodeEditor.detach(); });
+		const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(DEFAULT_FONT_VARIANT));
+		t.after(() => { input.dispose(); code.detach(); });
 		let events = 0;
 		model.onDidChangeContent(() => {
 			events += 1;
 			assert.equal(getSingleCursorSelectionRange(view), null);
 			model.buffer.offsetAt(view.cursorRow, view.cursorColumn);
 		});
-		entry.run();
+		entry.run(code);
 		assert.equal(model.buffer.getText(), entry.result);
 		const cursor = { row: view.cursorRow, column: view.cursorColumn };
-		undoActiveEdit();
+		undoActiveEdit(code);
 		assert.equal(model.buffer.getText(), entry.source);
 		assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, entry.column);
-		redoActiveEdit();
+		redoActiveEdit(code);
 		assert.equal(model.buffer.getText(), entry.result);
 		assert.equal(view.cursorRow, cursor.row); assert.equal(view.cursorColumn, cursor.column);
 		assert.equal(events, 3);
 	}
 });
 
-test('a local search job cannot continue against another model with the same version', (t) => {
-	const first = new EditorTextModel(luaResource('first.lua'), 'lua', 'needle');
-	const second = new EditorTextModel(luaResource('second.lua'), 'lua', 'needle');
-	activeCodeEditor.attach(first, createCodeEditorViewState());
-	editorSearchState.query = 'needle';
-	editorSearchState.matches = [];
-	startSearchJob();
-	activeCodeEditor.attach(second, createCodeEditorViewState());
-	t.after(() => {
-		clearBackgroundTasks();
-		editorSearchState.query = '';
-		editorSearchState.matches = [];
-		editorSearchState.job = null;
-	});
-
-	runBackgroundTasks(new VirtualHeadlessClock());
-
-	assert.equal(editorSearchState.job, null);
-	assert.deepEqual(editorSearchState.matches, []);
+test('a local search job cannot continue against another model with the same version', t => {
+	const { models, documents, clock } = createTestCodeDocuments(t);
+	const first = models.retain(luaResource('first.lua'), 'lua', 'needle');
+	const second = models.retain(luaResource('second.lua'), 'lua', 'needle');
+	const code = createTestCodeControl(t, first, documents, clock);
+	const search = new EditorSearchController(code, {} as RuntimeSourceState);
+	t.after(() => { search.dispose(); clearBackgroundTasks(); });
+	search.applySearchFieldText('needle', true);
+	search.openSearch(false);
+	code.attach(second, createCodeEditorViewState(), documents.get(second));
+	runBackgroundTasks(clock);
+	assert.equal(search.state.job, null);
+	assert.deepEqual(search.state.matches, []);
 });
 
 test('canonical source clamps survive document shrink without a font or layout', () => {

@@ -2,7 +2,6 @@ import { pointerHover } from './hover';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
-import { editorPointerState, resetPointerClickTracking } from './state';
 
 export function handleResourcePanelPointer(
 	resourcePanel: ResourcePanelController,
@@ -25,13 +24,11 @@ export function handleResourcePanelPointer(
 	resourcePanel.hoverIndex = hoverIndex;
 	if (justPressed) {
 		resourcePanel.setFocused(true);
-		resetPointerClickTracking();
 		if (hoverIndex >= 0) {
 			resourcePanel.setSelectionIndex(hoverIndex);
 			openResourcePanelSelection(resourcePanel, hoverIndex, snapshot.viewportX);
 		}
 	}
-	editorPointerState.pointerSelecting = false;
 	return true;
 }
 

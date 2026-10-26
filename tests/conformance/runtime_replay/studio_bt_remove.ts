@@ -1,10 +1,10 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { inputFocus } from '../../../ide/input/focus';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Physical source-removal commands, not a feature-local graph model or mock keyboard route. */
 export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
@@ -14,7 +14,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
@@ -53,9 +53,9 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	for (let index = 0; index < 6; index += 1) await frame();
 	check(ide.editor.editorGroup.model.activeTab === lens && model.version === version, 'A01: held toolbar Enter does not navigate or edit');
 	setKey('Enter', false); await frame();
-	check(ide.editor.editorGroup.model.activeTab === code && model.version === version && !hasSelection()
-		&& activeCodeEditor.view.cursorRow === selected.source.occurrenceRange.start.line - 1
-		&& activeCodeEditor.view.cursorColumn === selected.source.occurrenceRange.start.column - 1,
+	check(ide.editor.editorGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
+		&& sourcePane(test).code.view.cursorRow === selected.source.occurrenceRange.start.line - 1
+		&& sourcePane(test).code.view.cursorColumn === selected.source.occurrenceRange.start.column - 1,
 		'BT removal: held Source remains navigation only');
 	check(!ide.editor.commands.isEnabled(remove), 'BT removal: code focus does not inherit graph commands');
 	await press('Delete');
@@ -111,8 +111,8 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	console.info('STUDIO: BT removed child ready for visual inspection');
 	await click(sourceButton.bounds);
 	const definitionRange = lens.view.document.definitions[0].occurrenceRange;
-	check(ide.editor.editorGroup.model.activeTab === code && model.version === version + 1 && !hasSelection()
-		&& activeCodeEditor.view.cursorRow === definitionRange.start.line - 1,
+	check(ide.editor.editorGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code)
+		&& sourcePane(test).code.view.cursorRow === definitionRange.start.line - 1,
 		'BT removal: with no selected child, Source navigates to the selected registration');
 	const hiddenDocument = lens.view.document;
 	await press('ControlLeft', 'KeyZ');

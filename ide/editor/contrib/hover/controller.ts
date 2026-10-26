@@ -1,3 +1,4 @@
+import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { editorTextModelService } from '../../model/model_service';
@@ -6,11 +7,11 @@ import * as constants from '../../../common/constants';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaHover } from '../../../../toolchain/ts/lua/semantic/hover';
-import type { CodeEditorContext } from '../../ui/code_editor_state';
-import type { ResourceDomain } from '../../../common/resource';
+import type { CodeEditorControl } from '../../ui/code_editor_control';
+import type { EditorTextModel } from '../../model/text_model';
+import type { EditorFont } from '../../ui/view/font';
 import type { Blua32SourceMedia } from '../../../runtime/sources';
-import { writeWrappedOverlayLine } from '../../common/text/layout';
-import { editorViewState } from '../../ui/view/state';
+import { writeWrappedMeasuredLine } from '../../../common/text';
 import {
 	buildEditorSemanticSnapshot,
 	createEditorSemanticFrontend,
@@ -20,12 +21,11 @@ import {
 	inspectLuaRuntimeExpression,
 	type LuaRuntimeInspection,
 } from '../intellisense/engine';
-import { hoverState } from './state';
 
 type HoverQueryState = {
 	valid: boolean;
-	path: string;
-	domain: ResourceDomain;
+	model: EditorTextModel | null;
+	font: EditorFont | undefined;
 	row: number;
 	column: number;
 	textVersion: number;
@@ -39,149 +39,143 @@ type HoverQueryState = {
 	semanticSnapshot: LuaSemanticWorkspaceSnapshot;
 };
 
-const queryState: HoverQueryState = {
-	valid: false,
-	path: '',
-	domain: -1,
-	row: 0,
-	column: 0,
-	textVersion: 0,
-	wrapWidth: 0,
-	evaluatesRuntime: false,
-	executionPc: 0,
-	executionFrameDepth: 0,
-	executionCycles: 0,
-	media: undefined,
-	faultSnapshot: null,
-	semanticSnapshot: null,
-};
+export class CodeEditorHoverController {
+	private readonly queryState: HoverQueryState = {
+		valid: false, model: null, font: undefined,
+		row: 0,
+		column: 0,
+		textVersion: 0,
+		wrapWidth: 0,
+		evaluatesRuntime: false,
+		executionPc: 0,
+		executionFrameDepth: 0,
+		executionCycles: 0,
+		media: undefined,
+		faultSnapshot: null,
+		semanticSnapshot: null,
+	};
 
-export function updateHoverTooltip(
-	sources: RuntimeSourceState,
-	guest: SuspendedGuestSession,
-	fault: RuntimeFaultState,
-	runtime: Runtime,
-	context: CodeEditorContext,
-	row: number,
-	column: number,
-): void {
-	if (context.model.mode !== 'lua') {
-		clearHoverTooltip();
-		return;
-	}
-	const path = context.model.resource.path;
-	const textVersion = context.model.version;
-	const wrapWidth = Math.max(
-		editorViewState.spaceAdvance,
-		editorViewState.viewportWidth
-			- constants.HOVER_TOOLTIP_PADDING_X * 2
-			- editorViewState.spaceAdvance * 2,
-	);
-	const cpu = runtime.machine.cpu;
-	const executionCycles = runtime.machine.scheduler.currentNowCycles();
-	const media = sources.currentBlua32Media;
-	const executionPc = fault.faultSnapshot === null ? cpu.lastPc : fault.lastCpuFaultPc;
-	const executionFrameDepth = fault.faultSnapshot === null
-		? cpu.getFrameDepth()
-		: fault.lastCpuFaultSnapshot.length;
-	const semanticProject = getOrCreateSemanticProject(editorTextModelService, context.model.resource.domain);
-	semanticProject.synchronizeRuntimeSources(sources);
-	const semanticSnapshot = semanticProject.getSnapshot();
-	if (queryState.valid
-		&& queryState.path === path
-		&& queryState.domain === context.model.resource.domain
-		&& queryState.row === row
-		&& queryState.column === column
-		&& queryState.textVersion === textVersion
-		&& queryState.wrapWidth === wrapWidth
-		&& queryState.semanticSnapshot === semanticSnapshot
-		&& (!queryState.evaluatesRuntime
-			|| (queryState.executionPc === executionPc
-				&& queryState.executionFrameDepth === executionFrameDepth
-				&& queryState.executionCycles === executionCycles
-				&& queryState.media === media
-				&& queryState.faultSnapshot === fault.faultSnapshot))) {
-		return;
-	}
+	public constructor(private readonly code: CodeEditorControl, private readonly sources: RuntimeSourceState,
+		private readonly guest: SuspendedGuestSession, private readonly fault: RuntimeFaultState, private readonly runtime: Runtime) {}
 
-	const snapshot = buildEditorSemanticSnapshot(
-		sources,
-		context.model.resource,
-		context.model.buffer,
-	);
-	const frontend = createEditorSemanticFrontend(snapshot, context.model.resource.domain);
-	const semanticHover = frontend.provideHover(path, row + 1, column + 1);
-	const evaluatableExpression = frontend.provideEvaluatableExpression(path, row + 1, column + 1);
-	const runtimeInspection = evaluatableExpression === null
-		? null
-		: inspectLuaRuntimeExpression(
-			sources,
-			guest,
-			fault,
-			runtime,
-			evaluatableExpression.expression,
-			context.model.resource.domain,
-			snapshot.getFileData(path)!,
-			evaluatableExpression.range.start.line,
-			evaluatableExpression.range.start.column,
-		);
-
-	queryState.valid = true;
-	queryState.path = path;
-	queryState.domain = context.model.resource.domain;
-	queryState.row = row;
-	queryState.column = column;
-	queryState.textVersion = textVersion;
-	queryState.wrapWidth = wrapWidth;
-	queryState.evaluatesRuntime = evaluatableExpression !== null;
-	queryState.executionPc = executionPc;
-	queryState.executionFrameDepth = executionFrameDepth;
-	queryState.executionCycles = executionCycles;
-	queryState.media = media;
-	queryState.faultSnapshot = fault.faultSnapshot;
-	queryState.semanticSnapshot = snapshot;
-
-	let range;
-	if (semanticHover === null) {
-		if (evaluatableExpression === null || runtimeInspection === null) {
-			hoverState.tooltip = null;
+	public update(row: number, column: number): void {
+		if (this.code.model.mode !== 'lua') {
+			this.clear();
 			return;
 		}
-		range = evaluatableExpression.range;
-	} else {
-		range = semanticHover.applicableRange;
-	}
-	const lines: string[] = [];
-	if (semanticHover !== null) {
-		appendSemanticHover(lines, semanticHover);
-	}
-	if (runtimeInspection !== null) {
-		if (lines.length > 0) {
-			lines.push('');
+		const path = this.code.model.resource.path;
+		const textVersion = this.code.model.version;
+		const wrapWidth = Math.max(
+			this.code.spaceAdvance,
+			this.code.geometry.clientBounds.right - this.code.geometry.clientBounds.left
+				- constants.HOVER_TOOLTIP_PADDING_X * 2
+				- this.code.spaceAdvance * 2,
+		);
+		const cpu = this.runtime.machine.cpu;
+		const executionCycles = this.runtime.machine.scheduler.currentNowCycles();
+		const media = this.sources.currentBlua32Media;
+		const executionPc = this.fault.faultSnapshot === null ? cpu.lastPc : this.fault.lastCpuFaultPc;
+		const executionFrameDepth = this.fault.faultSnapshot === null
+			? cpu.getFrameDepth()
+			: this.fault.lastCpuFaultSnapshot.length;
+		const semanticProject = getOrCreateSemanticProject(editorTextModelService, this.code.model.resource.domain);
+		semanticProject.synchronizeRuntimeSources(this.sources);
+		const semanticSnapshot = semanticProject.getSnapshot();
+		if (this.queryState.valid
+			&& this.queryState.model === this.code.model
+			&& this.queryState.font === this.code.font
+			&& this.queryState.row === row
+			&& this.queryState.column === column
+			&& this.queryState.textVersion === textVersion
+			&& this.queryState.wrapWidth === wrapWidth
+			&& this.queryState.semanticSnapshot === semanticSnapshot
+			&& (!this.queryState.evaluatesRuntime
+				|| (this.queryState.executionPc === executionPc
+					&& this.queryState.executionFrameDepth === executionFrameDepth
+					&& this.queryState.executionCycles === executionCycles
+					&& this.queryState.media === media
+					&& this.queryState.faultSnapshot === this.fault.faultSnapshot))) {
+			return;
 		}
-		appendRuntimeInspection(lines, runtimeInspection);
-	}
-	const wrappedLines: string[] = [];
-	for (let index = 0; index < lines.length; index += 1) {
-		writeWrappedOverlayLine(wrappedLines, lines[index], wrapWidth);
-	}
-	hoverState.tooltip = {
-		contentLines: wrappedLines,
-		path,
-		row: range.start.line - 1,
-		startColumn: range.start.column - 1,
-		endColumn: range.end.column,
-		scrollOffset: 0,
-		visibleLineCount: 0,
-		bubbleBounds: null,
-	};
-}
 
-export function clearHoverTooltip(): void {
-	hoverState.tooltip = null;
-	queryState.valid = false;
-	queryState.media = undefined;
-	queryState.faultSnapshot = null;
+		const snapshot = buildEditorSemanticSnapshot(
+			this.sources,
+			this.code.model.resource,
+			this.code.model.buffer,
+		);
+		const frontend = createEditorSemanticFrontend(snapshot, this.code.model.resource.domain);
+		const semanticHover = frontend.provideHover(path, row + 1, column + 1);
+		const evaluatableExpression = frontend.provideEvaluatableExpression(path, row + 1, column + 1);
+		const runtimeInspection = evaluatableExpression === null
+			? null
+			: inspectLuaRuntimeExpression(
+				this.sources,
+				this.guest,
+				this.fault,
+				this.runtime,
+				evaluatableExpression.expression,
+				this.code.model.resource.domain,
+				snapshot.getFileData(path)!,
+				evaluatableExpression.range.start.line,
+				evaluatableExpression.range.start.column,
+			);
+
+		this.queryState.valid = true;
+		this.queryState.model = this.code.model; this.queryState.font = this.code.font;
+		this.queryState.row = row;
+		this.queryState.column = column;
+		this.queryState.textVersion = textVersion;
+		this.queryState.wrapWidth = wrapWidth;
+		this.queryState.evaluatesRuntime = evaluatableExpression !== null;
+		this.queryState.executionPc = executionPc;
+		this.queryState.executionFrameDepth = executionFrameDepth;
+		this.queryState.executionCycles = executionCycles;
+		this.queryState.media = media;
+		this.queryState.faultSnapshot = this.fault.faultSnapshot;
+		this.queryState.semanticSnapshot = snapshot;
+
+		let range;
+		if (semanticHover === null) {
+			if (evaluatableExpression === null || runtimeInspection === null) {
+				this.code.hoverTooltip = null;
+				return;
+			}
+			range = evaluatableExpression.range;
+		} else {
+			range = semanticHover.applicableRange;
+		}
+		const lines: string[] = [];
+		if (semanticHover !== null) {
+			appendSemanticHover(lines, semanticHover);
+		}
+		if (runtimeInspection !== null) {
+			if (lines.length > 0) {
+				lines.push('');
+			}
+			appendRuntimeInspection(lines, runtimeInspection);
+		}
+		const wrappedLines: string[] = [];
+		for (let index = 0; index < lines.length; index += 1) {
+			writeWrappedMeasuredLine(wrappedLines, lines[index], wrapWidth, this.code.font.measureTextRange);
+		}
+		const lineWidths = wrappedLines.map(line => this.code.font.measure(line));
+		this.code.hoverTooltip = {
+			contentLines: wrappedLines, lineWidths,
+			path,
+			row: range.start.line - 1,
+			startColumn: range.start.column - 1,
+			endColumn: range.end.column,
+			scrollOffset: 0,
+			visibleLineCount: 0,
+			bubbleBounds: create_rect_bounds(),
+		};
+	}
+
+	public clear(): void {
+		this.code.hoverTooltip = null;
+		this.queryState.valid = false; this.queryState.model = null; this.queryState.font = undefined;
+		this.queryState.media = undefined; this.queryState.faultSnapshot = null; this.queryState.semanticSnapshot = null;
+	}
 }
 
 function appendSemanticHover(lines: string[], hover: LuaHover): void {

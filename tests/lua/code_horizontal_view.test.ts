@@ -1,45 +1,35 @@
+import { createTestCodeControl } from '../helpers/code_control';
+import { EditorFont } from '../../ide/editor/ui/view/font';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
-import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { TAB_SPACES } from '../../ide/common/constants';
-import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
-import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 import { revealCursor, revealInlineEdit, resolveViewportCapacity } from '../../ide/editor/ui/view/caret/view';
-import { editorViewState } from '../../ide/editor/ui/view/state';
-import { applyViewportSize, configureFontVariant, resolvePointerTextPosition, resolveTextPositionBounds } from '../../ide/editor/ui/view/view';
-import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { resolvePointerTextPosition, resolveTextPositionBounds } from '../../ide/editor/ui/view/view';
 
 function fixture(t: TestContext, source: string, variant: FontVariant) {
-	const previousWrap = editorViewState.wordWrapEnabled, previousSuspended = editorCaretState.cursorRevealSuspended;
-	configureFontVariant(variant);
-	applyViewportSize({ width: variant === 'tiny' ? 78 : 118, height: 288 }); refreshWorkbenchLayout();
-	editorViewState.wordWrapEnabled = false; editorCaretState.cursorRevealSuspended = false;
-	const { documents } = createTestCodeDocuments(t, editorTextModelService);
-	const model = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'horizontal.lua' }, domain: 0, path: 'horizontal.lua',
+	const { models, documents, clock } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'horizontal.lua' }, domain: 0, path: 'horizontal.lua',
 		source: { type: 'lua', resid: 'horizontal', source_path: 'horizontal.lua' } }, 'lua', source);
-	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
-	editorViewState.layout.attach(documents.get(model));
-	t.after(() => {
-		activeCodeEditor.detach(); editorViewState.layout.dispose(); editorTextModelService.clear();
-		editorViewState.wordWrapEnabled = previousWrap; editorCaretState.cursorRevealSuspended = previousSuspended;
-	});
-	return { model, view, documents, layout: editorViewState.layout, font: editorViewState.font };
+	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant),
+		{ left: 0, top: 10, right: variant === 'tiny' ? 78 : 118, bottom: 270 });
+	code.wordWrapEnabled = false;
+	return { code, model, view: code.view, documents, layout: code.layout, font: code.font };
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} minimum-width maximum scroll reaches every ellipsis and the complete EOL caret`, t => {
-		const source = '--' + '…'.repeat(20), { model, view, layout, font } = fixture(t, source, variant);
-		const viewport = resolveViewportCapacity(), line = layout.getViewLine(0), version = model.version;
+		const source = '--' + '…'.repeat(20), { code, model, view, layout, font } = fixture(t, source, variant);
+		const viewport = resolveViewportCapacity(code), line = layout.getViewLine(0), version = model.version;
 		assert.equal(font.advance('…'), 6); assert.equal(font.advance('M'), variant === 'tiny' ? 4 : 6);
 		const endPixel = line.advancePrefix[line.hi.text.length], endCaret = font.advance(' ');
 		assert.equal(layout.maxViewWidth(), endPixel + endCaret);
 		assert.equal(viewport.maxScrollLeft, endPixel + endCaret - viewport.contentWidth);
 		view.scrollLeft = viewport.maxScrollLeft; view.cursorColumn = source.length;
 		assert.ok(endPixel - view.scrollLeft <= viewport.contentRight - viewport.textLeft);
-		const bounds = create_rect_bounds(); resolveTextPositionBounds(0, source.length, bounds);
+		const bounds = create_rect_bounds(); resolveTextPositionBounds(code, 0, source.length, bounds);
 		assert.equal(bounds.right - bounds.left, endCaret);
 		assert.equal(bounds.right, viewport.contentRight, 'the actual EOL caret fits at the maximum pixel origin');
 		assert.equal(layout.cursorWidth(line, line.hi.text.length), endCaret);
@@ -47,8 +37,8 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} borrowed line viewports include partial edge glyphs without snapping their pixel origin`, t => {
-		const { view, layout } = fixture(t, '…'.repeat(20), variant);
-		resolveViewportCapacity(); view.scrollLeft = 3.5;
+		const { code, view, layout } = fixture(t, '…'.repeat(20), variant);
+		resolveViewportCapacity(code); view.scrollLeft = 3.5;
 		const line = layout.getViewLine(0), segment = layout.visualIndexToSegment(0);
 		const slice = layout.resolveLineViewport(line, segment, view.scrollLeft, 7, false);
 		assert.deepEqual(slice, { startDisplay: 0, endDisplay: 2, pixelOffset: 3.5 });
@@ -64,39 +54,39 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} source bounds and hits agree for tabs, ellipses, ghost cells and surviving text at 3.5 pixels`, t => {
-		const source = '…\tretur_tail()' + 'x'.repeat(40), { model, view, layout, font } = fixture(t, source, variant);
+		const source = '…\tretur_tail()' + 'x'.repeat(40), { code, model, view, layout, font } = fixture(t, source, variant);
 		const start = '…\tretur'.length, end = source.indexOf('('), version = model.version;
-		view.cursorColumn = start; activeCodeEditor.setInlineEdit(0, start, end, 'n…\t');
-		const viewport = resolveViewportCapacity(); view.scrollLeft = 3.5;
+		view.cursorColumn = start; code.setInlineEdit(0, start, end, 'n…\t');
+		const viewport = resolveViewportCapacity(code); view.scrollLeft = 3.5;
 		assert.ok(viewport.maxScrollLeft > view.scrollLeft);
 		const line = layout.getViewLine(0), inline = line.inline!, bounds = create_rect_bounds();
-		const y = viewport.codeTop + editorViewState.lineHeight * 0.5;
+		const y = viewport.codeTop + code.lineHeight * 0.5;
 		for (const column of [1, 2, start - 1, end]) {
-			resolveTextPositionBounds(0, column, bounds);
+			resolveTextPositionBounds(code, 0, column, bounds);
 			const x = bounds.left + (bounds.right - bounds.left) * 0.25;
 			assert.ok(x >= viewport.textLeft && x < viewport.contentRight);
-			assert.deepEqual(resolvePointerTextPosition(x, y), { row: 0, column, injected: false });
+			assert.deepEqual(resolvePointerTextPosition(code, x, y), { row: 0, column, injected: false });
 			assert.equal(bounds.left, viewport.textLeft + line.advancePrefix[line.hi.columnToDisplay[column]] - 3.5);
 			if (source.charAt(column) === '\t') assert.equal(bounds.right - bounds.left, font.advance(' ') * TAB_SPACES);
 		}
 		const ghostStart = line.advancePrefix[inline.startDisplay], ghostEnd = line.advancePrefix[inline.endDisplay];
 		const ghostRightX = viewport.textLeft + ghostStart + (ghostEnd - ghostStart) * 0.75 - 3.5;
-		assert.deepEqual(resolvePointerTextPosition(ghostRightX, y), { row: 0, column: start, injected: true });
-		assert.deepEqual(resolvePointerTextPosition(viewport.textLeft + ghostEnd - 3.5, y), { row: 0, column: end, injected: false });
+		assert.deepEqual(resolvePointerTextPosition(code, ghostRightX, y), { row: 0, column: start, injected: true });
+		assert.deepEqual(resolvePointerTextPosition(code, viewport.textLeft + ghostEnd - 3.5, y), { row: 0, column: end, injected: false });
 		assert.equal(view.scrollLeft, 3.5); assert.equal(view.cursorColumn, start);
 		assert.equal(model.buffer.getText(), source); assert.equal(model.version, version);
 	});
 
 	test(`${variant} pixel reveal covers the inline interval but preserves deliberately suspended fractional scroll`, t => {
-		const prefix = '…\t'.repeat(5), source = prefix + 'retur_tail()', { model, view, layout } = fixture(t, source, variant);
+		const prefix = '…\t'.repeat(5), source = prefix + 'retur_tail()', { code, model, view, layout } = fixture(t, source, variant);
 		const column = prefix.length + 5, version = model.version;
-		view.cursorColumn = column; activeCodeEditor.setInlineEdit(0, column, column + 5, '…n…');
-		const viewport = resolveViewportCapacity(), line = layout.getViewLine(0), inline = line.inline!;
-		view.scrollLeft = 3.5; editorCaretState.cursorRevealSuspended = true;
-		revealInlineEdit(); assert.equal(view.scrollLeft, 3.5); assert.equal(editorCaretState.cursorRevealSuspended, true);
-		editorCaretState.cursorRevealSuspended = false; revealInlineEdit();
+		view.cursorColumn = column; code.setInlineEdit(0, column, column + 5, '…n…');
+		const viewport = resolveViewportCapacity(code), line = layout.getViewLine(0), inline = line.inline!;
+		view.scrollLeft = 3.5; code.caret.cursorRevealSuspended = true;
+		revealInlineEdit(code); assert.equal(view.scrollLeft, 3.5); assert.equal(code.caret.cursorRevealSuspended, true);
+		code.caret.cursorRevealSuspended = false; revealInlineEdit(code);
 		for (const reveal of [revealInlineEdit, revealCursor]) {
-			reveal();
+			reveal(code);
 			assert.ok(line.advancePrefix[inline.startDisplay] >= view.scrollLeft);
 			assert.ok(line.advancePrefix[inline.endDisplay] <= view.scrollLeft + viewport.contentWidth);
 			assert.ok(view.scrollLeft > 3.5 && view.scrollLeft <= viewport.maxScrollLeft);

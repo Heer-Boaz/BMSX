@@ -5,7 +5,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { insertValue } from '../../ide/editor/ui/inline/text_field';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { inputFocus } from '../../ide/input/focus';

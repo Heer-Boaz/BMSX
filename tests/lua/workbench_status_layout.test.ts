@@ -7,7 +7,7 @@ import * as colors from '../../ide/common/constants';
 import { editorFeedbackState, showEditorMessage, updateEditorMessage } from '../../ide/common/feedback_state';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { createRuntimeDebuggerState } from '../../ide/runtime/debugger_state';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';

@@ -1,25 +1,25 @@
+import type { CodeEditorControl } from '../ui/code_editor_control';
 import { notifyReadOnlyEdit } from '../ui/view/view';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
 import { markTextMutated } from '../common/text/runtime';
-import { resetBlink } from '../render/caret';
+import { resetBlinkState } from '../ui/view/caret/blink';
 import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import * as TextEditing from './text_editing_and_selection';
-import { activeCodeEditor } from '../ui/code_editor_state';
 
-export function toggleLineComments(): void {
-	const prefix = activeCodeEditor.model.language.lineComment;
+export function toggleLineComments(code: CodeEditorControl): void {
+	const prefix = code.model.language.lineComment;
 	if (prefix === undefined) return;
-	if (activeCodeEditor.model.readOnly) {
+	if (code.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
-	const range = TextEditing.getLineRangeForMovement();
+	const range = TextEditing.getLineRangeForMovement(code);
 	if (range.startRow < 0 || range.endRow < range.startRow) {
 		return;
 	}
 	let allCommented = true;
 	for (let row = range.startRow; row <= range.endRow; row++) {
-		const line = activeCodeEditor.model.buffer.getLineContent(row);
+		const line = code.model.buffer.getLineContent(row);
 		const commentIndex = firstNonWhitespaceIndex(line);
 		if (commentIndex >= line.length) {
 			allCommented = false;
@@ -31,27 +31,27 @@ export function toggleLineComments(): void {
 		}
 	}
 	if (allCommented) {
-		removeLineComments(range);
+		removeLineComments(code, range);
 	} else {
-		addLineComments(range);
+		addLineComments(code, range);
 	}
 }
 
-export function addLineComments(range?: { startRow: number; endRow: number }): void {
-	const prefix = activeCodeEditor.model.language.lineComment;
+export function addLineComments(code: CodeEditorControl, range?: { startRow: number; endRow: number }): void {
+	const prefix = code.model.language.lineComment;
 	if (prefix === undefined) return;
-	if (activeCodeEditor.model.readOnly) {
+	if (code.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
-	const target = range ?? TextEditing.getLineRangeForMovement();
+	const target = range ?? TextEditing.getLineRangeForMovement(code);
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
 	}
-	prepareUndo('comment-lines', false);
+	prepareUndo(code, 'comment-lines', false);
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = activeCodeEditor.model.buffer.getLineContent(row);
+		const originalLine = code.model.buffer.getLineContent(row);
 		const insertIndex = firstNonWhitespaceIndex(originalLine);
 		const hasContent = insertIndex < originalLine.length;
 		let insertion = prefix;
@@ -61,36 +61,36 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 				insertion = prefix + ' ';
 			}
 		}
-		applyUndoableReplace(activeCodeEditor.model.buffer.offsetAt(row, insertIndex), 0, insertion);
-		shiftPositionsForInsertion(row, insertIndex, insertion.length);
+		applyUndoableReplace(code, code.model.buffer.offsetAt(row, insertIndex), 0, insertion);
+		shiftPositionsForInsertion(code, row, insertIndex, insertion.length);
 		changed = true;
 	}
 	if (!changed) {
 		return;
 	}
-	activeCodeEditor.view.cursorRow = activeCodeEditor.model.clampRow(activeCodeEditor.view.cursorRow);
-	activeCodeEditor.view.cursorColumn = activeCodeEditor.model.clampColumn(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-	activeCodeEditor.view.selectionAnchor = TextEditing.clampSelectionPosition(activeCodeEditor.view.selectionAnchor);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	code.view.cursorRow = code.model.clampRow(code.view.cursorRow);
+	code.view.cursorColumn = code.model.clampColumn(code.view.cursorRow, code.view.cursorColumn);
+	code.view.selectionAnchor = TextEditing.clampSelectionPosition(code, code.view.selectionAnchor);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
-export function removeLineComments(range?: { startRow: number; endRow: number }): void {
-	const prefix = activeCodeEditor.model.language.lineComment;
+export function removeLineComments(code: CodeEditorControl, range?: { startRow: number; endRow: number }): void {
+	const prefix = code.model.language.lineComment;
 	if (prefix === undefined) return;
-	if (activeCodeEditor.model.readOnly) {
+	if (code.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
-	const target = range ?? TextEditing.getLineRangeForMovement();
+	const target = range ?? TextEditing.getLineRangeForMovement(code);
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
 	}
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = activeCodeEditor.model.buffer.getLineContent(row);
+		const originalLine = code.model.buffer.getLineContent(row);
 		const commentIndex = firstNonWhitespaceIndex(originalLine);
 		if (commentIndex >= originalLine.length) {
 			continue;
@@ -106,22 +106,22 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 			}
 		}
 		if (!changed) {
-			prepareUndo('uncomment-lines', false);
+			prepareUndo(code, 'uncomment-lines', false);
 			changed = true;
 		}
-		applyUndoableReplace(activeCodeEditor.model.buffer.offsetAt(row, commentIndex), removal, '');
-		shiftPositionsForRemoval(row, commentIndex, removal);
+		applyUndoableReplace(code, code.model.buffer.offsetAt(row, commentIndex), removal, '');
+		shiftPositionsForRemoval(code, row, commentIndex, removal);
 	}
 	if (!changed) {
 		return;
 	}
-	activeCodeEditor.view.cursorRow = activeCodeEditor.model.clampRow(activeCodeEditor.view.cursorRow);
-	activeCodeEditor.view.cursorColumn = activeCodeEditor.model.clampColumn(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-	activeCodeEditor.view.selectionAnchor = TextEditing.clampSelectionPosition(activeCodeEditor.view.selectionAnchor);
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
+	code.view.cursorRow = code.model.clampRow(code.view.cursorRow);
+	code.view.cursorColumn = code.model.clampColumn(code.view.cursorRow, code.view.cursorColumn);
+	code.view.selectionAnchor = TextEditing.clampSelectionPosition(code, code.view.selectionAnchor);
+	markTextMutated(code);
+	resetBlinkState(code.caret);
+	updateDesiredColumn(code);
+	revealCursor(code);
 }
 
 export function firstNonWhitespaceIndex(value: string): number {
@@ -134,34 +134,34 @@ export function firstNonWhitespaceIndex(value: string): number {
 	return value.length;
 }
 
-export function shiftPositionsForInsertion(row: number, column: number, length: number): void {
+export function shiftPositionsForInsertion(code: CodeEditorControl, row: number, column: number, length: number): void {
 	if (length <= 0) {
 		return;
 	}
-	if (activeCodeEditor.view.cursorRow === row && activeCodeEditor.view.cursorColumn >= column) {
-		activeCodeEditor.view.cursorColumn += length;
+	if (code.view.cursorRow === row && code.view.cursorColumn >= column) {
+		code.view.cursorColumn += length;
 	}
-	if (activeCodeEditor.view.selectionAnchor && activeCodeEditor.view.selectionAnchor.row === row && activeCodeEditor.view.selectionAnchor.column >= column) {
-		activeCodeEditor.view.selectionAnchor.column += length;
+	if (code.view.selectionAnchor && code.view.selectionAnchor.row === row && code.view.selectionAnchor.column >= column) {
+		code.view.selectionAnchor.column += length;
 	}
 }
 
-export function shiftPositionsForRemoval(row: number, column: number, length: number): void {
+export function shiftPositionsForRemoval(code: CodeEditorControl, row: number, column: number, length: number): void {
 	if (length <= 0) {
 		return;
 	}
-	if (activeCodeEditor.view.cursorRow === row && activeCodeEditor.view.cursorColumn > column) {
-		if (activeCodeEditor.view.cursorColumn <= column + length) {
-			activeCodeEditor.view.cursorColumn = column;
+	if (code.view.cursorRow === row && code.view.cursorColumn > column) {
+		if (code.view.cursorColumn <= column + length) {
+			code.view.cursorColumn = column;
 		} else {
-			activeCodeEditor.view.cursorColumn -= length;
+			code.view.cursorColumn -= length;
 		}
 	}
-	if (activeCodeEditor.view.selectionAnchor && activeCodeEditor.view.selectionAnchor.row === row && activeCodeEditor.view.selectionAnchor.column > column) {
-		if (activeCodeEditor.view.selectionAnchor.column <= column + length) {
-			activeCodeEditor.view.selectionAnchor.column = column;
+	if (code.view.selectionAnchor && code.view.selectionAnchor.row === row && code.view.selectionAnchor.column > column) {
+		if (code.view.selectionAnchor.column <= column + length) {
+			code.view.selectionAnchor.column = column;
 		} else {
-			activeCodeEditor.view.selectionAnchor.column -= length;
+			code.view.selectionAnchor.column -= length;
 		}
 	}
 }

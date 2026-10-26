@@ -1,12 +1,10 @@
-import type { RuntimeSourceState } from '../../../../runtime/sources';
-import type { CartEditor } from '../../../../cart_editor';
+import type { CodeEditorPane } from '../editor_pane';
 import type { LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
 import { symbolKindLabel } from '../../../../../toolchain/ts/lua/semantic/model';
-import { clearReferenceHighlights, listGlobalLuaSymbols, listLuaSymbols } from '../../../../editor/contrib/intellisense/engine';
+import { listGlobalLuaSymbols, listLuaSymbols } from '../../../../editor/contrib/intellisense/engine';
 import { subscribeToLuaModelChanges } from '../../../../editor/contrib/intellisense/model_lifetime';
 import { editorTextModelService } from '../../../../editor/model/model_service';
 import { navigateToLuaDefinition } from '../../../ui/code_tab/activation';
-import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { SymbolQuickPickProvider } from './quick_pick_provider';
 import type { QuickPickItem } from '../../../services/quick_input/provider';
 
@@ -21,15 +19,16 @@ export function buildSymbolQuickPickItems(symbols: readonly LuaSymbolEntry[], sc
 	});
 }
 
-export function openSymbolSearch(editor: CartEditor, sources: RuntimeSourceState, scope: 'file' | 'workspace'): void {
-	const resource = getActiveCodeTabContext(editor.editorGroup).model.resource;
-	clearReferenceHighlights();
-	editor.quickInput.pick(scope === 'file' ? `SYMBOLS: ${resource.path}` : 'GO TO WORKSPACE SYMBOL',
+export function openSymbolSearch(pane: CodeEditorPane, scope: 'file' | 'workspace'): void {
+	const input = pane.input, resource = input.workingCopy.resource;
+	pane.code.references.clear();
+	pane.editor.quickInput.pick(scope === 'file' ? `SYMBOLS: ${resource.path}` : 'GO TO WORKSPACE SYMBOL',
 		scope === 'file' ? 'Type a symbol name' : 'Symbol name, then source path', (_origin, lifetime) => {
 			const symbols = scope === 'file'
-				? listLuaSymbols(sources, resource.domain, resource.path)
-				: listGlobalLuaSymbols(sources, resource.domain);
-			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => editor.quickInput.hide()));
+				? listLuaSymbols(pane.sources, resource.domain, resource.path)
+				: listGlobalLuaSymbols(pane.sources, resource.domain);
+			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => pane.editor.quickInput.hide()));
 			return new SymbolQuickPickProvider(buildSymbolQuickPickItems(symbols, scope), scope);
-		}, item => navigateToLuaDefinition(editor, resource.domain, item.symbol.location));
+		}, item => navigateToLuaDefinition(pane, resource.domain, item.symbol.location),
+		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));
 }

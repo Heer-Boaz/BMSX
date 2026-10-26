@@ -1,7 +1,9 @@
+import { writeWrappedMeasuredLine } from '../../common/text';
+import type { CodeEditorControl } from '../ui/code_editor_control';
 import type { OverlayApi as Api } from '../../runtime/overlay_api';
 import type { EditorFont } from '../ui/view/font';
 import { drawEditorText } from './text_renderer';
-import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text/layout';
+import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines } from '../common/text/layout';
 import type { RuntimeErrorDetails } from '../../runtime/fault_state';
 import type { SourceStackTraceFrame } from '../../runtime/stack_trace';
 import type { RuntimeErrorOverlay } from '../contrib/runtime_error/model';
@@ -11,15 +13,10 @@ import { api } from '../../runtime/overlay_api';
 import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import * as constants from '../../common/constants';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
-import { resetBlink } from './caret';
+import { resetBlinkState } from '../ui/view/caret/blink';
 import { formatRuntimeErrorLocation } from '../../runtime/error_format';
 import { splitText } from '../../../machine/ts/common/text_lines';
 import { resolveThemeTokenColor } from '../../theme/tokens';
-import { editorPointerState } from '../../input/pointer/state';
-import { editorCaretState } from '../ui/view/caret/state';
-import { runtimeErrorState } from '../contrib/runtime_error/state';
-import { activeCodeEditor } from '../ui/code_editor_state';
-import { editorViewState } from '../ui/view/state';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -160,56 +157,56 @@ export function renderErrorOverlayText(
 		currentY += lineHeight;
 	}
 }
-export function computeRuntimeErrorOverlayGeometry(codeRight: number, textLeft: number, contentBottom: number): { contentRight: number; availableBottom: number; } {
+export function computeRuntimeErrorOverlayGeometry(code: CodeEditorControl, codeRight: number, textLeft: number, contentBottom: number): { contentRight: number; availableBottom: number; } {
 	const contentRightCandidate = codeRight
-		- (editorViewState.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
+		- (code.geometry.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0)
 		- constants.CODE_AREA_RIGHT_MARGIN;
 	const contentRight = textLeft > contentRightCandidate ? textLeft : contentRightCandidate;
 	return { contentRight, availableBottom: contentBottom };
 }
-export function resolveRuntimeErrorOverlayAnchor(
+export function resolveRuntimeErrorOverlayAnchor(code: CodeEditorControl,
 	overlay: RuntimeErrorOverlay,
 	codeTop: number,
 	textLeft: number,
 	contentRight: number,
 	availableBottom: number): RuntimeErrorOverlayAnchor {
-	ensureVisualLines();
-	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
-	const visibleRowsCandidate = ((availableBottom - codeTop) / editorViewState.lineHeight) | 0;
+	ensureVisualLines(code);
+	const visualIndex = code.layout.positionToVisualIndex(overlay.row, overlay.column);
+	const visibleRowsCandidate = ((availableBottom - codeTop) / code.lineHeight) | 0;
 	const visibleRows = visibleRowsCandidate > 1 ? visibleRowsCandidate : 1;
-	const relativeRow = visualIndex - (activeCodeEditor.view.scrollRow | 0);
+	const relativeRow = visualIndex - (code.view.scrollRow | 0);
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		return null;
 	}
-	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
+	const segment = code.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		return null;
 	}
-	const entry = editorViewState.layout.getViewLine(segment.row);
+	const entry = code.layout.getViewLine(segment.row);
 	const highlight = entry.hi;
-	const slice = editorViewState.layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft,
-		contentRight - textLeft, editorViewState.wordWrapEnabled);
-	const anchorDisplay = editorViewState.layout.columnToDisplay(highlight, overlay.column);
+	const slice = code.layout.resolveLineViewport(entry, segment, code.view.scrollLeft,
+		contentRight - textLeft, code.wordWrapEnabled);
+	const anchorDisplay = code.layout.columnToDisplay(highlight, overlay.column);
 	const advancePrefix = entry.advancePrefix;
 	const anchorX = Math.max(textLeft, Math.min(contentRight, textLeft - slice.pixelOffset + advancePrefix[anchorDisplay]));
-	const rowTop = codeTop + relativeRow * editorViewState.lineHeight;
+	const rowTop = codeTop + relativeRow * code.lineHeight;
 	return {
 		anchorX,
 		rowTop,
-		lineHeight: editorViewState.lineHeight,
+		lineHeight: code.lineHeight,
 		availableBottom,
 	};
 }
 
-export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, textLeft: number, contentBottom: number): RuntimeErrorOverlayRenderResult {
-	const overlay = runtimeErrorState.activeOverlay;
+export function renderRuntimeErrorOverlay(code: CodeEditorControl, codeTop: number, codeRight: number, textLeft: number, contentBottom: number): RuntimeErrorOverlayRenderResult {
+	const overlay = code.runtimeError.activeOverlay;
 	if (!overlay || overlay.hidden) {
 		return 'absent';
 	}
-	ensureVisualLines();
-	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
-	const visibleRows = editorViewState.cachedVisibleRowCount > 1 ? editorViewState.cachedVisibleRowCount : 1;
-	const visibleStart = activeCodeEditor.view.scrollRow | 0;
+	ensureVisualLines(code);
+	const visualIndex = code.layout.positionToVisualIndex(overlay.row, overlay.column);
+	const visibleRows = code.geometry.cachedVisibleRowCount > 1 ? code.geometry.cachedVisibleRowCount : 1;
+	const visibleStart = code.view.scrollRow | 0;
 	const visibleEnd = visibleStart + visibleRows - 1;
 	if (visualIndex < visibleStart) {
 		overlay.layout = null;
@@ -219,13 +216,13 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		overlay.layout = null;
 		return 'below';
 	}
-	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft, contentBottom);
-	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
+	const geometry = computeRuntimeErrorOverlayGeometry(code, codeRight, textLeft, contentBottom);
+	const anchor = resolveRuntimeErrorOverlayAnchor(code, overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
 	if (!anchor) {
 		overlay.layout = null;
 		return 'rendered';
 	}
-	const layout = computeRuntimeErrorOverlayLayout(
+	const layout = computeRuntimeErrorOverlayLayout(code,
 		overlay,
 		anchor,
 		codeTop,
@@ -233,13 +230,13 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		textLeft,
 		constants.ERROR_OVERLAY_PADDING_X,
 		constants.ERROR_OVERLAY_PADDING_Y,
-		computeRuntimeErrorOverlayMaxWidth()
+		computeRuntimeErrorOverlayMaxWidth(code)
 	);
 	if (!layout) {
 		overlay.layout = null;
 		return 'rendered';
 	}
-	const highlightLines = runtimeErrorHighlightLines;
+	const highlightLines = code.scratch.runtimeErrorHighlightLines;
 	highlightLines.length = 0;
 	if (overlay.hovered && overlay.hoverLine >= 0 && overlay.hoverLine < overlay.lineDescriptors.length) {
 		const descriptor = overlay.lineDescriptors[overlay.hoverLine];
@@ -262,7 +259,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		highlightColor: constants.ERROR_OVERLAY_LINE_HOVER,
 		highlightLines: highlightLines.length > 0 ? highlightLines : null,
 	};
-	renderRuntimeErrorOverlayBubble(editorViewState.font, overlay, layout, anchor.lineHeight, drawOptions);
+	renderRuntimeErrorOverlayBubble(code.font, overlay, layout, anchor.lineHeight, drawOptions);
 	return 'rendered';
 }
 
@@ -270,7 +267,7 @@ const COPY_ICON_ID = 'copy';
 const COPY_ICON_WIDTH = 6;
 const COPY_ICON_HEIGHT = 8;
 const COPY_BUTTON_GAP = 2;
-const runtimeErrorHighlightLines: number[] = [];
+
 
 export type RuntimeErrorOverlayRenderResult = 'absent' | 'rendered' | 'above' | 'below';
 
@@ -310,7 +307,7 @@ export type AppliedRuntimeErrorOverlay = {
 	statusLine: string;
 };
 
-export function computeRuntimeErrorOverlayLayout(
+export function computeRuntimeErrorOverlayLayout(code: CodeEditorControl,
 	overlay: RuntimeErrorOverlay,
 	anchor: RuntimeErrorOverlayAnchor,
 	codeTop: number,
@@ -326,8 +323,8 @@ export function computeRuntimeErrorOverlayLayout(
 	const reserveWidth = buttonSize + COPY_BUTTON_GAP;
 	const contentLimit = (codeRight - textLeft) - constants.ERROR_OVERLAY_CONNECTOR_OFFSET - paddingX * 2;
 	let maxLineWidthLimit = maxTextWidth < contentLimit ? maxTextWidth : contentLimit;
-	if (maxLineWidthLimit < editorViewState.charAdvance) {
-		maxLineWidthLimit = editorViewState.charAdvance;
+	if (maxLineWidthLimit < code.charAdvance) {
+		maxLineWidthLimit = code.charAdvance;
 	}
 	const wrapWidthCandidate = maxLineWidthLimit - reserveWidth;
 	const wrapWidth = wrapWidthCandidate > 1 ? wrapWidthCandidate : 1;
@@ -336,7 +333,7 @@ export function computeRuntimeErrorOverlayLayout(
 	for (let d = 0; d < sourceLines.length; d += 1) {
 		const text = sourceLines[d];
 		const lineStart = displayLines.length;
-		writeWrappedOverlayLine(displayLines, text, wrapWidth);
+		writeWrappedMeasuredLine(displayLines, text, wrapWidth, code.font.measureTextRange);
 		for (let i = lineStart; i < displayLines.length; i += 1) {
 			displayLineMap.push(d);
 		}
@@ -347,7 +344,7 @@ export function computeRuntimeErrorOverlayLayout(
 		anchor.anchorX,
 		anchor.rowTop,
 		displayLines,
-		(text) => measureText(text) + reserveWidth,
+		(text) => code.font.measureTextRange(text, 0, text.length) + reserveWidth,
 		{
 			left: textLeft,
 			top: codeTop,
@@ -461,27 +458,27 @@ export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverl
 	return -1;
 }
 
-export function applyRuntimeErrorOverlay(
+export function applyRuntimeErrorOverlay(code: CodeEditorControl,
 	line: number,
 	column: number,
 	message: string,
 	details?: RuntimeErrorDetails,
 	path: string = ''
 ): AppliedRuntimeErrorOverlay {
-	const targetRow = activeCodeEditor.model.clampRow(line - 1);
-	const targetColumn = activeCodeEditor.model.clampColumn(targetRow, column - 1);
-	activeCodeEditor.clearVisualCursor();
-	activeCodeEditor.view.cursorRow = targetRow;
-	activeCodeEditor.view.cursorColumn = targetColumn;
-	activeCodeEditor.view.selectionAnchor = null;
-	editorPointerState.pointerSelecting = false;
-	editorViewState.scrollbarController.cancel();
-	editorCaretState.cursorRevealSuspended = false;
-	activeCodeEditor.emitCursorMoved();
-	centerCursorVertically();
-	updateDesiredColumn();
-	revealCursor();
-	resetBlink();
+	const targetRow = code.model.clampRow(line - 1);
+	const targetColumn = code.model.clampColumn(targetRow, column - 1);
+	code.clearVisualCursor();
+	code.view.cursorRow = targetRow;
+	code.view.cursorColumn = targetColumn;
+	code.view.selectionAnchor = null;
+	code.pointer.pointerSelecting = false;
+	code.scrollbarController.cancel();
+	code.caret.cursorRevealSuspended = false;
+	code.emitCursorMoved();
+	centerCursorVertically(code);
+	updateDesiredColumn(code);
+	revealCursor(code);
+	resetBlinkState(code.caret);
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
 	const locationLabel = formatRuntimeErrorLocation(path, line, column);
 	const overlayMessage = locationLabel ? `${locationLabel}: ${normalizedMessage}` : normalizedMessage;

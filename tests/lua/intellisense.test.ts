@@ -1,3 +1,5 @@
+import { createTestCodeControl } from '../helpers/code_control';
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
 import { readRuntimeStackFrames, buildLuaStackFrames, createLuaSourceStackTraceFrame } from '../../ide/runtime/stack_trace';
@@ -12,8 +14,7 @@ import type { Table } from '../../machine/ts/machine/cpu/table';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeEditorContext } from '../../ide/editor/ui/code_editor_state';
-import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { createCodeEditorViewState, type CodeEditorContext } from '../../ide/editor/ui/code_editor_state';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -1356,10 +1357,11 @@ test('context tokens ignore retained comment trivia and resolve declaration name
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path,
 		source: { resid: path, type: 'lua', source_path: path, generated: false } }, 'lua', source);
 	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
-	activeCodeEditor.attach(model, createCodeEditorViewState());
-	context.after(() => { activeCodeEditor.detach(); model.dispose(); });
-	assert.equal(resolveContextMenuToken(0, 0, path)?.text, 'actual_name');
-	assert.equal(resolveContextMenuToken(0, source.indexOf('decoy_name') + 1, path), null);
-	assert.equal(resolveContextMenuToken(0, source.indexOf('trailing_name') + 1, path), null);
-	assert.equal(resolveContextMenuToken(0, source.indexOf('actual_name') + 1, path)?.text, 'actual_name');
+	const { documents, clock } = createTestCodeDocuments(context);
+	const code = createTestCodeControl(context, model, documents, clock);
+	context.after(() => model.dispose());
+	assert.equal(resolveContextMenuToken(code, 0, 0, path)?.text, 'actual_name');
+	assert.equal(resolveContextMenuToken(code, 0, source.indexOf('decoy_name') + 1, path), null);
+	assert.equal(resolveContextMenuToken(code, 0, source.indexOf('trailing_name') + 1, path), null);
+	assert.equal(resolveContextMenuToken(code, 0, source.indexOf('actual_name') + 1, path)?.text, 'actual_name');
 });

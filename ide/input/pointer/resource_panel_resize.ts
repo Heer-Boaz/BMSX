@@ -1,7 +1,5 @@
 import type { PointerSnapshot } from '../../common/models';
 import * as constants from '../../common/constants';
-import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
-import { clearEditorPointerSelectionState } from './state';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 
 export function handleResourcePanelResizePointer(resourcePanel: ResourcePanelController, snapshot: PointerSnapshot, justPressed: boolean): boolean {
@@ -14,9 +12,7 @@ export function handleResourcePanelResizePointer(resourcePanel: ResourcePanelCon
 	const bounds = resourcePanel.getBounds();
 	if (bounds && bounds.right > bounds.left) {
 		resourcePanel.beginResize(snapshot);
-		clearEditorPointerSelectionState();
 	}
-	clearGotoHoverHighlight();
 	return true;
 }
 

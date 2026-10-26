@@ -34,7 +34,7 @@ function fixture(t: TestContext, weighted = false, edge = false, definition = 1)
 	assert.ok(origin.source.kind === 'section');
 	const entry = origin.entries[1];
 	const node = weighted && !edge ? entry.node.children[0] : entry.node;
-	prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	f.viewport.selection = edge ? f.viewport.model.edgesBySource.get(node.rowKey)! : f.viewport.model.nodesBySource.get(node.rowKey)!;
 	acceptBehaviorGraphSelection(f.view, f.graph);
 	const member = { file: origin.source.file, table: origin.source.table, branch: origin, index: 1 };
@@ -158,7 +158,7 @@ test('navigation restores a mapped occurrence and pan after choosing another reg
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted\n' }]);
 	f.refresh();
 	const version = f.model.version;
-	selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.ok(f.view.presentation.kind === 'graph');
 	const viewport = f.view.presentation.viewport;
@@ -178,17 +178,17 @@ test('a removed history occurrence does not select a surviving namesake, even af
 	const selected = new BehaviorLensNavigationSelection(input);
 	t.after(() => selected.dispose());
 	f.model.pushEditOperations(createBehaviorTreeChildRemovalEdits(f.model.buffer, f.member));
-	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.equal(f.view.selection, null);
 	assert.equal(f.viewport.selection, null);
 	f.model.undo(f.view.editSource); f.refresh();
-	selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(f.view.selection, null, 'only an edit-associated Undo selection can explicitly restore a deleted occurrence');
 	assert.equal(f.viewport.selection, null);
 	const source = f.model.buffer.getText();
 	f.model.pushEditOperations([{ offset: 0, deleteLength: source.length, text: source }]);
-	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(f.view.definitionRowKey, null, 'a replaced registration cannot adopt another definition with the same id');
 	assert.equal(f.viewport.model.nodes.length, 0);
 });
@@ -209,7 +209,7 @@ test('session snapshots retain hidden transfer bookmarks without publishing a gr
 	const restored = createBehaviorTreeEditFixture(t, transferred, 0);
 	const reopened = restored.input;
 	const value: BehaviorLensViewSnapshot = JSON.parse(serialized);
-	restoreBehaviorLensView(reopened, value); prepareBehaviorLensLayout(restored.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
+	restoreBehaviorLensView(reopened, value); prepareBehaviorLensLayout(restored.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(restored.view.definitionRowKey, restored.view.document.definitions[1].rowKey);
 	const selected = restored.viewport.selection;
 	assert.ok(selected?.kind === 'node');
@@ -223,7 +223,7 @@ test('two inputs on the same behavior registration consume only their own explic
 	const otherView = createBehaviorLensViewState(f.view.document, f.model, 'graph', assert.fail);
 	selectBehaviorLensDefinition(otherView, otherView.document.definitions[1].rowKey);
 	const sibling = new BehaviorLensInput(f.model, otherView, () => assert.fail('focused source correspondence does not need a worker'));
-	const bounds = { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom };
+	const bounds = { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom };
 	prepareBehaviorLensLayout(otherView, bounds);
 	assert.ok(otherView.presentation.kind === 'graph');
 	const graph = otherView.presentation;

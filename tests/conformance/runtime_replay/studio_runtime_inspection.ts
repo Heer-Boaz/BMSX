@@ -1,10 +1,9 @@
 import { RUNTIME_INSPECTION_CALLBACKS_SOURCE, RUNTIME_INSPECTION_CART_SOURCE } from '../../helpers/runtime_inspection_fixture';
 import { RUNTIME_INSPECTION_TREES_SOURCE } from '../../helpers/runtime_inspection_bt_fixture';
-import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { check, codePositionBounds, createStudioLuaSource, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, codePositionBounds, createStudioLuaSource, type StudioFixture } from './studio_fixture';
 import * as constants from '../../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../../ide/theme/tokens';
 import { openRuntimeEffectInspector, openRuntimeEffectPicker, testRuntimeEffectSource } from './studio_actioneffect_runtime';
@@ -221,7 +220,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await settle();
 	check(rewindInspector.visible && rewindInspector.model.rows[0].element === retainedEffect,
 		'inspection: history refreshes the retained instance document');
-	check(hoverState.tooltip === null, 'inspection: restore ends the old hover lifetime');
+	check(sourcePane(test).code.hoverTooltip === null, 'inspection: restore ends the old hover lifetime');
 	const restoredTick = guest.global('inspection_tick') as number;
 	check(restoredTick < latestTick, 'inspection: rewind selected an older heap');
 	inspect('inspection_tick');
@@ -271,14 +270,14 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		await press('ControlLeft', 'AltLeft', 'KeyT');
 		check(constants.getActiveIdeThemeVariant() === theme, 'inspection: real theme shortcut');
 		test.setKey('AltLeft', true);
-		test.movePointer(codePositionBounds(row, column));
-		await until(() => hoverState.tooltip !== null && hoverState.tooltip.bubbleBounds !== null, 'inspection: physical Alt-hover paints the current runtime value');
+		test.movePointer(codePositionBounds(test, row, column));
+		await until(() => sourcePane(test).code.hoverTooltip !== null && sourcePane(test).code.hoverTooltip.bubbleBounds !== null, 'inspection: physical Alt-hover paints the current runtime value');
 	}
 	check(cycles() === position && model.version === version && guest.global('inspection_callback_count') === 0,
 		'inspection: theme and pointer do not mutate guest or source');
 	console.info('STUDIO: actual ActionEffect/FSM/BT instances, retained definitions and blackboards, rebind/binding stops, imported callbacks, no-change init, source divergence, compile failure and rewind inspection PASS');
 	return { hostFrames: test.observations.hostFrames, initCount: 3, restoredTick, latestTick,
 		renderProof: { ...ide.overlayRenderer.viewportSize, topBarBottom: editorChromeState.topBarBounds.bottom,
-			hover: { ...hoverState.tooltip!.bubbleBounds, text: resolveThemeTokenColor(constants.HOVER_TOOLTIP_TEXT),
+			hover: { ...sourcePane(test).code.hoverTooltip!.bubbleBounds, text: resolveThemeTokenColor(constants.HOVER_TOOLTIP_TEXT),
 				background: resolveThemeTokenColor(constants.HOVER_TOOLTIP_BACKGROUND) } } };
 }

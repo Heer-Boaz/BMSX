@@ -1,15 +1,11 @@
-import type { RuntimeSourceState } from '../../../../runtime/sources';
-import type { CartEditor } from '../../../../cart_editor';
+import type { CodeEditorPane } from '../editor_pane';
 import { showEditorMessage } from '../../../../common/feedback_state';
-import { referenceState } from '../../../../editor/contrib/references/state';
 import { resolveReferenceLookup } from '../../../../editor/contrib/references/lookup';
 import { buildReferenceSources, type ReferenceSource } from '../../../../editor/contrib/references/sources';
 import { sourcePositionInRange } from '../../../../../toolchain/ts/lua/semantic/source_range';
 import { definitionLocationFromSourceRange } from '../../../../editor/navigation/source_range';
-import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
 import { subscribeToLuaModelChanges } from '../../../../editor/contrib/intellisense/model_lifetime';
 import { editorTextModelService } from '../../../../editor/model/model_service';
-import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { navigateToLuaDefinition } from '../../../ui/code_tab/activation';
 import { TextQuickPickProvider } from '../../../services/quick_input/text_provider';
 import type { QuickPickItem } from '../../../services/quick_input/provider';
@@ -29,11 +25,11 @@ export function createReferenceQuickPickProvider(
 	return new TextQuickPickProvider(items, initialItemIndex);
 }
 
-export function openReferenceSearch(editor: CartEditor, sources: RuntimeSourceState): void {
-	const { model, view } = getActiveCodeTabContext(editor.editorGroup);
+export function openReferenceSearch(pane: CodeEditorPane): void {
+	const input = pane.input, { model, view } = input.context;
 	const { resource } = model;
 	const row = view.cursorRow, column = view.cursorColumn;
-	const result = resolveReferenceLookup(sources, { buffer: model.buffer, cursorRow: row, cursorColumn: column, identity: resource });
+	const result = resolveReferenceLookup(pane.sources, { buffer: model.buffer, cursorRow: row, cursorColumn: column, identity: resource });
 	if (result.kind === 'error') {
 		showEditorMessage(result.message, 'warning', result.duration);
 		return;
@@ -43,11 +39,12 @@ export function openReferenceSearch(editor: CartEditor, sources: RuntimeSourceSt
 		showEditorMessage('No references found', 'warning', 1.6);
 		return;
 	}
-	clearReferenceHighlights();
-	editor.quickInput.pick(`REFERENCES: ${result.info.expression}`, 'Type to filter references', (_origin, lifetime) => {
-		referenceState.apply(result.info, result.initialIndex);
-		lifetime.add({ dispose: () => referenceState.clear() });
-		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => editor.quickInput.hide()));
+	pane.code.references.clear();
+	pane.editor.quickInput.pick(`REFERENCES: ${result.info.expression}`, 'Type to filter references', (_origin, lifetime) => {
+		pane.code.references.apply(result.info, result.initialIndex);
+		lifetime.add({ dispose: () => pane.code.references.clear() });
+		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => pane.editor.quickInput.hide()));
 		return createReferenceQuickPickProvider(references, resource.path, row + 1, column + 1);
-	}, item => navigateToLuaDefinition(editor, resource.domain, definitionLocationFromSourceRange(item.source.range)));
+	}, item => navigateToLuaDefinition(pane, resource.domain, definitionLocationFromSourceRange(item.source.range)),
+		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));
 }

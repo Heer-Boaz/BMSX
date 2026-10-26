@@ -7,7 +7,7 @@ import { buildResourceQuickPickItems } from '../../../ide/workbench/contrib/reso
 import { FileQuickPickProvider } from '../../../ide/workbench/services/quick_input/file_provider';
 import { TextQuickPickProvider } from '../../../ide/workbench/services/quick_input/text_provider';
 import { QuickInputController } from '../../../ide/workbench/services/quick_input/controller';
-import { configureFontVariant } from '../../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { medianMilliseconds } from '../../helpers/performance';
 

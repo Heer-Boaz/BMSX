@@ -3,7 +3,7 @@ import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { TextQuickPickProvider } from '../../../ide/workbench/services/quick_input/text_provider';
 import assert from 'node:assert/strict';
-import { configureFontVariant } from '../../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { QuickInputController } from '../../../ide/workbench/services/quick_input/controller';
 import { medianMilliseconds } from '../../helpers/performance';

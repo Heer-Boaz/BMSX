@@ -1,15 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
-import { editorViewState } from '../../ide/editor/ui/view/state';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
+
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import { CartMapPane } from '../../ide/workbench/contrib/cart_maps/editor_pane';
 import { projectCartMap, selectCartMapRow, createCartMapMove } from '../../ide/workbench/contrib/cart_maps/source_projection';
 import { captureCartMapView, restoreCartMapView, CartMapNavigationSelection } from '../../ide/workbench/contrib/cart_maps/view_snapshot';
 import { inputFocus } from '../../ide/input/focus';
-import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
-import { pointerCapture } from '../../ide/input/pointer/capture';
+
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
@@ -180,10 +179,6 @@ test('accepted map moves and focused history reveal the restored member in both 
 	cells[1] = 'm';
 	for (let column = 10; column < 400; column += 10) cells[column] = 'm';
 	const { model, input } = fixture(`map_rows: ["${cells.join('')}"]\n`, 'nemesis');
-	const previousScrollbarController = editorViewState.scrollbarController;
-	editorViewState.scrollbarController = new ScrollbarController({
-		codeVertical: input.grid.vertical, codeHorizontal: input.grid.horizontal, resourceVertical: input.tree.scrollbar, resourceHorizontal: input.grid.horizontal,
-	}, () => {}, pointerCapture);
 	const bounds = { left: 0, top: 0, right: 320, bottom: 200 }, surfaces = new WorkbenchSurfaceService();
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('map fixture'), getBounds: () => bounds, getClip: () => bounds, isVisible: () => true, draw() {} });
 	const pane = new CartMapPane(null!,
@@ -192,7 +187,7 @@ test('accepted map moves and focused history reveal the restored member in both 
 		inputFocus.setTarget(null);
 		pane.clearInput(); pane.dispose(); input.dispose(); model.dispose();
 		surfaces.dispose();
-		editorViewState.scrollbarController = previousScrollbarController;
+
 	});
 	pane.setInput(input, { left: 0, top: 0, right: 320, bottom: 200 });
 	selectCartMapRow(input, 1); pane.update();

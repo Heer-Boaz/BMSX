@@ -1,10 +1,10 @@
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { FSM_INITIAL_SOURCE, FSM_INITIAL_MODULE_SOURCE, fsmInitialImportedSource } from '../../helpers/fsm_initial_fixture';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { inputFocus } from '../../../ide/input/focus';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Physical source-authoring controls; no fixture state is installed into the guest. */
 export async function testStudioFsmInitial(test: StudioFixture): Promise<void> {
@@ -17,7 +17,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const main = activeCodeEditor.model, originalMain = main.buffer.getText(), mainResource = main.resource;
+	const main = sourcePane(test).code.model, originalMain = main.buffer.getText(), mainResource = main.resource;
 	if (imported) {
 		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
 			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
@@ -26,7 +26,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 	}
 	const source = imported ? FSM_INITIAL_MODULE_SOURCE : FSM_INITIAL_SOURCE;
 	const code = ide.editor.editorGroup.model.activeTab;
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
@@ -57,7 +57,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 		'initial: real worker reroutes the entry to the new state');
 	console.info('STUDIO: FSM initial edit ready for visual inspection');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && model.buffer.getText() === changed && !hasSelection(), 'initial: held Source action is navigation only');
+	check(ide.editor.editorGroup.model.activeTab === code && model.buffer.getText() === changed && !hasSelection(sourcePane(test).code), 'initial: held Source action is navigation only');
 	check(inputFocus.getCommand('behaviorLens.setInitialState') === undefined, 'initial: code focus has no graph-authoring command');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'initial: code Undo restores the token while the graph is hidden');

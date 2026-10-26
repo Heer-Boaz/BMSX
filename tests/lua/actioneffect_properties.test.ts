@@ -4,7 +4,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';

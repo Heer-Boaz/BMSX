@@ -5,9 +5,9 @@ import { clamp } from '../../../../../machine/ts/common/clamp';
 import { resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../../runtime/sources';
 import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
 import { updateDesiredColumn, ensureCursorVisible } from '../../../../editor/ui/view/caret/caret';
-import { resetBlink } from '../../../../editor/render/caret';
-import { editorCaretState } from '../../../../editor/ui/view/caret/state';
-import { activeCodeEditor, captureCodeEditorSelectionSnapshot, codeEditorEditState } from '../../../../editor/ui/code_editor_state';
+import { resetBlinkState } from '../../../../editor/ui/view/caret/blink';
+import { captureCodeEditorSelectionSnapshot, codeEditorEditState } from '../../../../editor/ui/code_editor_state';
+import type { CodeEditorControl } from '../../../../editor/ui/code_editor_control';
 import type { ResourceDomain } from '../../../../common/resource';
 import type { EditorModelEdit, EditorTextModel } from '../../../../editor/model/text_model';
 import { editorTextModelService } from '../../../../editor/model/model_service';
@@ -21,18 +21,19 @@ import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellise
 import type { WorkspaceSourceContext } from '../../../services/working_copy/source_context';
 
 export function commitRename(
+	code: CodeEditorControl,
 	crossFileRename: CrossFileRenameManager,
 	matches: readonly SearchMatch[],
 	newName: string,
 	activeIndex: number,
 	info: ReferenceMatchInfo,
 ): number {
-	const model = activeCodeEditor.model;
+	const model = code.model;
 	const edits = crossFileRename.prepareRename(model.resource.domain, info, newName);
 	const focused = matches[clamp(activeIndex, 0, matches.length - 1)];
 	const focusedOffset = model.buffer.offsetAt(focused.row, focused.start);
-	const before = captureCodeEditorSelectionSnapshot(activeCodeEditor.view);
-	const source = activeCodeEditor.view.editSource;
+	const before = captureCodeEditorSelectionSnapshot(code.view);
+	const source = code.view.editSource;
 	const edit = edits.get(model)!;
 	edits.set(model, { ...edit, beforeEditState: codeEditorEditState.of(before, source), computeAfterEditState: changes => {
 		const position = { row: 0, column: 0 };
@@ -42,11 +43,11 @@ export function commitRename(
 	} });
 	editorTextModelService.history.applyEdits(edits);
 	clearForwardNavigationHistory();
-	activeCodeEditor.emitCursorMoved();
-	updateDesiredColumn();
-	resetBlink();
-	editorCaretState.cursorRevealSuspended = false;
-	ensureCursorVisible();
+	code.emitCursorMoved();
+	updateDesiredColumn(code);
+	resetBlinkState(code.caret);
+	code.caret.cursorRevealSuspended = false;
+	ensureCursorVisible(code);
 	let updatedTotal = 0;
 	for (const edit of edits.values()) updatedTotal += edit.edits.length;
 	return updatedTotal;

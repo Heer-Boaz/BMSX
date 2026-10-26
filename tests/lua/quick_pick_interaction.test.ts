@@ -10,7 +10,7 @@ import type { PointerSnapshot } from '../../ide/common/models';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture, PointerCaptureService, WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { insertValue } from '../../ide/editor/ui/inline/text_field';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';

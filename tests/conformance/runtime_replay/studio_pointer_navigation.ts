@@ -4,11 +4,11 @@ import { testStudioSourceRecovery } from './studio_source_recovery';
 import { testStudioStateGraph } from './studio_state_graph';
 import { testStudioFsmInitial } from './studio_fsm_initial';
 import { testStudioFsmBookmarks } from './studio_fsm_bookmarks';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { queryDefinitionsAt } from '../../../ide/editor/contrib/definitions/query';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
-import { check, codePositionBounds, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, codePositionBounds, type StudioFixture } from './studio_fixture';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
 import { testStudioBtMembership } from './studio_bt_membership';
 import { testStudioBtMoves } from './studio_bt_moves';
@@ -36,7 +36,7 @@ const CASES = {
 } as const;
 
 function assertSourcePosition(test: StudioFixture, path: string, line: number, column: number, route: string): void {
-	const { model, view } = activeCodeEditor;
+	const { model, view } = sourcePane(test).code;
 	check(test.ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && model.resource.path === path
 		&& view.cursorRow === line - 1 && view.cursorColumn === column - 1,
 		`${route}: expected ${path}:${line}:${column}, got ${model.resource.path}:${view.cursorRow + 1}:${view.cursorColumn + 1}`);
@@ -52,7 +52,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: spec.path })!;
 	await ide.editor.navigation.openResource(resource);
 	await frame();
-	const model = activeCodeEditor.model;
+	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	const useRow = original.split('\n').findIndex(line => line.trim() === spec.useStatement);
 	check(useRow >= 0, `${cart}: fixture use statement exists in the authored source`);
@@ -62,7 +62,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	check(declarationOffset >= 0, `${cart}: fixture declaration exists in the authored source`);
 	const declaration = { row: 0, column: 0 };
 	model.buffer.positionAt(declarationOffset, declaration);
-	const definition = queryDefinitionsAt(ide.sources, activeCodeEditor, useRow, useColumn)!;
+	const definition = queryDefinitionsAt(ide.sources, sourcePane(test).code, useRow, useColumn)!;
 	check(definition.definitions.length === 1 && definition.definitions[0].location.path === spec.path
 		&& definition.definitions[0].location.range.startLine === (declaration.row + 1)
 		&& definition.definitions[0].location.range.startColumn === (declaration.column + 1),
@@ -75,10 +75,10 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 			await runPaletteCommand('Go: Go to Definition');
 		} else if (route === 'ctrl-click') {
 			setKey('ControlLeft', true);
-			await click(codePositionBounds(useRow, useColumn), 6);
+			await click(codePositionBounds(test, useRow, useColumn), 6);
 			setKey('ControlLeft', false);
 		} else {
-			await click(codePositionBounds(useRow, useColumn), 4, 'pointer_secondary');
+			await click(codePositionBounds(test, useRow, useColumn), 4, 'pointer_secondary');
 			check(ide.editor.contextMenu.visible,
 				`${cart}: actual right click captures the intended identifier`);
 			const index = ide.editor.contextMenu.model.rows.findIndex(entry => entry.command === 'goToDefinition');
@@ -94,16 +94,16 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	// the button until a guessed timeout or consume the next physical press.
 	const row = declaration.row;
 	const column = declaration.column;
-	movePointer(codePositionBounds(row, column));
+	movePointer(codePositionBounds(test, row, column));
 	await frame();
 	setPointerButton('pointer_primary', true);
 	await frame();
-	movePointer(codePositionBounds(row, column + 3));
+	movePointer(codePositionBounds(test, row, column + 3));
 	for (let index = 0; index < 3; index += 1) await frame();
 	setPointerButton('pointer_primary', false);
 	await frame();
-	check(activeCodeEditor.view.cursorRow === row && activeCodeEditor.view.cursorColumn === column + 3
-		&& activeCodeEditor.view.selectionAnchor!.row === row && activeCodeEditor.view.selectionAnchor!.column === column,
+	check(sourcePane(test).code.view.cursorRow === row && sourcePane(test).code.view.cursorColumn === column + 3
+		&& sourcePane(test).code.view.selectionAnchor!.row === row && sourcePane(test).code.view.selectionAnchor!.column === column,
 		`${cart}: a new physical drag still works after navigation`);
 
 	await runPaletteCommand('Behavior Lens: Open');

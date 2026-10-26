@@ -1,9 +1,8 @@
 import { SOURCE_CHOICES_DEFINITIONS, SOURCE_CHOICES_USAGE } from '../../fixtures/studio/source_choices';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { referenceState } from '../../../ide/editor/contrib/references/state';
+
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { inputFocus } from '../../../ide/input/focus';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { checkQuickPickHighlightRuns } from './studio_quick_pick_highlights';
 
 /** Independent Lua source, real file Save and shared physical popup/navigation routes. */
@@ -17,12 +16,12 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	check(picker.visible && inputFocus.target === picker.field.focusTarget,
 		'A06: physical document-symbol command opens the shared picker, not the old inline widget');
 	await press('Escape');
-	const definitions = activeCodeEditor.model;
+	const definitions = sourcePane(test).code.model;
 	const originalDefinitions = definitions.buffer.getText();
 	definitions.pushEditOperations([{ offset: 0, deleteLength: definitions.buffer.length, text: SOURCE_CHOICES_DEFINITIONS }]);
 	await runPaletteCommand('File: Save'); await test.until(() => !definitions.dirty, 'A06: save independent definition source');
 	harness.openLuaSource('title_screen.lua');
-	const usage = activeCodeEditor.model;
+	const usage = sourcePane(test).code.model;
 	const originalUsage = usage.buffer.getText();
 	usage.pushEditOperations([{ offset: 0, deleteLength: usage.buffer.length, text: SOURCE_CHOICES_USAGE }]);
 	await runPaletteCommand('File: Save'); await test.until(() => !usage.dirty, 'A06: save independent usage source');
@@ -36,7 +35,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 		'A06: document symbol matching admits an abbreviation without changing Lua identifiers');
 	await checkQuickPickHighlightRuns(test, 'shadow', [[0, 2], [3, 4], [5, 6]]);
 	await press('Enter');
-	check(activeCodeEditor.model === usage && activeCodeEditor.view.cursorRow === 1 && activeCodeEditor.view.cursorColumn === 15,
+	check(sourcePane(test).code.model === usage && sourcePane(test).code.view.cursorRow === 1 && sourcePane(test).code.view.cursorColumn === 15,
 		'A06: accepting a symbol synchronously reveals its actual declaration');
 
 	await press('AltLeft', 'Comma');
@@ -46,12 +45,12 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	const row = picker.model.viewport.bounds;
 	test.movePointer({ left: row.left, right: row.right, top: picker.model.rowTop(0), bottom: picker.model.rowTop(0) + picker.model.rowHeight });
 	await frame(); test.setPointerButton('pointer_primary', true); await frame();
-	check(picker.visible && activeCodeEditor.model === usage, 'A06: symbol press does not navigate before release');
+	check(picker.visible && sourcePane(test).code.model === usage, 'A06: symbol press does not navigate before release');
 	test.setPointerButton('pointer_primary', false); await frame();
-	check(activeCodeEditor.model === definitions && activeCodeEditor.view.cursorRow === 0 && activeCodeEditor.view.cursorColumn === 0,
+	check(sourcePane(test).code.model === definitions && sourcePane(test).code.view.cursorRow === 0 && sourcePane(test).code.view.cursorColumn === 0,
 		'A06: symbol release navigates across files without retargeting its domain');
 	await press('AltLeft', 'ArrowLeft');
-	check(activeCodeEditor.model === usage && activeCodeEditor.view.cursorRow === 1, 'A06: Back returns to the source choice origin');
+	check(sourcePane(test).code.model === usage && sourcePane(test).code.view.cursorRow === 1, 'A06: Back returns to the source choice origin');
 
 	await press('ControlLeft', 'End'); await press('ArrowUp'); await press('Home');
 	for (let index = 0; index < 7; index += 1) await press('ArrowRight');
@@ -59,16 +58,16 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	check(picker.visible && picker.model.list.rows.length === 4 && picker.model.list.selectionIndex === 3
 		&& picker.model.list.rows[3].item.label === 'return source_choice_beacon',
 		'A06: workspace reference selection uses path and cursor, not the current-file index');
-	check(referenceState.getMatches().length === 2 && referenceState.getActiveIndex() === 1,
+	check(sourcePane(test).code.references.getMatches().length === 2 && sourcePane(test).code.references.getActiveIndex() === 1,
 		'A06: file-local highlight state remains separate from workspace selection');
 	await test.clipboard.writeText('beacon'); await press('ControlLeft', 'KeyV');
 	await checkQuickPickHighlightRuns(test, 'return source_choice_beacon', [[21, 27]]);
 	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'Home'); await press('Enter');
-	check(activeCodeEditor.model === definitions && activeCodeEditor.view.cursorRow === 0 && referenceState.getMatches().length === 0,
+	check(sourcePane(test).code.model === definitions && sourcePane(test).code.view.cursorRow === 0 && sourcePane(test).code.references.getMatches().length === 0,
 		'A06: reference accept reveals the chosen declaration and ends temporary highlights');
 	await press('AltLeft', 'ArrowLeft');
-	check(activeCodeEditor.model === usage && activeCodeEditor.view.cursorRow === 5 && activeCodeEditor.view.cursorColumn === 7,
+	check(sourcePane(test).code.model === usage && sourcePane(test).code.view.cursorRow === 5 && sourcePane(test).code.view.cursorColumn === 7,
 		'A06: reference navigation preserves its exact origin for Back');
 
 	await press('ArrowUp'); await press('End'); await press('ArrowLeft');
@@ -76,12 +75,12 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	check(picker.visible && picker.model.list.rows.length === 2,
 		'A06: a factory with two authored member origins opens the shared definition chooser');
 	await press('ArrowDown'); await press('Enter');
-	check(activeCodeEditor.model === definitions && activeCodeEditor.view.cursorRow === 3 && activeCodeEditor.view.cursorColumn === 10,
+	check(sourcePane(test).code.model === definitions && sourcePane(test).code.view.cursorRow === 3 && sourcePane(test).code.view.cursorColumn === 10,
 		'A06: selected factory member source, not a synthetic symbol row, determines navigation');
 	check(!definitions.dirty && !usage.dirty && definitions.version === definitionVersion && usage.version === usageVersion,
 		'A06: symbol, reference and ambiguous-definition navigation did not edit either document');
 	await press('AltLeft', 'ArrowLeft');
-	check(activeCodeEditor.model === usage && activeCodeEditor.view.cursorRow === 4, 'A06: multi-definition Back restores the usage');
+	check(sourcePane(test).code.model === usage && sourcePane(test).code.view.cursorRow === 4, 'A06: multi-definition Back restores the usage');
 
 	await press('ControlLeft', 'ShiftLeft', 'KeyO');
 	await test.clipboard.writeText('no source choice'); await press('ControlLeft', 'KeyV'); await press('Enter');
@@ -95,7 +94,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 
 	await press('AltLeft', 'Comma');
 	definitions.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- source generation\n' }]);
-	check(!picker.visible && inputFocus.target === activeCodeEditor.focusTarget, 'A06: an edited imported/source candidate retires stale locations');
+	check(!picker.visible && inputFocus.target === sourcePane(test).code.focusTarget, 'A06: an edited imported/source candidate retires stale locations');
 	await press('ControlLeft', 'Comma'); // New file chooser must survive the expired source listener.
 	definitions.undo();
 	check(picker.visible, 'A06: the expired source generation cannot close a newer file picker');

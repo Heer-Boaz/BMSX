@@ -1,36 +1,13 @@
-import type { PointerInputSnapshot, VisualLineSegment } from '../../common/models';
+import type { CodeEditorControl } from '../../editor/ui/code_editor_control';
 
-type PointerRowResolution = {
-	visualIndex: number;
-	segment: VisualLineSegment;
-};
-
-type EditorPointerState = {
-	lastPointerSnapshot: PointerInputSnapshot;
-	pointerSelecting: boolean;
-	lastPointerClickTimeMs: number;
-	lastPointerClickRow: number;
-	lastPointerClickColumn: number;
-	lastPointerRowResolution: PointerRowResolution;
-};
-
-export const editorPointerState: EditorPointerState = {
-	lastPointerSnapshot: null,
-	pointerSelecting: false,
-	lastPointerClickTimeMs: 0,
-	lastPointerClickRow: -1,
-	lastPointerClickColumn: -1,
-	lastPointerRowResolution: null,
-};
-
-export function resetPointerClickTracking(): void {
-	editorPointerState.lastPointerClickTimeMs = 0;
-	editorPointerState.lastPointerClickRow = -1;
-	editorPointerState.lastPointerClickColumn = -1;
+export function resetPointerClickTracking(code: CodeEditorControl): void {
+	code.pointer.lastPointerClickTimeMs = 0;
+	code.pointer.lastPointerClickRow = -1;
+	code.pointer.lastPointerClickColumn = -1;
 }
 
-export function clearEditorPointerSelectionState(): void {
-	editorPointerState.pointerSelecting = false;
-	editorPointerState.lastPointerRowResolution = null;
-	resetPointerClickTracking();
+export function clearEditorPointerSelectionState(code: CodeEditorControl): void {
+	code.pointer.pointerSelecting = false;
+	code.pointer.lastPointerRowResolution = null;
+	resetPointerClickTracking(code);
 }

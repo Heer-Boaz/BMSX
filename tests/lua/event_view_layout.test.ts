@@ -4,7 +4,7 @@ import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { SCROLLBAR_WIDTH } from '../../ide/common/constants';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { RuntimeEventHistory } from '../../ide/runtime/event_history';
 import { api } from '../../ide/runtime/overlay_api';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';

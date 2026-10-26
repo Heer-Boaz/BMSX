@@ -4,7 +4,7 @@ import * as colors from '../../ide/common/constants';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { drawValueInput } from '../../ide/editor/ui/inline/value_input_render';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus } from '../../ide/input/focus';
 import { api } from '../../ide/runtime/overlay_api';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';

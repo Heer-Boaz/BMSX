@@ -1,5 +1,5 @@
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
-import { configureFontVariant } from '../../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../../ide/editor/ui/view/configuration';
 import { ProblemsPanelController } from '../../../ide/workbench/contrib/problems/panel/controller';
 import type { EditorDiagnostic } from '../../../ide/common/models';
 import { api } from '../../../ide/runtime/overlay_api';

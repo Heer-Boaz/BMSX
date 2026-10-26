@@ -5,7 +5,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { CartEditor } from '../../ide/cart_editor';
 import type { ResourceDomain } from '../../ide/common/resource';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';

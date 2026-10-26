@@ -1,4 +1,4 @@
-import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
+import { sourcePane } from './studio_fixture';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
 import { check, type StudioFixture } from './studio_fixture';
@@ -69,7 +69,7 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 		'operations: installed code plus guest failure, never a success toast');
 	check(runtime.completionCallPending() && ide.debugger.plans.mutationActive, 'operations: fault retains real recovery roots');
 	await press('ControlRight', 'ShiftRight');
-	await until(() => runtimeErrorState.activeOverlay !== null, 'operations: physical fault navigation finishes');
+	await until(() => sourcePane(test).code.runtimeError.activeOverlay !== null, 'operations: physical fault navigation finishes');
 	await frame();
 	await test.capture?.('init-faulted');
 	harness.replaceActiveCodeSource(source);

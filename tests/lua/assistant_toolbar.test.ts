@@ -25,7 +25,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import * as colors from '../../ide/common/constants';
 import type { PointerInputSnapshot } from '../../ide/common/models';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';

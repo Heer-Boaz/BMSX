@@ -1,11 +1,11 @@
+import type { CodeEditorControl } from '../../ui/code_editor_control';
 import { clearForwardNavigationHistory } from '../../../navigation/navigation_history';
-import { activeCodeEditor, captureCodeEditorSelectionSnapshot, codeEditorEditState } from '../../ui/code_editor_state';
-import { editorRuntimeState } from '../runtime_state';
+import { captureCodeEditorSelectionSnapshot, codeEditorEditState } from '../../ui/code_editor_state';
 
-export function markTextMutated(): void {
-	const editContext = editorRuntimeState.pendingEditContext;
-	editorRuntimeState.pendingEditContext = null;
-	if (!activeCodeEditor.model.commitEdit(codeEditorEditState.of(captureCodeEditorSelectionSnapshot(activeCodeEditor.view), activeCodeEditor.view.editSource), editContext)) {
+export function markTextMutated(code: CodeEditorControl): void {
+	const editContext = code.pendingEditContext;
+	code.pendingEditContext = null;
+	if (!code.model.commitEdit(codeEditorEditState.of(captureCodeEditorSelectionSnapshot(code.view), code.view.editSource), editContext)) {
 		return;
 	}
 	clearForwardNavigationHistory();

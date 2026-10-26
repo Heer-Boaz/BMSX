@@ -3,8 +3,8 @@ import { EditorPaneSelection } from '../../services/editor/editor_selection';
 import type { CodeEditorInput } from './editor_input';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
-import { resetBlink } from '../../../editor/render/caret';
-import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
+import { resetBlinkState } from '../../../editor/ui/view/caret/blink';
+import type { CodeEditorControl } from '../../../editor/ui/code_editor_control';
 
 import { captureCodeEditorView, mapCodeEditorView, restoreCodeEditorView, type CodeEditorLocation } from './view_snapshot';
 
@@ -22,13 +22,13 @@ export class CodeEditorNavigationSelection extends EditorPaneSelection {
 		return this.snapshot.cursor === other.snapshot.cursor && this.snapshot.anchor === other.snapshot.anchor;
 	}
 
-	public restore(input: CodeEditorInput): void {
+	public restore(input: CodeEditorInput, code: CodeEditorControl): void {
 		restoreCodeEditorView(input, this.snapshot);
-		activeCodeEditor.clearVisualCursor();
-		activeCodeEditor.emitCursorMoved();
-		ensureVisualLines();
-		clearEditorPointerSelectionState();
-		updateDesiredColumn();
-		resetBlink();
+		code.clearVisualCursor();
+		code.emitCursorMoved();
+		ensureVisualLines(code);
+		clearEditorPointerSelectionState(code);
+		updateDesiredColumn(code);
+		resetBlinkState(code.caret);
 	}
 }

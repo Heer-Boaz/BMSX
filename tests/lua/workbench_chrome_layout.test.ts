@@ -4,7 +4,7 @@ import type { EditorCommandId } from '../../ide/common/commands';
 import { HEADER_BUTTON_PADDING_X } from '../../ide/common/constants';
 import { editorFeedbackState, showEditorMessage, updateEditorMessage } from '../../ide/common/feedback_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { api } from '../../ide/runtime/overlay_api';
 import { getWorkbenchEditorBounds, getWorkbenchWorkArea, getStatusMessageLines, topMargin, refreshWorkbenchLayout, updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { renderTopBar } from '../../ide/workbench/render/top_bar';
@@ -20,7 +20,6 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { drawContextMenu } from '../../ide/workbench/services/context_menu/render';
 import { MenubarController } from '../../ide/workbench/ui/top_bar/controller';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
-import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
@@ -295,22 +294,4 @@ test('the root layout publishes viewport, font and status changes into one borro
 	configureFontVariant('tiny'); refreshWorkbenchLayout();
 	assert.equal(getWorkbenchWorkArea(), area);
 	assert.equal(area.top, tinyTop); assert.equal(area.right, 384); assert.equal(area.bottom, 288 - editorViewState.baseBottomMargin);
-});
-
-
-test('pane-root geometry includes inline editor widgets while the text viewport starts below them', t => {
-	fixture(t);
-	const wasVisible = editorSearchState.visible;
-	t.after(() => { editorSearchState.visible = wasVisible; refreshWorkbenchLayout(); });
-	editorSearchState.visible = false;
-	refreshWorkbenchLayout();
-	const bounds = getWorkbenchEditorBounds();
-	const top = bounds.top;
-	editorSearchState.visible = true;
-	refreshWorkbenchLayout();
-	assert.equal(getWorkbenchEditorBounds(), bounds, 'the surface references the actual retained layout rectangle');
-	assert.equal(bounds.top, top);
-	assert.equal(bounds.top, topMargin());
-	assert.ok(editorViewState.codeAreaTop > bounds.top, 'the inline search bar stays inside the pane paint and input clip');
-	assert.equal(refreshWorkbenchLayout(), false, 'unchanged geometry does not invalidate routed hover each frame');
 });

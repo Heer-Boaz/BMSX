@@ -5,7 +5,7 @@ import * as colors from '../../ide/common/constants';
 import type { EditorDiagnostic, PointerSnapshot } from '../../ide/common/models';
 import { EditorTextModel, type EditorTextModel as TextModel } from '../../ide/editor/model/text_model';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerHover } from '../../ide/input/pointer/hover';

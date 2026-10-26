@@ -5,7 +5,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { insertValue } from '../../ide/editor/ui/inline/text_field';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';

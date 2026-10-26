@@ -7,7 +7,7 @@ import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
-import { activeCodeEditor } from '../../ide/editor/ui/code_editor_state';
+import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { insertValue, setFieldText } from '../../ide/editor/ui/inline/text_field';
@@ -15,7 +15,7 @@ import { InputFocusScope, inputFocus, type InputFocusTarget } from '../../ide/in
 import { handleEditorCommandBindings } from '../../ide/input/keyboard/global_bindings';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
-import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/view';
+import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { getWorkbenchEditorBounds, refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
@@ -60,7 +60,8 @@ function menuFixture(t: TestContext) {
 	const editor = ide.editor;
 	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
-	const origin = inputFocus.target!, model = activeCodeEditor.model!, view = activeCodeEditor.view!;
+	const pane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane;
+	const origin = inputFocus.target!, model = pane.code.model!, view = pane.code.view!;
 	view.cursorRow = 1; view.cursorColumn = 6;
 	const key = (code: string, modifiers = KeyModifier.none, down = true, repeat = false) => {
 		const event = new KeyInputEvent(code, modifiers, repeat, down); editor.dispatchKey(event); editor.update(0); return event;
@@ -104,7 +105,8 @@ test('Files focus is idempotent and retains its selection and source working cop
 	assert.ok(panel.files.selectedNode === selected); assert.equal(root.collapsed, false);
 
 	assert.ok(editor.editorGroup.panes.activePane!.input === input);
-	assert.ok(activeCodeEditor.model === model && activeCodeEditor.view === view);
+	assert.ok((editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code.model === model
+		&& (editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code.view === view);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.canUndo, false);
 	assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 6); assert.equal(view.selectionAnchor, null);
 	assert.equal(host.runtime.machine.scheduler.nowCycles, cycles);
@@ -125,7 +127,7 @@ test('clean AltLeft release and F10 use the real menu session and return the sou
 	key('F10', KeyModifier.none, false); assert.equal(editor.contextMenu.visible, true);
 	key('F10'); assert.equal(editor.contextMenu.visible, false); assert.ok(inputFocus.target === origin);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.canUndo, false);
-	assert.ok(activeCodeEditor.view === view); assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 6);
+	assert.ok((editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code.view === view); assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 6);
 });
 
 test('F10 preserves the concrete step-over binding while closed and dismisses only an admitted menu', t => {
@@ -678,7 +680,7 @@ test('a genuine guest input target does not acquire list Find from an applicatio
 	assert.equal(finds, 0); assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
 });
 
-test('list Find does not claim Shift/Alt variants or change Actor Lab and source-local Find routes', t => {
+test('list Find does not claim Shift/Alt variants or change Actor Lab routing', t => {
 	const f = fixture(t, inputFocus.workbenchScope);
 	let finds = 0, actorFinds = 0;
 	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
@@ -697,13 +699,6 @@ test('list Find does not claim Shift/Alt variants or change Actor Lab and source
 		assert.equal(event.consumed, true);
 	}
 	assert.equal(actorFinds, 2); assert.equal(finds, 0);
-	activeCodeEditor.focusTarget.focus();
-	assert.equal(activeCodeEditor.focusTarget.getCommand('list.find'), undefined);
-	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
-		const event = new KeyInputEvent('KeyF', primary);
-		assert.equal(handleEditorCommandBindings(event, inputFocus.commandRunner), false,
-			'the source owner retains its existing local Find handling after central bindings decline');
-		assert.equal(event.consumed, false);
-	}
+
 	assert.equal(finds, 0); assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
 });

@@ -1,11 +1,11 @@
 import type { SerializedCodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_serializer';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { buildCodeTabId } from '../../../ide/workbench/ui/tab/id';
 import { workspaceState } from '../../../ide/workbench/workspace/state';
 import { chooseBehavior } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 /** Reported real-cart smoke; collection/lifecycle regressions use independent unit fixtures. */
 export async function testStudioSourceRecovery(test: StudioFixture): Promise<void> {
@@ -30,7 +30,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 		&& !backup.payload.editorGroup.inputs.some(entry => entry.kind === 'code_editor' && (JSON.parse(entry.value) as SerializedCodeEditorInput).source.resource.path === model.resource.path), 'crossfoe: a valid content backup need not have a code view');
 	const editedVersion = model.version;
 	await click(graph.actionBar.items[0].bounds, 8);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model && model.version === editedVersion && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model && model.version === editedVersion && !hasSelection(sourcePane(test).code),
 		'crossfoe: first Source activation attaches the same edited model without another edit');
 	await until(() => workspaceState.localRevision === workspaceState.requestedRevision, 'crossfoe: first code-view metadata survives the autosave timer');
 	const sourceGeneration = workspaceState.localGeneration!;
@@ -39,7 +39,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	check(sourceGeneration.payload.editorGroup.inputs.some(entry => {
 		if (entry.kind !== 'code_editor') return false;
 		const state: SerializedCodeEditorInput = JSON.parse(entry.value);
-		return state.source.resource.path === model.resource.path && state.view.cursor === model.buffer.offsetAt(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+		return state.source.resource.path === model.resource.path && state.view.cursor === model.buffer.offsetAt(sourcePane(test).code.view.cursorRow, sourcePane(test).code.view.cursorColumn);
 	}),
 		'crossfoe: recovery now includes the first code view and its exact source selection');
 	await press('ControlLeft', 'KeyZ');
@@ -67,7 +67,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 			check(inspector.visible && !ide.editor.quickInput.visible, 'crossfoe: Details opens full source content');
 			await click(inspector.actionBar.items[0].bounds, 8);
 		}
-		check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model && !hasSelection(), `${route}: Source focuses code without a held selection`);
+		check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model && !hasSelection(sourcePane(test).code), `${route}: Source focuses code without a held selection`);
 		for (let index = 0; index < 140; index += 1) await frame();
 		check(model.version === cleanVersion && !model.dirty && navigationEdits === 0 && model.buffer.getText() === original,
 			`${route}: navigation emits no content change and creates no dirty working copy`);
@@ -75,7 +75,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	await press('ControlRight', 'ShiftRight');
 	await press('ControlRight', 'ShiftRight');
 	for (let index = 0; index < 140; index += 1) await frame();
-	check(ide.editor.isActive && activeCodeEditor.model === model && !model.dirty && navigationEdits === 0,
+	check(ide.editor.isActive && sourcePane(test).code.model === model && !model.dirty && navigationEdits === 0,
 		'crossfoe: reopening the IDE with the source active is clean');
 	unsubscribe();
 	check(cycles() === position && ide.sources.currentBlua32Media === media, 'source/recovery controls do not modify the paused machine');

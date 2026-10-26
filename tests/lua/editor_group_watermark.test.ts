@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import * as colors from '../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { api } from '../../ide/runtime/overlay_api';
@@ -16,7 +16,7 @@ configureFontVariant('tiny');
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
 	const previous = { width: editorViewState.viewportWidth, height: editorViewState.viewportHeight,
-		left: editorViewState.codeAreaLeft, inset: editorChromeState.editorRightInset, variant: editorViewState.font.variant,
+		left: editorViewState.editorAreaLeft, inset: editorChromeState.editorRightInset, variant: editorViewState.font.variant,
 		theme: colors.getActiveIdeThemeVariant() };
 	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
@@ -24,10 +24,10 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
 	t.after(() => {
 		configureFontVariant(previous.variant); colors.setIdeThemeVariant(previous.theme);
 		editorViewState.viewportWidth = previous.width; editorViewState.viewportHeight = previous.height;
-		editorViewState.codeAreaLeft = previous.left; editorChromeState.editorRightInset = previous.inset; refreshWorkbenchLayout();
+		editorViewState.editorAreaLeft = previous.left; editorChromeState.editorRightInset = previous.inset; refreshWorkbenchLayout();
 	});
 	const draw = (left: number, width: number, height = 288) => {
-		editorViewState.codeAreaLeft = left; editorChromeState.editorRightInset = 384 - left - width;
+		editorViewState.editorAreaLeft = left; editorChromeState.editorRightInset = 384 - left - width;
 		editorViewState.viewportHeight = height; refreshWorkbenchLayout();
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawEditorGroupWatermark(); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];

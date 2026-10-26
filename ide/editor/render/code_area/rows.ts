@@ -1,3 +1,4 @@
+import type { CodeEditorControl } from '../../ui/code_editor_control';
 import type { EditorDiagnosticsByRow } from '../../contrib/diagnostics/model';
 import type { CodeLayout } from '../../ui/code/layout';
 import type { SearchMatch } from '../../../common/models';
@@ -5,10 +6,7 @@ import type { Font } from '../../../../machine/ts/render/shared/bmsx_font';
 import { drawEditorText } from '../text_renderer';
 import * as constants from '../../../common/constants';
 import { drawHighlightSlice } from './highlights';
-import { CodeRowDecorations } from './decorations';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './underlines';
-import { activeCodeEditor } from '../../ui/code_editor_state';
-import { editorViewState } from '../../ui/view/state';
 import type { CodeAreaViewport } from '../../ui/code/area_viewport';
 
 type ActiveGotoHighlight = {
@@ -18,9 +16,9 @@ type ActiveGotoHighlight = {
 	expression: string;
 };
 
-const decorations = new CodeRowDecorations();
 
-export function drawCodeAreaRows(
+
+export function drawCodeAreaRows(code: CodeEditorControl,
 	viewport: CodeAreaViewport,
 	activeGotoHighlight: ActiveGotoHighlight,
 	useUppercase: boolean,
@@ -35,14 +33,15 @@ export function drawCodeAreaRows(
 	layout: CodeLayout,
 	lineHeight: number,
 ): void {
+	const decorations = code.scratch.rowDecorations;
 	for (let i = 0; i < viewport.rows; i += 1) {
-		const visualIndex = (activeCodeEditor.view.scrollRow | 0) + i;
+		const visualIndex = (code.view.scrollRow | 0) + i;
 		const rowY = viewport.codeTop + i * lineHeight;
 		if (rowY >= viewport.contentBottom) {
 			break;
 		}
 		if (visualIndex >= viewport.visualCount) {
-			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, 0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
+			drawEditorText(code.font, '~', viewport.textLeft, rowY, 0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
 		const segment = layout.visualIndexToSegment(visualIndex)!;
@@ -51,12 +50,12 @@ export function drawCodeAreaRows(
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
 		const advancePrefix = entry.advancePrefix;
-		const slice = layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft, viewport.contentWidth, viewport.wrapEnabled);
+		const slice = layout.resolveLineViewport(entry, segment, code.view.scrollLeft, viewport.contentWidth, viewport.wrapEnabled);
 		const sliceStartDisplay = slice.startDisplay, sliceEndDisplay = slice.endDisplay;
 		const lineLeft = viewport.textLeft - slice.pixelOffset;
-		decorations.prepare(lineIndex, entry, sliceStartDisplay, sliceEndDisplay, referenceMatches, referenceActiveIndex,
+		decorations.prepare(code, lineIndex, entry, sliceStartDisplay, sliceEndDisplay, referenceMatches, referenceActiveIndex,
 			searchMatches, searchActiveIndex, searchHighlightsVisible, cursorActive);
-		drawHighlightSlice(renderFont, renderText, highlight.colors, advancePrefix,
+		drawHighlightSlice(code, renderFont, renderText, highlight.colors, advancePrefix,
 			sliceStartDisplay, sliceEndDisplay, lineLeft + advancePrefix[sliceStartDisplay], rowY, 0, decorations);
 		const rowDiagnostics = diagnosticsByRow.get(lineIndex);
 		if (rowDiagnostics !== undefined) drawDiagnosticUnderlinesForRow(

@@ -3,9 +3,8 @@ import test, { type TestContext } from 'node:test';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import * as colors from '../../ide/common/constants';
 import type { PointerInputSnapshot } from '../../ide/common/models';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
@@ -64,9 +63,6 @@ function imageSnapshot(): RomInspectorSnapshot {
 test('ROM catalog commands dispatch from the actual focused list and after filter Enter', t => {
 	configureFontVariant('tiny');
 	const input = new RomInspectorInput(imageSnapshot()), surfaces = new WorkbenchSurfaceService();
-	const previousScrollbars = editorViewState.scrollbarController;
-	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: input.list.scrollbar, codeHorizontal: input.readerHorizontal,
-		resourceVertical: input.list.scrollbar, resourceHorizontal: input.readerHorizontal }, () => {}, pointerCapture);
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('ROM catalog command owner'), getBounds: () => area,
 		getClip: () => area, isVisible: () => true, draw() {} });
@@ -77,7 +73,7 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 	const navigation = { openResource: async (resource: { domain: number; path: string }) => { opened.push(resource); return 1; } } as EditorNavigationController;
 	const pane = new RomInspectorPane(commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area, inputFocus.workbenchScope);
 	t.after(() => { pane.clearInput(); pane.dispose(); quickInput.dispose(); contextMenu.dispose(); inputFocus.setTarget(null);
-		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); editorViewState.scrollbarController = previousScrollbars; });
+		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose();  });
 	pane.setInput(input, area); pane.focus();
 	const catalog = inputFocus.target;
 	commands.execute('romInspector.structure');

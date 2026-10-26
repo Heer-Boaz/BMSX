@@ -23,7 +23,7 @@ import type { TestTargetFactory } from '../testing/target';
 import { editorTextModelService } from '../editor/model/model_service';
 import type { WorkspaceRecord } from '../workspace/records';
 import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
-import { clearHoverTooltip } from '../editor/contrib/hover/controller';
+import { pointerHover } from '../input/pointer/hover';
 import { StudioWorkbench } from './workbench';
 import { activateEditor } from './overlay_modes';
 import { presentRuntimeDebuggerStop } from './contrib/debugger/controller';
@@ -76,7 +76,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 		this.onDidReplaceMachine(() => {
 			this.editor.terminal.discard();
 			clearAllRuntimeErrorOverlays(this.editor.editorGroup);
-			clearHoverTooltip();
+			pointerHover.clear();
 		});
 		this.onDidStop(() => {
 			activateEditor(this.editor, sources, runtime, audioOutput);

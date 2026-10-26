@@ -1,16 +1,15 @@
+import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import { CodeEditorViewBinding } from '../../ide/editor/ui/code_editor_view_binding';
-import { activeCodeEditor, codeEditorEditState, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { codeEditorEditState, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { getSingleCursorSelectionRange, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { undo as undoSource, redo as redoSource } from '../../ide/editor/editing/undo_controller';
-import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/view';
-import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { inputFocus } from '../../ide/input/focus';
 
 const resource = { location: { kind: 'workspace' as const, path: 'positions.lua' }, domain: 0 as const, path: 'positions.lua', source: { resid: 'positions.lua', type: 'lua' as const } };
@@ -131,33 +130,31 @@ test('history capture treats wrapped scroll rows as view coordinates, not text p
 });
 
 test('Source Undo and Redo deliver recorded selections only to the invoking view before notifying observers', t => {
-	const { models, documents } = createTestCodeDocuments(t);
+	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain(resource, 'lua', 'abcdefghij');
 	const origin = createCodeEditorViewState(), invoking = createCodeEditorViewState();
 	origin.cursorColumn = 3; origin.scrollRow = 70; origin.scrollLeft = 41.5;
 	const originBinding = new CodeEditorViewBinding(model, origin), invokingBinding = new CodeEditorViewBinding(model, invoking);
 	t.after(() => {
-		inputFocus.setTarget(null); activeCodeEditor.detach();
+		inputFocus.setTarget(null);
 		originBinding.dispose(); invokingBinding.dispose();
 	});
 	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 3, selectionAnchor: { row: 0, column: 1 } }, origin.editSource);
 	const after = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 4, selectionAnchor: null }, origin.editSource);
 	model.pushEditOperations([{ offset: 3, deleteLength: 0, text: 'X' }], before, () => after);
 	origin.cursorColumn = 11;
-	activeCodeEditor.attach(model, invoking);
-	configureFontVariant('tiny', documents.get(model));
-	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
-	activeCodeEditor.focusTarget.focus();
+	const code = createTestCodeControl(t, model, documents, clock, invoking);
+	code.focusTarget.focus();
 	const seen: [string, number, number][] = [];
 	model.onDidChangeContent(event => seen.push([event.kind, origin.cursorColumn, invoking.cursorColumn]));
 
-	undoSource();
+	undoSource(code);
 	assert.equal(model.buffer.getText(), 'abcdefghij');
 	assert.equal(origin.cursorColumn, 10); assert.equal(origin.selectionAnchor, null);
 	assert.equal(invoking.cursorColumn, 3); assert.deepEqual(invoking.selectionAnchor, { row: 0, column: 1 });
 	assert.equal(origin.scrollRow, 70); assert.equal(origin.scrollLeft, 41.5);
 	assert.equal(invoking.scrollRow, 0); assert.equal(invoking.scrollLeft, 0);
-	redoSource();
+	redoSource(code);
 	assert.equal(model.buffer.getText(), 'abcXdefghij');
 	assert.equal(origin.cursorColumn, 11); assert.equal(origin.selectionAnchor, null);
 	assert.equal(invoking.cursorColumn, 4); assert.equal(invoking.selectionAnchor, null);
@@ -242,14 +239,14 @@ test('retiring a Source view does not transfer its history snapshot authority to
 
 
 test('Source Undo of a compound workspace edit restores only the invoking model view', t => {
-	const { models, documents } = createTestCodeDocuments(t);
+	const { models, documents, clock } = createTestCodeDocuments(t);
 	const a = models.retain(resource, 'lua', 'abcdef');
 	const b = models.retain({ ...resource, path: 'other.lua', location: { kind: 'workspace', path: 'other.lua' } }, 'lua', 'ghijkl');
 	const aOrigin = createCodeEditorViewState(), aSibling = createCodeEditorViewState(), bOrigin = createCodeEditorViewState(), invoking = createCodeEditorViewState();
 	const bindings = [new CodeEditorViewBinding(a, aOrigin), new CodeEditorViewBinding(a, aSibling),
 		new CodeEditorViewBinding(b, bOrigin), new CodeEditorViewBinding(b, invoking)];
 	t.after(() => {
-		inputFocus.setTarget(null); activeCodeEditor.detach();
+		inputFocus.setTarget(null);
 		for (const binding of bindings) binding.dispose();
 		models.clear();
 	});
@@ -263,18 +260,16 @@ test('Source Undo of a compound workspace edit restores only the invoking model 
 	]));
 	aOrigin.cursorColumn = 7; aOrigin.scrollRow = 70; aOrigin.scrollLeft = 41.5;
 	aSibling.cursorColumn = 5; bOrigin.cursorColumn = 7;
-	activeCodeEditor.attach(b, invoking);
-	configureFontVariant('tiny', documents.get(b));
-	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
-	activeCodeEditor.focusTarget.focus();
+	const code = createTestCodeControl(t, b, documents, clock, invoking);
+	code.focusTarget.focus();
 	const seen: number[] = [];
 	b.onDidChangeContent(() => seen.push(invoking.cursorColumn));
-	undoSource();
+	undoSource(code);
 	assert.equal(a.buffer.getText(), 'abcdef'); assert.equal(b.buffer.getText(), 'ghijkl');
 	assert.equal(aOrigin.cursorColumn, 6); assert.equal(aSibling.cursorColumn, 4); assert.equal(bOrigin.cursorColumn, 6);
 	assert.equal(invoking.cursorColumn, 3); assert.deepEqual(invoking.selectionAnchor, { row: 0, column: 1 });
 	assert.equal(aOrigin.scrollRow, 70); assert.equal(aOrigin.scrollLeft, 41.5);
-	redoSource();
+	redoSource(code);
 	assert.equal(a.buffer.getText(), 'aXbcdef'); assert.equal(b.buffer.getText(), 'gYhijkl');
 	assert.equal(aOrigin.cursorColumn, 7); assert.equal(aSibling.cursorColumn, 5); assert.equal(bOrigin.cursorColumn, 7);
 	assert.equal(invoking.cursorColumn, 4); assert.equal(invoking.selectionAnchor, null);

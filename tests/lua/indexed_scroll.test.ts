@@ -1,3 +1,4 @@
+import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import { EMPTY_DIAGNOSTICS_BY_ROW } from '../../ide/editor/contrib/diagnostics/model';
 import { navigationState } from '../../ide/navigation/navigation_history';
@@ -10,7 +11,7 @@ import { create_rect_bounds } from '../../machine/ts/common/rect';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { api } from '../../ide/runtime/overlay_api';
 import { scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
-import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
+
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { ScrollableWorkbenchTree } from '../../ide/workbench/ui/scrollable_tree';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
@@ -21,9 +22,10 @@ import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/edito
 import { ResourceViewerEditorPane } from '../../ide/workbench/contrib/resources/editor_pane';
 import { inputFocus } from '../../ide/input/focus';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
-import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { configureFontVariant, getCodeAreaBounds, resolvePointerTextPosition, resolveTextPositionBounds, scrollHorizontally, scrollRows } from '../../ide/editor/ui/view/view';
+import { getCodeAreaBounds, resolvePointerTextPosition, resolveTextPositionBounds, scrollHorizontally, scrollRows } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { ensureVisualLines } from '../../ide/editor/common/text/layout';
 import { measureTextRange } from '../../ide/editor/common/text/layout';
@@ -52,9 +54,6 @@ test('indexed list and tree retain tiny deltas across layout while hit tests add
 test('property and resource rendering preserves the actual retained fractional reading positions', t => {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 240; editorViewState.viewportHeight = 160;
-	editorViewState.scrollbars = {
-		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
-		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'), };
 	refreshWorkbenchLayout();
 	const overlay = createHostOverlayFixture(240, 160);
 	const tree = createWorkbenchPropertyTree();
@@ -85,35 +84,33 @@ test('property and resource rendering preserves the actual retained fractional r
 
 test('source scrolling retains fractional pixels while hit tests resolve source columns', t => {
 	configureFontVariant('tiny');
-	const { models, documents } = createTestCodeDocuments(t);
+	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain({ location: { kind: 'workspace' as const, path: 'wheel.lua' }, domain: 0, path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
 	const view = createCodeEditorViewState();
-	activeCodeEditor.attach(model, view);
-	editorViewState.layout.attach(documents.get(model));
-	t.after(() => { activeCodeEditor.detach(); editorViewState.layout.dispose(); });
-	editorViewState.wordWrapEnabled = false;
-	editorViewState.cachedVisibleRowCount = 4;
-	editorViewState.cachedMaxScrollLeft = 8;
-	ensureVisualLines();
+	const code = createTestCodeControl(t, model, documents, clock, view);
+	code.wordWrapEnabled = false;
+	code.geometry.cachedVisibleRowCount = 4;
+	code.geometry.cachedMaxScrollLeft = 8;
+	ensureVisualLines(code);
 	const bounds = { codeTop: 0, codeBottom: 100, codeLeft: 0, codeRight: 100, gutterLeft: 0, gutterRight: 0, textLeft: 0 };
 	for (let step = 1; step <= 6; step++) {
-		scrollRows(0.25); scrollHorizontally(0.25); ensureVisualLines();
+		scrollRows(code, 0.25); scrollHorizontally(code, 0.25); ensureVisualLines(code);
 		assert.equal(view.scrollRow, step * 0.25);
 		assert.equal(view.scrollLeft, step * 0.25);
-		const position = resolvePointerTextPosition(0, 1, bounds);
+		const position = resolvePointerTextPosition(code, 0, 1, bounds);
 		assert.equal(position.row, step * 0.25 | 0);
-		assert.equal(position.column, Math.round(step * 0.25 / editorViewState.charAdvance));
+		assert.equal(position.column, Math.round(step * 0.25 / code.charAdvance));
 	}
 	const overlay = createHostOverlayFixture(240, 160);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-	renderCodeArea({ session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, false, new Set(), [], -1, [], -1, false, EMPTY_DIAGNOSTICS_BY_ROW, editorViewState.layout, editorViewState.lineHeight);
+	renderCodeArea(code, { session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, false, new Set(), [], -1, [], -1, false, EMPTY_DIAGNOSTICS_BY_ROW);
 	overlay.renderer.endFrame();
 	assert.equal(view.scrollRow, 1.5);
 	assert.equal(view.scrollLeft, 1.5);
 	const caret = create_rect_bounds();
-	resolveTextPositionBounds(1, 1, caret);
+	resolveTextPositionBounds(code, 1, 1, caret);
 	assert.ok(Number.isInteger(caret.top));
-	assert.equal(caret.left, getCodeAreaBounds().textLeft + editorViewState.charAdvance - view.scrollLeft);
+	assert.equal(caret.left, getCodeAreaBounds(code).textLeft + code.charAdvance - view.scrollLeft);
 });
 
 test('Problems wheel integrates sub-row distances without changing selection or being undone by focused drawing', t => {

@@ -1,6 +1,3 @@
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
-import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { CodeDocumentProjections } from '../../ide/editor/ui/code/document_projections';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import { ResourceViewerEditorPane } from '../../ide/workbench/contrib/resources/editor_pane';
 import type { KeyInputEvent } from '../../hosts/common/input/text';
@@ -21,7 +18,8 @@ import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor
 import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
-import { activateCodeEditorTab, applyActiveCodeTabSelection } from '../../ide/workbench/ui/code_tab/activation';
+import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
+import { restoreCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
 import type {
 	BehaviorLensInput,
 	CodeEditorInput,
@@ -84,12 +82,16 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 }
 
 class TestCodeEditorPane extends TestEditorPane<CodeEditorInput> {
-	public constructor(scope: InputFocusScope, documents: CodeDocumentProjections) {
-		super(scope, input => activateCodeEditorTab(input, documents.get(input.context.model)), input => new CodeEditorNavigationSelection(input));
+	public constructor(scope: InputFocusScope) {
+		super(scope, input => input.initializeViewState(), input => new CodeEditorNavigationSelection(input));
 	}
 	public override setOptions(selection?: EditorTextSelection, navigationSelection?: CodeEditorNavigationSelection): void {
-		if (selection !== undefined) applyActiveCodeTabSelection(selection);
-		navigationSelection?.restore(this.input);
+		const view = this.input.context.view;
+		if (selection !== undefined) {
+			setSingleCursorPosition(view, selection.row, selection.startColumn);
+			setSingleCursorSelectionAnchor(view, selection.row, selection.endColumn);
+		}
+		if (navigationSelection !== undefined) restoreCodeEditorView(this.input, navigationSelection.snapshot);
 	}
 }
 
@@ -99,17 +101,8 @@ function activateViewInput(_input: EditorInput): void {
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorGroup(
 	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
-	documents?: CodeDocumentProjections,
+	codePane?: (scope: InputFocusScope) => EditorPane<CodeEditorInput>,
 ): EditorGroupView {
-	const ownsDocuments = documents === undefined;
-	if (documents === undefined) {
-		const builtins = { epoch: 0, ids: [] as string[] };
-		documents = new CodeDocumentProjections(editorTextModelService, {
-			clock: new VirtualHeadlessClock(), maxHighlightCache: 512, semanticDebounceMs: 200,
-			getBuiltinIdentifiers: () => builtins,
-		});
-	}
-	const codeDocuments = documents;
 	const group = new EditorGroupView({
 		home: scope => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(scope, activateViewInput),
 		play_session: scope => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(scope, activateViewInput),
@@ -126,7 +119,7 @@ export function createTestEditorGroup(
 		conversation_observer: scope => new TestEditorPane<ConversationObserverInput>(scope, activateViewInput),
 		assistant: scope => new TestEditorPane<AssistantInput>(scope, activateViewInput),
 		workspace_edit_review: scope => new TestEditorPane<WorkspaceEditReviewInput>(scope, activateViewInput),
-		code_editor: scope => new TestCodeEditorPane(scope, codeDocuments),
+		code_editor: scope => codePane === undefined ? new TestCodeEditorPane(scope) : codePane(scope),
 		resource_view: scope => new ResourceViewerEditorPane(scope),
 		aem_editor: scope => new TestEditorPane<AemEditorInput>(scope, activateViewInput),
 		lua_program: scope => new TestEditorPane<LuaProgramInput>(scope, activateViewInput),
@@ -135,6 +128,5 @@ export function createTestEditorGroup(
 		scene_editor: scope => new TestEditorPane<SceneEditorInput>(scope, activateViewInput),
 		cart_map: scope => new TestEditorPane<CartMapInput>(scope, activateViewInput),
 	}, commands);
-	if (ownsDocuments) group.onWillDispose(() => codeDocuments.dispose());
 	return group;
 }

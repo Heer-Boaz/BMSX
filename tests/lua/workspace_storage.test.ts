@@ -75,7 +75,7 @@ import {
 } from '../../ide/workbench/services/working_copy/lua_sources';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 import { recordAemSourceApplyFailure } from '../../ide/runtime/aem';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import {

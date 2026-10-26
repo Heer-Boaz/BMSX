@@ -1,93 +1,47 @@
-import { getSearchFieldLayout } from '../../../workbench/contrib/code_editor/inline_bar/layout';
-import { InlineBarFieldPointer } from '../pointer/field';
 import { pointerHover } from '../../pointer/hover';
-import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
-import { applySearchSelection, ensureSearchSelectionVisible, searchHover } from '../../../workbench/contrib/code_editor/find/search';
-import { closeLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
-import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../../workbench/common/layout';
+import type { EditorSearchController } from '../../../workbench/contrib/code_editor/find/search';
+import type { SourceInlineBars } from '../../../workbench/contrib/code_editor/inline_bar/source_inline_bars';
 import type { PointerSnapshot } from '../../../common/models';
-import { activateQuickInputField } from '../pointer/common';
-import { editorViewState } from '../../../editor/ui/view/state';
-import { editorSearchState } from '../../../workbench/contrib/code_editor/find/widget_state';
-import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
-import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { EditorGroupView } from '../../../workbench/services/editor/editor_group';
 
-const fieldPointer = new InlineBarFieldPointer(editorSearchState.field, getSearchFieldLayout);
-
-function applySearchPointerSelection(
-	editorGroup: EditorGroupView,
-	sources: RuntimeSourceState,
-	index: number,
-	preview?: boolean,
-): void {
-	applySearchSelection(index, { preview });
-	if (editorSearchState.scope !== 'global' || preview) {
-		return;
-	}
-	const match = editorSearchState.globalMatches[editorSearchState.currentIndex];
-	if (match) {
-		openGlobalSearchMatch(editorGroup, sources, match);
-	}
+function applySearchPointerSelection(find: EditorSearchController, index: number, preview = false): void {
+	find.applySearchSelection(index, { preview });
+	if (!preview) find.openSelectedGlobalMatch();
 }
 
-export function handleSearchPointer(editorGroup: EditorGroupView, sources: RuntimeSourceState, resourcePanel: ResourcePanelController, snapshot: PointerSnapshot, justPressed: boolean): boolean {
-	const bounds = getSearchBarBounds();
-	if (!editorSearchState.visible || !bounds) {
-		editorSearchState.hoverIndex = -1;
+export function handleSearchPointer(find: EditorSearchController, bars: SourceInlineBars,
+	snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	const state = find.state, bounds = bars.searchBounds;
+	if (!state.visible || bounds === null) { state.hoverIndex = -1; return false; }
+	if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)) {
+		pointerHover.release(find.searchHover);
+		if (justPressed) { state.field.focusTarget.release(); state.hoverIndex = -1; }
 		return false;
 	}
-	const insideBar = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
-	if (!insideBar) {
-		pointerHover.release(searchHover);
-		if (justPressed) {
-			editorSearchState.field.focusTarget.release();
-			editorSearchState.hoverIndex = -1;
-		}
-		return false;
-	}
-	const fieldBottom = bounds.top + editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-	editorSearchState.hoverIndex = -1;
+	const fieldBottom = bounds.top + find.code.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	state.hoverIndex = -1;
 	if (snapshot.viewportY < fieldBottom) {
 		if (justPressed) {
-			closeLineJump(false);
-			editorSearchState.field.focusTarget.focus();
-			activateQuickInputField(resourcePanel);
+			find.focus();
 		}
-		fieldPointer.handlePointer(snapshot, justPressed);
+		find.fieldPointer.handlePointer(snapshot, justPressed);
 		return true;
 	}
-	pointerHover.visit(searchHover);
-	const hoverIndex = resolveSearchHoverIndex(snapshot.viewportY, fieldBottom);
-	editorSearchState.hoverIndex = hoverIndex;
-	if (hoverIndex >= 0 && justPressed) {
-		if (hoverIndex !== editorSearchState.currentIndex) {
-			editorSearchState.currentIndex = hoverIndex;
-			ensureSearchSelectionVisible();
-			if (editorSearchState.scope === 'local') {
-					applySearchPointerSelection(editorGroup, sources, hoverIndex, true);
-			}
+	pointerHover.visit(find.searchHover);
+	const resultsStart = fieldBottom + constants.SEARCH_RESULT_SPACING;
+	if (snapshot.viewportY < resultsStart) return true;
+	const indexWithin = Math.trunc((snapshot.viewportY - resultsStart) / bars.searchResultEntryHeight);
+	if (indexWithin >= bars.visibleSearchResults) return true;
+	const hoverIndex = state.displayOffset + indexWithin;
+	state.hoverIndex = hoverIndex;
+	if (justPressed) {
+		if (hoverIndex !== state.currentIndex) {
+			state.currentIndex = hoverIndex;
+			find.ensureSearchSelectionVisible();
+			if (state.scope === 'local') applySearchPointerSelection(find, hoverIndex, true);
 		}
-		applySearchPointerSelection(editorGroup, sources, hoverIndex);
-		return true;
+		applySearchPointerSelection(find, hoverIndex);
 	}
 	return true;
-}
-
-function resolveSearchHoverIndex(pointerY: number, fieldBottom: number): number {
-	const visibleResults = searchVisibleResultCount();
-	if (visibleResults <= 0) {
-		return -1;
-	}
-	const resultsStart = fieldBottom + constants.SEARCH_RESULT_SPACING;
-	if (pointerY < resultsStart) {
-		return -1;
-	}
-	const indexWithin = Math.floor((pointerY - resultsStart) / searchResultEntryHeight());
-	if (indexWithin < 0 || indexWithin >= visibleResults) {
-		return -1;
-	}
-	return editorSearchState.displayOffset + indexWithin;
 }

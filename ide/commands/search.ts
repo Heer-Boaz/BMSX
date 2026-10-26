@@ -2,74 +2,33 @@ import { showCommandPalette } from '../workbench/contrib/commands/quick_access';
 import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
 import { buildResourceQuickPickItems } from '../workbench/contrib/resources/quick_access';
 import { FileQuickPickProvider } from '../workbench/services/quick_input/file_provider';
-import { openLineJump } from '../workbench/contrib/code_editor/find/line_jump';
-import { openReferenceSearch } from '../workbench/contrib/code_editor/references/quick_access';
-import { openRenamePrompt } from '../workbench/contrib/code_editor/rename/prompt';
-import { openSymbolSearch } from '../workbench/contrib/code_editor/symbols/quick_access';
+import { EditorNavigationController } from '../workbench/contrib/resources/navigation';
 import type { EditorCommandId, EditorSearchCommandId } from '../common/commands';
-import type { RenameController } from '../workbench/contrib/code_editor/rename/controller';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
+import type { EditorGroupView } from '../workbench/services/editor/editor_group';
 
-export function isEditorSearchCommand(command: EditorCommandId): command is EditorSearchCommandId {
-	switch (command) {
-		case 'commandPalette':
-		case 'symbolSearch':
-		case 'symbolSearchGlobal':
-		case 'resourceSearch':
-		case 'runtimeErrorFocus':
-		case 'findGlobal':
-		case 'findLocal':
-		case 'lineJump':
-		case 'referenceSearch':
-		case 'rename':
-		case 'renamePreview':
-			return true;
-		default:
-			return false;
-	}
+type WorkbenchSearchCommand = Extract<EditorSearchCommandId, 'commandPalette' | 'resourceSearch' | 'runtimeErrorFocus'>;
+
+export function isEditorSearchCommand(command: EditorCommandId): command is WorkbenchSearchCommand {
+	return command === 'commandPalette' || command === 'resourceSearch' || command === 'runtimeErrorFocus';
 }
 
-export function executeEditorSearchCommand(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	rename: RenameController,
-	command: EditorSearchCommandId,
-): void {
+export function executeEditorSearchCommand(editor: CartEditor, sources: RuntimeSourceState,
+	command: WorkbenchSearchCommand, group: EditorGroupView): void {
 	switch (command) {
 		case 'commandPalette':
 			showCommandPalette(editor.quickInput, editor.commands);
 			return;
-		case 'symbolSearch':
-			openSymbolSearch(editor, sources, 'file');
-			return;
-		case 'symbolSearchGlobal':
-			openSymbolSearch(editor, sources, 'workspace');
-			return;
-		case 'resourceSearch':
+		case 'resourceSearch': {
+			const navigation = new EditorNavigationController(sources, editor.resourcePanel, editor.resourceEditors, group);
 			editor.quickInput.pick('GO TO FILE', 'Type a file name or path', () => new FileQuickPickProvider(buildResourceQuickPickItems(sources.resources)),
-				item => { void editor.navigation.openResource(item.resource); });
+				item => { void navigation.openResource(item.resource); },
+			lifetime => lifetime.add({ dispose: group.onWillDispose(() => editor.quickInput.hide()) }));
 			return;
+		}
 		case 'runtimeErrorFocus':
-			focusRuntimeErrorOverlay(editor.editorGroup);
-			return;
-		case 'findGlobal':
-			editor.search.openSearch(true, 'global');
-			return;
-		case 'findLocal':
-			editor.search.openSearch(true, 'local');
-			return;
-		case 'lineJump':
-			openLineJump(editor.search);
-			return;
-		case 'referenceSearch':
-			openReferenceSearch(editor, sources);
-			return;
-		case 'rename':
-			openRenamePrompt(sources, rename, editor.search);
-			return;
-		case 'renamePreview':
-			openRenamePrompt(sources, rename, editor.search, editor.editorGroup);
+			focusRuntimeErrorOverlay(group);
 			return;
 	}
 }

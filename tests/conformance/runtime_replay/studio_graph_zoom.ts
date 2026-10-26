@@ -1,4 +1,3 @@
-import { editorPointerState } from '../../../ide/input/pointer/state';
 import { check, type StudioFixture } from './studio_fixture';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 
@@ -37,9 +36,8 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	// Center-anchored zoom can move a left-aligned graph offscreen; reveal before inspecting its actual texels.
 	viewport.reveal(selected); await frame();
 	console.info(`STUDIO: ${graph.kind} zoomed-in canvas ready for visual inspection`);
-	movePointer({ left: centerX - 10, right: centerX - 10, top: centerY + 8, bottom: centerY + 8 }); await frame();
+	const pointer = movePointer({ left: centerX - 10, right: centerX - 10, top: centerY + 8, bottom: centerY + 8 }); await frame();
 	// The display owner publishes integer logical pointer coordinates, not the fractional requested center.
-	const pointer = editorPointerState.lastPointerSnapshot!;
 	const pointerX = viewport.viewportToGraphX(pointer.viewportX), pointerY = viewport.viewportToGraphY(pointer.viewportY);
 	setKey('ControlLeft', true);
 	test.remote.apply([{ type: 'wheel', deltaY: 1 }]); await frame();

@@ -50,13 +50,6 @@ export class EditorGroupView {
 			id => this.activate(id), id => this.close(id), () => this.panes.activePane?.focus());
 	}
 
-	/** Bind the existing primary Source control once at frontend composition. */
-	public bindInputScope(scope: InputFocusScope): void {
-		scope.surfaceScope = this.captureScope;
-		groupsByScope.set(scope, this);
-		this.disposeListeners.add(() => groupsByScope.set(scope, null));
-	}
-
 	public onWillDispose(listener: () => void): () => void {
 		this.disposeListeners.add(listener);
 		return () => this.disposeListeners.delete(listener);

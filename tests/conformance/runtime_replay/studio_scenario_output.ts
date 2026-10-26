@@ -1,11 +1,11 @@
-import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import type { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
 import { SCENARIO_RESULT_LOG_RETAIN_COUNT } from '../../../ide/testing/scenario/result_service';
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
 import type { ScenarioTestResult } from '../../../ide/testing/scenario/result_service';
 import type { ScenarioLabViewState, ScenarioLabResultRow } from '../../../ide/workbench/contrib/scenario_lab/view_model';
-import { check, type StudioFixture } from './studio_fixture';
+import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 const EFFECTS = `local effects<const> = require('cartlib/actioneffects')
 effects.register_effect('fixture.result', { handler = function(owner) owner.first = true end })
@@ -22,7 +22,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: 'cart.lua' });
 	check(resource !== undefined, 'A05: test cancellation retains the cartridge source');
 	await ide.editor.navigation.openResource(resource!);
-	const model = activeCodeEditor.model, original = model.buffer.getText();
+	const model = sourcePane(test).code.model, original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: EFFECTS }]);
 	const version = model.version, dirty = model.dirty, position = cycles();
 	await runPaletteCommand('Scenario Lab: Open');
@@ -89,7 +89,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	await press('Enter');
 	check(inspector.isEnabled('propertyInspector.source'), 'A05: real diagnostic source is enabled');
 	await click(inspector.actionBar.items.find(item => item.command === 'propertyInspector.source')!.bounds);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === 3,
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === 3,
 		'A05: Source uses the message location, not its test context');
 	await runPaletteCommand('Go: Back');
 	check(ide.editor.editorGroup.model.activeTab === lab && view.resultPane.rows[view.resultPane.selectionIndex].kind === 'log', 'A05: navigation Back restores retained result selection');
@@ -134,7 +134,7 @@ async function testScenarioEffectSourceChoice(
 	const rows = ide.editor.quickInput.model.list.rows;
 	check(rows.length === 2 && rows[0].item.detail !== rows[1].item.detail, 'A05: same-id definitions have distinct source coordinates');
 	await press('ArrowDown'); await press('Enter');
-	check(activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === 3, 'A05: choosing second occurrence navigates its exact source');
+	check(sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === 3, 'A05: choosing second occurrence navigates its exact source');
 	await choose();
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shift all source ranges\n' }]);
 	check(!ide.editor.quickInput.visible, 'A05: source edits expire the occurrence choice before stale ranges can be accepted');

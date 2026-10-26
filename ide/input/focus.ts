@@ -20,6 +20,7 @@ export type GuestInputBinding = {
 
 export type FocusCommand = {
 	isEnabled(): boolean;
+	isChecked?(): boolean;
 	run(): void;
 };
 
