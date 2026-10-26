@@ -36,7 +36,7 @@ export function transferBehaviorFixtureSelection(
 	const original = luaSourceRangeToTextRange(model.buffer, entry.file.chunk.locations.range(entry.field.span));
 	const transfer = createLuaTableFieldTransfer(model.buffer, entry.file.chunk, entry.field, target.source.table,
 		target.source.table.fields.length);
-	model.pushEditOperations(transfer.edits, behaviorSourceEditState.of(before), changes => {
+	model.pushEditOperations(transfer.edits, behaviorSourceEditState.of(before, view.editSource), changes => {
 		mapBehaviorSourceBookmark(destination, model.resource, changes);
 		for (const step of suffix) {
 			if (step.start >= original.start && step.end <= original.end) {
@@ -44,6 +44,6 @@ export function transferBehaviorFixtureSelection(
 				step.end += transfer.fieldRange.start - original.start;
 			} else mapTrackedTextRange(step, changes); // Referenced initializer source does not travel.
 		}
-		return behaviorSourceEditState.of({ kind: selection.kind, path: [...destination.path, ...suffix] });
+		return behaviorSourceEditState.of({ kind: selection.kind, path: [...destination.path, ...suffix] }, view.editSource);
 	});
 }

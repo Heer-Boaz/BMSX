@@ -1,7 +1,6 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { api } from '../../../ide/runtime/overlay_api';
 import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -18,9 +17,9 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.second');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'properties') throw new Error('Effect editing requires its property input.');
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof BehaviorLensEditorPane)) throw new Error('Effect editing requires its contribution pane.');
 	const editor = pane.propertyEdit, view = lens.view, properties = lens.view.presentation;
 	const select = async (name: string) => {
@@ -110,7 +109,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	await press('ControlLeft', 'KeyZ');
 	const handler = await select('handler');
 	await runPaletteCommand('Behavior Lens: Edit Authored Property');
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model
 		&& activeCodeEditor.view.cursorRow === handler.source.occurrenceRange.start.line - 1 && !editor.active,
 		'effect: multiline code uses the full source editor, not a flattened cell');
 	await press('AltLeft', 'ArrowLeft');

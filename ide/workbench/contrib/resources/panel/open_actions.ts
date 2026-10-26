@@ -7,7 +7,7 @@ export function openResourcePanelCallHierarchyLocation(
 	item: CallHierarchyPanelItem,
 ): void {
 	editor.navigation.focusChunkSourceForContext(
-		getActiveCodeTabContext().model.resource.domain,
+		getActiveCodeTabContext(editor.editorGroup).model.resource.domain,
 		item.location.path,
 		{
 			row: item.location.range.startLine - 1,

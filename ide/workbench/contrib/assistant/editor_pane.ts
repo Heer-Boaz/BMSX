@@ -1,3 +1,4 @@
+import type { InputFocusScope } from '../../../input/focus';
 import type { ImageDecoder } from '../../../../hosts/common/image';
 import { ImagePreviewCache } from '../../ui/image_preview';
 import { ImagePreviewOverlay } from '../../ui/image_preview_overlay';
@@ -22,13 +23,11 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
 import { WorkspaceEditReviewInput } from '../edit_review/editor_input';
 import type { AssistantInput } from './editor_input';
 import { isAssistantCommand, type AssistantChatCommands } from './chat_commands';
@@ -52,15 +51,15 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
 	private unbindAttachmentClipboard: (() => void) | undefined;
-	public constructor(private readonly clipboard: Clipboard, private readonly panes: EditorPanes, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
+	public constructor(private readonly clipboard: Clipboard, private readonly group: EditorGroupView, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner,
-		contextMenu: ContextMenuController, workArea: Readonly<RectBounds>) {
-		super();
+		contextMenu: ContextMenuController, workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		super(scope);
 		this.turnToolbar = new AssistantTurnToolbar(this, this.focusTarget, () => this.focus(), contextMenu, surfaces, owner, workArea);
 		this.previews = new ImagePreviewCache(decodeImage);
 		this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner, commands);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview, () => this.execute('assistant.review'));
-		this.attachments = new AssistantAttachmentStrip(this.previews, url => this.preview.open(url));
+		this.attachments = new AssistantAttachmentStrip(this.previews, url => this.preview.open(url), this.focusTarget);
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		for (const command of ['assistant.review', 'assistant.copy'] as const)
 			this.transcriptView.scroll.focusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
@@ -71,6 +70,8 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		this.transcriptView.setInput(this.input);
 		this.attachments.setInput(this.input.attachments);
 		const draftInput = this.input;
+		draftInput.draft.focusTarget.scope.surfaceScope = this.focusTarget.scope.surfaceScope;
+		draftInput.draft.focusTarget.scope.commands = this.focusTarget.scope.commands;
 		this.composer.setInput(draftInput.draft, draftInput.composer, draftInput.composerBounds, images => draftInput.attachments.add(images));
 		this.unbindAttachmentClipboard = this.attachments.focusTarget.bindClipboard({ paste: contents => draftInput.draft.paste(contents) });
 		this.unbindDraft = this.input.draft.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
@@ -123,8 +124,8 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 			case 'assistant.copy': void writeClipboard(this.clipboard, this.input.selection.entry!.text.getText(), 'Copied message'); break;
 			case 'assistant.review': {
 				const proposal = this.input.selection.proposal!;
-				const existing = editorTabGroup.tabs.find(input => input.kind === 'workspace_edit_review' && input.proposal === proposal);
-				openEditorTab(this.panes, existing ?? new WorkspaceEditReviewInput(proposal)); break;
+				const existing = this.group.model.tabs.find(input => input.kind === 'workspace_edit_review' && input.proposal === proposal);
+				this.group.openEditor(existing ?? new WorkspaceEditReviewInput(proposal)); break;
 			}
 		}
 	}

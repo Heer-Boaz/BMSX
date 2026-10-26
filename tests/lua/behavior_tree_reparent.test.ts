@@ -36,10 +36,10 @@ test('transfer preparation retains exact edits and typed selection without chang
 	f.model.history.applyEdits(new Map([[f.model, plan]])); f.refresh();
 	assert.equal(f.model.buffer.getText(), expected); assert.equal(f.model.version, version + 1);
 	assert.ok(f.viewport.selection === root().children[1].children.at(-1));
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.model.buffer.getText(), BT_REPARENT_SOURCE); assert.equal(f.model.canUndo, false);
 	assert.ok(f.viewport.selection === root().children[0]);
-	f.model.redo(); f.refresh(); assert.equal(f.model.buffer.getText(), expected);
+	f.model.redo(f.view.editSource); f.refresh(); assert.equal(f.model.buffer.getText(), expected);
 	assert.ok(f.viewport.selection === root().children[1].children.at(-1));
 });
 
@@ -70,12 +70,12 @@ test('a drop into deeper and empty parents proposes source, then one Undo/Redo p
 		assert.equal(root().children.length, 2);
 		const text = f.model.buffer.getText();
 		assert.match(text, /traveller documentation\n\s*leaf, -- traveller inline/);
-		f.model.undo(); f.refresh();
+		f.model.undo(f.view.editSource); f.refresh();
 		assert.equal(f.model.buffer.getText(), BT_REPARENT_SOURCE);
 		assert.equal(f.model.dirty, false);
 		assert.equal(f.model.canUndo, false);
 		assert.equal(f.viewport.selection?.kind === 'edge' ? f.viewport.selection.child : f.viewport.selection, root().children[0]);
-		f.model.redo(); f.refresh();
+		f.model.redo(f.view.editSource); f.refresh();
 		assert.equal(f.model.buffer.getText(), text);
 		assert.equal(f.viewport.selection?.kind === 'edge' ? f.viewport.selection.child : f.viewport.selection,
 			root().children[targetIndex - 1].children.at(-1));
@@ -96,7 +96,7 @@ test('an only child moves upward before a sibling and leaves its written list em
 	assert.equal(root().children.length, 4);
 	assert.equal(root().children[1].children[0].children.length, 0);
 	assert.equal(f.viewport.selection, root().children[2]);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.model.buffer.getText(), BT_REPARENT_SOURCE);
 	assert.equal(f.viewport.selection, root().children[1].children[0].children[0]);
 });
@@ -124,7 +124,7 @@ trees.register('weighted', { root={type='sequence',children={
 		assert.equal(selected.kind, edge ? 'edge' : 'node');
 		assert.equal(selected.kind === 'edge' ? selected.child : selected, root().children[1].children[0]);
 		assert.equal(root().children[0].children.length, 0);
-		f.model.undo(); f.refresh();
+		f.model.undo(f.view.editSource); f.refresh();
 		assert.equal(f.model.buffer.getText(), source);
 	}
 });
@@ -160,7 +160,7 @@ trees.register('shared', {root={type='sequence',children={shared,shared,{type='s
 	assert.equal(root().children[0].children.length, 0);
 	assert.equal(root().children[1].children.length, 0);
 	assert.equal(f.viewport.selection, root().children[2].children[0]);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.model.buffer.getText(), source);
 	assert.equal(f.viewport.selection, root().children[1].children[0]);
 });

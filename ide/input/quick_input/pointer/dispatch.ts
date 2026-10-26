@@ -18,5 +18,5 @@ export function handleQuickInputPointer(
 	if (handleLineJumpPointer(resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	return handleSearchPointer(editor.editorPanes, sources, resourcePanel, snapshot, justPressed);
+	return handleSearchPointer(editor.editorGroup, sources, resourcePanel, snapshot, justPressed);
 }

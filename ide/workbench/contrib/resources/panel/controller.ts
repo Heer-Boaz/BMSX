@@ -160,7 +160,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		if (focused) {
 			this.focusTarget.focus();
 		} else if (this.focusTarget.hasFocus) {
-			const activePane = this.editor.editorPanes.activePane;
+			const activePane = this.editor.editorGroup.panes.activePane;
 			const bounds = getWorkbenchEditorBounds();
 			if (activePane === null || bounds.right === bounds.left || bounds.bottom === bounds.top) this.focusTarget.release();
 			else activePane.focus();

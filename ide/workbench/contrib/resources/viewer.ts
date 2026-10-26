@@ -20,18 +20,6 @@ export type ResourceViewerLayout = {
 	textCapacity: number;
 };
 
-const resourceViewerLayout: ResourceViewerLayout = {
-	hasImage: false,
-	imageLeft: 0,
-	imageTop: 0,
-	imageWidth: 0,
-	imageHeight: 0,
-	imageBottom: 0,
-	imageScale: 1,
-	textTop: 0,
-	textCapacity: 0,
-};
-
 export function buildResourceViewerContent(sources: RuntimeSourceState, resource: RuntimeResource): ResourceViewerContent {
 	const asset = resource.source;
 	const title = computeResourceTabTitle(resource);
@@ -147,15 +135,16 @@ export function buildResourceViewerContent(sources: RuntimeSourceState, resource
 	return state;
 }
 
-export function resolveResourceViewerLayout(
+export function layoutResourceViewer(
+	layout: ResourceViewerLayout,
 	viewer: ResourceViewerState,
 	bounds: Readonly<RectBounds>,
 	lineHeight: number,
-): ResourceViewerLayout {
+): void {
 	const contentTop = bounds.top + 2;
-	resourceViewerLayout.hasImage = false;
-	resourceViewerLayout.textTop = contentTop;
-	resourceViewerLayout.textCapacity = 0;
+	layout.hasImage = false;
+	layout.textTop = contentTop;
+	layout.textCapacity = 0;
 	const totalHeight = bounds.bottom - bounds.top;
 	const paddingX = constants.RESOURCE_PANEL_PADDING_X;
 	const availableWidth = bounds.right - bounds.left - paddingX * 2;
@@ -180,41 +169,18 @@ export function resolveResourceViewerLayout(
 		}
 		const left = bounds.left + paddingX + (((availableWidth - width) / 2) | 0);
 		const top = contentTop;
-		resourceViewerLayout.hasImage = true;
-		resourceViewerLayout.imageLeft = left;
-		resourceViewerLayout.imageTop = top;
-		resourceViewerLayout.imageWidth = width;
-		resourceViewerLayout.imageHeight = height;
-		resourceViewerLayout.imageBottom = top + height;
-		resourceViewerLayout.imageScale = scale;
-		resourceViewerLayout.textTop = resourceViewerLayout.imageBottom + lineHeight;
+		layout.hasImage = true;
+		layout.imageLeft = left;
+		layout.imageTop = top;
+		layout.imageWidth = width;
+		layout.imageHeight = height;
+		layout.imageBottom = top + height;
+		layout.imageScale = scale;
+		layout.textTop = layout.imageBottom + lineHeight;
 	}
-	if (resourceViewerLayout.textTop < bounds.bottom) {
-		resourceViewerLayout.textCapacity = ((bounds.bottom - resourceViewerLayout.textTop) / lineHeight) | 0;
+	if (layout.textTop < bounds.bottom) {
+		layout.textCapacity = ((bounds.bottom - layout.textTop) / lineHeight) | 0;
 	}
-	return resourceViewerLayout;
-}
-
-export function resourceViewerTextCapacity(viewer: ResourceViewerState, bounds: Readonly<RectBounds>, lineHeight: number): number {
-	return resolveResourceViewerLayout(viewer, bounds, lineHeight).textCapacity;
-}
-
-export function clampResourceViewerScroll(viewer: ResourceViewerState, bounds: Readonly<RectBounds>, lineHeight: number): void {
-	setResourceViewerScroll(viewer, bounds, lineHeight, viewer.scroll);
-}
-
-export function setResourceViewerScroll(viewer: ResourceViewerState, bounds: Readonly<RectBounds>, lineHeight: number, scroll: number): void {
-	applyResourceViewerScroll(viewer, resourceViewerTextCapacity(viewer, bounds, lineHeight), scroll);
-}
-
-export function applyResourceViewerScroll(viewer: ResourceViewerState, capacity: number, scroll: number): void {
-	if (capacity <= 0) {
-		viewer.scroll = 0;
-		return;
-	}
-	const scrollLimit = viewer.content.lines.length - capacity;
-	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
-	viewer.scroll = clamp(scroll, 0, maxScroll);
 }
 
 function appendResourceViewerLine(target: string[], entry: string): void {

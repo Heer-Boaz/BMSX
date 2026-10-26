@@ -22,7 +22,7 @@ function openSelectedGlobalMatch(
 	}
 	const match = editorSearchState.globalMatches[editorSearchState.currentIndex];
 	if (match) {
-		openGlobalSearchMatch(editor.editorPanes, sources, match);
+		openGlobalSearchMatch(editor.editorGroup, sources, match);
 	}
 }
 

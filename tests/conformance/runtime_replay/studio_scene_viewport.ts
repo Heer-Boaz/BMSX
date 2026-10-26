@@ -1,6 +1,5 @@
 import { SCENE_VIEWPORT_SOURCE } from '../../fixtures/studio/scene_viewport';
 import { SCROLLBAR_WIDTH } from '../../../ide/common/constants';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
@@ -28,7 +27,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	for (const resource of ide.sources.luaResources) {
 		if (resource.domain !== 0) continue;
 		await ide.editor.navigation.openResource(resource); await frame(); await frame();
-		if (editorChromeState.tabScrollbar.isVisible()) break;
+		if (ide.editor.editorGroup.tabStrip.scrollbar.isVisible()) break;
 	}
 	await ide.editor.navigation.openResource(resolveRuntimeResource(ide.sources, { domain: 0, path: 'scenes/root.lua' })!);
 	const model = harness.getActiveEditorDocument().model;
@@ -37,7 +36,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	const authored = model.buffer.getText();
 	const scene = await openSceneEditor(test);
 	await selectMember(test, scene, 0);
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('A02: actual Scene pane required');
 	const [x, y, z] = pane.controls;
 	check(scene.properties[0].value === 11 && scene.properties[2].value === 33, 'A02: independent fixture is selected');
@@ -96,7 +95,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	};
 	for (const variant of ['msx', 'tiny'] as const) {
 		ide.editor.setFontVariant(variant); await frame();
-		check(editorChromeState.tabScrollbar.isVisible() && editorViewState.tabBarTotalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
+		check(ide.editor.editorGroup.tabStrip.scrollbar.isVisible() && editorViewState.tabBarTotalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
 			'A02/A04: overflowing tabs remain one bounded row at either font');
 		check(scene.layout.top === editorViewState.codeAreaTop && scene.layout.bottom === editorViewState.codeAreaBottom,
 			'A02/A04: font and tab-strip height reach the child layout in one update');
@@ -162,7 +161,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		const selectedProblem = problemsPanel.selectedDiagnostic;
 		const panel = getProblemsPanelBounds()!;
 		await test.click(point(panel.left + 4, panel.bottom - 1));
-		check(problemsPanel.isFocused && problemsPanel.getHoverIndex() === -1 && ide.editor.editorPanes.activePane === pane,
+		check(problemsPanel.isFocused && problemsPanel.getHoverIndex() === -1 && ide.editor.editorGroup.panes.activePane === pane,
 			'A02: Problems padding focuses the panel without activating a clipped diagnostic');
 		check(problemsPanel.selectedDiagnostic === selectedProblem && model.buffer.getText() === authored,
 			'A02: panel focus does not change diagnostic selection or authored source');

@@ -24,7 +24,7 @@ export async function testSceneSourceTree(test: StudioFixture): Promise<void> {
 	const root = tree.roots[0];
 	check(tree.roots.length === 1 && tree.rows.length === 5 && tree.selectionIndex === 0
 		&& root.element.kind === 'scene' && root.children.length === 4, 'tree: initial selection is the actual definition, not an implicit member');
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('tree: actual Scene Editor pane required');
 	const x = pane.controls[0];
 	check(pane.controls.every(control => control.field.readOnly), 'tree: a definition root has no editable member properties');

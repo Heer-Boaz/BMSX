@@ -1,6 +1,5 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behavior_lens/quick_access';
 import { inspectBehaviorTreeInstance, readBehaviorTreeInstances } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_runtime';
@@ -20,9 +19,9 @@ export async function openRuntimeTreePicker(test: StudioFixture, expectedCount =
 	check(index >= 0, 'runtime BT: unexecuted same-id registration remains independently authored');
 	for (let n = 0; n < index; n += 1) await test.press('ArrowDown');
 	await test.press('Enter');
-	const input = getActiveTab();
+	const input = test.ide.editor.editorGroup.model.activeTab;
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'graph') throw new Error('runtime BT: source graph required');
-	const inspector = (test.ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (test.ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	if (inspector.visible) await test.press('Escape');
 	check(!inspector.visible, 'runtime BT: explicit close returns from a retained inspection to its source graph');
 	await test.click(input.view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.inspectRuntimeTree')!.bounds);
@@ -42,7 +41,7 @@ export async function openRuntimeTreeInspector(test: StudioFixture, component: '
 	await press('ControlLeft', 'KeyV');
 	check(test.ide.editor.quickInput.model.list.rows.length === 1, 'runtime BT: component choice disambiguates the shared tree id');
 	await press('Enter');
-	const inspector = (test.ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (test.ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !test.ide.editor.quickInput.visible, 'runtime BT: chosen component opens the same property inspector');
 	const first = inspector.model.rows[0], wrapped = first.value;
 	for (let n = 0; n < 10; n += 1) await frame();

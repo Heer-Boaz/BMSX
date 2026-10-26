@@ -1,3 +1,7 @@
+import { navigationState } from '../../ide/navigation/navigation_history';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -12,9 +16,10 @@ import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ide/wor
 import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree } from '../../ide/workbench/ui/property_tree';
 import { drawWorkbenchPropertyTree } from '../../ide/workbench/render/property_tree';
 import { resourcePanelIndexAtRelativeY } from '../../ide/workbench/contrib/resources/panel/navigation';
-import { applyResourceViewerScroll } from '../../ide/workbench/contrib/resources/viewer';
-import type { ResourceViewerState } from '../../ide/workbench/contrib/resources/model';
-import { drawResourceViewer } from '../../ide/workbench/render/resource_panel';
+import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
+import { ResourceViewerEditorPane } from '../../ide/workbench/contrib/resources/editor_pane';
+import { inputFocus } from '../../ide/input/focus';
+import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { configureFontVariant, getCodeAreaBounds, resolvePointerTextPosition, resolveTextPositionBounds, scrollHorizontally, scrollRows } from '../../ide/editor/ui/view/view';
@@ -43,13 +48,12 @@ test('indexed list and tree retain tiny deltas across layout while hit tests add
 	assert.equal(workbenchListRowIndexAtPosition(tree, 5, 1), 1);
 });
 
-test('property and resource renderers project fractional positions without losing their retained viewport', () => {
+test('property and resource rendering preserves the actual retained fractional reading positions', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 240; editorViewState.viewportHeight = 160;
 	editorViewState.scrollbars = {
 		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
-		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'), viewerVertical: new Scrollbar('vertical'),
-	};
+		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'), };
 	refreshWorkbenchLayout();
 	const overlay = createHostOverlayFixture(240, 160);
 	const tree = createWorkbenchPropertyTree();
@@ -60,17 +64,20 @@ test('property and resource renderers project fractional positions without losin
 	rebuildWorkbenchTreeRows(tree, null);
 	layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), measureTextRange, 0, 0, 240, 160);
 	scrollWorkbenchList(tree, 1.5);
-	const viewer: ResourceViewerState = { scroll: 0, content: {
-		resource: { location: { kind: 'workspace' as const, path: 'rows.lua' }, domain: 0, path: 'rows.lua', source: { type: 'lua', resid: 'rows' } },
-		lines: Array.from({ length: 80 }, (_, index) => String(index)), error: '', title: 'rows',
-	} };
-	for (let step = 0; step < 6; step++) applyResourceViewerScroll(viewer, 4, viewer.scroll + 0.25);
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('rows.lua', 1,
+		Array.from({ length: 80 }, (_, index) => `-- row ${index}`).join('\n'))]);
+	const input = new ResourceViewerInput(sources, sources.luaResources[0]);
+	const pane = new ResourceViewerEditorPane(inputFocus.workbenchScope);
+	pane.setInput(input, { left: 0, top: 0, right: 240, bottom: 160 });
+	t.after(() => { pane.clearInput(); pane.dispose(); input.dispose(); });
+	for (let step = 0; step < 6; step++) pane.handleWheel({ viewportX: 5, viewportY: 5,
+		valid: true, insideViewport: true, deltaX: 0, deltaY: 0.25, modifiers: 0 });
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 	drawWorkbenchPropertyTree(tree);
-	drawResourceViewer(viewer);
+	pane.draw();
 	overlay.renderer.endFrame();
 	assert.equal(tree.scroll, 1.5);
-	assert.equal(viewer.scroll, 1.5);
+	assert.equal(input.view.scroll, 1.5);
 	assert.equal(workbenchListRowIndexAtPosition(tree, 5, 1), 1);
 	assert.ok(overlay.queue.consumeOverlayFrame().commandCount > 0);
 });
@@ -160,4 +167,45 @@ test('Problems wheel prepares current variable-height layout after show, resize 
 	assert.equal(controller.handlePointerWheel(narrowHeight / editorViewState.lineHeight - 1, narrow), true);
 	assert.equal(controller.getScrollIndex(), 2, 'fractional progress survives invalidation and crosses the actual wrapped height');
 	assert.equal(controller.getSelectionIndex(), 0);
+});
+
+test('actual Resource viewers keep arranged scrollbar gestures and retirement local to their groups', t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('read.lua', 1,
+		Array.from({ length: 80 }, (_, row) => `-- retained row ${row}`).join('\n'))]);
+	const first = createTestEditorGroup(), second = createTestEditorGroup();
+	const firstInput = new ResourceViewerInput(sources, sources.luaResources[0]);
+	const secondInput = new ResourceViewerInput(sources, sources.luaResources[0]);
+	const bounds = { left: 10, top: 20, right: 150, bottom: 130 };
+	first.panes.layout(bounds);
+	second.panes.layout({ left: 190, top: 40, right: 350, bottom: 280 });
+	first.openEditor(firstInput); second.openEditor(secondInput);
+	const pane = first.panes.activePane!;
+	pane.focus();
+	assert.equal(navigationState.activeGroup, first);
+	const focused = inputFocus.target;
+	t.after(() => { first.dispose(); second.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	// Address the actual component's arranged scrollbar, not root-workbench chrome.
+	const down = { valid: true, insideViewport: true,
+		viewportX: bounds.right - 1, viewportY: bounds.top + 1,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0,
+		modifiers: 0, spaceDown: false };
+	pointerCapture.beginRoute(first.captureScope, down);
+	pane.handlePointer(down, true, false, 0, false);
+	assert.equal(pointerCapture.active, true);
+	const move = { ...down, viewportY: bounds.top + 30, justPressedButtons: 0 };
+	pointerCapture.dispatch(move, false, 1, first.captureScope);
+	assert.ok(firstInput.view.scroll > 0);
+	assert.equal(secondInput.view.scroll, 0);
+	second.clear();
+	assert.equal(first.panes.activePane, pane);
+	assert.equal(first.model.activeTab, firstInput);
+	assert.equal(pointerCapture.active, true);
+	assert.equal(inputFocus.target, focused);
+	const before = firstInput.view.scroll;
+	pointerCapture.dispatch({ ...move, viewportY: bounds.top + 40 }, false, 2, first.captureScope);
+	assert.ok(firstInput.view.scroll > before);
+	pointerCapture.dispatch({ ...move, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 3, first.captureScope);
+	assert.equal(pointerCapture.active, false);
+	assert.equal(secondInput.view.scroll, 0);
 });

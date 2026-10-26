@@ -1,3 +1,6 @@
+import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
+import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavior_lens/source_correspondence';
+import { installBehaviorLensDocument } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { captureBehaviorLensView, restoreBehaviorLensView, type BehaviorLensViewSnapshot } from '../../ide/workbench/contrib/behavior_lens/view_snapshot';
 import assert from 'node:assert/strict';
@@ -43,7 +46,7 @@ test('explicit bookmarks follow a new parent, chosen registration and shared des
 		const f = fixture(t, weighted, edge);
 		f.transfer(); f.refresh();
 		const transferred = f.model.buffer.getText();
-		for (const action of [() => {}, () => f.model.undo(), () => f.model.redo(), () => f.model.undo(), () => f.model.redo()]) {
+		for (const action of [() => {}, () => f.model.undo(f.view.editSource), () => f.model.redo(f.view.editSource), () => f.model.undo(f.view.editSource), () => f.model.redo(f.view.editSource)]) {
 			action(); f.refresh();
 			assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 			const selected = f.viewport.selection!;
@@ -68,14 +71,14 @@ test('hidden edits map a pending bookmark, while history values remain immutable
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- prefix 🐉\r\n' }]);
 	assert.equal(f.view.document, document, 'hidden content events never parse or publish a graph');
 	assert.notEqual(JSON.stringify(f.view.selectionBookmark), expected);
-	f.model.undo();
+	f.model.undo(f.view.editSource);
 	f.refresh();
 	assert.ok(f.viewport.selection?.kind === 'node');
 	assert.equal(f.viewport.selection.parent!.member!.index, 2);
-	const record = f.model.undo()!;
+	const record = f.model.undo(f.view.editSource)!;
 	assert.ok(record.afterEditState!.is(behaviorSourceEditState));
 	assert.equal(JSON.stringify(record.afterEditState.value), expected, 'mapping did not mutate a history bookmark');
-	f.model.redo(); f.model.undo(); f.refresh();
+	f.model.redo(f.view.editSource); f.model.undo(f.view.editSource); f.refresh();
 	assert.ok(f.viewport.selection?.kind === 'node');
 	assert.equal(f.viewport.selection.parent!.member!.index, 0);
 	assert.equal(f.model.buffer.getText(), f.source);
@@ -88,9 +91,9 @@ test('replacing selected source still clears selection; identical text is not a 
 	f.model.pushEditOperations([{ offset: 0, deleteLength: source.length, text: source }]);
 	f.refresh();
 	assert.equal(f.view.selection, null);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.view.selection, null, 'ordinary replacement Undo carries no explicit selection');
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.view.definitionRowKey, null);
 	assert.equal(f.viewport.selection, null, 'an edit bookmark cannot rebind a deleted definition input');
 });
@@ -99,7 +102,7 @@ test('a document edit bookmark cannot retarget another definition view', t => {
 	const f = fixture(t);
 	f.transfer(); f.refresh();
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
 	assert.equal(f.view.selection!.rowKey, f.view.definitionRowKey);
 });
@@ -114,9 +117,9 @@ test('cross-registration transfer records retain their destination without retar
 	assert.ok(target.role === 'children');
 	transferBehaviorFixtureSelection(f.model, f.view, f.member, target); f.refresh();
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
-	f.model.redo(); f.refresh();
+	f.model.redo(f.view.editSource); f.refresh();
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
 });
 
@@ -129,7 +132,7 @@ test('a bookmark can retain a selected descendant whose initializer bytes were n
 	assert.ok(f.viewport.selection?.kind === 'node');
 	assert.equal(readLuaSourceRange(f.model.buffer, f.viewport.selection.source.occurrenceRange), 'leaf');
 	assert.equal(f.viewport.selection.parent!.parent!.member!.index, 2);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.viewport.selection.parent!.parent!.member!.index, 0);
 });
 
@@ -140,14 +143,13 @@ test('unannotated transfers keep the strict parent-correspondence rule rather th
 		f.target.source.table, f.target.source.table.fields.length);
 	f.model.pushEditOperations(transfer.edits); f.refresh();
 	assert.equal(f.view.selection, null);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.view.selection, null);
 });
 
 test('navigation restores a mapped occurrence and pan after choosing another registration, not the old graph object', t => {
 	const f = fixture(t);
-	const input = new BehaviorLensInput(f.model, f.view, () => assert.fail('BT layout must not start an FSM worker'));
-	t.after(() => input.dispose());
+	const input = f.input;
 	f.viewport.scrollX = 37; f.viewport.scrollY = 19;
 	const selected = new BehaviorLensNavigationSelection(input);
 	t.after(() => selected.dispose());
@@ -172,8 +174,7 @@ test('navigation restores a mapped occurrence and pan after choosing another reg
 
 test('a removed history occurrence does not select a surviving namesake, even after Undo reintroduces its bytes', t => {
 	const f = fixture(t);
-	const input = new BehaviorLensInput(f.model, f.view, () => assert.fail('BT layout must not start an FSM worker'));
-	t.after(() => input.dispose());
+	const input = f.input;
 	const selected = new BehaviorLensNavigationSelection(input);
 	t.after(() => selected.dispose());
 	f.model.pushEditOperations(createBehaviorTreeChildRemovalEdits(f.model.buffer, f.member));
@@ -181,7 +182,7 @@ test('a removed history occurrence does not select a surviving namesake, even af
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.equal(f.view.selection, null);
 	assert.equal(f.viewport.selection, null);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(f.view.selection, null, 'only an edit-associated Undo selection can explicitly restore a deleted occurrence');
 	assert.equal(f.viewport.selection, null);
@@ -195,20 +196,18 @@ test('a removed history occurrence does not select a surviving namesake, even af
 
 test('session snapshots retain hidden transfer bookmarks without publishing a graph or persisting live objects', t => {
 	const f = fixture(t);
-	const input = new BehaviorLensInput(f.model, f.view, () => assert.fail('BT never starts an FSM worker'));
-	t.after(() => input.dispose());
+	const input = f.input;
 	const document = f.view.document;
 	f.transfer();
 	const transferred = f.model.buffer.getText();
 	const snapshot = captureBehaviorLensView(input);
 	const serialized = JSON.stringify(snapshot);
 	assert.equal(f.view.document, document, 'capture never reparses a hidden input');
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(JSON.stringify(snapshot), serialized, 'live Undo cannot mutate the persisted value');
 
 	const restored = createBehaviorTreeEditFixture(t, transferred, 0);
-	const reopened = new BehaviorLensInput(restored.model, restored.view, () => assert.fail('BT never starts an FSM worker'));
-	t.after(() => reopened.dispose());
+	const reopened = restored.input;
 	const value: BehaviorLensViewSnapshot = JSON.parse(serialized);
 	restoreBehaviorLensView(reopened, value); prepareBehaviorLensLayout(restored.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(restored.view.definitionRowKey, restored.view.document.definitions[1].rowKey);
@@ -217,4 +216,42 @@ test('session snapshots retain hidden transfer bookmarks without publishing a gr
 	assert.equal(readLuaSourceRange(restored.model.buffer, selected.source.occurrenceRange), 'moved');
 	assert.equal(selected.member!.index, 1);
 	assert.equal(selected.parent!.member!.index, 2, 'second use of destination initializer, not the previous parent');
+});
+
+test('two inputs on the same behavior registration consume only their own explicit selection state', t => {
+	const f = fixture(t);
+	const otherView = createBehaviorLensViewState(f.view.document, f.model, 'graph', assert.fail);
+	selectBehaviorLensDefinition(otherView, otherView.document.definitions[1].rowKey);
+	const sibling = new BehaviorLensInput(f.model, otherView, () => assert.fail('focused source correspondence does not need a worker'));
+	const bounds = { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom };
+	prepareBehaviorLensLayout(otherView, bounds);
+	assert.ok(otherView.presentation.kind === 'graph');
+	const graph = otherView.presentation;
+	graph.viewport.selection = graph.viewport.model.nodes[0].children[0].children[0].children[0];
+	acceptBehaviorGraphSelection(otherView, graph);
+	const unbind = f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(otherView, f.model.resource, event));
+	t.after(() => { unbind(); sibling.dispose(); });
+	const refresh = () => {
+		f.refresh();
+		installBehaviorLensDocument(otherView, f.view.document);
+		prepareBehaviorLensLayout(otherView, bounds);
+	};
+	const checkSibling = () => {
+		assert.equal(otherView.selectionBookmark, undefined);
+		assert.equal(otherView.definitionRowKey, otherView.document.definitions[1].rowKey);
+		const selected = graph.viewport.selection;
+		assert.ok(selected?.kind === 'node');
+		assert.equal(readLuaSourceRange(f.model.buffer, selected.source.occurrenceRange), 'leaf');
+		assert.equal(selected.parent!.member!.index, 0);
+	};
+	f.transfer();
+	assert.equal(otherView.selectionBookmark, undefined, 'a sibling input does not receive the transfer origin bookmark');
+	refresh(); checkSibling();
+	f.model.undo(f.view.editSource);
+	assert.equal(otherView.selectionBookmark, undefined);
+	refresh(); checkSibling();
+	assert.equal(f.model.buffer.getText(), f.source);
+	f.model.redo(f.view.editSource);
+	assert.equal(otherView.selectionBookmark, undefined);
+	refresh(); checkSibling();
 });

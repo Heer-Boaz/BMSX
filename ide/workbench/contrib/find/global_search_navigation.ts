@@ -1,14 +1,14 @@
 import type { GlobalSearchMatch } from '../../../common/models';
 import { openLuaCodeTab } from '../../ui/code_tab/io';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 
 export function openGlobalSearchMatch(
-	editorPanes: EditorPanes,
+	editorGroup: EditorGroupView,
 	sources: RuntimeSourceState,
 	match: GlobalSearchMatch,
 ): void {
-	openLuaCodeTab(editorPanes, sources, match.resource, {
+	openLuaCodeTab(editorGroup, sources, match.resource, {
 		row: match.row,
 		startColumn: match.start,
 		endColumn: match.end,

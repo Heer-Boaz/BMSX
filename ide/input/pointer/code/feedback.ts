@@ -2,7 +2,6 @@ import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { type PointerHoverTarget } from '../hover';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
-import { isCodeTabActive } from '../../../workbench/ui/tabs';
 import { clearGotoHoverHighlight, refreshGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip, updateHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
@@ -29,14 +28,14 @@ export function updateCodeAreaPointerFeedback(
 	activeContext: CodeEditorContext,
 	bounds: CodeAreaBounds
 ): void {
-	if (isCodeTabActive() && (snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && gotoModifierActive) {
+	if ((snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && gotoModifierActive) {
 		const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 		if (hover.injected) clearGotoHoverHighlight();
 		else refreshGotoHoverHighlight(sources, hover.row, hover.column, activeContext);
-	} else if (!gotoModifierActive || !insideCodeArea || ((snapshot.pressedButtons & PointerButton.Primary) !== 0) || pointerSelecting || !isCodeTabActive()) {
+	} else if (!gotoModifierActive || !insideCodeArea || ((snapshot.pressedButtons & PointerButton.Primary) !== 0) || pointerSelecting) {
 		clearGotoHoverHighlight();
 	}
-	if (isCodeTabActive()) {
+	{
 		const altDown = isAltDown(snapshot);
 		if ((snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && altDown) {
 			const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);

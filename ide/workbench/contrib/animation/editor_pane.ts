@@ -5,7 +5,7 @@ import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
-import { inputFocus, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, type InputFocusTarget, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
@@ -70,8 +70,8 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 	private keysAvailable = false;
 	public constructor(private readonly controller: AnimationEditorController,
 		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super();
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		super(scope);
 		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, workArea);
 		this.propertyPointer.attachFeedback(surfaces, paneSurface, workArea, this.detailsFocus);
 		this.keys = new AnimationKeyControl(this.focusTarget, controller, controller.authoring);

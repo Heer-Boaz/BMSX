@@ -1,7 +1,6 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -38,7 +37,7 @@ export async function runAssistantDebugger(kind: StudioRendererKind, canvas: HTM
 	await until(() => ide.debuggerExecution.active !== undefined, 'debugger tools: conversation owns ongoing Continue');
 	const operation = ide.debuggerExecution.active!;
 	await until(() => cycles() > completedAt + runtime.timing.cpuHz / 60, 'debugger tools: Continue actually runs game behind chat');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane required');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
 	await renderer.capture!('stop-dispatched');
 	check(operation.outcome?.reason === 'cancelled' || operation.result?.reason === 'cancelled',

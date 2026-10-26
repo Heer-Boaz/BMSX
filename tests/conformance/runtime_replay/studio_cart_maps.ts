@@ -7,8 +7,6 @@ import { CartMapPane } from '../../../ide/workbench/contrib/cart_maps/editor_pan
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import type { CartMapInput } from '../../../ide/workbench/contrib/cart_maps/editor_input';
 import type { SerializedEditorGroup } from '../../../ide/workbench/services/editor/editor_serialization';
-import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { persistWorkspaceSessionLocally } from '../../../ide/workbench/workspace/storage';
 import { check, type StudioFixture } from './studio_fixture';
 import { typeSourceText } from './studio_scene_authoring';
@@ -26,10 +24,10 @@ async function openMap(test: StudioFixture, name: string): Promise<CartMapInput>
 	await test.press('ControlLeft', 'KeyA');
 	await typeSourceText(test, name);
 	await test.press('Enter');
-	await test.until(() => getActiveTab().kind === 'code_editor' && getActiveTab().resource?.path.endsWith(`${name}.yaml`) === true,
+	await test.until(() => test.ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && test.ide.editor.editorGroup.model.activeTab.resource?.path.endsWith(`${name}.yaml`) === true,
 		'map: file picker opens the canonical YAML source');
 	await test.runPaletteCommand('Map Editor: Open');
-	const input = getActiveTab();
+	const input = test.ide.editor.editorGroup.model.activeTab;
 	if (input.kind !== 'cart_map') throw new Error('Map command must open the source-backed map pane');
 	return input;
 }
@@ -54,10 +52,10 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 	// boundary as the product, not an explicit serialize/deserialize test shortcut.
 	window.addEventListener('pagehide', persistWorkspaceSessionLocally);
 	if (restored !== undefined) {
-		const input = getActiveTab();
+		const input = test.ide.editor.editorGroup.model.activeTab;
 		if (input.kind !== 'cart_map') throw new Error('map: fresh browser session restores the active map editor');
 		const model = input.workingCopy;
-		check(JSON.stringify(editorTabGroup.serialize(test.ide.editor.editorInputSerializers)) === JSON.stringify(restored.group),
+		check(JSON.stringify(test.ide.editor.editorGroup.model.serialize(test.ide.editor.editorInputSerializers)) === JSON.stringify(restored.group),
 			'map: fresh reload restores ordered views, active selection and map view state');
 		check(model.resource.path === restored.sourcePath && model.buffer.getText() === restored.source && !model.dirty && !model.canUndo,
 			'map: reload has exact saved YAML and a fresh, clean working copy without invented Undo');
@@ -98,7 +96,7 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 		'map: empty-grid deselection retains its sheet, scroll position and authored bytes');
 	await test.capture?.('deselected');
 	await selectMapItem(test, input, cart);
-	const pane = test.ide.editor.editorPanes.activePane;
+	const pane = test.ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof CartMapPane)) throw new Error('map: actual map pane owns the position inputs');
 	await test.click(input.fieldBounds[0]);
 	await test.press('ControlLeft', 'KeyA');
@@ -138,7 +136,7 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 		'map: shared Undo restores the keyboard move and its member selection');
 	await test.capture?.('moved');
 	await test.runPaletteCommand('Map Editor: Open Source');
-	const code = getActiveTab();
+	const code = test.ide.editor.editorGroup.model.activeTab;
 	check(code.kind === 'code_editor' && code.workingCopy === model, 'map: Source reveals the same resource-owned model');
 	await test.press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'map: source-view Undo shares the visual edit history');
@@ -163,6 +161,6 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 	await test.until(() => !editorFeedbackState.message.visible, 'map: transient save feedback yields to the asset status');
 	await test.capture?.('reopened');
 	const map: CartMapExpectation = { sourcePath: model.resource.path, source: expected,
-		group: editorTabGroup.serialize(test.ide.editor.editorInputSerializers), x: x + 1, y };
+		group: test.ide.editor.editorGroup.model.serialize(test.ide.editor.editorInputSerializers), x: x + 1, y };
 	return { hostFrames: test.observations.hostFrames, map };
 }

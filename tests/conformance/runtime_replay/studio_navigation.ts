@@ -2,7 +2,6 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { getActiveTab, closeTab } from '../../../ide/workbench/ui/tabs';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import type { EditorViewCommandId } from '../../../ide/common/commands';
 import { check, type StudioFixture } from './studio_fixture';
@@ -11,7 +10,7 @@ import { chooseBehavior } from './studio_behavior_picker';
 async function openView(test: StudioFixture, command: EditorViewCommandId): Promise<void> {
 	await test.click(editorChromeState.menuEntryBounds.view);
 	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
-	check(item.enabled, `navigation: ${command} is enabled from ${getActiveTab().kind}`);
+	check(item.enabled, `navigation: ${command} is enabled from ${test.ide.editor.editorGroup.model.activeTab.kind}`);
 	await test.clickContextCommand(item.command!);
 }
 
@@ -50,45 +49,45 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	harness.openLuaSource('cart.lua');
 	await frame();
 	await openView(test, 'sceneEditor');
-	check(getActiveTab().kind === 'code_editor', 'navigation: entry file is not silently installed as an empty scene');
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor', 'navigation: entry file is not silently installed as an empty scene');
 	check(!ide.editor.quickInput.model.items.some(row => row.label === 'cart.lua'),
 		'navigation: the catalog contains scene registrations, not every Lua file');
 	await chooseSource(test, 'scenes/root.lua');
-	const scene = getActiveTab();
+	const scene = ide.editor.editorGroup.model.activeTab;
 	if (scene.kind !== 'scene_editor') throw new Error('navigation: selected scene input missing');
 	check(scene.workingCopy.resource.path === 'scenes/root.lua',
 		'navigation: tool title and exact source identity are separate');
 	const selected = scene.outline.rows[scene.outline.selectionIndex].element.source;
 	await click(scene.actionBar.items[0].bounds);
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === scene.workingCopy
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === scene.workingCopy
 		&& activeCodeEditor.view.cursorRow === selected.start.line - 1,
 		'navigation: Source reveals the selected scene syntax in root.lua, not cart.lua');
 	await openView(test, 'sceneEditor');
 	await openView(test, 'behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('navigation: selected lens input missing');
 	check(lens.view.document.definitions.length > 0,
 		'navigation: the actual title FSM is visible under its definition title');
 	const sourceRange = selectedBehaviorLensSourceRange(lens.view)!;
 	await click(lens.view.presentation.actionBar.items[0].bounds);
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	check(code.kind === 'code_editor' && activeCodeEditor.model === lens.workingCopy
 		&& activeCodeEditor.view.cursorRow === sourceRange.start.line - 1,
 		'navigation: visible Lens Source action reveals the selected FSM source range');
 	await openView(test, 'behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
-	closeTab(ide.editor.editorPanes, code.id);
+	ide.editor.editorGroup.close(code.id);
 	await frame();
-	check(getActiveTab() === lens, 'navigation: lens remains attached when its code tab closes');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'navigation: lens remains attached when its code tab closes');
 	await openView(test, 'scenarioLab');
 	await openView(test, 'sceneEditor');
 	await chooseSource(test, 'scenes/root.lua');
-	check(getActiveTab() === scene, 'navigation: Scenario Lab opens the same retained scene model');
+	check(ide.editor.editorGroup.model.activeTab === scene, 'navigation: Scenario Lab opens the same retained scene model');
 	await openView(test, 'scenarioLab');
 	await openView(test, 'behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
-	check(getActiveTab() === lens, 'navigation: Scenario Lab opens the retained lens without a code-tab requirement');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'navigation: Scenario Lab opens the retained lens without a code-tab requirement');
 	check(cycles() === position, 'navigation: choosing sources does not mutate or run the paused machine');
 	harness.openLuaSource('scenes/root.lua');
 }

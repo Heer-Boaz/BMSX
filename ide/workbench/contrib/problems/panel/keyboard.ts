@@ -2,37 +2,37 @@ import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../../input/keyboard/key_input';
 import type { ProblemsPanelController } from './controller';
 import { handleProblemsPanelNavigationCommand } from './navigation';
-import type { EditorPanes } from '../../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../../services/editor/editor_group';
 
 export function handleProblemsPanelKeyboardInput(
 	playerInput: KeyInputEvent,
 	controller: ProblemsPanelController,
-	editorPanes: EditorPanes,
+	editorGroup: EditorGroupView,
 ): void {
 	if (isKeyDown('ArrowUp', playerInput)) {
 		consumeIdeKey('ArrowUp', playerInput);
-		handleProblemsPanelNavigationCommand(controller, editorPanes, 'up');
+		handleProblemsPanelNavigationCommand(controller, editorGroup, 'up');
 	} else if (isKeyDown('ArrowDown', playerInput)) {
 		consumeIdeKey('ArrowDown', playerInput);
-		handleProblemsPanelNavigationCommand(controller, editorPanes, 'down');
+		handleProblemsPanelNavigationCommand(controller, editorGroup, 'down');
 	} else if (isKeyDown('PageUp', playerInput)) {
 		consumeIdeKey('PageUp', playerInput);
-		handleProblemsPanelNavigationCommand(controller, editorPanes, 'page-up');
+		handleProblemsPanelNavigationCommand(controller, editorGroup, 'page-up');
 	} else if (isKeyDown('PageDown', playerInput)) {
 		consumeIdeKey('PageDown', playerInput);
-		handleProblemsPanelNavigationCommand(controller, editorPanes, 'page-down');
+		handleProblemsPanelNavigationCommand(controller, editorGroup, 'page-down');
 	} else if (isKeyDown('Home', playerInput)) {
 		consumeIdeKey('Home', playerInput);
-		handleProblemsPanelNavigationCommand(controller, editorPanes, 'home');
+		handleProblemsPanelNavigationCommand(controller, editorGroup, 'home');
 	} else if (isKeyDown('End', playerInput)) {
 		consumeIdeKey('End', playerInput);
-		handleProblemsPanelNavigationCommand(controller, editorPanes, 'end');
+		handleProblemsPanelNavigationCommand(controller, editorGroup, 'end');
 	} else if (isKeyJustPressed('Enter', playerInput)) {
 		consumeIdeKey('Enter', playerInput);
-		handleProblemsPanelNavigationCommand(controller, editorPanes, 'activate');
+		handleProblemsPanelNavigationCommand(controller, editorGroup, 'activate');
 	} else if (isKeyJustPressed('NumpadEnter', playerInput)) {
 		consumeIdeKey('NumpadEnter', playerInput);
-		handleProblemsPanelNavigationCommand(controller, editorPanes, 'activate');
+		handleProblemsPanelNavigationCommand(controller, editorGroup, 'activate');
 	}
 	if (isKeyDown('ArrowLeft', playerInput)) {
 		consumeIdeKey('ArrowLeft', playerInput);

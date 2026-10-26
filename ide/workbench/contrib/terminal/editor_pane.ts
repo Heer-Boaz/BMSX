@@ -1,3 +1,4 @@
+import type { InputFocusScope } from '../../../input/focus';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
@@ -16,8 +17,8 @@ import type { TerminalInput } from './editor_input';
 /** The physical BIOS terminal, not a host REPL or a second line editor. */
 export class TerminalPane extends WorkbenchViewEditorPane<TerminalInput> {
 	private readonly gameInput: GameInputControl;
-	public constructor(private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter) {
-		super(); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
+	public constructor(private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter, scope: InputFocusScope) {
+		super(scope); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 	}
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	public override focus(): void {

@@ -43,7 +43,6 @@ import {
 	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
 } from './models';
-import { editorTabGroup } from '../ui/tab/group_model';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { loadWorkspaceDirtySources } from '../../workspace/source_recovery_store';
 
@@ -254,8 +253,8 @@ export async function restoreWorkspaceStorageSession(
 	editor = workspaceEditor;
 	sources = runtimeSources;
 	debuggerState = runtimeDebuggerState;
-	unsubscribeEditorGroup = editorTabGroup.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
-	unsubscribeEditorPane = editor.editorPanes.onDidClearEditor(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
+	unsubscribeEditorGroup = editor.editorGroup.model.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
+	unsubscribeEditorPane = editor.editorGroup.panes.onDidClearEditor(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
 	unsubscribeModelSaved = editorTextModelService.onDidSaveModel(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles));
 	if (restorePayload !== payload) {
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);

@@ -1,12 +1,12 @@
 import type { AssistantModel, AssistantModelSelection } from '../../../../hosts/common/assistant_protocol';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
-import { getActiveTab } from '../../ui/tabs';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { AssistantInput } from './editor_input';
 
 /** Transient native-catalog choices; no permanent toolbar or model-generated suggestions. */
 export class AssistantModelPicker {
-	public constructor(private readonly quickInput: QuickInputController) {}
+	public constructor(private readonly quickInput: QuickInputController, private readonly group: EditorGroupView) {}
 	public async open(input: AssistantInput, kind: 'model' | 'effort' | 'fast'): Promise<void> {
 		if (input.commandPending) return;
 		const conversation = input.conversation;
@@ -14,7 +14,7 @@ export class AssistantModelPicker {
 		input.commandPending = true;
 		try {
 			const { models } = await conversation.listModels();
-			if (input.lifetime.signal.aborted || getActiveTab() !== input || !conversation.canBrowse) return;
+			if (input.lifetime.signal.aborted || this.group.model.activeTab !== input || !conversation.canBrowse) return;
 			if (models.length === 0) { conversation.notice('No models are available for this account.'); return; }
 			const current = models.find(model => model.id === conversation.configuration?.model);
 			if (kind === 'model') {
@@ -57,7 +57,7 @@ export class AssistantModelPicker {
 	}
 
 	private apply(input: AssistantInput, selection: AssistantModelSelection): void {
-		if (input.lifetime.signal.aborted || getActiveTab() !== input) return;
+		if (input.lifetime.signal.aborted || this.group.model.activeTab !== input) return;
 		void input.conversation.configure(selection).catch(error => {
 			if (!input.lifetime.signal.aborted) input.conversation.notice(`Model settings not changed: ${String(error)}`);
 		});

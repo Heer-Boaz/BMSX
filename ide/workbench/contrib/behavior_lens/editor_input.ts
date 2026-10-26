@@ -1,3 +1,5 @@
+import { editorTextModelService } from '../../../editor/model/model_service';
+import { mapBehaviorLensSourceRanges } from './source_correspondence';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { BehaviorLensTabId } from '../../ui/tab/id';
@@ -38,6 +40,12 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 		this.graphLayout = this.disposables.add(new AsyncGraphLayout(createEngine));
 		this.setWorkingCopies(new Set([workingCopy]));
 		this.updateDefinition();
+		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
+			if (model.mode !== 'lua' || (model.resource.domain !== view.resource.domain && model.resource.domain !== -1)) return;
+			view.source.invalidate();
+			if (view.source.models.get(model.resource.path) === model) mapBehaviorLensSourceRanges(view, model.resource, event);
+			this.invalidatePresentation();
+		}) });
 	}
 
 	public override dispose(): void {

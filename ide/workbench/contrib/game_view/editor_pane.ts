@@ -1,3 +1,4 @@
+import type { InputFocusScope } from '../../../input/focus';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
@@ -24,8 +25,8 @@ export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 	private shownHistory = false;
 	private frameLabel = '';
 	public constructor(private readonly commands: IdeCommandController,
-		private readonly contextMenu: ContextMenuController, private readonly runtime: Runtime, recipient: InputRecipient, presenter: VideoPresenter) {
-		super();
+		private readonly contextMenu: ContextMenuController, private readonly runtime: Runtime, recipient: InputRecipient, presenter: VideoPresenter, scope: InputFocusScope) {
+		super(scope);
 		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { commands.transport.togglePlayback(); } });
 		this.focusTarget.next = this.gameInput.focusTarget;

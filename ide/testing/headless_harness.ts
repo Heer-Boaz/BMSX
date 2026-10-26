@@ -22,7 +22,6 @@ import { updateHoverTooltip } from '../editor/contrib/hover/controller';
 import { hoverState, type CodeHoverTooltip } from '../editor/contrib/hover/state';
 import type { CodeTabContext } from '../workbench/ui/code_tab/model';
 import type { EditorInput } from '../workbench/ui/tab/model';
-import { getActiveTab, getTabs } from '../workbench/ui/tabs';
 import type {
 	RecordedLogMessage,
 	RecordingLogOutput,
@@ -91,17 +90,17 @@ export function createHeadlessIdeHarness(
 		getLogMessage: index => logOutput.messages[index],
 		getFaultStack: () => ide.fault.lastLuaCallStack,
 		getSignatureHelp: () => ide.editor.completion.hint,
-		getActiveWorkbenchTab: () => getActiveTab(),
-		getActiveCodeContext: () => getActiveCodeTabContext(),
+		getActiveWorkbenchTab: () => ide.editor.editorGroup.model.activeTab,
+		getActiveCodeContext: () => getActiveCodeTabContext(ide.editor.editorGroup),
 		getActiveEditorDocument: () => activeCodeEditor,
-		getWorkbenchTabs: () => getTabs(),
+		getWorkbenchTabs: () => ide.editor.editorGroup.model.tabs,
 		getHover: (row, column) => {
 			updateHoverTooltip(
 				ide.sources,
 				ide.guest,
 				ide.fault,
 				runtime,
-				getActiveCodeTabContext(),
+				getActiveCodeTabContext(ide.editor.editorGroup),
 				row,
 				column,
 			);
@@ -135,7 +134,7 @@ export function createHeadlessIdeHarness(
 				ide.sources.activeCartridgeSlot,
 				path,
 			)!;
-			openLuaCodeTab(ide.editor.editorPanes, ide.sources, resource);
+			openLuaCodeTab(ide.editor.editorGroup, ide.sources, resource);
 		},
 		replaceActiveCodeSource: (source: string) => {
 			const buffer = activeCodeEditor.model.buffer;

@@ -25,7 +25,7 @@ test('inactive restored map retains its pending viewport across another session 
 	projectCartMap(input);
 	selectCartMapRow(input, 1);
 	input.section = 'map';
-	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, 10, 0)]]));
+	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, 10, 0, input.editSource)]]));
 	projectCartMap(input);
 	const bounds = { left: 0, top: 0, right: 320, bottom: 200 };
 	layoutCartMap(input, bounds, true);
@@ -124,7 +124,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const section of ['outline'
 		assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.dirty, false); assert.equal(model.canUndo, false);
 	});
 
-test('map capture projects background history selection before saving collapsed rooms', async t => {
+test('Source undo preserves a background map view selection and collapsed room', async t => {
 	const sources = createScenarioTestSourceState([]);
 	const resource = { location: { kind: 'workspace' as const, path: 'res/data/castle_map.yaml' }, domain: 0, path: 'res/data/castle_map.yaml', source: { resid: 'map', type: 'data' } } as const;
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
@@ -137,13 +137,13 @@ test('map capture projects background history selection before saving collapsed 
 	t.after(() => { input.dispose(); editorTextModelService.clear(); });
 	projectCartMap(input);
 	selectCartMapRow(input, 1);
-	const selection = { ...input.selectionRange };
-	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, 2, 0)]]));
+	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, 2, 0, input.editSource)]]));
 	projectCartMap(input);
 	setWorkbenchTreeCollapsed(input.tree, 0, true);
 	selectCartMapRow(input, input.tree.rows.indexOf(input.tree.roots[1]));
-	// Undo in the source tab updates the tracked selection before this hidden
-	// map's retained presentation has had another pane update.
+	const selection = { ...input.selectionRange };
+	// Source Undo maps this hidden view's current room; it does not consume the
+	// map editor's explicit object-selection history.
 	model.undo();
 	assert.deepEqual(input.selectionRange, selection);
 	assert.equal(input.activeSheet, '7');
@@ -152,9 +152,9 @@ test('map capture projects background history selection before saving collapsed 
 	const restored = await serializer.deserialize(serializer.serialize(input));
 	t.after(() => restored.dispose());
 	assert.deepEqual(restored.selectionRange, selection);
-	assert.equal(restored.activeSheet, '2');
-	assert.equal(restored.selected!.x, 1);
-	assert.equal(restored.tree.roots[0].collapsed, false);
+	assert.equal(restored.activeSheet, '7');
+	assert.equal(restored.selected, undefined);
+	assert.equal(restored.tree.roots[0].collapsed, true);
 	assert.equal(model.buffer.getText(), source);
 	assert.equal(model.canRedo, true);
 });

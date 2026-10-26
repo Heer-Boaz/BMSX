@@ -1,4 +1,3 @@
-import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { inputFocus } from '../../../ide/input/focus';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
 import { check, type StudioFixture } from './studio_fixture';
@@ -14,7 +13,7 @@ export async function runStudioTerminal(test: StudioFixture) {
 	await test.runMenuCommand('pause');
 	const media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: BIOS Terminal');
-	const terminal = editorTabGroup.activeTab;
+	const terminal = ide.editor.editorGroup.model.activeTab;
 	if (terminal.kind !== 'terminal') throw new Error('registered view opens the BIOS terminal');
 	await until(() => (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_RESUMABLE) !== 0,
 		'BIOS terminal: physical supervisor entry');
@@ -67,7 +66,7 @@ export async function runStudioTerminal(test: StudioFixture) {
 		&& !ide.debugger.plans.controlActive && test.execution.userPaused,
 		'CONT leaves the physical supervisor without clearing independent host pause (the caller may still be an IRQ)');
 	const held = cycles();
-	ide.editor.editorPanes.activePane!.focus();
+	ide.editor.editorGroup.panes.activePane!.focus();
 	await test.click({ left: terminal.layout.left + 1, right: terminal.layout.left + 2,
 		top: terminal.layout.top + 1, bottom: terminal.layout.top + 2 });
 	await test.clickTab(terminal.id);

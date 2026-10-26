@@ -1,3 +1,4 @@
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -13,7 +14,6 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext, path: string, canonicalPath: string, generated = false) {
@@ -23,11 +23,12 @@ function fixture(t: TestContext, path: string, canonicalPath: string, generated 
 	const source = { ...createScenarioTestSourceRecord(path, 1), normalized_source_path: canonicalPath, generated };
 	const sources = createScenarioTestSourceState([source]);
 	const resource = sources.resources.find(resource => resource.domain === 0 && resource.path === path)!;
-	editorTabGroup.initialize(resolveLuaCodeEditorInput(sources, resource));
+	const group = createTestEditorGroup();
+	group.model.initialize(resolveLuaCodeEditorInput(sources, resource));
 	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
-	const editor = { quickInput: picker } as CartEditor;
+	const editor = { quickInput: picker, editorGroup: group } as CartEditor;
 	t.after(() => {
-		picker.dispose(); menu.dispose(); editorTabGroup.clear();
+		picker.dispose(); menu.dispose(); group.dispose();
 		editorTextModelService.clear(); inputFocus.setTarget(null);
 	});
 	return { clock, sources, editor, picker, resource };
@@ -39,7 +40,7 @@ test('New File uses a project resource authoring directory, including a project-
 	assert.equal(f.picker.inputBox, true);
 	// This is the actual proposed filesystem directory, not the prompt wording.
 	assert.equal(f.picker.field.text, 'cartlib/');
-	assert.equal(editorTabGroup.activeTab!.resource, f.resource);
+	assert.equal(f.editor.editorGroup.model.activeTab!.resource, f.resource);
 });
 
 for (const [path, generated] of [['cartlib/shared.lua', false], ['testlib/context.lua', false], ['bmsx/assets.lua', true]] as const) {
@@ -52,6 +53,6 @@ for (const [path, generated] of [['cartlib/shared.lua', false], ['testlib/contex
 		f.picker.accept();
 		assert.equal(f.picker.inputBox, true);
 		assert.equal(f.picker.field.text, '', 'the explicitly chosen project cannot inherit an external or generated directory');
-		assert.equal(editorTabGroup.activeTab!.resource, f.resource);
+		assert.equal(f.editor.editorGroup.model.activeTab!.resource, f.resource);
 	});
 }

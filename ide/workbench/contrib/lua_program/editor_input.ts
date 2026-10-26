@@ -1,10 +1,11 @@
+import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
 import { createWorkbenchPropertyTree } from '../../ui/property_tree';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import type { WorkbenchMenuItem } from '../../ui/menu/registry';
 import type { LuaProgramKind, LuaProgramOccurrence, LuaProgramProperty } from './source';
-import type { TrackedTextRange } from '../../../editor/text/text_change';
+import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { sourceTabDescription } from '../../ui/tab/titles';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
@@ -38,6 +39,10 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 		this.sourceModels.set(workingCopy.resource.path, workingCopy);
 		this.setWorkingCopies(new Set(this.sourceModels.values()));
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
+		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
+			if (this.sourceModels.get(model.resource.path) === model) this.invalidateProjection();
+			if (this.workingCopy === model) mapTrackedTextRange(this.occurrenceRange, event.changes);
+		}) });
 		this.disposables.add({ dispose: guest.onDidInvalidate(reason => {
 			this.liveDirty = true;
 			if (reason !== 'execution') {

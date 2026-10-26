@@ -31,7 +31,6 @@ import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegi
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
-import { getActiveTab, getTabs, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
@@ -93,7 +92,7 @@ function workbenchFixture(t: TestContext) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	openEditorTab(editor.editorPanes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
+	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	editorRuntimeState.active = true; editor.update(0);
 	const cache = new ImagePreviewCache(async () => pixels);
 	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.paneSurface, editor.commands);
@@ -106,9 +105,9 @@ function workbenchFixture(t: TestContext) {
 }
 
 test('the isolated lightbox admits only explicit tab commands, closing and returning focus before their actual workbench runner', t => {
-	const { editor, preview } = workbenchFixture(t), sourceTab = getActiveTab()!;
-	openEditorTab(editor.editorPanes, new GameViewInput()); openEditorTab(editor.editorPanes, new HostErrorInput('Diagnostic'));
-	setActiveTab(editor.editorPanes, sourceTab.id); editor.update(0);
+	const { editor, preview } = workbenchFixture(t), sourceTab = editor.editorGroup.model.activeTab!;
+	editor.editorGroup.openEditor(new GameViewInput()); editor.editorGroup.openEditor(new HostErrorInput('Diagnostic'));
+	editor.editorGroup.activate(sourceTab.id); editor.update(0);
 	const order: string[] = [], executed: EditorCommandId[] = [];
 	let origin = inputFocus.target!;
 	const execute = editor.commands.execute;
@@ -126,7 +125,7 @@ test('the isolated lightbox admits only explicit tab commands, closing and retur
 		['Tab', KeyModifier.ctrl | KeyModifier.shift, 'tabs.previous'],
 	] as const) {
 		origin = inputFocus.target!;
-		const before = getTabs().slice(), active = getActiveTab();
+		const before = editor.editorGroup.model.tabs.slice(), active = editor.editorGroup.model.activeTab;
 		const unbind = origin.onDidFocus(() => {
 			assert.equal(preview.visible, false, 'return-focus publication cannot expose an open lightbox');
 			order.push('return origin');
@@ -147,17 +146,17 @@ test('the isolated lightbox admits only explicit tab commands, closing and retur
 		editor.dispatchKey(event); unbind(); editor.update(0);
 		assert.equal(event.consumed, true);
 		assert.deepEqual(order, ['return origin', command]);
-		assert.notEqual(getActiveTab(), active, 'the real workbench performs the admitted tab operation');
-		if (command === 'tabs.close') { assert.equal(getTabs().length, before.length - 1); assert.ok(!getTabs().includes(active!)); }
-		else assert.deepEqual(getTabs(), before);
+		assert.notEqual(editor.editorGroup.model.activeTab, active, 'the real workbench performs the admitted tab operation');
+		if (command === 'tabs.close') { assert.equal(editor.editorGroup.model.tabs.length, before.length - 1); assert.ok(!editor.editorGroup.model.tabs.includes(active!)); }
+		else assert.deepEqual(editor.editorGroup.model.tabs, before);
 		order.length = 0;
 	}
 	assert.deepEqual(executed, ['tabs.close', 'tabs.next', 'tabs.previous']);
 });
 
 test('a disabled explicit tab command is consumed without closing or escaping the isolated lightbox', t => {
-	const { editor, preview } = workbenchFixture(t), active = getActiveTab();
-	assert.equal(getTabs().length, 1); assert.equal(editor.commands.isEnabled('tabs.next'), false);
+	const { editor, preview } = workbenchFixture(t), active = editor.editorGroup.model.activeTab;
+	assert.equal(editor.editorGroup.model.tabs.length, 1); assert.equal(editor.commands.isEnabled('tabs.next'), false);
 	const execute = t.mock.method(editor.commands, 'execute');
 	preview.open('image');
 	const modal = inputFocus.target;
@@ -165,7 +164,7 @@ test('a disabled explicit tab command is consumed without closing or escaping th
 	const event = new KeyInputEvent('Tab', KeyModifier.ctrl);
 	editor.dispatchKey(event);
 	assert.equal(event.consumed, true); assert.equal(execute.mock.callCount(), 0);
-	assert.equal(preview.visible, true); assert.ok(inputFocus.target === modal); assert.ok(getActiveTab() === active);
+	assert.equal(preview.visible, true); assert.ok(inputFocus.target === modal); assert.ok(editor.editorGroup.model.activeTab === active);
 });
 
 test('the shared lightbox owns local pointer and wheel admission rather than asking each pane to block', t => {

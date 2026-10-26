@@ -1,5 +1,4 @@
 import { FSM_INITIAL_CART_SOURCE } from '../../helpers/fsm_initial_fixture';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
@@ -39,7 +38,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	check(guest.readStringMember(data, 'retained') === 73, 'initial live: actual mutable FSM data exists');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.initial');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('initial live: FSM graph required');
 	await lens.graphLayout.settled; await frame();
 	const graph = lens.view.presentation;

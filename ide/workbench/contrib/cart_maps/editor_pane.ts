@@ -9,7 +9,7 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import { INTEGER_INPUT_FORMAT, parseIntegerInput } from '../../../editor/ui/inline/integer_input';
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -69,8 +69,8 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 	};
 	private readonly beforeFieldHide = (axis: number): void => { this.controls[axis].field.focusTarget.cancelInput(); };
 	public constructor(controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super();
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		super(scope);
 		this.tooltip.attach(surfaces, paneSurface, workArea);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'map';
 		this.gridFocus.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline';
@@ -88,7 +88,7 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 			const historyCommand = {
 				isEnabled: () => !this.input.workingCopy.readOnly && (direction === 'undo' ? this.input.workingCopy.canUndo : this.input.workingCopy.canRedo),
 				run: () => {
-					if (!executeTextHistoryCommand(this.input.workingCopy, direction)) return;
+					if (!executeTextHistoryCommand(this.input.workingCopy, direction, this.input.editSource)) return;
 					this.update();
 					if (this.input.layout.mode !== 'map' && this.input.tree.selectionIndex >= 0) revealWorkbenchListSelection(this.input.tree);
 					if (this.input.selected !== undefined) this.input.grid.reveal(this.input.selected);
@@ -105,7 +105,7 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 				if ('error' in result) return result;
 				const item = this.input.selected!;
 				const x = axis === 0 ? result.value : item.x, y = axis === 1 ? result.value : item.y;
-				try { return { value: { coordinate: result.value, edit: createCartMapMove(item, x, y) } }; }
+				try { return { value: { coordinate: result.value, edit: createCartMapMove(item, x, y, this.input.editSource) } }; }
 				catch (error) { return { error: String(error) }; }
 			},
 		}, value => this.applyMove(value.edit!), () => this.update()));
@@ -233,7 +233,7 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 			consumeIdeKey(code, input); projectCartMap(this.input);
 			const item = this.input.selected;
 			if (item !== undefined && !this.input.workingCopy.readOnly) {
-				try { this.applyMove(createCartMapMove(item, item.x + dx, item.y + dy)); }
+				try { this.applyMove(createCartMapMove(item, item.x + dx, item.y + dy, this.input.editSource)); }
 				catch (error) { showEditorMessage(String(error), 'warning', 4); }
 			} else {
 				this.input.grid.scrollBy(dx, dy);

@@ -1,25 +1,24 @@
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { RenameController } from './controller';
 import type { EditorSearchController } from '../find/search';
-import { getActiveCodeTabContext, isEditableCodeTab } from '../../../ui/code_tab/contexts';
 import { closeLineJump } from '../find/line_jump';
 import { notifyReadOnlyEdit } from '../../../../editor/ui/view/view';
 import { resetBlink } from '../../../../editor/render/caret';
 import { revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
-import type { EditorPanes } from '../../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../../services/editor/editor_group';
 import { getRenameBarBounds } from '../../../common/layout';
 import { inputFocus } from '../../../../input/focus';
 
-export function openRenamePrompt(sources: RuntimeSourceState, rename: RenameController, search: EditorSearchController, reviewPanes?: EditorPanes): void {
-	if (!isEditableCodeTab()) {
+export function openRenamePrompt(sources: RuntimeSourceState, rename: RenameController, search: EditorSearchController, reviewGroup?: EditorGroupView): void {
+	if (activeCodeEditor.model === null || activeCodeEditor.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
 	search.closeSearch(false);
 	closeLineJump(false);
-	const context = getActiveCodeTabContext();
+	const context = activeCodeEditor;
 	switch (context.model.mode) {
 		case 'lua':
 			break;
@@ -32,7 +31,7 @@ export function openRenamePrompt(sources: RuntimeSourceState, rename: RenameCont
 		cursorRow: activeCodeEditor.view.cursorRow,
 		cursorColumn: activeCodeEditor.view.cursorColumn,
 		identity: context.model.resource,
-	}, reviewPanes);
+	}, reviewGroup);
 	if (started) {
 		const bounds = getRenameBarBounds();
 		if (bounds === null) { rename.cancel(); return; }

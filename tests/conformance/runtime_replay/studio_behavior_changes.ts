@@ -26,7 +26,7 @@ export async function testBehaviorValueChanges(test: StudioFixture) {
 			for (let n = 0; n < index; n++) await press('ArrowDown');
 			await press('Enter');
 		}
-		const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+		const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 		check(inspector.visible && inspector.model.rows.every(row => !row.element.valueChanged), 'opening a live instance starts neutral');
 		const index = inspector.model.rows.findIndex(row => {
 			const identity = (row.element as RuntimeInspectionProperty).identity;

@@ -10,7 +10,7 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	const original = model.buffer.getText();
 	const scene = await openSceneEditor(test);
 	await selectMember(test, scene, 2);
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('move: actual Scene Editor pane required');
 	const x = pane.controls[0];
 	const up = scene.actionBar.items.find(item => item.command === 'sceneEditor.moveMemberUp')!;

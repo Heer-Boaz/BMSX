@@ -3,7 +3,6 @@ import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../../helpers/behavior_source_fixture';
 import { check, type StudioFixture } from './studio_fixture';
@@ -14,7 +13,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	if (view.presentation.kind !== 'graph') throw new Error('BT controls require the concrete graph');
 	const graph = view.presentation;
 	const viewport = graph.viewport;
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	check(editorViewState.font.variant === 'tiny' && editorViewState.viewportWidth === 384 && editorViewState.viewportHeight === 288,
 		'BT controls: actual constrained tiny-font viewport');
 	await press('Home');
@@ -23,14 +22,14 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	if (sequence?.kind !== 'node') throw new Error('BT controls: root node not selected');
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	const picker = ide.editor.quickInput;
-	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	const detail = sequence.details.find(item => item.label === 'num_loops')!;
 	const detailIndex = inspector.model.rows.findIndex(row => row.element.source?.range === detail.range);
 	check(inspector.visible && !picker.visible && detailIndex >= 0,
 		'BT controls: full inspector includes decorator policy without a source-choice popup');
 	for (let index = 0; index < detailIndex; index += 1) await press('ArrowDown');
 	await press('Enter');
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === detail.range.start.line - 1
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === detail.range.start.line - 1
 		&& activeCodeEditor.view.cursorColumn === detail.range.start.column - 1, 'BT controls: detail activation opens its exact Lua value');
 	await test.clickTab(lens.id);
 	await press('ArrowDown');

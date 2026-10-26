@@ -191,6 +191,9 @@ export class InputFocusService {
 		return scope.commands;
 	}
 
+	/** Focus admission for delayed UI operations is tied to this actual control transition. */
+	public get revision(): number { return this.focusRevision; }
+
 	public get target(): InputFocusTarget | null {
 		return this.targetValue;
 	}

@@ -2,14 +2,12 @@ import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import { GteCommandSnapshot, type RuntimeGteHistory } from '../../../runtime/gte_history';
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import type { PropertyInspectorViewState } from '../../ui/property_inspector/model';
 import { WorkbenchWindowModel } from '../../ui/window/model';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
 import { GteCommandProjection, type GteDebugPlane, type GteDebugView } from './presentation';
 import type { GteDiagramAnchor } from './diagram';
 
@@ -87,7 +85,7 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 	}
 }
 
-export function openGteDebugger(panes: EditorPanes, history: RuntimeGteHistory): void {
-	const existing = editorTabGroup.findById('gte-debugger');
-	openEditorTab(panes, existing ?? new GteDebuggerInput(history), { pinned: true });
+export function openGteDebugger(group: EditorGroupView, history: RuntimeGteHistory): void {
+	const existing = group.model.findById('gte-debugger');
+	group.openEditor(existing ?? new GteDebuggerInput(history), { pinned: true });
 }

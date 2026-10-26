@@ -12,7 +12,7 @@ import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { consumeIdeKey, isKeyDown, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -74,8 +74,8 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
 		private readonly contextMenu: ContextMenuController, sources: RuntimeSourceState,
 		private readonly sourceNavigation: EditorNavigationController, private readonly surfaces: WorkbenchSurfaceService,
-		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super();
+		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		super(scope);
 		this.source = new CapturedLuaSourceBinding(editorTextModelService, sources);
 		this.unbindSource = this.source.onDidChange(() => this.retireContextMenu());
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);

@@ -19,7 +19,6 @@ import { editorViewState } from './state';
 import {
 	ensureVisualLines,
 } from '../../common/text/layout';
-import { rewrapRuntimeErrorOverlays } from '../../../runtime_error/navigation';
 import type { InlineFieldMetrics } from '../inline/text_field';
 
 function advanceInlineFieldChar(ch: string): number {
@@ -86,7 +85,6 @@ export function refreshViewportLayout(): void {
 	editorViewState.layout.markVisualLinesDirty();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
-	rewrapRuntimeErrorOverlays();
 }
 
 export function codeViewportTop(): number {
@@ -276,7 +274,6 @@ export function setFontVariant(
 	ensureVisualLines();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
-	rewrapRuntimeErrorOverlays();
 	requestSemanticRefresh();
 }
 

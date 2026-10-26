@@ -22,8 +22,7 @@ import { drawContextMenu } from '../../ide/workbench/services/context_menu/rende
 import { MenubarController } from '../../ide/workbench/ui/top_bar/controller';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
-import { layoutTabBar } from '../../ide/workbench/ui/tab/layout';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
@@ -51,6 +50,7 @@ function fixture(t: TestContext) {
 			api.blit_text_inline_with_font(text, x, y, z, color, editorViewState.font.renderFont());
 		},
 	};
+	const group = createTestEditorGroup();
 	const menubar = new MenubarController(popup, commands, context);
 	const surfaces = new WorkbenchSurfaceService();
 	const root = { left: 0, top: 0, right: 384, bottom: 288 };
@@ -59,7 +59,15 @@ function fixture(t: TestContext) {
 	refreshWorkbenchLayout(); menubar.attach(surfaces, owner, getWorkbenchWorkArea());
 	const layout = () => {
 		root.right = editorViewState.viewportWidth; root.bottom = editorViewState.viewportHeight;
-		layoutTopBar(context, menubar.expanded); layoutTabBar(context); refreshWorkbenchLayout(); menubar.update(); popup.update();
+		layoutTopBar(context, menubar.expanded);
+		group.tabStrip.layout({ left: editorChromeState.menuBarHeight === 0 ? editorChromeState.menuButtonBounds.right : 0,
+			top: editorChromeState.menuBarHeight, right: editorViewState.viewportWidth, bottom: 0 }, {
+			font: editorViewState.font.renderFont(), tabBarHeight: editorViewState.tabBarHeight,
+			charAdvance: editorViewState.charAdvance, measureText: context.measureText,
+			measureTextRange: (text, start, end) => editorViewState.font.measure(text.slice(start, end)),
+		});
+		editorViewState.tabBarTotalHeight = group.tabStrip.layoutState.totalHeight;
+		refreshWorkbenchLayout(); menubar.update(); popup.update();
 		if (popup.visible) popup.model.layout(editorViewState.viewportWidth, editorViewState.viewportHeight, context.lineHeight,
 			editorViewState.font.renderFont(), context.measureText);
 	};
@@ -81,9 +89,9 @@ function fixture(t: TestContext) {
 			pressedButtons: 0, justPressedButtons: pressed ? PointerButton.Primary : 0, justReleasedButtons: 0 });
 		layout();
 	};
-	t.after(() => { menubar.dispose(); popup.dispose(); surfaces.dispose(); editorTabGroup.clear(); editorFeedbackState.message.visible = false; });
+	t.after(() => { menubar.dispose(); popup.dispose(); surfaces.dispose(); group.dispose(); editorFeedbackState.message.visible = false; });
 	layout();
-	return { layout, paint, context, popup, menubar, focus, origin, active, disabled, executed, pointer,
+	return { group, layout, paint, context, popup, menubar, focus, origin, active, disabled, executed, pointer,
 		measured: () => measurements, queried: () => queries };
 }
 
@@ -91,21 +99,21 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Menu is one acc
 	const f = fixture(t);
 	configureFontVariant(new VirtualHeadlessClock(), variant, null); f.layout();
 	const menu = editorChromeState.menuButtonBounds, button = { ...menu };
-	assert.equal(editorTabGroup.tabs.length, 0);
+	assert.equal(f.group.model.tabs.length, 0);
 	assert.equal(editorChromeState.menuBarHeight, 0, 'ordinary workbench layout has no permanent menu row');
-	assert.equal(editorChromeState.tabBarBounds.top, 0);
+	assert.equal(f.group.tabStrip.layoutState.bounds.top, 0);
 	assert.ok(menu.right > menu.left && menu.bottom > menu.top);
-	assert.ok(menu.bottom <= editorChromeState.tabBarBounds.bottom);
-	assert.ok(editorChromeState.tabViewportBounds.left >= menu.right, 'even the empty tab viewport excludes the Menu control');
+	assert.ok(menu.bottom <= f.group.tabStrip.layoutState.bounds.bottom);
+	assert.ok(f.group.tabStrip.layoutState.viewportBounds.left >= menu.right, 'even the empty tab viewport excludes the Menu control');
 	const body = getWorkbenchEditorBounds(), before = { ...body };
-	const tab = new GameViewInput(); editorTabGroup.add(tab); editorTabGroup.activate(tab); f.layout();
-	const groupRevision = editorTabGroup.revision, tabIntent = editorTabGroup.activeTab;
+	const tab = new GameViewInput(); f.group.model.add(tab); f.group.model.activate(tab); f.layout();
+	const groupRevision = f.group.model.revision, tabIntent = f.group.model.activeTab;
 	f.menubar.toggleFocus(); f.layout();
 	assert.equal(f.menubar.expanded, true); assert.ok(editorChromeState.menuBarHeight > 0);
-	assert.equal(editorChromeState.tabBarBounds.top, editorChromeState.menuBarHeight);
+	assert.equal(f.group.tabStrip.layoutState.bounds.top, editorChromeState.menuBarHeight);
 	assert.deepEqual(menu, button, 'the Menu target stays at its root-chrome anchor as the real category part expands');
 	assert.equal(getWorkbenchEditorBounds(), body); assert.equal(body.top, before.top + editorChromeState.menuBarHeight);
-	assert.equal(editorTabGroup.activeTab, tabIntent); assert.equal(editorTabGroup.revision, groupRevision);
+	assert.equal(f.group.model.activeTab, tabIntent); assert.equal(f.group.model.revision, groupRevision);
 	f.focus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); f.layout();
 	assert.equal(editorChromeState.menuBarHeight, 0); assert.deepEqual(body, before); assert.equal(f.focus.target, f.origin);
 });

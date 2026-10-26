@@ -22,7 +22,7 @@ export function buildDefinitionQuickPickItems(definitions: readonly LuaDefinitio
 }
 
 export function openDefinitionSearch(sources: RuntimeSourceState, editor: CartEditor, row: number, column: number): boolean {
-	const context = getActiveCodeTabContext();
+	const context = getActiveCodeTabContext(editor.editorGroup);
 	const resource = context.model.resource;
 	const query = queryDefinitionsAt(sources, context, row, column);
 	if (!query) {

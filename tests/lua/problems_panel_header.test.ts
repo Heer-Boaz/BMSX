@@ -16,7 +16,7 @@ import type { PointerSnapshot } from '../../ide/common/models';
 import { PROBLEMS_PANEL_HEADER_PADDING_X } from '../../ide/common/constants';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
-import { createTestEditorPanes } from '../helpers/editor_panes';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', width = 240) {
 	configureFontVariant(new VirtualHeadlessClock(), variant, null);
@@ -30,8 +30,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', width = 240) {
 	};
 	controller.header.attach(surfaces, owner, area, commands);
 	controller.show(); controller.prepareLayout(bounds);
-	const panes = createTestEditorPanes();
-	const unbindKeyboard = controller.focusTarget.bindKeyboard(event => controller.handleKeyboard(event, panes));
+	const group = createTestEditorGroup();
+	const unbindKeyboard = controller.focusTarget.bindKeyboard(event => controller.handleKeyboard(event, group));
 	const overlay = createHostOverlayFixture(384, 288), texts: string[] = [];
 	t.mock.method(api, 'blit_text_inline_with_font', text => { texts.push(text); });
 	const paint = () => {
@@ -47,10 +47,10 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', width = 240) {
 		const event: PointerSnapshot = { valid: true, insideViewport: true, viewportX: button.left + 2, viewportY: button.top + 2,
 			pressedButtons: held, justPressedButtons: down, justReleasedButtons: up };
 		pointerHover.beginDispatch();
-		if (!pointerCapture.dispatch(event, false, 100)) controller.handlePointer(panes, event, down !== 0, up !== 0, bounds);
+		if (!pointerCapture.dispatch(event, false, 100)) controller.handlePointer(group, event, down !== 0, up !== 0, bounds);
 		pointerHover.endDispatch();
 	};
-	t.after(() => { controller.hide(); controller.header.detach(); unbindKeyboard(); pointerHover.clear(); pointerCapture.cancel(); surfaces.dispose(); panes.dispose(); });
+	t.after(() => { controller.hide(); controller.header.detach(); unbindKeyboard(); pointerHover.clear(); pointerCapture.cancel(); surfaces.dispose(); group.dispose(); });
 	return { controller, surfaces, owner, bounds, area, texts, paint, press, pointer };
 }
 

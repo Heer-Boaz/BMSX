@@ -10,8 +10,6 @@ import { inputFocus } from '../../ide/input/focus';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import { openEditorTab } from '../../ide/workbench/ui/tabs';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 
@@ -25,7 +23,7 @@ function fixture(t: TestContext) {
 		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, 0.3,
 		{ width: 640, height: 480 }, sources, new Map(), unused, unused, unused);
 	editorRuntimeState.active = true;
-	t.after(async () => { inputFocus.setTarget(null); await ide.editor.shutdown(); editorTabGroup.clear(); host.audio.dispose(); host.input.dispose(); });
+	t.after(async () => { inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	return { ...host, ide, editor: ide.editor };
 }
 
@@ -33,7 +31,7 @@ function fixture(t: TestContext) {
 // inside the editor's published client, not the physical canvas or Files pane.
 for (const kind of ['game_view', 'terminal'] as const) test(`${kind} fits its image to the current client origin across Files and font changes`, t => {
 	const f = fixture(t), input = kind === 'game_view' ? new GameViewInput() : new TerminalInput();
-	openEditorTab(f.editor.editorPanes, input);
+	f.editor.editorGroup.openEditor(input);
 	for (const font of ['tiny', 'msx'] as const) {
 		configureFontVariant(f.clock, font, null);
 		f.editor.resourcePanel.setFontMetrics(editorViewState.font);

@@ -1,6 +1,5 @@
 import { RuntimeBreakpoints } from '../../ide/runtime/breakpoints';
 import { semanticSnapshot } from './semantic_test_harness';
-import { resolveResourceViewerInput } from '../../ide/workbench/contrib/resources/view_tabs';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import './test_setup';
 import assert from 'node:assert/strict';
@@ -10,13 +9,12 @@ import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { resolveWorkspacePath } from '../../ide/workspace/path';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { createTestRuntimeSourceState, createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
-import { createTestEditorPanes } from '../helpers/editor_panes';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import type { EditorInputSerializers } from '../../ide/workbench/services/editor/editor_serialization';
 import { CodeEditorInputSerializer } from '../../ide/workbench/contrib/code_editor/editor_serializer';
 import { BehaviorLensInputSerializer } from '../../ide/workbench/contrib/behavior_lens/editor_serializer';
@@ -31,7 +29,6 @@ import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model'
 import { SceneEditorController } from '../../ide/workbench/contrib/scene_editor/controller';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
-import { buildResourceViewerContent } from '../../ide/workbench/contrib/resources/viewer';
 import { selectBehaviorLensDefinition, prepareBehaviorLensLayout } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { captureBehaviorLensView, restoreBehaviorLensView } from '../../ide/workbench/contrib/behavior_lens/view_snapshot';
 import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
@@ -65,12 +62,12 @@ function registry(root: string, text: string): LuaSourceRegistry {
 function fixture(t: TestContext) {
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), lineHeight: 6, viewportWidth: 384, viewportHeight: 288, codeAreaTop: 24, codeAreaBottom: 120 });
 	const sources = createTestRuntimeSourceState(registry('system', '-- system'), [registry('game', SOURCE), registry('extension', '-- second slot')], 0);
-	const panes = createTestEditorPanes();
-	const behavior = new BehaviorLensController(sources, null, panes, null, new BehaviorSourceDocuments(editorTextModelService, sources), () => assert.fail('metadata must not start an FSM layout worker'), null, null);
-	const scene = new SceneEditorController(sources, panes, null);
+	const group = createTestEditorGroup();
+	const behavior = new BehaviorLensController(sources, null, group, null, new BehaviorSourceDocuments(editorTextModelService, sources), () => assert.fail('metadata must not start an FSM layout worker'), null, null);
+	const scene = new SceneEditorController(sources, group, null);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const runs = new ScenarioRunService(editorTextModelService, sources, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
-	const scenario = new ScenarioLabController(null, null, panes, null, runs, null);
+	const scenario = new ScenarioLabController(null, null, group, null, runs, null);
 	const unused = { serialize: () => assert.fail('unexpected serialization'), deserialize: () => assert.fail('unexpected reconstruction') };
 	const serializers: EditorInputSerializers = {
 		home: unused,
@@ -84,13 +81,10 @@ function fixture(t: TestContext) {
 		resource_view: new ResourceViewerInputSerializer(sources),
 		scenario_lab: new ScenarioLabInputSerializer(scenario),
 	};
-	const unsubscribe = editorTextModelService.onDidChangeContent((model, event) => {
-		behavior.onDidChangeContent(model, event); scene.onDidChangeContent(model, event);
-	});
-	t.after(() => { panes.dispose(); scenario.dispose(); runs.dispose(); unsubscribe(); editorTabGroup.clear(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
+	t.after(() => { group.dispose(); scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'definitions.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
-	return { sources, panes, behavior, scene, scenario, serializers, model, runtime };
+	return { sources, group, behavior, scene, scenario, serializers, model, runtime };
 }
 
 test('group round-trip restores ordered clean/dirty views, preview and distinct definitions sharing one hydrated model', async t => {
@@ -99,34 +93,34 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const code = new CodeEditorInput(f.model);
 	code.context.view.cursorRow = 2; code.context.view.cursorColumn = 8;
 	code.context.view.selectionAnchor = { row: 1, column: 3 }; code.context.view.scrollRow = 1; code.context.view.scrollLeft = 17.25;
-	editorTabGroup.initialize(code);
+	f.group.model.initialize(code);
 	const lenses = [0, 1].map(index => {
 		const input = f.behavior.createInput(f.model, 'graph');
 		selectBehaviorLensDefinition(input.view, input.view.document.definitions[index].rowKey);
 		input.updateDefinition(); prepareBehaviorLensLayout(input.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 		assert.ok(input.view.presentation.kind === 'graph');
 		input.view.presentation.position = { scrollX: 37 + index, scrollY: 25 + index, zoom: 0.75 };
-		editorTabGroup.add(input); return input;
+		f.group.model.add(input); return input;
 	});
 	const scene = new SceneEditorInput(f.model); f.scene.refresh(scene); selectSceneOutlineRow(scene, 1);
-	scene.position = { outlineScroll: 1, detailsScroll: 17 }; editorTabGroup.add(scene);
+	scene.position = { outlineScroll: 1, detailsScroll: 17 }; f.group.model.add(scene);
 	const cleanResource = resolveRuntimeResource(f.sources, { domain: 1, path: 'definitions.lua' })!;
 	const cleanModel = editorTextModelService.retain(cleanResource, 'lua', '-- second slot');
-	const clean = new CodeEditorInput(cleanModel); editorTabGroup.add(clean, { pinned: false });
-	editorTabGroup.activate(lenses[1]);
-	const before = editorTabGroup.serialize(f.serializers);
-	assert.equal(editorTabGroup.serialize(f.serializers, before), before, 'unchanged checkpoint reuses immutable group');
+	const clean = new CodeEditorInput(cleanModel); f.group.model.add(clean, { pinned: false });
+	f.group.model.activate(lenses[1]);
+	const before = f.group.model.serialize(f.serializers);
+	assert.equal(f.group.model.serialize(f.serializers, before), before, 'unchanged checkpoint reuses immutable group');
 	const dirtySource = f.model.buffer.getText();
 	workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath('game', 0, 'definitions.lua'), { contents: dirtySource, updatedAt: 50 });
 	const generation = JSON.parse(JSON.stringify({ dirtyFiles: [{ domain: 0, path: 'definitions.lua', updatedAt: 50 }], editorGroup: before, fontVariant: 'tiny', breakpoints: [] }));
-	await applyWorkspaceAutosavePayload({ editorPanes: f.panes, editorInputSerializers: f.serializers, setFontVariant() {} },
+	await applyWorkspaceAutosavePayload({ editorGroup: f.group, editorInputSerializers: f.serializers, setFontVariant() {} },
 		f.sources, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation);
-	const after = editorTabGroup.serialize(f.serializers);
+	const after = f.group.model.serialize(f.serializers);
 	assert.deepEqual(after, before);
-	assert.deepEqual(editorTabGroup.tabs.map(input => input.kind), ['code_editor', 'behavior_lens', 'behavior_lens', 'scene_editor', 'code_editor']);
-	const [newCode, first, second, newScene, newClean] = editorTabGroup.tabs;
+	assert.deepEqual(f.group.model.tabs.map(input => input.kind), ['code_editor', 'behavior_lens', 'behavior_lens', 'scene_editor', 'code_editor']);
+	const [newCode, first, second, newScene, newClean] = f.group.model.tabs;
 	assert.ok(newCode.kind === 'code_editor' && first.kind === 'behavior_lens' && second.kind === 'behavior_lens' && newScene.kind === 'scene_editor' && newClean.kind === 'code_editor');
-	assert.equal(editorTabGroup.activeTab, second); assert.equal(editorTabGroup.previewTab, newClean);
+	assert.equal(f.group.model.activeTab, second); assert.equal(f.group.model.previewTab, newClean);
 	assert.equal(newCode.context.view.scrollLeft, 17.25, 'workspace recovery preserves the code view pixel origin without glyph conversion');
 	assert.notEqual(first.id, second.id); assert.notEqual(first.id, lenses[0].id);
 	assert.notEqual(first.workingCopy, f.model);
@@ -143,17 +137,17 @@ test('changed canonical bytes retain topology but cannot adopt a same-length nam
 	const f = fixture(t);
 	const input = f.behavior.createInput(f.model, 'graph');
 	selectBehaviorLensDefinition(input.view, input.view.document.definitions[1].rowKey); input.updateDefinition();
-	editorTabGroup.initialize(input);
-	const value = editorTabGroup.serialize(f.serializers);
+	f.group.model.initialize(input);
+	const value = f.group.model.serialize(f.serializers);
 	const record = f.sources.cartridgeSlots[0]!.luaSources.records[0];
 	record.src = record.base_src = SOURCE.replaceAll('fixture.second', 'another.second');
 	f.sources.cartridgeSlots[0]!.luaSources.revision += 1;
-	f.panes.clearEditor(); editorTabGroup.clear(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
-	await editorTabGroup.deserialize(value, f.serializers);
-	const restored = editorTabGroup.activeTab;
+	f.group.panes.clearEditor(); f.group.model.clear(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
+	await f.group.model.deserialize(value, f.serializers);
+	const restored = f.group.model.activeTab;
 	assert.ok(restored?.kind === 'behavior_lens');
 	assert.equal(restored.view.definitionRowKey, null); assert.equal(restored.view.selection, null);
-	assert.equal(restored.workingCopy.dirty, false); assert.equal(editorTabGroup.tabs.length, 1);
+	assert.equal(restored.workingCopy.dirty, false); assert.equal(f.group.model.tabs.length, 1);
 });
 
 for (const changeProvider of [false, true]) test(`behavior mementos fingerprint every source resource (provider changed: ${changeProvider})`, async t => {
@@ -169,7 +163,7 @@ for (const changeProvider of [false, true]) test(`behavior mementos fingerprint 
 	});
 	const input = new BehaviorLensInput(f.model, view, assert.fail);
 	selectBehaviorLensDefinition(view, document.definitions[1].rowKey);
-	editorTabGroup.initialize(input);
+	f.group.model.initialize(input);
 	const serialized = f.serializers.behavior_lens.serialize(input);
 	const state = JSON.parse(serialized);
 	assert.equal(state.dependencies.length, 1);
@@ -180,7 +174,7 @@ for (const changeProvider of [false, true]) test(`behavior mementos fingerprint 
 		record.src = record.base_src = '-- test two';
 		f.sources.cartridgeSlots[0]!.luaSources.revision += 1;
 	}
-	editorTabGroup.clear(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
+	f.group.model.clear(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
 	const restored = await f.serializers.behavior_lens.deserialize(serialized);
 	t.after(() => restored.dispose());
 	assert.equal(restored.workingCopy.buffer.getText(), SOURCE);
@@ -228,7 +222,7 @@ test('resource viewer restoration uses the resource socket, not the active cart 
 	f.sources.resourceByIdentity.set('1\0values.data', resource);
 	f.sources.cartridgeSlots[0]!.package.data.values = { owner: 'game' };
 	f.sources.cartridgeSlots[1]!.package.data.values = { owner: 'extension' };
-	const input = new ResourceViewerInput(buildResourceViewerContent(f.sources, resource)); input.view.scroll = 3;
+	const input = new ResourceViewerInput(f.sources, resource); input.view.scroll = 3;
 	const restored = f.serializers.resource_view.deserialize(f.serializers.resource_view.serialize(input));
 	assert.ok(restored instanceof ResourceViewerInput);
 	assert.equal(restored.view.content.resource, resource); assert.equal(restored.view.scroll, 3);
@@ -246,7 +240,7 @@ test('Scenario Lab persists only test identity and scope expansion, not run/resu
 	assert.deepEqual(JSON.parse(value), captureScenarioLabTestView(input.view));
 	assert.doesNotMatch(value, /results|runActive|focus|previous/);
 	const runs = new ScenarioRunService(editorTextModelService, f.sources, new Map(), f.runtime.model, () => assert.fail('session recovery must not create test machines'));
-	const next = new ScenarioLabController(null, null, f.panes, null, runs, null);
+	const next = new ScenarioLabController(null, null, f.group, null, runs, null);
 	const fresh = new ScenarioLabInputSerializer(next).deserialize(value);
 	assert.deepEqual(captureScenarioLabTestView(fresh.view), captureScenarioLabTestView(input.view));
 	assert.equal(fresh.view.runActive, false); assert.equal(fresh.view.focus, 'tests'); assert.equal(fresh.view.resultPane.rows.length, 0);
@@ -256,7 +250,7 @@ test('Scenario Lab persists only test identity and scope expansion, not run/resu
 test('a persisted behavior snapshot is immutable across later model edits', t => {
 	const f = fixture(t);
 	const input = f.behavior.createInput(f.model, 'graph');
-	selectBehaviorLensDefinition(input.view, input.view.document.definitions[1].rowKey); editorTabGroup.initialize(input);
+	selectBehaviorLensDefinition(input.view, input.view.document.definitions[1].rowKey); f.group.model.initialize(input);
 	const captured = captureBehaviorLensView(input); const json = JSON.stringify(captured);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- prefix\n' }]);
 	assert.equal(JSON.stringify(captured), json);
@@ -272,19 +266,20 @@ test('resource refresh replaces content, not the retained viewport or group memb
 	const resource = { location: { kind: 'workspace' as const, path: 'refresh.data' }, domain: 1 as const, path: 'refresh.data', source: { resid: 'refresh', type: 'data' as const } };
 	const data = f.sources.cartridgeSlots[1]!.package.data;
 	data.refresh = { revision: 'before' };
-	const input = resolveResourceViewerInput(f.sources, resource);
-	editorTabGroup.initialize(input);
+	const input = new ResourceViewerInput(f.sources, resource);
+	f.group.openEditor(input);
 	const view = input.view, content = view.content;
 	view.scroll = 3;
-	const revision = editorTabGroup.revision;
 	data.refresh = { revision: 'after' };
-	const reopened = resolveResourceViewerInput(f.sources, resource);
+	f.group.openEditor(new ResourceViewerInput(f.sources, resource));
+	const reopened = f.group.model.activeTab!;
+	assert.ok(reopened.kind === 'resource_view');
 	assert.equal(reopened, input);
 	assert.equal(reopened.view, view, 'content resolution cannot replace view state');
 	assert.equal(view.scroll, 3, 'no resetting then restoring the cursor at a callsite');
 	assert.notEqual(view.content, content, 'resolution still refreshes content');
 	assert.match(view.content.lines.join('\n'), /after/);
 	assert.doesNotMatch(view.content.lines.join('\n'), /before/);
-	assert.equal(editorTabGroup.revision, revision, 'unchanged labels and membership emit no group change');
+	assert.equal(f.group.model.tabs.length, 1, 'refreshing the admitted resource cannot add another group member');
 	assert.equal(input.toResourceEditor().resource, resource);
 });

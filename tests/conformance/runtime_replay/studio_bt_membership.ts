@@ -2,7 +2,6 @@ import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/beha
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../ide/language/lua/source_edits';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_MEMBERSHIP_SOURCE } from '../../helpers/behavior_membership_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -14,13 +13,13 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_MEMBERSHIP_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.membership');
-	let lens = getActiveTab();
+	let lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT membership: concrete graph required');
 	let view = lens.view;
 	let graph = lens.view.presentation;
@@ -35,7 +34,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	check(opaque.member?.index === 1 && opaque.source.kind === 'dynamic' && opaque.children.length === 0,
 		'BT membership: physical navigation enters the opaque slot without inventing its result');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === opaque.source.occurrenceRange.start.line - 1
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === opaque.source.occurrenceRange.start.line - 1
 		&& activeCodeEditor.view.cursorColumn === opaque.source.occurrenceRange.start.column - 1 && !hasSelection(),
 		'BT membership: held Source opens the builder use, not its function or a code drag');
 	await test.clickTab(lens.id);
@@ -68,14 +67,14 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	check(model.buffer.getText() === BT_MEMBERSHIP_SOURCE, 'BT membership: normal code history restores both source changes');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.weighted-membership');
-	const nextDefinition2 = getActiveTab();
+	const nextDefinition2 = ide.editor.editorGroup.model.activeTab;
 	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
 	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
 	lens = nextDefinition2;
 	view = lens.view;
 	graph = nextDefinition2.view.presentation;
 	viewport = graph.viewport;
-	check(getActiveTab() === lens && lens.workingCopy === model, 'BT membership: chosen definition retains the same text owner');
+	check(ide.editor.editorGroup.model.activeTab === lens && lens.workingCopy === model, 'BT membership: chosen definition retains the same text owner');
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await press('ArrowRight');
@@ -96,7 +95,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 		'BT membership: choice Source uses the full choice occurrence, not its opaque child');
 	await test.clickTab(lens.id);
 	await runPaletteCommand('Behavior Lens: Open Source Details');
-	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	const weight = choice.details.find(detail => detail.label === 'weight')!;
 	const detailIndex = inspector.model.rows.findIndex(row => row.element.source?.range === weight.range);
 	check(inspector.visible && detailIndex >= 0, 'BT membership: known weight remains inspectable');

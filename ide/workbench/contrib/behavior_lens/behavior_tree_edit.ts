@@ -58,8 +58,8 @@ export function createBehaviorTreeTransferEdit(model: EditorTextModel, view: Beh
 	const movedPath = before.path.slice(prefixLength).map(step => ({ ...step,
 		start: transfer.fieldRange.start + step.start - fieldStart, end: transfer.fieldRange.start + step.end - fieldStart }));
 	const resource = model.identity;
-	return { version: model.version, edits: transfer.edits, beforeEditState: behaviorSourceEditState.of(before), computeAfterEditState: changes => {
+	return { version: model.version, edits: transfer.edits, beforeEditState: behaviorSourceEditState.of(before, view.editSource), computeAfterEditState: changes => {
 		mapBehaviorSourceBookmark(after, resource, changes);
-		return behaviorSourceEditState.of({ ...after, path: [...after.path, ...movedPath] });
+		return behaviorSourceEditState.of({ ...after, path: [...after.path, ...movedPath] }, view.editSource);
 	} };
 }

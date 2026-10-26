@@ -3,12 +3,11 @@ import type { RuntimeResource } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { TextEditorInput } from '../../common/editor_input';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { FileQuickPickProvider } from '../../services/quick_input/file_provider';
 import { resolveTextFileModel } from '../../services/working_copy/text_file_model';
 import { resolveTextCodeEditorInput } from '../../ui/code_tab/io';
-import { getActiveTab, openEditorTab } from '../../ui/tabs';
 import { buildResourceQuickPickItems } from '../resources/quick_access';
 import { CartMapInput, type CartMapKind } from './editor_input';
 import { projectCartMap } from './source_projection';
@@ -29,10 +28,10 @@ export async function resolveCartMapInput(sources: RuntimeSourceState, resource:
 }
 
 export class CartMapController {
-	public constructor(private readonly sources: RuntimeSourceState, private readonly panes: EditorPanes,
+	public constructor(private readonly sources: RuntimeSourceState, private readonly group: EditorGroupView,
 		private readonly quickInput: QuickInputController) {}
 	public open(): void {
-		const active = getActiveTab();
+		const active = this.group.model.activeTab;
 		if (active instanceof TextEditorInput) {
 			const kind = cartMapKind(active.workingCopy.resource);
 			if (kind !== undefined) { this.openResource(active.workingCopy.resource, kind); return; }
@@ -42,21 +41,15 @@ export class CartMapController {
 			item => this.openResource(item.resource, cartMapKind(item.resource)!));
 	}
 	public openResource(resource: RuntimeResource, kind: CartMapKind): void {
-		const generation = this.panes.beginOpen();
-		void resolveCartMapInput(this.sources, resource, kind).then(input => {
-			if (this.panes.openGeneration === generation) openEditorTab(this.panes, input);
-			else input.dispose();
-		}, error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
+		void this.group.openResolvedEditor(resolveCartMapInput(this.sources, resource, kind))
+			.catch(error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
 	}
 	public openSource(input: CartMapInput): void {
 		projectCartMap(input);
 		const position = { row: 0, column: 0 };
 		input.workingCopy.buffer.positionAt(input.selectionRange.start, position);
-		const generation = this.panes.beginOpen();
-		void resolveTextCodeEditorInput(this.sources, input.workingCopy.resource).then(code => {
-			if (this.panes.openGeneration === generation) openEditorTab(this.panes, code,
-				{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } });
-			else code.dispose();
-		}, error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
+		void this.group.openResolvedEditor(resolveTextCodeEditorInput(this.sources, input.workingCopy.resource),
+			{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } })
+			.catch(error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
 	}
 }

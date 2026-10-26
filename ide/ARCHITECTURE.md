@@ -52,8 +52,9 @@ execution services and their explicit targets.
 text-model resolution, persistence and source-edit publication. Source-backed
 visual tools consume those models rather than keeping another authored copy.
 
-Contributions own concrete retained editor inputs; `workbench/ui/tab/` owns
-their group membership.
+Contributions own concrete retained editor inputs. `EditorGroupView` owns its
+group model, pane cache, focus/capture scopes and tab-strip control. Tab layout,
+hover and gestures live in that strip, not in frontend-wide chrome state.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
 Source inputs own their model-to-view subscriptions. Closing one releases its
@@ -63,13 +64,17 @@ separate from serialized view state and explicit navigation selections.
 Text history retains source selections and inert editing origins, not viewport
 coordinates or control references. Source history commands name their invoking
 view; sibling views track the canonical text changes independently.
+The Source widget, native text input and code-layout state belong to the primary
+frontend control; independent Source inputs are not multiple attached controls.
 `workbench/services/editor/` owns editor-kind resolution and pane attachment:
 a pane is a reusable control
 bound to one input, not the lifetime owner of that input or its source.
 
 The frontend owns shared navigation history. Captured selections belong to their
-pane-owner lifetime; constructing or disposing a child pane owner cannot reset
-another owner's history.
+group/input lifetime and name their destination group. Opening admission is
+group-local; a delayed attachment does not reactivate a group after the user
+has moved elsewhere. Actions retain the invoking control's group through popup
+focus. Constructing or disposing a group cannot reset another group's history.
 
 Shared window/control code owns presentation and input mechanics. Contributions
 own their subjects and register their commands on the appropriate focus target.

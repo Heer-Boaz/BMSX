@@ -1,7 +1,7 @@
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { resourceIdentityKey } from '../../../common/resource';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import { EditorEditStateType } from '../../../editor/model/edit_state';
+import { EditorEditStateType, type EditorEditSource } from '../../../editor/model/edit_state';
 import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
 import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
@@ -55,6 +55,7 @@ export type CartMapLayout = FullWidthWorkbenchLayout & {
 
 /** A retained source projection, not a second map document or a runtime scene. */
 export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_map'> {
+	public readonly editSource: EditorEditSource = Symbol('cart-map-view');
 	public version = -1;
 	public viewRevision = 0;
 	public activeSheet: string | undefined;
@@ -79,7 +80,7 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 		this.sourceCaption = computeResourceTabTitle(workingCopy.resource);
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
 		this.disposables.add({ dispose: workingCopy.onDidChangeContent(event => {
-			if (event.editState?.is(cartMapEditSelection)) {
+			if (event.editState?.is(cartMapEditSelection) && event.editSource === this.editSource) {
 				this.selectionRange.start = event.editState.value.start;
 				this.selectionRange.end = event.editState.value.end;
 			} else mapTrackedTextRange(this.selectionRange, event.changes);

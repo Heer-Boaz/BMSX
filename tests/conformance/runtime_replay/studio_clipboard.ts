@@ -2,7 +2,6 @@ import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { TextField } from '../../../ide/editor/ui/inline/text_field_model';
 import { inputFocus } from '../../../ide/input/focus';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorSearchState, lineJumpState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
 import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
@@ -39,7 +38,7 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 		snapshot() {
 			const target = inputFocus.target?.clipboard;
 			const field = target instanceof TextField ? target : undefined;
-			const tab = getActiveTab();
+			const tab = test.ide.editor.editorGroup.model.activeTab;
 			return {
 				text: field?.text, canUndo: field?.canUndo, canRedo: field?.canRedo,
 				canPaste: test.ide.editor.commands.isEnabled('paste'),
@@ -59,13 +58,13 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 		async property() {
 			test.harness.openLuaSource('scenes/root.lua'); await test.frame();
 			test.ide.editor.commands.execute('sceneEditor'); await test.frame();
-			const view = getActiveTab(); if (view.kind !== 'scene_editor') throw new Error('Scene Editor expected');
+			const view = test.ide.editor.editorGroup.model.activeTab; if (view.kind !== 'scene_editor') throw new Error('Scene Editor expected');
 			await selectMember(test, view, 2);
 			await test.click(view.properties[0].bounds);
 		},
 		async transcript() {
 			test.ide.editor.commands.execute('assistant'); await test.frame();
-			const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant expected');
+			const view = test.ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant expected');
 			const text = 'Clipboard: **literal** output';
 			view.conversation.notice(text); await test.frame();
 			const index = view.conversation.entries.length - 1;

@@ -1,5 +1,4 @@
 import { editorPointerState } from '../../../ide/input/pointer/state';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 
@@ -9,7 +8,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	// Expiring authoring feedback changes the canvas extent. Test zoom anchoring
 	// after that unrelated presentation has retired, not across two layouts.
 	await test.until(() => !editorFeedbackState.message.visible, 'zoom: preceding authoring feedback retired');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || (lens.view.presentation.kind !== 'graph' && lens.view.presentation.kind !== 'state-graph')) throw new Error('zoom probe requires an actual Studio diagram');
 	const graph = lens.view.presentation;
 	const viewport = graph.viewport;
@@ -49,9 +48,9 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 		&& Math.abs(viewport.viewportToGraphY(pointer.viewportY) - pointerY) < 1e-7, 'zoom: Ctrl-wheel uses the actual pointer, not the canvas center');
 	const zoom = viewport.zoom, x = viewport.scrollX, y = viewport.scrollY;
 	await runPaletteCommand('Behavior Lens: Open Source');
-	check(getActiveTab().kind === 'code_editor' && lens.workingCopy.version === version, 'zoom: Source switches to unscaled code chrome without editing');
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && lens.workingCopy.version === version, 'zoom: Source switches to unscaled code chrome without editing');
 	await runPaletteCommand('Go: Back');
-	check(getActiveTab() === lens && viewport.zoom === zoom && viewport.scrollX === x && viewport.scrollY === y,
+	check(ide.editor.editorGroup.model.activeTab === lens && viewport.zoom === zoom && viewport.scrollX === x && viewport.scrollY === y,
 		'zoom: Back restores the source occurrence and the entire view transform');
 	check(viewport.model === model && viewport.selection === selected && lens.view.selection!.rowKey === source.rowKey,
 		'zoom: navigation preserves selection and does not run layout');

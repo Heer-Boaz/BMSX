@@ -23,7 +23,6 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { RuntimeIdeState } from '../../ide/workbench/state';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -116,12 +115,12 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const editor = ide.editor;
 		t.after(async () => {
 			inputFocus.setTarget(null); problemsPanel.hide();
-			await editor.shutdown(); editorTabGroup.clear(); host.audio.dispose(); host.input.dispose();
+			await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 		});
 		editorRuntimeState.active = true; editorFeedbackState.message.visible = false;
 		await editor.navigation.openResource(sources.resourceByIdentity.get(resourceIdentityKey({ domain: 0, path: 'status.lua' }))!);
 		configureFontVariant(host.clock, variant, null); editor.resourcePanel.setFontMetrics(editorViewState.font);
-		const pane = editor.editorPanes.activePane!, status = t.mock.method(pane, 'drawStatusBar');
+		const pane = editor.editorGroup.panes.activePane!, status = t.mock.method(pane, 'drawStatusBar');
 		const model = activeCodeEditor.model, view = activeCodeEditor.view;
 		const draw = () => {
 			editor.update(0); ide.overlayRenderer.beginFrame(host.presenter); api.beginFrame(ide.overlayRenderer);

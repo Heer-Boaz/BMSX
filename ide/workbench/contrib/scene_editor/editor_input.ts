@@ -1,7 +1,7 @@
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { LuaChunk, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import type { TrackedTextRange } from '../../../editor/text/text_change';
+import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
 import { resourceIdentityKey } from '../../../common/resource';
 import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { SceneEditorTabId } from '../../ui/tab/id';
@@ -49,5 +49,9 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		super(`scene:${resourceIdentityKey(workingCopy.resource)}`, 'scene_editor', 'SCENE EDITOR', true);
 		this.sourceCaption = computeResourceTabTitle(workingCopy.resource);
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
+		this.disposables.add({ dispose: workingCopy.onDidChangeContent(event => {
+			mapTrackedTextRange(this.selectionRange, event.changes);
+			for (const root of this.outline.roots) mapTrackedTextRange(root.element.span, event.changes);
+		}) });
 	}
 }

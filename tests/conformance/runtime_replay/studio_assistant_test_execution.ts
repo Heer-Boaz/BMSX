@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
@@ -46,7 +45,7 @@ export async function runAssistantTestExecution(kind: StudioRendererKind, canvas
 	check(document.dirty && document.buffer.getText() === current && conversation.entries.every(entry => entry.kind !== 'proposal'), 'execution is neither save/install nor source-edit authority');
 	await frame(); await renderer.capture!('conversation-results');
 	await runPaletteCommand('Scenario Lab: Open'); await frame();
-	const lab = getActiveTab(); if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
+	const lab = ide.editor.editorGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
 	check(lab.view.resultService === ide.scenarioRuns.results, 'ordinary Scenario Lab and conversation share one result owner');
 	await renderer.capture!('ordinary-scenario-history');
 	await runPaletteCommand('View: Codex Assistant');
@@ -55,7 +54,7 @@ export async function runAssistantTestExecution(kind: StudioRendererKind, canvas
 	const own = runs[0];
 	for (let i = 0; i < 3; i++) await frame();
 	check(own.state === 'running' && ide.scenarioRuns.session!.execution!.target.runtime !== test.runtime, 'test target is physically separate from authoring');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane required');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
 	await until(() => conversation.state === 'ready' && !ide.scenarioRuns.active, 'test tools: visible Stop retires wait and finishes bounded test cleanup');
 	check(own.state === 'cancelled' && own.items[0].logs.at(own.items[0].logs.length - 1).text === 'cleanup ends', 'chat Stop cancels its own test without dropping cooperative teardown');

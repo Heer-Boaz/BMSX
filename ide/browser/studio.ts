@@ -8,7 +8,6 @@ import { decodeImage, encodePngImage } from '../../hosts/browser/image';
 import { AssistantHttpConnection } from './assistant_connection';
 import { StudioServerConnection } from './server_connection';
 import { WorkspaceEditReviewInput } from '../workbench/contrib/edit_review/editor_input';
-import { openEditorTab } from '../workbench/ui/tabs';
 import { StudioHttpSession } from './http_session';
 import { BrowserGraphLayoutEngine } from './graph_layout';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
@@ -223,7 +222,7 @@ async function startBrowserStudio(): Promise<void> {
 			const connection = new StudioServerConnection(httpSession(server.baseUrl),
 				{ title: document.title, url: location.href, tools: server.tools, builds: server.builds }, ide.editor.tools, proposal => {
 					ide.editor.activate();
-					openEditorTab(ide.editor.editorPanes, new WorkspaceEditReviewInput(proposal));
+					ide.editor.editorGroup.openEditor(new WorkspaceEditReviewInput(proposal));
 				}, (state, detail) => {
 					ide.editor.serverConnectionState = state;
 					ide.editor.serverConnectionDetail = detail;

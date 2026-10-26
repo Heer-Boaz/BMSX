@@ -2,7 +2,6 @@ import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selec
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { inputFocus } from '../../../ide/input/focus';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -14,13 +13,13 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.second');
-	let lens = getActiveTab();
+	let lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('ActionEffect source: expected the actual lens input');
 	let view = lens.view;
 	let properties = view.presentation;
@@ -41,14 +40,14 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	await revealLensOccurrence(test, view, tag.rowKey);
 	const version = model.version;
 	await runPaletteCommand('Behavior Lens: Open Source Details');
-	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && inspector.model.rows[0].element.value === "'blocked'",
 		'ActionEffect: full requirement inspection retains its field role and exact value');
 	await click(inspector.actionBar.items[0].bounds, 6);
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === tag.authoredRange.start.line - 1 && model.version === version,
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === tag.authoredRange.start.line - 1 && model.version === version,
 		'ActionEffect: held inspector Source opens the individual tag without editing');
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === lens, 'ActionEffect: normal Back returns to the same retained properties');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'ActionEffect: normal Back returns to the same retained properties');
 	const handler = second.body!.fields.find(field => field.kind === 'value' && field.name === 'handler')!;
 	check(properties.nodesBySource.get(handler.source.rowKey)!.element.value === 'function(owner, payload)', 'ActionEffect: inline handler identifies its actual parameters');
 	await revealLensOccurrence(test, view, handler.source.rowKey);
@@ -61,7 +60,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	test.setKey('Enter', true);
 	for (let index = 0; index < 6; index += 1) await frame();
 	test.setKey('Enter', false); await frame();
-	check(grant.collapsed && view.selection === null && getActiveTab() === lens, 'ActionEffect controls: held Enter folds once without opening fake group source');
+	check(grant.collapsed && view.selection === null && ide.editor.editorGroup.model.activeTab === lens, 'ActionEffect controls: held Enter folds once without opening fake group source');
 	await press('Enter');
 	const groupBounds = { left: properties.tree.layout.valueLeft, right: properties.tree.layout.contentRight,
 		top: properties.tree.layout.contentTop, bottom: properties.tree.layout.contentTop + properties.tree.layout.rowHeight };
@@ -86,7 +85,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	input.inputButton('gamepad:0', 'a', true, 1, clock.now() + 1, ++padPressId);
 	for (let index = 0; index < 6; index += 1) await frame();
 	input.inputButton('gamepad:0', 'a', false, 0, clock.now() + 1, ++padPressId); await frame();
-	check(grant.collapsed && getActiveTab() === lens, 'ActionEffect controls: held controller A folds once');
+	check(grant.collapsed && ide.editor.editorGroup.model.activeTab === lens, 'ActionEffect controls: held controller A folds once');
 	input.disconnectInputDevice('gamepad:0');
 	await press('ArrowRight');
 	const period = second.body!.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!;
@@ -99,21 +98,21 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	await press('Escape');
 	await click(propertyBounds, 6);
-	check(getActiveTab() === lens, 'ActionEffect controls: palette focus interrupts a property double-click sequence');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'ActionEffect controls: palette focus interrupts a property double-click sequence');
 	await click(propertyBounds, 6);
 	const row = ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.includes('period_ms = 20'));
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
 		'ActionEffect controls: held property double-click opens its exact source without a code drag');
 	await test.clickTab(lens.id);
 	await click(properties.actionBar.items[0].bounds, 6);
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
 		'ActionEffect source: held Source click opens the selected field without dragging code');
 	await test.clickTab(lens.id);
 	await click(propertyBounds, 1, 'pointer_secondary');
 	check(ide.editor.contextMenu.visible && view.selection?.rowKey === period.source.rowKey,
 		'ActionEffect context: right click targets the property without expanding or activating it');
 	await test.clickContextCommand('behaviorLens.source');
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
 		'ActionEffect context: shared menu opens exact field source without editing');
 	const oldDocument = view.document;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 effect source\n' }]);
@@ -135,11 +134,11 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.first');
-	const chosen2 = getActiveTab();
+	const chosen2 = ide.editor.editorGroup.model.activeTab;
 	if (chosen2.kind !== 'behavior_lens' || chosen2.view.presentation.kind !== 'properties') throw new Error('ActionEffect: selected definition input missing');
 	check(chosen2 !== lens && chosen2.workingCopy === model, 'ActionEffect: distinct definition input shares the text owner');
 	lens = chosen2; view = lens.view; properties = chosen2.view.presentation; tree = properties.tree;
-	check(getActiveTab() === lens && view.definitionRowKey === view.document.definitions[0].rowKey,
+	check(ide.editor.editorGroup.model.activeTab === lens && view.definitionRowKey === view.document.definitions[0].rowKey,
 		'ActionEffect source: both registrations remain independently selectable with their own retained inputs');
 	await click(properties.actionBar.items[0].bounds);
 	check(activeCodeEditor.view.cursorRow === ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.startsWith("effects.register_effect('fixture.first'")),
@@ -165,7 +164,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_PARTIAL_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.partial');
-	const chosen3 = getActiveTab();
+	const chosen3 = ide.editor.editorGroup.model.activeTab;
 	if (chosen3.kind !== 'behavior_lens' || chosen3.view.presentation.kind !== 'properties') throw new Error('ActionEffect: selected definition input missing');
 	check(chosen3 !== lens && chosen3.workingCopy === model, 'ActionEffect: distinct definition input shares the text owner');
 	lens = chosen3; view = lens.view; properties = chosen3.view.presentation; tree = properties.tree;

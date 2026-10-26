@@ -75,8 +75,8 @@ export function handleWorkbenchChromePointer(editor: CartEditor, snapshot: Point
 		clearEditorPointerSelectionState();
 		return;
 	}
-	if (handleEditorChromePointerDispatch(editor, snapshot, justPressed, (snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0)) return;
-	handleEditorPanelPointer(editor.resourcePanel, editor.editorPanes, snapshot, justPressed,
+	if (handleEditorChromePointerDispatch(editor, snapshot, justPressed)) return;
+	handleEditorPanelPointer(editor.resourcePanel, editor.editorGroup, snapshot, justPressed,
 		(snapshot.justReleasedButtons & PointerButton.Primary) !== 0);
 }
 
@@ -85,7 +85,7 @@ export function handleWorkbenchPanePointer(editor: CartEditor, snapshot: Pointer
 	// Splitter grab margins cross the layout boundary by a few pixels. Their
 	// existing geometry owner admits that part of the pane's content route too.
 	if (handleEditorPanelResizePointer(editor.resourcePanel, snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0)) return;
-	editor.editorPanes.activePane?.handlePointer(snapshot,
+	editor.editorGroup.panes.activePane?.handlePointer(snapshot,
 		(snapshot.justPressedButtons & PointerButton.Primary) !== 0,
 		(snapshot.justPressedButtons & PointerButton.Secondary) !== 0,
 		now, isCtrlDown(snapshot) || isMetaDown(snapshot));

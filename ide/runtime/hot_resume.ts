@@ -48,7 +48,6 @@ import {
 	type HotResumeRevision,
 	type HotResumeRevisions,
 } from './hot_resume_relocation';
-import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 
@@ -461,7 +460,6 @@ function applyPreparedHotResume(
 	report({ kind: 'applied' });
 	clearFaultSnapshot(fault);
 	fault.hostFrameFailure = undefined;
-	clearAllRuntimeErrorOverlays();
 	applyRuntimeDebuggerHotResume(
 		debuggerState,
 		debuggerState.breakpoints.compile(prepared.media),

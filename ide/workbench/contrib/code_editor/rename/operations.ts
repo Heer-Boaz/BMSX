@@ -2,7 +2,6 @@ import type { SearchMatch } from '../../../../common/models';
 import type { ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
 import type { LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/index';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../../runtime/sources';
 import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
 import { updateDesiredColumn, ensureCursorVisible } from '../../../../editor/ui/view/caret/caret';
@@ -28,7 +27,7 @@ export function commitRename(
 	activeIndex: number,
 	info: ReferenceMatchInfo,
 ): number {
-	const model = getActiveCodeTabContext().model;
+	const model = activeCodeEditor.model;
 	const edits = crossFileRename.prepareRename(model.resource.domain, info, newName);
 	const focused = matches[clamp(activeIndex, 0, matches.length - 1)];
 	const focusedOffset = model.buffer.offsetAt(focused.row, focused.start);

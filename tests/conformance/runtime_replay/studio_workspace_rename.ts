@@ -1,5 +1,4 @@
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -9,13 +8,13 @@ export async function testStudioWorkspaceRename(test: StudioFixture): Promise<vo
 	console.info('STUDIO: multi-resource Rename and shared Undo/Redo');
 	harness.openLuaSource('cart.lua');
 	const main = harness.getActiveEditorDocument().model;
-	const mainTab = getActiveTab();
+	const mainTab = ide.editor.editorGroup.model.activeTab;
 	const originalMain = main.buffer.getText();
 	const providerSource = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 	harness.openLuaSource(providerSource.source_path);
 	const provider = harness.getActiveEditorDocument().model;
-	const providerTab = getActiveTab();
+	const providerTab = ide.editor.editorGroup.model.activeTab;
 	const originalProvider = provider.buffer.getText();
 	const mainText = 'return fixture_rename, fixture_rename';
 	const providerText = 'fixture_rename = { value = 1 }\nreturn fixture_rename';

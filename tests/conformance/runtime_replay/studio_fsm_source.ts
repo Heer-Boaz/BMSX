@@ -2,7 +2,6 @@ import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selec
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import type { StateMachineSourceDefinition } from '../../../ide/workbench/contrib/behavior_lens/state_machine_model';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { FSM_BEHAVIOR_SOURCE } from '../../helpers/fsm_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -20,13 +19,13 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_BEHAVIOR_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.first');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('FSM source: expected the real Behavior Lens input');
 	const view = lens.view;
 	const outline = view.presentation;
@@ -36,7 +35,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	await click(outline.actionBar.items[0].bounds, 6);
 	const lines = FSM_BEHAVIOR_SOURCE.split('\n');
 	const row = lines.findIndex(line => line.includes('update = step'));
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
 		'FSM source: held Source gesture opens the callback binding without dragging code');
 	const oldDocument = view.document;
 	const prefix = '-- 🐉 moved FSM source\n';

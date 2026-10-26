@@ -116,7 +116,7 @@ export class StudioWorkbench {
 		this.textFileSaves = new TextFileSaveService(models, clock, sources, this.guest, runtime, runtimeTasks);
 		this.hotResumes = new HotResumeService(models, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
-		this.hotResumes.onDidApply = () => { this.events.beginTimeline(); this.gte.didInstall(); this.gpu.didInstall(); };
+		this.hotResumes.onDidApply(() => { this.events.beginTimeline(); this.gte.didInstall(); this.gpu.didInstall(); });
 		this.boots = new BootService(models, sources, this.fault, runtime, runtimeTasks, execution, audioOutput, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(models, sources, clock);
 		this.luaEvaluation = new RuntimeLuaEvaluation(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);

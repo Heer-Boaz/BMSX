@@ -2,7 +2,6 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_REPARENT_SOURCE, BT_REPARENT_MODULE_SOURCE } from '../../helpers/behavior_reparent_fixture';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -33,7 +32,7 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 	const mainVersion = main.version;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.reparent');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT reparent requires its graph input');
 	const viewport = lens.view.presentation.viewport;
 	await runPaletteCommand('Graph: Zoom Out');
@@ -52,7 +51,7 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 		setPointerButton('pointer_primary', true); await frame();
 		movePointer(point(target, fraction)); await frame();
 		setPointerButton('pointer_primary', false); await frame();
-		const review = getActiveTab();
+		const review = ide.editor.editorGroup.model.activeTab;
 		if (!(review instanceof WorkspaceEditReviewInput)) throw new Error('reparent: physical drop must open the unified review tab');
 		check(review.proposal.state === 'pending', 'reparent: compatible list move opens pending source review');
 		return review;
@@ -64,11 +63,11 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 		'reparent: review identifies the written reference and eager read');
 	console.info('STUDIO: BT reparent review ready for visual inspection');
 	await runPaletteCommand('Review: Discard Workspace Edit');
-	check(review.proposal.state === 'discarded' && getActiveTab() === review && model.version === version, 'reparent: Discard retains evidence without edits');
+	check(review.proposal.state === 'discarded' && ide.editor.editorGroup.model.activeTab === review && model.version === version, 'reparent: Discard retains evidence without edits');
 	await test.clickTab(lens.id);
 	review = await drop(root().children[0], root().children[2], 0.5);
 	await click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds, 6);
-	check(review.proposal.state === 'applied' && getActiveTab().kind === 'code_editor' && model.version === version + 1,
+	check(review.proposal.state === 'applied' && ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && model.version === version + 1,
 		'reparent: accepted source opens its working copy and retains review evidence');
 	await test.clickTab(lens.id);
 	check(root().children.length === 2,
@@ -100,7 +99,7 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 	review = await drop(root().children[0], root().children[2], 0.5);
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- new generation' }]);
 	await frame();
-	check(review.proposal.state === 'stale' && getActiveTab() === review && model.version === version + 1, 'reparent: changed source revokes the pending proposal');
+	check(review.proposal.state === 'stale' && ide.editor.editorGroup.model.activeTab === review && model.version === version + 1, 'reparent: changed source revokes the pending proposal');
 	await test.clickTab(lens.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'reparent: Undo restores the fixture, not the expired proposal');

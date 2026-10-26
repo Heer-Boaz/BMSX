@@ -32,14 +32,13 @@ async function fixture(t: TestContext, failed = true) {
 		get: async () => { reads++; return job; }, cancel: async () => job, forget() {}, log: async () => '' };
 	const input = new BuildLogInput(job, builds), clipboard = new HeadlessClipboard();
 	const vertical = input.document.viewport.scrollbar, horizontal = new Scrollbar('horizontal');
-	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: vertical, viewerVertical: vertical,
-		resourceVertical: vertical, codeHorizontal: horizontal, resourceHorizontal: horizontal }, () => {}, pointerCapture);
+	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: vertical, resourceVertical: vertical, codeHorizontal: horizontal, resourceHorizontal: horizontal }, () => {}, pointerCapture);
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
 	const bounds = { left: 13, top: 21, right: 333, bottom: 241 };
 	const surfaces = new WorkbenchSurfaceService();
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('build log pane'), getBounds: () => bounds,
 		getClip: () => bounds, isVisible: () => true, draw() {} });
-	const pane = new BuildLogPane(clipboard, menu, surfaces, owner, bounds);
+	const pane = new BuildLogPane(clipboard, menu, surfaces, owner, bounds, inputFocus.workbenchScope);
 	await input.refresh(); pane.setInput(input, bounds); pane.focus();
 	t.after(() => {
 		pane.clearInput(); inputFocus.setTarget(null); pane.dispose(); menu.dispose(); input.dispose();

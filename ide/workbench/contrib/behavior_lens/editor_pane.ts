@@ -6,7 +6,7 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import { WORKBENCH_MENUS, type WorkbenchContextMenuId } from '../../ui/menu/registry';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { BehaviorLensNavigationSelection } from './navigation_selection';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ui/graph/control';
 import { scrollWorkbenchList } from '../../ui/list_view';
@@ -91,8 +91,9 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		private readonly contextMenu: ContextMenuController,
 		private readonly frameNavigation: RuntimeFrameNavigation,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, workArea: Readonly<RectBounds>,
+		scope: InputFocusScope,
 	) {
-		super();
+		super(scope);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionBar.onDidOpenOverflow = lifetime => {
 			lifetime.add({ dispose: this.input.view.source.onDidInvalidate(() => this.contextMenu.hide()) });
@@ -155,7 +156,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 				},
 				run: () => {
 					const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!;
-					executeTextHistoryCommand(model, direction);
+					executeTextHistoryCommand(model, direction, this.input.view.editSource);
 				},
 			});
 		}

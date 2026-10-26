@@ -1,4 +1,3 @@
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { inputFocus } from '../../../ide/input/focus';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
@@ -50,7 +49,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await task;
 	await until(() => tasks.ready, 'palette: occupied queue settles without altering pause');
 	await runPaletteCommand('Scenario Lab: Open');
-	const scenario = getActiveTab();
+	const scenario = ide.editor.editorGroup.model.activeTab;
 	check(scenario.kind === 'scenario_lab', 'palette: Scenario Lab is an ordinary registered command');
 	const scenarioFocus = inputFocus.target;
 	await press('ControlLeft', 'Comma');
@@ -69,11 +68,11 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await clipboard.writeText('scenes/root.lua');
 	await press('ControlLeft', 'KeyV');
 	await press('Enter');
-	const scene = getActiveTab();
+	const scene = ide.editor.editorGroup.model.activeTab;
 	if (scene.kind !== 'scene_editor') throw new Error('palette: chosen Scene Editor is missing');
 	const source = scene.workingCopy.buffer.getText();
 	await selectMember(test, scene, 2);
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('palette: actual scene pane missing');
 	await click(scene.properties[0].bounds);
 	await press('Digit5');
@@ -96,7 +95,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await runPaletteCommand('File: Save');
 	await until(() => !scene.workingCopy.dirty, 'palette: restore the canonical fixture through ordinary Save');
 	await runPaletteCommand('Scene Editor: Open Source');
-	check(getActiveTab().kind === 'code_editor' && harness.getActiveEditorDocument().model === scene.workingCopy,
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && harness.getActiveEditorDocument().model === scene.workingCopy,
 		'palette: category-disambiguated Source executes the registered scene action');
 	check(cycles() === position, 'palette: source, view and history commands do not advance the paused machine');
 	await openSceneEditor(test);

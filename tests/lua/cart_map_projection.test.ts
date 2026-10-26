@@ -56,15 +56,15 @@ test('map coordinates use the same source history and reject stale proposals', t
 	const { model, input } = fixture();
 	t.after(() => { input.dispose(); model.dispose(); });
 	selectCartMapRow(input, 1);
-	const edit = createCartMapMove(input.selected!, 3, 1);
+	const edit = createCartMapMove(input.selected!, 3, 1, input.editSource);
 	model.history.applyEdits(new Map([[model, edit]]));
 	projectCartMap(input);
 	assert.equal(model.buffer.getText(), SOURCE.replace('x: 1, y: 0', 'x: 3, y: 1'));
 	assert.deepEqual([input.selected!.x, input.selected!.y], [3, 1]);
-	model.undo(); projectCartMap(input);
+	model.undo(input.editSource); projectCartMap(input);
 	assert.equal(model.buffer.getText(), SOURCE);
 	assert.deepEqual([input.selected!.x, input.selected!.y], [1, 0]);
-	model.redo(); projectCartMap(input);
+	model.redo(input.editSource); projectCartMap(input);
 	assert.deepEqual([input.selected!.x, input.selected!.y], [3, 1]);
 	const current = model.buffer.getText();
 	assert.throws(() => model.history.applyEdits(new Map([[model, edit]])));
@@ -78,24 +78,24 @@ test('marker moves restore source selection through shared undo/redo, including 
 		selectCartMapRow(input, 1);
 		const before = { ...input.selectionRange }, x = input.selected!.x;
 		const destination = x === 0 ? 2 : 1;
-		model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, destination, 0)]]));
+		model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, destination, 0, input.editSource)]]));
 		projectCartMap(input);
 		assert.equal(input.selected!.x, destination);
 		const after = { ...input.selectionRange };
 		assert.equal(model.buffer.getText().slice(after.start, after.end), 'm');
 		selectCartMapRow(input, -1);
-		model.undo(); projectCartMap(input);
+		model.undo(input.editSource); projectCartMap(input);
 		assert.equal(model.buffer.getText(), source);
 		assert.equal(input.selected!.x, x);
 		assert.deepEqual(input.selectionRange, before);
-		model.redo(); projectCartMap(input);
+		model.redo(input.editSource); projectCartMap(input);
 		assert.equal(input.selected!.x, destination);
 		assert.deepEqual(input.selectionRange, after);
 		// Unrelated text replacement is not a move and must not reattach by glyph.
 		model.pushEditOperations([{ offset: after.start, deleteLength: after.end - after.start, text: 'M' }]);
 		projectCartMap(input);
 		assert.equal(input.selected, undefined);
-		model.undo(); projectCartMap(input);
+		model.undo(input.editSource); projectCartMap(input);
 		assert.equal(input.selected, undefined);
 	}
 });
@@ -159,7 +159,7 @@ test('map viewport can reveal signed object positions outside the authored tile 
 	const { model, input } = fixture();
 	t.after(() => { input.dispose(); model.dispose(); });
 	selectCartMapRow(input, 1);
-	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, -3, -2)]]));
+	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, -3, -2, input.editSource)]]));
 	projectCartMap(input);
 	const grid = input.grid;
 	grid.layout(40, 20, 80, 60);
@@ -183,13 +183,12 @@ test('accepted map moves and focused history reveal the restored member in both 
 	const { model, input } = fixture(`map_rows: ["${cells.join('')}"]\n`, 'nemesis');
 	const previousScrollbarController = editorViewState.scrollbarController;
 	editorViewState.scrollbarController = new ScrollbarController({
-		codeVertical: input.grid.vertical, codeHorizontal: input.grid.horizontal, viewerVertical: input.grid.vertical,
-		resourceVertical: input.tree.scrollbar, resourceHorizontal: input.grid.horizontal,
+		codeVertical: input.grid.vertical, codeHorizontal: input.grid.horizontal, resourceVertical: input.tree.scrollbar, resourceHorizontal: input.grid.horizontal,
 	}, () => {}, pointerCapture);
 	const bounds = { left: 0, top: 0, right: 320, bottom: 200 }, surfaces = new WorkbenchSurfaceService();
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('map fixture'), getBounds: () => bounds, getClip: () => bounds, isVisible: () => true, draw() {} });
 	const pane = new CartMapPane(null!,
-		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, bounds);
+		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope);
 	t.after(() => {
 		inputFocus.setTarget(null);
 		pane.clearInput(); pane.dispose(); input.dispose(); model.dispose();
@@ -214,4 +213,31 @@ test('accepted map moves and focused history reveal the restored member in both 
 	pane.update();
 	assert.equal(input.grid.horizontal.getScroll(), 0, 'ordinary updates preserve user panning');
 	assert.equal(input.tree.scroll, 0, 'ordinary updates preserve outline scrolling');
+});
+
+test('two map inputs share authored moves without sharing the invoking view selection', t => {
+	const { model, input } = fixture();
+	const sibling = new CartMapInput(model, 'pietious');
+	t.after(() => { input.dispose(); sibling.dispose(); model.dispose(); });
+	projectCartMap(sibling);
+	selectCartMapRow(input, 1);
+	selectCartMapRow(sibling, 2);
+	assert.equal(sibling.selected!.x, 2);
+	const siblingSelection = { ...sibling.selectionRange };
+	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, 3, 1, input.editSource)]]));
+	projectCartMap(input); projectCartMap(sibling);
+	assert.deepEqual([input.selected!.x, input.selected!.y], [3, 1]);
+	assert.equal(sibling.selected!.x, 2);
+	assert.deepEqual(sibling.selectionRange, siblingSelection);
+	model.undo(input.editSource);
+	projectCartMap(input); projectCartMap(sibling);
+	assert.equal(model.buffer.getText(), SOURCE);
+	assert.deepEqual([input.selected!.x, input.selected!.y], [1, 0]);
+	assert.equal(sibling.selected!.x, 2);
+	assert.deepEqual(sibling.selectionRange, siblingSelection);
+	model.redo(input.editSource);
+	projectCartMap(input); projectCartMap(sibling);
+	assert.deepEqual([input.selected!.x, input.selected!.y], [3, 1]);
+	assert.equal(sibling.selected!.x, 2);
+	assert.deepEqual(sibling.selectionRange, siblingSelection);
 });

@@ -5,7 +5,7 @@ import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { TextEditorInput } from '../../common/editor_input';
 import type { QuickInputController } from '../../services/quick_input/controller';
-import { getActiveTab } from '../../ui/tabs';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { buildResourceQuickPickItems } from '../resources/quick_access';
 import { FileQuickPickProvider } from '../../services/quick_input/file_provider';
 
@@ -21,6 +21,7 @@ export type SourceViewContribution = {
  * Catalog work occurs on invocation only, using retained semantic file data.
  */
 export function openSourceView(
+	group: EditorGroupView,
 	sources: RuntimeSourceState,
 	picker: QuickInputController,
 	view: SourceViewContribution,
@@ -36,7 +37,7 @@ export function openSourceView(
 		}
 		return snapshot;
 	};
-	const active = getActiveTab();
+	const active = group.model.activeTab;
 	if (active instanceof TextEditorInput && active.workingCopy.mode === 'lua') {
 		const resource = active.workingCopy.resource;
 		if (view.accepts(resource, snapshotFor(resource.domain))) {

@@ -195,7 +195,7 @@ test('property drafts edit written expressions and retain ordinary source histor
 		assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 		assert.ok(f.view.selection, `selection after editing ${name}`);
 		assert.ok(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label.startsWith(name));
-		f.model.undo(); f.refresh();
+		f.model.undo(f.view.editSource); f.refresh();
 		assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE);
 		assert.equal(f.model.canUndo, false);
 		assert.ok(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label.startsWith(name));
@@ -222,7 +222,7 @@ test('property drafts cancel on invalidation and read-only; invalid Enter retain
 	assert.equal(edit.active, false);
 	assert.equal(edit.control.pending, false);
 	assert.equal(f.model.buffer.getText(), '-- invalidated\n' + ACTIONEFFECT_SOURCE);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	open(); insertValue(edit.control.field, '3');
 	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } }); edit.update();
 	assert.equal(edit.active, false);
@@ -367,7 +367,7 @@ test('property selection and fold preferences survive hidden source edits/Undo o
 		assert.equal(f.properties.tree.roots[0].collapsed, true);
 		assert.equal(f.properties.collapsedRowKeys.size, 1);
 		assert.equal(pointer.handle(f.properties.tree, point, true, 20), WorkbenchPropertyPointerResult.Selection, 'new generation cannot complete the old double-click');
-		f.model.undo(); f.refresh();
+		f.model.undo(f.view.editSource); f.refresh();
 		assert.equal(f.properties.tree.rows[f.properties.tree.selectionIndex].element.value, '20');
 		const roots = f.properties.tree.roots.slice();
 		const rows = f.properties.tree.rows;

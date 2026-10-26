@@ -5,7 +5,7 @@ import { forEachWrappedMeasuredRange } from '../../../common/text';
 import { measureTextRange } from '../../../editor/common/text/layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
@@ -24,8 +24,8 @@ export class HostErrorPane extends WorkbenchViewEditorPane<HostErrorInput> {
 
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 
-	public constructor() {
-		super();
+	public constructor(scope: InputFocusScope) {
+		super(scope);
 		this.scroll.focusTarget.clipboard = { readOnly: true, copy: () => this.input.stack };
 	}
 	public override focus(): void { this.scroll.focusTarget.focus(); }

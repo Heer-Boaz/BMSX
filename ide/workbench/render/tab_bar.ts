@@ -1,24 +1,26 @@
 import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import type { RectBounds } from '../../../machine/ts/common/rect';
-import { editorChromeState } from '../ui/chrome_state';
-import { tabBarItems } from '../ui/tab/layout';
-import type { ChromeRenderContext } from './chrome_context';
+import type { EditorTabStrip } from '../ui/tab/control';
 import { renderWorkbenchActionBar } from './action_bar';
-import { editorViewState } from '../../editor/ui/view/state';
+
+export type EditorTabStripRenderContext = {
+	drawText(text: string, x: number, y: number, z: number, color: number): void;
+};
 
 /** Painting consumes the published strip; it never reveals tabs or changes hit geometry. */
-export function renderTabBar(context: ChromeRenderContext): void {
-	const { top: barTop, bottom: barBottom, right: viewportWidth } = editorChromeState.tabBarBounds;
-	const rowBottom = barTop + context.tabBarHeight;
+export function renderTabBar(strip: EditorTabStrip, context: EditorTabStripRenderContext): void {
+	const layout = strip.layoutState;
+	const { left: stripLeft, top: barTop, bottom: barBottom, right: stripRight } = layout.bounds;
+	const rowBottom = barTop + layout.rowHeight;
 	const borderColor = constants.COLOR_TAB_BORDER;
-	const scrollbar = editorChromeState.tabScrollbar;
-	api.fill_rect(0, barTop, viewportWidth, barBottom, 0, constants.COLOR_TAB_BAR_BACKGROUND);
-	const tabsRight = editorChromeState.tabViewportBounds.right;
-	api.pushClipRect(editorChromeState.tabViewportBounds.left, barTop, tabsRight, rowBottom);
-	for (let index = 0; index < tabBarItems.length; index++) {
-		const entry = tabBarItems.peek(index), { bounds, closeBounds } = entry;
-		if (bounds.right <= 0 || bounds.left >= tabsRight) continue;
+	const scrollbar = strip.scrollbar;
+	api.fill_rect(stripLeft, barTop, stripRight, barBottom, 0, constants.COLOR_TAB_BAR_BACKGROUND);
+	const tabsRight = layout.viewportBounds.right;
+	api.pushClipRect(layout.viewportBounds.left, barTop, tabsRight, rowBottom);
+	for (let index = 0; index < layout.items.length; index++) {
+		const entry = layout.items.peek(index), { bounds, closeBounds } = entry;
+		if (bounds.right <= layout.viewportBounds.left || bounds.left >= tabsRight) continue;
 		const active = entry.active;
 		const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
 		const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
@@ -63,13 +65,13 @@ export function renderTabBar(context: ChromeRenderContext): void {
 		}
 
 	}
-	const drag = editorChromeState.tabDragState;
+	const drag = strip.drag.state;
 	if (drag !== null && drag.targetIndex >= 0) {
 		const x = drag.markerX - Math.round(scrollbar.getScroll());
 		api.fill_rect(x - 1, barTop, x + 1, rowBottom, 0, constants.COLOR_TAB_ACTIVE_TEXT);
 	}
 	api.popClipRect();
-	renderWorkbenchActionBar(editorChromeState.tabActions, editorViewState.font.renderFont(), constants.COLOR_STATUS_TEXT, constants.COLOR_HEADER_BUTTON_TEXT_DISABLED);
+	renderWorkbenchActionBar(strip.actions, layout.font, constants.COLOR_STATUS_TEXT, constants.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 	if (scrollbar.isVisible()) scrollbar.draw(constants.COLOR_TAB_BAR_BACKGROUND, constants.COLOR_TAB_BORDER);
 }
 

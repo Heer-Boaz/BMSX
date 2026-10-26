@@ -1,10 +1,8 @@
 import type { RuntimeEventHistory } from '../../../runtime/event_history';
 import { ReadonlyEditorInput } from '../../common/editor_input';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
 import { EventProjection } from './presentation';
 import { createEventViewerLayout } from './layout';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
@@ -22,6 +20,6 @@ export class EventViewerInput extends ReadonlyEditorInput<'events', 'event_viewe
 	}
 }
 
-export function openEventViewer(panes: EditorPanes, history: RuntimeEventHistory): void {
-	openEditorTab(panes, editorTabGroup.findById('events') ?? new EventViewerInput(history));
+export function openEventViewer(group: EditorGroupView, history: RuntimeEventHistory): void {
+	group.openEditor(group.model.findById('events') ?? new EventViewerInput(history));
 }

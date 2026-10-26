@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -38,12 +37,12 @@ export async function runAssistantTestInspection(kind: StudioRendererKind, canva
 	check(result.state === 'failed' && ide.scenarioRuns.canInspect(result), 'a physical failed test target remains after prompt completion');
 	await frame(); await renderer.capture!('conversation-values');
 	await runPaletteCommand('Scenario Lab: Open'); await frame();
-	const lab = getActiveTab(); if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
+	const lab = ide.editor.editorGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
 	await press('Tab'); await press('Home');
 	const index = lab.view.resultPane.rows.findIndex(row => row.id === result.id);
 	for (let i = 0; i < index; i++) await press('ArrowDown');
 	await runPaletteCommand('Scenario Lab: Inspect Retained Test Target'); await frame();
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab pane required');
 	const model = pane.targetInspection.model!;
 	check(model !== undefined && model.tree.roots[0].children.length === 0, 'ordinary inspection lazily binds same target without reading values during paint');

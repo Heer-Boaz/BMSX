@@ -31,7 +31,6 @@ import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletion
 import { buildEditorSemanticFrontend } from '../../../../editor/contrib/intellisense/frontend';
 import { assignRowColumn } from '../../../../common/state';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
-import { isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../ui/code_tab/contexts';
 import { prepareUndo } from '../../../../editor/editing/undo_controller';
 import { revealInlineEdit } from '../../../../editor/ui/view/caret/view';
 import type { Decl, FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../../toolchain/ts/lua/semantic/model';
@@ -69,14 +68,14 @@ export class CompletionController {
 	public readonly popupBoundsScratch = create_rect_bounds();
 
 	protected isCompletionContextActive(): boolean {
-		return isActiveLuaCodeTab();
+		return (activeCodeEditor.model?.mode === 'lua');
 	}
 
 	protected isCompletionReady(): boolean {
-		if (!isActiveLuaCodeTab()) {
+		if (!(activeCodeEditor.model?.mode === 'lua')) {
 			return false;
 		}
-		if (isReadOnlyCodeTab()) {
+		if (activeCodeEditor.model.readOnly) {
 			return false;
 		}
 		if (!activeCodeEditor.focusTarget.hasFocus) {

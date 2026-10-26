@@ -7,7 +7,7 @@ import { truncateMeasuredText } from '../../../common/text';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
@@ -20,7 +20,7 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { WorkspaceEditReviewInput } from './editor_input';
 import { layoutEditReviewRows } from './projection';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -28,7 +28,6 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { CodeEditorInput } from '../code_editor/editor_input';
-import { openEditorTab } from '../../ui/tabs';
 import { sourceTabDescription } from '../../ui/tab/titles';
 import type { PointerHoverTarget } from '../../../input/pointer/hover';
 import type { DisposableStore } from '../../../common/lifecycle';
@@ -47,10 +46,10 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 	private readonly headingBounds = create_rect_bounds();
 	private headingHovered = false;
 	private sourcePicker: DisposableStore | undefined;
-	public constructor(private readonly panes: EditorPanes, private readonly quickInput: QuickInputController,
+	public constructor(private readonly group: EditorGroupView, private readonly quickInput: QuickInputController,
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
-		private readonly workArea: Readonly<RectBounds>) {
-		super();
+		private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		super(scope);
 		this.focusTarget.canFocus = this.scroll.focusTarget.canFocus = () => this.hasInput
 			&& this.input.viewport.bounds.left < this.input.viewport.bounds.right && this.input.viewport.height > 0;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
@@ -118,7 +117,7 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 		}, item => {
 			const { model, offset } = item.location, position = { row: 0, column: 0 };
 			model.buffer.positionAt(offset, position);
-			openEditorTab(this.panes, new CodeEditorInput(model), {
+			this.group.openEditor(new CodeEditorInput(model), {
 				selection: { row: position.row, startColumn: position.column, endColumn: position.column },
 			});
 		}, lifetime => {
@@ -128,7 +127,7 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 		});
 	}
 	private reveal(models: readonly EditorTextModel[]): void {
-		for (const model of models) openEditorTab(this.panes, new CodeEditorInput(model));
+		for (const model of models) this.group.openEditor(new CodeEditorInput(model));
 	}
 	private async apply(input: WorkspaceEditReviewInput): Promise<void> {
 		try {

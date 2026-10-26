@@ -1,9 +1,7 @@
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
-import { getActiveTab, openEditorTab } from '../../../ide/workbench/ui/tabs';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { WorkspaceSourceTools } from '../../../ide/workbench/services/assistant/source_tools';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
-import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { check, type StudioFixture } from './studio_fixture';
@@ -15,12 +13,12 @@ export async function runStudioEditReview(test: StudioFixture) {
 	await reachNemesisTitle(test);
 	harness.openLuaSource('cart.lua');
 	await frame();
-	const main = harness.getActiveEditorDocument().model, mainTab = getActiveTab();
+	const main = harness.getActiveEditorDocument().model, mainTab = ide.editor.editorGroup.model.activeTab;
 	const originalMain = main.buffer.getText();
 	const record = runtimeLuaSourceRegistry(ide.sources, 0)!.records.find(record => record.program_module
 		&& !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 	harness.openLuaSource(record.source_path);
-	const provider = harness.getActiveEditorDocument().model, providerTab = getActiveTab();
+	const provider = harness.getActiveEditorDocument().model, providerTab = ide.editor.editorGroup.model.activeTab;
 	const originalProvider = provider.buffer.getText();
 	const mainText = 'return fixture_rename, fixture_rename';
 	const providerText = 'fixture_rename = { value = 1 }\n'
@@ -34,7 +32,7 @@ export async function runStudioEditReview(test: StudioFixture) {
 		await runPaletteCommand('Edit: Rename Symbol with Preview');
 		await test.clipboard.writeText('fixture_reviewed');
 		await press('ControlLeft', 'KeyV'); await press('Enter');
-		const input = getActiveTab();
+		const input = ide.editor.editorGroup.model.activeTab;
 		if (input.kind !== 'workspace_edit_review') throw new Error('edit review: production review pane expected');
 		check(activeCodeEditor.model === null && input.proposal.files.length === 2,
 			'edit review: resource-based pane detaches the code widget and shows both sources');
@@ -81,7 +79,7 @@ export async function runStudioEditReview(test: StudioFixture) {
 	await frame(); await test.capture?.('stale');
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyZ');
 	const transient = await show();
-	const serialized = editorTabGroup.serialize(ide.editor.editorInputSerializers);
+	const serialized = ide.editor.editorGroup.model.serialize(ide.editor.editorInputSerializers);
 	check(serialized.inputs.every(input => input.kind !== ('workspace_edit_review' as string)), 'edit review: session never serializes edit rights');
 	await press('ControlLeft', 'KeyW');
 	check(transient.proposal.state === 'discarded', 'edit review: Close discards the unaccepted proposal');
@@ -104,7 +102,7 @@ async function sourceToolReview(test: StudioFixture, mainPath: string): Promise<
 			if (catalog.kind !== 'sources') throw new Error('source tools: catalog expected');
 			const selected = [catalog.data.find(source => source.domain === 0 && source.path === mainPath)!,
 				catalog.data.find(source => source.domain === 0 && source.path.endsWith('nemesis_s_stage.yaml'))!];
-			const tabCount = editorTabGroup.tabs.length;
+			const tabCount = ide.editor.editorGroup.model.tabs.length;
 			const reads = await Promise.all(selected.map(source => tools.execute('studio_read_source', { resource: source.resource })));
 			const files = reads.map((read, index) => {
 				if (read.kind !== 'source') throw new Error('source tools: captured source expected');
@@ -113,9 +111,9 @@ async function sourceToolReview(test: StudioFixture, mainPath: string): Promise<
 			});
 			const result = await tools.execute('studio_propose_edits', { title: 'Source tools: Lua and YAML review', files });
 			if (result.kind !== 'proposal') throw new Error('source tools: review proposal expected');
-			check(editorTabGroup.tabs.length === tabCount, 'source tools: source reads/proposal do not create hidden source tabs');
+			check(ide.editor.editorGroup.model.tabs.length === tabCount, 'source tools: source reads/proposal do not create hidden source tabs');
 			const input = new WorkspaceEditReviewInput(result.proposal);
-			openEditorTab(ide.editor.editorPanes, input);
+			ide.editor.editorGroup.openEditor(input);
 			return { input, before: selected.map(source => editorTextModelService.get(source)!.buffer.getText()),
 				models: selected.map(source => editorTextModelService.get(source)!) };
 		} finally { tools.dispose(); }

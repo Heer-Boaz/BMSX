@@ -1,6 +1,5 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
 import { SCENARIO_RESULT_LOG_RETAIN_COUNT } from '../../../ide/testing/scenario/result_service';
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -18,7 +17,7 @@ const MESSAGE = `expected:\n\n${Array.from({ length: 65 }, (_, n) => `line_${n}:
 /** Independent result/source data through the actual Lab, inspector and Quick Input routes. */
 export async function testStudioScenarioOutput(test: StudioFixture): Promise<void> {
 	const { ide, press, click, frame, runPaletteCommand, cycles } = test;
-	const origin = getActiveTab();
+	const origin = ide.editor.editorGroup.model.activeTab;
 	// Open the canonical cartridge resource independently of test-target lifetime.
 	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: 'cart.lua' });
 	check(resource !== undefined, 'A05: test cancellation retains the cartridge source');
@@ -27,7 +26,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: EFFECTS }]);
 	const version = model.version, dirty = model.dirty, position = cycles();
 	await runPaletteCommand('Scenario Lab: Open');
-	const lab = getActiveTab();
+	const lab = ide.editor.editorGroup.model.activeTab;
 	if (lab.kind !== 'scenario_lab') throw new Error('A05: actual Lab input required');
 	const view = lab.view, service = view.resultService;
 	const testRow = view.testPane.rows.find(row => row.kind === 'test')!;
@@ -43,7 +42,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	service.fail(result, 53, { message: MESSAGE }, null);
 	service.completeRun(run);
 	await frame(); await press('Tab');
-	const pane = ide.editor.editorPanes.activePane as ScenarioLabEditorPane;
+	const pane = ide.editor.editorGroup.panes.activePane as ScenarioLabEditorPane;
 	const inspector = pane.inspector;
 	const select = async (matches: (row: ScenarioLabResultRow) => boolean) => {
 		const index = view.resultPane.rows.findIndex(matches);
@@ -55,7 +54,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	await select(row => row.kind === 'log' && row.log.text === MESSAGE);
 	const selectedId = view.resultPane.rows[view.resultPane.selectionIndex].id;
 	await press('Enter');
-	check(getActiveTab() === lab, 'A05: activating output inspects the message, not an invented test-file source');
+	check(ide.editor.editorGroup.model.activeTab === lab, 'A05: activating output inspects the message, not an invented test-file source');
 	check(inspector.visible && inspector.model.rows[0].element.value === MESSAGE, 'A05: original multiline output is available');
 	check(!inspector.isEnabled('propertyInspector.source'), 'A05: host output has no fabricated source');
 	const measured = inspector.model.rows[0];
@@ -90,10 +89,10 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	await press('Enter');
 	check(inspector.isEnabled('propertyInspector.source'), 'A05: real diagnostic source is enabled');
 	await click(inspector.actionBar.items.find(item => item.command === 'propertyInspector.source')!.bounds);
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === 3,
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === 3,
 		'A05: Source uses the message location, not its test context');
 	await runPaletteCommand('Go: Back');
-	check(getActiveTab() === lab && view.resultPane.rows[view.resultPane.selectionIndex].kind === 'log', 'A05: navigation Back restores retained result selection');
+	check(ide.editor.editorGroup.model.activeTab === lab && view.resultPane.rows[view.resultPane.selectionIndex].kind === 'log', 'A05: navigation Back restores retained result selection');
 	await select(row => row.kind === 'log' && row.log.text === MESSAGE);
 	await press('Enter');
 	for (let n = 0; n < SCENARIO_RESULT_LOG_RETAIN_COUNT; n += 1) service.appendLog(result, 60 + n, `replacement ${n}`);

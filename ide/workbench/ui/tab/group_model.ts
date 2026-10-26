@@ -227,5 +227,3 @@ export class EditorTabGroupModel {
 		this.emitChanged();
 	}
 }
-
-export const editorTabGroup = new EditorTabGroupModel();

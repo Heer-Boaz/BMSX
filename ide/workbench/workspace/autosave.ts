@@ -3,7 +3,6 @@ import {
 	type RuntimeSourceState,
 } from '../../runtime/sources';
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
-import { editorTabGroup } from '../ui/tab/group_model';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { captureWorkspaceDirtySources } from '../services/working_copy/source_recovery';
 import { publishWorkspaceDirtySources, pruneWorkspaceDirtySources } from '../../workspace/source_recovery_store';
@@ -58,7 +57,7 @@ export function commitWorkspaceSessionLocally(
 		generationDirtyRecords = previousGeneration.dirtyRecords;
 	}
 	const editorGroup = !previousGeneration || rebuildDirtyFiles || (changes & WorkspaceAutosaveChange.EditorSession)
-		? editorTabGroup.serialize(editor.editorInputSerializers, previousGeneration?.payload.editorGroup)
+		? editor.editorGroup.model.serialize(editor.editorInputSerializers, previousGeneration?.payload.editorGroup)
 		: previousGeneration.payload.editorGroup;
 
 	const breakpoints = !previousGeneration || (changes & WorkspaceAutosaveChange.Breakpoints)

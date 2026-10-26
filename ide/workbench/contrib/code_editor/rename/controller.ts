@@ -17,9 +17,8 @@ import { handleRenameControllerInput } from './input';
 import { validateRenameIdentifier } from './validation';
 import type { CrossFileRenameManager } from './operations';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
-import type { EditorPanes } from '../../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../../services/editor/editor_group';
 import { WorkspaceEditReviewInput } from '../../edit_review/editor_input';
-import { openEditorTab } from '../../../ui/tabs';
 import { WorkspaceSourceContext, WorkspaceSourceContextConflict } from '../../../services/working_copy/source_context';
 import { InlineBarFieldLayout } from '../inline_bar/field';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
@@ -37,7 +36,7 @@ export class RenameController {
 	private matches: SearchMatch[] = EMPTY_RENAME_MATCHES;
 	private info: ReferenceMatchInfo = null;
 	private unbindSourceChanges: () => void;
-	private reviewPanes: EditorPanes | undefined;
+	private reviewGroup: EditorGroupView | undefined;
 	private context: WorkspaceSourceContext | undefined;
 	private originalName = '';
 	private activeIndex = -1;
@@ -58,7 +57,7 @@ export class RenameController {
 		});
 	}
 
-	public begin(sources: RuntimeSourceState, options: RenameStartOptions, reviewPanes?: EditorPanes): boolean {
+	public begin(sources: RuntimeSourceState, options: RenameStartOptions, reviewGroup?: EditorGroupView): boolean {
 		const lookup = resolveReferenceLookup(sources, options);
 		if (lookup.kind === 'error') {
 			showEditorMessage(lookup.message, 'warning', lookup.duration);
@@ -78,7 +77,7 @@ export class RenameController {
 		}
 		this.matches = info.matches;
 		this.context = new WorkspaceSourceContext(editorTextModelService, sources);
-		this.reviewPanes = reviewPanes;
+		this.reviewGroup = reviewGroup;
 		this.info = info;
 		this.originalName = currentName;
 		this.activeIndex = initialIndex;
@@ -169,12 +168,12 @@ export class RenameController {
 		}
 		let updatedMatches: number;
 		try {
-			if (this.reviewPanes !== undefined) {
+			if (this.reviewGroup !== undefined) {
 				const proposal = crossFileRename.proposeRename(this.context!, activeCodeEditor.model.resource.domain, this.info, nextName);
 				this.context = undefined; // Review now owns the accepted reading operation.
-				const panes = this.reviewPanes;
+				const group = this.reviewGroup;
 				this.cancel();
-				openEditorTab(panes, new WorkspaceEditReviewInput(proposal));
+				group.openEditor(new WorkspaceEditReviewInput(proposal));
 				return;
 			}
 			updatedMatches = commitRename(crossFileRename, this.matches, nextName, this.activeIndex, this.info);
@@ -207,7 +206,7 @@ export class RenameController {
 		refreshWorkbenchLayout();
 		this.matches = EMPTY_RENAME_MATCHES;
 		this.info = null;
-		this.reviewPanes = undefined;
+		this.reviewGroup = undefined;
 		this.originalName = '';
 		this.activeIndex = -1;
 		this.expressionLabel = null;

@@ -1,3 +1,4 @@
+import { inputFocus } from '../../../input/focus';
 import type { RuntimeResource } from '../../../common/models';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
 import {
@@ -16,9 +17,7 @@ import {
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ResourcePanelController } from './panel/controller';
 import type { ResourceEditorResolver } from '../../services/editor/resource_editor_resolver';
-import { openEditorTab, setActiveTab } from '../../ui/tabs';
-import type { EditorPanes } from '../../services/editor/editor_panes';
-import { editorTabGroup } from '../../ui/tab/group_model';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { EditorSearchController } from '../code_editor/find/search';
 
 export class EditorNavigationController {
@@ -26,26 +25,22 @@ export class EditorNavigationController {
 		private readonly sources: RuntimeSourceState,
 		private readonly resourcePanel: ResourcePanelController,
 		private readonly editorResolver: ResourceEditorResolver,
-		private readonly editorPanes: EditorPanes,
+		private readonly group: EditorGroupView,
 		private readonly search: EditorSearchController,
 	) {
 	}
 
 	/** The attached generation, or undefined when another opening superseded this request. */
 	public async openResource(resource: RuntimeResource, selection?: EditorTextSelection): Promise<number | undefined> {
-		const generation = this.editorPanes.beginOpen();
-		const input = await this.editorResolver.resolveEditorInput(resource);
-		if (generation !== this.editorPanes.openGeneration) {
-			if (editorTabGroup.findById(input.id) !== input) input.dispose();
-			return undefined;
-		}
-		openEditorTab(this.editorPanes, input, { selection });
+		const result = await this.group.openResolvedEditor(this.editorResolver.resolveEditorInput(resource), { selection });
+		if (result === undefined) return undefined;
+		if (!result.activated) return result.generation;
 		this.resourcePanel.queuePendingSelection(resource);
 		if (this.resourcePanel.isVisible()) {
 			this.resourcePanel.applyPendingSelection();
 		}
 		releaseResourcePanelFocus(this.resourcePanel);
-		return this.editorPanes.openGeneration;
+		return result.generation;
 	}
 
 	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): Promise<number | undefined> {
@@ -80,26 +75,31 @@ export class EditorNavigationController {
 	}
 
 	private async openHistoryEntry(target: NavigationHistoryEntry): Promise<void> {
-		const generation = this.editorPanes.beginOpen();
+		const group = target.owner;
+		const generation = group.panes.beginOpen();
+		const activation = inputFocus.revision;
+		let preserveFocus = false;
 		try {
 			const destination = target.target;
 			if (destination.kind === 'input') {
 				withNavigationCaptureSuspended(() => {
 					// This live destination already belongs to the group. History does
 					// not turn a surviving preview into an explicit Keep Open request.
-					setActiveTab(this.editorPanes, destination.input.id, undefined, target.selection);
+					group.activate(destination.input.id, undefined, target.selection);
 				});
 			} else {
 				const input = await this.editorResolver.resolveEditorInput(resolveRuntimeResource(this.sources, destination.resource)!, destination.editorId);
-				if (generation !== this.editorPanes.openGeneration) {
-					if (editorTabGroup.findById(input.id) !== input) input.dispose();
+				if (generation !== group.panes.openGeneration || target.isDisposed) {
+					input.dispose();
 					return;
 				}
+				preserveFocus = activation !== inputFocus.revision;
 				withNavigationCaptureSuspended(() => {
-					openEditorTab(this.editorPanes, input, { pinned: false, navigationSelection: target.selection });
+					group.openEditor(input, { pinned: false, navigationSelection: target.selection,
+					preserveFocus });
 				});
 			}
-			releaseResourcePanelFocus(this.resourcePanel);
+			if (!preserveFocus) releaseResourcePanelFocus(this.resourcePanel);
 		} finally {
 			target.dispose();
 		}

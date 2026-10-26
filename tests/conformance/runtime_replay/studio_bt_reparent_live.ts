@@ -2,7 +2,6 @@ import { BT_REPARENT_LIVE_SOURCE } from '../../helpers/behavior_reparent_live_fi
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -37,7 +36,7 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 	const position = cycles(), media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.live');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') {
 		throw new Error('BT live: actual BT graph and contribution pane required');
 	}
@@ -56,11 +55,11 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 	const version = model.version;
 	movePointer(point(source)); await frame(); setPointerButton('pointer_primary', true); await frame();
 	movePointer(point(target)); await frame(); setPointerButton('pointer_primary', false); await frame();
-	const review = getActiveTab();
+	const review = ide.editor.editorGroup.model.activeTab;
 	if (!(review instanceof WorkspaceEditReviewInput)) throw new Error('BT live: drop must open a unified review tab');
 	check(review.proposal.state === 'pending' && model.version === version, 'BT live: cross-depth release offers review without applying source');
 	await click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds, 6);
-	check(review.proposal.state === 'applied' && getActiveTab().kind === 'code_editor' && model.version === version + 1,
+	check(review.proposal.state === 'applied' && ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && model.version === version + 1,
 		'BT live: acceptance opens the working copy while retaining the exact preview');
 	await test.clickTab(lens.id);
 	check(root().children.length === 2 && root().children[0].children.length === 2,

@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -14,10 +13,10 @@ export async function runAssistantProgram(kind: StudioRendererKind, canvas: HTML
 	const { ide, runtime, until, cycles, harness, frame, press } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'program: boot actual authored fixture');
 	await reachNemesisTitle(test); harness.openLuaSource('cart.lua'); await frame();
-	const mainTab = getActiveTab(), main = harness.getActiveEditorDocument().model;
+	const mainTab = ide.editor.editorGroup.model.activeTab, main = harness.getActiveEditorDocument().model;
 	const original = main.buffer.getText(), oldMedia = ide.sources.currentBlua32Media, before = cycles();
 	await test.runPaletteCommand('View: Codex Assistant');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane required');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	const conversation = ide.editor.assistant;
 	await submitAssistantText(test, 'Run installed_probe and inspect its failure. Read cart.lua and propose the source fix for review. Do not save or install yet.');
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.proposal !== undefined), 'program: reproduce failure and offer canonical-source repair');
@@ -25,7 +24,7 @@ export async function runAssistantProgram(kind: StudioRendererKind, canvas: HTML
 	check(main.buffer.getText() === original && !main.dirty && cycles() === before && ide.sources.currentBlua32Media === oldMedia,
 		'failure reproduction and proposal do not change the authoring machine');
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.review')!.bounds);
-	const review = getActiveTab(); if (review.kind !== 'workspace_edit_review') throw new Error('Shared review required');
+	const review = ide.editor.editorGroup.model.activeTab; if (review.kind !== 'workspace_edit_review') throw new Error('Shared review required');
 	await frame(); await renderer.capture!('review');
 	await test.click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
 	check(proposal.state === 'applied' && main.dirty && main.lastSavedSource === original, 'visible Apply does not Save or install');

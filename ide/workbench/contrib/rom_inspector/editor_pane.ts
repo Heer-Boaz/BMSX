@@ -10,7 +10,7 @@ import { TextField } from '../../../editor/ui/inline/text_field_model';
 import { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_viewport';
 import { resetBlink } from '../../../editor/render/caret';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -80,8 +80,8 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		private readonly sources: RuntimeSourceState, private readonly navigation: EditorNavigationController,
 		private readonly quickInput: QuickInputController, private readonly contextMenu: ContextMenuController,
 		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface,
-		private readonly workArea: Readonly<RectBounds>) {
-		super();
+		private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		super(scope);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionTooltip.attach(surfaces, owner, workArea);
 		this.actions.onDidOpenOverflow = () => this.actionTooltip.hide();

@@ -72,9 +72,10 @@ export class RuntimeIdeState extends StudioWorkbench {
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
+		this.hotResumes.onDidApply(() => clearAllRuntimeErrorOverlays(this.editor.editorGroup));
 		this.onDidReplaceMachine(() => {
 			this.editor.terminal.discard();
-			clearAllRuntimeErrorOverlays();
+			clearAllRuntimeErrorOverlays(this.editor.editorGroup);
 			clearHoverTooltip();
 		});
 		this.onDidStop(() => {
@@ -84,7 +85,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 		});
 		this.onDidFailHostFrame(stack => {
 			this.overlayRenderer.abandonFrame();
-			openHostError(this.editor.editorPanes, stack);
+			openHostError(this.editor.editorGroup, stack);
 			this.editor.activate();
 		});
 	}

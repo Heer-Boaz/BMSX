@@ -2,7 +2,6 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { BehaviorTreeTransferAnalysis } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_TRANSFER_SOURCE, transferBehaviorFixtureSelection } from '../../helpers/behavior_transfer_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -14,14 +13,14 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	if (code.kind !== 'code_editor') throw new Error('bookmark: source code input required');
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_TRANSFER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.second');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('bookmark: BT graph required');
 	const view = lens.view;
 	const graph = lens.view.presentation;
@@ -60,7 +59,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const transferred = model.buffer.getText();
 	version = model.version;
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(getActiveTab() === code && model.version === version && !hasSelection()
+	check(ide.editor.editorGroup.model.activeTab === code && model.version === version && !hasSelection()
 		&& activeCodeEditor.view.cursorRow === range.start.line - 1 && activeCodeEditor.view.cursorColumn === range.start.column - 1,
 		'bookmark: held Source click is navigation, not a document edit or drag into the source editor');
 	await press('ArrowRight');
@@ -72,7 +71,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	check(activeCodeEditor.view.cursorColumn === typingColumn + 1, 'bookmark: physical typing produces code-owned edit state');
 	await test.clickTab(lens.id);
 	await runPaletteCommand('Edit: Undo');
-	check(getActiveTab() === lens && code.context.view.cursorRow === typingRow && code.context.view.cursorColumn === typingColumn,
+	check(ide.editor.editorGroup.model.activeTab === lens && code.context.view.cursorRow === typingRow && code.context.view.cursorColumn === typingColumn,
 		'bookmark: graph Undo restores the hidden code input through the document event, without a code Undo caller');
 	await runPaletteCommand('Edit: Redo');
 	check(code.context.view.cursorColumn === typingColumn + 1, 'bookmark: graph Redo restores the hidden code result too');

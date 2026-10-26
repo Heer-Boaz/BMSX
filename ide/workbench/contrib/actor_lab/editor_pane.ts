@@ -10,7 +10,7 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import type { EditorCommandRunner } from '../../../common/commands';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, type InputFocusTarget, type InputFocusScope } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -69,9 +69,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private boundGraph: ActorStateGraph | undefined;
 	public constructor(private readonly commands: EditorCommandRunner,
 		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
-		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super();
-		this.focusTarget.scope.surfaceScope = paneSurface.captureScope;
+		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		super(scope);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
 			value => this.input.timeline.request(value), () => this.input.timeline.cancelPending());

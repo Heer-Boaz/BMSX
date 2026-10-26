@@ -5,7 +5,7 @@ import * as colors from '../../../common/constants';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
@@ -36,8 +36,8 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 	private focusedSection = -1;
 	private focusedAction = -1;
 
-	public constructor(private readonly commands: EditorCommandRunner) {
-		super();
+	public constructor(private readonly commands: EditorCommandRunner, scope: InputFocusScope) {
+		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.viewport.bounds.left < this.input.viewport.bounds.right
 			&& this.input.viewport.bounds.top < this.input.viewport.bounds.bottom;
 		this.scroll.focusTarget.canFocus = this.focusTarget.canFocus;

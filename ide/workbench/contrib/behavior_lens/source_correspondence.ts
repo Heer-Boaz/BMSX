@@ -13,7 +13,7 @@ export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, resour
 	const { changes, editState } = event;
 	const definition = state.definitionRowKey === null ? undefined : state.source.ranges.get(state.definitionRowKey);
 	// A document's undo state belongs to the edited registration, not all its views.
-	if (editState !== null && editState.is(behaviorSourceEditState) && definition !== undefined
+	if (editState !== null && editState.is(behaviorSourceEditState) && event.editSource === state.editSource && definition !== undefined
 		&& definition.start !== definition.end && trackedTextLocationsEqual(definition, editState.value.path[0])) {
 		state.selectionBookmark = copyBehaviorSourceBookmark(editState.value);
 	} else if (state.selectionBookmark !== undefined) {

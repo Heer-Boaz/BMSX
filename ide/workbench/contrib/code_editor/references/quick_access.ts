@@ -30,7 +30,7 @@ export function createReferenceQuickPickProvider(
 }
 
 export function openReferenceSearch(editor: CartEditor, sources: RuntimeSourceState): void {
-	const { model, view } = getActiveCodeTabContext();
+	const { model, view } = getActiveCodeTabContext(editor.editorGroup);
 	const { resource } = model;
 	const row = view.cursorRow, column = view.cursorColumn;
 	const result = resolveReferenceLookup(sources, { buffer: model.buffer, cursorRow: row, cursorColumn: column, identity: resource });

@@ -1,3 +1,4 @@
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -11,7 +12,6 @@ import { AnimationLaneControl } from '../../ide/workbench/contrib/animation/lane
 import { AnimationInputSerializer } from '../../ide/workbench/contrib/animation/editor_serializer';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
@@ -194,7 +194,8 @@ test('imported sprite configuration retains its actual consumer and selected sou
 	const caller = "local sprite=require('cartlib/component/sprite_animation_component'); return sprite.factory(require('parent'))";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, config), createScenarioTestSourceRecord('caller.lua', 1, caller)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', config);
-	const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
+	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const controller = new AnimationEditorController(sources, group, undefined!, undefined!);
 	const project = getOrCreateSemanticProject(editorTextModelService, 0); project.synchronizeRuntimeSources(sources);
 	const snapshot = project.getSnapshot(), factory = collectAnimationDefinitions({ domain: 0, path: 'caller.lua' }, snapshot)[0];
 	assert.equal(factory.file.file, resource.path);
@@ -202,9 +203,8 @@ test('imported sprite configuration retains its actual consumer and selected sou
 	assert.equal(factory.consumer!.file, 'caller.lua', 'raw exports cannot swallow consumer-specific provenance');
 	const input = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, factory.file.chunk.locations.range(factory.table.span)), 'sprite', factory.consumer!.file);
 	const consumer = controller.modelFor(input, factory.consumer!);
-	editorTabGroup.add(input);
-	const unbind = editorTextModelService.onDidChangeContent((model, event) => controller.onDidChangeContent(model, event));
-	t.after(() => { unbind(); editorTabGroup.clear(); input.dispose(); editorTextModelService.clear(); });
+	group.model.add(input);
+	t.after(() => { group.model.clear(); input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.selectTrack(input, input.tracks.rows.length - 1); controller.selectProperty(input, 1);
 	assert.equal(input.document!.family, 'sprite');
 	controller.authoring.reorder(input, -1);
@@ -233,10 +233,10 @@ test('a selected mixed-coordinate lane remains Source after a shared working-cop
 	const source = "return {tracks={{kind='event',keys={{time_ms=0,event='first'}}},{kind='event',keys={{frame=1,event='second'},{u=1,event='third'}}}}}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
-	const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
-	const input = new AnimationEditorInput(model); editorTabGroup.add(input);
-	const unbind = editorTextModelService.onDidChangeContent((model, event) => controller.onDidChangeContent(model, event));
-	t.after(() => { unbind(); editorTabGroup.clear(); input.dispose(); editorTextModelService.clear(); });
+	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const controller = new AnimationEditorController(sources, group, undefined!, undefined!);
+	const input = new AnimationEditorInput(model); group.model.add(input);
+	t.after(() => { group.model.clear(); input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.selectTrack(input, 2);
 	assert.equal(input.keys.unit, undefined);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shared edit\n' }]); controller.refresh(input);
@@ -246,7 +246,7 @@ test('a selected mixed-coordinate lane remains Source after a shared working-cop
 });
 
 test('animation recovery restores the native cursor after the document admits its axis', async t => {
-	t.after(() => { editorTabGroup.clear(); editorTextModelService.clear(); });
+	t.after(() => { editorTextModelService.clear(); });
 	for (const unit of ['time_ms', 'frame', 'u'] as const) {
 		const source = `return {tracks={{kind='event',keys={{${unit}=0,event='start'},{${unit}=1,event='end'}}}}}`;
 		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
@@ -305,7 +305,7 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const oldScrollbars = editorViewState.scrollbarController;
 	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
-		viewerVertical: new Scrollbar('vertical'), resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, () => {}, pointerCapture);
+		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, () => {}, pointerCapture);
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
 	const navigated: unknown[][] = [];
@@ -321,7 +321,7 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	const root = { ...bounds, right: 384 };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('animation pane'), isVisible: () => true,
 		getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	const pane = new AnimationEditorPane(controller, commands as IdeCommandController, menu, surfaces, owner, root);
+	const pane = new AnimationEditorPane(controller, commands as IdeCommandController, menu, surfaces, owner, root, inputFocus.workbenchScope);
 	t.after(() => {
 		menu.dispose(); pane.dispose(); input.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear();
 		editorTextModelService.clear(); editorViewState.scrollbarController = oldScrollbars;

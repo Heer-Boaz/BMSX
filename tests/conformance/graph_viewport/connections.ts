@@ -7,9 +7,9 @@ function check(condition: boolean, message: string): void {
 
 /** Real pane/input/render protocol, not a fake FSM retarget command or Lua editor. */
 export function exerciseGraphConnections(fixture: Awaited<ReturnType<typeof createFixture>>) {
-	const { panes, pane, inputs, move, button, step, key, connection: f } = fixture;
+	const { group, pane, inputs, move, button, step, key, connection: f } = fixture;
 	const input = inputs[2];
-	panes.openEditor(input);
+	group.openEditor(input);
 	const position = (x: number, y: number) => move(x + f.view.bounds.left - f.view.scrollX, y + f.view.bounds.top - f.view.scrollY);
 	const press = (end: 'source' | 'target') => {
 		const i = end === 'source' ? 0 : f.edge.points.length - 2;
@@ -43,7 +43,7 @@ export function exerciseGraphConnections(fixture: Awaited<ReturnType<typeof crea
 		check(f.interaction.drops.length === 0, 'restoring capability while held cannot revive a press');
 	}
 	press('target'); position(248, 146); step();
-	panes.openEditor(inputs[1]); step(); panes.openEditor(input); step(); button(false); step();
+	group.openEditor(inputs[1]); step(); group.openEditor(input); step(); button(false); step();
 	check(pane.graph.dragFeedback === undefined && f.interaction.drops.length === 0, 'real editor-input switch cancels and retains only view state');
 	select(); press('source'); position(248, 146); step(); button(false); step();
 	check(f.interaction.drops.length === 1 && f.interaction.drops[0].start.end === 'source'
@@ -67,6 +67,6 @@ export function exerciseGraphConnections(fixture: Awaited<ReturnType<typeof crea
 				right: node.bounds.right + f.view.bounds.left, top: node.bounds.top + f.view.bounds.top,
 				bottom: node.bounds.top + node.headerHeight + f.view.bounds.top })) };
 		},
-		finish() { cancel(); panes.openEditor(inputs[0]); step(); },
+		finish() { cancel(); group.openEditor(inputs[0]); step(); },
 	};
 }

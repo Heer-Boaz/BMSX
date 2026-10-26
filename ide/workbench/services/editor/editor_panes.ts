@@ -2,12 +2,18 @@ import type { EditorPaneSelection } from './editor_selection';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
 import type { EditorPane } from './editor_pane';
-import { inputFocus } from '../../../input/focus';
-import { pointerCapture, WORKBENCH_POINTER_SCOPE } from '../../../input/pointer/capture';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
+import { pointerCapture } from '../../../input/pointer/capture';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 
 export type EditorPaneFactories = {
-	[TKind in EditorInputKind]: () => EditorPane<Extract<EditorInput, { kind: TKind }>>;
+	[TKind in EditorInputKind]: (scope: InputFocusScope) => EditorPane<Extract<EditorInput, { kind: TKind }>>;
+};
+
+export type EditorPaneOpenOptions = {
+	readonly selection?: EditorTextSelection;
+	readonly navigationSelection?: EditorPaneSelection;
+	readonly preserveFocus?: boolean;
 };
 
 /** Owns the active editor pane and its input lifecycle for one editor group. */
@@ -35,7 +41,7 @@ export class EditorPanes {
 		return () => this.clearListeners.delete(listener);
 	}
 
-	public constructor(private readonly factories: EditorPaneFactories) {}
+	public constructor(private readonly factories: EditorPaneFactories, public readonly focusScope: InputFocusScope) {}
 
 	/** Retire captured selections before the attached control and input are detached. */
 	public onWillDispose(listener: () => void): () => void {
@@ -47,17 +53,19 @@ export class EditorPanes {
 		return this.activePaneValue;
 	}
 
-	public openEditor(input: EditorInput, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
+	public openEditor(input: EditorInput, options: EditorPaneOpenOptions = {}): void {
+		const { selection, navigationSelection, preserveFocus } = options;
 		this.openGenerationValue += 1;
 		const activePane = this.activePaneValue;
 		if (activePane !== null && activePane.input === input) {
 			// Finish the focused control's draft against its current selection.
 			// Reselecting a tab is focus, not another activation of its input.
 			if (selection !== undefined || navigationSelection !== undefined) {
-				inputFocus.setTarget(null);
-				activePane.setOptions(selection, navigationSelection);
+				if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
+					|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 			}
-			activePane.focus();
+			activePane.setOptions(selection, navigationSelection);
+			if (!preserveFocus) activePane.focus();
 			return;
 		}
 		this.clearEditor();
@@ -65,7 +73,7 @@ export class EditorPanes {
 		this.activePaneValue = pane;
 		pane.setInput(input, this.contentBounds, selection, navigationSelection);
 		pane.layout(this.contentBounds);
-		pane.focus();
+		if (!preserveFocus) pane.focus();
 	}
 
 	public clearEditor(): void {
@@ -74,10 +82,12 @@ export class EditorPanes {
 		if (activePane === null) {
 			return;
 		}
-		pointerCapture.cancelScope(WORKBENCH_POINTER_SCOPE);
-		if (inputFocus.target?.scope.surfaceScope === WORKBENCH_POINTER_SCOPE) inputFocus.setTarget(null);
+		pointerCapture.cancelScope(this.focusScope.surfaceScope);
+		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
+			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 		activePane.clearInput();
-		if (inputFocus.target?.scope.surfaceScope === WORKBENCH_POINTER_SCOPE) inputFocus.setTarget(null);
+		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
+			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 		this.activePaneValue = null;
 		for (const listener of this.clearListeners) listener();
 	}
@@ -94,7 +104,7 @@ export class EditorPanes {
 	private getOrCreatePane(input: EditorInput): EditorPane<EditorInput> {
 		let pane = this.panes.get(input.kind);
 		if (pane === undefined) {
-			pane = this.factories[input.kind]();
+			pane = this.factories[input.kind](this.focusScope);
 			this.panes.set(input.kind, pane);
 		}
 		return pane;

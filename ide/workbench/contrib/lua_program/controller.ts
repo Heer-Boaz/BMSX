@@ -1,22 +1,18 @@
 import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { RuntimeResource, ResourceDomain } from '../../../common/resource';
-import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { luaSourceRangeToTextRange, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
-import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { resolveRuntimeResource, resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
 import { collectLuaPrograms, projectLuaProgram, type LuaProgramKind, type LuaProgramOccurrence } from './source';
 import { LuaProgramInput } from './editor_input';
 import { LuaProgramRuntimeProjection, readProgramInstances } from './runtime';
@@ -27,7 +23,7 @@ import type { HostRewind } from '../../../../hosts/common/rewind';
 export class LuaProgramController {
 	private readonly projections = new WeakMap<LuaProgramInput, LuaProgramRuntimeProjection>();
 	public constructor(private readonly sources: RuntimeSourceState, public readonly guest: SuspendedGuestSession,
-		private readonly panes: EditorPanes, private readonly navigation: EditorNavigationController, public readonly quickInput: QuickInputController,
+		private readonly group: EditorGroupView, private readonly navigation: EditorNavigationController, public readonly quickInput: QuickInputController,
 		private readonly rewind: HostRewind) {}
 	public open(kind: LuaProgramKind): void {
 		const choices: { label: string; description: string; detail: string; occurrence: LuaProgramOccurrence }[] = [];
@@ -58,13 +54,13 @@ export class LuaProgramController {
 		const resource = resolveRuntimeResource(this.sources, occurrence.resource)!;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 		const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
-		let input = editorTabGroup.tabs.find((input): input is LuaProgramInput => input.kind === 'lua_program'
+		let input = this.group.model.tabs.find((input): input is LuaProgramInput => input.kind === 'lua_program'
 			&& input.workingCopy === model && input.programKind === occurrence.kind && input.occurrenceRange.start === span.start && input.occurrenceRange.end === span.end);
 		if (input === undefined) {
 			input = new LuaProgramInput(model, occurrence.kind, span, this.guest);
 			this.refresh(input);
 		}
-		openEditorTab(this.panes, input);
+		this.group.openEditor(input);
 		return input;
 	}
 	public refreshRuntime(input: LuaProgramInput): void {
@@ -80,13 +76,6 @@ export class LuaProgramController {
 		projection.refresh(input);
 	}
 	public resolveRuntime(input: LuaProgramInput): void { this.projections.get(input)!.resolve(input); }
-	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {
-		for (const input of editorTabGroup.tabs) {
-			if (input.kind !== 'lua_program') continue;
-			if (input.sourceModels.get(model.resource.path) === model) input.invalidateProjection();
-			if (input.workingCopy === model) mapTrackedTextRange(input.occurrenceRange, event.changes);
-		}
-	}
 	public refresh(input: LuaProgramInput): void {
 		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.domain);
 		project.synchronizeRuntimeSources(this.sources);

@@ -27,7 +27,7 @@ import { handleProblemsPanelKeyboardInput } from './keyboard';
 import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
 import { handleProblemsPanelPointerInput } from './pointer';
-import type { EditorPanes } from '../../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../../services/editor/editor_group';
 import { inputFocus } from '../../../../input/focus';
 import { ProblemsPanelHeader } from './header';
 import type { EditorCommandRunner } from '../../../../common/commands';
@@ -236,13 +236,13 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	public handlePointer(
-		editorPanes: EditorPanes,
+		editorGroup: EditorGroupView,
 		snapshot: PointerSnapshot,
 		justPressed: boolean,
 		_justReleased: boolean,
 		bounds: RectBounds,
 	): boolean {
-		return handleProblemsPanelPointerInput(this, editorPanes, snapshot, justPressed, bounds);
+		return handleProblemsPanelPointerInput(this, editorGroup, snapshot, justPressed, bounds);
 	}
 
 	public handlePointerWheel(deltaRows: number, bounds: RectBounds): boolean {
@@ -266,15 +266,15 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 		return true;
 	}
 
-	public handleKeyboard(playerInput: KeyInputEvent, editorPanes: EditorPanes): void {
-		handleProblemsPanelKeyboardInput(playerInput, this, editorPanes);
+	public handleKeyboard(playerInput: KeyInputEvent, editorGroup: EditorGroupView): void {
+		handleProblemsPanelKeyboardInput(playerInput, this, editorGroup);
 	}
 
 	public handleKeyboardCommand(
-		editorPanes: EditorPanes,
+		editorGroup: EditorGroupView,
 		command: ProblemsPanelCommand,
 	): boolean {
-		return handleProblemsPanelNavigationCommand(this, editorPanes, command);
+		return handleProblemsPanelNavigationCommand(this, editorGroup, command);
 	}
 
 	public setFixedHeightPx(height: number): void { this.fixedHeightPx = height > 0 ? height : null; this.cachedLayout = null; }
@@ -377,9 +377,9 @@ export function drawProblemsPanel() {
 	problemsPanel.draw(bounds);
 	return bounds;
 }
-export function toggleProblemsPanel(editorPanes: EditorPanes): void {
+export function toggleProblemsPanel(editorGroup: EditorGroupView): void {
 	if (problemsPanel.isVisible) {
-		hideProblemsPanel(editorPanes);
+		hideProblemsPanel(editorGroup);
 		return;
 	}
 	showProblemsPanel();
@@ -389,9 +389,9 @@ export function showProblemsPanel(): void {
 	problemsPanel.show();
 }
 
-export function hideProblemsPanel(editorPanes: EditorPanes): void {
+export function hideProblemsPanel(editorGroup: EditorGroupView): void {
 	const restoreEditorFocus = problemsPanel.isFocused;
 	problemsPanel.hide();
-	if (restoreEditorFocus) editorPanes.activePane?.focus();
+	if (restoreEditorFocus) editorGroup.panes.activePane?.focus();
 	resetBlink();
 }

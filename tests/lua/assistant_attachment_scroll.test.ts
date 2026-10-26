@@ -14,7 +14,8 @@ test('attachment wheel keeps a continuous viewport, leaves selection alone and h
 	const attachments = new AssistantAttachments();
 	attachments.add(Array.from({ length: 4 }, () => ({ read: () => new Promise<never>(() => {}) })));
 	const cache = new ImagePreviewCache(async () => { throw new Error('pending images must not decode'); });
-	const strip = new AssistantAttachmentStrip(cache, () => { throw new Error('pending images must not open'); });
+	const parent = inputFocus.createTarget();
+	const strip = new AssistantAttachmentStrip(cache, () => { throw new Error('pending images must not open'); }, parent);
 	t.after(() => { strip.clearInput(); cache.dispose(); });
 	editorViewState.font = new EditorFont('tiny');
 	for (const method of ['blit_rect', 'pushClipRect', 'popClipRect', 'blit_text_inline_with_font'] as const) t.mock.method(api, method, () => {});

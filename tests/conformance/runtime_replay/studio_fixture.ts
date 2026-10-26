@@ -8,7 +8,6 @@ import type { AssistantConnectionFactory } from '../../../hosts/common/assistant
 import { HttpWorkspaceRecordProvider } from '../../../ide/browser/workspace_records';
 import { stripProjectRootPrefix } from '../../../ide/workspace/path';
 import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { getCodeAreaBounds, resolveTextPositionBounds } from '../../../ide/editor/ui/view/view';
 import { BrowserGraphLayoutEngine } from '../../../ide/browser/graph_layout';
 import type { RectBounds } from '../../../machine/ts/common/rect';
@@ -204,8 +203,8 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	/** Reach an offscreen tab through the real wheel route, then click its visible label. */
 	const clickTab = async (id: EditorTabId, heldFrames = 1) => {
 		await frame();
-		const bounds = editorChromeState.tabButtonBounds.get(id)!;
-		const viewport = editorChromeState.tabViewportBounds;
+		const bounds = ide.editor.editorGroup.tabStrip.layoutState.items.peek(ide.editor.editorGroup.model.indexOf(ide.editor.editorGroup.model.findById(id)!)).bounds;
+		const viewport = ide.editor.editorGroup.tabStrip.layoutState.viewportBounds;
 		const delta = bounds.left < viewport.left ? bounds.left - viewport.left
 			: bounds.right > viewport.right ? bounds.right - viewport.right : 0;
 		if (delta !== 0) {
@@ -217,7 +216,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		const left = Math.max(viewport.left, bounds.left), right = Math.min(viewport.right, bounds.right);
 		check(right > left, `tab ${id} is reachable through horizontal scrolling`);
 		await click({ left, right, top: bounds.top, bottom: bounds.bottom }, heldFrames);
-		check(getActiveTab().id === id, `tab ${id} opens through its visible label`);
+		check(ide.editor.editorGroup.model.activeTab.id === id, `tab ${id} opens through its visible label`);
 	};
 	const runMenuCommand = async (command: EditorCommandId) => {
 		check(ide.editor.isActive, 'Run-menu commands require editor focus');
@@ -278,7 +277,7 @@ export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;
 
 /** Shared product file-creation flow; callers author bytes and choose Save/Reboot themselves. */
 export async function createStudioLuaSource(test: StudioFixture, path: string, source: string) {
-	const root = runtimeSourceProjectRootPath(test.ide.sources, getActiveTab().resource!.domain);
+	const root = runtimeSourceProjectRootPath(test.ide.sources, test.ide.editor.editorGroup.model.activeTab.resource!.domain);
 	await test.press('ControlLeft', 'KeyN');
 	await test.press('ControlLeft', 'KeyA');
 	await test.clipboard.writeText(stripProjectRootPrefix(path, root));

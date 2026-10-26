@@ -67,7 +67,7 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 	const input = new RomInspectorInput(imageSnapshot()), surfaces = new WorkbenchSurfaceService();
 	const previousScrollbars = editorViewState.scrollbarController;
 	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: input.list.scrollbar, codeHorizontal: input.readerHorizontal,
-		viewerVertical: input.list.scrollbar, resourceVertical: input.list.scrollbar, resourceHorizontal: input.readerHorizontal }, () => {}, pointerCapture);
+		resourceVertical: input.list.scrollbar, resourceHorizontal: input.readerHorizontal }, () => {}, pointerCapture);
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('ROM catalog command owner'), getBounds: () => area,
 		getClip: () => area, isVisible: () => true, draw() {} });
@@ -76,7 +76,7 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('a.lua', 1), createScenarioTestSourceRecord('b.lua', 2)]);
 	const opened: { domain: number; path: string }[] = [];
 	const navigation = { openResource: async (resource: { domain: number; path: string }) => { opened.push(resource); return 1; } } as EditorNavigationController;
-	const pane = new RomInspectorPane(commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area);
+	const pane = new RomInspectorPane(commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area, inputFocus.workbenchScope);
 	t.after(() => { pane.clearInput(); pane.dispose(); quickInput.dispose(); contextMenu.dispose(); inputFocus.setTarget(null);
 		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); editorViewState.scrollbarController = previousScrollbars; });
 	pane.setInput(input, area); pane.focus();

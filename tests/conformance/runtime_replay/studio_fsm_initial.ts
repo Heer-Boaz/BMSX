@@ -3,7 +3,6 @@ import { FSM_INITIAL_SOURCE, FSM_INITIAL_MODULE_SOURCE, fsmInitialImportedSource
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { inputFocus } from '../../../ide/input/focus';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -26,13 +25,13 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 		harness.openLuaSource(record.source_path);
 	}
 	const source = imported ? FSM_INITIAL_MODULE_SOURCE : FSM_INITIAL_SOURCE;
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.other');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('initial: FSM graph required');
 	await lens.graphLayout.settled; await frame();
 	const graph = lens.view.presentation;
@@ -58,7 +57,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 		'initial: real worker reroutes the entry to the new state');
 	console.info('STUDIO: FSM initial edit ready for visual inspection');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(getActiveTab() === code && model.buffer.getText() === changed && !hasSelection(), 'initial: held Source action is navigation only');
+	check(ide.editor.editorGroup.model.activeTab === code && model.buffer.getText() === changed && !hasSelection(), 'initial: held Source action is navigation only');
 	check(inputFocus.getCommand('behaviorLens.setInitialState') === undefined, 'initial: code focus has no graph-authoring command');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'initial: code Undo restores the token while the graph is hidden');

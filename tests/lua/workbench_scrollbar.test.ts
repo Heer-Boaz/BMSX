@@ -126,19 +126,18 @@ test('signed content coordinates stay at the range owner, including a changed mi
 test('editor scrollbar routing only hits the attached owner list, not another pane retained at the same coordinates', () => {
 	const bars = {
 		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
-		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'), viewerVertical: new Scrollbar('vertical'),
-	};
+		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'), };
 	const track = { left: 100, right: 103, top: 10, bottom: 110 };
-	for (const bar of [bars.codeVertical, bars.resourceVertical, bars.viewerVertical]) bar.layout(track, 300, 100, 0);
+	for (const bar of [bars.codeVertical, bars.resourceVertical]) bar.layout(track, 300, 100, 0);
 	const applied: string[] = [];
 	const capture = new PointerCaptureService();
 	const controller = new ScrollbarController(bars, kind => applied.push(kind), capture);
 	const pointer: PointerSnapshot = { viewportX: 101, viewportY: 100, valid: true, insideViewport: true,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
-	assert.equal(controller.begin(['viewerVertical'], pointer, 3), true);
+	assert.equal(controller.begin(['resourceVertical'], pointer, 3), true);
 	pointer.viewportY = 70; pointer.justPressedButtons = 0;
 	capture.dispatch(pointer, false, 0);
-	assert.deepEqual(applied, ['viewerVertical', 'viewerVertical']);
+	assert.deepEqual(applied, ['resourceVertical', 'resourceVertical']);
 	controller.cancel();
 	assert.equal(bars.codeVertical.getScroll(), 0, 'hidden code geometry never steals the viewer press');
 	pointer.viewportY = 100; pointer.justPressedButtons = PointerButton.Primary;

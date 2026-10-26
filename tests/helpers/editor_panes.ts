@@ -1,3 +1,5 @@
+import type { EditorCommandRunner } from '../../ide/common/commands';
+import { ResourceViewerEditorPane } from '../../ide/workbench/contrib/resources/editor_pane';
 import type { KeyInputEvent } from '../../hosts/common/input/text';
 import type { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import type { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
@@ -21,23 +23,25 @@ import type {
 	BehaviorLensInput,
 	CodeEditorInput,
 	EditorInput,
-	ResourceViewerInput,
 	ScenarioLabInput,
 } from '../../ide/workbench/ui/tab/model';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
-import { EditorPanes } from '../../ide/workbench/services/editor/editor_panes';
-import { inputFocus } from '../../ide/input/focus';
+import { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
 
 class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 
-	private readonly focusTarget = inputFocus.createTarget();
-	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+	private readonly focusTarget: InputFocusTarget;
+	private readonly unbindKeyboard: () => void;
 	public constructor(
+		scope: InputFocusScope,
 		private readonly activateInput: (input: TInput) => void,
 		captureSelection?: (input: TInput) => EditorPaneSelection,
 	) {
 		super();
+		this.focusTarget = inputFocus.createTarget(null, scope);
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		if (captureSelection !== undefined) this.getSelection = () => captureSelection(this.input);
 	}
 
@@ -77,7 +81,7 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 }
 
 class TestCodeEditorPane extends TestEditorPane<CodeEditorInput> {
-	public constructor() { super(activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)); }
+	public constructor(scope: InputFocusScope) { super(scope, activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)); }
 	public override setOptions(selection?: EditorTextSelection, navigationSelection?: CodeEditorNavigationSelection): void {
 		if (selection !== undefined) applyActiveCodeTabSelection(selection);
 		navigationSelection?.restore(this.input);
@@ -88,30 +92,30 @@ function activateViewInput(_input: EditorInput): void {
 }
 
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
-export function createTestEditorPanes(): EditorPanes {
-	return new EditorPanes({
-		home: () => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(activateViewInput),
-		play_session: () => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(activateViewInput),
-		animation: () => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(activateViewInput),
-		host_error: () => new TestEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(activateViewInput),
-		build_log: () => new TestEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(activateViewInput),
-		rom_inspector: () => new TestEditorPane<RomInspectorInput>(activateViewInput),
-		event_viewer: () => new TestEditorPane<EventViewerInput>(activateViewInput),
-		gte_debugger: () => new TestEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(activateViewInput),
-		gpu_debugger: () => new TestEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(activateViewInput),
-		terminal: () => new TestEditorPane<TerminalInput>(activateViewInput),
-		actor_lab: () => new TestEditorPane<ActorLabInput>(activateViewInput),
-		game_view: () => new TestEditorPane<GameViewInput>(activateViewInput),
-		conversation_observer: () => new TestEditorPane<ConversationObserverInput>(activateViewInput),
-		assistant: () => new TestEditorPane<AssistantInput>(activateViewInput),
-		workspace_edit_review: () => new TestEditorPane<WorkspaceEditReviewInput>(activateViewInput),
-		code_editor: () => new TestCodeEditorPane(),
-		resource_view: () => new TestEditorPane<ResourceViewerInput>(activateViewInput),
-		aem_editor: () => new TestEditorPane<AemEditorInput>(activateViewInput),
-		lua_program: () => new TestEditorPane<LuaProgramInput>(activateViewInput),
-		behavior_lens: () => new TestEditorPane<BehaviorLensInput>(activateViewInput),
-		scenario_lab: () => new TestEditorPane<ScenarioLabInput>(activateViewInput),
-		scene_editor: () => new TestEditorPane<SceneEditorInput>(activateViewInput),
-		cart_map: () => new TestEditorPane<CartMapInput>(activateViewInput),
-	});
+export function createTestEditorGroup(commands: EditorCommandRunner = { isEnabled: () => false, execute() {} }): EditorGroupView {
+	return new EditorGroupView({
+		home: scope => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(scope, activateViewInput),
+		play_session: scope => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(scope, activateViewInput),
+		animation: scope => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(scope, activateViewInput),
+		host_error: scope => new TestEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(scope, activateViewInput),
+		build_log: scope => new TestEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(scope, activateViewInput),
+		rom_inspector: scope => new TestEditorPane<RomInspectorInput>(scope, activateViewInput),
+		event_viewer: scope => new TestEditorPane<EventViewerInput>(scope, activateViewInput),
+		gte_debugger: scope => new TestEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(scope, activateViewInput),
+		gpu_debugger: scope => new TestEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(scope, activateViewInput),
+		terminal: scope => new TestEditorPane<TerminalInput>(scope, activateViewInput),
+		actor_lab: scope => new TestEditorPane<ActorLabInput>(scope, activateViewInput),
+		game_view: scope => new TestEditorPane<GameViewInput>(scope, activateViewInput),
+		conversation_observer: scope => new TestEditorPane<ConversationObserverInput>(scope, activateViewInput),
+		assistant: scope => new TestEditorPane<AssistantInput>(scope, activateViewInput),
+		workspace_edit_review: scope => new TestEditorPane<WorkspaceEditReviewInput>(scope, activateViewInput),
+		code_editor: scope => new TestCodeEditorPane(scope),
+		resource_view: scope => new ResourceViewerEditorPane(scope),
+		aem_editor: scope => new TestEditorPane<AemEditorInput>(scope, activateViewInput),
+		lua_program: scope => new TestEditorPane<LuaProgramInput>(scope, activateViewInput),
+		behavior_lens: scope => new TestEditorPane<BehaviorLensInput>(scope, activateViewInput),
+		scenario_lab: scope => new TestEditorPane<ScenarioLabInput>(scope, activateViewInput),
+		scene_editor: scope => new TestEditorPane<SceneEditorInput>(scope, activateViewInput),
+		cart_map: scope => new TestEditorPane<CartMapInput>(scope, activateViewInput),
+	}, commands);
 }

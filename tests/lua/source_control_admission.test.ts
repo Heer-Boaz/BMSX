@@ -14,7 +14,6 @@ import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor
 import { LuaProgramEditorPane } from '../../ide/workbench/contrib/lua_program/editor_pane';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { RuntimeIdeState } from '../../ide/workbench/state';
-import { getActiveTab, openEditorTab } from '../../ide/workbench/ui/tabs';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -51,9 +50,9 @@ function fixture(t: TestContext, source: string) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	openEditorTab(editor.editorPanes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
+	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	t.after(async () => {
-		const pane = editor.editorPanes.activePane;
+		const pane = editor.editorGroup.panes.activePane;
 		if (pane instanceof SceneEditorPane) {
 			for (const control of pane.controls) control.cancel();
 			for (const control of pane.options.controls) control.cancel();
@@ -77,7 +76,7 @@ function fixture(t: TestContext, source: string) {
 	};
 	const scene = () => {
 		editor.sceneEditor.openResource(model.resource); editor.update(0);
-		const input = getActiveTab()!, pane = editor.editorPanes.activePane!;
+		const input = editor.editorGroup.model.activeTab!, pane = editor.editorGroup.panes.activePane!;
 		assert.ok(input.kind === 'scene_editor' && pane instanceof SceneEditorPane);
 		press('Home'); press('ArrowDown'); press('Enter');
 		assert.equal(input.outline.rows[input.outline.selectionIndex].element.kind, 'member');
@@ -141,10 +140,10 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 	f.editor.sceneEditor.openResource(f.model.resource); f.editor.update(0);
 	assert.equal(subscriptions, 1);
 	f.editor.commands.execute('sceneEditor.source'); await setImmediate(); f.editor.update(0);
-	assert.ok(f.editor.editorPanes.activePane !== pane);
+	assert.ok(f.editor.editorGroup.panes.activePane !== pane);
 	assert.equal(subscriptions, 1, 'Source replaces, rather than retains, the Scene observer');
 	f.editor.sceneEditor.openResource(f.model.resource); f.editor.update(0);
-	assert.ok(f.editor.editorPanes.activePane === pane);
+	assert.ok(f.editor.editorGroup.panes.activePane === pane);
 	assert.equal(subscriptions, 1);
 	f.unchanged();
 });
@@ -152,7 +151,7 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 test('a fully covered Lua Program has no destructive keyboard admission and preserves its selected source', t => {
 	const f = fixture(t, PROGRAM_SOURCE);
 	f.editor.luaPrograms.openResource(f.model.resource, 'progression'); f.editor.update(0);
-	const input = getActiveTab()!, pane = f.editor.editorPanes.activePane!;
+	const input = f.editor.editorGroup.model.activeTab!, pane = f.editor.editorGroup.panes.activePane!;
 	assert.ok(input.kind === 'lua_program' && pane instanceof LuaProgramEditorPane);
 	const target = input.tree.rows.findIndex(row => row.element.field !== undefined && row.element.container?.structural);
 	assert.ok(target >= 0); f.press('Home');

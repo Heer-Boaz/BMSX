@@ -127,18 +127,18 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	editorViewState.viewportWidth = WIDTH;
 	editorViewState.viewportHeight = HEIGHT;
 	const connection = graphConnectionFixture(font);
-	const { panes, pane, inputs, group } = createGraphFixturePanes([{ view }, { view: second },
+	const { pane, inputs, group } = createGraphFixturePanes([{ view }, { view: second },
 		{ view: connection.view, dragSource: connection.interaction }]);
-	panes.openEditor(inputs[0]);
+	group.openEditor(inputs[0]);
 	const pointer: PointerInputSnapshot = { viewportX: 0, viewportY: 0, valid: false, insideViewport: false,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
 	const dispatchPointer = (event: PointerInputEvent) => {
 		nativePointer.events.push({ buttons: event.buttons, pressedButtons: event.pressedButtons,
 			releasedButtons: event.releasedButtons, cancelledButtons: event.cancelledButtons });
 		projectEditorPointerEvent(display, event, pointer);
-		if (!pointerCapture.dispatch(pointer, false, clock.now())) {
-			panes.activePane.handlePointer(pointer, (pointer.justPressedButtons & PointerButton.Primary) !== 0, false, clock.now(), false);
-			if (pointer.justReleasedButtons !== 0) pointerCapture.dispatch(pointer, false, clock.now());
+		if (!pointerCapture.dispatch(pointer, false, clock.now(), group.captureScope)) {
+			group.panes.activePane.handlePointer(pointer, (pointer.justPressedButtons & PointerButton.Primary) !== 0, false, clock.now(), false);
+			if (pointer.justReleasedButtons !== 0) pointerCapture.dispatch(pointer, false, clock.now(), group.captureScope);
 		}
 	};
 	hub.setNativePointerHandler(dispatchPointer);
@@ -147,7 +147,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		renderer.beginFrame(presenter);
 		api.beginFrame(renderer);
 		api.fill_rect_color(0, 0, WIDTH, HEIGHT, 0, 0xff20252d);
-		panes.activePane.draw();
+		group.panes.activePane.draw();
 		renderer.itemRun('GRAPH VIEWPORT / TINY FONT', 0, 26, 8, 8, 0, font, 0xffffffff, LAYER_2D_IDE);
 		renderer.endFrame();
 		presenter.present(machine.gxGpu.readDeviceOutput(), clock.now() / 1000, 0.02);
@@ -159,7 +159,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		editorRuntimeState.currentTimeMs = clock.now();
 		hub.poll(clock.now());
 		input.pollInput();
-		panes.activePane.update(0.02);
+		group.panes.activePane.update(0.02);
 		draw();
 	};
 	const move = (x: number, y: number) => {
@@ -177,9 +177,9 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		check(view.selection === edge, 'physical click selects the visible route');
 		button(false); step(); move(80, 225); step(); button(true); step(); move(100, 230); step();
 		check(view.scrollX === -20 && view.scrollY === -5, 'blank canvas drag pans');
-		panes.openEditor(inputs[1]); move(120, 230); step();
+		group.openEditor(inputs[1]); move(120, 230); step();
 		check(second.scrollX === 0 && second.scrollY === 0 && second.selection === null, 'switching input while held does not begin a new gesture');
-		panes.openEditor(inputs[0]); move(140, 230); step();
+		group.openEditor(inputs[0]); move(140, 230); step();
 		check(view.scrollX === -20 && view.scrollY === -5, 'returning to input retains viewport, not its old capture');
 		button(false); step();
 		view.setModel({ ...model }, null);
@@ -201,7 +201,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		commandKinds: kinds, commandRefs: refs, commandCount: 3 };
 	return {
 		exercise, draw,
-		view, otherView: second, player, font, move, button, key, step, panes, pane, inputs, group, connection, nativePointer,
+		view, otherView: second, player, font, move, button, key, step, pane, inputs, group, connection, nativePointer,
 		healthy,
 		resize(width: number, height: number) {
 			// Retain the editor's logical layout choice while the game target changes.

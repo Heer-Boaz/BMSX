@@ -52,7 +52,6 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { buildCodeTabId } from '../../ide/workbench/ui/tab/id';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import {
 	applyWorkspaceAutosavePayload,
 	hydrateDirtyFiles,
@@ -101,12 +100,11 @@ import {
 	type WorkspaceAutosavePayload,
 } from '../../ide/workbench/workspace/models';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
-import { initializeTabs, openEditorTab } from '../../ide/workbench/ui/tabs';
 import { resolveTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { WORKBENCH_RESOURCE_VIEWER_ID } from '../../ide/workbench/contrib/resources/editor_input';
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
-import { createTestEditorPanes } from '../helpers/editor_panes';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 
 class MockStorage implements KeyValueStorage {
 	private readonly store = new Map<string, string>();
@@ -310,7 +308,6 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	await shutdownWorkspaceStorage();
 	storage.clear();
 	clearWorkspaceSourceCaches();
-	editorTabGroup.clear();
 	editorTextModelService.clear();
 	globalThis.fetch = ORIGINAL_FETCH;
 }
@@ -459,12 +456,15 @@ test('a future code-input schema is rejected before source reconstruction, not t
 
 function editorStub(
 	sources: RuntimeSourceState,
+	t: TestContext,
 ) {
+	const editorGroup = createTestEditorGroup();
+	t.after(() => editorGroup.dispose());
 	return {
 		fontVariant: DEFAULT_FONT_VARIANT,
 		resourcePanel: null,
 		editorInputSerializers: { code_editor: new CodeEditorInputSerializer(sources), resource_view: new ResourceViewerInputSerializer(sources) },
-		editorPanes: createTestEditorPanes(),
+		editorGroup,
 		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
 	};
@@ -477,15 +477,16 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, root =
 		TEST_DOMAIN,
 	);
 	const restored = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, root, sources, files, testLogOutput);
+	const editor = editorStub(sources, t);
 	await restoreWorkspaceStorageSession(
-		editorStub(sources) as any,
+		editor as any,
 		sources,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
 		new Set(),
 	);
 	t.after(() => resetSemanticProjects(editorTextModelService));
-	return sources;
+	return { sources, editor };
 }
 
 async function flushRequestedAutosave(): Promise<void> {
@@ -502,7 +503,6 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 		0,
 	);
 	t.after(() => {
-		editorTabGroup.clear();
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 		clearWorkspaceSourceCaches();
@@ -555,8 +555,9 @@ test('workspace restore preserves explicit tab order and an active dirty system 
 		updatedAt: 80,
 	});
 	installWorkspaceRestoreView();
+	const editor = editorStub(sources, t);
 	await applyWorkspaceAutosavePayload(
-		editorStub(sources) as any,
+		editor as any,
 		sources,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		payload(
@@ -572,19 +573,19 @@ test('workspace restore preserves explicit tab order and an active dirty system 
 		),
 	);
 
-	const activeTab = editorTabGroup.activeTab!;
+	const activeTab = editor.editorGroup.model.activeTab!;
 	assert.equal(activeTab.kind, 'code_editor');
 	const activeContext = activeTab.kind === 'code_editor' ? activeTab.context : null;
 	assert.equal(activeContext.model.resource.domain, SYSTEM_RESOURCE_DOMAIN);
 	assert.equal(activeContext.model.resource.path, systemPath);
-	assert.equal(editorTabGroup.tabs.length, 2);
-	const systemContext = editorTabGroup.findById(buildCodeTabId({ domain: SYSTEM_RESOURCE_DOMAIN, path: systemPath }))!.context;
+	assert.equal(editor.editorGroup.model.tabs.length, 2);
+	const systemContext = editor.editorGroup.model.findById(buildCodeTabId({ domain: SYSTEM_RESOURCE_DOMAIN, path: systemPath }))!.context;
 	assert.equal(systemContext.model.dirty, true);
 	assert.equal(getTextSnapshot(systemContext.model.buffer), '-- dirty system source');
 	assert.equal(systemContext.view.cursorColumn, 7);
 	assert.equal(systemContext.view.scrollLeft, 3);
 	assert.deepEqual(systemContext.view.selectionAnchor, { row: 0, column: 2 });
-	assert.equal(editorTabGroup.tabs.some(tab => tab.kind === 'code_editor' && tab.context === systemContext), true);
+	assert.equal(editor.editorGroup.model.tabs.some(tab => tab.kind === 'code_editor' && tab.context === systemContext), true);
 });
 
 test('canonical source cache keys identical resource paths by physical project path', async (t) => {
@@ -844,8 +845,9 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 	assert.equal(rejected.size, 0);
 
 	installWorkspaceRestoreView();
+	const editor = editorStub(sources, t);
 	await restoreWorkspaceStorageSession(
-		editorStub(sources) as any,
+		editor as any,
 		sources,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
@@ -855,7 +857,7 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 	assert.equal(getTextSnapshot(model.buffer), '-- dirty edit');
 	assert.equal(model.lastSavedSource, '-- saved source');
 	assert.equal(model.dirty, true);
-	assert.equal(editorTabGroup.tabs.length, 0);
+	assert.equal(editor.editorGroup.model.tabs.length, 0);
 	model.revert();
 	assert.equal(model.buffer.getText(), '-- saved source');
 	assert.equal(model.dirty, false);
@@ -934,16 +936,17 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 	const rejected = await applyAllWorkspaceSourceOverrides(sources, workspaceDirtyRecords);
 	assert.deepEqual([...rejected], [dirtyPath]);
 	installWorkspaceRestoreView();
+	const editor = editorStub(sources, t);
 	await restoreWorkspaceStorageSession(
-		editorStub(sources) as any,
+		editor as any,
 		sources,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
 		rejected,
 	);
 	assert.equal(registry.records[0].src, '-- newer rom source');
-	assert.equal(editorTabGroup.findById(buildCodeTabId({ domain: TEST_DOMAIN, path: 'entry.lua' }))!.context.model.dirty, false);
-	assert.equal(editorTabGroup.findById(buildCodeTabId({ domain: TEST_DOMAIN, path: 'entry.lua' }))!.context.view.cursorColumn, 0);
+	assert.equal(editor.editorGroup.model.findById(buildCodeTabId({ domain: TEST_DOMAIN, path: 'entry.lua' }))!.context.model.dirty, false);
+	assert.equal(editor.editorGroup.model.findById(buildCodeTabId({ domain: TEST_DOMAIN, path: 'entry.lua' }))!.context.view.cursorColumn, 0);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', dirtyRecordPath)!.contents, '-- stale dirty edit');
 });
 
@@ -1010,7 +1013,7 @@ test('idle workspace has no periodic autosave callback or materialization work',
 test('a dirty working copy can acquire its first code view after the content backup', async (t) => {
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
-	const sources = await startAutosaveSession(t, storage);
+	const { sources, editor } = await startAutosaveSession(t, storage);
 	const resource = resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', '-- cart source');
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- visual edit' }]);
@@ -1020,7 +1023,7 @@ test('a dirty working copy can acquire its first code view after the content bac
 	assert.equal(backup.payload.dirtyFiles.length, 1);
 	assert.equal(backup.payload.editorGroup.inputs.length, 0);
 	const input = new CodeEditorInput(model), context = input.context;
-	editorTabGroup.initialize(input);
+	editor.editorGroup.model.initialize(input);
 	context.view.cursorRow = 1;
 	context.view.cursorColumn = 3;
 	const version = model.version;
@@ -1036,9 +1039,10 @@ test('a dirty working copy can acquire its first code view after the content bac
 	assert.equal(server.requests.filter(request => request.method === 'PUT' && request.path.includes('/.bmsx/dirty/')).length, writes);
 	const restored = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
 	installWorkspaceRestoreView();
-	await restoreWorkspaceStorageSession(editorStub(sources) as any, sources,
+	const restoredEditor = editorStub(sources, t);
+	await restoreWorkspaceStorageSession(restoredEditor as any, sources,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, restored, new Set());
-	const restoredContext = editorTabGroup.findById(buildCodeTabId(resource))!.context;
+	const restoredContext = restoredEditor.editorGroup.model.findById(buildCodeTabId(resource))!.context;
 	assert.notStrictEqual(restoredContext.model, model);
 	assert.equal(restoredContext.model.buffer.getText(), '-- cart source\n-- visual edit');
 	assert.equal(restoredContext.model.dirty, true);
@@ -1049,12 +1053,12 @@ test('a dirty working copy can acquire its first code view after the content bac
 test('cursor-only autosave reuses retained dirty content and background metadata', async (t) => {
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
-	await startAutosaveSession(t, storage);
+	const { editor } = await startAutosaveSession(t, storage);
 	const activeTab = new CodeEditorInput(installDirtyModel('src/foo.lua', '-- dirty foreground'));
 	const activeContext = activeTab.context;
 	const backgroundTab = new CodeEditorInput(installDirtyModel('src/bar.lua', '-- dirty background'));
-	editorTabGroup.initialize(activeTab);
-	editorTabGroup.add(backgroundTab);
+	editor.editorGroup.model.initialize(activeTab);
+	editor.editorGroup.model.add(backgroundTab);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	const firstGeneration = workspaceState.localGeneration!;
@@ -1065,7 +1069,7 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 
 	activeContext.view.cursorColumn = 1;
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
-	editorTabGroup.activate(backgroundTab);
+	editor.editorGroup.model.activate(backgroundTab);
 	await flushRequestedAutosave();
 	const secondGeneration = workspaceState.localGeneration!;
 	assert.strictEqual(secondGeneration.dirtyRecords, firstGeneration.dirtyRecords);
@@ -1090,13 +1094,13 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 test('view metadata belongs to the emitting model even when a different tab is active', async (t) => {
 	const storage = new MockStorage();
 	installWorkspaceServer(t, storage);
-	await startAutosaveSession(t, storage);
+	const { editor } = await startAutosaveSession(t, storage);
 	const firstInput = new CodeEditorInput(installDirtyModel('same.lua', '-- first', 0));
 	const first = firstInput.context;
 	const secondInput = new CodeEditorInput(installDirtyModel('same.lua', '-- second', -1));
 	const second = secondInput.context;
-	editorTabGroup.initialize(secondInput);
-	editorTabGroup.add(firstInput);
+	editor.editorGroup.model.initialize(secondInput);
+	editor.editorGroup.model.add(firstInput);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	first.view.cursorColumn = 2;
@@ -1112,11 +1116,11 @@ test('view metadata belongs to the emitting model even when a different tab is a
 test('clean views persist without source backups and unchanged checkpoints do not write', async (t) => {
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
-	const sources = await startAutosaveSession(t, storage);
+	const { sources, editor } = await startAutosaveSession(t, storage);
 	const resource = resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', '-- cart source');
 	const input = new CodeEditorInput(model), context = input.context;
-	editorTabGroup.initialize(input);
+	editor.editorGroup.model.initialize(input);
 	context.view.cursorColumn = 3;
 	const revision = workspaceState.requestedRevision;
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
@@ -1175,7 +1179,7 @@ test('record generation stays unique when the host clock does not advance', asyn
 test('local dirty write failure does not advance retained records or local revision', async (t) => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
-	const sources = await startAutosaveSession(t, storage);
+	const { sources } = await startAutosaveSession(t, storage);
 	installDirtyModel('src/foo.lua', '-- dirty edit');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
 	storage.failWritePrefix = buildWorkspaceStorageKey('offline-cart', dirtyPath);
@@ -1363,7 +1367,7 @@ test('remote sync publishes the exact dirty records retained with its state gene
 test('failed dirty DELETE retries on an explicit checkpoint and stale orphan cannot resurrect', async (t) => {
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
-	const sources = await startAutosaveSession(t, storage);
+	const { sources } = await startAutosaveSession(t, storage);
 	const model = installDirtyModel('entry.lua', '-- dirty edit');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'entry.lua');
 	const statePath = workspaceStatePath('offline-cart');
@@ -1409,7 +1413,7 @@ test('failed dirty DELETE retries on an explicit checkpoint and stale orphan can
 test('workspace reconfiguration waits for the active autosave task', async (t) => {
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
-	const sources = await startAutosaveSession(t, storage, 'root-a');
+	const { sources } = await startAutosaveSession(t, storage, 'root-a');
 	installDirtyModel('src/foo.lua', '-- dirty edit');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('root-a', TEST_DOMAIN, 'src/foo.lua');
 	let releaseWrite: () => void;
@@ -1454,7 +1458,7 @@ test('workspace reconfiguration is not blocked by an old remote replica failure'
 test('workspace reconfiguration commits a pending debounced edit locally', async (t) => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
-	const sources = await startAutosaveSession(t, storage, 'root-a');
+	const { sources } = await startAutosaveSession(t, storage, 'root-a');
 	installDirtyModel('src/foo.lua', '-- pending edit');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('root-a', TEST_DOMAIN, 'src/foo.lua');
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
@@ -1519,8 +1523,9 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 		{ domain: SYSTEM_RESOURCE_DOMAIN, path: 'base.lua', lines: [4] },
 		{ domain: TEST_DOMAIN, path: retained.path, lines: [3, 9] },
 	];
+	const editor = editorStub(sources, t);
 	await applyWorkspaceAutosavePayload(
-		editorStub(sources) as any,
+		editor as any,
 		sources,
 		debuggerState,
 		restoredPayload,
@@ -1528,7 +1533,7 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 	const model = editorTextModelService.get(retained)!;
 	assert.strictEqual(model.resource, retained);
 	assert.equal(model.buffer.getText(), '-- restored edit');
-	assert.equal(editorTabGroup.findById(buildCodeTabId(retained)), undefined);
+	assert.equal(editor.editorGroup.model.findById(buildCodeTabId(retained)), undefined);
 	assert.deepEqual(debuggerState.breakpoints.get({ domain: -1, path: 'base.lua' }), new Set([4]));
 	assert.deepEqual(debuggerState.breakpoints.get(retained), new Set([3, 9]));
 	assert.equal(debuggerState.breakpoints.get({ domain: 1, path: 'stale.lua' }).size, 0);
@@ -1548,8 +1553,9 @@ test('workspace recovery hydrates a dirty working copy without creating an edito
 	workspaceDirtyRecords.set(dirtyPath, { contents: '{ "version": 1 }', updatedAt: 1 });
 	workspaceCanonicalSourceCache.set('offline-cart/res/test_scene.aem', { contents: '{ "events": {} }', updatedAt: 0 });
 	installWorkspaceRestoreView();
+	const editor = editorStub(sources, t);
 	await applyWorkspaceAutosavePayload(
-		editorStub(sources) as any,
+		editor as any,
 		sources,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		payload([{
@@ -1563,16 +1569,16 @@ test('workspace recovery hydrates a dirty working copy without creating an edito
 	assert.equal(model.mode, 'aem');
 	assert.equal(model.buffer.getText(), '{ "version": 1 }');
 	assert.equal(model.dirty, true);
-	assert.equal(editorTabGroup.findById(buildCodeTabId(resource)), undefined);
-	assert.equal(editorTabGroup.tabs.length, 0);
-	assert.equal(editorTabGroup.activeTab, null);
+	assert.equal(editor.editorGroup.model.findById(buildCodeTabId(resource)), undefined);
+	assert.equal(editor.editorGroup.model.tabs.length, 0);
+	assert.equal(editor.editorGroup.model.activeTab, null);
 	assert.equal([...editorTextModelService.models].length, 1);
 });
 
 test('YAML dirty session recovery restores exact unsaved source into a fresh working copy', async t => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
-	const sources = await startAutosaveSession(t, storage);
+	const { sources } = await startAutosaveSession(t, storage);
 	const resource = testResource('res/data/stage.yaml', TEST_DOMAIN, 'data');
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const canonicalPath = 'offline-cart/res/data/stage.yaml';
@@ -1593,8 +1599,9 @@ test('YAML dirty session recovery restores exact unsaved source into a fresh wor
 		storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput,
 	);
 	assert.ok(restoredPayload);
+	const restoredEditor = editorStub(sources, t);
 	await restoreWorkspaceStorageSession(
-		editorStub(sources) as any,
+		restoredEditor as any,
 		sources,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restoredPayload,
@@ -1629,7 +1636,8 @@ for (const type of ['data', 'aem'] as const) for (const savedAt of [10, 20, 30, 
 		if (savedAt !== null) await workspaceFiles.write(canonicalPath, { contents: saved, updatedAt: savedAt }, true);
 		const restoredPayload = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
 		installWorkspaceRestoreView();
-		await restoreWorkspaceStorageSession(editorStub(sources) as any, sources,
+		const editor = editorStub(sources, t);
+		await restoreWorkspaceStorageSession(editor as any, sources,
 			{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, restoredPayload, new Set());
 		const restored = await resolveTextFileModel(editorTextModelService, sources, resource);
 		const keepDraft = savedAt === null || savedAt <= 20;
@@ -1700,6 +1708,7 @@ test('generated compiler sources ignore manifest dirty records', async (t) => {
 });
 
 test('runtime source capture reads the resource model independently of the active input', (t) => {
+	const group = createTestEditorGroup(); t.after(() => group.dispose());
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
 	const registry = sourceRegistry('-- packed source', 'offline-cart', 'src/foo.lua');
@@ -1710,17 +1719,12 @@ test('runtime source capture reads the resource model independently of the activ
 	);
 	const model = installDirtyModel('src/foo.lua', '-- tab buffer');
 	const codeTab = new CodeEditorInput(model);
-	editorTabGroup.initialize(codeTab);
+	group.model.initialize(codeTab);
 	assert.equal(captureCurrentLuaSource(editorTextModelService, sources, model.resource).source, '-- tab buffer');
 	const resource = testResource('image.png', TEST_DOMAIN, 'image');
-	const resourceTab = new ResourceViewerInput({
-			resource,
-			lines: [],
-			error: '',
-			title: 'image.png',
-	});
-	editorTabGroup.add(resourceTab);
-	editorTabGroup.activate(resourceTab);
+	const resourceTab = new ResourceViewerInput(sources, resource);
+	group.model.add(resourceTab);
+	group.model.activate(resourceTab);
 	assert.equal(captureCurrentLuaSource(editorTextModelService, sources, model.resource).source, '-- tab buffer');
 });
 
@@ -1939,43 +1943,45 @@ test('explicit Lua save promotes one exact canonical record without deleting man
 test('built-in resolution admits source without opening tabs or stealing the preview', async t => {
 	const storage = new MockStorage(); installBrowserWorkspace(t, storage); installWorkspaceRestoreView();
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], 0);
-	const panes = createTestEditorPanes(); t.after(() => panes.dispose());
-	initializeTabs(panes);
-	openEditorTab(panes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!));
-	const entry = editorTabGroup.activeTab;
+	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	group.openEditor(resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!));
+	const entry = group.model.activeTab;
 	const aem = testResource('res/cue.aem.yaml', 0, 'aem');
 	workspaceCanonicalSourceCache.set('offline-cart/res/cue.aem.yaml', { contents: 'events: {}', updatedAt: 0 });
 	const resolver = createResourceEditorResolver(sources);
-	const revision = editorTabGroup.revision;
+	const revision = group.model.revision;
 	const [first, second] = await Promise.all([resolver.resolveEditorInput(aem), resolver.resolveEditorInput(aem)]);
-	assert.equal(editorTabGroup.revision, revision);
-	assert.equal(editorTabGroup.activeTab, entry);
-	assert.equal(panes.activePane!.input, entry);
-	assert.equal(editorTabGroup.tabs.length, 1);
+	assert.equal(group.model.revision, revision);
+	assert.equal(group.model.activeTab, entry);
+	assert.equal(group.panes.activePane!.input, entry);
+	assert.equal(group.model.tabs.length, 1);
 	assert.equal(first.kind, 'aem_editor'); assert.equal(second.kind, 'aem_editor');
 	if (first.kind !== 'aem_editor' || second.kind !== 'aem_editor') throw new Error('audio event map contribution');
 	assert.equal(first.workingCopy, second.workingCopy, 'both contributions bind the one admitted working copy');
-	openEditorTab(panes, first, { pinned: false });
-	assert.equal(editorTabGroup.previewTab, first);
+	group.openEditor(first, { pinned: false });
+	assert.equal(group.model.previewTab, first);
 	let discarded = 0; second.onWillDispose(() => { discarded += 1; });
-	openEditorTab(panes, second, { pinned: false });
-	assert.equal(editorTabGroup.activeTab, first);
-	assert.equal(editorTabGroup.previewTab, first);
+	group.openEditor(second, { pinned: false });
+	assert.equal(group.model.activeTab, first);
+	assert.equal(group.model.previewTab, first);
 	assert.equal(discarded, 1, 'group admission releases the unused candidate');
-	assert.equal(editorTabGroup.tabs.length, 2);
+	assert.equal(group.model.tabs.length, 2);
 	const system = resolveRuntimeResource(sources, { domain: -1, path: 'entry.lua' })!;
-	const previewRevision = editorTabGroup.revision;
+	const previewRevision = group.model.revision;
 	const viewer = await resolver.resolveEditorInput(system, WORKBENCH_RESOURCE_VIEWER_ID);
-	assert.equal(editorTabGroup.revision, previewRevision);
-	assert.equal(editorTabGroup.previewTab, first);
+	assert.equal(group.model.revision, previewRevision);
+	assert.equal(group.model.previewTab, first);
 	assert.equal(viewer.kind, 'resource_view');
 	if (viewer.kind !== 'resource_view') throw new Error('resource contribution');
-	openEditorTab(panes, viewer);
+	group.openEditor(viewer);
 	viewer.view.scroll = 3;
-	assert.equal(await resolver.resolveEditorInput(system, WORKBENCH_RESOURCE_VIEWER_ID), viewer);
+	const viewerCandidate = await resolver.resolveEditorInput(system, WORKBENCH_RESOURCE_VIEWER_ID);
+	assert.notEqual(viewerCandidate, viewer);
+	group.openEditor(viewerCandidate);
+	assert.equal(group.model.activeTab, viewer);
 	assert.equal(viewer.view.scroll, 3, 'resolving an existing preview preserves its view state');
-	assert.equal(editorTabGroup.activeTab, viewer);
-	assert.equal(editorTabGroup.tabs.length, 3);
+	assert.equal(group.model.activeTab, viewer);
+	assert.equal(group.model.tabs.length, 3);
 	assert.equal(await resolveTextFileModel(editorTextModelService, sources, aem), first.workingCopy);
 	assert.equal(first.workingCopy.mode, 'aem', 'the YAML suffix does not replace AEM source ownership');
 });

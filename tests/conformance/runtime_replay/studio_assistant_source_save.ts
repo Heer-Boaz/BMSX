@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { createStudioFixture, check } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -14,10 +13,10 @@ export async function runAssistantSourceSave(kind: StudioRendererKind, canvas: H
 	const { ide, runtime, until, cycles, frame, press, harness, runPaletteCommand } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'source Save: boot authoring target');
 	await reachNemesisTitle(test); harness.openLuaSource('cart.lua'); await frame();
-	const mainTab = getActiveTab(), main = harness.getActiveEditorDocument().model;
+	const mainTab = ide.editor.editorGroup.model.activeTab, main = harness.getActiveEditorDocument().model;
 	const original = main.buffer.getText(), media = ide.sources.currentBlua32Media, stoppedAt = cycles();
 	await runPaletteCommand('View: Codex Assistant');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant required');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant required');
 	const conversation = ide.editor.assistant;
 	await submitAssistantText(test, 'Read Lua and canonical YAML. Propose comments for my review, without applying or installing.');
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.proposal !== undefined), 'source Save: model proposes exact source edits');
@@ -29,7 +28,7 @@ export async function runAssistantSourceSave(kind: StudioRendererKind, canvas: H
 	check(main.buffer.getText() === original && !main.dirty && !yaml.dirty && ide.textFileSaves.latestOperation(main) === undefined,
 		'a proposal is neither Apply nor Save');
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.review')!.bounds);
-	const review = getActiveTab(); if (review.kind !== 'workspace_edit_review') throw new Error('Shared review required');
+	const review = ide.editor.editorGroup.model.activeTab; if (review.kind !== 'workspace_edit_review') throw new Error('Shared review required');
 	await frame(); await renderer.capture!('review');
 	await test.click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
 	check(proposal.state === 'applied' && main.dirty && yaml.dirty && main.lastSavedSource === original && yaml.lastSavedSource === originalYaml

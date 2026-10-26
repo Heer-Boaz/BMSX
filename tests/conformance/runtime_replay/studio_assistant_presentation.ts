@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { TextStyle } from '../../../ide/common/markdown/model';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { measureTextRange } from '../../../ide/editor/common/text/layout';
@@ -22,7 +21,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	harness.openLuaSource('cart.lua'); await frame();
 	await press('ControlLeft', 'Home'); await test.clipboard.writeText('-- REFERENCED WORKING COPY\n'); await press('ControlLeft', 'KeyV');
 	await test.runPaletteCommand('View: Codex Assistant');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant expected');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant expected');
 	const conversation = ide.editor.assistant, paused = cycles();
 	const picker = ide.editor.quickInput;
 	const emptyComposerHeight = view.composerBounds.bottom - view.composerBounds.top;

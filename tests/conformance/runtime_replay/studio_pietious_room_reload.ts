@@ -1,5 +1,4 @@
 import type { Value } from '../../../machine/ts/machine/cpu/value';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { typeSourceText } from './studio_scene_authoring';
@@ -31,7 +30,7 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	check(index >= 0, 'director is visible by its real runtime id');
 	for (let i = 0; i < index; i++) await press('ArrowDown');
 	await press('Enter');
-	const lab = getActiveTab();
+	const lab = ide.editor.editorGroup.model.activeTab;
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab did not open');
 	await until(() => lab.outline.rows.length > 0 && lab.outline.rows[0].element.node.label === 'd', 'inspect the actual director');
 	const reload = async () => {

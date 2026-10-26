@@ -1,5 +1,5 @@
+import type { EditorGroupView } from '../workbench/services/editor/editor_group';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
-import { getActiveTab } from '../workbench/ui/tabs';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
 import { TextEditorInput } from '../workbench/common/editor_input';
 import type { TextFileSaveService } from '../workbench/services/working_copy/text_file_save';
@@ -46,13 +46,14 @@ export function executeEditorWorkspaceCommand(
 	logOutput: LogOutput,
 	textFileSaves: TextFileSaveService,
 	command: EditorWorkspaceCommandId,
+	group: EditorGroupView,
 ): void {
 	switch (command) {
 		case 'createResource':
 			openCreateResourcePrompt(editor, sources, clock);
 			return;
 		case 'save': {
-			const activeInput = getActiveTab();
+			const activeInput = group.model.activeTab;
 			if (activeInput instanceof TextEditorInput) for (const model of activeInput.getWorkingCopies()) {
 				if (!model.dirty || model.readOnly) continue;
 				void saveTextFileFromCommand(textFileSaves, model, editor, sources);
@@ -75,7 +76,7 @@ export function executeEditorWorkspaceCommand(
 				performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, audioOutput, logOutput, request);
 			};
 			if (command === 'runCurrentFile' || command === 'runProject') {
-				const resource = getActiveTab()?.resource;
+				const resource = group.model.activeTab?.resource;
 				if (resource && resource.domain !== -1
 					&& (command === 'runCurrentFile' || sources.cartridgeSlots[resource.domain]!.luaSources.can_boot_from_source)) {
 					requestAction({ action: 'run', entry: command === 'runCurrentFile'

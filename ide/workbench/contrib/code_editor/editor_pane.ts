@@ -67,6 +67,9 @@ const SOURCE_READING_COLUMNS = 48;
 const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
 export class CodeEditorPane extends EditorPane<CodeEditorInput> implements PointerCaptureTarget {
+	public override get inputScope() {
+		return this.hasInput && activeCodeEditor.view === this.input.context.view ? activeCodeEditor.focusTarget.scope : undefined;
+	}
 	public override get companionGameMinimumWidth(): number {
 		return measureGutterWidth() + 2 + editorViewState.charAdvance * (SOURCE_READING_COLUMNS + 1)
 			+ constants.SCROLLBAR_WIDTH + constants.CODE_AREA_RIGHT_MARGIN;
@@ -194,7 +197,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 			if (width !== this.layoutWidth) editorViewState.layout.markVisualLinesDirty();
 			this.layoutWidth = width;
 			resolveCodeAreaViewport();
-			rewrapRuntimeErrorOverlays();
+			rewrapRuntimeErrorOverlays(this.editor.editorGroup);
 		}
 		layoutInlineWidgets();
 		if (!activeCodeEditor.focusTarget.canFocus!()) {

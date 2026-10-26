@@ -1,3 +1,4 @@
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
@@ -15,7 +16,6 @@ import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animat
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -157,15 +157,15 @@ test('independent inline views share real documents/history and retire stale ses
 	const source = "local first = {frames=function() end,frame_duration=20}; local second={duration_frames=8}; return {}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
-	const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
+	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const controller = new AnimationEditorController(sources, group, undefined!, undefined!);
 	const project = getOrCreateSemanticProject(editorTextModelService, 0); project.synchronizeRuntimeSources(sources);
 	const file = project.getSnapshot().getFileData(resource.path)!;
 	const first = animationDefinitionAtPosition(file, 1, 30)!, second = animationDefinitionAtPosition(file, 1, 86)!;
 	const input = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(first.span)));
 	const other = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(second.span)));
-	editorTabGroup.add(input); editorTabGroup.add(other);
-	const unbind = editorTextModelService.onDidChangeContent((model, event) => controller.onDidChangeContent(model, event));
-	t.after(() => { unbind(); editorTabGroup.clear(); input.dispose(); other.dispose(); editorTextModelService.clear(); });
+	group.model.add(input); group.model.add(other);
+	t.after(() => { group.model.clear(); input.dispose(); other.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.refresh(other);
 	assert.equal(controller.authoring.canAddTrack(input), true);
 	assert.notEqual(input.id, other.id);

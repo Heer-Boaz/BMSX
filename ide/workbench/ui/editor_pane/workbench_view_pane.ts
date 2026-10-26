@@ -2,7 +2,7 @@ import type { PointerInputSnapshot } from '../../../common/models';
 import { editorPointerState, clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { EditorPane } from '../../services/editor/editor_pane';
 import type { EditorInput } from '../tab/model';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 
 type WorkbenchViewInput = Exclude<EditorInput, { kind: 'code_editor' }>;
 
@@ -10,15 +10,23 @@ type WorkbenchViewInput = Exclude<EditorInput, { kind: 'code_editor' }>;
 export abstract class WorkbenchViewEditorPane<
 	TInput extends WorkbenchViewInput,
 > extends EditorPane<TInput> {
-	protected readonly focusTarget = inputFocus.createTarget();
+	protected readonly focusTarget: InputFocusTarget;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindGamepad: () => void;
 
-	public constructor() {
+	public constructor(scope: InputFocusScope) {
 		super();
+		this.focusTarget = inputFocus.createTarget(null, scope);
 		this.focusTarget.canFocus = () => this.hasInput;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.unbindGamepad = this.focusTarget.bindGamepad(input => this.handleGamepad(input));
+	}
+
+	public override get inputScope(): InputFocusScope { return this.focusTarget.scope; }
+
+	public override clearInput(): void {
+		this.focusTarget.release();
+		super.clearInput();
 	}
 
 	public focus(): void {

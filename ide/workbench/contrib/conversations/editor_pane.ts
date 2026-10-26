@@ -1,3 +1,4 @@
+import type { InputFocusScope } from '../../../input/focus';
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { ImageDecoder } from '../../../../hosts/common/image';
@@ -24,8 +25,8 @@ export class ConversationObserverPane extends WorkbenchViewEditorPane<Conversati
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly transcriptView: AssistantTranscriptControl;
-	public constructor(decodeImage: ImageDecoder, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner) {
-		super();
+	public constructor(decodeImage: ImageDecoder, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner, scope: InputFocusScope) {
+		super(scope);
 		this.previews = new ImagePreviewCache(decodeImage); this.preview = new ImagePreviewOverlay(this.previews, surfaces, owner, commands);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview);
 		this.focusTarget.registerCommand('conversations.older', { isEnabled: () => this.hasInput && !this.input.conversation.pending && this.input.conversation.olderCursor !== null,

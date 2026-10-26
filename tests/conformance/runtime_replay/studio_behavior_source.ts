@@ -4,7 +4,6 @@ import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selec
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../../ide/language/lua/source_edits';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../../helpers/behavior_source_fixture';
 import { revealLensOccurrence } from './studio_behavior_picker';
@@ -28,7 +27,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	const media = ide.sources.currentBlua32Media;
 	// The existing module is only a textmodel carrier. No fixture is compiled or installed in the machine.
 	harness.openLuaSource('cart.lua');
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
@@ -38,7 +37,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	const picker = ide.editor.quickInput;
 	check(picker.model.list.rows.length === 2, 'source graph: the fixture contributes two independent registrations');
 	await press('Enter');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('source graph: actual Behavior Lens input missing');
 	check(lens.workingCopy === model, 'source graph: the lens and code share the real working copy');
 	const view = lens.view;
@@ -60,12 +59,12 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	await click(graph.actionBar.items[0].bounds);
 	await test.clickTab(lens.id);
 	await click(bounds);
-	check(getActiveTab() === lens, 'source graph: pane switching cancels the earlier click, not a double-click on return');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'source graph: pane switching cancels the earlier click, not a double-click on return');
 	await click(graph.actionBar.items[0].bounds, 6);
 	const sourceLines = BEHAVIOR_SOURCE_FIXTURE.split('\n');
 	const sourceRow = sourceLines.findIndex(line => line.includes('children = { leaf,'));
 	const sourceColumn = sourceLines[sourceRow].indexOf('leaf');
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === sourceRow
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === sourceRow
 		&& activeCodeEditor.view.cursorColumn === sourceColumn && !hasSelection(),
 		'source graph: a held Source gesture opens the initializer reference without starting a code drag');
 	const oldDocument = view.document;
@@ -99,7 +98,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	await test.clickTab(lens.id);
 	check(view.selection === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');
 	await press('Enter');
-	check(getActiveTab() === lens, 'source graph: an absent selection has no stale source action');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'source graph: an absent selection has no stale source action');
 	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);

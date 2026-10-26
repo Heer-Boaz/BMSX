@@ -4,7 +4,6 @@ import {
 } from '../../../runtime/debugger_state';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { CartEditor } from '../../../cart_editor';
-import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import {
 	blua32SourceRangeAtPc,
@@ -17,7 +16,7 @@ export class BreakpointController {
 	public constructor(private readonly state: RuntimeDebuggerState) {}
 
 	public toggleBreakpointForEditorRow(row: number = activeCodeEditor.view.cursorRow): boolean {
-		const context = getActiveCodeTabContext();
+		const context = activeCodeEditor;
 		if (context.model.mode !== 'lua') {
 			return false;
 		}
@@ -61,7 +60,7 @@ export async function presentRuntimeDebuggerStop(
 		domain: source.domain,
 		path: source.record.source_path,
 	}, range.start.line, range.start.column);
-	if (generation !== editor.editorPanes.openGeneration) return;
+	if (generation !== editor.editorGroup.panes.openGeneration) return;
 	showEditorMessage(
 		state.source.stop!.reason === RuntimeDebuggerStopReason.Breakpoint
 			? 'Paused on breakpoint'

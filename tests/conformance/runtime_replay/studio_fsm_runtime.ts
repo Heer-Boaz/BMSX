@@ -2,7 +2,6 @@ import { editorTextModelService } from '../../../ide/editor/model/model_service'
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behavior_lens/quick_access';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { inspectStateMachineState, readStateMachineInstances, readStateMachineStates } from '../../../ide/workbench/contrib/behavior_lens/state_machine_runtime';
 import { medianMilliseconds } from '../../helpers/performance';
 import { check, type StudioFixture } from './studio_fixture';
@@ -21,9 +20,9 @@ export async function openRuntimeStateMachineLens(test: StudioFixture) {
 	check(index >= 0, 'runtime FSM: unexecuted source remains independently discoverable');
 	for (let n = 0; n < index; n += 1) await press('ArrowDown');
 	await press('Enter');
-	const input = getActiveTab();
+	const input = ide.editor.editorGroup.model.activeTab;
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'state-graph') throw new Error('runtime FSM: real source graph required');
-	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	if (inspector.visible) await press('Escape');
 	check(!inspector.visible, 'runtime FSM: explicit close returns from a retained inspection to its source graph');
 	return input;
@@ -64,7 +63,7 @@ export async function openRuntimeStateInspector(test: StudioFixture, component: 
 	check(index >= 0, 'runtime FSM: choose a concrete state by its actual instance id');
 	for (let n = 0; n < index; n += 1) await press('ArrowDown');
 	await press('Enter');
-	const inspector = (test.ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (test.ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !picker.visible, 'runtime FSM: the selected state opens the retained inspector');
 	const rows = inspector.model.rows;
 	check(rows.find(row => row.element.label === 'LOADED DEFAULTS')!.element.value === `revision: ${loadedRevision}`,

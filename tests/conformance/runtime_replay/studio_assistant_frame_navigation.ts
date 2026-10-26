@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -17,7 +16,7 @@ export async function runAssistantNavigation(kind: StudioRendererKind, canvas: H
 	const source = test.harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- navigation must not install this source\n' }]);
 	await test.runPaletteCommand('View: Codex Assistant');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane required');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	const before = { cycles: cycles(), videoTick: runtime.frameScheduler.lastTickSequence };
 	const version = source.version, media = ide.sources.currentBlua32Media, conversation = ide.editor.assistant;
 	await submitAssistantText(test, 'Inspect, advance four video frames, rewind two, capture the image, seek the original recording position and replay four. Leave me paused.');
@@ -25,7 +24,7 @@ export async function runAssistantNavigation(kind: StudioRendererKind, canvas: H
 	const after = { cycles: cycles(), videoTick: runtime.frameScheduler.lastTickSequence };
 	check(after.videoTick === before.videoTick + 4 && test.execution.userPaused && ide.frameNavigation.active === undefined,
 		'model completes four actual video boundaries and leaves explicit pause');
-	check(getActiveTab() === view && ide.editor.isActive && source.version === version && ide.sources.currentBlua32Media === media,
+	check(ide.editor.editorGroup.model.activeTab === view && ide.editor.isActive && source.version === version && ide.sources.currentBlua32Media === media,
 		'navigation needs no view switch, UI click, save or install');
 	check(ide.inspection.canInspect && test.rewind.active, 'model can inspect the stopped historical target');
 	await renderer.capture!('completed');
@@ -49,7 +48,7 @@ export async function runAssistantNavigation(kind: StudioRendererKind, canvas: H
 	const uiBefore = runtime.frameScheduler.lastTickSequence;
 	await test.runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'navigation tools: ordinary Next Frame completes');
-	check(runtime.frameScheduler.lastTickSequence === uiBefore + 1 && getActiveTab().kind === 'game_view', 'ordinary command steps and opens Game View');
+	check(runtime.frameScheduler.lastTickSequence === uiBefore + 1 && ide.editor.editorGroup.model.activeTab.kind === 'game_view', 'ordinary command steps and opens Game View');
 	const uiPresent = { cycles: cycles(), videoTick: runtime.frameScheduler.lastTickSequence };
 	const retainedLatest = runtime.history.latestCycles;
 	await test.runPaletteCommand('Run: Previous Frame');

@@ -1,4 +1,3 @@
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { eventClipboardText } from '../../../ide/workbench/contrib/events/presentation';
 import type { EventViewerPane } from '../../../ide/workbench/contrib/events/editor_pane';
 import { WorkspaceRuntimeTools } from '../../../ide/workbench/services/assistant/runtime_tools';
@@ -48,9 +47,9 @@ export async function runStudioEventNavigation(test: StudioFixture) {
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'events: physical baseline settles');
 	await runPaletteCommand('View: Event Viewer'); await frame();
-	const view = getActiveTab();
+	const view = ide.editor.editorGroup.model.activeTab;
 	if (view.kind !== 'event_viewer') throw new Error('Event Viewer required');
-	const pane = ide.editor.editorPanes.activePane as EventViewerPane;
+	const pane = ide.editor.editorGroup.panes.activePane as EventViewerPane;
 	await click(view.actions.items.find(item => item.command === 'events.filter')!.bounds);
 	await test.clipboard.writeText('navigation.match'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	check(view.projection.rows.length >= 20 && view.projection.rows.every(record => record.event.kind === 'string' && record.event.value === 'navigation.match'),

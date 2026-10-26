@@ -4,9 +4,8 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
-import { EditorTabGroupModel, editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import { openEditorTab } from '../../ide/workbench/ui/tabs';
-import { createTestEditorPanes } from '../helpers/editor_panes';
+import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import { navigationState } from '../../ide/navigation/navigation_history';
 
 function scene(path: string) {
@@ -158,16 +157,16 @@ test('an intentionally absent compact description keeps the entire duplicate-tit
 });
 
 test('workbench preview replacement detaches the pane before disposal, and history cannot retain a closed preview', t => {
-	const panes = createTestEditorPanes();
-	t.after(() => { panes.dispose(); editorTabGroup.clear(); });
+	const group = createTestEditorGroup();
+	t.after(() => { group.dispose(); });
 	const kept = scene('kept.lua'), first = scene('preview.lua'), next = scene('next.lua');
-	openEditorTab(panes, kept); openEditorTab(panes, first, { pinned: false });
+	group.openEditor(kept); group.openEditor(first, { pinned: false });
 	let detached = false;
-	first.onWillDispose(() => { detached = panes.activePane?.input !== first; });
-	openEditorTab(panes, next, { pinned: false });
-	assert.equal(detached, true); assert.equal(panes.activePane?.input, next);
+	first.onWillDispose(() => { detached = group.panes.activePane?.input !== first; });
+	group.openEditor(next, { pinned: false });
+	assert.equal(detached, true); assert.equal(group.panes.activePane?.input, next);
 	assert.ok(navigationState.back.every(entry => !entry.isDisposed && (entry.target.kind !== 'input' || entry.target.input !== first)));
-	openEditorTab(panes, next); assert.equal(editorTabGroup.previewTab, null);
-	openEditorTab(panes, kept, { pinned: false });
-	assert.equal(editorTabGroup.previewTab, null, 'preview opening an already kept input does not unpin it');
+	group.openEditor(next); assert.equal(group.model.previewTab, null);
+	group.openEditor(kept, { pinned: false });
+	assert.equal(group.model.previewTab, null, 'preview opening an already kept input does not unpin it');
 });

@@ -1,7 +1,6 @@
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { FSM_RETARGET_CART_SOURCE, FSM_RETARGET_CART_CALLBACK_SOURCE, fsmRetargetImportedCartSource } from '../../helpers/fsm_retarget_fixture';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
@@ -24,7 +23,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 		cartSource = fsmRetargetImportedCartSource(record.module_path);
 		harness.openLuaSource(record.source_path);
 	}
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = harness.getActiveEditorDocument().model;
 	const source = imported ? FSM_RETARGET_CART_CALLBACK_SOURCE : cartSource;
 	main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length, text: cartSource }]);
@@ -45,10 +44,10 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.drag.one');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('FSM drag: concrete FSM pane required');
 	const currentReview = () => {
-		const input = getActiveTab();
+		const input = ide.editor.editorGroup.model.activeTab;
 		if (!(input instanceof WorkspaceEditReviewInput)) throw new Error('FSM drag: physical drop must open the unified review tab');
 		return input;
 	};
@@ -63,7 +62,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 		const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
 		await press('Home');
 		for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('ArrowDown');
-		const input = getActiveTab();
+		const input = ide.editor.editorGroup.model.activeTab;
 		check(input.kind === 'behavior_lens' && viewport.selection === edge && input.view.selection?.kind === 'state-outcome', 'FSM drag: exact edge selected by keyboard');
 		const points = edge.points;
 		movePointer(point(viewport.graphToViewportX(points[points.length - 2]), viewport.graphToViewportY(points[points.length - 1])));
@@ -81,10 +80,10 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	for (let index = 0; index < 8; index += 1) await frame();
 	unchanged(version, 'FSM drag: held preview is not a source or guest mutation');
 	await press('Escape'); await release();
-	check(getActiveTab() === lens, 'FSM drag: Escape cancels the physical gesture');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'FSM drag: Escape cancels the physical gesture');
 	unchanged(version, 'FSM drag: cancelled drag creates no edit');
 	await begin(); await press('ControlLeft', 'ShiftLeft', 'KeyP'); await press('Escape'); await release();
-	check(getActiveTab() === lens, 'FSM drag: palette interruption cannot resurrect a drop');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'FSM drag: palette interruption cannot resurrect a drop');
 	await begin(); await release();
 	let review = currentReview();
 	check(review.proposal.state === 'pending' && review.evidence.items.length === 2, 'FSM drag: shared callback requires review of both registrations');
@@ -95,7 +94,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	check(review.proposal.state === 'pending', 'A01: release outside Apply leaves the review open');
 	unchanged(version, 'A01: cancelled Apply has no history element');
 	await click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.discard')!.bounds, 5);
-	check(review.proposal.state === 'discarded' && getActiveTab() === review, 'FSM drag: actual Discard retains settled evidence');
+	check(review.proposal.state === 'discarded' && ide.editor.editorGroup.model.activeTab === review, 'FSM drag: actual Discard retains settled evidence');
 	unchanged(version, 'FSM drag: held Discard neither applies nor clicks through to graph');
 	await test.clickTab(lens.id); await ready();
 	await begin(); await release(); review = currentReview();
@@ -108,7 +107,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	model.refreshResource({ ...resource, source: { ...resource.source, generated: true } });
 	check(review.proposal.state === 'stale' && !ide.editor.commands.isEnabled('workspaceEditReview.apply'), 'FSM drag: readonly immediately revokes Apply');
 	await frame(); model.refreshResource(resource); await frame();
-	check(review.proposal.state === 'stale' && getActiveTab() === review, 'FSM drag: restored writability cannot revive the retained preview');
+	check(review.proposal.state === 'stale' && ide.editor.editorGroup.model.activeTab === review, 'FSM drag: restored writability cannot revive the retained preview');
 	unchanged(version, 'FSM drag: authority cancellation leaves source and guest untouched');
 	await test.clickTab(lens.id); await ready();
 	await begin(); await release(); review = currentReview();
@@ -124,7 +123,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	await runPaletteCommand('Review: Open Impact Source');
 	check(ide.editor.quickInput.visible, 'FSM drag: Source offers captured written locations');
 	await press('Home'); await press('ArrowDown'); await press('Enter');
-	check(getActiveTab() === code && review.proposal.state === 'pending' && !hasSelection(), 'FSM drag: captured Source navigates without discarding or selection leak');
+	check(ide.editor.editorGroup.model.activeTab === code && review.proposal.state === 'pending' && !hasSelection(), 'FSM drag: captured Source navigates without discarding or selection leak');
 	check(activeCodeEditor.model === location.model && activeCodeEditor.view.cursorRow === positionAt.row
 		&& activeCodeEditor.view.cursorColumn === positionAt.column, 'FSM drag: Source reaches the captured UTF-16 position');
 	unchanged(version, 'FSM drag: impact Source does not dirty source');
@@ -132,13 +131,13 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	await test.clickTab(lens.id); await ready();
 	await begin(); await release(); review = currentReview();
 	await runPaletteCommand('Review: Apply Workspace Edit');
-	check(review.proposal.state === 'applied' && getActiveTab() === code && model.version === version + 1, 'FSM drag: palette applies the admitted preview and retains evidence');
+	check(review.proposal.state === 'applied' && ide.editor.editorGroup.model.activeTab === code && model.version === version + 1, 'FSM drag: palette applies the admitted preview and retains evidence');
 	await test.clickTab(lens.id); await ready(); await runPaletteCommand('Edit: Undo'); await ready();
 	check(model.buffer.getText() === source, 'FSM drag: palette Apply uses the same one-edit history');
 	version = model.version;
 	await begin(); await release(); review = currentReview();
 	await press('ControlLeft', 'ShiftLeft', 'KeyP'); await press('Escape');
-	check(review.proposal.state === 'pending' && getActiveTab() === review, 'FSM drag: palette dismissal returns to the pending review');
+	check(review.proposal.state === 'pending' && ide.editor.editorGroup.model.activeTab === review, 'FSM drag: palette dismissal returns to the pending review');
 	await press('Tab'); await press('Home');
 	for (let step = 0; step < review.actionBar.items.length
 		&& review.actionBar.items[review.actionBar.focusedIndex].command !== 'workspaceEditReview.apply'; step++) await press('ArrowRight');
@@ -147,12 +146,12 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	await press('Space');
 	const changed = source.replace("--[[chosen path]] 'active'", "--[[chosen path]] 'other'");
 	check(model.buffer.getText() === changed && model.version === version + 1 && review.proposal.state === 'applied'
-		&& getActiveTab() === code && (!imported || main.version === mainVersion), 'FSM drag: held Apply commits one exact literal edit');
+		&& ide.editor.editorGroup.model.activeTab === code && (!imported || main.version === mainVersion), 'FSM drag: held Apply commits one exact literal edit');
 	check(cycles() === position && ide.sources.currentBlua32Media === media, 'FSM drag: acceptance still does not install or run the guest');
 	await test.clickTab(lens.id); await ready();
 	check(viewport.selection?.kind === 'edge' && viewport.selection.link.target.source.label === 'other', 'FSM drag: new layout selects the exact changed proof');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(getActiveTab() === code && model.version === version + 1 && !hasSelection(), 'FSM drag: post-edit Source is read-only navigation');
+	check(ide.editor.editorGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(), 'FSM drag: post-edit Source is read-only navigation');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'FSM drag: one hidden code Undo restores source');
 	await test.clickTab(lens.id); await ready();
@@ -185,7 +184,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	check(execution.userPaused, 'FSM drag: final view is paused without coupling pause to authoring');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.drag.single');
-	const single = getActiveTab();
+	const single = ide.editor.editorGroup.model.activeTab;
 	if (single.kind !== 'behavior_lens' || single.view.presentation.kind !== 'state-graph') throw new Error('FSM drag: chosen direct registration requires its own graph');
 	graph = single.view.presentation; viewport = graph.viewport;
 	await ready();
@@ -193,13 +192,13 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	version = main.version;
 	const beforeSingle = main.buffer.getText();
 	await begin(); await release(); await ready();
-	check(getActiveTab() === single && main.version === version + 1 && main.buffer.getText().includes("on = { choose = 'other' }"),
+	check(ide.editor.editorGroup.model.activeTab === single && main.version === version + 1 && main.buffer.getText().includes("on = { choose = 'other' }"),
 		'FSM drag: one recognized direct use commits on physical drop without a review');
 	await runPaletteCommand('Edit: Undo'); await ready();
 	check(main.buffer.getText() === beforeSingle && model.buffer.getText() === changed, 'FSM drag: direct drop also has one ordinary Undo');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.drag.one');
-	check(getActiveTab() === lens, 'FSM drag: reopening the shared registration restores its own retained input');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'FSM drag: reopening the shared registration restores its own retained input');
 	graph = lens.view.presentation; viewport = graph.viewport;
 	await ready();
 	// Keep the review visible in the final backend screenshot, without changing saved source.

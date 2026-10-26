@@ -3,7 +3,7 @@ import { handleProblemsPanelPointer, handleProblemsPanelResizePointer } from './
 import { handleResourcePanelPointer } from './resource_panel_content';
 import { handleResourcePanelResizePointer } from './resource_panel_resize';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
-import type { EditorPanes } from '../../workbench/services/editor/editor_panes';
+import type { EditorGroupView } from '../../workbench/services/editor/editor_group';
 
 export function handleEditorPanelResizePointer(resourcePanel: ResourcePanelController, snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (handleResourcePanelResizePointer(resourcePanel, snapshot, justPressed)) {
@@ -14,7 +14,7 @@ export function handleEditorPanelResizePointer(resourcePanel: ResourcePanelContr
 
 export function handleEditorPanelPointer(
 	resourcePanel: ResourcePanelController,
-	editorPanes: EditorPanes,
+	editorGroup: EditorGroupView,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	justReleased: boolean,
@@ -22,5 +22,5 @@ export function handleEditorPanelPointer(
 	if (handleResourcePanelPointer(resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	return handleProblemsPanelPointer(editorPanes, snapshot, justPressed, justReleased);
+	return handleProblemsPanelPointer(editorGroup, snapshot, justPressed, justReleased);
 }

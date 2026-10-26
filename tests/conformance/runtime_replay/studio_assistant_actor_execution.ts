@@ -4,7 +4,6 @@ import { ActorRuntimeInspection } from '../../../ide/workbench/contrib/actor_lab
 import { resolveActorTarget } from '../../../ide/workbench/contrib/actor_lab/target';
 import { ActorRuntimeTree, findRuntimeActor } from '../../../ide/workbench/contrib/actor_lab/runtime';
 import type { Table } from '../../../machine/ts/machine/cpu/table';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ACTOR_EXECUTION_SOURCE } from '../../helpers/actor_tools_fixture';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -26,11 +25,11 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- live tools must not install this dirty source\n' }]);
 	const version = source.version, media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Actor Lab: Open'); await press('ArrowDown'); await press('Enter'); await frame();
-	const lab = getActiveTab(); if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
+	const lab = ide.editor.editorGroup.model.activeTab; if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	const selection = lab.actorHashId;
 	check(lab.runtime.roots[0].label === 'second', 'manual Actor Lab selects a different instance from the tool request');
 	await runPaletteCommand('View: Codex Assistant');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant required');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant required');
 	const conversation = ide.editor.assistant;
 	const probeLine = ACTOR_EXECUTION_SOURCE.split('\n').findIndex(line => line.includes('return self.id, nil')) + 1;
 	ide.debugger.breakpoints.set({ domain: 0, path: 'cart.lua' }, [probeLine]);

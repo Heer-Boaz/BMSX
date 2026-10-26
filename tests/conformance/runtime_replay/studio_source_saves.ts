@@ -3,7 +3,6 @@ import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/
 import { workspaceRecords } from '../../../ide/workspace/records';
 import { resolveWorkspacePath } from '../../../ide/workspace/path';
 import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 
@@ -61,7 +60,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 		await ide.editor.navigation.openResource(resource);
 		if (kind === 'aem') {
 			await frame();
-			const input = getActiveTab();
+			const input = ide.editor.editorGroup.model.activeTab;
 			if (input.kind !== 'aem_editor') throw new Error('source saves: actual audio event editor required');
 			const original = input.workingCopy.buffer.getText();
 			const index = input.tree.rows.findIndex(row => row.element.path.length === 2 && row.element.path[0] === 'events');

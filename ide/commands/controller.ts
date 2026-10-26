@@ -1,3 +1,4 @@
+import { findEditorGroup } from '../workbench/services/editor/editor_group';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create';
 import { chooseBuild, showBuildJobs } from '../workbench/contrib/builds/commands';
 import { createCartridge } from '../workbench/contrib/projects/commands';
@@ -8,8 +9,6 @@ import type { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import { RuntimeTransport } from '../runtime/transport';
 import { navigationState } from '../navigation/navigation_history';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
-import { editorTabGroup } from '../workbench/ui/tab/group_model';
-import { editorChromeState } from '../workbench/ui/chrome_state';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -29,7 +28,6 @@ import { executeEditorViewCommand, isEditorViewCommand } from './view';
 import { editorViewState } from '../editor/ui/view/state';
 import { problemsPanel } from '../workbench/contrib/problems/panel/controller';
 import { isActiveLuaCodeTab } from '../workbench/ui/code_tab/contexts';
-import { closeActiveTab, cycleTab, getActiveTab, isBehaviorLensActive, isCodeTabActive, isScenarioLabActive } from '../workbench/ui/tabs';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
 import { TextEditorInput } from '../workbench/common/editor_input';
@@ -103,13 +101,11 @@ export class IdeCommandController {
 			&& !execution.frameStepPending && fault.hostFrameFailure === undefined && fault.faultSnapshot === null
 			&& debuggerState.source.stop === undefined && !debuggerState.plans.controlActive && !scenarioRuns.active);
 	}
-
-	/** Ordinary authoring selects the main machine; a live editor explicitly selects its physical session. */
-	private get selectedTransport(): RuntimeTransport {
-		return this.editor.editorPanes.activePane?.runtimeTransport ?? this.transport;
-	}
-
 	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): void {
+		const originGroup = findEditorGroup(target);
+		if (originGroup === null) return;
+		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
+		const transport = group.panes.activePane?.runtimeTransport ?? this.transport;
 		// Committing the focused draft and choosing an action's target are distinct.
 		// Pointer actions retain field focus but invoke their own explicit context.
 		const edit = inputFocus.target?.edit;
@@ -160,7 +156,7 @@ export class IdeCommandController {
 				this.editor.assistantCommands.execute(command);
 				return;
 			case 'aem.testEvent': {
-				const input = getActiveTab()!;
+				const input = group.model.activeTab!;
 				if (input.kind === 'aem_editor') {
 					const property = input.tree.rows[input.tree.selectionIndex].element;
 					this.editor.actorLab.auditionEvent(input.workingCopy.resource.domain, property.path[1] as string);
@@ -168,7 +164,7 @@ export class IdeCommandController {
 				return;
 			}
 			case 'input.testActionString': this.editor.actionStrings.open(this.sources.activeCartridgeSlot); return;
-			case 'behaviorLens.testEffect': { const input = getActiveTab()!; if (input.kind === 'behavior_lens') this.editor.actorLab.testEffect(input.workingCopy.resource.domain); return; }
+			case 'behaviorLens.testEffect': { const input = group.model.activeTab!; if (input.kind === 'behavior_lens') this.editor.actorLab.testEffect(input.workingCopy.resource.domain); return; }
 			case 'progression.createProgram': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'progression'); return;
 			case 'aem.create': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'aem'); return;
 			case 'animation.createSprite': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'sprite_animation'); return;
@@ -183,21 +179,21 @@ export class IdeCommandController {
 				showServerConnection(this.editor);
 				return;
 			case 'conversations.history':
-				openObservedConversation(this.editor.editorPanes, this.editor.observedConversation, this.editor.quickInput);
+				openObservedConversation(group, this.editor.observedConversation, this.editor.quickInput);
 				return;
 			case 'debugEvaluation':
 				if (this.debuggerState.plans.controlSuspended && this.debuggerState.source.stop !== undefined) {
 					resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
-					clearExecutionStopHighlights();
+					clearExecutionStopHighlights(group);
 				} else this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
 				if (!this.debuggerState.plans.controlSuspended) this.execution.requestExecution(false);
 				return;
-			case 'tabs.close': closeActiveTab(this.editor.editorPanes); return;
-			case 'tabs.next': cycleTab(this.editor.editorPanes, 1); return;
-			case 'tabs.previous': cycleTab(this.editor.editorPanes, -1); return;
+			case 'tabs.close': group.close(group.model.activeTab!.id); return;
+			case 'tabs.next': group.cycle(1); return;
+			case 'tabs.previous': group.cycle(-1); return;
 			case 'tabs.scrollLeft': case 'tabs.scrollRight':
-				editorChromeState.tabScrollbar.setScroll(editorChromeState.tabScrollbar.getScroll()
-					+ (command === 'tabs.scrollLeft' ? -1 : 1) * editorChromeState.tabViewportBounds.right * 0.75);
+				group.tabStrip.scrollbar.setScroll(group.tabStrip.scrollbar.getScroll()
+					+ (command === 'tabs.scrollLeft' ? -1 : 1) * (group.tabStrip.layoutState.viewportBounds.right - group.tabStrip.layoutState.viewportBounds.left) * 0.75);
 				return;
 			case 'pause':
 				if (this.execution.userPaused) {
@@ -219,28 +215,28 @@ export class IdeCommandController {
 				return;
 			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
 			case 'runtime.pause':
-				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(false);
-				this.selectedTransport.pause();
+				group.panes.activePane?.setRuntimeCaptureRunning?.(false);
+				transport.pause();
 				return;
 			case 'runtime.present':
 			case 'runtime.accept':
-				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(false);
-				this.selectedTransport.navigation.finishReview(command === 'runtime.present' ? 'present' : 'here');
+				group.panes.activePane?.setRuntimeCaptureRunning?.(false);
+				transport.navigation.finishReview(command === 'runtime.present' ? 'present' : 'here');
 				return;
 			case 'runtime.resume':
-				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(true);
-				this.selectedTransport.resumeHere();
+				group.panes.activePane?.setRuntimeCaptureRunning?.(true);
+				transport.resumeHere();
 				return;
 			case 'gameView.playback': {
-				const running = this.selectedTransport.togglePlayback();
-				this.editor.editorPanes.activePane?.setRuntimeCaptureRunning?.(running);
+				const running = transport.togglePlayback();
+				group.panes.activePane?.setRuntimeCaptureRunning?.(running);
 				return;
 			}
 			case 'gameView.togglePanel': this.editor.gamePanel.toggle(); return;
 			case 'gameView.closePanel': this.editor.gamePanel.close(); return;
 			case 'stepFrame':
 			case 'stepFrameBack':
-				openGameView(this.editor.editorPanes);
+				openGameView(group);
 				this.frameNavigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
 			case 'scenarioLab.debug':
@@ -259,7 +255,7 @@ export class IdeCommandController {
 			case 'debugStepOver':
 				this.debuggerExecution.resume(command === 'debugStepInto' ? 'into' : command === 'debugStepOut' ? 'out'
 					: command === 'debugStepOver' ? 'over' : 'continue', 'game');
-				clearExecutionStopHighlights();
+				clearExecutionStopHighlights(group);
 				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
 				return;
 		}
@@ -276,7 +272,7 @@ export class IdeCommandController {
 			return;
 		}
 		if (isEditorViewCommand(command)) {
-			executeEditorViewCommand(this.editor, this.sources, this.fault, command);
+			executeEditorViewCommand(this.editor, this.sources, this.fault, command, group);
 			return;
 		}
 		if (isEditorWorkspaceCommand(command)) {
@@ -292,6 +288,7 @@ export class IdeCommandController {
 				this.logOutput,
 				this.textFileSaves,
 				command,
+				group,
 			);
 			return;
 		}
@@ -323,6 +320,10 @@ export class IdeCommandController {
 	}
 
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
+		const originGroup = findEditorGroup(focus);
+		if (originGroup === null) return false;
+		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
+		const transport = group.panes.activePane?.runtimeTransport ?? this.transport;
 		const implementation = focus?.getCommand(command);
 		if (implementation !== undefined) return implementation.isEnabled();
 		switch (command) {
@@ -342,7 +343,7 @@ export class IdeCommandController {
 			case 'reboot':
 				return this.boots.acceptingRequests;
 			case 'runCurrentFile': {
-				const resource = getActiveTab()?.resource;
+				const resource = group.model.activeTab?.resource;
 				if (!this.boots.acceptingRequests || !this.runtimeTasks.ready || !resource || resource.domain === -1) return false;
 				const source = resolveRuntimeLuaSource(this.sources, resource);
 				return source !== null && source.record.sourceKind !== 'source-only' && !source.record.generated;
@@ -351,7 +352,7 @@ export class IdeCommandController {
 				return this.boots.acceptingRequests && this.runtimeTasks.ready
 					&& this.sources.cartridgeSlots.some(cart => cart?.luaSources.can_boot_from_source);
 			case 'keepEditor':
-				return editorTabGroup.previewTab !== null && editorTabGroup.previewTab === editorTabGroup.activeTab;
+				return group.model.previewTab !== null && group.model.previewTab === group.model.activeTab;
 			case 'navigateBack':
 				return navigationState.captureSuspendDepth === 0 && navigationState.back.length > 0;
 			case 'navigateForward':
@@ -387,11 +388,11 @@ export class IdeCommandController {
 				return this.editor.observedConversation.available && !this.editor.observedConversation.pending;
 			case 'debugEvaluation':
 				return this.runtimeTasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
-			case 'tabs.close': return editorTabGroup.activeTab?.closable === true;
-			case 'tabs.next': case 'tabs.previous': return editorTabGroup.tabs.length > 1;
-			case 'tabs.scrollLeft': return editorChromeState.tabScrollbar.getScroll() > 0;
-			case 'tabs.scrollRight': return editorChromeState.tabScrollbar.getScroll() < editorChromeState.tabScrollbar.getMaximumScroll();
-			case 'openEditors': return editorTabGroup.tabs.length > 0;
+			case 'tabs.close': return group.model.activeTab?.closable === true;
+			case 'tabs.next': case 'tabs.previous': return group.model.tabs.length > 1;
+			case 'tabs.scrollLeft': return group.tabStrip.scrollbar.getScroll() > 0;
+			case 'tabs.scrollRight': return group.tabStrip.scrollbar.getScroll() < group.tabStrip.scrollbar.getMaximumScroll();
+			case 'openEditors': return group.model.tabs.length > 0;
 			case 'pause':
 				return !this.execution.userPaused || this.runtimeTasks.mutationReady;
 			case 'stepFrame':
@@ -401,17 +402,17 @@ export class IdeCommandController {
 			case 'runtime.hideTimeline': return this.editor.isActive && this.editor.runtimeTimeline.canHide;
 			case 'runtime.toggleTimeline': return this.editor.isActive && (this.editor.runtimeTimeline.available || this.editor.runtimeTimeline.requested);
 			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
-			case 'runtime.pause': return this.selectedTransport.playbackEnabled;
+			case 'runtime.pause': return transport.playbackEnabled;
 			case 'runtime.present':
 			case 'runtime.accept':
-				return this.selectedTransport.navigation.canFinishReview;
+				return transport.navigation.canFinishReview;
 			case 'runtime.resume':
-				return this.selectedTransport.rewind.active && this.selectedTransport.navigation.active === undefined
-					&& this.selectedTransport.playbackEnabled;
-			case 'gameView.togglePanel': return this.editor.isActive && this.editor.editorPanes.activePane?.companionGameMinimumWidth !== undefined;
+				return transport.rewind.active && transport.navigation.active === undefined
+					&& transport.playbackEnabled;
+			case 'gameView.togglePanel': return this.editor.isActive && group.panes.activePane?.companionGameMinimumWidth !== undefined;
 			case 'gameView.closePanel': return this.editor.gamePanel.enabled;
 			case 'gameView.playback':
-				return this.editor.gamePanel.visible && this.selectedTransport.playbackEnabled;
+				return this.editor.gamePanel.visible && transport.playbackEnabled;
 			case 'scenarioLab.play':
 			case 'scenarioLab.debug':
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
@@ -428,7 +429,7 @@ export class IdeCommandController {
 			case 'debugStepOut':
 				return this.debuggerExecution.canResume(command === 'debugStepInto' ? 'into' : command === 'debugStepOver' ? 'over' : 'out');
 			case 'save': {
-				const activeInput = getActiveTab();
+				const activeInput = group.model.activeTab;
 				return this.textFileSaves.acceptingSaves && activeInput instanceof TextEditorInput
 					&& (activeInput.canSave() || !activeInput.readOnly && focus?.edit?.pending === true);
 			}
@@ -437,9 +438,9 @@ export class IdeCommandController {
 			case 'referenceSearch':
 			case 'goToDefinition':
 			case 'callHierarchy':
-				return isActiveLuaCodeTab();
+				return isActiveLuaCodeTab(group);
 			case 'aem.testEvent': {
-				const input = getActiveTab();
+				const input = group.model.activeTab;
 				if (input?.kind !== 'aem_editor') return false;
 				const property = input.tree.rows[input.tree.selectionIndex]?.element;
 				return property !== undefined && property.path[0] === 'events' && property.path.length >= 2
@@ -449,7 +450,7 @@ export class IdeCommandController {
 			case 'aem': return true;
 			case 'input.testActionString': return this.editor.actionStrings.canStart(this.sources.activeCartridgeSlot);
 			case 'behaviorLens.testEffect': {
-				const input = getActiveTab();
+				const input = group.model.activeTab;
 				return input?.kind === 'behavior_lens' && input.view.presentation.kind === 'properties'
 					&& this.editor.actorLab.canInteract(input.workingCopy.resource.domain);
 			}
@@ -465,17 +466,17 @@ export class IdeCommandController {
 			case 'gameView':
 				return true;
 			case 'sceneEditor.source':
-				return getActiveTab()?.kind === 'scene_editor';
+				return group.model.activeTab?.kind === 'scene_editor';
 			case 'behaviorLens.source':
-				return getActiveTab()?.kind === 'behavior_lens';
+				return group.model.activeTab?.kind === 'behavior_lens';
 			case 'rename':
 			case 'renamePreview':
-				return isActiveLuaCodeTab() && !activeCodeEditor.model.readOnly;
+				return isActiveLuaCodeTab(group) && !activeCodeEditor.model.readOnly;
 			case 'findGlobal':
 			case 'findLocal':
 			case 'lineJump':
 			case 'wrap':
-				return isCodeTabActive();
+				return (group.model.activeTab?.kind === 'code_editor');
 			case 'filter':
 				return this.editor.resourcePanel.isVisible()
 					&& this.editor.resourcePanel.getMode() === 'resources';
@@ -485,20 +486,23 @@ export class IdeCommandController {
 		}
 	}
 
-	public isActive(command: EditorCommandId): boolean {
+	public isActive(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): boolean {
+		const originGroup = findEditorGroup(target);
+		if (originGroup === null) return false;
+		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
 		switch (command) {
 			case 'runtime.toggleTimeline': return this.editor.runtimeTimeline.requested;
 			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
 			case 'romInspector.hold': {
-				const input = getActiveTab();
+				const input = group.model.activeTab;
 				return input?.kind === 'rom_inspector' && input.readerHeld;
 			}
 			case 'romInspector.collision': {
-				const input = getActiveTab();
+				const input = group.model.activeTab;
 				return input?.kind === 'rom_inspector' && input.reader.showCollision;
 			}
 			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': {
-				const input = getActiveTab();
+				const input = group.model.activeTab;
 				return input?.kind === 'rom_inspector' && command === `romInspector.${input.model.mode}`;
 			}
 
@@ -511,9 +515,9 @@ export class IdeCommandController {
 			case 'problems':
 				return problemsPanel.isVisible;
 			case 'behaviorLens':
-				return isBehaviorLensActive();
+				return (group.model.activeTab?.kind === 'behavior_lens');
 			case 'scenarioLab':
-				return isScenarioLabActive();
+				return (group.model.activeTab?.kind === 'scenario_lab');
 			case 'filter':
 				return this.editor.resourcePanel.getFilterMode() === 'lua_only';
 			case 'wrap':

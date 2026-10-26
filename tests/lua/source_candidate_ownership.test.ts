@@ -7,21 +7,21 @@ import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { CodeEditorInputSerializer } from '../../ide/workbench/contrib/code_editor/editor_serializer';
 import { resolveLuaCodeEditorInput, resolveTextCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
-import { EditorTabGroupModel, editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import { createTestEditorPanes } from '../helpers/editor_panes';
+import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 test('a superseded audio Source opening retires only its fresh candidate, not retained views of the same working copy', async t => {
-	const sources = createScenarioTestSourceState([]), panes = createTestEditorPanes();
+	const sources = createScenarioTestSourceState([]), group = createTestEditorGroup();
 	registerWorkspaceTextSources(sources, 0, [{ type: 'aem', resid: 'candidate-audio', source_path: 'candidate_audio.aem' }]);
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'candidate_audio.aem' })!;
 	const model = editorTextModelService.retain(resource, 'aem', 'events: {}\n');
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '# edited\n' }]);
 	const retained = await resolveTextCodeEditorInput(sources, resource), sibling = await resolveTextCodeEditorInput(sources, resource);
 	const siblingGroup = new EditorTabGroupModel(), audio = new AemEditorInput(model);
-	editorTabGroup.add(retained); editorTabGroup.activate(retained); siblingGroup.initialize(sibling);
+	group.model.add(retained); group.model.activate(retained); siblingGroup.initialize(sibling);
 	t.after(() => {
-		panes.dispose(); audio.dispose(); editorTabGroup.clear(); siblingGroup.clear(); editorTextModelService.clear();
+		group.dispose(); audio.dispose(); siblingGroup.clear(); editorTextModelService.clear();
 	});
 	const retainedView = retained.context.view, siblingView = sibling.context.view, sourceIdentity = retainedView.editSource;
 	retainedView.cursorColumn = 3; siblingView.cursorColumn = 5;
@@ -30,15 +30,15 @@ test('a superseded audio Source opening retires only its fresh candidate, not re
 	t.mock.method(CodeEditorInput.prototype, 'dispose', function (this: CodeEditorInput): void {
 		discarded.push(this); dispose.call(this);
 	});
-	new AemEditorController(sources, panes, null!).openSource(audio);
-	panes.beginOpen();
+	new AemEditorController(sources, group, null!).openSource(audio);
+	group.panes.beginOpen();
 	await new Promise<void>(resolve => setImmediate(resolve));
 	assert.equal(discarded.length, 1);
 	const candidate = discarded[0], discardedView = candidate.context.view;
 	assert.notEqual(candidate, retained); assert.notEqual(candidate, sibling); assert.equal(candidate.workingCopy, model);
-	assert.equal(editorTabGroup.activeTab, retained); assert.equal(siblingGroup.activeTab, sibling);
+	assert.equal(group.model.activeTab, retained); assert.equal(siblingGroup.activeTab, sibling);
 	assert.equal(retained.context.view, retainedView); assert.equal(retainedView.editSource, sourceIdentity);
-	assert.equal(panes.activePane, null, 'superseded resolution cannot attach a late pane');
+	assert.equal(group.panes.activePane, null, 'superseded resolution cannot attach a late pane');
 	assert.equal(model.version, version); assert.equal(model.dirty, true); assert.equal(model.history.lastRecord(model), undo);
 	assert.equal(model.canUndo, true);
 	// A retired candidate no longer owns position-tracking subscriptions.

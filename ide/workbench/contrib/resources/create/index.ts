@@ -6,7 +6,6 @@ import type { HostClock } from '../../../../../hosts/common/clock';
 import { structuredTextAssetFromPath } from '../../../../../toolchain/ts/rompack/assets';
 import { resolveRuntimeResource, runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../../runtime/sources';
 import { createTextResource } from '../../../../workspace/workspace';
-import { getActiveTab } from '../../../ui/tabs';
 import { openLuaCodeTab } from '../../../ui/code_tab/io';
 import { NEW_AEM_SOURCE, newLuaSource, type NewSourceKind } from './source_templates';
 import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../../common/resource';
@@ -19,7 +18,7 @@ export function openCreateResourcePrompt(
 	clock: HostClock,
 	kind: NewSourceKind = 'empty',
 ): void {
-	const identity = getActiveTab()?.resource;
+	const identity = editor.editorGroup.model.activeTab?.resource;
 	if (identity !== undefined) {
 		const resource = resolveRuntimeResource(sources, identity)!;
 		if (resource.location.kind === 'project') {
@@ -69,6 +68,6 @@ function showNewSourceInput(
 			}
 			else if (kind === 'progression' || kind === 'input') editor.luaPrograms.openResource(created, kind);
 			else if (kind === 'aem') void editor.navigation.openResource(created);
-			else openLuaCodeTab(editor.editorPanes, sources, created);
+			else openLuaCodeTab(editor.editorGroup, sources, created);
 		});
 }

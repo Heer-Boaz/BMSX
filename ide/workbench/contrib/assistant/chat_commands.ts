@@ -1,13 +1,11 @@
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { EditorCommandId } from '../../../common/commands';
 import type { AssistantConversation } from '../../services/assistant/conversation';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { setFieldText } from '../../../editor/ui/inline/text_field';
 import { writeClipboard } from '../../../input/clipboard';
-import { getActiveTab } from '../../ui/tabs';
-import { editorTabGroup } from '../../ui/tab/group_model';
 import { openAssistant, type AssistantInput } from './editor_input';
 import { AssistantModelPicker } from './model_picker';
 
@@ -41,9 +39,9 @@ export function isAssistantCommand(input: AssistantInput): boolean {
 
 export class AssistantChatCommands {
 	private readonly models: AssistantModelPicker;
-	public constructor(private readonly conversation: AssistantConversation, private readonly panes: EditorPanes,
+	public constructor(private readonly conversation: AssistantConversation, private readonly group: EditorGroupView,
 		private readonly quickInput: QuickInputController, private readonly clipboard: Clipboard) {
-		this.models = new AssistantModelPicker(quickInput);
+		this.models = new AssistantModelPicker(quickInput, group);
 	}
 
 	/** Workbench actions depend on the conversation, never on the currently focused pane. */
@@ -52,7 +50,7 @@ export class AssistantChatCommands {
 		if (!model.available) return false;
 		switch (command) {
 			case 'assistant.history': case 'assistant.new': case 'assistant.commands': {
-				const input = editorTabGroup.tabs.find(input => input.kind === 'assistant');
+				const input = this.group.model.tabs.find(input => input.kind === 'assistant');
 				return !input?.commandPending && (command === 'assistant.commands' || model.canBrowse);
 			}
 			case 'assistant.signIn': return model.state === 'disconnected' || model.state === 'ready' && !model.accountRefreshing && model.account!.requiresLogin;
@@ -69,11 +67,11 @@ export class AssistantChatCommands {
 		if (!this.isEnabled(command)) return;
 		const model = this.conversation;
 		switch (command) {
-			case 'assistant.history': void this.history(openAssistant(this.panes, model)); break;
-			case 'assistant.new': openAssistant(this.panes, model); void model.newConversation(); break;
-			case 'assistant.commands': this.commands(openAssistant(this.panes, model)); break;
+			case 'assistant.history': void this.history(openAssistant(this.group, model)); break;
+			case 'assistant.new': openAssistant(this.group, model); void model.newConversation(); break;
+			case 'assistant.commands': this.commands(openAssistant(this.group, model)); break;
 			case 'assistant.signIn':
-				openAssistant(this.panes, model);
+				openAssistant(this.group, model);
 				void model.connect().then(() => model.startLogin()); break;
 			case 'assistant.cancelLogin': void model.cancelLogin(); break;
 			case 'assistant.signOut': void model.signOut(); break;
@@ -94,7 +92,7 @@ export class AssistantChatCommands {
 		input.commandPending = true;
 		try {
 			const page = await input.conversation.listHistory(cursor, search);
-			if (input.lifetime.signal.aborted || getActiveTab() !== input) return;
+			if (input.lifetime.signal.aborted || this.group.model.activeTab !== input) return;
 			const items = page.threads.map(thread => ({ label: thread.title, description: new Date(thread.updatedAt * 1000).toLocaleString(), detail: '',
 				id: thread.id, cursor: undefined as string | undefined }));
 			if (page.nextCursor !== null) items.push({ label: 'Older conversations…', description: 'Load the next page', detail: '', id: '', cursor: page.nextCursor });
@@ -112,7 +110,7 @@ export class AssistantChatCommands {
 		input.commandPending = true;
 		await model.connect();
 		input.commandPending = false;
-		if (input.lifetime.signal.aborted || getActiveTab() !== input || model.state === 'disconnected') return;
+		if (input.lifetime.signal.aborted || this.group.model.activeTab !== input || model.state === 'disconnected') return;
 		const items = model.queued.map((message, index) => ({ label: message.text || 'Image message', description: `Queued ${index + 1}${message.images?.length ? ` | ${message.images.length} image(s)` : ''}`, detail: 'Edit or remove', message }));
 		this.quickInput.pick('Codex queue', model.queuePaused ? 'Paused; /continue resumes work' : 'Waiting for the active turn', () => new TextQuickPickProvider(items), item => {
 			this.quickInput.pick('Queued message', item.label, () => new TextQuickPickProvider([

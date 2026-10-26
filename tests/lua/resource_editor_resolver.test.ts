@@ -1,3 +1,4 @@
+import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -26,12 +27,7 @@ function registration(id: string, selector: ResourceEditorSelector): ResourceEdi
 		id,
 		selector,
 		createEditorInput: resource => {
-			const input = new ResourceViewerInput({
-				resource,
-				lines: [],
-				error: '',
-				title: resource.path,
-			});
+			const input = new ResourceViewerInput(createScenarioTestSourceState([]), resource);
 			input.title = id;
 			return input;
 		},

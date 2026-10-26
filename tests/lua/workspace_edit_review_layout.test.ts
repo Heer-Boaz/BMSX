@@ -16,8 +16,6 @@ import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_revie
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
 import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
 import { RuntimeIdeState } from '../../ide/workbench/state';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import { openEditorTab } from '../../ide/workbench/ui/tabs';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
@@ -39,14 +37,14 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 0, deleteLength: SOURCE.length, text: SOURCE.replaceAll('before', 'after') }] }]]),
 	});
 	const input = new WorkspaceEditReviewInput(proposal);
-	openEditorTab(ide.editor.editorPanes, input);
-	const pane = ide.editor.editorPanes.activePane!;
+	ide.editor.editorGroup.openEditor(input);
+	const pane = ide.editor.editorGroup.panes.activePane!;
 	const arrange = (left: number, right: number, nextVariant = editorViewState.font.variant, bottom = 276) => {
 		if (nextVariant !== editorViewState.font.variant) configureFontVariant(host.clock, nextVariant, null);
 		pane.layout({ left, top: 31, right, bottom }); pane.update(0);
 	};
 	t.after(async () => {
-		inputFocus.setTarget(null); await ide.editor.shutdown(); editorTabGroup.clear(); host.audio.dispose(); host.input.dispose();
+		inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	return { input, model, proposal, pane, arrange, host, ide };
 }

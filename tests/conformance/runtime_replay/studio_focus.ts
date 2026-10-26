@@ -5,7 +5,6 @@ import { inputFocus } from '../../../ide/input/focus';
 import { editorSearchState, lineJumpState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
 import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { GX_REGISTER_SOURCE_PATH } from '../../../toolchain/ts/rompack/generated_modules';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -22,11 +21,11 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, click, frame, until, setKey, input, cycles } = test;
 	console.info('STUDIO: focus-owned commands and control history');
 	harness.openLuaSource(GX_REGISTER_SOURCE_PATH);
-	const readonlyTab = getActiveTab();
+	const readonlyTab = ide.editor.editorGroup.model.activeTab;
 	const readonlyModel = harness.getActiveEditorDocument().model;
 	check(readonlyModel.readOnly, 'focus: real generated GX source is read-only');
 	harness.openLuaSource('title_screen.lua');
-	const titleTab = getActiveTab();
+	const titleTab = ide.editor.editorGroup.model.activeTab;
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
 	const position = cycles();
@@ -140,7 +139,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 		'focus: an explicit new Rename binds a fresh reference context');
 	let blurOnOldInput = false;
 	const unbind = renameField.focusTarget.onDidBlur(() => {
-		blurOnOldInput = getActiveTab() === titleTab && activeCodeEditor.model === model;
+		blurOnOldInput = ide.editor.editorGroup.model.activeTab === titleTab && activeCodeEditor.model === model;
 	});
 	await test.clickTab(readonlyTab.id);
 	unbind();
@@ -168,7 +167,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await click(editorChromeState.menuEntryBounds.view);
 	const scenarioLabItem = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'scenarioLab')!;
 	await test.clickContextCommand(scenarioLabItem.command!);
-	check(getActiveTab().kind === 'scenario_lab' && !activeCodeEditor.focusTarget.hasFocus && model.canRedo,
+	check(ide.editor.editorGroup.model.activeTab.kind === 'scenario_lab' && !activeCodeEditor.focusTarget.hasFocus && model.canRedo,
 		'focus: real non-code view takes input ownership while the source retains redoable history');
 	const viewTarget = inputFocus.target;
 	await press('ControlLeft', 'KeyY');
@@ -185,7 +184,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 
 	await test.runPaletteCommand('View: ROM Inspector');
 	await press('ArrowDown'); await press('Enter');
-	const rom = getActiveTab();
+	const rom = ide.editor.editorGroup.model.activeTab;
 	if (rom.kind !== 'rom_inspector') throw new Error('focus: ROM Inspector did not open');
 	await click(rom.filterBounds);
 	const filterTarget = inputFocus.target!;

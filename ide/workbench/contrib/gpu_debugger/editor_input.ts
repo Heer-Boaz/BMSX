@@ -2,14 +2,12 @@ import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import { GpuOperationSnapshot, type RuntimeGpuHistory } from '../../../runtime/gpu_history';
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import type { PropertyInspectorViewState } from '../../ui/property_inspector/model';
 import { WorkbenchWindowModel } from '../../ui/window/model';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
 import { GpuOperationProjection, type GpuDebugView } from './presentation';
 import type { GpuDiagramViewState } from './diagram';
 
@@ -87,7 +85,7 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 	public override dispose(): void { this.selectionListeners.clear(); super.dispose(); }
 }
 
-export function openGpuDebugger(panes: EditorPanes, history: RuntimeGpuHistory): void {
-	const existing = editorTabGroup.findById('gpu-debugger');
-	openEditorTab(panes, existing ?? new GpuDebuggerInput(history), { pinned: true });
+export function openGpuDebugger(group: EditorGroupView, history: RuntimeGpuHistory): void {
+	const existing = group.model.findById('gpu-debugger');
+	group.openEditor(existing ?? new GpuDebuggerInput(history), { pinned: true });
 }

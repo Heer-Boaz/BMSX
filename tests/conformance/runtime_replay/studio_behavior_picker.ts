@@ -3,7 +3,6 @@ import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behav
 import type { EffectPropertyElement } from '../../../ide/workbench/contrib/behavior_lens/action_effect_properties';
 import type { WorkbenchTreeNode } from '../../../ide/workbench/ui/tree_view';
 import { inputFocus } from '../../../ide/input/focus';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Accept a unique behavior through the actual shared query field and keyboard. */
@@ -40,7 +39,7 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		return;
 	}
 	if (view.presentation.kind === 'state-graph') {
-		const lens = getActiveTab();
+		const lens = test.ide.editor.editorGroup.model.activeTab;
 		if (lens.kind !== 'behavior_lens') throw new Error('FSM navigation requires its active input');
 		await lens.graphLayout.settled;
 		await test.frame();
@@ -54,7 +53,7 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		check(view.selection!.rowKey === owner, 'FSM navigation: traversal reaches the owning state');
 		if (owner === key) return;
 		await test.runPaletteCommand('Behavior Lens: Open Source Details');
-		const inspector = (test.ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+		const inspector = (test.ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 		const index = inspector.model.rows.findIndex(row => {
 			const source = row.element.source?.stateSelection;
 			return source !== undefined && source.kind === 'node' && source.rowKey === key;
@@ -121,7 +120,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	const lastLine = lines.findLastIndex(line => line.startsWith("fsm_library.register('picker.same'"));
 	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, 'FSM picker.second');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior picker: selected lens missing');
 	check(lens.workingCopy === model,
 		'behavior picker: selects the second registration, not the first definition or the current code cursor');
@@ -132,7 +131,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 		'behavior picker: Source opens the chosen registration reference, not the shared initializer');
 	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, 'FSM picker.first');
-	const first = getActiveTab();
+	const first = ide.editor.editorGroup.model.activeTab;
 	check(first.kind === 'behavior_lens' && first !== lens && first.workingCopy === model
 		&& lens.view.definitionRowKey === secondKey,
 		'behavior picker: separate FSM inputs share one model without overwriting the earlier definition');
@@ -148,7 +147,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	const bounds = picker.model.viewport.bounds;
 	await click({ left: bounds.left, right: bounds.right,
 		top: bounds.top + picker.model.rowHeight, bottom: bounds.top + picker.model.rowHeight * 2 }, 3);
-	const duplicate = getActiveTab();
+	const duplicate = ide.editor.editorGroup.model.activeTab;
 	if (duplicate.kind !== 'behavior_lens') throw new Error('behavior picker: duplicate input missing');
 	check(duplicate !== lens && duplicate.workingCopy === model, 'behavior picker: pointer selection opens a distinct definition view');
 	const selected = duplicate.view.source.nodesByRowKey.get(duplicate.view.selection!.rowKey)!;
@@ -157,7 +156,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	const focus = inputFocus.target;
 	await runPaletteCommand('Behavior Lens: Open');
 	await press('Escape');
-	check(inputFocus.target === focus && getActiveTab() === duplicate
+	check(inputFocus.target === focus && ide.editor.editorGroup.model.activeTab === duplicate
 		&& duplicate.view.source.nodesByRowKey.get(duplicate.view.selection!.rowKey)! === selected,
 		'behavior picker: cancellation preserves invoking focus and selection');
 	await click(duplicate.view.presentation.actionBar.items[0].bounds);

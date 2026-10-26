@@ -1,15 +1,13 @@
 import type { BehaviorLensNavigationSelection } from './navigation_selection';
 import { captureNavigation } from '../../../navigation/navigation_history';
-import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
-import { mapBehaviorLensSourceRanges } from './source_correspondence';
+import type { EditorTextModel } from '../../../editor/model/text_model';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import { resolveRuntimeResource, resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
 import type { QuickInputController } from '../../services/quick_input/controller';
-import { editorTabGroup, type EditorOpenOptions } from '../../ui/tab/group_model';
-import { getActiveTab, openEditorTab } from '../../ui/tabs';
+import { type EditorOpenOptions } from '../../ui/tab/group_model';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { BehaviorLensInput } from './editor_input';
 import {
 	selectBehaviorLensDefinition,
@@ -68,7 +66,7 @@ export class BehaviorLensController {
 	public constructor(
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
-		private readonly editorPanes: EditorPanes,
+		private readonly editorGroup: EditorGroupView,
 		public readonly quickInput: QuickInputController,
 		public readonly documents: BehaviorSourceDocuments,
 		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
@@ -88,7 +86,7 @@ export class BehaviorLensController {
 			const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 			const occurrence = luaSourceRangeToTextRange(model.buffer, registration.occurrenceRange);
 			let input: BehaviorLensInput | undefined;
-			for (const candidate of editorTabGroup.tabs) {
+			for (const candidate of this.editorGroup.model.tabs) {
 				if (candidate.kind !== 'behavior_lens' || candidate.workingCopy !== model || candidate.view.definitionRowKey === null) continue;
 				const view = candidate.view;
 				const span = view.source.ranges.get(view.definitionRowKey)!;
@@ -108,7 +106,7 @@ export class BehaviorLensController {
 				input.updateDefinition();
 			}
 			// Reopening a surviving occurrence preserves its selection and viewport.
-			openEditorTab(this.editorPanes, input, options);
+			this.editorGroup.openEditor(input, options);
 			return input;
 		});
 	}
@@ -152,7 +150,7 @@ export class BehaviorLensController {
 		const evidence = { summary: `${target.uses.length} recognized uses: ${target.literal.value} -> ${target.text}\nRecognized in ${view.resource.path}; other registration files and dynamic calls are not enumerated.`,
 			items: stateMachineRetargetImpacts(view, target) };
 		const proposal = new WorkspaceEditProposal('Retarget FSM', context, { kind: 'edit', edits: new Map([[model, edit]]) });
-		openEditorTab(this.editorPanes, new WorkspaceEditReviewInput(proposal, evidence));
+		this.editorGroup.openEditor(new WorkspaceEditReviewInput(proposal, evidence));
 	}
 
 	/** Capture the exact transfer and its source caveats before leaving the graph. */
@@ -166,11 +164,11 @@ export class BehaviorLensController {
 		const evidence = { summary: `${analysis.member.branch.role} -> ${check.target.role} position ${insertion + 1}\nRecognized source uses only; dynamic consumers are not enumerated.`,
 			items: behaviorTreeTransferImpacts(view, analysis, insertion, check) };
 		const proposal = new WorkspaceEditProposal('Move BT source', context, { kind: 'edit', edits: new Map([[model, edit]]) });
-		openEditorTab(this.editorPanes, new WorkspaceEditReviewInput(proposal, evidence));
+		this.editorGroup.openEditor(new WorkspaceEditReviewInput(proposal, evidence));
 	}
 
 	public openSource(): void {
-		const input = getActiveTab();
+		const input = this.editorGroup.model.activeTab;
 		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		if (selectedBehaviorLensSourceRange(input.view) === null) this.openDefinitionSource(input.view);
@@ -294,61 +292,61 @@ export class BehaviorLensController {
 	}
 
 	public canMoveSelectedChild(direction: -1 | 1): boolean {
-		const input = getActiveTab();
+		const input = this.editorGroup.model.activeTab;
 		if (input?.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		return member !== undefined && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
 	public canEditSelectedChild(): boolean {
-		const input = getActiveTab();
+		const input = this.editorGroup.model.activeTab;
 		if (input?.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
 		const member = behaviorTreeEditTarget(input.view);
 		return member !== null && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
 	public canSetSelectedInitialState(): boolean {
-		const input = getActiveTab();
+		const input = this.editorGroup.model.activeTab;
 		if (input?.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
 		const target = stateMachineInitialTarget(input.view);
 		return target !== undefined && !input.view.source.models.get(target.owner.file.file)!.readOnly;
 	}
 
 	public setSelectedInitialState(): void {
-		const input = getActiveTab();
+		const input = this.editorGroup.model.activeTab;
 		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const target = stateMachineInitialTarget(input.view);
 		if (target === undefined) return;
 		const model = input.view.source.models.get(target.owner.file.file)!;
 		if (model.readOnly) return;
-		this.editorPanes.activePane.focus();
+		this.editorGroup.panes.activePane.focus();
 		model.pushEditOperations(createStateMachineInitialEdits(model.buffer, target));
 		this.updateView(input);
 	}
 
 	public duplicateSelectedChild(): void {
-		const input = getActiveTab();
+		const input = this.editorGroup.model.activeTab;
 		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
 		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
-		this.editorPanes.activePane.focus();
+		this.editorGroup.panes.activePane.focus();
 		model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(model.buffer, member));
 		this.updateView(input);
 	}
 
 	public removeSelectedChild(): void {
-		const input = getActiveTab();
+		const input = this.editorGroup.model.activeTab;
 		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
 		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
-		this.editorPanes.activePane.focus();
+		this.editorGroup.panes.activePane.focus();
 		model.pushEditOperations(createBehaviorTreeChildRemovalEdits(model.buffer, member));
 		// Ordinary source correspondence clears the deleted occurrence, including
 		// shared/identical uses. It must not select its former index or a namesake.
@@ -356,14 +354,14 @@ export class BehaviorLensController {
 	}
 
 	public moveSelectedChild(direction: -1 | 1): void {
-		const input = getActiveTab();
+		const input = this.editorGroup.model.activeTab;
 		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		if (member === undefined) return;
 		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
-		this.editorPanes.activePane.focus();
+		this.editorGroup.panes.activePane.focus();
 		model.pushEditOperations(createBehaviorTreeChildMoveEdits(model.buffer, member, member.index + direction));
 		this.updateView(input);
 	}
@@ -384,7 +382,7 @@ export class BehaviorLensController {
 		}
 		if (result === BehaviorLensNavigationResult.Changed) {
 			if (view.presentation.kind === 'state-graph') {
-				const input = getActiveTab();
+				const input = this.editorGroup.model.activeTab;
 				if (input?.kind === 'behavior_lens') acceptStateGraphSelection(view, view.presentation);
 			}
 			finishBehaviorLensNavigation(view);
@@ -393,16 +391,6 @@ export class BehaviorLensController {
 		return result === BehaviorLensNavigationResult.Panned;
 	}
 
-	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {
-		if (model.mode !== 'lua') return;
-		for (const input of editorTabGroup.tabs) {
-			if (input.kind === 'behavior_lens' && (model.resource.domain === input.view.resource.domain || model.resource.domain === -1)) {
-				input.view.source.invalidate();
-				if (input.view.source.models.get(model.resource.path) === model) mapBehaviorLensSourceRanges(input.view, model.resource, event);
-				input.invalidatePresentation();
-			}
-		}
-	}
 
 	private openSelectedSource(view: BehaviorLensViewState): void {
 		const range = selectedBehaviorLensSourceRange(view);

@@ -16,7 +16,7 @@ export async function testSceneFieldInsertion(test: StudioFixture): Promise<void
 	const original = model.buffer.getText();
 	const scene = await openSceneEditor(test);
 	await selectMember(test, scene, 2);
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('insert: actual Scene Editor pane required');
 	const x = pane.controls[0];
 	const fieldSource = readLuaSourceRange(model.buffer, scene.outline.roots[0].children[2].element.source);

@@ -417,7 +417,7 @@ The existing single-client assumptions must change at their owners together:
 | Boundary | Required ownership change |
 | --- | --- |
 | `workbench/workbench.ts`, source/catalog, model and Save composition | Separate authoring authority from execution attachments; admit logical source contexts centrally. |
-| `ui/tabs.ts`, `ui/tab/group_model.ts`, `services/editor/editor_panes.ts` | Part/group-owned inputs and controls; scope-specific retirement instead of singleton selection/reset. |
+| `services/editor/editor_group.ts`, `ui/tab/`, `services/editor/editor_panes.ts` | Part/group-owned inputs and controls; scope-specific retirement instead of singleton selection/reset. |
 | `editor/ui/code_editor_state.ts`, view/layout and editor contributions | Control-owned source interaction/viewport state, with shared model/semantic/font-generation producers. |
 | `commands/controller.ts` and contribution controllers | Explicit invocation input/group/transport instead of global active-tab subject discovery. |
 | `navigation/navigation_history.ts` | One workspace history of scoped destinations; no constructor/dispose reset from each group. |

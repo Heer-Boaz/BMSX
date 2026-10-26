@@ -1,4 +1,3 @@
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
@@ -14,7 +13,7 @@ export async function testStudioBehaviorImports(test: StudioFixture): Promise<vo
 	const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 	harness.openLuaSource(record.source_path);
-	const providerTab = getActiveTab();
+	const providerTab = ide.editor.editorGroup.model.activeTab;
 	const provider = harness.getActiveEditorDocument().model;
 	const originalProvider = provider.buffer.getText();
 	const position = cycles(), media = ide.sources.currentBlua32Media;
@@ -27,7 +26,7 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	const mainVersion = main.version, providerVersion = provider.version;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.imported');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('imports: Behavior Lens input required');
 	const leaves = () => lens.view.source.nodes.filter(node => node.kind === 'node' && node.label === 'wait');
 	check(leaves().length === 2 && leaves()[0].authoredRange === leaves()[1].authoredRange,
@@ -66,7 +65,7 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 		text: `local effects<const> = require('cartlib/actioneffects')\neffects.register_effect('fixture.imported-effect', require('${record.module_path}'))` }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.imported-effect');
-	const effectLens = getActiveTab();
+	const effectLens = ide.editor.editorGroup.model.activeTab;
 	if (effectLens.kind !== 'behavior_lens') throw new Error('imports: effect input required');
 	const effect = effectLens.view.document.definitions[0];
 	if (effect.behaviorKind !== 'action_effect') throw new Error('imports: effect definition required');
@@ -76,9 +75,9 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	await test.until(() => !main.dirty && !provider.dirty, 'imports: composite Save persists both authored resources');
 	const registrationVersion = main.version;
 	await runPaletteCommand('Behavior Lens: Edit Authored Property');
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof BehaviorLensEditorPane)) throw new Error('imports: effect property pane required');
-	check(getActiveTab() === effectLens && pane.propertyEdit.active && pane.propertyEdit.control.field.focusTarget.hasFocus,
+	check(ide.editor.editorGroup.model.activeTab === effectLens && pane.propertyEdit.active && pane.propertyEdit.control.field.focusTarget.hasFocus,
 		'imports: Edit stays in the Lens with a real provider-owned value draft');
 	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('80'); await press('ControlLeft', 'KeyV');
 	check(provider.buffer.getText() === effectSource && !effectLens.isDirty(), 'imports: a focused draft does not dirty either source');
@@ -87,7 +86,7 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 		'imports: accepting the cell changes only the provider');
 	check(effectLens.isDirty() && !main.dirty && !pane.propertyEdit.active, 'imports: the Lens dirty marker follows its provider, not the registration file');
 	await press('ControlLeft', 'KeyZ');
-	check(getActiveTab() === effectLens && provider.buffer.getText() === effectSource && main.version === registrationVersion,
+	check(ide.editor.editorGroup.model.activeTab === effectLens && provider.buffer.getText() === effectSource && main.version === registrationVersion,
 		'imports: Lens Undo targets the provider and retains registration identity');
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'ShiftLeft', 'KeyZ');
 	check(provider.buffer.getText() === effectSource.replace('40', '80'), 'imports: code Redo shares the same source history');

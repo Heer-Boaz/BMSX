@@ -1,7 +1,7 @@
 import { DisposableStore } from '../common/lifecycle';
 import type { ResourceEditorIdentity } from '../workbench/common/editor_input';
 import type { EditorInput } from '../workbench/ui/tab/model';
-import type { EditorPanes } from '../workbench/services/editor/editor_panes';
+import type { EditorGroupView } from '../workbench/services/editor/editor_group';
 import type { EditorPaneSelection } from '../workbench/services/editor/editor_selection';
 
 const NAVIGATION_HISTORY_LIMIT = 64;
@@ -13,7 +13,7 @@ export type NavigationHistoryTarget =
 /** Retains a selection only while its capturing pane owner and retained input survive. */
 export class NavigationHistoryEntry extends DisposableStore {
 	public constructor(public readonly target: NavigationHistoryTarget, public readonly selection: EditorPaneSelection | undefined,
-		public readonly owner: EditorPanes) {
+		public readonly owner: EditorGroupView) {
 		super();
 		if (selection !== undefined) this.add(selection);
 		this.add({ dispose: owner.onWillDispose(this.retire) });
@@ -26,20 +26,19 @@ export class NavigationHistoryEntry extends DisposableStore {
 	};
 }
 
-let activeEditorPanes: EditorPanes | null = null;
-
 export const navigationState = {
 	back: [] as NavigationHistoryEntry[],
 	forward: [] as NavigationHistoryEntry[],
 	captureSuspendDepth: 0,
+	activeGroup: null as EditorGroupView | null,
 };
 
 /** The frontend binds its editor group; child pane construction never selects this owner. */
-export function initializeNavigationState(editorPanes: EditorPanes): () => void {
+export function initializeNavigationState(group: EditorGroupView): () => void {
 	resetNavigationHistoryState();
-	activeEditorPanes = editorPanes;
+	navigationState.activeGroup = group;
 	return () => {
-		activeEditorPanes = null;
+		navigationState.activeGroup = null;
 		resetNavigationHistoryState();
 	};
 }
@@ -118,9 +117,9 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 }
 
 export function createNavigationEntry(): NavigationHistoryEntry | null {
-	const owner = activeEditorPanes;
+	const owner = navigationState.activeGroup;
 	if (owner === null) return null; // No frontend or active editor group is attached.
-	const pane = owner.activePane;
+	const pane = owner.panes.activePane;
 	if (pane === null) return null; // The editor group can be empty.
 	const resourceEditor = pane.input.toResourceEditor?.();
 	return new NavigationHistoryEntry(resourceEditor === undefined

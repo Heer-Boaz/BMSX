@@ -1,7 +1,5 @@
-import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { NAVIGATION_SOURCE } from '../../fixtures/studio/navigation';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { closeTab, getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
@@ -12,7 +10,7 @@ import { check, type StudioFixture } from './studio_fixture';
 export async function testStudioNavigationHistory(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, frame, click, runPaletteCommand } = test;
 	console.info('STUDIO A03: diagram -> Source -> definition -> Back -> Back -> Forward');
-	const initialTabs = new Set(editorTabGroup.tabs);
+	const initialTabs = new Set(ide.editor.editorGroup.model.tabs);
 	const cycles = test.cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua'); // Workspace transport only; all assertions use the independent fixture.
@@ -21,7 +19,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: NAVIGATION_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM navigation.fsm.one');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('A03: FSM pane missing');
 	await lens.graphLayout.settled; await frame();
 	const view = lens.view;
@@ -42,7 +40,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	const version = model.version;
 	const dirty = model.dirty;
 	await click(graph.actionBar.items[0].bounds, 5);
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line - 1 && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line - 1 && !hasSelection(),
 		'A03: Source opens the selected proof without changing or selecting text');
 	await frame();
 	await test.capture?.('diagram-source');
@@ -57,10 +55,10 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await press('ControlLeft', 'Home'); await test.clipboard.writeText(prefix); await press('ControlLeft', 'KeyV');
 	const editedVersion = model.version;
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line
 		&& activeCodeEditor.view.cursorColumn === source.start.column - 1 + 'return '.length, 'A03: Back restores the mapped source-use cursor');
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === lens, 'A03: the second Back returns to the concrete visual input');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'A03: the second Back returns to the concrete visual input');
 	await lens.graphLayout.settled; await frame();
 	check(view.definitionRowKey === view.document.definitions[0].rowKey && view.selection?.kind === 'state-outcome'
 		&& selectedBehaviorLensSourceRange(view)!.start.line === source.start.line + 1,
@@ -69,16 +67,16 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 		'A03: asynchronous geometry publication preserves the saved viewport instead of running initial reveal');
 	await test.capture?.('diagram-return');
 	await press('AltLeft', 'ArrowRight');
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line,
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line,
 		'A03: Forward is a workbench binding, including from a graph');
 	check(model.version === editedVersion && model.buffer.getText() === prefix + NAVIGATION_SOURCE,
 		'A03: history restoration does not apply an undo snapshot or lose source edits');
 	await runPaletteCommand('Go: Back');
-	check(getActiveTab() === lens, 'A03: palette and shortcut share the navigation owner');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'A03: palette and shortcut share the navigation owner');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM navigation.fsm.two');
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === lens && view.definitionRowKey === view.document.definitions[0].rowKey && view.selection?.kind === 'state-outcome',
+	check(ide.editor.editorGroup.model.activeTab === lens && view.definitionRowKey === view.document.definitions[0].rowKey && view.selection?.kind === 'state-outcome',
 		'A03/A04: Back from another definition restores the original input and its exact selection');
 	await lens.graphLayout.settled; await frame();
 	check(graph.viewport.scrollX === scrollX && graph.viewport.scrollY === scrollY, 'A03: repeated definition switching keeps the saved viewport');
@@ -86,7 +84,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	console.info('STUDIO A03/A04: FSM history, mapped returns, async viewport and definition inputs passed');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT navigation.tree.one');
-	const treeInput = getActiveTab();
+	const treeInput = ide.editor.editorGroup.model.activeTab;
 	if (treeInput.kind !== 'behavior_lens') throw new Error('A04: BT input missing');
 	const treeView = treeInput.view;
 	if (treeView.presentation.kind !== 'graph') throw new Error('A03: BT presentation missing');
@@ -96,10 +94,10 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	const treeSource = selectedBehaviorLensSourceRange(treeView)!;
 	await click(tree.actionBar.items[0].bounds);
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === treeInput && treeView.selection!.rowKey === occurrence && treeView.presentation.kind === 'graph', 'A03: Back restores the second shared BT occurrence');
+	check(ide.editor.editorGroup.model.activeTab === treeInput && treeView.selection!.rowKey === occurrence && treeView.presentation.kind === 'graph', 'A03: Back restores the second shared BT occurrence');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT navigation.effect');
-	const effectInput = getActiveTab();
+	const effectInput = ide.editor.editorGroup.model.activeTab;
 	if (effectInput.kind !== 'behavior_lens' || effectInput.view.presentation.kind !== 'properties') throw new Error('A03: effect properties missing');
 	const effect = effectInput.view.document.definitions.find(definition => definition.behaviorKind === 'action_effect')!;
 	if (effect.behaviorKind !== 'action_effect') throw new Error('A03: effect definition missing');
@@ -107,7 +105,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await revealLensOccurrence(test, effectInput.view, period.rowKey);
 	await click(effectInput.view.presentation.actionBar.items[0].bounds);
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === effectInput && effectInput.view.presentation.kind === 'properties' && effectInput.view.selection!.rowKey === period.rowKey,
+	check(ide.editor.editorGroup.model.activeTab === effectInput && effectInput.view.presentation.kind === 'properties' && effectInput.view.selection!.rowKey === period.rowKey,
 		'A03: ActionEffect Source returns to its exact authored property');
 	// Cross-kind restoration must rebind reusable graph/property controls, not just change their data.
 	await press('AltLeft', 'ArrowLeft');
@@ -122,7 +120,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await click(treeView.presentation.actionBar.items[0].bounds);
 	model.pushEditOperations([{ offset: removedOffset, deleteLength: 4, text: '' }]);
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === treeInput && treeView.selection === null && treeView.presentation.viewport.selection === null,
+	check(ide.editor.editorGroup.model.activeTab === treeInput && treeView.selection === null && treeView.presentation.viewport.selection === null,
 		'A03: a deleted history occurrence cannot select the remaining identical leaf');
 	await press('AltLeft', 'ArrowRight');
 	await press('ControlLeft', 'KeyZ');
@@ -136,18 +134,18 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	const member = scene.selectionRange.start;
 	await click(scene.actionBar.items[0].bounds);
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === scene && scene.selectionRange.start === member && scene.properties[0].value === 44,
+	check(ide.editor.editorGroup.model.activeTab === scene && scene.selectionRange.start === member && scene.properties[0].value === 44,
 		'A03: Scene Source restores member identity and bound properties');
 	await press('AltLeft', 'ArrowRight');
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model, 'A03: Scene Forward returns to the shared source model');
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model, 'A03: Scene Forward returns to the shared source model');
 	// A closed text input remains a registered resource destination, not a disposed input.
 	await press('ControlLeft', 'KeyW');
 	await runPaletteCommand('Go: Back');
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model, 'A03: Back reopens a closed text resource through its registered editor');
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model, 'A03: Back reopens a closed text resource through its registered editor');
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: original }]);
 	await frame();
 	await runPaletteCommand('Scenario Lab: Open');
-	const scenario = getActiveTab();
+	const scenario = ide.editor.editorGroup.model.activeTab;
 	if (scenario.kind !== 'scenario_lab') throw new Error('A03: Scenario Lab missing');
 	// Catalog membership is the source owner; no scenario name/path/ordinal is assumed.
 	const testIndex = scenario.view.testPane.rows.findIndex(row => row.kind === 'test');
@@ -156,12 +154,12 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	for (let index = 0; index < testIndex; index += 1) await press('ArrowDown');
 	const testId = scenario.view.testPane.selectedNodeId;
 	await press('Enter');
-	check(getActiveTab().kind === 'code_editor', 'A03: Scenario test opens its source without running');
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor', 'A03: Scenario test opens its source without running');
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === scenario && scenario.view.testPane.selectedNodeId === testId && scenario.view.focus === 'tests',
+	check(ide.editor.editorGroup.model.activeTab === scenario && scenario.view.testPane.selectedNodeId === testId && scenario.view.focus === 'tests',
 		'A03: Scenario source returns to its exact test selection');
 	check(test.cycles() === cycles && ide.sources.currentBlua32Media === media, 'A03: all history routes preserve the paused machine and installed media');
-	for (const input of [...editorTabGroup.tabs]) if (!initialTabs.has(input) && input.kind === 'behavior_lens') closeTab(ide.editor.editorPanes, input.id);
+	for (const input of [...ide.editor.editorGroup.model.tabs]) if (!initialTabs.has(input) && input.kind === 'behavior_lens') ide.editor.editorGroup.close(input.id);
 	harness.openLuaSource('cart.lua'); await frame();
 	console.info('STUDIO A03: shared history routes passed');
 }

@@ -1,5 +1,4 @@
 import { openHome } from './contrib/home/editor_input';
-import { editorTabGroup } from './ui/tab/group_model';
 import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
 import type { GameImageCapture, ImageDecoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
@@ -136,7 +135,7 @@ export async function initializeIdeFeatures(
 		workspacePayload,
 		rejectedDirtyPaths,
 	);
-	if (editorTabGroup.tabs.length === 0) openHome(state.editor.editorPanes, workspaceState.projectRootPath);
+	if (state.editor.editorGroup.model.tabs.length === 0) openHome(state.editor.editorGroup, workspaceState.projectRootPath);
 	registerRuntimeShortcuts(state, runtime, input, audioOutput);
 	return state;
 }

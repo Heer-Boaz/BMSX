@@ -189,7 +189,7 @@ export type VisualLineSegment = {
 	endDisplay: number;
 };
 
-export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
+export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal';
 
 export type CrtOptionsSnapshot = {
 	noiseIntensity: number;

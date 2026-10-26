@@ -51,7 +51,7 @@ export function executeEditorSearchCommand(
 				item => { void editor.navigation.openResource(item.resource); });
 			return;
 		case 'runtimeErrorFocus':
-			focusRuntimeErrorOverlay(editor.editorPanes);
+			focusRuntimeErrorOverlay(editor.editorGroup);
 			return;
 		case 'findGlobal':
 			editor.search.openSearch(true, 'global');
@@ -69,7 +69,7 @@ export function executeEditorSearchCommand(
 			openRenamePrompt(sources, rename, editor.search);
 			return;
 		case 'renamePreview':
-			openRenamePrompt(sources, rename, editor.search, editor.editorPanes);
+			openRenamePrompt(sources, rename, editor.search, editor.editorGroup);
 			return;
 	}
 }

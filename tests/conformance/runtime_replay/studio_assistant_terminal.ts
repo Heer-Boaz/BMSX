@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { showEditorMessage } from '../../../ide/common/feedback_state';
 import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, createStudioFixture } from './studio_fixture';
@@ -20,7 +19,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- terminal must not install source\n' }]);
 	const version = source.version, media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: Codex Assistant');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane required');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	const conversation = ide.editor.assistant, terminal = ide.luaEvaluation;
 	await test.runMenuCommand('pause');
 	const repl = { domain: -1 as const, path: 'shell/repl.lua' };
@@ -65,7 +64,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	check(stop.bounds.top !== topBeforeExpiry, 'Stop remains reachable when the transient status row disappears');
 	check(terminal.paused && (conversation.state === 'stopping' || conversation.state === 'ready'),
 		`visible Stop synchronously suspends its owned call: ${JSON.stringify({ state: conversation.state, status: operation.status,
-			view: getActiveTab().kind, revision: test.execution.revision, owned: operation.executionRevision, version: operation.controlVersion })}`);
+			view: ide.editor.editorGroup.model.activeTab.kind, revision: test.execution.revision, owned: operation.executionRevision, version: operation.controlVersion })}`);
 	await until(() => conversation.state === 'ready' && terminal.paused, 'terminal tools: visible Stop suspends guest work');
 	const pausedAt = cycles();
 	for (let i = 0; i < 6; i++) await frame();

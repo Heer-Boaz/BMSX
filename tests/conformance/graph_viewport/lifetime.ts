@@ -10,7 +10,7 @@ function check(condition: boolean, message: string): void {
 
 /** Real input/model/group owners and the packaged Worker, independent of current carts. */
 export async function exerciseGraphLayoutLifetime(fixture: Awaited<ReturnType<typeof createFixture>>) {
-	const { inputs, group, panes, font, view, otherView, step, move, button } = fixture;
+	const { inputs, group, font, view, otherView, step, move, button } = fixture;
 	const [first, second] = inputs;
 	const admitted: number[] = [];
 	const request = (generation: number) => first.layout.request(async engine => {
@@ -29,13 +29,13 @@ export async function exerciseGraphLayoutLifetime(fixture: Awaited<ReturnType<ty
 			request(generation);
 		}
 		check(admitted.length === 1 && first.layout.state.kind === 'pending', 'edits coalesce before projection/measurement/Worker messaging');
-		group.activate(second); panes.openEditor(second);
+		group.activate(second.id);
 		const focus = inputFocus.target;
 		const inactiveView = view.model;
 		await first.layout.settled;
 		check(admitted.length === 2 && admitted[1] === 1000, 'only first and last geometry generations execute');
 		check(first.layout.state.kind === 'ready', 'the current input receives its result while hidden');
-		check(panes.activePane.input === second && inputFocus.target === focus && view.model === inactiveView,
+		check(group.panes.activePane.input === second && inputFocus.target === focus && view.model === inactiveView,
 			'async result neither activates a pane nor writes an inactive control');
 		first.workingCopy.undo();
 		check(first.layout.state.kind === 'idle', 'hidden canonical Undo immediately invalidates the result');
@@ -48,7 +48,7 @@ export async function exerciseGraphLayoutLifetime(fixture: Awaited<ReturnType<ty
 		await first.layout.settled;
 		const ready = first.layout.state;
 		if (ready.kind !== 'ready') throw new Error('expected current compound geometry');
-		group.activate(first); panes.openEditor(first);
+		group.activate(first.id);
 		view.setModel(ready.model, null);
 		view.scrollX = view.scrollBounds.left + 30;
 		view.scrollY = view.scrollBounds.top + 30;
@@ -58,8 +58,8 @@ export async function exerciseGraphLayoutLifetime(fixture: Awaited<ReturnType<ty
 		move(150, 110); step(); button(true); step(); move(160, 115); step();
 		check(view.scrollX === panX - 10 && view.scrollY === panY - 5, 'close must exercise a live physical pan capture');
 		request(1003); request(1004);
-		group.activate(second); panes.openEditor(second);
-		group.removeAt(group.indexOf(first));
+		group.activate(second.id);
+		group.close(first.id);
 		const otherX = otherView.scrollX;
 		const otherY = otherView.scrollY;
 		move(170, 120); step();
@@ -75,7 +75,7 @@ export async function exerciseGraphLayoutLifetime(fixture: Awaited<ReturnType<ty
 		return { submitted: 1005, admitted, framesDuringLayout: frames };
 	} finally {
 		cancelAnimationFrame(frameRequest);
-		panes.dispose(); group.clear();
+		group.dispose();
 		for (const input of inputs) input.workingCopy.dispose();
 	}
 }

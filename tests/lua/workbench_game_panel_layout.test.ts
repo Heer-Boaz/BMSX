@@ -13,8 +13,6 @@ import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_revie
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
 import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
 import { RuntimeIdeState } from '../../ide/workbench/state';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import { openEditorTab } from '../../ide/workbench/ui/tabs';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
@@ -34,8 +32,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 7, deleteLength: 1, text: '2' }] }]]),
 	});
 	const input = new WorkspaceEditReviewInput(proposal), editor = ide.editor;
-	openEditorTab(editor.editorPanes, input);
-	const pane = editor.editorPanes.activePane!;
+	editor.editorGroup.openEditor(input);
+	const pane = editor.editorGroup.panes.activePane!;
 	let minimum: number | undefined = 200, buttons = 0;
 	// A container-layout test programs its child's declared constraint. The real
 	// reader, focus, pointer routing and workbench composition remain attached.
@@ -53,7 +51,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	};
 	editor.gamePanel.toggle(); arrange();
 	t.after(async () => {
-		inputFocus.setTarget(null); await editor.shutdown(); editorTabGroup.clear(); host.audio.dispose(); host.input.dispose();
+		inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	return { editor, input, model, proposal, pane, arrange, drag, pointer, constraint, setMinimum: (value: number | undefined) => { minimum = value; } };
 }
@@ -105,8 +103,8 @@ for (const variant of ['tiny', 'msx'] as const) {
 		f.arrange(700, 120);
 		assert.equal(f.editor.gamePanel.visible, false);
 		assert.equal(inputFocus.target, reader);
-		assert.equal(f.editor.editorPanes.activePane, f.pane);
-		assert.equal(f.editor.editorPanes.activePane!.input, f.input);
+		assert.equal(f.editor.editorGroup.panes.activePane, f.pane);
+		assert.equal(f.editor.editorGroup.panes.activePane!.input, f.input);
 		assert.equal(f.proposal.state, 'pending'); assert.equal(f.model.canUndo, false);
 	});
 

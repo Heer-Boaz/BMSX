@@ -8,11 +8,10 @@ import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../.
 import { prepareLuaArguments, prepareLuaLiteral } from '../../../runtime/lua_literal';
 import type { RuntimeSourceState, RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import type { QuickPickItem } from '../../services/quick_input/provider';
-import { openEditorTab, closeTab, findTabById } from '../../ui/tabs';
 import type { ActorLabTabId } from '../../ui/tab/id';
 import type { ActorLabViewport } from './viewport';
 import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
@@ -47,7 +46,7 @@ export class ActorLabController {
 		public readonly guest: SuspendedGuestSession,
 		private readonly cpu: CPU,
 		private readonly quickInput: QuickInputController,
-		private readonly panes: EditorPanes,
+		private readonly group: EditorGroupView,
 		private readonly navigation: EditorNavigationController,
 		private readonly execution: ActorExecutionService,
 		public readonly rewind: HostRewind,
@@ -77,7 +76,7 @@ export class ActorLabController {
 	public dispose(): void {
 		this.unbindGuest(); this.unbindReview();
 		if (this.current !== undefined) {
-			if (findTabById(this.current.id) === this.current) closeTab(this.panes, this.current.id);
+			if (this.group.model.findById(this.current.id) === this.current) this.group.close(this.current.id);
 			else this.current.dispose();
 		}
 	}
@@ -94,13 +93,13 @@ export class ActorLabController {
 	}
 	public open(): void {
 		const input = this.resolveInput();
-		openEditorTab(this.panes, input);
+		this.group.openEditor(input);
 		if (input.actorHashId === 0) this.selectActor(input);
 	}
 	public auditionEvent(domain: ResourceDomain, name: string): void {
 		const input = this.resolveInput();
 		input.running = false;
-		openEditorTab(this.panes, input);
+		this.group.openEditor(input);
 		if (input.domain === domain) this.refresh(input);
 		if (input.domain !== domain || input.actorHashId === 0) this.selectActor(input, () => { this.refresh(input); this.emitEvent(input, name); }, domain);
 		else this.emitEvent(input, name);
@@ -118,7 +117,7 @@ export class ActorLabController {
 			input.actorHashId = actorHashId;
 			input.selectionPath = undefined;
 			input.running = false; input.dirty = true;
-			openEditorTab(this.panes, input);
+			this.group.openEditor(input);
 			this.refresh(input);
 			const effect = input.runtime.roots[0]?.children.find(node => node.hashId === componentHashId)?.children
 				.find(node => node.hashId === effectHashId && this.guest.matchesIdentity(node.key, key));
@@ -233,8 +232,8 @@ export class ActorLabController {
 		});
 	}
 	private run(input: ActorLabInput, request: ActorInvocation, observer?: (result: ActorExecutionResult) => void, current: () => boolean = () => true): void {
-		const generation = this.panes.openGeneration, domain = input.domain, actor = input.actorHashId;
-		const operation = this.execution.start(request, { isCurrent: () => this.panes.openGeneration === generation
+		const generation = this.group.panes.openGeneration, domain = input.domain, actor = input.actorHashId;
+		const operation = this.execution.start(request, { isCurrent: () => this.group.panes.openGeneration === generation
 			&& input.domain === domain && input.actorHashId === actor && current() });
 		void operation.completion.then(result => {
 			if (observer !== undefined) observer(result);

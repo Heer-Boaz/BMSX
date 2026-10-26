@@ -39,7 +39,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 	projectCartMap(input);
 	const previousScrollbarController = editorViewState.scrollbarController;
 	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: input.grid.vertical, codeHorizontal: input.grid.horizontal,
-		viewerVertical: input.grid.vertical, resourceVertical: input.tree.scrollbar, resourceHorizontal: input.grid.horizontal }, () => {}, pointerCapture);
+		resourceVertical: input.tree.scrollbar, resourceHorizontal: input.grid.horizontal }, () => {}, pointerCapture);
 	const bounds = { left: 23, top: 31, right: 23 + width, bottom: 277 }, surfaces = new WorkbenchSurfaceService();
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('responsive map fixture'), getBounds: () => bounds,
 		getClip: () => bounds, isVisible: () => true, draw() {} });
@@ -48,7 +48,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const pane = new CartMapPane(null!, commands,
-		createScenarioTestSourceState([]), surfaces, surface, bounds);
+		createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope);
 	pane.setInput(input, bounds); pane.update();
 	const layout = (nextWidth = bounds.right - bounds.left, nextVariant: 'tiny' | 'msx' = editorViewState.font.variant) => {
 		if (nextVariant !== editorViewState.font.variant) configureFontVariant(new VirtualHeadlessClock(), nextVariant, null);

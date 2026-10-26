@@ -2,9 +2,7 @@ import type { SerializedCodeEditorInput } from '../../../ide/workbench/contrib/c
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
-import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { buildCodeTabId } from '../../../ide/workbench/ui/tab/id';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { workspaceState } from '../../../ide/workbench/workspace/state';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -16,12 +14,12 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT enemy_crossfoe');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('crossfoe: concrete BT graph required');
 	const model = lens.workingCopy;
 	const graph = lens.view.presentation;
 	const original = model.buffer.getText();
-	check(!model.dirty && !model.canUndo && editorTabGroup.findById(buildCodeTabId(model.resource)) === undefined, 'crossfoe: clean Lens model exists without a code view');
+	check(!model.dirty && !model.canUndo && ide.editor.editorGroup.model.findById(buildCodeTabId(model.resource)) === undefined, 'crossfoe: clean Lens model exists without a code view');
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await runPaletteCommand('Behavior Lens: Move BT Child Later');
@@ -32,7 +30,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 		&& !backup.payload.editorGroup.inputs.some(entry => entry.kind === 'code_editor' && (JSON.parse(entry.value) as SerializedCodeEditorInput).source.resource.path === model.resource.path), 'crossfoe: a valid content backup need not have a code view');
 	const editedVersion = model.version;
 	await click(graph.actionBar.items[0].bounds, 8);
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model && model.version === editedVersion && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model && model.version === editedVersion && !hasSelection(),
 		'crossfoe: first Source activation attaches the same edited model without another edit');
 	await until(() => workspaceState.localRevision === workspaceState.requestedRevision, 'crossfoe: first code-view metadata survives the autosave timer');
 	const sourceGeneration = workspaceState.localGeneration!;
@@ -65,11 +63,11 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 			await click(bounds, 8);
 		} else {
 			await test.runPaletteCommand('Behavior Lens: Open Source Details');
-			const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+			const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 			check(inspector.visible && !ide.editor.quickInput.visible, 'crossfoe: Details opens full source content');
 			await click(inspector.actionBar.items[0].bounds, 8);
 		}
-		check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model && !hasSelection(), `${route}: Source focuses code without a held selection`);
+		check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.model === model && !hasSelection(), `${route}: Source focuses code without a held selection`);
 		for (let index = 0; index < 140; index += 1) await frame();
 		check(model.version === cleanVersion && !model.dirty && navigationEdits === 0 && model.buffer.getText() === original,
 			`${route}: navigation emits no content change and creates no dirty working copy`);

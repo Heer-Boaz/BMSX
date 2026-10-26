@@ -7,11 +7,9 @@ import { MultilineFieldViewport } from '../../../editor/ui/inline/multiline_view
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { AssistantConversation } from '../../services/assistant/conversation';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
 import { AssistantTranscriptProjection } from './projection';
 import { MarkdownSource } from '../../../common/markdown/source';
 import { AssistantFooter } from './footer';
@@ -63,8 +61,8 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	}
 }
 
-export function openAssistant(panes: EditorPanes, conversation: AssistantConversation): AssistantInput {
-	const input = editorTabGroup.tabs.find(input => input.kind === 'assistant') ?? new AssistantInput(conversation);
-	openEditorTab(panes, input);
+export function openAssistant(group: EditorGroupView, conversation: AssistantConversation): AssistantInput {
+	const input = group.model.tabs.find(input => input.kind === 'assistant') ?? new AssistantInput(conversation);
+	group.openEditor(input);
 	return input;
 }

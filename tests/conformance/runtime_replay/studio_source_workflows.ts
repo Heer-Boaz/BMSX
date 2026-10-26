@@ -1,7 +1,6 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
-import { closeTab, getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { check, type StudioFixture } from './studio_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -24,11 +23,11 @@ export async function testSourceViewsBeforeApply(
 	model.pushEditOperations([{ offset: source.indexOf(originalRule), deleteLength: originalRule.length, text: newRule }]);
 	const edited = source.replace(originalRule, newRule);
 	check(model.dirty && status() === 'pending', 'W04: typing immediately differs from both saved and installed source');
-	const sourceTab = getActiveTab();
+	const sourceTab = ide.editor.editorGroup.model.activeTab;
 	harness.executeCommand('behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	await frame();
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('W04: source lens command must open a visual view');
 	check(lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
 		'W04: source lens projects the edited working-copy generation');
@@ -45,11 +44,11 @@ export async function testSourceViewsBeforeApply(
 	harness.executeCommand('behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	await frame();
-	check(getActiveTab() === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
+	check(ide.editor.editorGroup.model.activeTab === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
 		'W04: the retained source lens refreshes after undo and redo');
-	closeTab(ide.editor.editorPanes, sourceTab.id);
+	ide.editor.editorGroup.close(sourceTab.id);
 	await frame();
-	check(getActiveTab() === lens, 'W04: closing the code tab does not close its source view');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'W04: closing the code tab does not close its source view');
 	harness.openLuaSource(model.resource.path);
 	check(harness.getActiveEditorDocument().model === model, 'W04: reopening a closed tab retains document content and history');
 	const note = '\n-- W04: this unsaved source edit is included in Hot Resume.\n';
@@ -117,7 +116,7 @@ export async function testAemSourceApplication(test: StudioFixture): Promise<voi
 	const { ide, harness, tasks, until, press, title, runPaletteCommand } = test;
 	const resource = ide.sources.resources.find(item => item.domain === 0 && item.source.type === 'aem')!;
 	await ide.editor.navigation.openResource(resource);
-	const aem = getActiveTab();
+	const aem = ide.editor.editorGroup.model.activeTab;
 	if (aem.kind !== 'aem_editor') throw new Error('W04: an AEM resource opens its visual editor');
 	const model = aem.workingCopy;
 	await runPaletteCommand('Audio Events: Open Source');

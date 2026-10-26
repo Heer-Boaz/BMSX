@@ -1,6 +1,5 @@
 import { getActiveIdeThemeVariant } from '../../../ide/common/constants';
 import { inputFocus } from '../../../ide/input/focus';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
 import type { ActorMemberChoice } from '../../../ide/workbench/contrib/actor_lab/member_choices';
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
@@ -13,7 +12,7 @@ export async function runStudioActorChanges(test: StudioFixture) {
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'actor changes: boot authoring');
 	await press('ControlRight', 'ShiftRight');
 	harness.openLuaSource('cart.lua');
-	const sourceTab = getActiveTab(), source = harness.getActiveEditorDocument().model;
+	const sourceTab = ide.editor.editorGroup.model.activeTab, source = harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: source.buffer.length, text: ACTOR_TOOLS_SOURCE
 		.replace("local display<const>", "local gpu<const> = require('cartlib/gx/gpu')\nlocal input<const> = require('cartlib/input/input')\nlocal clock<const> = require('cartlib/clock')\nlocal display<const>")
 		.replace('systems = {}', "systems = { require('cartlib/input/input_system') }")
@@ -55,9 +54,9 @@ actor_tool_ready = true`)
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'actor changes: baseline frame boundary');
 	await runPaletteCommand('Actor Lab: Open'); await press('Enter'); await frame();
-	const lab = getActiveTab();
+	const lab = ide.editor.editorGroup.model.activeTab;
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
-	const pane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
+	const pane = ide.editor.editorGroup.panes.activePane as ActorLabEditorPane;
 	let inspector = pane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	check(inspector.model.rows.every(row => !row.element.valueChanged), 'initial instance observation is not a value change');

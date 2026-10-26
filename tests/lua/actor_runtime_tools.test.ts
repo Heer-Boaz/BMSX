@@ -47,6 +47,8 @@ import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submi
 import { RuntimeTimelineControl } from '../../ide/workbench/ui/runtime_timeline_control';
 import { updateFullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
+import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 
 /** Compiled guest representations, not JS table mocks. Actual cartlib construction is tested in the browser workflow. */
 const WORLD_SOURCE = `local fsm<const> = require('cartlib/fsm/fsm_component')
@@ -66,8 +68,11 @@ function rename() probe.id = 'renamed' end
 function remove() probe._components[2] = nil end
 return world`;
 
-const controllers: ActorLabController[] = [];
-afterEach(() => { for (const controller of controllers) controller.dispose(); controllers.length = 0; });
+const controllerFixtures: { readonly controller: ActorLabController; readonly group: EditorGroupView }[] = [];
+afterEach(() => {
+	for (const { controller, group } of controllerFixtures) { controller.dispose(); group.dispose(); }
+	controllerFixtures.length = 0;
+});
 
 function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraModules: readonly { path: string; source: string }[] = [], quickInput?: QuickInputController) {
 	const modules = [{ path: 'cartlib/world/world', source: worldSource }, { path: 'cartlib/fsm/fsm_component', source: 'return {}' },
@@ -85,10 +90,11 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 	f.inspection.pause();
 	const inspection = f.inspection.open(), actors = inspection.lifetime.add(new ActorRuntimeInspection(inspection));
 	const transport = new RuntimeTransport(runtime, f.execution, f.rewind, f.frameNavigation, () => f.actorExecution.canExecute);
+	const group = createTestEditorGroup();
 	const controller = new ActorLabController(sources, f.guest, runtime.machine.cpu,
-		quickInput!, undefined!, undefined!, f.actorExecution, f.rewind, sources,
+		quickInput!, group, undefined!, f.actorExecution, f.rewind, sources,
 		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport });
-	controllers.push(controller);
+	controllerFixtures.push({ controller, group });
 	return { ...f, stop: inspection, actors, controller };
 }
 
@@ -329,10 +335,9 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	editorViewState.scrollbarController = new ScrollbarController({
-		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'), viewerVertical: new Scrollbar('vertical'),
-		resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'),
+		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'), resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'),
 	}, () => {}, pointerCapture);
-	const pane = new ActorLabEditorPane(commands, contextMenu, surfaces, owner, bounds);
+	const pane = new ActorLabEditorPane(commands, contextMenu, surfaces, owner, bounds, inputFocus.workbenchScope);
 	t.after(() => {
 		inputFocus.setTarget(null); pane.dispose(); surfaces.dispose(); input.dispose();
 		editorViewState.font = previousFont; editorViewState.lineHeight = previousLineHeight;

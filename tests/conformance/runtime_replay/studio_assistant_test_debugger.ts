@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -44,7 +43,7 @@ return { kind = 'unit',
 	const debug = ide.scenarioRuns.debugger!, revision = debug.revision;
 	await runPaletteCommand('Scenario Lab: Open');
 	await runPaletteCommand('Scenario Lab: Inspect Stopped Test'); await frame();
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab required');
 	const model = pane.targetInspection.model!;
 	check(model.inspection.state.target === debug.id && model.inspection.state.role === 'live-test', 'ordinary UI borrows exactly the model-controlled test stop');
@@ -65,7 +64,7 @@ return { kind = 'unit',
 	// Independent ordinary UI workflow: no tools or debugger methods are invoked by the driver.
 	document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: source }]);
 	await runPaletteCommand('Scenario Lab: Open');
-	const lab = getActiveTab(); if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab input required');
+	const lab = ide.editor.editorGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab input required');
 	const caseIndex = lab.view.testPane.rows.findIndex(row => row.kind === 'test' && row.test.caseName === 'codex_probe');
 	check(caseIndex >= 0, 'named case visible');
 	const list = lab.view.testPane.layout;
@@ -97,7 +96,7 @@ return { kind = 'unit',
 	await submitAssistantText(test, 'Start another debug case and wait at its admission stop.');
 	await until(() => ide.scenarioRuns.debugger?.reason === 'entry', 'second prompt owns another paused debug run');
 	const last = ide.scenarioRuns.results.liveRun!, inspector = ide.scenarioRuns.debugger!.inspect();
-	const chat = getActiveTab(); if (chat.kind !== 'assistant') throw new Error('Assistant required');
+	const chat = ide.editor.editorGroup.model.activeTab; if (chat.kind !== 'assistant') throw new Error('Assistant required');
 	await test.click(chat.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
 	check(!inspector.available, 'visible conversation Stop expires the run borrow synchronously');
 	await until(() => ide.editor.assistant.state === 'ready' && !ide.scenarioRuns.active, 'Stop completes provider interruption and bounded test cleanup');

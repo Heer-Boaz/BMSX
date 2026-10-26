@@ -2,7 +2,6 @@ import { FSM_DIAGRAM_SOURCE } from '../../helpers/fsm_source_fixture';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { inputFocus } from '../../../ide/input/focus';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { stateMachineSourceRange } from '../../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -14,13 +13,13 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_DIAGRAM_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.diagram');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('FSM diagram input missing');
 	await lens.graphLayout.settled;
 	await frame();
@@ -44,10 +43,10 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 		&& !ide.editor.commands.isEnabled('behaviorLens.setInitialState'),
 		'FSM entry: marker selects authored initial, not a fictitious child state');
 	await press('Home'); await press('Enter');
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === stateMachineSourceRange(marker.reference).start.line - 1
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === stateMachineSourceRange(marker.reference).start.line - 1
 		&& model.version === version && !hasSelection(), 'FSM entry: Source opens the exact initial field without editing');
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === lens && viewport.selection === marker && model.version === version,
+	check(ide.editor.editorGroup.model.activeTab === lens && viewport.selection === marker && model.version === version,
 		'FSM entry: ordinary Back restores the entry marker and unchanged source');
 	await press('Home'); await press('ArrowDown');
 	const selectedState = viewport.selection;
@@ -79,12 +78,12 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 		&& !ide.editor.contextMenu.model.rows.some(row => row.command === 'behaviorLens.setInitialState'),
 		'FSM context: right click on a proof label targets that edge, not a state or Lua token');
 	await press('Home'); await press('Enter');
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === 3 && !hasSelection(),
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === 3 && !hasSelection(),
 		'FSM context: edge Source opens its own return without dirtying source');
 	await test.clickTab(lens.id);
 	await click(bounds);
 	await click(bounds, 6);
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === 3 && !hasSelection(), 'FSM diagram: held edge double-click opens its own return without drag');
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === 3 && !hasSelection(), 'FSM diagram: held edge double-click opens its own return without drag');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved graph source\n' }]);
 	check(graph.viewport.model.nodes.length === 0 && lens.graphLayout.state.kind === 'idle', 'FSM diagram: hidden edit revokes publication and hits immediately');
 	await test.clickTab(lens.id);

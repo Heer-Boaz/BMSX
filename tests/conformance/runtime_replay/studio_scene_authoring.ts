@@ -1,4 +1,3 @@
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
@@ -26,8 +25,8 @@ export async function openScene(test: StudioFixture, name: string, memberCount =
 	const picker = test.ide.editor.quickInput;
 	check(picker.model.list.rows[0].item.label === `scenes/${name}.lua`, 'file picker finds the actual scene source');
 	await test.press('Enter');
-	await test.until(() => getActiveTab().kind === 'code_editor'
-		&& getActiveTab().resource?.path === `scenes/${name}.lua`, 'file picker opens scene code');
+	await test.until(() => test.ide.editor.editorGroup.model.activeTab.kind === 'code_editor'
+		&& test.ide.editor.editorGroup.model.activeTab.resource?.path === `scenes/${name}.lua`, 'file picker opens scene code');
 	const scene = await openSceneEditor(test);
 	check(scene.outline.roots.length === 1 && scene.outline.roots[0].children.length === memberCount,
 		`${name}: Studio exposes all ${memberCount} separately authored members`);
@@ -37,7 +36,7 @@ export async function openScene(test: StudioFixture, name: string, memberCount =
 /** Reach even a scrolled option through the editor's actual Tab/reveal route. */
 export async function focusOption(test: StudioFixture, scene: SceneEditorInput, member: number, label: string) {
 	await selectMember(test, scene, member);
-	const pane = test.ide.editor.editorPanes.activePane;
+	const pane = test.ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('the Scene Editor must own the option inputs');
 	const index = scene.optionProperties.findIndex(property => property.label === label);
 	check(index >= 0, `${label}: authored option appears in the inspector`);

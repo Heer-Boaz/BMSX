@@ -55,7 +55,7 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const hotResumes = new HotResumeService(models, sources, guest, fault, debuggerState,
 		input, runtime, tasks, execution, new Map());
-	hotResumes.onDidApply = () => events.beginTimeline();
+	hotResumes.onDidApply(() => events.beginTimeline());
 	// This fixture attaches inspection to an already reset runtime, not cold startup.
 	boots.didReplaceMachine();
 	return { events, gteHistory, gpuHistory, hotResumes, boots, models, storage, input, actorExecution, debuggerExecution, luaEvaluation, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };

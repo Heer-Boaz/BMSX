@@ -5,7 +5,7 @@ import * as colors from '../../../common/constants';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { writeClipboard } from '../../../input/clipboard';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -41,8 +41,8 @@ export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 	private statusText = '';
 
 	public constructor(private readonly clipboard: Clipboard, contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super();
+		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		super(scope);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = () => this.tooltip.hide();
 		this.tooltip.attach(surfaces, owner, workArea);

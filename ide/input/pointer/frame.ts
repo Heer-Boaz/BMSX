@@ -3,7 +3,6 @@ import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engin
 import { mapDisplayPointToViewport, DisplayPointMappingResult } from '../../../machine/ts/render/video_output';
 import type { PointerInputEvent, WheelInputEvent } from '../../../hosts/common/input/pointer_event';
 import { editorViewState } from '../../editor/ui/view/state';
-import { endTabDrag } from '../../workbench/ui/tab/drag';
 import type { PointerInputSnapshot, WheelInputSnapshot, PointerPosition } from '../../common/models';
 import { editorPointerState } from './state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
@@ -43,11 +42,6 @@ export function prepareEditorPointerFrame(
 ): void {
 	if (!gotoModifierActive) {
 		clearGotoHoverHighlight();
-	}
-	if (workbenchInputBlocked) {
-		// An exclusive input surface ends lower gestures; it never suspends a
-		// captured drag to resume later with the popup's release/cancel press.
-		endTabDrag();
 	}
 	editorPointerState.lastPointerSnapshot = snapshot.valid ? snapshot : null;
 	if (!snapshot.valid || workbenchInputBlocked) {

@@ -1,12 +1,10 @@
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
 import type { WorkbenchActionMenuId } from '../../ui/menu/registry';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
 
 export const HOME_SECTIONS: readonly { readonly title: string; readonly menu: WorkbenchActionMenuId }[] = [
 	{ title: 'Work', menu: 'home.work' },
@@ -40,6 +38,6 @@ export class HomeInput extends ReadonlyEditorInput<'home', 'home'> {
 	}
 }
 
-export function openHome(panes: EditorPanes, workspaceRoot: string | null): void {
-	openEditorTab(panes, editorTabGroup.findById('home') ?? new HomeInput(workspaceRoot));
+export function openHome(group: EditorGroupView, workspaceRoot: string | null): void {
+	group.openEditor(group.model.findById('home') ?? new HomeInput(workspaceRoot));
 }

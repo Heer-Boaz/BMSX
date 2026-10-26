@@ -1,7 +1,6 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -12,14 +11,14 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 	console.info('STUDIO: shared context menu: code/node/edge/canvas, focus, source invalidation and Undo');
 	const position = cycles();
 	harness.openLuaSource('cart.lua');
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	const dirty = model.dirty;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.order');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('context menu: actual BT graph required');
 	const view = lens.view.presentation.viewport;
 	const menu = ide.editor.contextMenu;
@@ -47,9 +46,9 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 		'context menu: keyboard opens on selected graph node with first enabled command');
 	// Source opens on key release; a held activation cannot become typing in the destination.
 	setKey('Enter', true); for (let i = 0; i < 30; i += 1) await frame();
-	check(menu.visible && getActiveTab() === lens && model.version === version, 'context menu: held Source is not text input');
+	check(menu.visible && ide.editor.editorGroup.model.activeTab === lens && model.version === version, 'context menu: held Source is not text input');
 	setKey('Enter', false); await frame();
-	check(!menu.visible && getActiveTab() === code && model.version === version,
+	check(!menu.visible && ide.editor.editorGroup.model.activeTab === code && model.version === version,
 		'context menu: keyboard Source opens exact model without source mutation');
 	await test.clickTab(lens.id);
 	await click(cardBounds(), 1, 'pointer_secondary');

@@ -6,10 +6,9 @@ import { editorTextModelService } from '../../../editor/model/model_service';
 import type { RuntimeResource } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resolveTextFileModel } from '../../services/working_copy/text_file_model';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
-import { openEditorTab } from '../../ui/tabs';
 import { resolveTextCodeEditorInput } from '../../ui/code_tab/io';
 import { AemEditorInput } from './editor_input';
 import { aemFieldTemplates, aemSequenceTemplate, aemSequenceValueTemplate } from './schema';
@@ -19,29 +18,23 @@ export async function resolveAemEditorInput(sources: RuntimeSourceState, resourc
 }
 
 export class AemEditorController {
-	public constructor(private readonly sources: RuntimeSourceState, private readonly panes: EditorPanes,
+	public constructor(private readonly sources: RuntimeSourceState, private readonly group: EditorGroupView,
 		public readonly quickInput: QuickInputController) {}
 	public open(): void {
 		this.quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', () => new TextQuickPickProvider(this.sources.resources
 			.filter(resource => resource.source.type === 'aem').map(resource => ({ label: resource.path, description: `CART ${resource.domain}`, detail: '', resource }))),
 			item => {
-				const generation = this.panes.beginOpen();
-				void resolveAemEditorInput(this.sources, item.resource).then(input => {
-					if (this.panes.openGeneration === generation) openEditorTab(this.panes, input);
-					else input.dispose();
-				}, error => showEditorWarningBanner(`Cannot open audio map: ${error instanceof Error ? error.message : String(error)}`));
+				void this.group.openResolvedEditor(resolveAemEditorInput(this.sources, item.resource))
+					.catch(error => showEditorWarningBanner(`Cannot open audio map: ${error instanceof Error ? error.message : String(error)}`));
 			});
 	}
 	public openSource(input: AemEditorInput): void {
 		const selected = input.tree.rows[input.tree.selectionIndex]?.element;
 		const position = { row: 0, column: 0 };
 		if (selected !== undefined) input.workingCopy.buffer.positionAt(selected.node.range![0], position);
-		const generation = this.panes.beginOpen();
-		void resolveTextCodeEditorInput(this.sources, input.workingCopy.resource).then(code => {
-			if (this.panes.openGeneration === generation) openEditorTab(this.panes, code,
-				{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } });
-			else code.dispose();
-		}, error => showEditorWarningBanner(`Cannot open audio source: ${error instanceof Error ? error.message : String(error)}`));
+		void this.group.openResolvedEditor(resolveTextCodeEditorInput(this.sources, input.workingCopy.resource),
+			{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } })
+			.catch(error => showEditorWarningBanner(`Cannot open audio source: ${error instanceof Error ? error.message : String(error)}`));
 	}
 	public audioIds(input: AemEditorInput): readonly string[] {
 		const resourcePackage = input.workingCopy.resource.domain === -1 ? this.sources.systemPackage : this.sources.cartridgeSlots[input.workingCopy.resource.domain]!.package;

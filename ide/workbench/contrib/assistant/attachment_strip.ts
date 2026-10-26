@@ -3,7 +3,7 @@ import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../.
 import type { PointerPosition, PointerSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { api } from '../../../runtime/overlay_api';
@@ -13,7 +13,7 @@ import type { AssistantAttachments } from './attachments';
 /** One scrollable thumbnail strip, not an ever-growing composer. Pointer and keyboard agree. */
 export class AssistantAttachmentStrip {
 	public readonly bounds = create_rect_bounds();
-	public readonly focusTarget = inputFocus.createTarget();
+	public readonly focusTarget: InputFocusTarget;
 	public selected = 0;
 	private first = 0;
 	private columns = 1;
@@ -21,7 +21,9 @@ export class AssistantAttachmentStrip {
 	private rowHeight = 0;
 	private readonly labels: string[] = [];
 	private attachments: AssistantAttachments | undefined;
-	public constructor(private readonly previews: ImagePreviewCache, private readonly open: (url: string) => void) {
+	public constructor(private readonly previews: ImagePreviewCache, private readonly open: (url: string) => void, parent: InputFocusTarget) {
+		this.focusTarget = inputFocus.createTarget(parent);
+		this.focusTarget.canFocus = () => this.attachments !== undefined && this.attachments.images.length > 0;
 		this.focusTarget.bindKeyboard(input => {
 			if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); inputFocus.moveFocus(false); return; }
 			if (isKeyJustPressed('Delete', input) || isKeyJustPressed('Backspace', input)) {

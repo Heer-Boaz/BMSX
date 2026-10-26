@@ -1,7 +1,6 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -13,13 +12,13 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.order');
-	let lens = getActiveTab();
+	let lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT moves: concrete graph required');
 	let view = lens.view;
 	let graph = lens.view.presentation;
@@ -50,7 +49,7 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const source = viewport.selection!;
 	if (source.kind !== 'node') throw new Error('BT moves: redo lost node selection');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === source.source.occurrenceRange.start.line - 1
+	check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === source.source.occurrenceRange.start.line - 1
 		&& activeCodeEditor.view.cursorColumn === source.source.occurrenceRange.start.column - 1 && !hasSelection(),
 		'BT moves: Source opens the new exact location without transferring held input');
 	const document = view.document;
@@ -61,7 +60,7 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 		'BT moves: returning to the lens preserves the same nested occurrence and expansion');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.shared-order');
-	const nextDefinition2 = getActiveTab();
+	const nextDefinition2 = ide.editor.editorGroup.model.activeTab;
 	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
 	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
 	lens = nextDefinition2;
@@ -72,13 +71,13 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	await press('ArrowDown');
 	await press('ArrowRight');
 	await runPaletteCommand('Behavior Lens: Move BT Child Earlier');
-	check(getActiveTab() === lens && lens.workingCopy === model && model.buffer.getText() === moved
+	check(ide.editor.editorGroup.model.activeTab === lens && lens.workingCopy === model && model.buffer.getText() === moved
 		&& view.definitionRowKey === view.document.definitions[1].rowKey, 'BT moves: shared initializer is edited once in its chosen definition input');
 	await runPaletteCommand('Edit: Undo');
 	check(model.buffer.getText() === BT_ORDER_SOURCE, 'BT moves: no separate graph history');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.weighted-order');
-	const nextDefinition3 = getActiveTab();
+	const nextDefinition3 = ide.editor.editorGroup.model.activeTab;
 	if (nextDefinition3.kind !== 'behavior_lens' || nextDefinition3.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
 	check(nextDefinition3 !== lens && nextDefinition3.workingCopy === model, 'BT: another definition has its own input and the same working copy');
 	lens = nextDefinition3;

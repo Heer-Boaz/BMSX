@@ -216,8 +216,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		applyViewportSize({ width: 128, height: 96 }); refreshWorkbenchLayout();
 		editorViewState.scrollbars = {
 			codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
-			resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'), viewerVertical: new Scrollbar('vertical'),
-		};
+			resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'), };
 		editorViewState.wordWrapEnabled = false; editorRuntimeState.uppercaseDisplay = false; editorCaretState.cursorVisible = true;
 		const source = '\tretur_tail + call()' + ' + trailing'.repeat(8);
 		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'pixels.lua' }, domain: 0, path: 'pixels.lua', source: { type: 'lua', resid: 'pixels' } }, 'lua', source);

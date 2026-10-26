@@ -7,7 +7,6 @@ import type { CartEditor } from '../../cart_editor';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
 import { workspaceDirtyRecords } from './state';
-import { editorTabGroup } from '../ui/tab/group_model';
 import { restoreWorkspaceDirtyModels } from '../services/working_copy/source_recovery';
 import {
 	type PersistedDirtyEntry,
@@ -15,19 +14,19 @@ import {
 } from './models';
 
 export async function applyWorkspaceAutosavePayload(
-	editor: Pick<CartEditor, 'editorPanes' | 'editorInputSerializers' | 'setFontVariant'>,
+	editor: Pick<CartEditor, 'editorGroup' | 'editorInputSerializers' | 'setFontVariant'>,
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
 ): Promise<void> {
-	editor.editorPanes.clearEditor();
-	editorTabGroup.clear();
+	editor.editorGroup.panes.clearEditor();
+	editor.editorGroup.model.clear();
 	editorTextModelService.clear();
 	editor.setFontVariant(payload.fontVariant);
 	await restoreWorkspaceDirtyModels(editorTextModelService, sources, payload.dirtyFiles, workspaceDirtyRecords);
-	await editorTabGroup.deserialize(payload.editorGroup, editor.editorInputSerializers);
-	const active = editorTabGroup.activeTab;
-	if (active !== null) editor.editorPanes.openEditor(active);
+	await editor.editorGroup.model.deserialize(payload.editorGroup, editor.editorInputSerializers);
+	const active = editor.editorGroup.model.activeTab;
+	if (active !== null) editor.editorGroup.activate(active.id);
 	debuggerState.breakpoints.restore(payload.breakpoints);
 }
 

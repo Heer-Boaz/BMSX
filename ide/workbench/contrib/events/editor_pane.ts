@@ -10,7 +10,7 @@ import { truncateMeasuredText } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorFont } from '../../../editor/ui/view/font';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
@@ -71,8 +71,8 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 	private filterSession: DisposableStore | undefined;
 	public constructor(private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
-		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>) {
-		super();
+		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		super(scope);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = () => { this.tooltip.hide(); this.keyboardFeedback = false; };
 		this.tooltip.attach(surfaces, owner, workArea);
@@ -119,11 +119,12 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 		this.running = false;
 		if (this.filterSession !== undefined) this.quickInput.hide();
 		this.tooltip.hide(); pointerHover.release(this); this.feedbackRecord = undefined;
-		this.contextMenu.hide();
+		if (this.contextMenu.visible && this.contextMenu.invocationOrigin?.scope === this.focusTarget.scope) this.contextMenu.hide();
 		this.inspector.hide(); this.actions.clearInput(); this.scroll.clearInput(); this.presentation.reset(); super.clearInput();
 	}
 	public override dispose(): void {
-		this.clearInput(); this.tooltip.detach(); this.unbindListBlur();
+		if (this.hasInput) this.clearInput();
+		this.tooltip.detach(); this.unbindListBlur();
 		this.inspector.dispose(); this.actions.dispose(); this.scroll.dispose(); super.dispose();
 	}
 	public isEnabled(command: EditorCommandId): boolean {
@@ -185,7 +186,7 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 			if (this.filterSession !== undefined) this.quickInput.hide();
 			input.selected = -1;
 			this.inspector.hide();
-			this.contextMenu.hide();
+			if (this.contextMenu.visible && this.contextMenu.invocationOrigin?.scope === this.focusTarget.scope) this.contextMenu.hide();
 			this.tooltip.hide(); pointerHover.release(this); this.feedbackRecord = undefined;
 		}
 		const atEnd = viewport.scrollTop + viewport.height >= viewport.contentHeight;

@@ -78,7 +78,7 @@ test('public wheel router delivers each occurrence to its current pane using sup
 	let activePane = { handleWheel: (event: WheelInputSnapshot) => firstPane.push(event) };
 	// Only the routing dependencies are replaced; this is not a RuntimeCartEditor/UI fixture.
 	const surfaces = new WorkbenchSurfaceService();
-	const editor = { surfaces, editorPanes: { get activePane() { return activePane; } } } as unknown as CartEditor;
+	const editor = { surfaces, editorGroup: { panes: { get activePane() { return activePane; } } } } as unknown as CartEditor;
 	surfaces.attach({
 		role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true, draw() {},
 		getBounds: getWorkbenchEditorBounds, getClip: getWorkbenchEditorBounds,
@@ -123,7 +123,7 @@ test('wheel ownership follows exclusive UI surfaces and spatial guest hits, not 
 	const surfaces = new WorkbenchSurfaceService();
 	const extent = { left: 0, top: 0, right: 400, bottom: 300 };
 	const editor = { surfaces,
-		editorPanes: { activePane: { handleWheel: (event: WheelInputSnapshot) => { sourceScroll += event.deltaY; } } },
+		editorGroup: { panes: { activePane: { handleWheel: (event: WheelInputSnapshot) => { sourceScroll += event.deltaY; } } } },
 	} as unknown as CartEditor;
 	surfaces.attach({
 		role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true, draw() {},

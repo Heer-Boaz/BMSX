@@ -20,7 +20,7 @@ import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContain
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import type { SceneEditorController } from './controller';
 import { POSITION_AXES, type SceneEditorInput, type SceneEditorSection } from './editor_input';
@@ -62,8 +62,9 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		private readonly sources: RuntimeSourceState,
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>,
+		scope: InputFocusScope,
 	) {
-		super();
+		super(scope);
 		this.identityFeedback = new SceneOutlineFeedback(surfaces, paneSurface, workArea, this.focusTarget);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);

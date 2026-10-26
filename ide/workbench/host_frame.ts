@@ -151,7 +151,7 @@ export function runWorkbenchHostFrame(
 		}
 		input.guestInputRecipient = ide.editor.guestInputRecipient;
 		const playEnabled = ide.editor.isActive && hostMenuInput === HostMenuInput.Inactive;
-		const inspectedPlay = ide.play.current?.session, pane = ide.editor.editorPanes.activePane;
+		const inspectedPlay = ide.play.current?.session, pane = ide.editor.editorGroup.panes.activePane;
 		const holdPlay = inspectedPlay !== undefined && pane?.runtimeTransport === inspectedPlay.transport && pane.suspendsRuntime
 			&& !runtimeDebuggerExecutionRequested(inspectedPlay.debugger)
 			&& input.guestInputRecipient !== inspectedPlay.input.physical;
@@ -159,7 +159,7 @@ export function runWorkbenchHostFrame(
 		const play = ide.play.current?.session;
 		if (play !== undefined) play.audio.muteMenu(hostMenuInput !== HostMenuInput.Inactive);
 		audioOutput.device.select(play?.ready === true && playEnabled
-			&& ide.editor.editorPanes.activePane?.runtimeTransport === play.transport ? play.audio : audioOutput);
+			&& ide.editor.editorGroup.panes.activePane?.runtimeTransport === play.transport ? play.audio : audioOutput);
 
 		session.execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
 		audioOutput.muteUi(ide.editor.executionSuspended);

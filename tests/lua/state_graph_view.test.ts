@@ -95,7 +95,7 @@ test('FSM graph shows unknown/no-path evidence without endpoints and preserves s
 		if (f.view.selection?.kind !== 'state-outcome') throw new Error('Selected proof missing');
 		assert.equal(f.view.selection.outcome.target.kind, 'no-path');
 		assert.equal(f.graph.viewport.selection, null, 'no invented self-loop or parent edge for return nil');
-		f.model.undo(); f.refresh(); await f.settle();
+		f.model.undo(f.view.editSource); f.refresh(); await f.settle();
 		assert.equal(f.graph.viewport.selection?.kind, 'edge');
 	} finally { f.input.dispose(); }
 });
@@ -156,11 +156,11 @@ test('FSM initial command updates real graph entry edges and retains selected st
 		const entries = f.graph.viewport.model.edges.filter(edge => edge.link.reference.kind === 'state-entry');
 		assert.equal(entries.filter(edge => edge.link.target.source.label === 'active').length, 2, 'both shared scopes have new entry edges');
 		const retained = f.view.document;
-		f.model.undo();
+		f.model.undo(f.view.editSource);
 		assert.equal(f.view.document, retained, 'hidden input does not reproject from the content event');
 		f.refresh(); await f.settle();
 		assert.equal(stateMachineInitialTarget(f.view)?.name, 'active');
-		f.model.redo(); f.refresh(); await f.settle();
+		f.model.redo(f.view.editSource); f.refresh(); await f.settle();
 		assert.equal(stateMachineInitialTarget(f.view), undefined);
 		f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\n@' }]);
 		f.refresh(); await f.settle();
@@ -191,8 +191,8 @@ test('retarget edit history republishes the exact selected graph proof after wor
 			f.refresh(); await f.settle();
 			for (const action of ['edit', 'undo', 'redo']) {
 				const document = f.view.document;
-				if (action === 'undo') f.model.undo();
-				if (action === 'redo') f.model.redo();
+				if (action === 'undo') f.model.undo(f.view.editSource);
+				if (action === 'redo') f.model.redo(f.view.editSource);
 				assert.equal(f.view.document, document, 'hidden events map state without projecting it');
 				f.refresh(); await f.settle();
 				const edge = f.graph.viewport.selection;

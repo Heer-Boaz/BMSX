@@ -1,5 +1,6 @@
+import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import type { TrackedTextRange } from '../../../editor/text/text_change';
+import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
@@ -58,6 +59,14 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 		this.sourceModels.set(workingCopy.resource.path, workingCopy);
 		this.publishModels();
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
+		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
+			if (this.sourceModels.get(model.resource.path) !== model) return;
+			this.invalidateProjection();
+			if (this.workingCopy === model && this.definitionRange !== undefined) mapTrackedTextRange(this.definitionRange, event.changes);
+			if (this.trackSelection?.path === model.resource.path) mapTrackedTextRange(this.trackSelection.range, event.changes);
+			if (this.keySelection?.path === model.resource.path) mapTrackedTextRange(this.keySelection.range, event.changes);
+			if (this.detailSelection?.path === model.resource.path) mapTrackedTextRange(this.detailSelection.range, event.changes);
+		}) });
 	}
 	public publishModels(): void { this.setWorkingCopies(new Set(this.sourceModels.values())); }
 	public invalidateProjection(): void { for (const listener of this.projectionListeners) listener(); }

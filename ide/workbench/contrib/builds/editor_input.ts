@@ -2,11 +2,9 @@ import type { StudioBuildJob } from '../../../../hosts/common/studio_builds';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { WorkspaceBuilds } from '../../services/builds';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
 import { WorkbenchTextViewModel } from '../../ui/text_view/model';
 
 export type BuildLogChannel = 'output' | 'error';
@@ -69,10 +67,10 @@ export class BuildLogInput extends ReadonlyEditorInput<`build-log:${string}`, 'b
 	}
 }
 
-export function openBuildLog(panes: EditorPanes, builds: WorkspaceBuilds, job: StudioBuildJob): BuildLogInput {
+export function openBuildLog(group: EditorGroupView, builds: WorkspaceBuilds, job: StudioBuildJob): BuildLogInput {
 	const id = `build-log:${job.request.requestId}` as const;
-	const input = editorTabGroup.findById(id) ?? new BuildLogInput(job, builds);
-	openEditorTab(panes, input);
+	const input = group.model.findById(id) ?? new BuildLogInput(job, builds);
+	group.openEditor(input);
 	void input.refresh();
 	return input;
 }

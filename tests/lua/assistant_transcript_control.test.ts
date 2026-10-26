@@ -244,7 +244,7 @@ test('detach closes the image before releasing transcript focus and removes the 
 test('transcript selection and detach cannot retire an actual draft-attachment preview with another origin', t => {
 	const f = fixture(t), entry = f.conversation.message('', [SECOND]), attachments = new AssistantAttachments();
 	attachments.set([FIRST]); f.layout();
-	const strip = new AssistantAttachmentStrip(f.cache, url => f.preview.open(url)); strip.setInput(attachments);
+	const strip = new AssistantAttachmentStrip(f.cache, url => f.preview.open(url), f.control.scroll.focusTarget); strip.setInput(attachments);
 	strip.layout(4, 180, 300, f.input.layout.rowHeight); t.after(() => strip.clearInput());
 	strip.focusTarget.focus(); f.key('Enter'); f.key('Enter', false);
 	assert.equal(f.preview.visible, true); assert.equal(f.preview.origin, strip.focusTarget);

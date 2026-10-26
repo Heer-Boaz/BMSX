@@ -1,35 +1,31 @@
 import { ReadonlyEditorInput } from '../../common/editor_input';
-import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
+import { resourceIdentityKey, type RuntimeResource } from '../../../common/resource';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourceViewerTabId } from '../../ui/tab/id';
 import type { ResourceViewerContent, ResourceViewerState } from './model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
-import { sourceTabDescription } from '../../ui/tab/titles';
+import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
+import { buildResourceViewerContent } from './viewer';
 
 export const WORKBENCH_RESOURCE_VIEWER_ID = 'workbench.editor.resourceViewer';
 
 /** Retained input for one read-only resource projection. */
 export class ResourceViewerInput extends ReadonlyEditorInput<ResourceViewerTabId, 'resource_view'> {
 	public readonly view: ResourceViewerState;
-	public get resource(): ResourceIdentity { return this.view.content.resource; }
+	private content: ResourceViewerContent | undefined;
 
-	public constructor(content: ResourceViewerContent) {
-		super(
-			`resource:${resourceIdentityKey(content.resource)}`,
-			'resource_view',
-			content.title,
-			true,
-		);
-		this.view = { content, scroll: 0 };
-		this.setLabel(content.title, sourceTabDescription(content.resource));
+	public constructor(private readonly sources: RuntimeSourceState, public readonly resource: RuntimeResource) {
+		const title = computeResourceTabTitle(resource);
+		super(`resource:${resourceIdentityKey(resource)}`, 'resource_view', title, true);
+		const input = this;
+		this.view = { get content() { return input.content ??= buildResourceViewerContent(input.sources, input.resource); }, scroll: 0 };
+		this.setLabel(title, sourceTabDescription(resource));
 	}
 
-	/** Refresh content and label without replacing the retained viewport. */
-	public updateContent(content: ResourceViewerContent): void {
-		this.view.content = content;
-		this.setLabel(content.title, sourceTabDescription(content.resource));
-	}
+	/** An explicit open resolves the live projection; the retained viewport stays with this input. */
+	public refreshContent(): void { this.content = undefined; }
 
 	public override toResourceEditor(): ResourceEditorIdentity {
-		return { resource: this.view.content.resource, editorId: WORKBENCH_RESOURCE_VIEWER_ID };
+		return { resource: this.resource, editorId: WORKBENCH_RESOURCE_VIEWER_ID };
 	}
 }

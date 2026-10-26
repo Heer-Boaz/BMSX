@@ -5,7 +5,6 @@ import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/
 import { createStateMachineRetargetEdit } from '../../../ide/workbench/contrib/behavior_lens/state_machine_edit';
 import { StateMachineRetargetAnalysis } from '../../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { FSM_RETARGET_SOURCE, FSM_RETARGET_MODULE_SOURCE, FSM_RETARGET_IMPORTED_SOURCE } from '../../helpers/fsm_retarget_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -37,13 +36,13 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 	}
 	const source = imported ? FSM_RETARGET_MODULE_SOURCE : FSM_RETARGET_SOURCE;
 	const mainVersion = main.version;
-	const code = getActiveTab();
+	const code = ide.editor.editorGroup.model.activeTab;
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.two');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('FSM bookmark: concrete input required');
 	const view = lens.view;
 	const graph = lens.view.presentation;
@@ -80,20 +79,20 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 		const range = selectedBehaviorLensSourceRange(view)!;
 		version = model.version;
 		await click(graph.actionBar.items[0].bounds, 6);
-		check(getActiveTab() === code && model.version === version && !hasSelection()
+		check(ide.editor.editorGroup.model.activeTab === code && model.version === version && !hasSelection()
 			&& activeCodeEditor.view.cursorRow === range.start.line - 1 && activeCodeEditor.view.cursorColumn === range.start.column - 1,
 			'FSM bookmark: held Source activation navigates without dirtying or selecting code');
 		await press('ArrowRight');
 		check(activeCodeEditor.view.cursorColumn === range.start.column, 'FSM bookmark: code input remains responsive');
 		await press('AltLeft', 'ArrowLeft'); await ready();
-		check(getActiveTab() === lens && selectedBehaviorLensSourceRange(view)!.start.line === range.start.line,
+		check(ide.editor.editorGroup.model.activeTab === lens && selectedBehaviorLensSourceRange(view)!.start.line === range.start.line,
 			'FSM bookmark: actual Back restores the same source proof');
 		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- after navigation restore\n' }]);
 		await ready();
 		check(selectedBehaviorLensSourceRange(view)?.start.line === range.start.line + 1,
 			'FSM bookmark: an edit after Back maps active selection once, independently of navigation history');
 		await click(graph.actionBar.items[0].bounds);
-		check(getActiveTab() === code && activeCodeEditor.view.cursorRow === range.start.line && !hasSelection(),
+		check(ide.editor.editorGroup.model.activeTab === code && activeCodeEditor.view.cursorRow === range.start.line && !hasSelection(),
 			'FSM bookmark: the restored and edited proof still opens the exact source line');
 		await press('ControlLeft', 'KeyZ');
 		await test.clickTab(lens.id); await ready();

@@ -2,7 +2,6 @@ import { AssistantHttpConnection } from '../../../ide/browser/assistant_connecti
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { ActorRuntimeInspection } from '../../../ide/workbench/contrib/actor_lab/runtime_inspection';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
 import { check, createStudioFixture } from './studio_fixture';
@@ -17,7 +16,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'actor tools: boot authoring');
 	await press('ControlRight', 'ShiftRight');
 	harness.openLuaSource('cart.lua');
-	const sourceTab = getActiveTab();
+	const sourceTab = ide.editor.editorGroup.model.activeTab;
 	const source = harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: source.buffer.length, text: ACTOR_TOOLS_SOURCE }]);
 	await runPaletteCommand('Run: Reboot'); await press('Enter');
@@ -31,7 +30,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	const picker = ide.editor.quickInput;
 	check(picker.visible && picker.model.list.rows.map(row => row.item.label).join(',') === 'first,second', 'ordinary Actor Lab lists actual World membership');
 	await press('Enter'); await frame();
-	const lab = getActiveTab(); if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
+	const lab = ide.editor.editorGroup.model.activeTab; if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	check(lab.outline.rows.length > 0 && lab.outline.rows.every(row => row.element.displayLabel.length > 0),
 		'opening an actor publishes measured, nonempty outline rows');
 	const topology = lab.outline.rows.map(row => ({ label: row.element.node.label, kind: row.element.node.kind, active: row.element.node.active }));
@@ -51,7 +50,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	const nest = lab.outline.rows.findIndex(row => row.element.node.label === 'nest');
 	for (let i = 0; i < nest; i++) await press('ArrowDown');
 	await press('Enter'); await frame();
-	const actorPane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
+	const actorPane = ide.editor.editorGroup.panes.activePane as ActorLabEditorPane;
 	let inspector = actorPane.inspector;
 	check(inspector.visible && actorPane.companionGameMinimumWidth === undefined && actorPane.detailsWindow.visible && lab.detailsWindow.open,
 		'ordinary Details leave the actor outline and game preview visible');
@@ -75,7 +74,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	const callbackScroll = inspector.model.viewport.scrollTop;
 	const callbackActor = lab.actorHashId, callbackMember = lab.selectionPath, callbackVersion = source.version;
 	await press('Enter');
-	check(getActiveTab() === sourceTab && lab.detailsWindow.open && !inspector.visible,
+	check(ide.editor.editorGroup.model.activeTab === sourceTab && lab.detailsWindow.open && !inspector.visible,
 		'Details Source follows the installed callback without closing the retained Details view');
 	await frame();
 	check(activeCodeEditor.view.cursorRow === ACTOR_TOOLS_SOURCE.split('\n').findIndex(line => line.startsWith('local function callback')),
@@ -84,13 +83,13 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await press('AltLeft', 'ArrowLeft'); await frame();
 	inspector = actorPane.inspector;
 	check(inspector.visible && inspector.model.rows[inspector.model.selectionIndex].element.label === 'UPDATE'
-		&& inspector.model.viewport.scrollTop === callbackScroll && getActiveTab() === lab && lab.actorHashId === callbackActor
+		&& inspector.model.viewport.scrollTop === callbackScroll && ide.editor.editorGroup.model.activeTab === lab && lab.actorHashId === callbackActor
 		&& JSON.stringify(lab.selectionPath) === JSON.stringify(callbackMember), 'Back from callback Source restores the selected actor, typed member and Details context');
 	check(cycles() === position && runtime.machine.cpu.luaHeap.usedBytes() === heap && source.version === callbackVersion
 		&& ide.sources.currentBlua32Media === media, 'source and Back navigation do not execute guest code or change source/installations');
 	await renderer.capture!('details-source-return');
 	await press('AltLeft', 'ArrowRight'); await frame();
-	check(getActiveTab() === sourceTab, 'Forward restores the callback source');
+	check(ide.editor.editorGroup.model.activeTab === sourceTab, 'Forward restores the callback source');
 	await press('AltLeft', 'ArrowLeft'); await frame();
 	inspector = actorPane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Escape');

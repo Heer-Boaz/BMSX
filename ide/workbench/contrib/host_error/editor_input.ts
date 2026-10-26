@@ -1,7 +1,5 @@
 import { ReadonlyEditorInput } from '../../common/editor_input';
-import type { EditorPanes } from '../../services/editor/editor_panes';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import type { EditorFont } from '../../../editor/ui/view/font';
@@ -19,8 +17,8 @@ export class HostErrorInput extends ReadonlyEditorInput<'host-error', 'host_erro
 	public constructor(public stack: string) { super('host-error', 'host_error', 'HOST ERROR', true); }
 }
 
-export function openHostError(panes: EditorPanes, stack: string): void {
-	const input = editorTabGroup.findById('host-error') ?? new HostErrorInput(stack);
+export function openHostError(group: EditorGroupView, stack: string): void {
+	const input = group.model.findById('host-error') ?? new HostErrorInput(stack);
 	input.stack = stack;
-	openEditorTab(panes, input);
+	group.openEditor(input);
 }

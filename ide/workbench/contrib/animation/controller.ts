@@ -1,20 +1,16 @@
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { editorTextModelService } from '../../../editor/model/model_service';
-import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
+import type { EditorTextModel } from '../../../editor/model/text_model';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
-import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { resolveRuntimeResourceForContext, runtimeLuaSourceRegistry, type RuntimeSourceState } from '../../../runtime/sources';
 import { onDidChangeLuaSourceRegistry } from '../../../runtime/source_registry';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { ResourceDomain, RuntimeResource } from '../../../common/resource';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import type { EditorNavigationController } from '../resources/navigation';
@@ -28,7 +24,7 @@ import { revealWorkbenchListSelection } from '../../ui/list_view';
 /** Admits source generations, selects syntax and issues edits through their real working copies. */
 export class AnimationEditorController {
 	public readonly authoring: AnimationAuthoring;
-	public constructor(private readonly sources: RuntimeSourceState, private readonly panes: EditorPanes,
+	public constructor(private readonly sources: RuntimeSourceState, private readonly group: EditorGroupView,
 		private readonly navigation: EditorNavigationController, private readonly quickInput: QuickInputController) { this.authoring = new AnimationAuthoring(this, quickInput, sources); }
 
 	public open(): void {
@@ -42,10 +38,10 @@ export class AnimationEditorController {
 			}
 			return snapshot;
 		};
-		const active = editorTabGroup.activeTab;
+		const active = this.group.model.activeTab;
 		if (active?.kind === 'code_editor' && active.workingCopy.mode === 'lua') {
 			const model = active.workingCopy, snapshot = snapshotFor(model.resource.domain), file = snapshot.getFileData(model.resource.path)!;
-			const table = animationDefinitionAtPosition(file, activeCodeEditor.view.cursorRow + 1, activeCodeEditor.view.cursorColumn + 1);
+			const table = animationDefinitionAtPosition(file, active.context.view.cursorRow + 1, active.context.view.cursorColumn + 1);
 			if (table !== undefined) {
 				const registered = collectAnimationDefinitions(model.resource, snapshot).find(item => item.table === table);
 				this.openDefinition(model.resource.domain, registered === undefined ? { file, table, label: `${model.resource.path}:${file.chunk.locations.range(table.span).start.line}` } : registered);
@@ -83,22 +79,22 @@ export class AnimationEditorController {
 		const resource = resolveRuntimeResourceForContext(this.sources, domain, definition.file.file)!;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 		const range = definition.file.chunk.locations.range(definition.table.span);
-		let input = editorTabGroup.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation'
+		let input = this.group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation'
 			&& item.workingCopy === model && item.consumerPath === definition.consumer?.file && item.definitionRange !== undefined && luaSourceRangeMatchesTextRange(model.buffer, range, item.definitionRange));
 		if (input === undefined) {
 			input = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, range), definition.label, definition.consumer?.file);
 			if (definition.consumer !== undefined) this.modelFor(input, definition.consumer);
 			this.refresh(input);
 		}
-		openEditorTab(this.panes, input);
+		this.group.openEditor(input);
 		return input;
 	}
 
 	public openResource(resource: RuntimeResource): AnimationEditorInput {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
-		let input = editorTabGroup.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
+		let input = this.group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
 		if (input === undefined) { input = new AnimationEditorInput(model); this.refresh(input); }
-		openEditorTab(this.panes, input);
+		this.group.openEditor(input);
 		return input;
 	}
 
@@ -112,16 +108,6 @@ export class AnimationEditorController {
 		return model;
 	}
 
-	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {
-		for (const input of editorTabGroup.tabs) {
-			if (input.kind !== 'animation' || input.sourceModels.get(model.resource.path) !== model) continue;
-			input.invalidateProjection();
-			if (input.workingCopy === model && input.definitionRange !== undefined) mapTrackedTextRange(input.definitionRange, event.changes);
-			if (input.trackSelection?.path === model.resource.path) mapTrackedTextRange(input.trackSelection.range, event.changes);
-			if (input.keySelection?.path === model.resource.path) mapTrackedTextRange(input.keySelection.range, event.changes);
-			if (input.detailSelection?.path === model.resource.path) mapTrackedTextRange(input.detailSelection.range, event.changes);
-		}
-	}
 
 	public refresh(input: AnimationEditorInput): void {
 		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.domain);

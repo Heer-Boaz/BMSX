@@ -1,3 +1,4 @@
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -15,7 +16,6 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { CodeEditorTextInput } from '../../ide/workbench/contrib/code_editor/native_text_input';
 import { EditorCompletionController } from '../../ide/workbench/contrib/code_editor/suggest/completion_controller';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext, source: string, columnOffset = source.length) {
@@ -26,7 +26,8 @@ function fixture(t: TestContext, source: string, columnOffset = source.length) {
 	const model = editorTextModelService.retain(sources.luaResources[0], 'lua', source);
 	const input = new CodeEditorInput(model), view = input.context.view, position = { row: 0, column: 0 };
 	model.buffer.positionAt(columnOffset, position); view.cursorRow = position.row; view.cursorColumn = position.column;
-	editorTabGroup.add(input); editorTabGroup.activate(input); activeCodeEditor.attach(model, view);
+	const group = createTestEditorGroup();
+	group.model.add(input); group.model.activate(input); activeCodeEditor.attach(model, view);
 	activeCodeEditor.focusTarget.focus();
 	const controller = new EditorCompletionController(sources, null, null, null), native = new CodeEditorTextInput();
 	const unbindBeforeContent = model.onWillChangeContent(() => {
@@ -39,7 +40,7 @@ function fixture(t: TestContext, source: string, columnOffset = source.length) {
 	editorRuntimeState.currentTimeMs = 1000;
 	t.after(() => {
 		unbindBeforeContent(); unbindContent();
-		controller.dispose(); inputFocus.setTarget(null); editorTabGroup.clear(); activeCodeEditor.detach();
+		controller.dispose(); inputFocus.setTarget(null); group.dispose(); activeCodeEditor.detach();
 		resetSemanticProjects(editorTextModelService); editorTextModelService.clear();
 	});
 	const type = (text: string) => {

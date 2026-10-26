@@ -11,10 +11,8 @@ import type { WheelInputSnapshot } from '../../../common/models';
 import type { CartEditor } from '../../../cart_editor';
 import type { EditorScenarioLabCommandId } from '../../../common/commands';
 import type { ScenarioLabTabId } from '../../ui/tab/id';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { isScenarioLabActive, openEditorTab } from '../../ui/tabs';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { prepareScenarioLabLayout } from './layout';
 import {
 	scrollWorkbenchList,
@@ -47,7 +45,7 @@ export class ScenarioLabController {
 	public constructor(
 		private readonly editor: CartEditor,
 		private readonly navigation: EditorNavigationController,
-		private readonly editorPanes: EditorPanes,
+		private readonly editorGroup: EditorGroupView,
 		private readonly behaviorRegistrations: BehaviorRegistrationIndex,
 		public readonly runs: ScenarioRunService,
 		private readonly play: PlayController,
@@ -69,7 +67,7 @@ export class ScenarioLabController {
 	}
 
 	public open(): void {
-		openEditorTab(this.editorPanes, this.resolveInput());
+		this.editorGroup.openEditor(this.resolveInput());
 	}
 
 	public revealRun(run: ScenarioRun): void {
@@ -123,11 +121,11 @@ export class ScenarioLabController {
 	}
 
 	public isCommandEnabled(command: EditorScenarioLabCommandId): boolean {
-		if (command === 'scenarioLab.play') return isScenarioLabActive() && !this.runs.active
+		if (command === 'scenarioLab.play') return (this.editorGroup.model.activeTab?.kind === 'scenario_lab') && !this.runs.active
 			&& this.play.service.current === undefined && this.selectedModule()?.suite?.kind === 'integration';
 		if (command === 'scenarioLab.revealRun') return this.runs.results.runs.length !== 0;
 		if (command === 'scenarioLab.cancel') return this.runs.active;
-		return isScenarioLabActive()
+		return (this.editorGroup.model.activeTab?.kind === 'scenario_lab')
 			&& this.view !== null
 			&& scenarioLabCommandEnabled(this.view, command);
 	}
@@ -164,7 +162,7 @@ export class ScenarioLabController {
 
 	public resolveInput(): ScenarioLabInput {
 		this.refreshSources();
-		const tab = editorTabGroup.findById(SCENARIO_LAB_TAB_ID);
+		const tab = this.editorGroup.model.findById(SCENARIO_LAB_TAB_ID);
 		return tab === undefined ? new ScenarioLabInput(this.getOrCreateView()) : tab;
 	}
 

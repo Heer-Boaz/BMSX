@@ -15,12 +15,11 @@ import { initializeNavigationState, resetNavigationHistoryState } from '../../id
 import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/panel/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
-import { createTestEditorPanes } from '../helpers/editor_panes';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 
@@ -31,7 +30,7 @@ function diagnostic(model: TextModel, row = 13, column = 5): EditorDiagnostic {
 }
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) {
 	configureFontVariant(new VirtualHeadlessClock(), variant, null);
-	const controller = new ProblemsPanelController(), surfaces = new WorkbenchSurfaceService(), panes = createTestEditorPanes();
+	const controller = new ProblemsPanelController(), surfaces = new WorkbenchSurfaceService(), group = createTestEditorGroup();
 	const attachments = t.mock.method(surfaces, 'attach');
 	const area = { left: 0, top: 24, right: 384, bottom: 274 }, bounds = { left: 0, top: 160, right: width, bottom: 274 };
 	surfaces.attach({ role: 'content', captureScope: Symbol('Workbench background'), getBounds: () => area, getClip: () => area,
@@ -46,7 +45,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) 
 		new EditorTextModel({ location: { kind: 'workspace' as const, path: 'scenes/cart.lua' }, domain: 1, path: 'scenes/cart.lua', source: { type: 'lua', resid: 'cart' } }, 'lua', source)];
 	controller.setDiagnostics(models.map(model => diagnostic(model)), { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	controller.setSelectionIndex(-1);
-	const unbind = controller.focusTarget.bindKeyboard(event => controller.handleKeyboard(event, panes));
+	const unbind = controller.focusTarget.bindKeyboard(event => controller.handleKeyboard(event, group));
 	const overlay = createHostOverlayFixture(384, 288);
 	const paint = () => {
 		controller.prepareLayout(bounds); controller.header.updateFeedback(); controller.updateFeedback(bounds);
@@ -57,8 +56,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) 
 		return glyphs;
 	};
 	const press = (code: string) => { inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none)); inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false)); };
-	t.after(() => { controller.hide(); controller.detach(); unbind(); inputFocus.setTarget(null); pointerHover.clear(); surfaces.dispose(); panes.dispose(); for (const model of models) model.dispose(); });
-	return { controller, surfaces, owner, feedback, panes, bounds, area, models, paint, press };
+	t.after(() => { controller.hide(); controller.detach(); unbind(); inputFocus.setTarget(null); pointerHover.clear(); surfaces.dispose(); group.dispose(); for (const model of models) model.dispose(); });
+	return { controller, surfaces, owner, feedback, group, bounds, area, models, paint, press };
 }
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} row disclosure anchors outside the actual Problems part instead of covering neighboring cards`, t => {
@@ -73,7 +72,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} row disclosure 
 	const layout = f.controller.getCachedLayout(), y = layout.contentTop + f.controller.getItemLayout(0).height + 2;
 	const pointer: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 12, viewportY: y,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
-	f.controller.handlePointer(f.panes, pointer, false, false, f.bounds); f.paint();
+	f.controller.handlePointer(f.group, pointer, false, false, f.bounds); f.paint();
 	assert.equal(f.controller.getHoverIndex(), 1); assert.equal(f.feedback.visible, true);
 	assert.ok(f.feedback.getBounds().bottom <= f.bounds.top - 2, 'hover uses the same actual part anchor');
 	assert.equal(f.surfaces.hitTest(pointer.viewportX, pointer.viewportY), f.owner);
@@ -94,7 +93,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		assert.equal(error.y, location.y + editorViewState.lineHeight, 'the resource location cannot share or cover a message row');
 		assert.ok(painted.some(run => run.items === b.location.toUpperCase()));
 		assert.equal(location.color, resolveThemeTokenColor(colors.COLOR_PROBLEMS_PANEL_LOCATION));
-		assert.equal(f.panes.activePane, null, 'disclosing a location never opens a source');
+		assert.equal(f.group.panes.activePane, null, 'disclosing a location never opens a source');
 	});
 }
 
@@ -107,12 +106,12 @@ test('narrow measured labels preserve line/column and expose full path/message t
 	assert.equal(item.feedback, `CART 0 / scenes/intro.lua:14:6\n${long.message}`);
 	assert.equal(f.controller.focusTarget.clipboard!.copy(), item.feedback, 'copy retains the complete message beyond the visible tooltip height');
 	assert.ok(painted.some(run => String(run.items).includes('scenes/intro.lua')));
-	assert.equal(f.panes.activePane, null);
+	assert.equal(f.group.panes.activePane, null);
 	f.controller.setFocused(false); f.controller.setSelectionIndex(-1);
 	const row = f.controller.getCachedLayout();
 	const pointer: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 12, viewportY: row.contentTop + 2,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
-	f.controller.handlePointer(f.panes, pointer, false, false, f.bounds);
+	f.controller.handlePointer(f.group, pointer, false, false, f.bounds);
 	assert.ok(f.paint().some(run => String(run.items).includes('scenes/intro.lua')));
 	assert.equal(f.surfaces.hitTest(pointer.viewportX, pointer.viewportY), f.owner, 'full diagnostic feedback never intercepts the row');
 	f.controller.onPointerLeave(); assert.equal(f.paint().some(run => String(run.items).includes('scenes/intro.lua')), false);
@@ -205,14 +204,14 @@ test('new row heights govern Home/End/Page and wheel hit geometry without changi
 });
 
 test('Enter preserves the diagnostic model/version and exact source selection rather than the displayed basename', t => {
-	const f = fixture(t); editorTextModelService.clear(); editorTabGroup.clear();
-	t.after(initializeNavigationState(f.panes));
+	const f = fixture(t); editorTextModelService.clear(); f.group.model.clear();
+	t.after(initializeNavigationState(f.group));
 	const a = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'a/shared.lua' }, domain: 0, path: 'a/shared.lua', source: { type: 'lua', resid: 'a' } }, 'lua', source);
 	const b = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'b/shared.lua' }, domain: 1, path: 'b/shared.lua', source: { type: 'lua', resid: 'b' } }, 'lua', source);
-	t.after(() => { editorTabGroup.clear(); resetNavigationHistoryState(); editorTextModelService.clear(); });
+	t.after(() => { f.group.model.clear(); resetNavigationHistoryState(); editorTextModelService.clear(); });
 	f.controller.setDiagnostics([diagnostic(a), diagnostic(b, 7, 3)], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	f.controller.setFocused(true); f.paint(); f.press('End'); f.press('Enter');
-	const opened = editorTabGroup.activeTab!; assert.equal(opened.kind, 'code_editor');
+	const opened = f.group.model.activeTab!; assert.equal(opened.kind, 'code_editor');
 	if (opened.kind === 'code_editor') { assert.equal(opened.context.model, b); assert.equal(opened.context.view.cursorRow, 7); assert.equal(opened.context.view.cursorColumn, 3); }
 	assert.equal(a.buffer.getText(), source); assert.equal(b.buffer.getText(), source);
 });
@@ -237,7 +236,7 @@ test('pending diagnostic projection retains semantic selection and reading inten
 	f.controller.handlePointerWheel(30, f.bounds); const scroll = f.controller.getScrollIndex(); assert.ok(scroll > 0);
 	f.controller.setDiagnostics([], { ready: 0, pending: 2, unsupported: 0, failed: 0 });
 	assert.equal(f.controller.selectedDiagnostic, null); assert.equal(f.controller.focusTarget.clipboard!.copy(), null);
-	assert.equal(f.controller.handleKeyboardCommand(f.panes, 'activate'), false); assert.equal(f.panes.activePane, null);
+	assert.equal(f.controller.handleKeyboardCommand(f.group, 'activate'), false); assert.equal(f.group.panes.activePane, null);
 	assert.equal(f.controller.getScrollIndex(), 0, 'an empty projection presents no nonexistent reading row');
 	// Freshness changes independently of marker identity; projection order can change too.
 	f.models[1].pushEditOperations([{ offset: f.models[1].buffer.length, deleteLength: 0, text: ' ' }]);

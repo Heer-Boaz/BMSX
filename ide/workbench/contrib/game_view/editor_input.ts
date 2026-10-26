@@ -1,9 +1,7 @@
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { openEditorTab } from '../../ui/tabs';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 
 /** The existing machine display, with shared inspection controls and explicit game focus. */
 export class GameViewInput extends ReadonlyEditorInput<'game-view', 'game_view'> {
@@ -15,6 +13,6 @@ export class GameViewInput extends ReadonlyEditorInput<'game-view', 'game_view'>
 	public constructor() { super('game-view', 'game_view', 'GAME', true); }
 }
 
-export function openGameView(panes: EditorPanes): void {
-	openEditorTab(panes, editorTabGroup.findById('game-view') ?? new GameViewInput());
+export function openGameView(group: EditorGroupView): void {
+	group.openEditor(group.model.findById('game-view') ?? new GameViewInput());
 }

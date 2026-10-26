@@ -1,3 +1,4 @@
+import type { EditorEditSource } from '../../../editor/model/edit_state';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { buildPietiousSource, createPietiousPositionEdit } from './pietious_source';
 import { buildNemesisSource, createNemesisMarkerMoveEdit } from './nemesis_source';
@@ -74,7 +75,7 @@ export function selectCartMapRow(input: CartMapInput, index: number): void {
 }
 
 /** A coordinate edit belongs to the actual authored representation, never to a cooked actor. */
-export function createCartMapMove(item: CartMapItem, x: number, y: number): EditorModelEdit {
+export function createCartMapMove(item: CartMapItem, x: number, y: number, source: EditorEditSource): EditorModelEdit {
 	let edit: EditorModelEdit;
 	let selection = item.source.range;
 	switch (item.kind) {
@@ -88,7 +89,7 @@ export function createCartMapMove(item: CartMapItem, x: number, y: number): Edit
 	}
 	// Explicit moves carry their selection through the document's existing edit
 	// history. Unrelated source replacements still clear tracked source identity.
-	return { ...edit, beforeEditState: cartMapEditSelection.of({ ...item.source.range }), computeAfterEditState: changes => cartMapEditSelection.of({
+	return { ...edit, beforeEditState: cartMapEditSelection.of({ ...item.source.range }, source), computeAfterEditState: changes => cartMapEditSelection.of({
 		start: mapTextOffset(selection.start, changes, 1), end: mapTextOffset(selection.end, changes, -1),
-	}) };
+	}, source) };
 }

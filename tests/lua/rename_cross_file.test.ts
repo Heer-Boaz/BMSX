@@ -1,3 +1,4 @@
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -6,7 +7,6 @@ import { createLuaSemanticFrontendFromSnapshot } from '../../ide/editor/contrib/
 import { getOrCreateSemanticProject, resetSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { CrossFileRenameManager } from '../../ide/workbench/contrib/code_editor/rename/operations';
 import { buildCodeTabId } from '../../ide/workbench/ui/tab/id';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
@@ -62,15 +62,11 @@ test('cross file rename updates a retained background model without opening an e
 		domain: SYSTEM_RESOURCE_DOMAIN,
 		path: 'usage.lua',
 	})!;
-	const resourceTab = new ResourceViewerInput({
-			resource: usageResource,
-			lines: [],
-			error: '',
-			title: 'usage.lua',
-	});
-	editorTabGroup.initialize(resourceTab);
+	const resourceTab = new ResourceViewerInput(sources, usageResource);
+	const group = createTestEditorGroup();
+	group.model.initialize(resourceTab);
 	t.after(() => {
-		editorTabGroup.clear();
+		group.dispose();
 			editorTextModelService.clear();
 	});
 
@@ -93,9 +89,9 @@ test('cross file rename updates a retained background model without opening an e
 	const usageModel = editorTextModelService.get(usageResource)!;
 	assert.equal(usageModel.dirty, true);
 	assert.equal(usageModel.buffer.getText(), 'print(worldState.value)');
-	assert.equal(editorTabGroup.tabs.length, 1);
-	assert.equal(editorTabGroup.activeTab, resourceTab);
-	assert.equal(editorTabGroup.findById(buildCodeTabId(usageResource)), undefined);
+	assert.equal(group.model.tabs.length, 1);
+	assert.equal(group.model.activeTab, resourceTab);
+	assert.equal(group.model.findById(buildCodeTabId(usageResource)), undefined);
 
 	const updatedData = getOrCreateSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN).getFileData('usage.lua');
 	assert.ok(updatedData);

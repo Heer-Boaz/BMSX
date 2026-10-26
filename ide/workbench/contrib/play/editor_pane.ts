@@ -13,7 +13,7 @@ import { GameInputControl } from '../game_view/game_input';
 import type { PlayEditorInput } from './editor_input';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { ContextMenuController } from '../../services/context_menu/controller';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
@@ -39,8 +39,8 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly details = new WorkbenchPropertyInspector<PlayDetailsProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	public constructor(private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		navigation: EditorNavigationController) {
-		super();
+		navigation: EditorNavigationController, scope: InputFocusScope) {
+		super(scope);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.actions.focusTarget.previous = this.focusTarget;

@@ -26,7 +26,7 @@ import {
 	handleScenarioLabKeyboardInput,
 } from './keyboard';
 import { drawScenarioLab } from './render';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from './pointer';
@@ -86,8 +86,9 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		surfaces: WorkbenchSurfaceService,
 		paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>,
+		scope: InputFocusScope,
 	) {
-		super();
+		super(scope);
 		this.targetInspection = new ScenarioTargetInspection(this.resultsFocus, commands, contextMenu, surfaces, paneSurface, workArea);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.rowFeedback = new ScenarioLabRowFeedback(surfaces, paneSurface, workArea, this.focusTarget, this.resultsFocus);

@@ -5,11 +5,13 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../ui/tab/model';
-import type { InputFocusTarget } from '../../../input/focus';
+import type { InputFocusScope, InputFocusTarget } from '../../../input/focus';
 import type { RuntimeTransport } from '../../../runtime/transport';
 
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
+	/** Scope of a concrete control borrowed by this pane, when separate from its group scope. */
+	public get inputScope(): InputFocusScope | undefined { return undefined; }
 	protected contentBounds!: Readonly<RectBounds>;
 	/** Authoring pauses gameplay, including host-only tools. Live preview panes explicitly release this hold. */
 	public get suspendsRuntime(): boolean { return true; }
@@ -35,7 +37,7 @@ export abstract class EditorPane<TInput extends EditorInput> {
 		this.inputValue = input;
 		this.contentBounds = bounds;
 		this.activate();
-		if (selection !== undefined || navigationSelection !== undefined) this.setOptions(selection, navigationSelection);
+		this.setOptions(selection, navigationSelection);
 	}
 
 	/** Selection options belong to the concrete view, never to input attachment. */

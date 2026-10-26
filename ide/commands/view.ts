@@ -1,3 +1,4 @@
+import type { EditorGroupView } from '../workbench/services/editor/editor_group';
 import { openHome } from '../workbench/contrib/home/editor_input';
 import { workspaceState } from '../workbench/workspace/state';
 import type { RuntimeFaultState } from '../runtime/fault_state';
@@ -16,7 +17,6 @@ import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { openSourceView } from '../workbench/contrib/source_views/quick_access';
 import { hasSceneSourceDefinitions } from '../workbench/contrib/scene_editor/source';
-import { editorTabGroup } from '../workbench/ui/tab/group_model';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import { showOpenEditors } from '../workbench/services/editor/open_editors';
 
@@ -60,23 +60,23 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 	}
 }
 
-export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId): void {
+export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId, group: EditorGroupView): void {
 	switch (command) {
-		case 'home': openHome(editor.editorPanes, workspaceState.projectRootPath); return;
+		case 'home': openHome(group, workspaceState.projectRootPath); return;
 		case 'animation': editor.animations.open(); return;
-		case 'hostError': openHostError(editor.editorPanes, fault.hostFrameFailure!); return;
-		case 'romInspector': openRomInspector(editor.editorPanes, editor.quickInput, sources); return;
-		case 'events': openEventViewer(editor.editorPanes, editor.events); return;
-		case 'gpuDebugger': openGpuDebugger(editor.editorPanes, editor.gpu); return;
-		case 'gteDebugger': openGteDebugger(editor.editorPanes, editor.gte); return;
+		case 'hostError': openHostError(group, fault.hostFrameFailure!); return;
+		case 'romInspector': openRomInspector(group, editor.quickInput, sources); return;
+		case 'events': openEventViewer(group, editor.events); return;
+		case 'gpuDebugger': openGpuDebugger(group, editor.gpu); return;
+		case 'gteDebugger': openGteDebugger(group, editor.gte); return;
 		case 'terminal':
 			editor.terminal.open();
-			openTerminal(editor.editorPanes);
+			openTerminal(group);
 			return;
 		case 'actorLab': editor.actorLab.open(); return;
-		case 'gameView': openGameView(editor.editorPanes); return;
-		case 'conversations': openObservedConversation(editor.editorPanes, editor.observedConversation, editor.quickInput); return;
-		case 'assistant': openAssistant(editor.editorPanes, editor.assistant); return;
+		case 'gameView': openGameView(group); return;
+		case 'conversations': openObservedConversation(group, editor.observedConversation, editor.quickInput); return;
+		case 'assistant': openAssistant(group, editor.assistant); return;
 		case 'resources':
 			editor.resourcePanel.togglePanel();
 			return;
@@ -84,7 +84,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			editor.resourcePanel.show();
 			return;
 		case 'problems':
-			toggleProblemsPanel(editor.editorPanes);
+			toggleProblemsPanel(group);
 			return;
 		case 'behaviorLens':
 			editor.behaviorLens.open();
@@ -93,9 +93,9 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			editor.behaviorLens.open(null, { pinned: false });
 			return;
 		case 'keepEditor':
-			editorTabGroup.pin(editorTabGroup.activeTab);
+			group.model.pin(group.model.activeTab);
 			return;
-		case 'openEditors': showOpenEditors(editor.editorPanes, editor.quickInput); return;
+		case 'openEditors': showOpenEditors(group, editor.quickInput); return;
 		case 'behaviorLens.actionEffects':
 			editor.behaviorLens.open('action_effect');
 			return;
@@ -113,7 +113,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			editor.scenarioLab.open();
 			return;
 		case 'sceneEditor':
-			openSourceView(sources, editor.quickInput, {
+			openSourceView(group, sources, editor.quickInput, {
 				title: 'SCENE EDITOR', accepts: hasSceneSourceDefinitions,
 				openResource: resource => editor.sceneEditor.openResource(resource),
 			});

@@ -4,14 +4,13 @@ import { resolveAemEditorInput } from '../aem/controller';
 import { WORKBENCH_AEM_EDITOR_ID } from '../aem/editor_input';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resolveTextCodeEditorInput, resolveLuaCodeEditorInput } from '../../ui/code_tab/io';
-import { resolveResourceViewerInput } from './view_tabs';
 import {
 	ResourceEditorResolver,
 	type ResourceEditorRegistration,
 } from '../../services/editor/resource_editor_resolver';
 
 import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
-import { WORKBENCH_RESOURCE_VIEWER_ID } from './editor_input';
+import { ResourceViewerInput, WORKBENCH_RESOURCE_VIEWER_ID } from './editor_input';
 
 /** Built-in resource editor contributions, ordered from specific to general. */
 export function createResourceEditorResolver(
@@ -46,7 +45,7 @@ export function createResourceEditorResolver(
 		{
 			id: WORKBENCH_RESOURCE_VIEWER_ID,
 			selector: { kind: 'all' },
-			createEditorInput: resource => resolveResourceViewerInput(sources, resource),
+			createEditorInput: resource => new ResourceViewerInput(sources, resource),
 		},
 	];
 	return new ResourceEditorResolver(registrations);

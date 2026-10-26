@@ -1,4 +1,3 @@
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 
@@ -14,7 +13,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	await press('ControlLeft', 'KeyV');
 	check(ide.editor.quickInput.model.list.rows.length === 1, 'behavior navigation: actual Moon source is selected');
 	await press('Enter');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior navigation: selected lens missing');
 	check(lens.workingCopy.resource.path === 'enemies/moon_death_ray.lua', 'behavior navigation: actual cart source model');
 	const state = lens.view.presentation;
@@ -34,7 +33,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	check(document.view.cursorRow === 79, 'behavior navigation: keyboard remains responsive after the idle semantic query');
 	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, lens.title);
-	check(getActiveTab() === lens, 'behavior navigation: palette can reopen the retained view after parameter help');
+	check(ide.editor.editorGroup.model.activeTab === lens, 'behavior navigation: palette can reopen the retained view after parameter help');
 	check(cycles() === position, 'behavior navigation: source navigation does not run or mutate the paused machine');
 	harness.openLuaSource('scenes/root.lua');
 }

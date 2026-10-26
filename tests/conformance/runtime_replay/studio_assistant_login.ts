@@ -2,7 +2,6 @@ import { AssistantHttpConnection } from '../../../ide/browser/assistant_connecti
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { submitAssistantText } from './studio_assistant_navigation';
 import { setFieldText } from '../../../ide/editor/ui/inline/text_field';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 
@@ -20,7 +19,7 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	await press('ControlRight', 'ShiftRight'); await test.runPaletteCommand('Run: Pause');
 	ide.editor.setFontVariant('tiny');
 	await test.runPaletteCommand('View: Codex Assistant');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
 	const conversation = ide.editor.assistant;
 	await submitAssistantText(test, 'Keep this draft; do not submit.');
 	// The implicit attempt is the ordinary browser method, and the destination it publishes is
@@ -57,7 +56,7 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	await until(() => conversation.state === 'ready', 'login: new process resumes the private account, not conversation authority');
 	check(JSON.stringify(conversation.account) === JSON.stringify(account), 'the explicit reconnect reads the persisted account');
 	await until(() => conversation.usage?.weeklyRemaining === weeklyRemaining, 'login: reconnect refreshes the account quota without inference');
-	await until(() => !(getActiveTab() as typeof view).commandPending, 'login: history finished');
+	await until(() => !(ide.editor.editorGroup.model.activeTab as typeof view).commandPending, 'login: history finished');
 	await press('Escape');
 	check(conversation.entries.every(entry => entry.kind !== 'user'), 'earlier drafts are not silently replayed');
 	await submitAssistantText(test, '/logout');
@@ -68,7 +67,7 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	await submitAssistantText(test, '/history');
 	await until(() => conversation.state === 'ready', 'login: reconnect after Sign out needs new authorization');
 	check(conversation.account!.requiresLogin && !conversation.account!.connected && !conversation.canSend, 'retired credentials cannot reopen prompt admission');
-	await until(() => !(getActiveTab() as typeof view).commandPending, 'login: final history finished');
+	await until(() => !(ide.editor.editorGroup.model.activeTab as typeof view).commandPending, 'login: final history finished');
 	await press('Escape');
 	await press('ControlLeft', 'KeyW');
 	await renderer.finish(); await ide.editor.shutdown();

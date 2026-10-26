@@ -1,3 +1,4 @@
+import type { EditorEditSource } from '../../../editor/model/edit_state';
 import { BehaviorSourceIndex } from './source_index';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -67,6 +68,7 @@ export type BehaviorLensStateGraph = {
 
 /** Source selection belongs to the input, never to a visible list's row number. */
 export type BehaviorLensViewState = {
+	readonly editSource: EditorEditSource;
 	readonly resource: BehaviorSourceDocument['resource'];
 	document: BehaviorSourceDocument;
 	definitionRowKey: BehaviorSourceRowKey | null;
@@ -106,6 +108,7 @@ export function createBehaviorLensStateGraph(): BehaviorLensStateGraph {
 export function createBehaviorLensViewState(document: BehaviorSourceDocument, model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind'],
 	resolveModel: (path: string) => EditorTextModel): BehaviorLensViewState {
 	const view: BehaviorLensViewState = {
+		editSource: Symbol('behavior-view'),
 		resource: document.resource,
 		document: { ...document, definitions: [] },
 		definitionRowKey: null,

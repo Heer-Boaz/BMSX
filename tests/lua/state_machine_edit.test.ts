@@ -60,9 +60,9 @@ test('retarget preparation captures exact source and typed proof before Source n
 	f.view.selection = null;
 	f.model.history.applyEdits(new Map([[f.model, plan]])); f.refresh(); f.checkSelection('../other');
 	assert.equal(f.model.buffer.getText(), expected); assert.equal(f.model.version, version + 1);
-	f.model.undo(); f.refresh(); f.checkSelection('../active');
+	f.model.undo(f.view.editSource); f.refresh(); f.checkSelection('../active');
 	assert.equal(f.model.buffer.getText(), original); assert.equal(f.model.canUndo, false);
-	f.model.redo(); f.refresh(); f.checkSelection('../other'); assert.equal(f.model.buffer.getText(), expected);
+	f.model.redo(f.view.editSource); f.refresh(); f.checkSelection('../other'); assert.equal(f.model.buffer.getText(), expected);
 });
 
 test('retarget preparation retains its source version rather than accepting a later generation', t => {
@@ -72,7 +72,7 @@ test('retarget preparation retains its source version rather than accepting a la
 	const changed = f.model.buffer.getText(), version = f.model.version;
 	assert.throws(() => f.model.history.applyEdits(new Map([[f.model, plan]])), EditorWorkspaceEditConflict);
 	assert.equal(f.model.buffer.getText(), changed); assert.equal(f.model.version, version);
-	f.model.undo(); assert.equal(f.model.buffer.getText(), FSM_RETARGET_SOURCE); assert.equal(f.model.canUndo, false);
+	f.model.undo(f.view.editSource); assert.equal(f.model.buffer.getText(), FSM_RETARGET_SOURCE); assert.equal(f.model.canUndo, false);
 });
 
 test('imported transition edits and source bookmarks belong to the literal, not the registration or callback binding', t => {
@@ -100,7 +100,7 @@ test('imported transition edits and source bookmarks belong to the literal, not 
 		assert.equal(f.input.isDirty(), false);
 		for (const direction of ['undo', 'redo', 'undo', 'redo'] as const) {
 			const owner = f.service.history.findModel(f.input.getWorkingCopies(), direction)!;
-			assert.equal(owner, f.model); owner[direction](); f.refresh();
+			assert.equal(owner, f.model); owner[direction](f.view.editSource); f.refresh();
 			f.checkSelection(direction === 'undo' ? '../active' : '../other');
 			assert.equal(f.model.buffer.getText(), direction === 'undo' ? original : changed);
 		}
@@ -108,7 +108,7 @@ test('imported transition edits and source bookmarks belong to the literal, not 
 		f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: 'return function(' }]);
 		f.refresh();
 		assert.equal(f.service.history.findModel(f.input.getWorkingCopies(), 'undo'), f.model);
-		f.model.undo(); f.refresh(); assert.equal(f.model.buffer.getText(), changed);
+		f.model.undo(f.view.editSource); f.refresh(); assert.equal(f.model.buffer.getText(), changed);
 	}
 });
 
@@ -122,8 +122,8 @@ test('retarget history restores exact direct, wrapped and callback evidence in e
 			assert.equal(f.model.buffer.getText(), expected, 'all exterior bytes, comments, wrappers and extra returns survive');
 			assert.equal(f.model.version, 2, 'one edit, one document history element');
 			for (const action of ['edit', 'undo', 'redo', 'undo', 'redo']) {
-				if (action === 'undo') f.model.undo();
-				if (action === 'redo') f.model.redo();
+				if (action === 'undo') f.model.undo(f.view.editSource);
+				if (action === 'redo') f.model.redo(f.view.editSource);
 				f.refresh();
 				f.checkSelection(action === 'undo' ? '../active' : '../other');
 				assert.equal(f.model.dirty, action !== 'undo');
@@ -139,10 +139,10 @@ test('long strings, quote delimiters, UTF-16 and CRLF still resolve the replaced
 		f.edit(); f.refresh();
 		f.checkSelection('../other');
 		assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), value[0] === '"' ? '"../other"' : "'../other'");
-		f.model.undo(); f.refresh();
+		f.model.undo(f.view.editSource); f.refresh();
 		f.checkSelection('../active');
 		assert.equal(f.model.buffer.getText(), source);
-		f.model.redo(); f.refresh(); f.checkSelection('../other');
+		f.model.redo(f.view.editSource); f.refresh(); f.checkSelection('../other');
 	}
 });
 
@@ -156,24 +156,24 @@ test('hidden edits map proof coordinates, not history values; identical inserted
 	f.model.pushEditOperations([{ offset, deleteLength: 0, text: "\tif actor.extra then return '../other' end\n" }]);
 	assert.equal(f.view.document, document, 'content events never reparse a hidden input');
 	f.refresh(); f.checkSelection('../other', 2);
-	f.model.undo(); f.model.undo(); f.refresh(); f.checkSelection('../other');
-	const record = f.model.undo()!;
+	f.model.undo(f.view.editSource); f.model.undo(f.view.editSource); f.refresh(); f.checkSelection('../other');
+	const record = f.model.undo(f.view.editSource)!;
 	assert.ok(record.afterEditState!.is(behaviorSourceEditState));
 	assert.ok(record.afterEditState.value.kind === 'state-outcome');
 	assert.equal(JSON.stringify(record.afterEditState.value), pending, 'mapped live coordinates did not alias history');
 	assert.deepEqual(Object.keys(record.afterEditState.value).sort(), ['kind', 'path', 'tracked']);
 	assert.deepEqual(Object.keys(record.afterEditState.value.tracked).sort(), ['binding', 'bindingKind', 'callback', 'kind', 'slotKind', 'statementStart']);
-	f.model.redo(); f.model.undo(); f.refresh(); f.checkSelection('../active');
+	f.model.redo(f.view.editSource); f.model.undo(f.view.editSource); f.refresh(); f.checkSelection('../active');
 });
 
 test('shared FSM source Undo does not retarget another definition view', t => {
 	const f = fixture(t, FSM_RETARGET_SOURCE, 1, 'left');
 	f.edit(); f.refresh();
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
-	f.model.undo(); f.refresh();
+	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
 	assert.equal(f.view.selection!.rowKey, f.view.definitionRowKey);
-	f.model.redo(); f.refresh();
+	f.model.redo(f.view.editSource); f.refresh();
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
 	assert.equal(f.view.selection!.rowKey, f.view.definitionRowKey);
 });
@@ -182,7 +182,7 @@ test('ordinary replacement of binding, return, callback or parent still deletes 
 	for (const part of ['binding', 'return', 'callback', 'parent'] as const) for (const hiddenUndo of [false, true]) {
 		const f = fixture(t, FSM_RETARGET_SOURCE, 0, 'right', part === 'binding' ? 'direct' : 'update', part === 'binding' ? 0 : 1);
 		f.edit(); f.refresh();
-		f.model.undo(); f.model.redo(); // Deliver a new pending history value without projection.
+		f.model.undo(f.view.editSource); f.model.redo(f.view.editSource); // Deliver a new pending history value without projection.
 		const selected = f.view.selection!;
 		assert.ok(selected.kind === 'state-outcome');
 		const proof = selected.outcome.proof;
@@ -191,10 +191,10 @@ test('ordinary replacement of binding, return, callback or parent still deletes 
 		const span = luaSourceRangeToTextRange(f.model.buffer, range);
 		const text = readLuaSourceRange(f.model.buffer, range);
 		f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text }]);
-		if (hiddenUndo) f.model.undo();
+		if (hiddenUndo) f.model.undo(f.view.editSource);
 		f.refresh(); assert.equal(f.view.selection, null, `${part}, hidden Undo ${hiddenUndo}`);
-		if (!hiddenUndo) { f.model.undo(); f.refresh(); assert.equal(f.view.selection, null); }
-		f.model.undo(); f.refresh(); f.checkSelection('../active');
+		if (!hiddenUndo) { f.model.undo(f.view.editSource); f.refresh(); assert.equal(f.view.selection, null); }
+		f.model.undo(f.view.editSource); f.refresh(); f.checkSelection('../active');
 	}
 });
 
@@ -202,7 +202,7 @@ test('unannotated literal replacement never gains the explicit retarget selectio
 	const f = fixture(t);
 	f.model.pushEditOperations([createLuaStringValueEdit(f.model.buffer, f.target.file.chunk.locations, f.target.literal, f.target.text)]);
 	f.refresh(); assert.equal(f.view.selection, null);
-	f.model.undo(); f.refresh(); assert.equal(f.view.selection, null);
+	f.model.undo(f.view.editSource); f.refresh(); assert.equal(f.view.selection, null);
 });
 
 test('entry bookmarks use the same typed history and distinguish shared initial declarations', t => {
@@ -214,13 +214,13 @@ test('entry bookmarks use the same typed history and distinguish shared initial 
 	const before = captureBehaviorSourceBookmark(f.view, f.view.selection);
 	const after = copyBehaviorSourceBookmark(before);
 	const prefix = '-- history probe\n';
-	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }], behaviorSourceEditState.of(before), changes => {
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }], behaviorSourceEditState.of(before, f.view.editSource), changes => {
 		mapBehaviorSourceBookmark(after, f.model.resource, changes);
-		return behaviorSourceEditState.of(after);
+		return behaviorSourceEditState.of(after, f.view.editSource);
 	});
 	for (const action of ['edit', 'undo', 'redo']) {
-		if (action === 'undo') f.model.undo();
-		if (action === 'redo') f.model.redo();
+		if (action === 'undo') f.model.undo(f.view.editSource);
+		if (action === 'redo') f.model.redo(f.view.editSource);
 		f.refresh();
 		assert.equal(f.view.selection?.kind, 'state-entry');
 		assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), "initial = 'idle'");

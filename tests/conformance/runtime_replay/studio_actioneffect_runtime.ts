@@ -1,6 +1,5 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behavior_lens/quick_access';
 import type { RuntimeInspectionProperty } from '../../../ide/workbench/contrib/behavior_lens/runtime_properties';
@@ -21,10 +20,10 @@ export async function openRuntimeEffectLens(test: StudioFixture) {
 	check(index >= 0, 'runtime effect: source catalog still offers the unexecuted registration');
 	for (let n = 0; n < index; n += 1) await press('ArrowDown');
 	await press('Enter');
-	const input = getActiveTab();
+	const input = ide.editor.editorGroup.model.activeTab;
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'properties') throw new Error('runtime effect: actual ActionEffect lens required');
 	// Reopening the same input retains its inspector; dismiss it explicitly to use the source lens.
-	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	if (inspector.visible) await press('Escape');
 	check(!inspector.visible, 'runtime effect: source navigation dismisses the previous inspection through its close gesture');
 	return input;
@@ -52,7 +51,7 @@ export async function openRuntimeEffectInspector(test: StudioFixture, component:
 	check(picker.model.list.rows.length === 1,
 		'runtime effect: same effect id on different components remains selectable');
 	await press('Enter');
-	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !picker.visible, 'runtime effect: selected instance opens the existing inspector');
 	const rows: InspectedPropertyRow<RuntimeInspectionProperty>[] = inspector.model.rows;
 	check(rows.find(row => row.element.label === 'PERIOD')!.element.value === String(period), 'runtime effect: actual loaded period, not the source literal 999');

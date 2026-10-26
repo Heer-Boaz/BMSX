@@ -1,12 +1,6 @@
-import { Scrollbar } from './scrollbar';
-import { ScrollbarPointerControl } from './scrollbar_pointer';
-import { pointerCapture } from '../../input/pointer/capture';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { create_rect_bounds } from '../../../machine/ts/common/rect';
-import type { EditorTabId } from './tab/id';
-import type { TabDragState } from './tab/model';
 import type { MenuId } from './top_bar/menu';
-import { createWorkbenchActionBar, type WorkbenchActionBarState } from './action_bar';
 
 type EditorChromeState = {
 	topBarBounds: RectBounds;
@@ -15,20 +9,7 @@ type EditorChromeState = {
 	runtimeTimelineHeight: number;
 	editorRightInset: number;
 	menuEntryBounds: Record<MenuId, RectBounds>;
-	tabBarBounds: RectBounds;
-	tabViewportBounds: RectBounds;
-	tabActions: WorkbenchActionBarState;
-	tabScrollbar: Scrollbar;
-	tabScrollControl: ScrollbarPointerControl;
-	tabButtonBounds: Map<EditorTabId, RectBounds>;
-	tabCloseButtonBounds: Map<EditorTabId, RectBounds>;
-	tabHoverId: EditorTabId | null;
-	tabDragState: TabDragState | null;
-	lastTabClickId: EditorTabId | null;
-	lastTabClickTime: number;
 };
-
-const tabScrollbar = new Scrollbar('horizontal');
 
 export const editorChromeState: EditorChromeState = {
 	topBarBounds: create_rect_bounds(),
@@ -43,15 +24,4 @@ export const editorChromeState: EditorChromeState = {
 		view: create_rect_bounds(),
 		tools: create_rect_bounds(),
 	},
-	tabBarBounds: create_rect_bounds(),
-	tabViewportBounds: create_rect_bounds(),
-	tabActions: createWorkbenchActionBar('editorTabs.title'),
-	tabScrollbar,
-	tabScrollControl: new ScrollbarPointerControl(pointerCapture),
-	tabButtonBounds: new Map<EditorTabId, RectBounds>(),
-	tabCloseButtonBounds: new Map<EditorTabId, RectBounds>(),
-	tabHoverId: null,
-	tabDragState: null,
-	lastTabClickId: null,
-	lastTabClickTime: 0,
 };

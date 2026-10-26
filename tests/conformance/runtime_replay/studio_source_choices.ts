@@ -3,7 +3,6 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { referenceState } from '../../../ide/editor/contrib/references/state';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { inputFocus } from '../../../ide/input/focus';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 import { checkQuickPickHighlightRuns } from './studio_quick_pick_highlights';
 
@@ -101,7 +100,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	definitions.undo();
 	check(picker.visible, 'A06: the expired source generation cannot close a newer file picker');
 	await press('Escape');
-	check(editorTextModelService.get(usage.resource) === usage && getActiveTab().kind === 'code_editor',
+	check(editorTextModelService.get(usage.resource) === usage && ide.editor.editorGroup.model.activeTab.kind === 'code_editor',
 		'A06: choosing sources retains the same working copy and ordinary editor pane');
 	check(test.cycles() === cycles && ide.sources.currentBlua32Media === media, 'A06: source choices never run or replace guest media');
 

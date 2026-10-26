@@ -14,6 +14,6 @@ export type ResourceViewerContent = {
 
 /** Input-owned view state survives replacement of the source-derived content. */
 export type ResourceViewerState = {
-	content: ResourceViewerContent;
+	readonly content: ResourceViewerContent;
 	scroll: number;
 };

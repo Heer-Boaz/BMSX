@@ -6,7 +6,6 @@ import { testStudioFsmInitial } from './studio_fsm_initial';
 import { testStudioFsmBookmarks } from './studio_fsm_bookmarks';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { queryDefinitionsAt } from '../../../ide/editor/contrib/definitions/query';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, codePositionBounds, type StudioFixture } from './studio_fixture';
@@ -36,9 +35,9 @@ const CASES = {
 	},
 } as const;
 
-function assertSourcePosition(path: string, line: number, column: number, route: string): void {
+function assertSourcePosition(test: StudioFixture, path: string, line: number, column: number, route: string): void {
 	const { model, view } = activeCodeEditor;
-	check(getActiveTab().kind === 'code_editor' && model.resource.path === path
+	check(test.ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && model.resource.path === path
 		&& view.cursorRow === line - 1 && view.cursorColumn === column - 1,
 		`${route}: expected ${path}:${line}:${column}, got ${model.resource.path}:${view.cursorRow + 1}:${view.cursorColumn + 1}`);
 	check(view.selectionAnchor === null || (view.selectionAnchor.row === view.cursorRow && view.selectionAnchor.column === view.cursorColumn),
@@ -89,7 +88,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 				top: menu.viewport.offsetTop + row.top, bottom: menu.viewport.offsetTop + row.bottom }, 6);
 		}
 		for (let index = 0; index < 3; index += 1) await frame();
-		assertSourcePosition(spec.path, (declaration.row + 1), (declaration.column + 1), `${cart} ${route}`);
+		assertSourcePosition(test, spec.path, (declaration.row + 1), (declaration.column + 1), `${cart} ${route}`);
 	}
 	// A real subsequent gesture still selects text; navigation does not suppress
 	// the button until a guessed timeout or consume the next physical press.
@@ -109,7 +108,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 
 	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, spec.behavior);
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('navigation: actual behavior lens missing');
 	const view = lens.view;
 	const sourceLines = lens.workingCopy.buffer.getText().split('\n');
@@ -127,7 +126,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	const presentation = view.presentation;
 	if (presentation.kind === 'state-graph') {
 		await click(presentation.actionBar.items[0].bounds, 6);
-		assertSourcePosition(spec.sourcePath, sourceLine, sourceColumn, `${cart} held FSM source action`);
+		assertSourcePosition(test, spec.sourcePath, sourceLine, sourceColumn, `${cart} held FSM source action`);
 	} else {
 		if (presentation.kind !== 'graph') throw new Error('navigation: this fixture requires the concrete BT graph');
 		const viewport = presentation.viewport;
@@ -138,7 +137,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 			bottom: card.bounds.bottom + viewport.bounds.top - viewport.scrollY };
 		await click(bounds);
 		await click(bounds, 6);
-		assertSourcePosition(spec.sourcePath, sourceLine, sourceColumn, `${cart} held lens double-click`);
+		assertSourcePosition(test, spec.sourcePath, sourceLine, sourceColumn, `${cart} held lens double-click`);
 	}
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		`${cart}: navigation changes neither source nor paused machine/media`);

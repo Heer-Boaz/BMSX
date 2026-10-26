@@ -1,3 +1,4 @@
+import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import { semanticSnapshot } from '../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
@@ -28,6 +29,7 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
 	selectBehaviorLensDefinition(view, document.definitions[definition].rowKey);
+	const input = new BehaviorLensInput(model, view, () => assert.fail('BT-only fixtures do not run an FSM layout worker'));
 	const bounds = { left: 0, top: 24, right: 384, bottom: 276 };
 	prepareBehaviorLensLayout(view, bounds);
 	assert.ok(view.presentation.kind === 'graph');
@@ -47,6 +49,6 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 		model.pushEditOperations(createBehaviorTreeChildMoveEdits(model.buffer, member, member.index + direction));
 		refresh();
 	};
-	t.after(() => { view.source.release(); model.dispose(); });
-	return { model, view, graph, viewport, refresh, select, move, get analysis() { return analysis; } };
+	t.after(() => { input.dispose(); model.dispose(); });
+	return { model, input, view, graph, viewport, refresh, select, move, get analysis() { return analysis; } };
 }

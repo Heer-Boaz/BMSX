@@ -22,7 +22,7 @@ export function buildSymbolQuickPickItems(symbols: readonly LuaSymbolEntry[], sc
 }
 
 export function openSymbolSearch(editor: CartEditor, sources: RuntimeSourceState, scope: 'file' | 'workspace'): void {
-	const resource = getActiveCodeTabContext().model.resource;
+	const resource = getActiveCodeTabContext(editor.editorGroup).model.resource;
 	clearReferenceHighlights();
 	editor.quickInput.pick(scope === 'file' ? `SYMBOLS: ${resource.path}` : 'GO TO WORKSPACE SYMBOL',
 		scope === 'file' ? 'Type a symbol name' : 'Symbol name, then source path', (_origin, lifetime) => {

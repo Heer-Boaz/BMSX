@@ -15,8 +15,6 @@ import { inputFocus } from '../../ide/input/focus';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createBlua32SystemSourceImage, resolveRuntimeResource } from '../../ide/runtime/sources';
 import { RuntimeIdeState } from '../../ide/workbench/state';
-import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import { closeTab, getActiveTab, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { WorkspaceEditReviewPane } from '../../ide/workbench/contrib/edit_review/editor_pane';
@@ -48,10 +46,10 @@ function fixture(t: TestContext) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	openEditorTab(editor.editorPanes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
+	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	t.after(async () => { problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
-	const code = getActiveTab()!, model = activeCodeEditor.model!;
+	const code = editor.editorGroup.model.activeTab!, model = activeCodeEditor.model!;
 	assert.ok(code.kind === 'code_editor');
 	const cycles = host.runtime.machine.scheduler.nowCycles;
 	const key = (code: string, down = true, modifiers = KeyModifier.none) => editor.dispatchKey(new KeyInputEvent(code, modifiers, false, down));
@@ -69,7 +67,7 @@ function fixture(t: TestContext) {
 			location: { model, version: model.version, offset: text.indexOf(`-- captured consumer ${i}`) },
 		})) };
 		const input = new WorkspaceEditReviewInput(proposal, evidence);
-		openEditorTab(editor.editorPanes, input); editor.update(0); return input;
+		editor.editorGroup.openEditor(input); editor.update(0); return input;
 	};
 	return { editor, host, sources, code, model, source, cycles, key, press, pointer, show };
 }
@@ -85,14 +83,14 @@ test('the retained review tab exposes exact pending bytes and captured Source wi
 	const picker = f.editor.quickInput;
 	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, review.evidence.items.length);
 	picker.model.list.selectionIndex = 17; await picker.accept(); await setImmediate(); f.editor.update(0);
-	assert.ok(getActiveTab() === f.code && activeCodeEditor.model === f.model);
+	assert.ok(f.editor.editorGroup.model.activeTab === f.code && activeCodeEditor.model === f.model);
 	const position = { row: 0, column: 0 }; f.model.buffer.positionAt(location.offset, position);
 	assert.equal(activeCodeEditor.view!.cursorRow, position.row); assert.equal(activeCodeEditor.view!.cursorColumn, position.column);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
-	assert.ok(editorTabGroup.tabs.includes(review));
+	assert.ok(f.editor.editorGroup.model.tabs.includes(review));
 	assert.equal(review.proposal.state, 'pending');
-	closeTab(f.editor.editorPanes, f.code.id); setActiveTab(f.editor.editorPanes, review.id); f.editor.update(0);
-	assert.equal(getActiveTab(), review); assert.equal(review.proposal.state, 'pending');
+	f.editor.editorGroup.close(f.code.id); f.editor.editorGroup.activate(review.id); f.editor.update(0);
+	assert.equal(f.editor.editorGroup.model.activeTab, review); assert.equal(review.proposal.state, 'pending');
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
 
@@ -108,13 +106,13 @@ test('physical Apply is release-paired, applies one exact working-copy edit, and
 	f.pointer(apply.bounds, 0, 0, PointerButton.Primary); await setImmediate(); f.editor.update(0);
 	assert.equal(f.model.buffer.getText(), f.source.replace("return 'before'", "return 'after'"));
 	assert.equal(f.model.version, 2); assert.equal(review.proposal.state, 'applied');
-	assert.equal(getActiveTab(), f.code); assert.ok(editorTabGroup.tabs.includes(review));
-	setActiveTab(f.editor.editorPanes, review.id); f.editor.update(0);
+	assert.equal(f.editor.editorGroup.model.activeTab, f.code); assert.ok(f.editor.editorGroup.model.tabs.includes(review));
+	f.editor.editorGroup.activate(review.id); f.editor.update(0);
 	assert.equal(f.editor.commands.isEnabled('workspaceEditReview.source'), false);
 	assert.equal(f.editor.commands.isEnabled('workspaceEditReview.apply'), false);
 	f.editor.commands.execute('workspaceEditReview.impacts'); f.editor.update(0);
 	assert.ok(review.viewport.scrollTop > 0, 'settled evidence remains readable through its actual navigation command');
-	setActiveTab(f.editor.editorPanes, f.code.id); f.editor.update(0); f.press('KeyZ', KeyModifier.ctrl);
+	f.editor.editorGroup.activate(f.code.id); f.editor.update(0); f.press('KeyZ', KeyModifier.ctrl);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 	f.press('KeyZ', KeyModifier.ctrl | KeyModifier.shift);
 	assert.equal(f.model.buffer.getText(), f.source.replace("return 'before'", "return 'after'"));
@@ -133,19 +131,19 @@ test('Source picker admission owns settlement before outgoing focus can publish 
 	const source = f.model.buffer.getText(), version = f.model.version;
 	f.press('Enter');
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
-	assert.equal(getActiveTab(), review);
+	assert.equal(f.editor.editorGroup.model.activeTab, review);
 });
 
 test('Discard settles retained evidence without editing and closing that tab does not close its canonical working copy', t => {
 	const f = fixture(t), review = f.show();
 	f.editor.commands.execute('workspaceEditReview.discard'); f.editor.update(0);
-	assert.equal(getActiveTab(), review); assert.equal(review.proposal.state, 'discarded');
+	assert.equal(f.editor.editorGroup.model.activeTab, review); assert.equal(review.proposal.state, 'discarded');
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 	assert.equal(f.editor.commands.isEnabled('workspaceEditReview.source'), false);
 	assert.equal(f.editor.commands.isEnabled('workspaceEditReview.impacts'), true);
-	closeTab(f.editor.editorPanes, review.id); f.editor.update(0);
+	f.editor.editorGroup.close(review.id); f.editor.update(0);
 	assert.equal(editorTextModelService.get(f.model.identity), f.model);
-	assert.equal(getActiveTab(), f.code);
+	assert.equal(f.editor.editorGroup.model.activeTab, f.code);
 });
 
 test('source and readonly publication permanently stale the same retained review, never turning captured evidence back into edit authority', t => {
@@ -158,10 +156,10 @@ test('source and readonly publication permanently stale the same retained review
 		assert.equal(f.editor.commands.isEnabled('workspaceEditReview.apply'), false);
 		assert.equal(f.editor.commands.isEnabled('workspaceEditReview.source'), false);
 		f.editor.commands.execute('workspaceEditReview.apply');
-		assert.equal(getActiveTab(), review); assert.equal(review.lines, lines);
-		if (change === 'content') { setActiveTab(f.editor.editorPanes, f.code.id); f.editor.update(0); f.press('KeyZ', KeyModifier.ctrl); }
+		assert.equal(f.editor.editorGroup.model.activeTab, review); assert.equal(review.lines, lines);
+		if (change === 'content') { f.editor.editorGroup.activate(f.code.id); f.editor.update(0); f.press('KeyZ', KeyModifier.ctrl); }
 		assert.equal(f.model.buffer.getText(), f.source); assert.equal(review.proposal.state, 'stale');
-		closeTab(f.editor.editorPanes, review.id); f.editor.update(0);
+		f.editor.editorGroup.close(review.id); f.editor.update(0);
 	}
 });
 
@@ -188,7 +186,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} actual Files re
 
 
 test('keyboard re-entry reaches visible review actions when the reading body has no presentation', t => {
-	const f = fixture(t), review = f.show(), pane = f.editor.editorPanes.activePane!;
+	const f = fixture(t), review = f.show(), pane = f.editor.editorGroup.panes.activePane!;
 	// Focus admission is the contract: keep the actual title actions presented
 	// while the reading body has no client area.
 	pane.layout({ left: review.layout.left, top: review.layout.top, right: review.layout.right,
@@ -213,9 +211,9 @@ test('captured Source picker retires on source publication and cannot apply or r
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- subsequent source\n' }]);
 	assert.equal(review.proposal.state, 'stale'); assert.equal(f.editor.quickInput.visible, false);
 	f.press('Enter');
-	assert.equal(getActiveTab(), review); assert.equal(review.proposal.state, 'stale');
+	assert.equal(f.editor.editorGroup.model.activeTab, review); assert.equal(review.proposal.state, 'stale');
 	assert.equal(f.model.version, 2); assert.equal(f.model.buffer.getText(), '-- subsequent source\n' + f.source);
-	setActiveTab(f.editor.editorPanes, f.code.id); f.editor.update(0); f.press('KeyZ', KeyModifier.ctrl);
+	f.editor.editorGroup.activate(f.code.id); f.editor.update(0); f.press('KeyZ', KeyModifier.ctrl);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(review.proposal.state, 'stale');
 });
 
@@ -223,7 +221,7 @@ test('source observations precede review focus admission, including reentrant so
 	const f = fixture(t), origin = inputFocus.admittedTarget!;
 	const stop = origin.onDidBlur(() => f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- during admission\n' }]));
 	const review = f.show(); stop();
-	assert.equal(review.proposal.state, 'stale'); assert.equal(getActiveTab(), review);
+	assert.equal(review.proposal.state, 'stale'); assert.equal(f.editor.editorGroup.model.activeTab, review);
 	assert.equal(f.editor.commands.isEnabled('workspaceEditReview.apply'), false);
 	f.editor.commands.execute('workspaceEditReview.apply');
 	assert.equal(f.model.buffer.getText(), '-- during admission\n' + f.source); assert.equal(f.model.version, 2);
@@ -272,7 +270,7 @@ test('Impacts retains its immutable destination when the whole review initially 
 test('an initially covered review retains an Impacts command destination before any row projection exists', t => {
 	const f = fixture(t);
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
-	const review = f.show(1, 16), pane = f.editor.editorPanes.activePane!;
+	const review = f.show(1, 16), pane = f.editor.editorGroup.panes.activePane!;
 	assert.ok(pane instanceof WorkspaceEditReviewPane);
 	assert.equal(review.rows.length, 0); assert.equal(review.viewport.height, 0);
 	const destination = review.lines.find(line => line.part === 'impacts')!;

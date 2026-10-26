@@ -1,7 +1,5 @@
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from '../editor/ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../navigation/navigation_history';
-import { isTabActive, setActiveTab } from '../workbench/ui/tabs';
-import { editorTabGroup } from '../workbench/ui/tab/group_model';
 import type { CodeEditorInput } from '../workbench/contrib/code_editor/editor_input';
 import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
 import { showEditorMessage } from '../common/feedback_state';
@@ -11,7 +9,6 @@ import { resetBlink } from '../editor/render/caret';
 import { rebuildRuntimeErrorOverlayView } from '../editor/contrib/runtime_error/overlay';
 import { editorPointerState } from '../input/pointer/state';
 import { editorCaretState } from '../editor/ui/view/caret/state';
-import { runtimeErrorState } from '../editor/contrib/runtime_error/state';
 import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import { editorViewState } from '../editor/ui/view/state';
 import { splitText } from '../../machine/ts/common/text_lines';
@@ -26,18 +23,18 @@ import type { SourceStackTraceFrame } from '../runtime/stack_trace';
 import { extractErrorMessage } from '../common/errors';
 import { clamp } from '../../machine/ts/common/clamp';
 import type { CartEditor } from '../cart_editor';
-import type { EditorPanes } from '../workbench/services/editor/editor_panes';
+import type { EditorGroupView } from '../workbench/services/editor/editor_group';
 import type { ResourceIdentity } from '../common/resource';
 import { resetPointerClickTracking } from '../input/pointer/state';
 
 type RuntimeErrorOverlayTarget = { input: CodeEditorInput; overlay: RuntimeErrorOverlay };
 
-function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget | null {
-	const active = editorTabGroup.activeTab;
+function resolveRuntimeErrorOverlayTarget(group: EditorGroupView): RuntimeErrorOverlayTarget | null {
+	const active = group.model.activeTab;
 	if (active?.kind === 'code_editor' && active.context.runtimeErrorOverlay !== null) {
 		return { input: active, overlay: active.context.runtimeErrorOverlay };
 	}
-	for (const input of editorTabGroup.tabs) {
+	for (const input of group.model.tabs) {
 		if (input.kind === 'code_editor' && input.context.runtimeErrorOverlay !== null) {
 			return { input, overlay: input.context.runtimeErrorOverlay };
 		}
@@ -45,12 +42,12 @@ function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget | null {
 	return null;
 }
 
-export function focusRuntimeErrorOverlay(editorPanes: EditorPanes): boolean {
-	const target = resolveRuntimeErrorOverlayTarget();
+export function focusRuntimeErrorOverlay(group: EditorGroupView): boolean {
+	const target = resolveRuntimeErrorOverlayTarget(group);
 	if (!target) {
 		return false;
 	}
-	if (!isTabActive(target.input.id)) setActiveTab(editorPanes, target.input.id);
+	if (group.model.activeTab !== target.input) group.activate(target.input.id);
 	else syncRuntimeErrorOverlayFromContext(target.input.context);
 	const overlay = target.overlay;
 	const navigationCheckpoint = beginNavigationCapture();
@@ -60,7 +57,7 @@ export function focusRuntimeErrorOverlay(editorPanes: EditorPanes): boolean {
 	overlay.copyButtonHovered = false;
 	overlay.layout = null;
 	setActiveRuntimeErrorOverlay(overlay);
-	setExecutionStopHighlightForCurrentContext(overlay.row);
+	setExecutionStopHighlightForCurrentContext(group, overlay.row);
 	activeCodeEditor.view.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorCaretState.cursorRevealSuspended = false;
@@ -77,52 +74,45 @@ function rewrapRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
 	rebuildRuntimeErrorOverlayView(overlay);
 }
 
-export function rewrapRuntimeErrorOverlays(): void {
-	const visited = new Set<RuntimeErrorOverlay>();
-	const activeOverlay = runtimeErrorState.activeOverlay;
-	if (activeOverlay) {
-		visited.add(activeOverlay);
-		rewrapRuntimeErrorOverlay(activeOverlay);
-	}
-	for (const input of editorTabGroup.tabs) {
+export function rewrapRuntimeErrorOverlays(group: EditorGroupView): void {
+	for (const input of group.model.tabs) {
 		if (input.kind !== 'code_editor') continue;
 		const overlay = input.context.runtimeErrorOverlay;
-		if (overlay && !visited.has(overlay)) {
-			visited.add(overlay);
+		if (overlay) {
 			rewrapRuntimeErrorOverlay(overlay);
 		}
 	}
 }
 
-export function clearAllRuntimeErrorOverlays(): void {
-	setActiveRuntimeErrorOverlay(null);
-	for (const input of editorTabGroup.tabs) {
+export function clearAllRuntimeErrorOverlays(group: EditorGroupView): void {
+	for (const input of group.model.tabs) {
 		if (input.kind !== 'code_editor') continue;
+		if (input.context.view === activeCodeEditor.view) setActiveRuntimeErrorOverlay(null);
 		input.context.runtimeErrorOverlay = null;
 	}
-	clearExecutionStopHighlights();
+	clearExecutionStopHighlights(group);
 }
 
-export function setActiveRuntimeErrorOverlayForCurrentContext(overlay: RuntimeErrorOverlay): void {
-	setActiveRuntimeErrorOverlay(overlay);
-	const context = getActiveCodeTabContext();
+export function setActiveRuntimeErrorOverlayForCurrentContext(group: EditorGroupView, overlay: RuntimeErrorOverlay): void {
+	const context = getActiveCodeTabContext(group);
 	if (context) {
 		context.runtimeErrorOverlay = overlay;
+		if (context.view === activeCodeEditor.view) setActiveRuntimeErrorOverlay(overlay);
 	}
 }
 
-export function setExecutionStopHighlightForCurrentContext(row: number): void {
-	setEditorExecutionStopHighlight(row);
-	const context = getActiveCodeTabContext();
+export function setExecutionStopHighlightForCurrentContext(group: EditorGroupView, row: number): void {
+	const context = getActiveCodeTabContext(group);
 	if (context) {
-		context.executionStopRow = runtimeErrorState.executionStopRow;
+		context.executionStopRow = clamp(row, 0, context.model.buffer.getLineCount() - 1);
+		if (context.view === activeCodeEditor.view) setEditorExecutionStopHighlight(context.executionStopRow);
 	}
 }
 
-export function clearExecutionStopHighlights(): void {
-	clearExecutionStopHighlight();
-	for (const input of editorTabGroup.tabs) {
+export function clearExecutionStopHighlights(group: EditorGroupView): void {
+	for (const input of group.model.tabs) {
 		if (input.kind !== 'code_editor') continue;
+		if (input.context.view === activeCodeEditor.view) clearExecutionStopHighlight();
 		input.context.executionStopRow = null;
 	}
 }
@@ -135,8 +125,8 @@ export async function focusExecutionStop(
 ): Promise<number | undefined> {
 	const row = line - 1;
 	const generation = await editor.navigation.focusChunkSource(resource, { row, startColumn: column - 1, endColumn: column - 1 });
-	if (generation !== editor.editorPanes.openGeneration) return undefined;
-	setExecutionStopHighlightForCurrentContext(row);
+	if (generation !== editor.editorGroup.panes.openGeneration) return undefined;
+	setExecutionStopHighlightForCurrentContext(editor.editorGroup, row);
 	centerCursorVertically();
 	return generation;
 }
@@ -173,7 +163,7 @@ export async function navigateToRuntimeErrorFrameTarget(
 ): Promise<void> {
 	try {
 		const generation = await editor.navigation.focusChunkSource(frame.resource);
-		if (generation !== editor.editorPanes.openGeneration) return;
+		if (generation !== editor.editorGroup.panes.openGeneration) return;
 	} catch (error) {
 		showEditorMessage(
 			`Failed to open runtime path: ${extractErrorMessage(error)}`,

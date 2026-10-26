@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -13,7 +12,7 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	await until(() => cycles() > test.runtime.timing.cpuHz * 13, 'test evidence: boot actual cart');
 	await press('ControlRight', 'ShiftRight'); await runPaletteCommand('Run: Pause');
 	await runPaletteCommand('Scenario Lab: Open');
-	const lab = getActiveTab(); if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
+	const lab = ide.editor.editorGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
 	const module = ide.scenarioRuns.collection.roots[0].children[0];
 	harness.openLuaSource(module.resource.path);
 	const document = harness.getActiveEditorDocument().model;
@@ -34,7 +33,7 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	check(run.state === 'failed' && run.failedCount === 1 && run.passedCount === 1, 'test evidence: actual terminal outcomes');
 	await press('Tab'); await press('Home'); await press('ArrowDown');
 	await runPaletteCommand('Scenario Lab: Inspect Test Result');
-	const pane = ide.editor.editorPanes.activePane;
+	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab pane required');
 	check(pane.inspector.visible && pane.inspector.model.rows[2].element.value === source, 'ordinary Details owns the same captured suite evidence');
 	await renderer.capture!('shared-test-result'); await press('Escape');
@@ -43,7 +42,7 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: current }]);
 	const version = document.version, position = cycles(), media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('View: Codex Assistant');
-	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane required');
+	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	const conversation = ide.editor.assistant;
 	await test.click(view.composerBounds); await test.clipboard.writeText('Read the recorded test results. They predate my source edit; do not run or change anything.');
 	await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');

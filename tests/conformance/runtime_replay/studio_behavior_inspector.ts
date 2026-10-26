@@ -1,7 +1,6 @@
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -25,7 +24,7 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.inspection');
-	const lens = getActiveTab();
+	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('inspection: actual BT graph required');
 	const graph = lens.view.presentation, viewport = graph.viewport;
 	await press('Home'); await press('ArrowDown');
@@ -36,7 +35,7 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	const version = model.version, dirty = model.dirty, geometry = viewport.model, x = viewport.scrollX, y = viewport.scrollY;
 	const sourceSelection = lens.view.selection;
 	ide.editor.commands.execute('behaviorLens.details');
-	const pane = ide.editor.editorPanes.activePane as BehaviorLensEditorPane;
+	const pane = ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane;
 	pane.update();
 	const inspector = pane.inspector;
 	check(inspector.model.rowAt(inspector.model.viewport.bounds.top + 1) === 0,
@@ -62,10 +61,10 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	for (let n = 0; n < targetIndex; n += 1) await press('ArrowDown');
 	await click(inspector.actionBar.items[0].bounds, 30);
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === property.element.source!.range.start.line - 1
+	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && activeCodeEditor.view.cursorRow === property.element.source!.range.start.line - 1
 		&& model.version === version && cycles() === position, 'inspection: held Source opens the property, never inserts text or runs the guest');
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === lens && viewport.model === geometry, 'inspection: ordinary navigation Back restores the retained diagram');
+	check(ide.editor.editorGroup.model.activeTab === lens && viewport.model === geometry, 'inspection: ordinary navigation Back restores the retained diagram');
 	if (!hadProblems) await runPaletteCommand('View: Problems Panel');
 	model.undo(); await frame();
 	check(model.buffer.getText() === original, 'inspection: one ordinary Undo removes only the independent fixture');

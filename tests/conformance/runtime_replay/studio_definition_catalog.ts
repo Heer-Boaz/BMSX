@@ -1,6 +1,5 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { readBehaviorDefinitions } from '../../../ide/workbench/contrib/behavior_lens/runtime_definitions';
 import { readActionEffectInstances } from '../../../ide/workbench/contrib/behavior_lens/action_effect_runtime';
@@ -52,7 +51,7 @@ export async function openRegisteredDefinition(test: StudioFixture, kind: 'effec
 		for (let n = 0; n < index; n += 1) await press('ArrowDown');
 		await press('Enter');
 	}
-	const inspector = (test.ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (test.ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !picker.visible, 'catalog: concrete definition opens the existing property inspector');
 	const row = inspector.model.rows[0], measured = row.value;
 	for (let n = 0; n < 10; n += 1) await test.frame();
@@ -69,7 +68,7 @@ export async function testActorlessDefinitionCatalog(test: StudioFixture): Promi
 	const empty = await openRegisteredDefinition(test, 'effect', 'empty');
 	check(empty.model.rows.length === 1, 'catalog: a registered empty definition is real, not unavailable');
 	const retainedRow = empty.model.rows[0];
-	await test.clickTab(getActiveTab().id);
+	await test.clickTab(ide.editor.editorGroup.model.activeTab.id);
 	check(empty.visible && empty.model.rows[0] === retainedRow, 'catalog: focusing the active tab retains its inspector session');
 	const unused = await openRegisteredDefinition(test, 'effect', 'ungranted');
 	check(unused.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '777', 'catalog: loaded unused scalar');
