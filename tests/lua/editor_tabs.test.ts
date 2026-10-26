@@ -10,7 +10,7 @@ import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { renderTabBar } from '../../ide/workbench/render/tab_bar';
 import { layoutTabBar, tabBarItems } from '../../ide/workbench/ui/tab/layout';
 import { layoutTopBar } from '../../ide/workbench/ui/top_bar/layout';
-import { beginTabDrag, endTabDrag } from '../../ide/workbench/ui/tab/drag';
+import { advanceTabDrag, beginTabDrag, endTabDrag, refreshTabDragTarget } from '../../ide/workbench/ui/tab/drag';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import type { PointerSnapshot } from '../../ide/common/models';
@@ -55,14 +55,17 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384) 
 		renderTabBar(context); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	};
 	const draw = () => {
-		layout(); paint();
+		layout(); refreshTabDragTarget(); paint();
 		return editorViewState.tabBarTotalHeight;
+	};
+	const frame = (now: number) => {
+		advanceTabDrag(now); layout(); refreshTabDragTarget();
 	};
 	t.after(() => {
 		endTabDrag(); pointerCapture.cancel(); editorTabGroup.clear();
 		for (const model of models) model.dispose();
 	});
-	return { add, layout, paint, draw, context, measured: () => measuredLabels, drawn: () => drawnLabels, bar: editorChromeState.tabScrollbar };
+	return { add, layout, paint, draw, frame, context, measured: () => measuredLabels, drawn: () => drawnLabels, bar: editorChromeState.tabScrollbar };
 }
 
 test('tab layout publishes height and hits before paint; paint cannot measure or reveal', t => {
@@ -180,15 +183,15 @@ test('tab capture previews its insertion and commits only an accepted physical d
 	assert.equal(pointerCapture.active, true);
 	pointerCapture.dispatch(pointer(200, y, primary), false, 20); f.draw();
 	assert.equal(editorChromeState.tabDragState!.targetIndex, 2);
-	assert.deepEqual(editorTabGroup.tabs, [a, b, c], 'hovering a destination is not a reorder');
+	assert.deepEqual(editorTabGroup.tabs.map(tab => tab.id), [a.id, b.id, c.id], 'hovering a destination is not a reorder');
 	pointerCapture.dispatch(pointer(200, y, 0, 0, primary), false, 40);
-	assert.deepEqual(editorTabGroup.tabs, [b, c, a]); assert.equal(pointerCapture.active, false);
+	assert.deepEqual(editorTabGroup.tabs.map(tab => tab.id), [b.id, c.id, a.id]); assert.equal(pointerCapture.active, false);
 	f.draw();
 	beginTabDrag(a.id, pointer(bounds.left + 2, y, primary, primary), 50);
 	pointerCapture.dispatch(pointer(editorChromeState.tabViewportBounds.left + 1, y, primary), false, 60); f.draw();
 	assert.equal(editorChromeState.tabDragState!.targetIndex, 0);
 	pointerCapture.cancel();
-	assert.deepEqual(editorTabGroup.tabs, [b, c, a], 'Escape/capture loss needs no rollback');
+	assert.deepEqual(editorTabGroup.tabs.map(tab => tab.id), [b.id, c.id, a.id], 'Escape/capture loss needs no rollback');
 	assert.equal(editorChromeState.tabDragState, null);
 });
 
@@ -200,15 +203,146 @@ test('a tab drag pins its preview, scrolls in host time and cancels on model/lif
 	beginTabDrag(preview.id, pointer(bounds.left + 2, y, primary, primary), 0);
 	const edge = editorChromeState.tabViewportBounds.left + 1;
 	pointerCapture.dispatch(pointer(edge, y, primary), false, 10); f.draw();
-	assert.equal(editorTabGroup.previewTab, null);
+	assert.ok(editorTabGroup.previewTab === null);
 	const scroll = f.bar.getScroll();
-	pointerCapture.dispatch(pointer(edge, y, primary), false, 1010); f.draw();
+	f.frame(1010);
 	assert.ok(f.bar.getScroll() < scroll - 100, 'holding the edge scrolls while the machine can remain paused');
-	const order = [...editorTabGroup.tabs];
+	const target = editorChromeState.tabDragState!.targetIndex;
+	assert.equal(editorChromeState.tabDragState!.markerX - Math.round(f.bar.getScroll()),
+		editorChromeState.tabButtonBounds.get(editorTabGroup.tabs[target].id)!.left,
+		'the insertion marker consumes the geometry published after this frame scrolls');
+	const order = editorTabGroup.tabs.map(tab => tab.id);
 	pointerCapture.dispatch(pointer(edge, y, primary), true, 1020);
-	assert.equal(pointerCapture.active, false); assert.deepEqual(editorTabGroup.tabs, order);
+	assert.equal(pointerCapture.active, false); assert.deepEqual(editorTabGroup.tabs.map(tab => tab.id), order);
 	beginTabDrag(preview.id, pointer(200, y, primary, primary), 1100);
 	editorTabGroup.removeAt(editorTabGroup.indexOf(preview));
-	pointerCapture.dispatch(pointer(edge, y, 0, 0, primary), false, 1120);
+	advanceTabDrag(1120);
 	assert.equal(pointerCapture.active, false); assert.equal(editorChromeState.tabDragState, null);
+});
+
+test('stationary tab edge scrolling depends on elapsed host time, not update frequency', t => {
+	const scrolls: number[] = [];
+	for (const fps of [50, 60, 120]) {
+		const f = fixture(t);
+		for (let index = 0; index < 20; index++) f.add(`definition ${index}`);
+		const tab = editorTabGroup.activeTab!; f.draw();
+		const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
+		const y = bounds.top + 1, edge = editorChromeState.tabViewportBounds.left + 1;
+		beginTabDrag(tab.id, pointer(bounds.left + 2, y, primary, primary), 0);
+		pointerCapture.dispatch(pointer(edge, y, primary), false, 10);
+		const scroll = f.bar.getScroll();
+		for (let frame = 1; frame <= fps; frame++) f.frame(10 + frame * 1000 / fps);
+		scrolls.push(scroll - f.bar.getScroll());
+	}
+	for (const scroll of scrolls) assert.ok(Math.abs(scroll - 110) < 1e-9);
+});
+
+test('tab motion charges the previous real pointer and starts scrolling only after activation', t => {
+	const f = fixture(t);
+	for (let index = 0; index < 20; index++) f.add(`definition ${index}`);
+	const tab = editorTabGroup.activeTab!; f.draw();
+	const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
+	const x = bounds.left + 2, y = bounds.top + 1;
+	const viewport = editorChromeState.tabViewportBounds, center = (viewport.left + viewport.right) / 2;
+	const scroll = f.bar.getScroll();
+	beginTabDrag(tab.id, pointer(x, y, primary, primary), 0);
+	f.frame(1000);
+	assert.equal(editorChromeState.tabDragState!.hasDragged, false);
+	assert.equal(f.bar.getScroll(), scroll, 'a pending press has no temporal scroll work');
+	pointerCapture.dispatch(pointer(center, y, primary), false, 1020);
+	f.frame(2020);
+	assert.equal(f.bar.getScroll(), scroll);
+	pointerCapture.dispatch(pointer(viewport.left + 1, y, primary), false, 3020);
+	assert.equal(f.bar.getScroll(), scroll, 'time in the center is not charged to the new edge');
+	f.frame(3520);
+	assert.ok(Math.abs(f.bar.getScroll() - (scroll - 55)) < 1e-9);
+	pointerCapture.dispatch(pointer(viewport.right - 1, y, primary), false, 4020);
+	assert.ok(Math.abs(f.bar.getScroll() - (scroll - 110)) < 1e-9, 'the final interval belongs to the departed left edge');
+	f.frame(4520);
+	assert.ok(Math.abs(f.bar.getScroll() - (scroll - 55)) < 1e-9);
+});
+
+test('leaving the tab viewport stops stationary scrolling without releasing capture', t => {
+	const f = fixture(t);
+	for (let index = 0; index < 20; index++) f.add(`definition ${index}`);
+	const tab = editorTabGroup.activeTab!; f.draw();
+	const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
+	const y = bounds.top + 1, viewport = editorChromeState.tabViewportBounds;
+	beginTabDrag(tab.id, pointer(bounds.left + 2, y, primary, primary), 0);
+	pointerCapture.dispatch(pointer(viewport.left + 1, y, primary), false, 20);
+	f.frame(520);
+	pointerCapture.dispatch(pointer(viewport.left - 1, y, primary), false, 520);
+	const scroll = f.bar.getScroll();
+	f.frame(10020);
+	assert.equal(f.bar.getScroll(), scroll);
+	assert.equal(pointerCapture.active, true);
+	assert.equal(editorChromeState.tabDragState!.targetIndex, -1);
+	pointerCapture.dispatch(pointer((viewport.left + viewport.right) / 2, y, primary), false, 10020);
+	f.frame(11020);
+	assert.equal(f.bar.getScroll(), scroll, 'time outside is not charged when returning to the strip');
+});
+
+test('tab release evaluates its final position without a final scroll interval or later temporal work', t => {
+	const f = fixture(t);
+	for (let index = 0; index < 20; index++) f.add(`definition ${index}`);
+	const tab = editorTabGroup.activeTab!; f.draw();
+	const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
+	const y = bounds.top + 1, edge = editorChromeState.tabViewportBounds.left + 1;
+	beginTabDrag(tab.id, pointer(bounds.left + 2, y, primary, primary), 0);
+	pointerCapture.dispatch(pointer(edge, y, primary), false, 20);
+	f.frame(520);
+	const scroll = f.bar.getScroll(), order = editorTabGroup.tabs.map(tab => tab.id);
+	assert.ok(editorChromeState.tabDragState!.targetIndex >= 0);
+	for (let duplicate = 0; duplicate < 100; duplicate++) f.frame(520);
+	assert.equal(f.bar.getScroll(), scroll);
+	pointerCapture.dispatch(pointer(edge - 2, y, 0, 0, primary), false, 1020);
+	assert.equal(f.bar.getScroll(), scroll);
+	assert.deepEqual(editorTabGroup.tabs.map(tab => tab.id), order, 'the final outside position rejects an earlier accepted target');
+	assert.equal(pointerCapture.active, false);
+	assert.equal(editorChromeState.tabDragState, null);
+	advanceTabDrag(2020); refreshTabDragTarget();
+	assert.equal(f.bar.getScroll(), scroll);
+	assert.deepEqual(editorTabGroup.tabs.map(tab => tab.id), order);
+});
+
+test('stationary tab targets consume resized and re-fonted layout without re-hitting unchanged frames', t => {
+	const f = fixture(t);
+	for (let index = 0; index < 20; index++) f.add(`definition ${index}`);
+	const tab = editorTabGroup.activeTab!; f.draw();
+	const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
+	const y = bounds.top + 1, viewport = editorChromeState.tabViewportBounds;
+	beginTabDrag(tab.id, pointer(bounds.left + 2, y, primary, primary), 0);
+	pointerCapture.dispatch(pointer((viewport.left + viewport.right) / 2, y, primary), false, 20);
+	const hit = t.mock.method(tabBarItems, 'peek');
+	advanceTabDrag(1020); refreshTabDragTarget();
+	advanceTabDrag(1020); refreshTabDragTarget();
+	assert.equal(hit.mock.callCount(), 0, 'a stationary center and duplicate timestamps require no new target scan');
+	editorViewState.viewportWidth = 768;
+	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	f.layout();
+	const layoutCalls = hit.mock.callCount();
+	refreshTabDragTarget();
+	assert.ok(hit.mock.callCount() > layoutCalls, 'newly published geometry invalidates the stationary target');
+	const state = editorChromeState.tabDragState!, from = editorTabGroup.indexOf(tab);
+	assert.ok(state.targetIndex >= 0 && state.targetIndex < from);
+	assert.equal(state.markerX - Math.round(f.bar.getScroll()),
+		editorChromeState.tabButtonBounds.get(editorTabGroup.tabs[state.targetIndex].id)!.left,
+		'the marker and accepted insertion use the same new layout');
+});
+
+test('tab release consumes scroll changes before the next layout publishes viewport bounds', t => {
+	const f = fixture(t);
+	for (let index = 0; index < 20; index++) f.add(`definition ${index}`);
+	const tab = editorTabGroup.activeTab!; f.draw();
+	const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
+	const y = bounds.top + 1, edge = editorChromeState.tabViewportBounds.left + 1;
+	beginTabDrag(tab.id, pointer(bounds.left + 2, y, primary, primary), 0);
+	pointerCapture.dispatch(pointer(edge, y, primary), false, 20);
+	assert.ok(editorChromeState.tabDragState!.targetIndex > 0);
+	const order = editorTabGroup.tabs.map(tab => tab.id);
+	f.bar.setScroll(0);
+	pointerCapture.dispatch(pointer(edge, y, 0, 0, primary), false, 40);
+	assert.deepEqual(editorTabGroup.tabs.map(input => input.id), [tab.id, ...order.slice(0, -1)]);
+	assert.equal(f.bar.getScroll(), 0);
+	assert.equal(pointerCapture.active, false);
 });

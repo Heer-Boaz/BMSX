@@ -23,14 +23,16 @@ type TabItemLayout = {
 	closable: boolean;
 	active: boolean;
 	hovered: boolean;
+	contentLeft: number;
 	tabWidth: number;
 };
 
 /** Retained layout records consumed by painting; hit rectangles keep input lifetime. */
 export const tabBarItems = new ScratchBuffer<TabItemLayout>(() => ({
 	bounds: null, closeBounds: null, text: '', closeWidth: 0, indicatorWidth: 0,
-	dirty: false, markerWidth: 0, markerHeight: 0, closable: false, active: false, hovered: false, tabWidth: 0,
+	dirty: false, markerWidth: 0, markerHeight: 0, closable: false, active: false, hovered: false, contentLeft: 0, tabWidth: 0,
 }), 8);
+export let tabBarLayoutRevision = 0;
 const tabTrack = create_rect_bounds();
 let measuredFont: BFont | undefined;
 let closeButtonWidth = 0;
@@ -122,6 +124,7 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 		const width = measured.width + constants.TAB_BUTTON_PADDING_X * 2 + metric.indicatorWidth;
 		itemsChanged ||= metric.tabWidth !== width;
 		metric.text = measured.text; metric.tabWidth = width;
+		metric.contentLeft = tabsLeft + contentWidth;
 		if (metric.active) { activeLeft = contentWidth; activeRight = contentWidth + width; }
 		contentWidth += width;
 		if (index + 1 < tabs.length) contentWidth += constants.TAB_BUTTON_SPACING;
@@ -145,6 +148,7 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 	// Resize can publish synchronously; the next update consumes unchanged geometry.
 	// Dirty/active presentation is still observed above, independent of group revision.
 	if (!itemsChanged && previousScrollbarRevision === scrollbar.revision && laidOutScroll === scroll) return;
+	tabBarLayoutRevision += 1;
 	laidOutScroll = scroll;
 	let cursor = tabsLeft + constants.TAB_DIRTY_LEFT_MARGIN - scroll;
 	for (let index = 0; index < tabBarItems.length; index++) {

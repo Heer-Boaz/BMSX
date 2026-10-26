@@ -61,8 +61,13 @@ export type TabDragState = {
 	startX: number;
 	startY: number;
 	hasDragged: boolean;
+	pointerX: number;
+	pointerY: number;
 	pointerTime: number;
 	revision: number;
+	targetDirty: boolean;
+	targetLayoutRevision: number;
+	targetScroll: number;
 	targetIndex: number;
 	markerX: number;
 };

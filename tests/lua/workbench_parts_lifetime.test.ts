@@ -29,6 +29,7 @@ import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/contro
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { getSearchBarBounds, getWorkbenchEditorBounds } from '../../ide/workbench/common/layout';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
+import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { closeTab, getActiveTab, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
 import { createCodeEditorInput, retainLuaCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
@@ -830,4 +831,36 @@ test('completion readonly subscription belongs only to the attached canonical mo
 	assert.equal(previous.buffer.getText(), f.edited); assert.equal(previous.version, f.version);
 	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0);
 	assert.equal(subscriptions, 0, 'detaching the source retires its readonly observer');
+});
+
+test('a stationary captured tab drag advances from the actual host frame without pointer polling or guest execution', t => {
+	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
+	for (let index = 40; index < 52; index++) {
+		openEditorTab(f.editor.editorPanes, createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(index))));
+		f.editor.update(0);
+	}
+	const input = getActiveTab()!, bounds = editorChromeState.tabButtonBounds.get(input.id)!;
+	const viewport = editorChromeState.tabViewportBounds, bar = editorChromeState.tabScrollbar;
+	assert.ok(bar.getScroll() > 0, 'real retained source tabs must overflow the strip before an edge hold');
+	const x = Math.max(bounds.left, viewport.left) + 3, y = bounds.top + 1;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	assert.equal(pointerCapture.active, true);
+	f.host.clock.advance(10);
+	const edge = viewport.left + 1;
+	f.editor.dispatchPointer({ x: edge, y, buttons: PointerButton.Primary, pressedButtons: 0,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	f.editor.update(0);
+	const scroll = bar.getScroll(), order = editorTabGroup.tabs.map(tab => tab.id);
+	f.host.clock.advance(500); f.editor.update(0.5);
+	assert.ok(bar.getScroll() < scroll, 'host frames, not repeated pointer events, advance a stationary edge hold');
+	assert.deepEqual(editorTabGroup.tabs.map(tab => tab.id), order, 'a held drag does not publish a tab reorder');
+	const beforeRelease = bar.getScroll();
+	f.host.clock.advance(500);
+	f.editor.dispatchPointer({ x: edge, y, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	assert.equal(bar.getScroll(), beforeRelease, 'release resolves the drop without an extra temporal scroll step');
+	assert.equal(pointerCapture.active, false); assert.ok(editorChromeState.tabDragState === null);
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });

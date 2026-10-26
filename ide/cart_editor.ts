@@ -168,6 +168,7 @@ import { drawEditorGroupWatermark } from './workbench/render/editor_group_waterm
 import { renderTabBar } from './workbench/render/tab_bar';
 import { renderTopBar } from './workbench/render/top_bar';
 import { layoutTabBar } from './workbench/ui/tab/layout';
+import { advanceTabDrag, refreshTabDragTarget } from './workbench/ui/tab/drag';
 import { layoutTopBar } from './workbench/ui/top_bar/layout';
 import { MenubarController } from './workbench/ui/top_bar/controller';
 import type { ChromeRenderContext } from './workbench/render/chrome_context';
@@ -829,7 +830,9 @@ export class RuntimeCartEditor implements CartEditor {
 		updateEditorMessage(deltaSeconds);
 		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
 		this.menubar.update();
+		advanceTabDrag(editorRuntimeState.currentTimeMs);
 		layoutTabBar(this.chromeRenderContext);
+		refreshTabDragTarget();
 		this.tabBar.update();
 		const pane = this.editorPanes.activePane;
 		if (pane?.runtimeControlContext !== undefined) this.runtimeTimeline.setContext(pane.runtimeControlContext, pane.runtimeTransport);
@@ -854,6 +857,7 @@ export class RuntimeCartEditor implements CartEditor {
 		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
 		this.menubar.update();
 		layoutTabBar(this.chromeRenderContext);
+		refreshTabDragTarget();
 		refreshWorkbenchLayout();
 		if (this.resourcePanel.refresh()) refreshWorkbenchLayout();
 		if (this.gamePanel.update()) refreshWorkbenchLayout();
