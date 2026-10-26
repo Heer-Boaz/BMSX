@@ -2,7 +2,11 @@ import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { NavigationHistoryEntry, areNavigationEntriesEqual, captureNavigation, createNavigationEntry, navigationState, pushUniqueNavigationEntry, resetNavigationHistoryState, takeBackwardNavigationEntry, takeForwardNavigationEntry } from '../../ide/navigation/navigation_history';
+import {
+	NavigationHistoryEntry, areNavigationEntriesEqual, captureNavigation, createNavigationEntry, navigationState,
+	pushUniqueNavigationEntry, resetNavigationHistoryState, initializeNavigationState, beginNavigationCapture,
+	completeNavigation, takeBackwardNavigationEntry, takeForwardNavigationEntry,
+} from '../../ide/navigation/navigation_history';
 import { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
@@ -20,23 +24,25 @@ import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
 import { createTestEditorPanes } from '../helpers/editor_panes';
+import type { EditorPanes } from '../../ide/workbench/services/editor/editor_panes';
 
 class Location extends EditorPaneSelection {
 	public constructor(public readonly value: number) { super(); }
 	public matches(other: Location): boolean { return this.value === other.value; }
 }
-function entry(path: string, value: number): NavigationHistoryEntry {
-	return new NavigationHistoryEntry({ kind: 'resource', resource: { domain: 0, path }, editorId: WORKBENCH_TEXT_EDITOR_ID }, new Location(value));
+function entry(owner: EditorPanes, path: string, value: number): NavigationHistoryEntry {
+	return new NavigationHistoryEntry({ kind: 'resource', resource: { domain: 0, path }, editorId: WORKBENCH_TEXT_EDITOR_ID }, new Location(value), owner);
 }
 function code(path: string) {
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
 	return new CodeEditorInput({ id: `code:0\0${path}`, title: path, model, view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null });
 }
 
-test('Back/Forward preserve the live destination, not an earlier captured cursor', () => {
+test('Back/Forward preserve the live destination, not an earlier captured cursor', t => {
+	const panes = createTestEditorPanes(); t.after(() => panes.dispose());
 	resetNavigationHistoryState();
-	const origin = entry('main.lua', 4);
-	const current = entry('enemy.lua', 37);
+	const origin = entry(panes, 'main.lua', 4);
+	const current = entry(panes, 'enemy.lua', 37);
 	navigationState.back.push(origin);
 	assert.equal(takeBackwardNavigationEntry(current), origin);
 	assert.deepEqual(navigationState.forward, [current]);
@@ -45,31 +51,33 @@ test('Back/Forward preserve the live destination, not an earlier captured cursor
 	current.dispose(); resetNavigationHistoryState();
 });
 
-test('bounded history owns disposal on duplicates, eviction, forward pruning and reset', () => {
+test('bounded history owns disposal on duplicates, eviction, forward pruning and reset', t => {
+	const panes = createTestEditorPanes(); t.after(() => panes.dispose());
 	resetNavigationHistoryState();
-	const first = entry('a.lua', 0); pushUniqueNavigationEntry(navigationState.back, first);
-	const duplicate = entry('a.lua', 0); pushUniqueNavigationEntry(navigationState.back, duplicate);
+	const first = entry(panes, 'a.lua', 0); pushUniqueNavigationEntry(navigationState.back, first);
+	const duplicate = entry(panes, 'a.lua', 0); pushUniqueNavigationEntry(navigationState.back, duplicate);
 	assert.equal(duplicate.selection!.isDisposed, true);
 	assert.equal(first.selection!.isDisposed, false);
-	for (let index = 1; index <= 64; index += 1) pushUniqueNavigationEntry(navigationState.back, entry('a.lua', index));
+	for (let index = 1; index <= 64; index += 1) pushUniqueNavigationEntry(navigationState.back, entry(panes, 'a.lua', index));
 	assert.equal(navigationState.back.length, 64);
 	assert.equal(first.selection!.isDisposed, true);
-	const returned = takeBackwardNavigationEntry(entry('b.lua', 7))!;
+	const returned = takeBackwardNavigationEntry(entry(panes, 'b.lua', 7))!;
 	const forward = navigationState.forward[0];
 	returned.dispose(); resetNavigationHistoryState();
 	assert.equal(forward.selection!.isDisposed, true);
-	const unused = entry('c.lua', 2);
+	const unused = entry(panes, 'c.lua', 2);
 	assert.equal(takeBackwardNavigationEntry(unused), null);
 	assert.equal(unused.selection!.isDisposed, true);
 });
 
-test('input close removes visual destinations from both stacks; resource destinations stay reopenable', () => {
+test('input close removes visual destinations from both stacks; resource destinations stay reopenable', t => {
+	const panes = createTestEditorPanes(); t.after(() => panes.dispose());
 	resetNavigationHistoryState();
 	const text = code('close.lua');
 	const visual = new SceneEditorInput(text.workingCopy);
-	const back = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1));
-	const forward = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(2));
-	const resource = new NavigationHistoryEntry({ kind: 'resource', ...text.toResourceEditor() }, new CodeEditorNavigationSelection(text));
+	const back = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1), panes);
+	const forward = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(2), panes);
+	const resource = new NavigationHistoryEntry({ kind: 'resource', ...text.toResourceEditor() }, new CodeEditorNavigationSelection(text), panes);
 	navigationState.back.push(resource, back); navigationState.forward.push(forward);
 	assert.equal(areNavigationEntriesEqual(back, resource), false, 'resource sharing is not view identity');
 	visual.dispose(); text.dispose();
@@ -79,9 +87,74 @@ test('input close removes visual destinations from both stacks; resource destina
 	resetNavigationHistoryState();
 });
 
+test('child pane construction and disposal cannot replace the frontend navigation owner', t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	const panes = createTestEditorPanes();
+	t.after(initializeNavigationState(panes));
+	const input = code('main.lua'); panes.openEditor(input);
+	t.after(() => { panes.dispose(); input.dispose(); input.workingCopy.dispose(); });
+	const retained = createNavigationEntry()!;
+	navigationState.back.push(retained);
+
+	const sibling = createTestEditorPanes();
+	t.after(() => sibling.dispose());
+	assert.deepEqual(navigationState.back, [retained]);
+	const afterConstruction = createNavigationEntry()!;
+	assert.equal(afterConstruction.owner, panes);
+	assert.equal(areNavigationEntriesEqual(afterConstruction, retained), true);
+	afterConstruction.dispose();
+
+	const siblingBack = entry(sibling, 'main.lua', 0), siblingForward = entry(sibling, 'other.lua', 2);
+	navigationState.back.push(siblingBack); navigationState.forward.push(siblingForward);
+	sibling.dispose();
+	assert.deepEqual(navigationState.back, [retained]);
+	assert.equal(navigationState.forward.length, 0);
+	assert.equal(siblingBack.selection!.isDisposed, true);
+	assert.equal(siblingForward.selection!.isDisposed, true);
+	assert.equal(retained.selection!.isDisposed, false);
+	const afterDisposal = createNavigationEntry()!;
+	assert.equal(afterDisposal.owner, panes);
+	assert.equal(areNavigationEntriesEqual(afterDisposal, retained), true);
+	afterDisposal.dispose();
+});
+
+test('pane retirement releases pending and popped selections before a later completion', t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	const panes = createTestEditorPanes();
+	t.after(initializeNavigationState(panes));
+	const input = code('retiring.lua'); panes.openEditor(input);
+	t.after(() => { panes.dispose(); input.dispose(); input.workingCopy.dispose(); });
+	const pending = beginNavigationCapture()!;
+	const target = entry(panes, 'closed.lua', 3);
+	navigationState.back.push(target);
+	const popped = takeBackwardNavigationEntry(createNavigationEntry())!;
+	assert.equal(popped, target);
+	assert.equal(pending.selection!.isDisposed, false);
+	assert.equal(popped.selection!.isDisposed, false);
+
+	panes.dispose();
+	assert.equal(pending.isDisposed, true);
+	assert.equal(pending.selection!.isDisposed, true);
+	assert.equal(popped.isDisposed, true);
+	assert.equal(popped.selection!.isDisposed, true);
+	assert.equal(navigationState.back.length, 0);
+	assert.equal(navigationState.forward.length, 0);
+	completeNavigation(pending);
+	assert.equal(navigationState.back.length, 0);
+});
+
+test('matching resources and selections retain distinct capturing pane lifetimes', t => {
+	const primary = createTestEditorPanes(), sibling = createTestEditorPanes();
+	t.after(() => { primary.dispose(); sibling.dispose(); });
+	const first = entry(primary, 'same.lua', 1), second = entry(sibling, 'same.lua', 1);
+	assert.equal(areNavigationEntriesEqual(first, second), false);
+	first.dispose(); second.dispose();
+});
+
 test('one explicit navigation records a departure before mutating the same retained input', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const panes = createTestEditorPanes();
+	t.after(initializeNavigationState(panes));
 	const input = code('same.lua'); editorTabGroup.initialize(input); panes.openEditor(input);
 	t.after(() => { panes.dispose(); editorTabGroup.clear(); });
 	const original = createNavigationEntry()!;
@@ -104,10 +177,11 @@ test('one explicit navigation records a departure before mutating the same retai
 test('history awaits the registered resource opener and restores a closed text input after hidden edits', async t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const panes = createTestEditorPanes();
+	t.after(initializeNavigationState(panes));
 	const origin = code('origin.lua'); editorTabGroup.initialize(origin); panes.openEditor(origin);
 	const closed = code('target.lua'); closed.context.view.cursorRow = 1; closed.context.view.cursorColumn = 6;
 	const selection = new CodeEditorNavigationSelection(closed);
-	const target = new NavigationHistoryEntry({ kind: 'resource', ...closed.toResourceEditor() }, selection);
+	const target = new NavigationHistoryEntry({ kind: 'resource', ...closed.toResourceEditor() }, selection, panes);
 	navigationState.back.push(target); closed.dispose();
 	const prefix = '-- 🐉 moved\n'; closed.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]);
 	const reopened = new CodeEditorInput({ ...closed.context, view: createCodeEditorViewState() });
@@ -140,10 +214,11 @@ test('history awaits the registered resource opener and restores a closed text i
 test('Back activates a surviving visual preview without turning navigation into Keep Open', async t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const panes = createTestEditorPanes();
+	t.after(initializeNavigationState(panes));
 	const origin = code('origin.lua'); editorTabGroup.initialize(origin); panes.openEditor(origin);
 	const visual = new SceneEditorInput(origin.workingCopy);
 	editorTabGroup.add(visual, { pinned: false });
-	const target = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1));
+	const target = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1), panes);
 	navigationState.back.push(target);
 	const navigation = new EditorNavigationController(
 		{} as RuntimeSourceState, { isFocused: () => false } as ResourcePanelController,
@@ -158,10 +233,11 @@ test('Back activates a surviving visual preview without turning navigation into 
 	assert.equal(navigationState.forward.length, 1);
 });
 
-for (const route of ['resource', 'history'] as const) for (const interruption of ['new navigation', 'direct tab', 'same tab', 'teardown'] as const) {
+for (const route of ['resource', 'history'] as const) for (const interruption of ['new navigation', 'direct tab', 'same tab', 'teardown', 'owner disposal'] as const) {
 	test(`slow ${route} resolution cannot reactivate after ${interruption}`, async t => {
 		configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 		const panes = createTestEditorPanes();
+		t.after(initializeNavigationState(panes));
 		const origin = code('origin.lua'); editorTabGroup.initialize(origin); panes.openEditor(origin);
 		const older = code('older.lua'), newer = code('newer.lua');
 		let discarded = 0; older.onWillDispose(() => { discarded += 1; });
@@ -178,13 +254,17 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 			}]), panes, new EditorSearchController({} as RuntimeSourceState, renameController),
 		);
 		t.after(() => { panes.dispose(); editorTabGroup.clear(); });
-		const target = new NavigationHistoryEntry({ kind: 'resource', ...older.toResourceEditor() }, new CodeEditorNavigationSelection(older));
+		const target = new NavigationHistoryEntry({ kind: 'resource', ...older.toResourceEditor() }, new CodeEditorNavigationSelection(older), panes);
 		if (route === 'history') navigationState.back.push(target);
 		const pending = route === 'history' ? navigation.goBackward() : navigation.openResource(older.workingCopy.resource);
 		assert.equal(navigationState.captureSuspendDepth, 0);
 		if (interruption === 'new navigation') await navigation.openResource(newer.workingCopy.resource);
 		else if (interruption === 'direct tab') openEditorTab(panes, newer);
 		else if (interruption === 'same tab') setActiveTab(panes, origin.id);
+		else if (interruption === 'owner disposal') {
+			panes.dispose(); editorTabGroup.clear();
+			if (route === 'history') assert.equal(target.selection!.isDisposed, true);
+		}
 		else { panes.clearEditor(); editorTabGroup.clear(); }
 		const active = editorTabGroup.activeTab;
 		const history = [...navigationState.back];
@@ -207,6 +287,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 test('a debugger continuation cannot decorate a tab chosen after its source attached', async t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const panes = createTestEditorPanes();
+	t.after(initializeNavigationState(panes));
 	const origin = code('origin.lua'); editorTabGroup.initialize(origin); panes.openEditor(origin);
 	const stopped = code('stopped.lua'), chosen = code('chosen.lua');
 	const resource = stopped.workingCopy.resource;
@@ -229,6 +310,7 @@ test('a debugger continuation cannot decorate a tab chosen after its source atta
 test('cancelled resolution does not dispose an input already owned by the group', async t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const panes = createTestEditorPanes();
+	t.after(initializeNavigationState(panes));
 	const input = code('retained.lua'); editorTabGroup.initialize(input); panes.openEditor(input);
 	let disposed = 0; input.onWillDispose(() => { disposed += 1; });
 	const navigation = new EditorNavigationController(

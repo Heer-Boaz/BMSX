@@ -351,6 +351,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unsubscribeDiagnosticsChanged: () => void;
 	private readonly unbindHostInput: () => void;
 	private readonly unbindEditorInputRetirement: () => void;
+	private readonly unbindNavigation: () => void;
 	private readonly unbindQuickInputFields: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
@@ -614,6 +615,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unbindSourceStop = debuggerState.source.onDidChangeStop(stop => {
 			if (stop === undefined) clearExecutionStopHighlights();
 		});
+		this.unbindNavigation = initializeNavigationState(this.editorPanes);
 		this.initializeEditorGroup();
 		this.unsubscribeWorkspaceCursorMoved = activeCodeEditor.onDidMoveCursor(() => {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
@@ -973,6 +975,7 @@ export class RuntimeCartEditor implements CartEditor {
 				await shutdownWorkspaceStorage();
 			} finally {
 				this.editorPanes.dispose();
+				this.unbindNavigation();
 				editorViewState.layout.dispose();
 				this.scenarioLab.dispose();
 				this.unsubscribeWorkspaceCursorMoved();
@@ -1130,7 +1133,6 @@ export class RuntimeCartEditor implements CartEditor {
 		refreshWorkbenchLayout();
 		this.editorPanes.layout(getWorkbenchEditorBounds());
 		initializeTabs(this.editorPanes);
-		initializeNavigationState(this.editorPanes);
 		editorRuntimeState.initialized = true;
 	}
 

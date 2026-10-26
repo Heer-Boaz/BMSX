@@ -1,5 +1,4 @@
 import type { EditorPaneSelection } from './editor_selection';
-import { initializeNavigationState, resetNavigationHistoryState } from '../../../navigation/navigation_history';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
 import type { EditorPane } from './editor_pane';
@@ -16,6 +15,7 @@ export class EditorPanes {
 	private readonly panes = new Map<EditorInputKind, EditorPane<EditorInput>>();
 	private activePaneValue: EditorPane<EditorInput> | null = null;
 	private readonly clearListeners = new Set<() => void>();
+	private readonly disposeListeners = new Set<() => void>();
 	private openGenerationValue = 0;
 	private readonly contentBounds = create_rect_bounds();
 
@@ -35,8 +35,12 @@ export class EditorPanes {
 		return () => this.clearListeners.delete(listener);
 	}
 
-	public constructor(private readonly factories: EditorPaneFactories) {
-		initializeNavigationState(this);
+	public constructor(private readonly factories: EditorPaneFactories) {}
+
+	/** Retire captured selections before the attached control and input are detached. */
+	public onWillDispose(listener: () => void): () => void {
+		this.disposeListeners.add(listener);
+		return () => this.disposeListeners.delete(listener);
 	}
 
 	public get activePane(): EditorPane<EditorInput> | null {
@@ -79,7 +83,8 @@ export class EditorPanes {
 	}
 
 	public dispose(): void {
-		resetNavigationHistoryState();
+		for (const listener of this.disposeListeners) listener();
+		this.disposeListeners.clear();
 		this.clearEditor();
 		for (const pane of this.panes.values()) pane.dispose();
 		this.panes.clear();

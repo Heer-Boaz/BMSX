@@ -205,7 +205,8 @@ test('new row heights govern Home/End/Page and wheel hit geometry without changi
 });
 
 test('Enter preserves the diagnostic model/version and exact source selection rather than the displayed basename', t => {
-	const f = fixture(t); editorTextModelService.clear(); editorTabGroup.clear(); initializeNavigationState(f.panes);
+	const f = fixture(t); editorTextModelService.clear(); editorTabGroup.clear();
+	t.after(initializeNavigationState(f.panes));
 	const a = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'a/shared.lua' }, domain: 0, path: 'a/shared.lua', source: { type: 'lua', resid: 'a' } }, 'lua', source);
 	const b = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'b/shared.lua' }, domain: 1, path: 'b/shared.lua', source: { type: 'lua', resid: 'b' } }, 'lua', source);
 	t.after(() => { editorTabGroup.clear(); resetNavigationHistoryState(); editorTextModelService.clear(); });

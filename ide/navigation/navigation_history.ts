@@ -10,29 +10,38 @@ export type NavigationHistoryTarget =
 	| { readonly kind: 'input'; readonly input: EditorInput }
 	| ({ readonly kind: 'resource' } & ResourceEditorIdentity);
 
-/** Owns the captured selection and, for non-reopenable inputs, its close listener. */
+/** Retains a selection only while its capturing pane owner and retained input survive. */
 export class NavigationHistoryEntry extends DisposableStore {
-	public constructor(public readonly target: NavigationHistoryTarget, public readonly selection: EditorPaneSelection | undefined) {
+	public constructor(public readonly target: NavigationHistoryTarget, public readonly selection: EditorPaneSelection | undefined,
+		public readonly owner: EditorPanes) {
 		super();
 		if (selection !== undefined) this.add(selection);
-		if (target.kind === 'input') this.add({ dispose: target.input.onWillDispose(() => {
-			removeNavigationEntry(navigationState.back, this);
-			removeNavigationEntry(navigationState.forward, this);
-			this.dispose();
-		}) });
+		this.add({ dispose: owner.onWillDispose(this.retire) });
+		if (target.kind === 'input') this.add({ dispose: target.input.onWillDispose(this.retire) });
 	}
+	private readonly retire = (): void => {
+		removeNavigationEntry(navigationState.back, this);
+		removeNavigationEntry(navigationState.forward, this);
+		this.dispose();
+	};
 }
+
+let activeEditorPanes: EditorPanes | null = null;
 
 export const navigationState = {
 	back: [] as NavigationHistoryEntry[],
 	forward: [] as NavigationHistoryEntry[],
 	captureSuspendDepth: 0,
-	editorPanes: null as EditorPanes,
 };
 
-export function initializeNavigationState(editorPanes: EditorPanes): void {
+/** The frontend binds its editor group; child pane construction never selects this owner. */
+export function initializeNavigationState(editorPanes: EditorPanes): () => void {
 	resetNavigationHistoryState();
-	navigationState.editorPanes = editorPanes;
+	activeEditorPanes = editorPanes;
+	return () => {
+		activeEditorPanes = null;
+		resetNavigationHistoryState();
+	};
 }
 
 export function clearForwardNavigationHistory(): void {
@@ -97,6 +106,7 @@ function removeNavigationEntry(stack: NavigationHistoryEntry[], entry: Navigatio
 }
 
 export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: NavigationHistoryEntry): boolean {
+	if (a.owner !== b.owner) return false;
 	const left = a.target;
 	const right = b.target;
 	if (left.kind === 'input') {
@@ -108,11 +118,13 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 }
 
 export function createNavigationEntry(): NavigationHistoryEntry | null {
-	const pane = navigationState.editorPanes.activePane;
+	const owner = activeEditorPanes;
+	if (owner === null) return null; // No frontend or active editor group is attached.
+	const pane = owner.activePane;
 	if (pane === null) return null; // The editor group can be empty.
 	const resourceEditor = pane.input.toResourceEditor?.();
 	return new NavigationHistoryEntry(resourceEditor === undefined
-		? { kind: 'input', input: pane.input } : { kind: 'resource', ...resourceEditor }, pane.getSelection?.());
+		? { kind: 'input', input: pane.input } : { kind: 'resource', ...resourceEditor }, pane.getSelection?.(), owner);
 }
 
 export function withNavigationCaptureSuspended<T>(operation: () => T): T {
