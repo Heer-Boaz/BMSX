@@ -9,6 +9,11 @@ canvas. Actor Lab Details is the first new window, not the limit of the model.
 Existing menus, Quick Input, prompts and local overlays are concrete design
 cases, not future extensions to ignore until Details works.
 
+The [main workspace and document-editor architecture](studio_workspace_design.md)
+defines the persistent project area, editor parts/groups and shared document
+ownership. Window chrome supplies presentation; it does not create independent
+editor or workspace ownership.
+
 The design separates window structure, layout, input, focus, rendering and
 feature state. It does not introduce a universal widget superclass or another
 renderer. Existing retained controls remain controls. Floating is a placement
