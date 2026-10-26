@@ -1,12 +1,12 @@
 import { DisposableStore } from '../../common/lifecycle';
 import type { EditorTextModel } from '../model/text_model';
 import { mapTextOffset } from '../text/text_change';
-import { applyCodeEditorViewSnapshot, codeEditorEditState, type CodeEditorViewState } from './code_editor_state';
+import { applyCodeEditorSelectionSnapshot, codeEditorEditState, type CodeEditorViewState } from './code_editor_state';
 import { clearSingleCursorSelection, getSingleCursorSelectionRange, setSingleCursorSelectionAnchor } from '../editing/cursor/state';
 
 /**
  * A retained code view tracks model edits, even when no code pane is attached.
- * Explicit code edit state wins; external edits map positions like editor markers.
+ * An explicit edit/history receiver consumes its selection; sibling views track markers.
  * Visual scroll rows are layout coordinates, never text-buffer row numbers.
  */
 export class CodeEditorViewBinding extends DisposableStore {
@@ -22,8 +22,8 @@ export class CodeEditorViewBinding extends DisposableStore {
 		}) });
 		this.add({ dispose: model.onDidChangeContent(event => {
 			const state = event.editState;
-			if (state !== null && state.is(codeEditorEditState)) {
-				applyCodeEditorViewSnapshot(view, state.value);
+			if (state !== null && state.is(codeEditorEditState) && event.editSource === view.editSource) {
+				applyCodeEditorSelectionSnapshot(view, state.value);
 				return;
 			}
 			const anchor = this.anchorOffset;

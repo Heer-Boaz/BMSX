@@ -86,14 +86,6 @@ export type GlobalSearchMatch = {
 	path: string;
 };
 
-export type CodeEditorViewSnapshot = {
-	cursorRow: number;
-	cursorColumn: number;
-	scrollRow: number;
-	scrollLeft: number;
-	selectionAnchor: Position;
-};
-
 export type LuaCompletionKind =
 	| 'keyword'
 	| 'local'

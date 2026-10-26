@@ -5,11 +5,10 @@ import { clamp } from '../../../../../machine/ts/common/clamp';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../../runtime/sources';
 import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
-import { captureCodeEditorViewSnapshot } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, ensureCursorVisible } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
-import { activeCodeEditor, codeEditorEditState } from '../../../../editor/ui/code_editor_state';
+import { activeCodeEditor, captureCodeEditorSelectionSnapshot, codeEditorEditState } from '../../../../editor/ui/code_editor_state';
 import type { ResourceDomain } from '../../../../common/resource';
 import type { EditorModelEdit, EditorTextModel } from '../../../../editor/model/text_model';
 import { editorTextModelService } from '../../../../editor/model/model_service';
@@ -33,13 +32,14 @@ export function commitRename(
 	const edits = crossFileRename.prepareRename(model.resource.domain, info, newName);
 	const focused = matches[clamp(activeIndex, 0, matches.length - 1)];
 	const focusedOffset = model.buffer.offsetAt(focused.row, focused.start);
-	const before = captureCodeEditorViewSnapshot();
+	const before = captureCodeEditorSelectionSnapshot(activeCodeEditor.view);
+	const source = activeCodeEditor.view.editSource;
 	const edit = edits.get(model)!;
-	edits.set(model, { ...edit, beforeEditState: codeEditorEditState.of(before), computeAfterEditState: changes => {
+	edits.set(model, { ...edit, beforeEditState: codeEditorEditState.of(before, source), computeAfterEditState: changes => {
 		const position = { row: 0, column: 0 };
 		model.buffer.positionAt(mapTextOffset(focusedOffset, changes, -1), position);
 		return codeEditorEditState.of({ ...before, cursorRow: position.row, cursorColumn: position.column,
-			selectionAnchor: { row: position.row, column: position.column + newName.length } });
+			selectionAnchor: { row: position.row, column: position.column + newName.length } }, source);
 	} });
 	editorTextModelService.history.applyEdits(edits);
 	clearForwardNavigationHistory();

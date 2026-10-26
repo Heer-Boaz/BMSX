@@ -15,7 +15,7 @@ import { clearBackgroundTasks } from '../../ide/common/background_tasks';
 import { expandTabs } from '../../ide/common/text';
 import { setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { replaceSelectionWith, replaceTextRange } from '../../ide/editor/editing/text_editing_and_selection';
-import { prepareUndo } from '../../ide/editor/editing/undo_controller';
+import { prepareUndo, undo as undoSource, redo as redoSource } from '../../ide/editor/editing/undo_controller';
 import { resolveViewportCapacity } from '../../ide/editor/ui/view/caret/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
@@ -28,10 +28,10 @@ function sourceRangeFixture(t: TestContext, source: string) {
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'range.lua' }, domain: 0, path: 'range.lua', source: { type: 'lua', resid: 'range' } }, 'lua', source);
 	const view = createCodeEditorViewState(), inputs = new CodeEditorInputManager();
 	inputs.register({ id: 'code:0\0range.lua', title: 'range.lua', model, view, runtimeErrorOverlay: null, executionStopRow: null });
-	activeCodeEditor.attach(model, view);
+	activeCodeEditor.attach(model, view); activeCodeEditor.focusTarget.focus();
 	const unbind = model.onDidChangeContent(event => editorViewState.layout.onDidChangeContent(model.buffer, event));
 	t.after(() => {
-		unbind(); inputs.clear(); activeCodeEditor.detach(); editorViewState.layout.invalidateAllHighlights();
+		unbind(); inputs.clear(); activeCodeEditor.focusTarget.release(); activeCodeEditor.detach(); editorViewState.layout.invalidateAllHighlights();
 		model.dispose(); clearBackgroundTasks();
 	});
 	return { model, view, layout: editorViewState.layout };
@@ -85,10 +85,10 @@ test('prepared explicit multiline UTF16 range edits publish their internal caret
 		const line = layout.getViewLine(model.buffer, row), segments = layout.getVisualLines().filter(segment => segment.row === row);
 		assert.equal(segments.map(segment => line.hi.text.slice(segment.startDisplay, segment.endDisplay)).join(''), expandTabs(lines[row]));
 	}
-	model.undo();
+	undoSource();
 	assert.equal(model.buffer.getText(), source); assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, 1);
 	assert.deepEqual(view.selectionAnchor, { row: 4, column: 2 }); assert.equal(model.canUndo, false);
-	model.redo();
+	redoSource();
 	assert.equal(model.buffer.getText(), expected); assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 3);
 	assert.equal(view.selectionAnchor, null);
 	assert.deepEqual(observed, [
@@ -107,8 +107,8 @@ test('selection replacement keeps its default end-of-insertion and deletion care
 	setSingleCursorSelectionAnchor(view, 1, 0); prepareUndo('delete-selection', false); replaceSelectionWith('');
 	assert.equal(model.buffer.getText(), 'one\n\nlast');
 	assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 0); assert.equal(view.selectionAnchor, null);
-	model.undo(); assert.equal(model.buffer.getText(), 'one\n\t😀\nnext\nlast');
-	model.undo(); assert.equal(model.buffer.getText(), source);
+	undoSource(); assert.equal(model.buffer.getText(), 'one\n\t😀\nnext\nlast');
+	undoSource(); assert.equal(model.buffer.getText(), source);
 });
 
 test('the actual focused text field preserves virtual text, edits and submission before any poll', t => {
@@ -169,8 +169,8 @@ test('native source replacement uses bounded canonical context and one shared Un
 	let writes = 0; model.onDidChangeContent(() => writes++);
 	assert.equal(target.replaceText(from, from + 3, 'née😀'), true);
 	assert.equal(writes, 1); assert.equal(model.buffer.getText(), source.replace('old', 'née😀'));
-	model.undo(); assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
-	model.redo(); assert.equal(model.buffer.getText(), source.replace('old', 'née😀'));
+	undoSource(); assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
+	redoSource(); assert.equal(model.buffer.getText(), source.replace('old', 'née😀'));
 });
 
 test('native source selection notifies its actual cursor owner only on change', t => {

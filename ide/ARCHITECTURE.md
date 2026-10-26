@@ -56,9 +56,16 @@ Contributions own concrete retained editor inputs; `workbench/ui/tab/` owns
 their group membership.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
+Text history retains source selections and inert editing origins, not viewport
+coordinates or control references. Source history commands name their invoking
+view; sibling views track the canonical text changes independently.
 `workbench/services/editor/` owns editor-kind resolution and pane attachment:
 a pane is a reusable control
 bound to one input, not the lifetime owner of that input or its source.
+
+The frontend owns shared navigation history. Captured selections belong to their
+pane-owner lifetime; constructing or disposing a child pane owner cannot reset
+another owner's history.
 
 Shared window/control code owns presentation and input mechanics. Contributions
 own their subjects and register their commands on the appropriate focus target.

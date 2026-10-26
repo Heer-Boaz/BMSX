@@ -1,3 +1,4 @@
+import type { EditorEditSource } from './edit_state';
 import { UNDO_HISTORY_LIMIT } from '../../common/constants';
 import type { EditorUndoRecord } from '../text/undo';
 import type { EditorTextModel, EditorModelEdit } from './text_model';
@@ -80,10 +81,10 @@ export class EditorUndoRedoService {
 		}
 	}
 
-	public undo(model: EditorTextModel): EditorUndoRecord | null { return this.replay(model, 'undo', 'redo'); }
-	public redo(model: EditorTextModel): EditorUndoRecord | null { return this.replay(model, 'redo', 'undo'); }
+	public undo(model: EditorTextModel, source?: EditorEditSource): EditorUndoRecord | null { return this.replay(model, 'undo', 'redo', source); }
+	public redo(model: EditorTextModel, source?: EditorEditSource): EditorUndoRecord | null { return this.replay(model, 'redo', 'undo', source); }
 
-	private replay(model: EditorTextModel, from: EditorHistoryDirection, to: EditorHistoryDirection): EditorUndoRecord | null {
+	private replay(model: EditorTextModel, from: EditorHistoryDirection, to: EditorHistoryDirection, source: EditorEditSource | undefined): EditorUndoRecord | null {
 		const element = this.stacks.get(model)![from].at(-1);
 		if (element === undefined) return null;
 		if (element.kind === 'resource') {
@@ -92,7 +93,7 @@ export class EditorUndoRedoService {
 			const wasDirty = model.dirty;
 			this.move(element, element, from, to);
 			const applied = model.applyHistoryRecord(element, from);
-			model.endHistoryReplay(element, from, applied, wasDirty);
+			model.endHistoryReplay(element, from, applied, wasDirty, source);
 			return element;
 		}
 		for (const record of element.records) {
@@ -106,7 +107,7 @@ export class EditorUndoRedoService {
 		const applied = element.records.map(record => record.model.applyHistoryRecord(record, from));
 		for (let index = 0; index < element.records.length; index += 1) {
 			const record = element.records[index];
-			record.model.endHistoryReplay(record, from, applied[index], dirtyBefore[index]);
+			record.model.endHistoryReplay(record, from, applied[index], dirtyBefore[index], record.model === model ? source : undefined);
 		}
 		return element.records.find(record => record.model === model)!;
 	}

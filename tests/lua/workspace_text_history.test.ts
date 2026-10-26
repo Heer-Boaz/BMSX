@@ -224,3 +224,22 @@ test('synchronous Save completion during content publication does not duplicate 
 		assert.deepEqual(dirty, expected);
 	}
 });
+
+test('compound history routes the invocation only to its addressed model and never persists that receiver', t => {
+	const f = fixture(t), [a, b] = f.models;
+	const state = new EditorEditStateType<number>();
+	const aSource = Symbol('a editor'), bSource = Symbol('b editor'), receiver = Symbol('history caller');
+	const plan = f.plan([a, b]);
+	plan.set(a, { ...plan.get(a)!, beforeEditState: state.of(0, aSource), computeAfterEditState: () => state.of(1, aSource) });
+	plan.set(b, { ...plan.get(b)!, beforeEditState: state.of(0, bSource), computeAfterEditState: () => state.of(1, bSource) });
+	const seen: [EditorTextModel, symbol | undefined, symbol | undefined][] = [];
+	for (const model of [a, b]) model.onDidChangeContent(event => seen.push([model, event.editSource, event.editState?.source]));
+	f.service.history.applyEdits(plan);
+	assert.deepEqual(seen.splice(0), [[a, aSource, aSource], [b, bSource, bSource]]);
+	b.undo(receiver);
+	assert.deepEqual(seen.splice(0), [[a, undefined, aSource], [b, receiver, bSource]]);
+	b.redo(receiver);
+	assert.deepEqual(seen.splice(0), [[a, undefined, aSource], [b, receiver, bSource]]);
+	b.undo();
+	assert.deepEqual(seen, [[a, undefined, aSource], [b, undefined, bSource]]);
+});

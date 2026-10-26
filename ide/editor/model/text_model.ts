@@ -7,7 +7,7 @@ import { getTextSnapshot } from '../text/source_text';
 import type { TextBuffer } from '../text/text_buffer';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
 import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } from '../text/text_change';
-import type { EditorEditState } from './edit_state';
+import type { EditorEditSource, EditorEditState } from './edit_state';
 import { EditorUndoRedoService, type EditorHistoryDirection } from './undo_redo_service';
 
 export type { EditorDocumentMode } from '../../language/configuration';
@@ -42,6 +42,8 @@ export type EditorTextModelContentChangeEvent = {
 	readonly changes: readonly EditorTextChange[];
 	/** Result state for this edit/Undo/Redo; interpreted only by its originating editor kind. */
 	readonly editState: EditorEditState | null;
+	/** Receiver for this edit or explicit history command; programmatic replay has none. */
+	readonly editSource: EditorEditSource | undefined;
 };
 
 export type EditorTextModelSnapshot = {
@@ -214,7 +216,8 @@ export class EditorTextModel {
 			&& lastRecord !== undefined
 			&& this.lastHistoryKey === key
 			&& timestamp - this.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS
-			&& lastRecord.afterEditState!.type === beforeEditState.type;
+			&& lastRecord.afterEditState!.type === beforeEditState.type
+			&& lastRecord.afterEditState!.source === beforeEditState.source;
 		if (shouldMerge) {
 			this.pendingRecord = lastRecord;
 			this.pendingRecordIsNew = false;
@@ -282,7 +285,7 @@ export class EditorTextModel {
 		const startRow = this.pendingStartRow;
 		this.clearPreparedEdit();
 		const applied = this.emitAppliedChanges(startRow, changes);
-		this.emitContentChange('edit', applied, editContext, record.afterEditState);
+		this.emitContentChange('edit', applied, editContext, record.afterEditState, record.afterEditState.source);
 		this.emitDirtyChange(wasDirty);
 		return true;
 	}
@@ -331,12 +334,12 @@ export class EditorTextModel {
 	public endEditOperations(record: EditorUndoRecord, applied: EditorTextModelAppliedChanges, wasDirty: boolean,
 		computeAfterEditState: ((changes: readonly EditorTextChange[]) => EditorEditState) | null = null): void {
 		if (computeAfterEditState !== null) record.afterEditState = computeAfterEditState(applied.changes);
-		this.emitContentChange('edit', applied, null, record.afterEditState);
+		this.emitContentChange('edit', applied, null, record.afterEditState, record.afterEditState?.source);
 		this.emitDirtyChange(wasDirty);
 	}
 
-	public undo(): EditorUndoRecord | null { return this.history.undo(this); }
-	public redo(): EditorUndoRecord | null { return this.history.redo(this); }
+	public undo(source?: EditorEditSource): EditorUndoRecord | null { return this.history.undo(this, source); }
+	public redo(source?: EditorEditSource): EditorUndoRecord | null { return this.history.redo(this, source); }
 
 	public beginHistoryReplay(): void {
 		this.breakUndoSequence();
@@ -387,9 +390,9 @@ export class EditorTextModel {
 		return this.emitAppliedChanges(0, record.getTextChanges(0, direction === 'undo'));
 	}
 
-	public endHistoryReplay(record: EditorUndoRecord, direction: EditorHistoryDirection, applied: EditorTextModelAppliedChanges, wasDirty: boolean): void {
+	public endHistoryReplay(record: EditorUndoRecord, direction: EditorHistoryDirection, applied: EditorTextModelAppliedChanges, wasDirty: boolean, source: EditorEditSource | undefined): void {
 		const undo = direction === 'undo';
-		this.emitContentChange(direction, applied, null, undo ? record.beforeEditState : record.afterEditState);
+		this.emitContentChange(direction, applied, null, undo ? record.beforeEditState : record.afterEditState, source);
 		this.emitDirtyChange(wasDirty);
 	}
 
@@ -525,7 +528,7 @@ export class EditorTextModel {
 		return applied;
 	}
 
-	private emitContentChange(kind: EditorTextModelChangeKind, applied: EditorTextModelAppliedChanges, editContext: EditContext | null, editState: EditorEditState | null = null): void {
+	private emitContentChange(kind: EditorTextModelChangeKind, applied: EditorTextModelAppliedChanges, editContext: EditContext | null, editState: EditorEditState | null = null, editSource?: EditorEditSource): void {
 		const event: EditorTextModelContentChangeEvent = {
 			kind,
 			version: applied.version,
@@ -533,6 +536,7 @@ export class EditorTextModel {
 			editContext,
 			changes: applied.changes,
 			editState,
+			editSource,
 		};
 		for (const listener of this.contentChangeListeners) {
 			listener(event);

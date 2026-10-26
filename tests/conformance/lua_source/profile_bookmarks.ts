@@ -49,13 +49,13 @@ for (const registeredCodeInput of [false, true]) {
 	const typingAndUndoMicroseconds = medianMilliseconds(() => {
 		for (let i = 0; i < 1000; i += 1) {
 			model.prepareUndo('typing', false, 0, codeEditorEditState.of({
-				cursorRow: 0, cursorColumn: 3, scrollRow: 0, scrollLeft: 0, selectionAnchor: null,
-			}));
+				cursorRow: 0, cursorColumn: 3, selectionAnchor: null,
+			}, view.editSource));
 			model.applyUndoableReplace(3, 0, 'x');
 			model.commitEdit(codeEditorEditState.of({
-				cursorRow: 0, cursorColumn: 4, scrollRow: 0, scrollLeft: 0, selectionAnchor: null,
-			}), null);
-			model.undo();
+				cursorRow: 0, cursorColumn: 4, selectionAnchor: null,
+			}, view.editSource), null);
+			model.undo(view.editSource);
 		}
 	});
 	assert.equal(model.buffer.getText(), 'abc');

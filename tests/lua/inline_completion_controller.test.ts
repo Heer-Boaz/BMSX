@@ -7,6 +7,7 @@ import { setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { activeCodeEditor, codeEditorEditState, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { undo as undoSource, redo as redoSource } from '../../ide/editor/editing/undo_controller';
 import { CodeEditorViewBinding } from '../../ide/editor/ui/code_editor_view_binding';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -89,7 +90,7 @@ test('a mid-identifier suffix retains the actual Tab replacement and one source 
 	assert.deepEqual(beforeMutation, [false]); unbind();
 	assert.equal(f.model.buffer.getLineContent(1), 'sprite_direction');
 	assert.equal(activeCodeEditor.inlineEdit.active, false);
-	f.model.undo(); assert.equal(f.model.buffer.getText(), typed);
+	undoSource(); assert.equal(f.model.buffer.getText(), typed);
 	assert.equal(f.view.cursorRow, 1); assert.equal(f.view.cursorColumn, 'sprite_directio'.length);
 	assert.equal(f.view.selectionAnchor, null, 'Undo restores the real pre-Tab caret, not the replacement range');
 });
@@ -101,10 +102,10 @@ test('explicit completion preserves an actual reversed user selection in Undo an
 	assert.ok(item);
 	f.controller.applyCompletionItem(candidates.context, item);
 	assert.equal(f.model.buffer.getText(), 'return()'); assert.equal(f.view.cursorColumn, 6); assert.equal(f.view.selectionAnchor, null);
-	f.model.undo();
+	undoSource();
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.view.cursorColumn, 2);
 	assert.deepEqual(f.view.selectionAnchor, { row: 0, column: 8 }, 'the original reverse orientation is history state');
-	f.model.redo();
+	redoSource();
 	assert.equal(f.model.buffer.getText(), 'return()'); assert.equal(f.view.cursorColumn, 6); assert.equal(f.view.selectionAnchor, null);
 });
 
@@ -121,7 +122,7 @@ for (const [label, kind, insertion, expectedCaret] of [
 		t.after(unbind);
 		f.controller.applyCompletionItem(context, { label, kind, insertText: label, sortKey: `${kind}:${label}`, detail: '' });
 		assert.equal(f.model.buffer.getText(), insertion); assert.equal(f.view.cursorColumn, expectedCaret);
-		f.model.undo(); f.model.redo();
+		undoSource(); redoSource();
 		assert.deepEqual(observed, [
 			{ kind: 'edit', row: 0, column: expectedCaret, anchor: null },
 			{ kind: 'undo', row: 0, column: 3, anchor: null },
@@ -146,23 +147,23 @@ test('an actual empty require-path candidate inserts at a zero-width range with 
 	t.after(unbind);
 	f.controller.applyCompletionItem(candidates.context, item);
 	assert.equal(f.model.buffer.getText(), "local m = require('module/real')"); assert.equal(changes, 1);
-	f.model.undo(); assert.equal(f.model.buffer.getText(), source); assert.equal(f.view.cursorColumn, column); assert.equal(f.view.selectionAnchor, null);
-	f.model.redo(); assert.equal(f.model.buffer.getText(), "local m = require('module/real')");
+	undoSource(); assert.equal(f.model.buffer.getText(), source); assert.equal(f.view.cursorColumn, column); assert.equal(f.view.selectionAnchor, null);
+	redoSource(); assert.equal(f.model.buffer.getText(), "local m = require('module/real')");
 	assert.equal(f.view.cursorColumn, column + item.insertText.length); assert.equal(f.view.selectionAnchor, null); assert.equal(changes, 3);
 });
 
 test('Undo updates completion only after the retained code view publishes its restored source cursor', t => {
 	const source = 'local other = 1', f = fixture(t, source, 0);
-	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 0, scrollRow: 0, scrollLeft: 0, selectionAnchor: null });
-	const after = codeEditorEditState.of({ ...before.value, cursorRow: 1, cursorColumn: 4 });
+	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 0, selectionAnchor: null }, f.view.editSource);
+	const after = codeEditorEditState.of({ ...before.value, cursorRow: 1, cursorColumn: 4 }, f.view.editSource);
 	f.model.pushEditOperations([{ offset: source.length, deleteLength: 0, text: '\nretu' }], before, () => after);
 	assert.equal(f.view.cursorRow, 1); assert.equal(f.view.cursorColumn, 4);
 	f.type('r'); f.settle();
 	assert.equal(activeCodeEditor.inlineEdit.active, true); assert.equal(activeCodeEditor.inlineEdit.row, 1);
-	f.model.undo();
+	undoSource();
 	assert.equal(f.view.cursorRow, 1); assert.equal(f.view.cursorColumn, 4);
 	assert.equal(activeCodeEditor.inlineEdit.active, true); assert.equal(activeCodeEditor.inlineEdit.startColumn, 4);
-	f.model.undo();
+	undoSource();
 	assert.equal(f.view.cursorRow, 0); assert.equal(f.view.cursorColumn, 0);
 	assert.equal(f.controller.session, null); assert.equal(activeCodeEditor.inlineEdit.active, false);
 	assert.equal(f.model.buffer.getText(), source);

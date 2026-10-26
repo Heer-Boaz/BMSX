@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeEditorViewSnapshot } from '../../ide/common/models';
 import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import type { RuntimeResource } from '../../ide/common/resource';
 import {
@@ -11,10 +10,12 @@ import {
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import {
 	codeEditorEditState,
+	applyCodeEditorSelectionSnapshot,
 	ActiveCodeEditorState,
 	activeCodeEditor,
 	createCodeEditorViewState,
 	type CodeEditorViewState,
+	type CodeEditorSelectionSnapshot,
 } from '../../ide/editor/ui/code_editor_state';
 import { CodeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
@@ -26,7 +27,7 @@ import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/
 import type { HostClock } from '../../hosts/common/clock';
 import { backspace, deleteForward, deleteWordBackward, deleteWordForward, indentSelectionOrLine, insertLineBreak, insertText, pasteText, unindentSelectionOrLine } from '../../ide/editor/editing/text_editing_and_selection';
 import { getSingleCursorSelectionRange, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
-import { restoreCodeEditorViewSnapshot, undo as undoActiveEdit } from '../../ide/editor/editing/undo_controller';
+import { undo as undoActiveEdit, redo as redoActiveEdit } from '../../ide/editor/editing/undo_controller';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 
@@ -108,10 +109,8 @@ function viewSnapshot(view: CodeEditorViewState) {
 	return codeEditorEditState.of({
 		cursorRow: view.cursorRow,
 		cursorColumn: view.cursorColumn,
-		scrollRow: view.scrollRow,
-		scrollLeft: view.scrollLeft,
 		selectionAnchor: view.selectionAnchor,
-	});
+	}, view.editSource);
 }
 
 function codeContext(model: EditorTextModel, view: CodeEditorViewState): CodeTabContext {
@@ -283,7 +282,7 @@ test('tab closure leaves the separately retained code input and resource model i
 	models.clear();
 });
 
-test('retained code inputs consume document edit state independently of the active widget and Undo caller', () => {
+test('retained code inputs track programmatic history independently of the active unrelated widget', () => {
 	const model = new EditorTextModel(luaResource('hidden-code.lua'), 'lua', 'abc');
 	const view = createCodeEditorViewState();
 	const inputs = new CodeEditorInputManager();
@@ -291,8 +290,8 @@ test('retained code inputs consume document edit state independently of the acti
 	const other = new EditorTextModel(luaResource('active-code.lua'), 'lua', 'other');
 	const otherView = createCodeEditorViewState();
 	activeCodeEditor.attach(other, otherView);
-	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 3, scrollRow: 0, scrollLeft: 0, selectionAnchor: { row: 0, column: 1 } });
-	const after = codeEditorEditState.of({ ...before.value, cursorColumn: 4 });
+	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 3, selectionAnchor: { row: 0, column: 1 } }, view.editSource);
+	const after = codeEditorEditState.of({ ...before.value, cursorColumn: 4 }, view.editSource);
 	model.pushEditOperations([{ offset: 3, deleteLength: 0, text: 'x' }], before, () => after);
 	assert.equal(view.cursorColumn, 4);
 	assert.equal(view.selectionAnchor, view.selectionAnchorScratch, 'state application reuses the input-owned cursor anchor');
@@ -302,8 +301,8 @@ test('retained code inputs consume document edit state independently of the acti
 	view.selectionAnchor.column = 2;
 	assert.equal(before.value.selectionAnchor.column, 1, 'view changes cannot alter history values');
 	model.redo();
-	assert.equal(view.cursorColumn, 4);
-	assert.equal(view.selectionAnchor.column, 1);
+	assert.equal(view.cursorColumn, 3, 'marker affinity excludes text reinserted at the selected range edge');
+	assert.equal(view.selectionAnchor.column, 2, 'programmatic Redo maps the current selection instead of restoring a saved one');
 	assert.equal(activeCodeEditor.model, other);
 	assert.equal(otherView.cursorColumn, 0, 'history does not mutate the active unrelated code widget');
 	inputs.clear(); model.dispose(); other.dispose();
@@ -317,11 +316,11 @@ test('code input replacement/clear releases old subscriptions and foreign edit-s
 	inputs.register(codeContext(model, oldView));
 	inputs.register(codeContext(model, view));
 	const before = viewSnapshot(view);
-	const after = codeEditorEditState.of({ ...before.value, cursorColumn: 4 });
+	const after = codeEditorEditState.of({ ...before.value, cursorColumn: 4 }, view.editSource);
 	model.pushEditOperations([{ offset: 3, deleteLength: 0, text: 'x' }], before, () => after);
 	assert.equal(view.cursorColumn, 4);
 	assert.equal(oldView.cursorColumn, 0);
-	const foreign = new EditorEditStateType<CodeEditorViewSnapshot>();
+	const foreign = new EditorEditStateType<CodeEditorSelectionSnapshot>();
 	model.pushEditOperations([{ offset: 4, deleteLength: 0, text: 'y' }], foreign.of(before.value), () => foreign.of(before.value));
 	assert.equal(view.cursorColumn, 4, 'payload shape is not ownership');
 	inputs.clear();
@@ -357,22 +356,13 @@ test('attaching a retained view validates its positions against the current mode
 	assert.deepEqual(view.selectionAnchor, { row: 0, column: 2 });
 });
 
-test('restoring a view does not lend mutable selection state from undo history', () => {
-	const model = new EditorTextModel(luaResource('selection-history.lua'), 'lua', 'root');
+test('applying a Source history selection does not lend its mutable anchor to the view', () => {
 	const view = createCodeEditorViewState();
-	activeCodeEditor.attach(model, view);
-	configureFontVariant(editorTestClock, DEFAULT_FONT_VARIANT, 'lua');
-	const snapshot: CodeEditorViewSnapshot = {
-		cursorRow: 0,
-		cursorColumn: 2,
-		scrollRow: 0,
-		scrollLeft: 0,
-		selectionAnchor: { row: 0, column: 1 },
+	const snapshot: CodeEditorSelectionSnapshot = {
+		cursorRow: 0, cursorColumn: 2, selectionAnchor: { row: 0, column: 1 },
 	};
-
-	restoreCodeEditorViewSnapshot(snapshot, { preserveScroll: true });
-	view.selectionAnchor!.column = 0;
-
+	applyCodeEditorSelectionSnapshot(view, snapshot);
+	view.selectionAnchor.column = 0;
 	assert.equal(snapshot.selectionAnchor.column, 1);
 });
 
@@ -412,14 +402,14 @@ test('backspace after Shift+End on an empty line publishes a collapsed caret whe
 	insertText('!');
 	assert.equal(model.buffer.getText(), 'head!');
 	assert.equal(getSingleCursorSelectionRange(view), null);
-	model.undo();
+	undoActiveEdit();
 	assert.equal(model.buffer.getText(), 'head');
 	assert.equal(getSingleCursorSelectionRange(view), null);
-	model.undo();
+	undoActiveEdit();
 	assert.equal(model.buffer.getText(), 'head\n');
 	assert.equal(view.cursorRow, 1);
 	assert.equal(getSingleCursorSelectionRange(view), null);
-	model.redo(); model.redo();
+	redoActiveEdit(); redoActiveEdit();
 	assert.equal(model.buffer.getText(), 'head!');
 	assert.equal(getSingleCursorSelectionRange(view), null);
 });
@@ -455,10 +445,10 @@ test('ordinary text edits publish and retain a collapsed result selection, inclu
 		entry.run();
 		assert.equal(model.buffer.getText(), entry.result);
 		const cursor = { row: view.cursorRow, column: view.cursorColumn };
-		model.undo();
+		undoActiveEdit();
 		assert.equal(model.buffer.getText(), entry.source);
 		assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, entry.column);
-		model.redo();
+		redoActiveEdit();
 		assert.equal(model.buffer.getText(), entry.result);
 		assert.equal(view.cursorRow, cursor.row); assert.equal(view.cursorColumn, cursor.column);
 		assert.equal(events, 3);

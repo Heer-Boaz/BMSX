@@ -1,7 +1,6 @@
-import { codeEditorEditState } from '../../ide/editor/ui/code_editor_state';
+import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { CodeEditorViewSnapshot } from '../../ide/common/models';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel, type EditorTextModelContentChangeEvent } from '../../ide/editor/model/text_model';
 import { mapTextOffset, mapTrackedTextRange, textChangesEndOffset, type EditorTextChange } from '../../ide/editor/text/text_change';
@@ -10,10 +9,6 @@ const resource: RuntimeResource = { location: { kind: 'workspace' as const, path
 	domain: 0, path: 'tracked.lua',
 	source: { resid: 'tracked.lua', type: 'lua', source_path: 'tracked.lua', generated: false },
 };
-const view: CodeEditorViewSnapshot = {
-	cursorRow: 0, cursorColumn: 0, scrollRow: 0, scrollLeft: 0, selectionAnchor: null,
-};
-
 test('text positions map replacement boundaries and insertion affinity in UTF-16 application order', () => {
 	const replacement = [{ offset: 3, deletedLength: 4, insertedLength: 2 }];
 	const expected = [[2, 2], [3, 3], [3, 5], [3, 5], [3, 5], [5, 5], [6, 6]];
@@ -111,15 +106,16 @@ test('affected text extent belongs to the final buffer, including deletions and 
 });
 
 test('coalesced typing emits only the new replacements, while history emits the complete inverse', () => {
+	const editState = new EditorEditStateType<void>();
 	const model = new EditorTextModel(resource, 'lua', 'abc');
 	const events: EditorTextModelContentChangeEvent[] = [];
 	model.onDidChangeContent(event => events.push(event));
-	model.prepareUndo('typing', true, 1, codeEditorEditState.of(view));
+	model.prepareUndo('typing', true, 1, editState.of(undefined));
 	model.applyUndoableReplace(3, 0, 'X');
-	model.commitEdit(codeEditorEditState.of(view), null);
-	model.prepareUndo('typing', true, 2, codeEditorEditState.of(view));
+	model.commitEdit(editState.of(undefined), null);
+	model.prepareUndo('typing', true, 2, editState.of(undefined));
 	model.applyUndoableReplace(4, 0, 'Y');
-	model.commitEdit(codeEditorEditState.of(view), null);
+	model.commitEdit(editState.of(undefined), null);
 	assert.deepEqual(events[0].changes, [{ offset: 3, deletedLength: 0, insertedLength: 1 }]);
 	assert.deepEqual(events[1].changes, [{ offset: 4, deletedLength: 0, insertedLength: 1 }]);
 	model.undo();
