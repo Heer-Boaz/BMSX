@@ -18,6 +18,7 @@ export type EditorSymbolNavigationCommandId =
 	| 'callHierarchy';
 
 export type EditorViewCommandId =
+	| 'home'
 	| 'hostError'
 	| 'romInspector'
 	| 'events'
@@ -28,6 +29,7 @@ export type EditorViewCommandId =
 	| 'assistant'
 	| 'gameView'
 	| 'resources'
+	| 'resources.focus'
 	| 'problems'
 	| 'behaviorLens'
 	| 'behaviorLens.preview'

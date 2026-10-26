@@ -1,3 +1,5 @@
+import { openHome } from '../workbench/contrib/home/editor_input';
+import { workspaceState } from '../workbench/workspace/state';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import { openHostError } from '../workbench/contrib/host_error/editor_input';
 import { openRomInspector } from '../workbench/contrib/rom_inspector/quick_access';
@@ -20,6 +22,7 @@ import { showOpenEditors } from '../workbench/services/editor/open_editors';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
 	switch (command) {
+		case 'home':
 		case 'hostError':
 		case 'romInspector':
 		case 'events':
@@ -29,6 +32,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'assistant':
 		case 'conversations':
 		case 'resources':
+		case 'resources.focus':
 		case 'problems':
 		case 'behaviorLens':
 		case 'behaviorLens.preview':
@@ -58,6 +62,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 
 export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId): void {
 	switch (command) {
+		case 'home': openHome(editor.editorPanes, workspaceState.projectRootPath); return;
 		case 'animation': editor.animations.open(); return;
 		case 'hostError': openHostError(editor.editorPanes, fault.hostFrameFailure!); return;
 		case 'romInspector': openRomInspector(editor.editorPanes, editor.quickInput, sources); return;
@@ -74,6 +79,9 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'assistant': openAssistant(editor.editorPanes, editor.assistant); return;
 		case 'resources':
 			editor.resourcePanel.togglePanel();
+			return;
+		case 'resources.focus':
+			editor.resourcePanel.show();
 			return;
 		case 'problems':
 			toggleProblemsPanel(editor.editorPanes);

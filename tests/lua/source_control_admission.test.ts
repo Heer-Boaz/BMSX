@@ -14,7 +14,8 @@ import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor
 import { LuaProgramEditorPane } from '../../ide/workbench/contrib/lua_program/editor_pane';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { RuntimeIdeState } from '../../ide/workbench/state';
-import { getActiveTab } from '../../ide/workbench/ui/tabs';
+import { getActiveTab, openEditorTab } from '../../ide/workbench/ui/tabs';
+import { createCodeEditorInput, retainEntryTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createHostFrameFixture } from '../helpers/host_frame';
@@ -50,6 +51,7 @@ function fixture(t: TestContext, source: string) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
+	openEditorTab(editor.editorPanes, createCodeEditorInput(retainEntryTabContext(sources)));
 	t.after(async () => {
 		const pane = editor.editorPanes.activePane;
 		if (pane instanceof SceneEditorPane) {

@@ -1,3 +1,4 @@
+import type { HomeInput } from '../../contrib/home/editor_input';
 import type { AnimationEditorInput } from '../../contrib/animation/editor_input';
 import type { PlayEditorInput } from '../../contrib/play/editor_input';
 import type { HostErrorInput } from '../../contrib/host_error/editor_input';
@@ -23,6 +24,7 @@ import type { GameViewInput } from '../../contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../contrib/edit_review/editor_input';
 
 export type EditorInput =
+	| HomeInput
 	| PlayEditorInput
 	| AnimationEditorInput
 	| HostErrorInput

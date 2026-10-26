@@ -1,3 +1,4 @@
+import { openHome } from '../../ide/workbench/contrib/home/editor_input';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
@@ -32,7 +33,7 @@ import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { closeTab, getActiveTab, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
-import { createCodeEditorInput, retainLuaCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import { createCodeEditorInput, retainEntryTabContext, retainLuaCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -63,6 +64,7 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
+	openEditorTab(editor.editorPanes, createCodeEditorInput(retainEntryTabContext(sources)));
 	t.after(async () => {
 		problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null);
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
@@ -863,4 +865,108 @@ test('a stationary captured tab drag advances from the actual host frame without
 	assert.equal(pointerCapture.active, false); assert.ok(editorChromeState.tabDragState === null);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('Home is an ordinary retained workspace editor and closing all editors leaves the group empty', t => {
+	const f = fixture(t);
+	openHome(f.editor.editorPanes, '/workspace/current'); f.editor.update(0);
+	const home = getActiveTab()!;
+	assert.equal(home.kind, 'home');
+	if (home.kind !== 'home') throw new Error('Home contribution');
+	assert.equal(home.workspaceRoot, '/workspace/current');
+	assert.equal(home.resource, undefined);
+	assert.equal(home.isDirty(), false);
+	assert.ok(f.editor.editorPanes.activePane!.input === home);
+	assert.equal(f.editor.editorPanes.activePane!.companionGameMinimumWidth, undefined);
+	const serialized = f.editor.editorInputSerializers.home.serialize(home);
+	assert.equal(serialized, '', 'the attached workspace, not saved cartridge identity, supplies the Home subject');
+	setActiveTab(f.editor.editorPanes, f.input.id);
+	openHome(f.editor.editorPanes, '/workspace/current'); f.editor.update(0);
+	assert.ok(getActiveTab() === home);
+	assert.equal(editorTabGroup.tabs.filter(input => input.kind === 'home').length, 1);
+	assert.ok(editorTabGroup.tabs.includes(f.input));
+	assert.ok(f.input.context.model === f.model);
+	assert.equal(f.model.buffer.getText(), f.edited);
+	assert.equal(f.model.version, f.version);
+	assert.equal(f.model.canUndo, true);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+	while (editorTabGroup.tabs.length > 0) closeTab(f.editor.editorPanes, editorTabGroup.tabs[0].id);
+	f.editor.update(0);
+	assert.equal(getActiveTab(), null);
+	assert.equal(f.editor.editorPanes.activePane, null);
+	assert.equal(inputFocus.target, null);
+	openHome(f.editor.editorPanes, '/workspace/current'); f.editor.update(0);
+	assert.equal(getActiveTab()!.kind, 'home');
+	assert.ok(getActiveTab() !== home);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('Home publishes action geometry before accepting a fresh pointer release', t => {
+	const f = fixture(t);
+	openHome(f.editor.editorPanes, '/workspace/current'); f.editor.update(0);
+	const home = getActiveTab()!;
+	if (home.kind !== 'home') throw new Error('Home contribution');
+	const bounds = home.sections[0].actions.items[1].bounds;
+	const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+	const invoke = t.mock.method(f.editor.commands, 'execute', () => {});
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
+	assert.equal(pointerCapture.active, true);
+	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
+	assert.equal(invoke.mock.callCount(), 1);
+	assert.equal(invoke.mock.calls[0].arguments[0], 'resourceSearch');
+	assert.equal(pointerCapture.active, false);
+});
+
+test('Home cover revokes both a held action and keyboard admission before the next frame', t => {
+	const f = fixture(t);
+	openHome(f.editor.editorPanes, '/workspace/current'); f.editor.update(0);
+	const home = getActiveTab()!;
+	if (home.kind !== 'home') throw new Error('Home contribution');
+	const focused = inputFocus.target!, bounds = home.sections[0].actions.items[0].bounds;
+	const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
+	assert.equal(pointerCapture.active, true);
+	const invoke = t.mock.method(f.editor.commands, 'execute', () => {});
+	problemsPanel.show(); problemsPanel.setFixedHeightPx(1000000);
+	f.editor.updateViewport({ width: 384, height: 288 });
+	assert.equal(pointerCapture.active, false);
+	assert.equal(pointerCapture.draining, true);
+	assert.equal(focused.canFocus!(), false);
+	assert.ok(inputFocus.target !== focused);
+	f.editor.dispatchKey(new KeyInputEvent('Enter', KeyModifier.none));
+	f.editor.dispatchKey(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
+	assert.equal(invoke.mock.callCount(), 0);
+	assert.equal(pointerCapture.draining, false);
+	problemsPanel.hide(); f.editor.update(0);
+	assert.ok(inputFocus.target !== focused, 'uncovering the retained page must not steal focus');
+	assert.equal(f.model.buffer.getText(), f.edited);
+	assert.equal(f.model.version, f.version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+});
+
+test('Home keyboard scroll retires a pointer action before a same-poll release', t => {
+	const f = fixture(t); f.editor.resourcePanel.show();
+	f.editor.updateViewport({ width: 256, height: 160 }); // Exercise a client that genuinely requires scrolling.
+	openHome(f.editor.editorPanes, '/workspace/current'); f.editor.update(0);
+	const home = getActiveTab()!;
+	if (home.kind !== 'home') throw new Error('Home contribution');
+	f.key('Escape'); // The actual Home action bar returns focus to its scroll view.
+	const bounds = home.sections[0].actions.items[1].bounds;
+	const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
+	assert.equal(pointerCapture.active, true);
+	const invoke = t.mock.method(f.editor.commands, 'execute', () => {});
+	f.editor.dispatchKey(new KeyInputEvent('PageDown', KeyModifier.none));
+	assert.ok(home.viewport.scrollTop > 0, 'the actual scroll owner must move for this stale-release regression');
+	assert.equal(pointerCapture.active, false);
+	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
+	assert.equal(invoke.mock.callCount(), 0);
+	assert.equal(pointerCapture.draining, false);
 });

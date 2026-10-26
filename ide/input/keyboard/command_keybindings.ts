@@ -81,6 +81,7 @@ const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
 	{ code: 'KeyL', command: 'filter', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift } },
 	{ code: 'Comma', command: 'resourceSearch', modifiers: { any: PRIMARY_MODIFIER, forbidden: KeyModifier.alt } },
 	{ code: 'KeyB', command: 'resources', modifiers: { any: PRIMARY_MODIFIER } },
+	{ code: 'KeyE', command: 'resources.focus', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
 	{ code: 'KeyM', command: 'problems', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift } },
 ];
 

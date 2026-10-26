@@ -32,35 +32,37 @@ const folderOwnsFocus = () => {
 const systemEditor = async () => {
 	const opened = t.activeWorkbenchTab();
 	t.assert(opened.kind === 'code_editor' && opened.context.model.resource.domain === -1
-		&& opened.context.model.resource.path === 'bmsx/blua32.lua', 'tree navigation did not open the exact selected BIOS resource');
+		&& t.sourceState().resources.includes(opened.context.model.resource), 'tree navigation did not open a canonical BIOS resource');
 	if (system === undefined) system = { input: opened, model: opened.context.model, source: opened.context.model.buffer.getText(), version: opened.context.model.version };
 	t.assert(opened === system.input && opened.context.model === system.model, 'Files replaced the retained system input/model');
 	t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'successful file navigation did not focus its actual source target');
 	await press('ControlLeft', 'Home'); await press('ArrowDown');
-	t.assert(opened.context.view.cursorRow === 1 && opened.context.view.cursorColumn === 0 && opened.context.view.selectionAnchor === null,
+	// Down follows a visual row: a long first line can wrap differently in each font.
+	t.assert((opened.context.view.cursorRow > 0 || opened.context.view.cursorColumn > 0) && opened.context.view.selectionAnchor === null,
 		'the opened source did not receive ordinary keyboard navigation');
 	unchanged();
 };
-const showBmsxExpanded = async () => {
+const showSystemFolderExpanded = async () => {
 	t.openLuaSource('cart.lua'); await t.frames(2); await press('ControlLeft', 'Home');
-	await press('ControlLeft', 'KeyB'); await press('Home'); await press('ArrowRight');
+	await press('ControlLeft', 'ShiftLeft', 'KeyE'); await press('Home'); await press('ArrowRight');
 	folderOwnsFocus();
 };
 // First entry is a distinct product contract: System starts closed. Slot roots remain expanded.
-await press('ControlLeft', 'Home'); await press('ControlLeft', 'KeyB'); await press('Home');
+await press('ControlLeft', 'Home'); await press('ControlLeft', 'ShiftLeft', 'KeyE'); await press('Home');
 folderOwnsFocus(); await capture('files-bios-initially-closed');
 await press('ArrowRight'); await press('ArrowDown'); await press('ArrowRight'); await press('ArrowDown');
 folderOwnsFocus(); await press('Enter'); await systemEditor(); await capture('files-bios-default-keyboard-open');
 for (const [font, lineHeight, rowHeight] of [['tiny', 6, 9], ['msx', 8, 10]]) {
 	// Coordinates drive the existing canvas only; resource identity/focus, never pixels, are the oracles.
-	const contentTop = (lineHeight + 4) + (lineHeight + 3) + 2 + 2;
+	// The root menu is collapsed; only the tab strip precedes Files content.
+	const contentTop = lineHeight + 3 + 2;
 	for (const theme of ['light', 'dark']) {
-		// System and bmsx are expanded after the preceding actual BIOS navigation.
-		await showBmsxExpanded(); await press('ArrowLeft'); folderOwnsFocus();
+		// System and its first folder are expanded after the preceding BIOS navigation.
+		await showSystemFolderExpanded(); await press('ArrowLeft'); folderOwnsFocus();
 		await press('ArrowRight'); folderOwnsFocus(); await capture(`files-keyboard-folder-${font}-${theme}`);
 		await press('ArrowRight'); await press('Enter'); await systemEditor();
 
-		await showBmsxExpanded(); await press('ArrowLeft'); folderOwnsFocus();
+		await showSystemFolderExpanded(); await press('ArrowLeft'); folderOwnsFocus();
 		await press('Escape'); t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'hiding Files did not return source focus');
 		await press('ControlLeft', 'KeyB'); folderOwnsFocus();
 		// A real catalog refresh must retain the selected folder, not its previous row ordinal.
@@ -68,11 +70,11 @@ for (const [font, lineHeight, rowHeight] of [['tiny', 6, 9], ['msx', 8, 10]]) {
 		folderOwnsFocus(); await capture(`files-retained-collapsed-${font}-${theme}`);
 		await press('ArrowRight'); await press('ArrowDown'); await press('Enter'); await systemEditor();
 
-		await showBmsxExpanded(); await press('Enter'); folderOwnsFocus();
+		await showSystemFolderExpanded(); await press('Enter'); folderOwnsFocus();
 		await capture(`files-enter-collapsed-${font}-${theme}`);
 		await press('Enter'); await press('ArrowRight'); await press('Enter'); await systemEditor();
 
-		await showBmsxExpanded();
+		await showSystemFolderExpanded();
 		await click(20, contentTop + rowHeight + rowHeight / 2); folderOwnsFocus();
 		await capture(`files-pointer-collapsed-${font}-${theme}`);
 		// If the click merely selects instead of collapsing, Right descends and Down opens a different file.

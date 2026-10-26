@@ -73,6 +73,7 @@ function fixture(t: TestContext) {
 	const scenario = new ScenarioLabController(null, null, panes, null, runs, null);
 	const unused = { serialize: () => assert.fail('unexpected serialization'), deserialize: () => assert.fail('unexpected reconstruction') };
 	const serializers: EditorInputSerializers = {
+		home: unused,
 		animation: unused,
 		aem_editor: unused, cart_map: unused, lua_program: unused, actor_lab: unused, game_view: unused,
 		event_viewer: { serialize: () => '', deserialize: () => { throw new Error('Events not used by this session fixture'); } },

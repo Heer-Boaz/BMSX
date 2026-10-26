@@ -90,6 +90,7 @@ function activateViewInput(_input: EditorInput): void {
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorPanes(): EditorPanes {
 	return new EditorPanes({
+		home: () => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(activateViewInput),
 		play_session: () => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(activateViewInput),
 		animation: () => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(activateViewInput),
 		host_error: () => new TestEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(activateViewInput),

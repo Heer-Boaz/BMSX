@@ -32,6 +32,7 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
 import { getActiveTab, getTabs, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
+import { createCodeEditorInput, retainEntryTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 
@@ -92,6 +93,7 @@ function workbenchFixture(t: TestContext) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
+	openEditorTab(editor.editorPanes, createCodeEditorInput(retainEntryTabContext(sources)));
 	editorRuntimeState.active = true; editor.update(0);
 	const cache = new ImagePreviewCache(async () => pixels);
 	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.paneSurface, editor.commands);

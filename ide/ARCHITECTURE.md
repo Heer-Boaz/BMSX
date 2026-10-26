@@ -36,6 +36,16 @@ Session, transport, source authority and physical-target boundaries are defined
 by the [repository architecture](../docs/architecture.md#studio-ownership), not
 by the kind of editor currently visible.
 
+## Workspace and execution
+
+`workbench/workspace/` owns the attached workspace root, editor-session storage
+and recovery namespace. `contrib/home/` presents that workspace through an
+ordinary editor input and pane. `workbench/mode.ts` chooses the startup editor
+after session restoration; changing the active editor does not choose a project
+or install a cartridge. Project selection belongs at workspace attachment, not
+inside Home or a tool pane. Physical execution remains with the workbench's
+execution services and their explicit targets.
+
 ## Documents, inputs and panes
 
 `editor/model/` owns canonical text models. Workbench working-copy services own

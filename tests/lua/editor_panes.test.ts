@@ -12,6 +12,7 @@ import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/
 import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
+import type { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -144,6 +145,7 @@ function createEditorPanes() {
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const editorPanes = new EditorPanes({
+		home: () => new RecordingEditorPane<HomeInput>(),
 		play_session: () => new RecordingEditorPane(),
 		animation: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'animation' }>>(),
 		host_error: () => new RecordingEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(),

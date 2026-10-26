@@ -1969,7 +1969,8 @@ test('built-in resolution admits source without opening tabs or stealing the pre
 	const storage = new MockStorage(); installBrowserWorkspace(t, storage); installWorkspaceRestoreView();
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], 0);
 	const panes = createTestEditorPanes(); t.after(() => panes.dispose());
-	initializeTabs(retainEntryTabContext(sources), panes);
+	initializeTabs(panes);
+	openEditorTab(panes, createCodeEditorInput(retainEntryTabContext(sources)));
 	const entry = editorTabGroup.activeTab;
 	const aem = testResource('res/cue.aem.yaml', 0, 'aem');
 	workspaceCanonicalSourceCache.set('offline-cart/res/cue.aem.yaml', { contents: 'events: {}', updatedAt: 0 });

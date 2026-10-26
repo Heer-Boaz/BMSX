@@ -13,7 +13,8 @@ import type { ContextMenuController } from '../services/context_menu/controller'
 import type { DisposableStore } from '../../common/lifecycle';
 
 const TRIGGER_KEYS = ['Enter', 'NumpadEnter', 'Space'] as const;
-const NAVIGATION_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const;
+const HORIZONTAL_NAVIGATION_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const;
+const VERTICAL_NAVIGATION_KEYS = ['ArrowUp', 'ArrowDown', 'Home', 'End'] as const;
 
 /** One composite control; input-owned geometry outlives physical gestures.
  * The owner chooses content focus on Escape; command scope and teardown parent are separate. */
@@ -35,7 +36,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly hover: PointerHoverService, private readonly commands: EditorCommandRunner, parent: InputFocusTarget | null,
-		private readonly focusContent: () => void, private readonly contextMenu?: ContextMenuController) {
+		private readonly focusContent: () => void, private readonly contextMenu?: ContextMenuController,
+		private readonly orientation: 'horizontal' | 'vertical' = 'horizontal') {
 		this.focusTarget = focus.createTarget(parent);
 		this.focusTarget.canFocus = () => this.input !== undefined;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), this.cancelPress);
@@ -237,10 +239,11 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 			return;
 		}
 		const state = this.input!;
-		for (const key of NAVIGATION_KEYS) if (isKeyDown(key, input)) {
+		const navigationKeys = this.orientation === 'vertical' ? VERTICAL_NAVIGATION_KEYS : HORIZONTAL_NAVIGATION_KEYS;
+		for (const key of navigationKeys) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			this.cancelPointer();
-			this.moveFocus(key === 'ArrowLeft' || key === 'End' ? -1 : 1,
+			this.moveFocus(key === 'ArrowLeft' || key === 'ArrowUp' || key === 'End' ? -1 : 1,
 				key === 'Home' ? -1 : key === 'End' ? 0 : state.focusedIndex);
 			return;
 		}

@@ -4,15 +4,13 @@ import { editorRuntimeState } from '../../editor/common/runtime_state';
 import { editorChromeState } from './chrome_state';
 import type { EditorTabId } from './tab/id';
 import type { EditorInput, EditorInputKind } from './tab/model';
-import type { CodeTabContext } from './code_tab/model';
 import { beginNavigationCapture, captureNavigation, completeNavigation } from '../../navigation/navigation_history';
-import { createCodeEditorInput } from './code_tab/contexts';
 import type { EditorTextSelection } from '../../editor/navigation/text_selection';
 import { endTabDrag } from './tab/drag';
 import { editorTabGroup, type EditorOpenOptions } from './tab/group_model';
 import type { EditorPanes } from '../services/editor/editor_panes';
 
-export function initializeTabs(initialContext: CodeTabContext, editorPanes: EditorPanes): void {
+export function initializeTabs(editorPanes: EditorPanes): void {
 	editorPanes.clearEditor();
 	editorChromeState.tabHoverId = null;
 	editorChromeState.lastTabClickId = null;
@@ -20,9 +18,7 @@ export function initializeTabs(initialContext: CodeTabContext, editorPanes: Edit
 	editorChromeState.tabScrollbar.setScroll(0);
 	editorChromeState.tabButtonBounds.clear();
 	editorChromeState.tabCloseButtonBounds.clear();
-	const initialTab = createCodeEditorInput(initialContext);
-	editorTabGroup.initialize(initialTab);
-	editorPanes.openEditor(initialTab);
+	editorTabGroup.clear();
 }
 
 /** The group can be empty; no active input is a workbench state, not a missing value. */

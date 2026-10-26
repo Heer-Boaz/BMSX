@@ -36,6 +36,7 @@ import { createHostFrameFixture } from '../helpers/host_frame';
 import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { closeTab, getTabs, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
+import { createCodeEditorInput, retainEntryTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 
 /** Native key dispatch and real menu/popup owners in a source-backed workbench. */
@@ -58,6 +59,7 @@ function menuFixture(t: TestContext) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
+	openEditorTab(editor.editorPanes, createCodeEditorInput(retainEntryTabContext(sources)));
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
 	const origin = inputFocus.target!, model = activeCodeEditor.model!, view = activeCodeEditor.view!;
 	view.cursorRow = 1; view.cursorColumn = 6;
@@ -67,6 +69,47 @@ function menuFixture(t: TestContext) {
 	t.after(async () => { inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	return { editor, host, origin, model, view, source, key };
 }
+
+test('Files focus is idempotent and retains its selection and source working copy while Ctrl+B still toggles visibility', t => {
+	const { editor, host, origin, model, view, source, key } = menuFixture(t);
+	const panel = editor.resourcePanel, input = editor.editorPanes.activePane!.input;
+	const version = model.version, cycles = host.runtime.machine.scheduler.nowCycles;
+	assert.equal(panel.visible, false);
+	assert.equal(key('KeyE', KeyModifier.ctrl | KeyModifier.shift).consumed, true);
+	assert.equal(panel.isVisible(), true); assert.equal(panel.isFocused(), true);
+	assert.equal(panel.getMode(), 'resources');
+	key('Home'); const root = panel.files.selectedNode!;
+	assert.equal(root.element.kind, 'root');
+	key('ArrowRight'); key('ArrowRight');
+	const selected = panel.files.selectedNode!;
+	assert.ok(selected.element.kind === 'file' && selected.element.resource === model.resource);
+	assert.equal(root.collapsed, false);
+
+	assert.equal(key('KeyE', KeyModifier.ctrl | KeyModifier.shift).consumed, true);
+	assert.equal(panel.isVisible(), true); assert.equal(panel.isFocused(), true);
+	assert.ok(panel.files.selectedNode === selected);
+	key('Tab'); assert.equal(panel.isVisible(), true); assert.ok(inputFocus.target === origin);
+	assert.equal(key('KeyE', KeyModifier.meta | KeyModifier.shift).consumed, true);
+	assert.equal(panel.isVisible(), true); assert.equal(panel.isFocused(), true);
+	assert.ok(panel.files.selectedNode === selected);
+
+	key('KeyB', KeyModifier.ctrl);
+	assert.equal(panel.visible, false); assert.ok(inputFocus.target === origin);
+	key('KeyB', KeyModifier.ctrl);
+	assert.equal(panel.isVisible(), true); assert.equal(panel.isFocused(), true);
+	assert.ok(panel.files.selectedNode === selected); assert.equal(root.collapsed, false);
+	key('KeyB', KeyModifier.ctrl);
+	assert.equal(panel.visible, false); assert.ok(inputFocus.target === origin);
+	assert.equal(key('KeyE', KeyModifier.ctrl | KeyModifier.shift).consumed, true);
+	assert.equal(panel.isVisible(), true); assert.equal(panel.isFocused(), true);
+	assert.ok(panel.files.selectedNode === selected); assert.equal(root.collapsed, false);
+
+	assert.ok(editor.editorPanes.activePane!.input === input);
+	assert.ok(activeCodeEditor.model === model && activeCodeEditor.view === view);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.canUndo, false);
+	assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 6); assert.equal(view.selectionAnchor, null);
+	assert.equal(host.runtime.machine.scheduler.nowCycles, cycles);
+});
 
 test('clean AltLeft release and F10 use the real menu session and return the source caret without editing it', t => {
 	const { editor, origin, model, view, source, key } = menuFixture(t);

@@ -22,6 +22,8 @@ const capture = label => {
 	t.log(`VISUAL ${label}`); t.capture(label);
 };
 await t.waitForCart(); await t.frames(90);
+// This Source-only fixture uses its first tab as a physical refocus affordance.
+t.command('tabs.close'); await t.frames(2);
 t.openLuaSource('cart.lua'); await t.frames(3);
 const code = t.activeWorkbenchTab(), model = code.workingCopy, original = model.buffer.getText();
 const cycles = t.runtime().machine.scheduler.nowCycles, executable = t.sourceState().currentBlua32Media;

@@ -21,7 +21,7 @@ import * as colors from '../../ide/common/constants';
 import { WORKBENCH_ICON_SIZE, type WorkbenchIcon } from '../../ide/workbench/ui/icon';
 import { drawWorkbenchIcon } from '../../ide/workbench/render/icon';
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, orientation: 'horizontal' | 'vertical' = 'horizontal') {
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
 	const hover = new PointerHoverService();
@@ -36,7 +36,7 @@ function fixture(t: TestContext) {
 		isEnabled: command => enabled.has(command),
 		execute: command => { calls.push(command); onExecute(command); },
 	};
-	const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, content, () => content.focus());
+	const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, content, () => content.focus(), undefined, orientation);
 	bar.setInput(state, content); bar.update();
 	content.next = bar.focusTarget; content.previous = bar.focusTarget;
 	bar.focusTarget.next = content; bar.focusTarget.previous = content;
@@ -484,4 +484,18 @@ test('subject invalidation retires only its armed action for pointer and keyboar
 	assert.deepEqual(f.calls, []);
 	f.key('Enter', true); f.bar.cancelCommand(other); f.key('Enter', false);
 	assert.deepEqual(f.calls, [command]);
+});
+
+
+test('vertical actions navigate on their own axis and revoke an armed trigger on selection change', t => {
+	const f = fixture(t, 'vertical'); f.bar.focusTarget.focus();
+	const first = f.state.items[0].command, second = f.state.items[1].command, last = f.state.items.at(-1)!.command;
+	f.press('ArrowRight');
+	f.key('Enter', true); assert.equal(f.state.pressedCommand, first);
+	f.press('ArrowDown'); f.key('Enter', false);
+	assert.deepEqual(f.calls, []);
+	f.press('Enter'); assert.deepEqual(f.calls, [second]);
+	f.press('ArrowUp'); f.press('Space'); assert.deepEqual(f.calls, [second, first]);
+	f.press('End'); f.press('Enter'); assert.deepEqual(f.calls, [second, first, last]);
+	f.press('Home'); f.press('Enter'); assert.deepEqual(f.calls, [second, first, last, first]);
 });

@@ -25,10 +25,13 @@ import { SceneEditorInputSerializer } from '../../../ide/workbench/contrib/scene
 import { ScenarioLabInputSerializer } from '../../../ide/workbench/contrib/scenario_lab/editor_serializer';
 import { ResourceViewerInputSerializer } from '../../../ide/workbench/contrib/resources/editor_serializer';
 import { GameViewInput } from '../../../ide/workbench/contrib/game_view/editor_input';
+import { HomeInput } from '../../../ide/workbench/contrib/home/editor_input';
+import { workspaceState } from '../../../ide/workbench/workspace/state';
 
 // Capture-only probe: real contribution serializers, no resolver, renderer, worker or storage IO.
 // Run with node --expose-gc --import tsx --import ./tests/lua/test_setup.ts <this file>.
 const serializers: EditorInputSerializers = {
+	home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.projectRootPath) },
 	animation: new AnimationInputSerializer(null, null),
 	aem_editor: new AemEditorInputSerializer(null),
 	cart_map: new CartMapInputSerializer(null),

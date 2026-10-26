@@ -1,3 +1,6 @@
+import { HomeInput } from './workbench/contrib/home/editor_input';
+import { HomeEditorPane } from './workbench/contrib/home/editor_pane';
+import { workspaceState } from './workbench/workspace/state';
 import { type PointerInputEvent, type WheelInputEvent } from '../hosts/common/input/pointer_event';
 import type { DisposableStore } from './common/lifecycle';
 import type { PointerInputSnapshot, WheelInputSnapshot } from './common/models';
@@ -81,7 +84,7 @@ import type { EditorDisplay, Viewport } from './common/viewport';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
-import { SYSTEM_RESOURCE_DOMAIN, type ResourceIdentity } from './common/resource';
+import type { ResourceIdentity } from './common/resource';
 import { type RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
@@ -139,7 +142,6 @@ import { handleEditorWheelInput, handleWorkbenchChromeWheel, handleWorkbenchPane
 import {
 	clearCodeEditorInputs,
 	getActiveCodeTabContext,
-	retainEntryTabContext,
 } from './workbench/ui/code_tab/contexts';
 import {
 	cancelWorkspaceAutosave,
@@ -500,6 +502,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
+			home: () => new HomeEditorPane(this.commands),
 			play_session: () => new PlayEditorPane(this.commands, this.contextMenu, this.navigation),
 			animation: () => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea),
 			host_error: () => new HostErrorPane(),
@@ -584,6 +587,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.luaPrograms = new LuaProgramController(sources, guest, this.editorPanes, this.navigation, this.quickInput, rewind);
 		this.actionStrings = new ActionStringTester(sources, clock, this.quickInput, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {
+			home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.projectRootPath) },
 			animation: new AnimationInputSerializer(sources, this.animations),
 			aem_editor: new AemEditorInputSerializer(sources),
 			lua_program: new LuaProgramInputSerializer(sources, this.luaPrograms),
@@ -1124,10 +1128,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		refreshWorkbenchLayout();
 		this.editorPanes.layout(getWorkbenchEditorBounds());
-		const entry = retainEntryTabContext(this.sources);
-		initializeTabs(entry, this.editorPanes);
-		this.resourcePanel.queuePendingSelection(entry.model.resource.domain === SYSTEM_RESOURCE_DOMAIN ? null : entry.model.resource);
-		activeCodeEditor.view.desiredColumn = activeCodeEditor.view.cursorColumn;
+		initializeTabs(this.editorPanes);
 		initializeNavigationState(this.editorPanes);
 		editorRuntimeState.initialized = true;
 	}

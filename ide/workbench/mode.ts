@@ -1,3 +1,5 @@
+import { openHome } from './contrib/home/editor_input';
+import { editorTabGroup } from './ui/tab/group_model';
 import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
 import type { GameImageCapture, ImageDecoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
@@ -42,6 +44,7 @@ import {
 import type { WorkspaceRecord } from '../workspace/records';
 import {
 	workspaceDirtyRecords,
+	workspaceState,
 } from './workspace/state';
 import {
 	toggleEditor,
@@ -133,6 +136,7 @@ export async function initializeIdeFeatures(
 		workspacePayload,
 		rejectedDirtyPaths,
 	);
+	if (editorTabGroup.tabs.length === 0) openHome(state.editor.editorPanes, workspaceState.projectRootPath);
 	registerRuntimeShortcuts(state, runtime, input, audioOutput);
 	return state;
 }
