@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
@@ -28,7 +27,7 @@ import { WorkbenchPropertyEdit } from '../../ide/workbench/ui/property_edit';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Record<string, string>> = {}) {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const resource = { location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 	const service = new EditorTextModelService();
 	const model = service.retain(resource, 'lua', source);
@@ -154,7 +153,7 @@ fx.register_effect('other', require('other'))`;
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} ActionEffect drafts use the actual shared transient beyond a narrow value column`, t => {
 	const f = fixture(ACTIONEFFECT_SOURCE, 1);
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const ui = propertyEditFixture(t, f, variant === 'tiny' ? 78 : 118);
 	const row = f.properties.tree.rows.find(row => row.element.kind === 'property' && row.element.source.label.startsWith('required_tags'))!;
 	f.properties.tree.selectionIndex = f.properties.tree.rows.indexOf(row);

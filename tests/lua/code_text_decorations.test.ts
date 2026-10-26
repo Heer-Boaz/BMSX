@@ -1,11 +1,10 @@
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import * as constants from '../../ide/common/constants';
 import { CodeTextDecoration, type EditorDiagnostic } from '../../ide/common/models';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { CodeRowDecorations } from '../../ide/editor/render/code_area/decorations';
 import { drawHighlightSlice } from '../../ide/editor/render/code_area/highlights';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from '../../ide/editor/render/code_area/underlines';
@@ -23,21 +22,22 @@ import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
 function createFixture(t: TestContext, variant: 'tiny' | 'msx', theme: 'light' | 'dark', source: string) {
-	const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
+	const previousWrap = editorViewState.wordWrapEnabled;
 	const previousTheme = constants.getActiveIdeThemeVariant();
-	configureFontVariant(new VirtualHeadlessClock(), variant, null); constants.setIdeThemeVariant(theme);
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'decoration.lua' }, domain: 0, path: 'decoration.lua', source: { type: 'lua', resid: 'decoration' } }, 'lua', source);
-	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
-	editorViewState.wordWrapEnabled = false; editorViewState.layout.ensureVisualLines(model.buffer, false, 0, 1);
-	const line = editorViewState.layout.getViewLine(model.buffer, 0), overlay = createHostOverlayFixture(256, 64);
+	configureFontVariant(variant); constants.setIdeThemeVariant(theme);
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'decoration.lua' }, domain: 0, path: 'decoration.lua', source: { type: 'lua', resid: 'decoration' } }, 'lua', source);
+	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view); editorViewState.layout.attach(documents.get(model));
+	editorViewState.wordWrapEnabled = false; editorViewState.layout.ensureVisualLines(false, 0, 1);
+	const line = editorViewState.layout.getViewLine(0), overlay = createHostOverlayFixture(256, 64);
 	const viewport = { codeTop: 4, codeBottom: 20, codeLeft: 0, codeRight: 256,
 		gutterLeft: 0, gutterRight: 8, textLeft: 8, rows: 1, contentWidth: 248, visualCount: 1,
 		contentRight: 256, contentBottom: 20, trackRight: 256, wrapEnabled: false, maxScrollLeft: 0 };
 	t.after(() => {
-		activeCodeEditor.detach(); model.dispose(); editorViewState.font = previousFont; editorViewState.layout = previousLayout;
+		activeCodeEditor.detach(); editorViewState.layout.dispose();
 		editorViewState.wordWrapEnabled = previousWrap; constants.setIdeThemeVariant(previousTheme);
 	});
-	return { model, view, line, overlay, viewport };
+	return { model, view, line, overlay, viewport, documents };
 }
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark'] as const) {
@@ -146,7 +146,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 test('visible masks exclude injected replacement glyphs, clip tab fragments and retain only the local span', t => {
 	const f = createFixture(t, 'tiny', 'light', '\tretur_tail + 2');
 	activeCodeEditor.setInlineEdit(0, 6, 11, 'n');
-	const line = editorViewState.layout.getViewLine(f.model.buffer, 0), mask = new CodeRowDecorations();
+	const line = editorViewState.layout.getViewLine(0), mask = new CodeRowDecorations();
 	f.view.cursorColumn = f.line.src.length; setSingleCursorSelectionAnchor(f.view, 0, 0);
 	mask.prepare(0, line, 3, line.hi.text.length - 1, [{ row: 0, start: 0, end: f.line.src.length }], 0, [], -1, false, true);
 	assert.equal(mask.roles.length, line.hi.text.length - 4);
@@ -209,11 +209,11 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		assert.equal(background.area.left, f.viewport.textLeft - 1.5); assert.equal(glyph.x, background.area.left);
 		assert.equal(glyph.item_start, 4); assert.equal(glyph.color, resolveThemeTokenColor(constants.CODE_TEXT_DECORATION_STYLES[CodeTextDecoration.Selection].foreground));
 		const width = editorViewState.font.measure('abcdefgh');
-		const layout = new CodeLayout(editorViewState.font, { maxHighlightCache: 16, semanticDebounceMs: 200, clock: new VirtualHeadlessClock(),
-			getBuiltinIdentifiers: () => ({ epoch: 1, ids: [] }), computeWrapWidth: () => width, inlineEdit: activeCodeEditor.inlineEdit });
-		editorViewState.layout = layout; editorViewState.wordWrapEnabled = true;
-		layout.ensureVisualLines(f.model.buffer, true, 0, 1); f.view.scrollRow = 1; f.view.scrollLeft = 0;
-		const segment = layout.visualIndexToSegment(1), line = layout.getViewLine(f.model.buffer, 0);
+		const layout = new CodeLayout(editorViewState.font, { computeWrapWidth: () => width, inlineEdit: activeCodeEditor.inlineEdit });
+		layout.attach(f.documents.get(f.model));
+		editorViewState.layout.dispose(); editorViewState.layout = layout; editorViewState.wordWrapEnabled = true;
+		layout.ensureVisualLines(true, 0, 1); f.view.scrollRow = 1; f.view.scrollLeft = 0;
+		const segment = layout.visualIndexToSegment(1), line = layout.getViewLine(0);
 		assert.ok(segment.startDisplay > 0);
 		const viewport = { ...f.viewport, wrapEnabled: true, visualCount: layout.getVisualLineCount(), contentWidth: width,
 			contentRight: f.viewport.textLeft + width };

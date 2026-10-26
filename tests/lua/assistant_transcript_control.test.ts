@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { decodeImage, encodeScreenshotPng } from '../../hosts/node/headless/screenshot';
 import * as colors from '../../ide/common/constants';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -65,7 +64,7 @@ class TranscriptProducer extends ObservedConversation {
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, theme = 'light', withReview = false) {
 	const previousTheme = colors.getActiveIdeThemeVariant();
-	configureFontVariant(new VirtualHeadlessClock(), variant, null); colors.setIdeThemeVariant(theme);
+	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 	const conversation = new TranscriptProducer(), input = new ConversationObserverInput(conversation), surfaces = new WorkbenchSurfaceService();
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {});
 	const composer = inputFocus.createTarget(parent); composer.bindKeyboard(() => {}); composer.focus();
@@ -87,7 +86,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 		const surface = surfaces.findByScope(scope.surfaceScope); return surface !== undefined && surfaces.isAdmitted(surface);
 	});
 	const layout = (nextWidth = input.layout.right, nextVariant: 'tiny' | 'msx' = input.layout.font!.variant, bottom = input.layout.bottom, left = input.layout.left) => {
-		if (editorViewState.font.variant !== nextVariant) configureFontVariant(new VirtualHeadlessClock(), nextVariant, null);
+		if (editorViewState.font.variant !== nextVariant) configureFontVariant(nextVariant);
 		const changed = input.layout.left !== left || input.layout.right !== nextWidth || input.layout.font !== editorViewState.font || input.layout.bottom !== bottom
 			|| input.layout.top !== 24 || input.layout.rowHeight !== editorViewState.lineHeight;
 		Object.assign(input.layout, { left, top: 24, right: nextWidth, bottom, font: editorViewState.font, rowHeight: editorViewState.lineHeight });

@@ -1,3 +1,4 @@
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -16,7 +17,6 @@ import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
 import { writeResourcePanelBounds } from '../../ide/workbench/contrib/resources/panel/layout';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { resolveCodeAreaViewport } from '../../ide/editor/ui/code/area_viewport';
 import { applySearchFieldText, EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
@@ -25,7 +25,7 @@ import type { RuntimeSourceState } from '../../ide/runtime/sources';
 
 function fixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock();
-	configureFontVariant(clock, 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	editorViewState.codeAreaLeft = 0; editorChromeState.editorRightInset = 0;
 	editorChromeState.runtimeTimelineHeight = 0; editorFeedbackState.message.visible = false;
@@ -111,10 +111,10 @@ test('search results and keyboard paging consume the same status, Problems and t
 });
 
 test('font and body-height changes republish the actual result capacity without stale cached bar bounds', t => {
-	const clock = fixture(t); manyResults(); refreshWorkbenchLayout();
+	fixture(t); manyResults(); refreshWorkbenchLayout();
 	const tinyCapacity = capacityForBody(), bounds = getSearchBarBounds()!;
 	assert.equal(searchVisibleResultCount(), tinyCapacity);
-	configureFontVariant(clock, 'msx', null); refreshWorkbenchLayout();
+	configureFontVariant('msx'); refreshWorkbenchLayout();
 	assert.equal(getSearchBarBounds(), bounds);
 	assert.equal(searchVisibleResultCount(), capacityForBody());
 	assert.ok(searchVisibleResultCount() < tinyCapacity);
@@ -148,10 +148,12 @@ test('a viewport shorter than permanent chrome publishes an empty pane and no ph
 test('asynchronous local results publish the smaller child viewport before revealing their source match', t => {
 	const clock = fixture(t);
 	const source = Array.from({ length: 200 }, (_, row) => `local needle_${row} = ${row}`).join('\n');
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'inline-find.lua' }, domain: 0, path: 'inline-find.lua', source: { type: 'lua', resid: 'inline-find' } }, 'lua', source);
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'inline-find.lua' }, domain: 0, path: 'inline-find.lua', source: { type: 'lua', resid: 'inline-find' } }, 'lua', source);
 	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
+	editorViewState.layout.attach(documents.get(model));
 	const search = new EditorSearchController({} as RuntimeSourceState, new RenameController());
-	t.after(() => { search.closeSearch(true); activeCodeEditor.detach(); model.dispose(); clearBackgroundTasks(); });
+	t.after(() => { search.closeSearch(true); activeCodeEditor.detach(); editorViewState.layout.dispose(); clearBackgroundTasks(); });
 	view.cursorRow = 199;
 	applySearchFieldText('needle', true); search.openSearch(false);
 	const fieldOnlyTop = editorViewState.codeAreaTop;
@@ -159,7 +161,7 @@ test('asynchronous local results publish the smaller child viewport before revea
 	assert.equal(editorSearchState.matches.length, 200);
 	assert.ok(editorViewState.codeAreaTop > fieldOnlyTop, 'the result producer publishes geometry before match reveal');
 	const scroll = view.scrollRow, viewport = resolveCodeAreaViewport();
-	const cursorVisual = editorViewState.layout.positionToVisualIndex(model.buffer, view.cursorRow, view.cursorColumn);
+	const cursorVisual = editorViewState.layout.positionToVisualIndex(view.cursorRow, view.cursorColumn);
 	assert.equal(view.cursorRow, 199);
 	assert.ok(cursorVisual >= scroll && cursorVisual < scroll + viewport.rows);
 	assert.equal(viewport.codeTop, getSearchBarBounds()!.bottom);

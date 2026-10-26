@@ -1,3 +1,4 @@
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import { EMPTY_DIAGNOSTICS_BY_ROW } from '../../ide/editor/contrib/diagnostics/model';
 import { navigationState } from '../../ide/navigation/navigation_history';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -5,7 +6,6 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { api } from '../../ide/runtime/overlay_api';
@@ -50,7 +50,7 @@ test('indexed list and tree retain tiny deltas across layout while hit tests add
 });
 
 test('property and resource rendering preserves the actual retained fractional reading positions', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 240; editorViewState.viewportHeight = 160;
 	editorViewState.scrollbars = {
 		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
@@ -84,11 +84,13 @@ test('property and resource rendering preserves the actual retained fractional r
 });
 
 test('source scrolling retains fractional pixels while hit tests resolve source columns', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'wheel.lua' }, domain: 0, path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
+	configureFontVariant('tiny');
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'wheel.lua' }, domain: 0, path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
 	const view = createCodeEditorViewState();
 	activeCodeEditor.attach(model, view);
-	t.after(() => { activeCodeEditor.detach(); model.dispose(); });
+	editorViewState.layout.attach(documents.get(model));
+	t.after(() => { activeCodeEditor.detach(); editorViewState.layout.dispose(); });
 	editorViewState.wordWrapEnabled = false;
 	editorViewState.cachedVisibleRowCount = 4;
 	editorViewState.cachedMaxScrollLeft = 8;
@@ -115,7 +117,7 @@ test('source scrolling retains fractional pixels while hit tests resolve source 
 });
 
 test('Problems wheel integrates sub-row distances without changing selection or being undone by focused drawing', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'problems.lua' }, domain: 0, path: 'problems.lua', source: { type: 'lua', resid: 'problems' } }, 'lua', 'x');
 	const diagnostics: EditorDiagnostic[] = Array.from({ length: 10 }, (_, row) => ({ model, version: 1, row,
 		startColumn: 0, endColumn: 1, message: 'A diagnostic message that wraps across several narrow panel lines.', severity: 'error' }));
@@ -142,7 +144,7 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 });
 
 test('Problems wheel prepares current variable-height layout after show, resize and diagnostic refresh without painting', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'problems-layout.lua' }, domain: 0, path: 'problems-layout.lua', source: { type: 'lua', resid: 'problems-layout' } }, 'lua', 'x');
 	const diagnostic = (message: string, row: number): EditorDiagnostic => ({ model, version: 1, row, startColumn: 0, endColumn: 1, message, severity: 'error' });
 	const diagnostics = [diagnostic('Short', 0), diagnostic('A diagnostic message that wraps across several narrow panel lines.', 1), diagnostic('Last', 2)];
@@ -171,7 +173,7 @@ test('Problems wheel prepares current variable-height layout after show, resize 
 });
 
 test('actual Resource viewers keep arranged scrollbar gestures and retirement local to their groups', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('read.lua', 1,
 		Array.from({ length: 80 }, (_, row) => `-- retained row ${row}`).join('\n'))]);
 	const first = createTestEditorGroup(), second = createTestEditorGroup();

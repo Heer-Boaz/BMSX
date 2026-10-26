@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { CartEditor } from '../../ide/cart_editor';
 import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -24,7 +23,7 @@ import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1))) {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const sources = createScenarioTestSourceState(records);
 	const group = createTestEditorGroup(), editor = { editorGroup: group, isActive: true } as CartEditor;

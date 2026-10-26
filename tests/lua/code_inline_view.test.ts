@@ -1,7 +1,7 @@
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -16,24 +16,25 @@ import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 
 function fixture(t: TestContext, source: string, variant: FontVariant, width = 384) {
 	const previousWrap = editorViewState.wordWrapEnabled, previousSuspended = editorCaretState.cursorRevealSuspended;
-	const clock = new VirtualHeadlessClock();
-	configureFontVariant(clock, variant, 'lua');
+	configureFontVariant(variant);
 	applyViewportSize({ width, height: 288 }); refreshWorkbenchLayout();
 	editorViewState.wordWrapEnabled = true; editorCaretState.cursorRevealSuspended = false;
+	const { documents } = createTestCodeDocuments(t, editorTextModelService);
 	const model = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'inline-view.lua' }, domain: 0, path: 'inline-view.lua',
 		source: { type: 'lua', resid: 'inline-view', source_path: 'inline-view.lua' } }, 'lua', source);
 	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
+	editorViewState.layout.attach(documents.get(model));
 	t.after(() => {
-		editorViewState.layout.invalidateAllHighlights(); activeCodeEditor.detach();
+		editorViewState.layout.dispose(); activeCodeEditor.detach();
 		resetSemanticProjects(editorTextModelService); editorTextModelService.clear();
 		editorViewState.wordWrapEnabled = previousWrap; editorCaretState.cursorRevealSuspended = previousSuspended;
 	});
-	return { clock, model, view };
+	return { model, view, documents };
 }
 
 function assertInlineVisible(): void {
 	const viewport = resolveViewportCapacity(), layout = editorViewState.layout;
-	const edit = activeCodeEditor.inlineEdit, line = layout.getViewLine(activeCodeEditor.model.buffer, edit.row);
+	const edit = activeCodeEditor.inlineEdit, line = layout.getViewLine(edit.row);
 	const first = layout.displayToVisualIndex(edit.row, line.inline!.startDisplay);
 	const last = layout.displayToVisualIndex(edit.row, line.inline!.endDisplay - 1);
 	assert.ok(first >= activeCodeEditor.view.scrollRow, 'the projected start is above neither viewport nor scroll anchor');
@@ -85,7 +86,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const source = 'retur_tail()', { model, view } = fixture(t, source, variant), version = model.version;
 		view.cursorColumn = 5; activeCodeEditor.setInlineEdit(0, 5, 10, 'n');
 		resolveViewportCapacity();
-		const bounds = getCodeAreaBounds(), line = editorViewState.layout.getViewLine(model.buffer, 0);
+		const bounds = getCodeAreaBounds(), line = editorViewState.layout.getViewLine(0);
 		const y = bounds.codeTop + editorViewState.lineHeight * 0.5;
 		const prefixDisplay = line.hi.columnToDisplay[4];
 		const prefixX = bounds.textLeft + line.advancePrefix[prefixDisplay]
@@ -104,19 +105,19 @@ for (const variant of ['tiny', 'msx'] as const) {
 
 	test(`${variant} EOF reveal and two-way font/resize reveal the same complete inline intent without moving source`, t => {
 		const source = 'line()\n'.repeat(50) + 'retur_tail()';
-		const { model, view, clock } = fixture(t, source, variant, minimumWidth), sourceVersion = model.version;
+		const { model, view, documents } = fixture(t, source, variant, minimumWidth), sourceVersion = model.version;
 		view.cursorRow = 50; view.cursorColumn = 5; ensureCursorVisible();
 		const capacity = resolveViewportCapacity();
-		view.scrollRow = editorViewState.layout.positionToVisualIndex(model.buffer, 50, 5) - capacity.rows + 1;
+		view.scrollRow = editorViewState.layout.positionToVisualIndex(50, 5) - capacity.rows + 1;
 		activeCodeEditor.setInlineEdit(50, 5, 10, 'n_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz');
 		const edit = activeCodeEditor.inlineEdit, intentVersion = edit.version;
 		resolveViewportCapacity();
-		const line = editorViewState.layout.getViewLine(model.buffer, 50);
+		const line = editorViewState.layout.getViewLine(50);
 		const last = editorViewState.layout.displayToVisualIndex(50, line.inline!.endDisplay - 1);
 		assert.ok(last >= view.scrollRow + capacity.rows, 'the newly published projected end starts below the viewport');
 		revealInlineEdit(); assertInlineVisible();
 		for (const font of [variant === 'tiny' ? 'msx' : 'tiny', variant] as const) {
-			setFontVariant(clock, font, 'lua');
+			setFontVariant(font, documents.get(model));
 			applyViewportSize({ width: font === 'tiny' ? 78 : 118, height: 240 });
 			refreshWorkbenchLayout(); refreshViewportLayout();
 			assert.equal(activeCodeEditor.inlineEdit, edit); assert.equal(edit.version, intentVersion);
@@ -147,7 +148,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const cellsPerWrap = (computeWrapWidth() / editorViewState.font.advance('n')) | 0;
 		activeCodeEditor.setInlineEdit(50, 5, 10, 'n'.repeat(cellsPerWrap * (viewport.rows - 1) - 5));
 		resolveViewportCapacity();
-		const layout = editorViewState.layout, line = layout.getViewLine(model.buffer, 50), inline = line.inline!;
+		const layout = editorViewState.layout, line = layout.getViewLine(50), inline = line.inline!;
 		const first = layout.displayToVisualIndex(50, inline.startDisplay), last = layout.displayToVisualIndex(50, inline.endDisplay - 1);
 		assert.equal(last - first + 1, viewport.rows - 1, 'the complete preview fits, but cannot reserve normal margins at both ends');
 		revealInlineEdit(); assertInlineVisible();
@@ -160,7 +161,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const { model, view } = fixture(t, 'x'.repeat(200), variant, minimumWidth);
 		const viewport = resolveViewportCapacity(), source = 'x'.repeat(Math.trunc(viewport.contentWidth / editorViewState.charAdvance));
 		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
-		editorViewState.layout.invalidateAllHighlights(); view.cursorColumn = source.length;
+		editorViewState.layout.markVisualLinesDirty(); view.cursorColumn = source.length;
 		ensureCursorVisible();
 		const box = create_rect_bounds(); resolveTextPositionBounds(0, source.length, box);
 		assert.ok(box.left >= viewport.textLeft && box.right <= viewport.contentRight,
@@ -169,12 +170,12 @@ for (const variant of ['tiny', 'msx'] as const) {
 
 	test(`${variant} wrapped glyphs and the trailing block caret fit the reserved text viewport`, t => {
 		const source = ('--' + '…'.repeat(30) + '\n').repeat(50);
-		const { model } = fixture(t, source, variant, minimumWidth);
+		fixture(t, source, variant, minimumWidth);
 		const viewport = resolveViewportCapacity(), layout = editorViewState.layout;
 		assert.equal(computeWrapWidth() + editorViewState.charAdvance, viewport.contentWidth);
 		assert.ok(editorViewState.codeVerticalScrollbarVisible);
 		for (const segment of layout.getVisualLines()) {
-			const line = layout.getViewLine(model.buffer, segment.row);
+			const line = layout.getViewLine(segment.row);
 			assert.ok(line.advancePrefix[segment.endDisplay] - line.advancePrefix[segment.startDisplay] + editorViewState.charAdvance <= viewport.contentWidth,
 				'wrapping must not hide its final glyph beneath the vertical scrollbar lane');
 		}
@@ -185,7 +186,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const { model, view } = fixture(t, source, variant, minimumWidth), column = leadingTabs.length + 5;
 		editorViewState.wordWrapEnabled = false;
 		view.cursorColumn = column; activeCodeEditor.setInlineEdit(0, column, column + 5, 'n_abc');
-		const viewport = resolveViewportCapacity(), line = editorViewState.layout.getViewLine(model.buffer, 0), inline = line.inline!;
+		const viewport = resolveViewportCapacity(), line = editorViewState.layout.getViewLine(0), inline = line.inline!;
 		assert.equal(view.scrollLeft, 0);
 		revealInlineEdit();
 		assert.ok(view.scrollLeft >= Math.min(viewport.maxScrollLeft, line.advancePrefix[inline.endDisplay] - viewport.contentWidth));

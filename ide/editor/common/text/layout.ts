@@ -59,7 +59,6 @@ export function computeSelectionSlices(lineIndex: number, line: CodeLineView, sl
 export function ensureVisualLines(): void {
 	const estimatedVisibleRowCount = editorViewState.cachedVisibleRowCount;
 	activeCodeEditor.view.scrollRow = editorViewState.layout.ensureVisualLines(
-		activeCodeEditor.model.buffer,
 		editorViewState.wordWrapEnabled,
 		activeCodeEditor.view.scrollRow,
 		estimatedVisibleRowCount,

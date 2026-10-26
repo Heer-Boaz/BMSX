@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { insertValue } from '../../ide/editor/ui/inline/text_field';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -15,7 +14,7 @@ import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree, type Workbenc
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const root = { left: 0, top: 24, right: 384, bottom: 274 }, pane = { ...root, right: variant === 'tiny' ? 78 : 118 };
 	const surfaces = new WorkbenchSurfaceService(), parent = inputFocus.createTarget();
 	parent.bindKeyboard(() => {}); parent.focus();
@@ -114,7 +113,7 @@ test('an external source publication and changed font/work area do not transfer 
 	const f = fixture(t), lifetime = f.open();
 	lifetime.add({ dispose: f.model.onDidChangeContent(() => f.edit.close()) });
 	insertValue(f.edit.control.field, '42');
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); f.root.right = 256; f.edit.update();
+	configureFontVariant('msx'); f.root.right = 256; f.edit.update();
 	assert.ok(f.edit.bounds.right <= 256); assert.equal(f.edit.control.field.text, '42');
 	f.model.pushEditOperations([{ offset: 7, deleteLength: 2, text: '60' }]);
 	assert.equal(f.edit.active, false); assert.equal(f.model.buffer.getText(), 'return 60'); assert.equal(f.applied(), 0);

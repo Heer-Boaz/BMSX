@@ -9,7 +9,6 @@ import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { measureText } from '../../ide/editor/common/text/layout';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { inputFocus } from '../../ide/input/focus';
 import { api } from '../../ide/runtime/overlay_api';
 import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
@@ -30,7 +29,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, 0.3,
 		{ width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	editorRuntimeState.active = true;
-	configureFontVariant(host.clock, variant, null);
+	ide.editor.setFontVariant(variant);
 	const resource = sources.resourceByIdentity.get(resourceIdentityKey({ domain: 0, path: 'review.lua' }))!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
 	const proposal = new WorkspaceEditProposal('Review canonical source and retain the complete prospective change', new WorkspaceSourceContext(editorTextModelService, sources), {
@@ -40,7 +39,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	ide.editor.editorGroup.openEditor(input);
 	const pane = ide.editor.editorGroup.panes.activePane!;
 	const arrange = (left: number, right: number, nextVariant = editorViewState.font.variant, bottom = 276) => {
-		if (nextVariant !== editorViewState.font.variant) configureFontVariant(host.clock, nextVariant, null);
+		if (nextVariant !== editorViewState.font.variant) ide.editor.setFontVariant(nextVariant);
 		pane.layout({ left, top: 31, right, bottom }); pane.update(0);
 	};
 	t.after(async () => {

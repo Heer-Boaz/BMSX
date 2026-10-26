@@ -53,7 +53,7 @@ import { buildStatusLeftInfo } from '../../render/status_bar_info';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import { undo, redo } from '../../../editor/editing/undo_controller';
-import { clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
+import { clearReferenceHighlights } from '../../../editor/contrib/intellisense/engine';
 import { CodeEditorNavigationSelection } from './navigation_selection';
 import { closeLineJump } from './find/line_jump';
 import { EMPTY_DIAGNOSTICS_BY_ROW } from '../../../editor/contrib/diagnostics/model';
@@ -141,7 +141,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 
 	protected activate(): void {
 		this.input.initializeViewState(this.viewMementos.get(this.input.workingCopy));
-		activateCodeEditorTab(this.input);
+		activateCodeEditorTab(this.input, this.editor.codeDocuments.get(this.input.workingCopy));
 		this.layoutWidth = this.contentBounds.right - this.contentBounds.left;
 		activeCodeEditor.focusTarget.textInput = this.nativeText;
 		this.unsubscribeReadOnlyChange = this.input.context.model.onDidChangeReadOnly(() => {
@@ -152,10 +152,8 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 			activeCodeEditor.clearInlineEdit(); activeCodeEditor.clearVisualCursor();
 		});
 		this.unsubscribeContentChange = this.input.context.model.onDidChangeContent(event => {
-			editorViewState.layout.onDidChangeContent(this.input.context.model.buffer, event);
 			this.editor.completion.updateAfterEdit(event.editContext);
 			clearReferenceHighlights();
-			requestSemanticRefresh();
 		});
 	}
 
@@ -182,6 +180,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		clearRuntimeErrorOverlay();
 		clearExecutionStopHighlight();
 		editorCaretState.cursorRevealSuspended = false;
+		editorViewState.layout.clearDocument();
 		activeCodeEditor.detach();
 		super.clearInput();
 	}
@@ -230,7 +229,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 			if (pointerHover.has(codeAreaHover)) updateCodeAreaPointerFeedback(this.sources, this.guest, this.fault, this.runtime, pointer,
 				true, isCtrlDown(pointer) || isMetaDown(pointer), editorPointerState.pointerSelecting, this.input.context, bounds);
 		} else pointerHover.release(codeAreaHover);
-		const semanticError = editorViewState.layout.getLastSemanticError();
+		const semanticError = editorViewState.layout.document!.getLastSemanticError();
 		if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
 			showEditorMessage(semanticError, 'error', 2.0);
 			editorRuntimeState.lastReportedSemanticError = semanticError;

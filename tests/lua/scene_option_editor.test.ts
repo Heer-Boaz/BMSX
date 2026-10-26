@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -31,7 +30,7 @@ scenes.register('room', { objects = {
 `;
 
 function fixture(source = SOURCE) {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'room.lua' }, domain: 0, path: 'room.lua', source: { resid: 'room', type: 'lua' } }, 'lua', source);
 	const input = new SceneEditorInput(model);
 	let boundSource = '';

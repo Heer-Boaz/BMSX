@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { SCROLLBAR_WIDTH } from '../../ide/common/constants';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -22,7 +21,7 @@ const images = compileEventHistoryFixture();
 const BUDGET = 10_000_000;
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx', count = 200, capacity = 2048) {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const history = new RuntimeEventHistory(runtime, sources, capacity);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
@@ -121,7 +120,7 @@ test('fixed event rows preserve the leading logical row and fraction through fon
 	const leadingRow = 41.375;
 	input.viewport.scrollbar.setScroll(leadingRow * input.layout.rowHeight);
 	for (const variant of ['msx', 'tiny', 'msx', 'tiny'] as const) {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		configureFontVariant(variant);
 		assert.equal(layoutEventViewer(input, wide, false), true);
 		assert.equal(input.viewport.scrollTop / input.layout.rowHeight, leadingRow);
 		const compact = { ...wide, right: wide.left + (variant === 'tiny' ? 78 : 118) };
@@ -226,7 +225,7 @@ test('visible event preparation invalidates geometry and membership without reta
 	assert.equal(view.rows[0].label.fullEvent, wideLabel.fullEvent);
 	assert.ok(editorViewState.font.measure(view.rows[0].label.event) <= input.layout.eventWidth - 4);
 	const tinyLabel = view.rows[0].label;
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	configureFontVariant('msx');
 	view.update(input, layoutEventViewer(input, { ...compact, right: 135 }, false), false);
 	assert.notEqual(view.rows[0].label, tinyLabel);
 	const labels = view.rows.map(row => row.label);

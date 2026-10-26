@@ -3,7 +3,6 @@ import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import type { StudioBuildJob } from '../../hosts/common/studio_builds';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -23,7 +22,7 @@ const ERROR = 'compiler: first\r\n\t' + 'a_real_long_authored_path/'.repeat(15) 
 
 async function fixture(t: TestContext, failed = true) {
 	const oldScrollbar = editorViewState.scrollbarController;
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const job: StudioBuildJob = { request: { requestId: 'actual-request-identity', target: 'cpu_soak', debug: true, optLevel: 0 },
 		state: failed ? 'failed' : 'completed', phase: 'Done', version: { generation: 1, sequence: 1 }, acceptedAt: 0, updatedAt: 1,
 		error: failed ? ERROR : undefined };

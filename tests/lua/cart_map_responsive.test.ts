@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -32,7 +31,7 @@ const SOURCE = [
 ].join('\n');
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = SOURCE, kind: 'pietious' | 'nemesis' = 'pietious') {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const path = kind === 'pietious' ? 'res/data/castle_map.yaml' : 'res/data/nemesis_s_stage.yaml';
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
 	const input = new CartMapInput(model, kind);
@@ -51,7 +50,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope);
 	pane.setInput(input, bounds); pane.update();
 	const layout = (nextWidth = bounds.right - bounds.left, nextVariant: 'tiny' | 'msx' = editorViewState.font.variant) => {
-		if (nextVariant !== editorViewState.font.variant) configureFontVariant(new VirtualHeadlessClock(), nextVariant, null);
+		if (nextVariant !== editorViewState.font.variant) configureFontVariant(nextVariant);
 		bounds.right = bounds.left + nextWidth; pane.layout(bounds); pane.update();
 	};
 	const press = (code: string) => {
@@ -305,7 +304,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Cart Map ${variant} intrin
 	input.section = 'map';
 	assert.equal(pane.companionGameMinimumWidth, input.layout.mapMinimumWidth);
 	const arrangedFont = input.layout.font;
-	configureFontVariant(new VirtualHeadlessClock(), variant === 'tiny' ? 'msx' : 'tiny', null);
+	configureFontVariant(variant === 'tiny' ? 'msx' : 'tiny');
 	const width = pane.companionGameMinimumWidth;
 	assert.equal(input.layout.font, arrangedFont, 'intrinsic measurement does not pretend that pane arrangement has run');
 	assert.equal(input.layout.mode, 'split'); assert.equal(input.section, 'map');

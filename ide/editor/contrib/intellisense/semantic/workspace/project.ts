@@ -6,7 +6,7 @@ import {
 	type FileSemanticData,
 	type LuaSemanticWorkspaceSnapshot,
 } from '../../../../../../toolchain/ts/lua/semantic/model';
-import type { LuaSourceRecord, LuaSourceRegistry } from '../../../../../runtime/source_registry';
+import { onDidChangeLuaSourceRegistry, type LuaSourceRecord, type LuaSourceRegistry } from '../../../../../runtime/source_registry';
 import {
 	runtimeLuaSourceRegistry,
 	type RuntimeSourceState,
@@ -50,6 +50,11 @@ export class EditorLuaSemanticProject {
 	private readonly modelBaselines = new Map<string, ModelAnalysisBaseline>();
 	private baseSources: ReadonlyMap<string, ProjectBaseSource> = new Map();
 	private readonly modelSubscriptions: readonly (() => void)[];
+	private readonly invalidationListeners = new Set<() => void>();
+	private readonly registrySubscriptions: (() => void)[] = [];
+	private generationValue = 0;
+	private runtimeSources: RuntimeSourceState;
+	private runtimeSourcesDirty = false;
 	private primaryRegistry: LuaSourceRegistry | undefined;
 	private primaryRevision = -1;
 	private systemRegistry: LuaSourceRegistry | null = null;
@@ -63,6 +68,7 @@ export class EditorLuaSemanticProject {
 			if (model.mode === 'lua'
 				&& (model.resource.domain === domain || model.resource.domain === SYSTEM_RESOURCE_DOMAIN)) {
 				this.pendingPaths.add(model.resource.path);
+				this.invalidate();
 			}
 		};
 		this.modelSubscriptions = [
@@ -83,18 +89,53 @@ export class EditorLuaSemanticProject {
 
 	public dispose(): void {
 		for (const unsubscribe of this.modelSubscriptions) unsubscribe();
+		for (const unsubscribe of this.registrySubscriptions) unsubscribe();
+		this.registrySubscriptions.length = 0;
+		this.invalidationListeners.clear();
 		this.pendingPaths.clear();
 		this.modelBaselines.clear();
 	}
 
+	public get generation(): number { return this.generationValue; }
+
+	public onDidInvalidate(listener: () => void): () => void {
+		this.invalidationListeners.add(listener);
+		return () => this.invalidationListeners.delete(listener);
+	}
+
+	private invalidate(): void {
+		this.generationValue++;
+		for (const listener of this.invalidationListeners) listener();
+	}
+
 	public synchronizeRuntimeSources(sources: RuntimeSourceState): void {
+		const queued = this.runtimeSourcesDirty;
+		if (this.refreshRuntimeSources(sources) && !queued) this.invalidate();
+	}
+
+	/** Reconcile queued registry input without publishing a second input generation. */
+	private refreshRuntimeSources(sources: RuntimeSourceState): boolean {
+		this.runtimeSources = sources;
+		this.runtimeSourcesDirty = false;
 		const primaryRegistry = runtimeLuaSourceRegistry(sources, this.domain);
 		const systemRegistry = sources.systemLuaSources;
 		if (this.primaryRegistry === primaryRegistry
 			&& (primaryRegistry === undefined || this.primaryRevision === primaryRegistry.revision)
 			&& this.systemRegistry === systemRegistry
 			&& this.systemRevision === systemRegistry.revision) {
-			return;
+			return false;
+		}
+		if (this.primaryRegistry !== primaryRegistry || this.systemRegistry !== systemRegistry) {
+			for (const unsubscribe of this.registrySubscriptions) unsubscribe();
+			this.registrySubscriptions.length = 0;
+			const queueRegistry = (): void => {
+				this.runtimeSourcesDirty = true;
+				this.invalidate();
+			};
+			if (this.domain !== SYSTEM_RESOURCE_DOMAIN && primaryRegistry !== undefined) {
+				this.registrySubscriptions.push(onDidChangeLuaSourceRegistry(primaryRegistry, queueRegistry));
+			}
+			this.registrySubscriptions.push(onDidChangeLuaSourceRegistry(systemRegistry, queueRegistry));
 		}
 
 		const registries: { domain: ResourceDomain; registry: LuaSourceRegistry }[] = [];
@@ -124,9 +165,11 @@ export class EditorLuaSemanticProject {
 		this.primaryRevision = primaryRegistry === undefined ? -1 : primaryRegistry.revision;
 		this.systemRegistry = systemRegistry;
 		this.systemRevision = systemRegistry.revision;
+		return true;
 	}
 
 	private synchronizeDocuments(): void {
+		if (this.runtimeSourcesDirty) this.refreshRuntimeSources(this.runtimeSources);
 		if (this.pendingPaths.size === 0) return;
 		const changedAnalyses: FileSemanticData[] = [];
 		const removedPaths: string[] = [];
@@ -181,7 +224,10 @@ export class EditorLuaSemanticProject {
 	public updateDocument(path: string, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
 		this.modelBaselines.delete(path);
 		this.documentPaths.add(path);
-		return this.workspace.updateFile(path, source, parsed);
+		const previous = this.workspace.getFileData(path);
+		const result = this.workspace.updateFile(path, source, parsed);
+		if (result !== previous) this.invalidate();
+		return result;
 	}
 
 	public updateDocuments(inputs: ReadonlyArray<SemanticDocumentInput>): void {
@@ -201,6 +247,7 @@ export class EditorLuaSemanticProject {
 			}
 		}
 		this.workspace.updateFiles(changedAnalyses);
+		if (changedAnalyses.length > 0) this.invalidate();
 	}
 
 	public getFileData(path: string): FileSemanticData | undefined {

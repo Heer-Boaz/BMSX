@@ -19,7 +19,7 @@ export function resolveCursorScreenInfo(viewport: CodeAreaViewport): CursorScree
 	const y = viewport.codeTop + rowOffset * editorViewState.lineHeight;
 	if (y >= viewport.contentBottom) return null;
 	const segment = layout.visualIndexToSegment(visualIndex)!;
-	const entry = layout.getViewLine(activeCodeEditor.model.buffer, segment.row);
+	const entry = layout.getViewLine(segment.row);
 	const slice = layout.resolveLineViewport(entry, segment, view.scrollLeft, viewport.contentWidth, viewport.wrapEnabled);
 	const display = layout.columnToDisplay(entry.hi, view.cursorColumn);
 	const x = viewport.textLeft - slice.pixelOffset + entry.advancePrefix[display];

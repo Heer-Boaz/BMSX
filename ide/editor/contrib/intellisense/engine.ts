@@ -34,7 +34,6 @@ import { KEYWORDS, isLuaTrivia, LuaTokenType, type LuaToken } from '../../../../
 import type { TextBuffer } from '../../text/text_buffer';
 import { activeCodeEditor } from '../../ui/code_editor_state';
 import { clearSingleCursorSelection } from '../../editing/cursor/state';
-import { editorViewState } from '../../ui/view/state';
 import { referenceState } from '../references/state';
 import { queryDefinitionsAt } from '../definitions/query';
 import { definitionLocationFromSourceRange } from '../../navigation/source_range';
@@ -81,20 +80,6 @@ export function buildMemberCompletionItems(
 	return items;
 }
 
-export function requestSemanticRefresh(): void {
-	switch (activeCodeEditor.model.mode) {
-		case 'lua':
-			editorViewState.layout.requestSemanticUpdate(
-				activeCodeEditor.model.buffer,
-				activeCodeEditor.model.version,
-				activeCodeEditor.model.resource,
-			);
-			return;
-		case 'yaml':
-		case 'aem':
-			return;
-	}
-}
 function extractIdentifierExpression(buffer: TextBuffer, row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
 	if (row < 0 || row >= buffer.getLineCount()) {
 		return null;

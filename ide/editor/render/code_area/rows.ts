@@ -47,7 +47,7 @@ export function drawCodeAreaRows(
 		}
 		const segment = layout.visualIndexToSegment(visualIndex)!;
 		const lineIndex = segment.row;
-		const entry = layout.getViewLine(activeCodeEditor.model.buffer, lineIndex);
+		const entry = layout.getViewLine(lineIndex);
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
 		const advancePrefix = entry.advancePrefix;

@@ -2,7 +2,6 @@ import { pointerHover } from '../../../input/pointer/hover';
 import { runtimeErrorOverlayPointer } from './pointer';
 import type { RuntimeErrorOverlay } from './model';
 import { activeCodeEditor } from '../../ui/code_editor_state';
-import { editorViewState } from '../../ui/view/state';
 import { runtimeErrorState } from './state';
 
 export function clearRuntimeErrorOverlay(): void {
@@ -17,7 +16,7 @@ export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void
 export function setExecutionStopHighlight(row: number): void {
 	let nextRow = row;
 	if (nextRow !== null) {
-		nextRow = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, nextRow);
+		nextRow = activeCodeEditor.model.clampRow(nextRow);
 	}
 	runtimeErrorState.executionStopRow = nextRow;
 }

@@ -4,8 +4,6 @@ import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
-import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
@@ -33,8 +31,7 @@ for (const kind of ['game_view', 'terminal'] as const) test(`${kind} fits its im
 	const f = fixture(t), input = kind === 'game_view' ? new GameViewInput() : new TerminalInput();
 	f.editor.editorGroup.openEditor(input);
 	for (const font of ['tiny', 'msx'] as const) {
-		configureFontVariant(f.clock, font, null);
-		f.editor.resourcePanel.setFontMetrics(editorViewState.font);
+		f.editor.setFontVariant(font);
 		for (const filesVisible of [false, true, false]) {
 			if (filesVisible) f.editor.resourcePanel.show(); else f.editor.resourcePanel.hide();
 			f.editor.updateViewport({ width: 640, height: 480 }); f.editor.update(0);

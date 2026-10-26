@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { IO_GX_GPU_GP0, IO_GX_GPU_GP1 } from '../../machine/ts/spec/bmsx/io';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -26,7 +25,7 @@ import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx') {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const { runtime } = eventHistoryRuntime(createCartlibProgramHarness('return true').images);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const history = new RuntimeGpuHistory(runtime, 2, 128), input = new GpuDebuggerInput(history);
@@ -171,7 +170,7 @@ test('GPU pane detachment restores the retained page document instead of mistaki
 	const restored = f.createDetails(); t.after(() => restored.dispose()); restored.update();
 	assert.equal(restored.inspector.model.selectionIndex, selected);
 	assert.equal(restored.inspector.model.viewport.scrollTop, scroll);
-	restored.window.setCollapsed(true); configureFontVariant(new VirtualHeadlessClock(), 'tiny', null); restored.update();
+	restored.window.setCollapsed(true); configureFontVariant('tiny'); restored.update();
 	restored.window.setCollapsed(false); restored.update();
 	const row = restored.inspector.model.rows[selected], view = restored.inspector.model.viewport;
 	assert.ok(view.offsetTop + row.top < view.bounds.bottom && view.offsetTop + row.bottom > view.bounds.top);
@@ -187,7 +186,7 @@ test('GPU Words preserves its independently scrolled word/fraction through both 
 	input.words.scrollbar.setScroll(17.5 * editorViewState.lineHeight);
 	const selected = input.selectedWord;
 	for (const variant of ['tiny', 'msx'] as const) {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null); details.update();
+		configureFontVariant(variant); details.update();
 		assert.equal(input.words.scrollTop / editorViewState.lineHeight, 17.5, 'font reflow retains the first logical word and within-row fraction');
 		assert.equal(input.selectedWord, selected, 'reading with the wheel does not retarget word selection');
 	}
@@ -207,24 +206,24 @@ test('GPU Diagram keeps the same source-text anchor through a wrapping font roun
 	details.canvas.saveViewState(input.diagram, input.diagramView);
 	assert.equal(input.diagramView.section, 0); assert.ok(input.diagramView.textOffset > 0, 'the actual operation heading wrapped at this supported width');
 	const before = input.diagram.scrollTop, offset = input.diagramView.textOffset;
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null); details.update();
+	configureFontVariant('tiny'); details.update();
 	assert.equal(input.diagramView.textOffset, offset);
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); details.update();
+	configureFontVariant('msx'); details.update();
 	assert.equal(input.diagramView.textOffset, offset, 'reflow projection cannot replace the source-text anchor with the new line start');
 	assert.equal(input.diagram.scrollTop, before, 'returning to the original font restores the same logical reading location');
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null); details.update(); details.dispose();
+	configureFontVariant('tiny'); details.update(); details.dispose();
 	const restored = f.createDetails(); t.after(() => restored.dispose()); restored.update();
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); restored.update();
+	configureFontVariant('msx'); restored.update();
 	assert.equal(input.diagramView.textOffset, offset, 'retiring a reflowed client preserves the original character identity');
 	assert.equal(input.diagram.scrollTop, before);
 	restored.diagram.focusTarget.focus(); f.press('End');
 	for (const variant of ['tiny', 'msx'] as const) {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null); restored.update();
+		configureFontVariant(variant); restored.update();
 		assert.equal(input.diagram.scrollTop, input.diagram.scrollbar.getMaximumScroll(), 'End keeps the last actual annotation in view across reflow');
 	}
 	f.press('Home'); assert.equal(input.diagram.scrollTop, 0);
 	for (const variant of ['tiny', 'msx'] as const) {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null); restored.update();
+		configureFontVariant(variant); restored.update();
 		assert.equal(input.diagram.scrollTop, 0, 'Home is the logical origin, not the heading padding');
 	}
 	restored.dispose(); const origin = f.createDetails(); t.after(() => origin.dispose()); origin.update();

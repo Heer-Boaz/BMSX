@@ -85,7 +85,7 @@ test('the Assistant turn bar has one retained responsive overflow owner', t => {
 function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'light') {
 	const f = fixture(t), { input, conversation } = f;
 	const previousTheme = colors.getActiveIdeThemeVariant();
-	configureFontVariant(new VirtualHeadlessClock(), variant, null); colors.setIdeThemeVariant(theme);
+	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 	const area = { left: 0, top: 24, right: 384, bottom: 274 }, surfaces = new WorkbenchSurfaceService();
 	Object.assign(input.layout, area, { rowHeight: editorViewState.lineHeight, font: editorViewState.font });
 	input.footerTop = 256;

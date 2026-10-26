@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -54,7 +53,7 @@ test('Scene full identity keeps written member expressions, source correspondenc
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} Details names the selected member, not only its parent scene`, t => {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const input = scene(t), member = input.outline.rows[1].element;
 	layoutSceneEditor(input, true, false, { left: 0, top: 24, right: 384, bottom: 276 });
 	assert.equal(input.detailsText[0].text, member.label);
@@ -70,7 +69,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} Details n
 });
 
 function feedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const input = scene(t), font = editorViewState.font.renderFont();
 	const area = { left: 0, top: 24, right: 384, bottom: 276 };
 	layoutSceneEditor(input, true, false, { ...area, right: variant === 'tiny' ? 78 : 94 });

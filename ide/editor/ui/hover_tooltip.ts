@@ -30,7 +30,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	}
 	ensureVisualLines();
 	const visibleRows = editorViewState.cachedVisibleRowCount;
-	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, tooltip.row, tooltip.startColumn);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(tooltip.row, tooltip.startColumn);
 	const relativeRow = visualIndex - (activeCodeEditor.view.scrollRow | 0);
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		tooltip.bubbleBounds = null;
@@ -42,7 +42,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, segment.row);
+	const entry = editorViewState.layout.getViewLine(segment.row);
 	const slice = editorViewState.layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft,
 		editorViewState.cachedContentWidth, editorViewState.wordWrapEnabled);
 	const sliceStartDisplay = slice.startDisplay, sliceEndDisplay = slice.endDisplay, lineLeft = textLeft - slice.pixelOffset;

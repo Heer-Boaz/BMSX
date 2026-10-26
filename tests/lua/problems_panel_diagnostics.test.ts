@@ -16,7 +16,6 @@ import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/pa
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createTestEditorGroup } from '../helpers/editor_panes';
@@ -29,7 +28,7 @@ function diagnostic(model: TextModel, row = 13, column = 5): EditorDiagnostic {
 		message: 'The same authored error appears in separate retained resources.', severity: 'error' };
 }
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const controller = new ProblemsPanelController(), surfaces = new WorkbenchSurfaceService(), group = createTestEditorGroup();
 	const attachments = t.mock.method(surfaces, 'attach');
 	const area = { left: 0, top: 24, right: 384, bottom: 274 }, bounds = { left: 0, top: 160, right: width, bottom: 274 };

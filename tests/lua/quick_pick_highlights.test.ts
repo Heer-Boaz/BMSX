@@ -12,7 +12,6 @@ import { QuickInputController } from '../../ide/workbench/services/quick_input/c
 import { HighlightedLabel } from '../../ide/editor/ui/highlighted_label';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { api } from '../../ide/runtime/overlay_api';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
@@ -94,7 +93,7 @@ test('command word positions explain abbreviations without marking equivalent se
 });
 
 test('highlighted labels own prefix clipping and ellipsis, with retained proportional run geometry', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	t.mock.method(editorViewState.font, 'advance', (char: string) => char === 'W' ? 9 : char === '…' ? 6 : 2);
 	const label = new HighlightedLabel();
 	label.layout('WiWiWi', 30); // 33 px full text; one 6 px ellipsis leaves a 24 px body.
@@ -115,7 +114,7 @@ test('highlighted labels own prefix clipping and ellipsis, with retained proport
 });
 
 test('shared picker consumes provider spans, updates them without text queries and renders each theme/font directly', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
 	const picker = new QuickInputController(menu);
@@ -139,7 +138,7 @@ test('shared picker consumes provider spans, updates them without text queries a
 		new HeadlessGPUBackend(384, 288, PSX_MACHINE_SPEC.gxGpuVramBytes), 384, 288);
 	const renderer = new OverlayRenderer(presenter.hostOverlayQueue);
 	for (const variant of ['msx', 'tiny'] as const) {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null); picker.update();
+		configureFontVariant(variant); picker.update();
 		for (const theme of ['light', 'dark'] as const) {
 			constants.setIdeThemeVariant(theme);
 			for (const selected of [true, false]) {

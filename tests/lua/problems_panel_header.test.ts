@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -19,7 +18,7 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', width = 240) {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const controller = new ProblemsPanelController(), surfaces = new WorkbenchSurfaceService();
 	const bounds = { left: 8, top: 170, right: width, bottom: 270 }, area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('Problems'), getBounds: () => bounds,

@@ -15,7 +15,6 @@ import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { inputFocus } from '../../ide/input/focus';
 import { subscribeToLuaModelChanges } from '../../ide/editor/contrib/intellisense/model_lifetime';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -38,7 +37,7 @@ function referenceFixture() {
 }
 
 function pickerFixture(t: TestContext) {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
 	const picker = new QuickInputController(menu);

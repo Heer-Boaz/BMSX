@@ -3,7 +3,6 @@ import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { insertValue } from '../../ide/editor/ui/inline/text_field';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -18,7 +17,7 @@ import { WorkbenchTextViewModel } from '../../ide/workbench/ui/text_view/model';
 
 const P = PointerButton.Primary;
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const parent = inputFocus.createTarget(), actions = inputFocus.createTarget(parent);
 	parent.bindKeyboard(() => {}); actions.bindKeyboard(() => {});
 	const control = new WorkbenchTextViewControl(parent), model = new WorkbenchTextViewModel(new PieceTreeBuffer('first probe\r\nsecond probe\n'));

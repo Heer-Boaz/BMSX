@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { setFieldText, setCursorFromOffset, applyInlineFieldEditing } from '../../ide/editor/ui/inline/text_field';
 import { configureFontVariant, getCodeAreaBounds } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
 import { refreshWorkbenchLayout, getWorkbenchEditorBounds } from '../../ide/workbench/common/layout';
 import { InlineBarFieldLayout } from '../../ide/workbench/contrib/code_editor/inline_bar/field';
@@ -15,10 +13,11 @@ import { getSearchFieldLayout } from '../../ide/workbench/contrib/code_editor/in
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 import { inputFocus } from '../../ide/input/focus';
+import { createTestCodeDocuments } from '../helpers/code_documents';
 
 for (const variant of ['tiny', 'msx'] as const) {
 	for (const axis of ['width', 'height'] as const) test(`${variant} empty inner ${axis} revokes an inline field without retiring its draft`, t => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		configureFontVariant(variant);
 		const field = new TextField(null, { singleLine: true, allowSpace: true }), layout = new InlineBarFieldLayout(field);
 		field.focusTarget.canFocus = () => layout.visible;
 		t.after(() => { layout.hide(); inputFocus.setTarget(null); });
@@ -41,7 +40,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} accepted field keys restart the visible caret without changing unrelated key phases`, t => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		configureFontVariant(variant);
 		const field = new TextField(null, { singleLine: true, allowSpace: true });
 		const visible = editorCaretState.cursorVisible, timer = editorCaretState.blinkTimer;
 		t.after(() => { editorCaretState.cursorVisible = visible; editorCaretState.blinkTimer = timer; });
@@ -58,10 +57,12 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} source viewport consumes the space reserved for the Find field`, t => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null);
-		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'inline.lua' }, domain: 0, path: 'inline.lua', source: { type: 'lua', resid: 'inline' } }, 'lua', '-- source');
+		configureFontVariant(variant);
+		const { models, documents } = createTestCodeDocuments(t);
+		const model = models.retain({ location: { kind: 'workspace' as const, path: 'inline.lua' }, domain: 0, path: 'inline.lua', source: { type: 'lua', resid: 'inline' } }, 'lua', '-- source');
 		activeCodeEditor.attach(model, createCodeEditorViewState());
-		t.after(() => { editorSearchState.visible = false; activeCodeEditor.detach(); model.dispose(); });
+		editorViewState.layout.attach(documents.get(model));
+		t.after(() => { editorSearchState.visible = false; activeCodeEditor.detach(); editorViewState.layout.dispose(); });
 		editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 		editorSearchState.visible = true; refreshWorkbenchLayout();
 		assert.ok(editorViewState.codeAreaTop > getWorkbenchEditorBounds().top);
@@ -77,7 +78,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} inline field gives its bounded viewport priority over optional label and metadata`, () => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		configureFontVariant(variant);
 		const field = new TextField(null, { singleLine: true, allowSpace: true });
 		const layout = new InlineBarFieldLayout(field);
 		setFieldText(field, 'long_query_with_a_visible_caret', true);
@@ -103,7 +104,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} unchanged field layout reuses its measured labels and glyph viewport`, t => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		configureFontVariant(variant);
 		const field = new TextField(null, { singleLine: true, allowSpace: true });
 		setFieldText(field, 'unchanged_query', true);
 		const layout = new InlineBarFieldLayout(field), bar = { left: 73, top: 20, right: 500, bottom: 40 };
@@ -118,7 +119,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} removing a field rectangle revokes input once without discarding its draft`, () => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		configureFontVariant(variant);
 		const field = new TextField(null, { singleLine: true, allowSpace: true }), layout = new InlineBarFieldLayout(field);
 		setFieldText(field, 'retained_query', true);
 		let cancellations = 0;

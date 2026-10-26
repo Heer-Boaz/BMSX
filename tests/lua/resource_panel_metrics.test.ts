@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { CartEditor } from '../../ide/cart_editor';
 import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -16,7 +15,7 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 
 // The contract under test is the font-dependent measurement cache, not UI wording or pixel placement.
 function fixture(t: TestContext, variant: FontVariant) {
-	const clock = new VirtualHeadlessClock(); configureFontVariant(clock, variant, null);
+	configureFontVariant(variant);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const path = `deep/tree/${'wide_name_'.repeat(12)}.lua`;
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(path, 1), createScenarioTestSourceRecord('short.lua', 1)]);
@@ -25,11 +24,11 @@ function fixture(t: TestContext, variant: FontVariant) {
 	panel.setFontMetrics(editorViewState.font); panel.queuePendingSelection({ domain: 0, path }); panel.show();
 	const index = panel.files.tree.rows.findIndex(node => node.element.kind === 'file' && node.element.resource.path === path); assert.ok(index >= 0);
 	const publish = (next: FontVariant) => {
-		configureFontVariant(clock, next, null);
+		configureFontVariant(next);
 		panel.setFontMetrics(editorViewState.font); refreshWorkbenchLayout();
 	};
 	t.after(() => { panel.hide(); group.dispose(); inputFocus.setTarget(null); });
-	return { panel, index, publish, clock };
+	return { panel, index, publish };
 }
 
 for (const first of ['tiny', 'msx'] as const) {
@@ -56,7 +55,7 @@ for (const first of ['tiny', 'msx'] as const) {
 test('same-variant publication and warmed metric reads reuse measurements and slots', t => {
 	const f = fixture(t, 'tiny'), slots = f.panel.files.tree.rows.map((_, index) => f.panel.getItemMetrics(index));
 	const maximum = f.panel.maxLineWidth;
-	configureFontVariant(f.clock, 'tiny', null);
+	configureFontVariant('tiny');
 	const font = editorViewState.font, advance = font.advance; let measurements = 0;
 	font.advance = character => { measurements++; return advance.call(font, character); };
 	t.after(() => { font.advance = advance; });

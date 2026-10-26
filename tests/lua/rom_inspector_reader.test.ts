@@ -21,7 +21,6 @@ import { QuickInputController } from '../../ide/workbench/services/quick_input/c
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { formatHexDumpRow } from '../../machine/ts/common/byte_hex_string';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -63,7 +62,7 @@ function imageSnapshot(): RomInspectorSnapshot {
 }
 
 test('ROM catalog commands dispatch from the actual focused list and after filter Enter', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const input = new RomInspectorInput(imageSnapshot()), surfaces = new WorkbenchSurfaceService();
 	const previousScrollbars = editorViewState.scrollbarController;
 	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: input.list.scrollbar, codeHorizontal: input.readerHorizontal,
@@ -112,7 +111,7 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'light', snapshot = imageSnapshot()) {
 	const previousTheme = colors.getActiveIdeThemeVariant(), previousCommands = inputFocus.workbenchScope.commands;
-	configureFontVariant(new VirtualHeadlessClock(), variant, null); colors.setIdeThemeVariant(theme);
+	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 	const input = new RomInspectorInput(snapshot), surfaces = new WorkbenchSurfaceService(), origin = inputFocus.createTarget();
 	Object.assign(input.layout, { ...area, right: variant === 'tiny' ? 78 : 118, bottom: 256, font: editorViewState.font, rowHeight: editorViewState.lineHeight });
 	origin.bindKeyboard(() => {});
@@ -253,7 +252,7 @@ test('byte reading stays anchored to its document offset when window columns or 
 	assert.ok(f.reader.presentation.byteColumns < columns);
 	assert.equal(address(), first, 'narrowing columns must not reinterpret pixel scroll as another byte offset');
 	f.reader.window.hide(); f.recreate();
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); f.reader.show(); f.reader.update();
+	configureFontVariant('msx'); f.reader.show(); f.reader.update();
 	assert.equal(address(), first, 'input-owned reading metrics survive controller detachment and a font change');
 });
 

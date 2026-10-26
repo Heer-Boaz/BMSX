@@ -1,11 +1,10 @@
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import * as colors from '../../ide/common/constants';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { drawCursor } from '../../ide/editor/render/caret';
 import { resolveCursorScreenInfo } from '../../ide/editor/ui/view/caret/screen_geometry';
 import type { CodeAreaViewport } from '../../ide/editor/ui/code/area_viewport';
@@ -37,27 +36,28 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 	for (const [source, suffix, startColumn] of [['retur', 'n', 0], ['fun', 'ction', 1], ['\tretur', 'n', 1]] as const) {
 		test(`${variant}/${theme} the visible inline glyph survives both caret phases after ${JSON.stringify(source)}`, t => {
 			const previousTheme = colors.getActiveIdeThemeVariant(), previousUppercase = editorRuntimeState.uppercaseDisplay;
-			const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
-			configureFontVariant(new VirtualHeadlessClock(), variant, null);
+			const previousWrap = editorViewState.wordWrapEnabled;
+			configureFontVariant(variant);
 			editorRuntimeState.uppercaseDisplay = variant === 'tiny'; colors.setIdeThemeVariant(theme);
-			const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'caret.lua' }, domain: 0, path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', source);
+			const { models, documents } = createTestCodeDocuments(t);
+			const model = models.retain({ location: { kind: 'workspace' as const, path: 'caret.lua' }, domain: 0, path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', source);
 			const view = createCodeEditorViewState(); view.cursorColumn = source.length;
-			activeCodeEditor.attach(model, view);
+			activeCodeEditor.attach(model, view); editorViewState.layout.attach(documents.get(model));
 			editorViewState.wordWrapEnabled = false;
 			t.after(() => {
-				activeCodeEditor.detach(); model.dispose();
-				editorViewState.layout = previousLayout; editorViewState.font = previousFont;
+				activeCodeEditor.detach();
+				editorViewState.layout.dispose();
 				editorViewState.wordWrapEnabled = previousWrap;
 				editorRuntimeState.uppercaseDisplay = previousUppercase; colors.setIdeThemeVariant(previousTheme);
 			});
-			const canonical = editorViewState.layout.getCachedHighlight(model.buffer, 0), originalHighlight = canonical.hi.text;
+			const canonical = editorViewState.layout.measurements.getLine(0), originalHighlight = canonical.hi.text;
 			activeCodeEditor.setInlineEdit(0, source.length, source.length, suffix);
-			const entry = editorViewState.layout.getViewLine(model.buffer, 0), left = rowViewport.textLeft, top = rowViewport.codeTop;
+			const entry = editorViewState.layout.getViewLine(0), left = rowViewport.textLeft, top = rowViewport.codeTop;
 			const start = entry.hi.columnToDisplay[startColumn], end = entry.hi.text.length;
 			const cursorDisplay = entry.inline!.startDisplay;
 			const renderText = editorRuntimeState.uppercaseDisplay ? entry.hi.upperText : entry.hi.text;
 			view.scrollLeft = entry.advancePrefix[start];
-			editorViewState.layout.ensureVisualLines(model.buffer, false, 0, 1);
+			editorViewState.layout.ensureVisualLines(false, 0, 1);
 			const info = resolveCursorScreenInfo(rowViewport)!;
 			const displayed = editorRuntimeState.uppercaseDisplay ? suffix.toUpperCase() : suffix;
 			assert.equal(info.baseChar, displayed.charAt(0)); assert.equal(info.baseColor, colors.COLOR_COMPLETION_PREVIEW_TEXT);
@@ -91,18 +91,19 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 }
 
 test('a suggestion clipped left of the source slice does not become a phantom caret glyph at the viewport edge', t => {
-	const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'clipped.lua' }, domain: 0, path: 'clipped.lua', source: { type: 'lua', resid: 'clipped' } }, 'lua', 'retur + 2');
+	const previousWrap = editorViewState.wordWrapEnabled;
+	configureFontVariant('msx');
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'clipped.lua' }, domain: 0, path: 'clipped.lua', source: { type: 'lua', resid: 'clipped' } }, 'lua', 'retur + 2');
 	const view = createCodeEditorViewState(); view.cursorColumn = 5; view.scrollLeft = editorViewState.font.measure('retur +');
-	activeCodeEditor.attach(model, view);
+	activeCodeEditor.attach(model, view); editorViewState.layout.attach(documents.get(model));
 	activeCodeEditor.setInlineEdit(0, 5, 5, 'n');
 	t.after(() => {
-		activeCodeEditor.detach(); model.dispose();
-		editorViewState.font = previousFont; editorViewState.layout = previousLayout; editorViewState.wordWrapEnabled = previousWrap;
+		activeCodeEditor.detach();
+		editorViewState.layout.dispose(); editorViewState.wordWrapEnabled = previousWrap;
 	});
 	editorViewState.wordWrapEnabled = false;
-	editorViewState.layout.ensureVisualLines(model.buffer, false, 0, 1);
+	editorViewState.layout.ensureVisualLines(false, 0, 1);
 	const overlay = createHostOverlayFixture(128, 32);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 	const info = resolveCursorScreenInfo(rowViewport);
@@ -114,17 +115,18 @@ test('a suggestion clipped left of the source slice does not become a phantom ca
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
 	test(`${variant}/${theme} authored highlights and underlines exclude injected glyphs and removed source`, t => {
-		const previousTheme = colors.getActiveIdeThemeVariant(), previousFont = editorViewState.font, previousLayout = editorViewState.layout;
-		configureFontVariant(new VirtualHeadlessClock(), variant, null); colors.setIdeThemeVariant(theme);
+		const previousTheme = colors.getActiveIdeThemeVariant();
+		configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 		const source = 'retur_tail + 2';
-		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'marks.lua' }, domain: 0, path: 'marks.lua', source: { type: 'lua', resid: 'marks' } }, 'lua', source);
-		const view = createCodeEditorViewState(); view.cursorColumn = 5; activeCodeEditor.attach(model, view);
+		const { models, documents } = createTestCodeDocuments(t);
+		const model = models.retain({ location: { kind: 'workspace' as const, path: 'marks.lua' }, domain: 0, path: 'marks.lua', source: { type: 'lua', resid: 'marks' } }, 'lua', source);
+		const view = createCodeEditorViewState(); view.cursorColumn = 5; activeCodeEditor.attach(model, view); editorViewState.layout.attach(documents.get(model));
 		activeCodeEditor.setInlineEdit(0, 5, 10, 'n');
 		t.after(() => {
-			activeCodeEditor.detach(); model.dispose();
-			editorViewState.font = previousFont; editorViewState.layout = previousLayout; colors.setIdeThemeVariant(previousTheme);
+			activeCodeEditor.detach();
+			editorViewState.layout.dispose(); colors.setIdeThemeVariant(previousTheme);
 		});
-		const line = editorViewState.layout.getViewLine(model.buffer, 0), left = 8, top = 4, bottom = top + editorViewState.lineHeight;
+		const line = editorViewState.layout.getViewLine(0), left = 8, top = 4, bottom = top + editorViewState.lineHeight;
 		assert.equal(line.viewText, 'return + 2');
 		const matches = [{ row: 0, start: 0, end: source.length }];
 		const diagnostics: readonly EditorDiagnostic[] = [{ row: 0, startColumn: 0, endColumn: source.length,
@@ -162,17 +164,18 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 }
 
 test('horizontal scrolling past a short row does not pull its end caret back onto the viewport edge', t => {
-	const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	const previousWrap = editorViewState.wordWrapEnabled;
+	configureFontVariant('msx');
 	const source = 'abc\n' + 'x'.repeat(30);
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'short.lua' }, domain: 0, path: 'short.lua', source: { type: 'lua', resid: 'short' } }, 'lua', source);
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'short.lua' }, domain: 0, path: 'short.lua', source: { type: 'lua', resid: 'short' } }, 'lua', source);
 	const view = createCodeEditorViewState(); view.cursorColumn = 3; view.scrollLeft = editorViewState.font.measure('xxxxxxx');
-	activeCodeEditor.attach(model, view); editorViewState.wordWrapEnabled = false;
+	activeCodeEditor.attach(model, view); editorViewState.layout.attach(documents.get(model)); editorViewState.wordWrapEnabled = false;
 	t.after(() => {
-		activeCodeEditor.detach(); model.dispose();
-		editorViewState.font = previousFont; editorViewState.layout = previousLayout; editorViewState.wordWrapEnabled = previousWrap;
+		activeCodeEditor.detach();
+		editorViewState.layout.dispose(); editorViewState.wordWrapEnabled = previousWrap;
 	});
-	editorViewState.layout.ensureVisualLines(model.buffer, false, 0, 1);
+	editorViewState.layout.ensureVisualLines(false, 0, 1);
 	const overlay = createHostOverlayFixture(128, 32);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 	const viewport = { ...rowViewport, visualCount: 2 };
@@ -184,21 +187,22 @@ test('horizontal scrolling past a short row does not pull its end caret back ont
 });
 
 test('an empty replacement of a source tab measures the surviving visible glyph rather than the removed source column', t => {
-	const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
+	const previousWrap = editorViewState.wordWrapEnabled;
 	const previousUppercase = editorRuntimeState.uppercaseDisplay;
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'deleted-tab.lua' }, domain: 0, path: 'deleted-tab.lua', source: { type: 'lua', resid: 'deleted-tab' } }, 'lua', '\ta');
-	activeCodeEditor.attach(model, createCodeEditorViewState());
+	configureFontVariant('msx');
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'deleted-tab.lua' }, domain: 0, path: 'deleted-tab.lua', source: { type: 'lua', resid: 'deleted-tab' } }, 'lua', '\ta');
+	activeCodeEditor.attach(model, createCodeEditorViewState()); editorViewState.layout.attach(documents.get(model));
 	activeCodeEditor.setInlineEdit(0, 0, 1, '');
 	editorViewState.wordWrapEnabled = false;
 	t.after(() => {
-		activeCodeEditor.detach(); model.dispose(); editorViewState.font = previousFont; editorViewState.layout = previousLayout;
+		activeCodeEditor.detach(); editorViewState.layout.dispose();
 		editorViewState.wordWrapEnabled = previousWrap;
 		editorRuntimeState.uppercaseDisplay = previousUppercase;
 	});
-	const line = editorViewState.layout.getViewLine(model.buffer, 0);
+	const line = editorViewState.layout.getViewLine(0);
 	assert.equal(line.viewText, 'a'); assert.equal(line.displayToColumn[0], 1);
-	editorViewState.layout.ensureVisualLines(model.buffer, false, 0, 1);
+	editorViewState.layout.ensureVisualLines(false, 0, 1);
 	for (const uppercase of [false, true]) {
 		editorRuntimeState.uppercaseDisplay = uppercase;
 		const info = resolveCursorScreenInfo(rowViewport)!, glyph = uppercase ? 'A' : 'a';
@@ -210,25 +214,26 @@ test('an empty replacement of a source tab measures the surviving visible glyph 
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
 	test(`${variant}/${theme} the actual text pass clips partial glyphs with one pixel origin while gutter chrome stays outside it`, t => {
-		const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousWrap = editorViewState.wordWrapEnabled;
+		const previousWrap = editorViewState.wordWrapEnabled;
 		const previousBars = editorViewState.scrollbars, previousTheme = colors.getActiveIdeThemeVariant();
 		const previousUppercase = editorRuntimeState.uppercaseDisplay, previousBlink = editorCaretState.cursorVisible;
-		configureFontVariant(new VirtualHeadlessClock(), variant, 'lua'); colors.setIdeThemeVariant(theme);
+		configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 		applyViewportSize({ width: 128, height: 96 }); refreshWorkbenchLayout();
 		editorViewState.scrollbars = {
 			codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
 			resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'), };
 		editorViewState.wordWrapEnabled = false; editorRuntimeState.uppercaseDisplay = false; editorCaretState.cursorVisible = true;
 		const source = '\tretur_tail + call()' + ' + trailing'.repeat(8);
-		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'pixels.lua' }, domain: 0, path: 'pixels.lua', source: { type: 'lua', resid: 'pixels' } }, 'lua', source);
-		const view = createCodeEditorViewState(); view.cursorColumn = 6; activeCodeEditor.attach(model, view);
+		const { models, documents } = createTestCodeDocuments(t);
+		const model = models.retain({ location: { kind: 'workspace' as const, path: 'pixels.lua' }, domain: 0, path: 'pixels.lua', source: { type: 'lua', resid: 'pixels' } }, 'lua', source);
+		const view = createCodeEditorViewState(); view.cursorColumn = 6; activeCodeEditor.attach(model, view); editorViewState.layout.attach(documents.get(model));
 		activeCodeEditor.setInlineEdit(0, 6, 11, 'n');
 		t.after(() => {
-			activeCodeEditor.detach(); model.dispose(); editorViewState.font = previousFont; editorViewState.layout = previousLayout;
+			activeCodeEditor.detach(); editorViewState.layout.dispose();
 			editorViewState.wordWrapEnabled = previousWrap; editorViewState.scrollbars = previousBars;
 			colors.setIdeThemeVariant(previousTheme); editorRuntimeState.uppercaseDisplay = previousUppercase; editorCaretState.cursorVisible = previousBlink;
 		});
-		const line = editorViewState.layout.getViewLine(model.buffer, 0);
+		const line = editorViewState.layout.getViewLine(0);
 		view.scrollLeft = line.advancePrefix[4] + 1.5;
 		const offset = view.scrollLeft, overlay = createHostOverlayFixture(128, 96);
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);

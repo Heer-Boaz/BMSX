@@ -4,7 +4,6 @@ import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import { api } from '../../ide/runtime/overlay_api';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -40,7 +39,7 @@ issue()
 return true`;
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', withSource = false, program = PROGRAM) {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const { runtime, sources, cpu } = eventHistoryRuntime(createCartlibProgramHarness(program).images);
 	const models = new EditorTextModelService(), registry = sources.cartridgeSlots[0]!.luaSources;
 	const record = { ...createScenarioTestSourceRecord('entry.lua', 1, program), sourceKind: 'project' as const, program_module: true };
@@ -167,7 +166,7 @@ test('GTE expanded reading position survives a font change while its client is c
 	details.show();
 	details.inspector.model.select(67);
 	details.window.setCollapsed(true);
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); details.update();
+	configureFontVariant('msx'); details.update();
 	details.window.setCollapsed(false); details.update();
 	const model = details.inspector.model, view = model.viewport, last = model.rows[67];
 	assert.equal(model.selectionIndex, 67);
@@ -229,11 +228,11 @@ for (const variant of ['tiny', 'msx'] as const) test(`GTE ${variant} Diagram own
 	const point = details.diagram.points[0];
 	assert.equal(details.diagram.hit(input.diagram.bounds.left + point.x, input.diagram.offsetTop + point.y, input.diagram), 0);
 	f.press('End'); assert.equal(input.diagram.scrollTop, input.diagram.contentHeight - input.diagram.height);
-	configureFontVariant(new VirtualHeadlessClock(), variant === 'tiny' ? 'msx' : 'tiny', null); details.update();
+	configureFontVariant(variant === 'tiny' ? 'msx' : 'tiny'); details.update();
 	assert.equal(input.diagram.scrollTop, input.diagram.contentHeight - input.diagram.height, 'End follows the actual annotation end, not old pixels');
 	f.press('Home'); f.press('ArrowDown');
 	const anchor = { ...input.diagramAnchor }; details.diagram.captureAnchor(input.diagram, anchor);
-	configureFontVariant(new VirtualHeadlessClock(), variant, null); details.update();
+	configureFontVariant(variant); details.update();
 	const after = { ...input.diagramAnchor }; details.diagram.captureAnchor(input.diagram, after);
 	assert.equal(after.section, anchor.section); assert.equal(after.offset, anchor.offset);
 	const advances = t.mock.method(editorViewState.font, 'advance');
@@ -343,14 +342,14 @@ return true`;
 	assert.ok(middle, 'the captured saturated RTPT FLAG must expose a scrollable wrapped annotation');
 	const reading = { top: middle.top, section: middle.section, start: middle.start };
 	input.diagram.scrollbar.setScroll(reading.top);
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null); details.update();
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); details.update();
+	configureFontVariant('tiny'); details.update();
+	configureFontVariant('msx'); details.update();
 	assert.equal(input.diagram.scrollTop, reading.top, 'returning to the original font restores the exact source-text row, not the intervening wider line start');
 	const restored = details.diagram.lines.find(line => line.top === input.diagram.scrollTop)!;
 	assert.equal(restored.section, reading.section); assert.equal(restored.start, reading.start);
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null); details.update();
+	configureFontVariant('tiny'); details.update();
 	details.dispose();
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	configureFontVariant('msx');
 	const reopened = new GteDetailsWindow(input, {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
@@ -358,10 +357,10 @@ return true`;
 	t.after(() => reopened.dispose());
 	reopened.show();
 	assert.equal(input.diagram.scrollTop, reading.top, 'a fresh controller restores retained source coordinates, not the old font pixels');
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null); reopened.update();
+	configureFontVariant('tiny'); reopened.update();
 	f.press('Home');
 	assert.equal(input.diagramAnchor.projectedScroll, undefined, 'actual Home intent retires even an unchanged projected position');
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); reopened.update();
+	configureFontVariant('msx'); reopened.update();
 	assert.equal(input.diagram.scrollTop, 0, 'explicit Home replaces the older semantic annotation anchor');
 });
 
@@ -402,7 +401,7 @@ test('GTE warmed width/font layouts reuse measured line and section records', t 
 	details.chooseView(); f.press('ArrowDown'); f.press('Enter'); details.update();
 	const diagram = details.diagram, lines = new Set<object>();
 	const fonts = (['tiny', 'msx'] as const).map(variant => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null); return editorViewState.font;
+		configureFontVariant(variant); return editorViewState.font;
 	});
 	for (const font of fonts) for (const width of [110, 180, 268]) {
 		editorViewState.font = font;

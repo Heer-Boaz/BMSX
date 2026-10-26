@@ -262,7 +262,7 @@ test('empty-group Studio retirement and blocked admission cannot carry an Alt ca
 });
 
 test('the real Menu icon remains pointer-accessible with ordinary, overflowing and empty editor groups', t => {
-	const { editor, host, origin, key } = menuFixture(t);
+	const { editor, origin, key } = menuFixture(t);
 	const sourceTab = editor.editorGroup.model.tabs[0];
 	for (const group of ['ordinary', 'overflow', 'empty'] as const) {
 		if (group === 'overflow') {
@@ -270,7 +270,7 @@ test('the real Menu icon remains pointer-accessible with ordinary, overflowing a
 			editor.updateViewport({ width: 96, height: 288 });
 		} else if (group === 'empty') for (const tab of [...editor.editorGroup.model.tabs]) editor.editorGroup.close(tab.id);
 		for (const variant of ['tiny', 'msx'] as const) {
-			configureFontVariant(host.clock, variant, null); editor.update(0);
+			editor.setFontVariant(variant); editor.update(0);
 			if (group === 'overflow') assert.equal(editor.editorGroup.tabStrip.scrollbar.isVisible(), true);
 			const bounds = editorChromeState.menuButtonBounds;
 			assert.ok(bounds.right > bounds.left && bounds.bottom > bounds.top, 'Menu retains an actual pointer target without an editor');
@@ -289,7 +289,7 @@ test('the real Menu icon remains pointer-accessible with ordinary, overflowing a
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} game chrome and Timeline menus retain visibility intent without stealing guest secondary input`, t => {
 	const f = menuFixture(t), game = new GameViewInput();
-	f.editor.editorGroup.openEditor(game); configureFontVariant(f.host.clock, variant, null); f.editor.update(0);
+	f.editor.editorGroup.openEditor(game); f.editor.setFontVariant(variant); f.editor.update(0);
 	const content = inputFocus.target!, version = f.model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const x = game.layout.left + 1, y = game.layout.top + 1;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
@@ -600,7 +600,7 @@ for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
 
 test('a parent or commandContext cannot lend list Find to a field, menu or toolbar, even with an application runner', t => {
 	const f = fixture(t, inputFocus.workbenchScope);
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
 	let finds = 0;
 	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
@@ -639,7 +639,7 @@ test('a parent or commandContext cannot lend list Find to a field, menu or toolb
 
 test('a real QuickInput query cannot borrow its invoking list Find while retaining its local text input', t => {
 	const f = fixture(t, inputFocus.workbenchScope);
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
 	let finds = 0;
 	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });

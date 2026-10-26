@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import * as colors from '../../ide/common/constants';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -27,7 +26,7 @@ const source = `return {duration_ms=100,tracks={
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark'] as const) {
 	test(`${variant}/${theme} animation labels and retained curve evidence use their actual non-source body pair`, t => {
 		const previousFont = editorViewState.font, previousLayout = editorViewState.layout, previousTheme = colors.getActiveIdeThemeVariant();
-		configureFontVariant(new VirtualHeadlessClock(), variant, null); colors.setIdeThemeVariant(theme);
+		configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 		const resource = { domain: 0 as const, path: 'body.lua', source: { type: 'lua' as const, resid: 'body.lua' } };
 		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 		const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);

@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { editorFeedbackState } from '../../ide/common/feedback_state';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
-import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -23,19 +21,22 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { RuntimeIdeState } from '../../ide/workbench/state';
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	const { models, documents } = createTestCodeDocuments(t);
+	configureFontVariant(variant);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	editorFeedbackState.message.visible = false; problemsPanel.hide();
 	const record = createScenarioTestSourceRecord('status.lua', 1, 'return 1\nreturn 2\n');
 	const sources = createScenarioTestSourceState([record]);
 	const resource = sources.resourceByIdentity.get(resourceIdentityKey({ domain: 0, path: 'status.lua' }))!;
-	const model = editorTextModelService.retain(resource, 'lua', record.src);
+	const model = models.retain(resource, 'lua', record.src);
 	const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
+	editorViewState.layout.attach(documents.get(model));
 	activeCodeEditor.focusTarget.focus();
 	const filesFocus = inputFocus.createTarget(), state = { visible: true, mode: 'resources' as 'resources' | 'command' };
 	const mode = t.mock.fn(() => state.mode), filter = t.mock.fn(() => 'lua_only' as const);
@@ -55,7 +56,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	};
 	t.after(() => {
 		quick.dispose(); menu.dispose(); problemsPanel.hide(); problemsPanel.setDiagnostics([], { ready: 0, pending: 0, unsupported: 0, failed: 0 });
-		inputFocus.setTarget(null); activeCodeEditor.detach(); editorTextModelService.clear(); pointerCapture.cancel();
+		inputFocus.setTarget(null); activeCodeEditor.detach(); editorViewState.layout.dispose(); pointerCapture.cancel();
 	});
 	return { model, view, filesFocus, state, mode, filter, status, lineCount, menu, quick, paint };
 }
@@ -119,7 +120,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		});
 		editorRuntimeState.active = true; editorFeedbackState.message.visible = false;
 		await editor.navigation.openResource(sources.resourceByIdentity.get(resourceIdentityKey({ domain: 0, path: 'status.lua' }))!);
-		configureFontVariant(host.clock, variant, null); editor.resourcePanel.setFontMetrics(editorViewState.font);
+		editor.setFontVariant(variant);
 		const pane = editor.editorGroup.panes.activePane!, status = t.mock.method(pane, 'drawStatusBar');
 		const model = activeCodeEditor.model, view = activeCodeEditor.view;
 		const draw = () => {

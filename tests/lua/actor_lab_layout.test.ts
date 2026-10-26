@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { GAME_FRAME_MINIMUM_WIDTH, GAME_FRAME_MINIMUM_HEIGHT } from '../../ide/workbench/common/game_frame';
@@ -11,7 +10,7 @@ import { ActorStateGraph } from '../../ide/workbench/contrib/actor_lab/state_gra
 import { GRAPH_NODE_PADDING } from '../../ide/workbench/ui/graph/model';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx', presentation: 'outline' | 'graph' = 'outline') {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const input = new ActorLabInput(null!, 'actor-lab', 'Actor', false);
 	input.presentation = presentation;
 	if (presentation === 'graph') input.stateGraph = new ActorStateGraph({ domain: 0, worldHashId: 1, actorHashId: 2, path: [] }, editorViewState.font.renderFont());
@@ -83,9 +82,9 @@ test('Actor preview admission follows the current font and reserves the actual v
 	const width = tiny.outlineMinimumWidth + 4 + tiny.previewMinimumWidth;
 	arrange(width); assert.equal(input.layout.previewVisible, true);
 	const ratio = input.split.ratio;
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	configureFontVariant('msx');
 	arrange(width); assert.equal(input.layout.previewVisible, false); assert.equal(input.split.ratio, ratio);
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	arrange(width); assert.equal(input.layout.previewVisible, true); assert.equal(input.split.ratio, ratio);
 	input.timeline.entryHashId = 1; input.timeline.positionLabel = '0 MS'; input.timeline.durationLabel = '100 MS';
 	arrange(width);

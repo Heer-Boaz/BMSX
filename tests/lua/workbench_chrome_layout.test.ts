@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { EditorCommandId } from '../../ide/common/commands';
 import { HEADER_BUTTON_PADDING_X } from '../../ide/common/constants';
 import { editorFeedbackState, showEditorMessage, updateEditorMessage } from '../../ide/common/feedback_state';
@@ -27,7 +26,7 @@ import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_inpu
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 function fixture(t: TestContext) {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const overlay = createHostOverlayFixture(384, 288);
 	const focus = new InputFocusService(), capture = new PointerCaptureService();
@@ -97,7 +96,7 @@ function fixture(t: TestContext) {
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Menu is one accessible tab-chrome control and reserves category rows only while expanded`, t => {
 	const f = fixture(t);
-	configureFontVariant(new VirtualHeadlessClock(), variant, null); f.layout();
+	configureFontVariant(variant); f.layout();
 	const menu = editorChromeState.menuButtonBounds, button = { ...menu };
 	assert.equal(f.group.model.tabs.length, 0);
 	assert.equal(editorChromeState.menuBarHeight, 0, 'ordinary workbench layout has no permanent menu row');
@@ -121,7 +120,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Menu is one acc
 test('a narrow expanded menubar wraps every category into its owned extent instead of discarding commands', t => {
 	const f = fixture(t);
 	for (const variant of ['tiny', 'msx'] as const) {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		configureFontVariant(variant);
 		editorViewState.viewportWidth = 96; f.layout(); f.menubar.toggleFocus(); f.layout();
 		const extent = editorChromeState.topBarBounds;
 		for (const entry of TOP_BAR_MENU_ENTRIES) {
@@ -235,7 +234,7 @@ test('menu layout retires stale popup geometry on viewport/font changes without 
 	assert.equal(f.popup.visible, false); assert.equal(f.focus.target, f.origin);
 	f.pointer('view');
 	assert.ok(f.popup.model.bounds.right <= 256);
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); f.layout();
+	configureFontVariant('msx'); f.layout();
 	assert.ok(f.measured() > measured);
 	assert.equal(f.popup.visible, false); assert.equal(f.focus.target, f.origin);
 	f.pointer('view'); assert.ok(f.popup.model.bounds.right <= 256);
@@ -257,7 +256,7 @@ test('feedback expiry and font wrapping publish parent bounds before full-width 
 	refreshWorkbenchLayout();
 	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), true);
 	const tinyLines = [...getStatusMessageLines()];
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	configureFontVariant('msx');
 	refreshWorkbenchLayout();
 	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), true);
 	const msxLines = [...getStatusMessageLines()];
@@ -285,7 +284,7 @@ test('the root layout publishes viewport, font and status changes into one borro
 	assert.equal(getWorkbenchWorkArea(), area); assert.ok(getStatusMessageLines().length > 1);
 	assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin - getStatusMessageLines().length * editorViewState.lineHeight - 4);
 	const tinyBottom = area.bottom;
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null); refreshWorkbenchLayout();
+	configureFontVariant('msx'); refreshWorkbenchLayout();
 	assert.equal(getWorkbenchWorkArea(), area);
 	assert.equal(area.top, topMargin()); assert.ok(area.top > tinyTop);
 	assert.ok(area.bottom < tinyBottom, 'the same borrowed object exposes the larger actual font/status budget');
@@ -293,7 +292,7 @@ test('the root layout publishes viewport, font and status changes into one borro
 	updateEditorMessage(1); refreshWorkbenchLayout();
 	assert.equal(getWorkbenchWorkArea(), area); assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null); refreshWorkbenchLayout();
+	configureFontVariant('tiny'); refreshWorkbenchLayout();
 	assert.equal(getWorkbenchWorkArea(), area);
 	assert.equal(area.top, tinyTop); assert.equal(area.right, 384); assert.equal(area.bottom, 288 - editorViewState.baseBottomMargin);
 });

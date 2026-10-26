@@ -4,7 +4,6 @@ import * as colors from '../../ide/common/constants';
 import { editorFeedbackState, showEditorMessage } from '../../ide/common/feedback_state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { RuntimeLuaEvaluation } from '../../ide/runtime/lua_evaluation';
 import { renderStatusBar } from '../../ide/workbench/render/status_bar';
@@ -30,7 +29,7 @@ const hiddenResources: Parameters<typeof renderStatusBar>[0] = {
 
 for (const variant of ['tiny', 'msx'] as const) for (const kind of ['info', 'success', 'warning', 'error'] as const) {
 	test(`${variant} retained ${kind} feedback resolves its actual status-surface ink after a theme change`, t => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null);
+		configureFontVariant(variant);
 		editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 		const originalTheme = colors.getActiveIdeThemeVariant();
 		t.after(() => { editorFeedbackState.message.visible = false; colors.setIdeThemeVariant(originalTheme); });
@@ -88,7 +87,7 @@ for (const theme of ['light', 'dark']) test(`${theme} non-source content and gra
 
 for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {
 	test(`${theme}/${variant} a rejected numeric draft paints input-owned fill, error ink and focus borders`, t => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null); colors.setIdeThemeVariant(theme);
+		configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 		const input = new ValueInput(null, INTEGER_INPUT_FORMAT, () => {});
 		t.after(() => { input.field.focusTarget.release(); input.dispose(); editorFeedbackState.message.visible = false; });
 		const bounds = { left: 0, top: 0, right: 90, bottom: 20 };

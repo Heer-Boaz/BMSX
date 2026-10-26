@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { inputFocus } from '../../ide/input/focus';
@@ -14,11 +13,11 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { editorPointerState } from '../../ide/input/pointer/state';
 import { handleCodeAreaSelectionPointer } from '../../ide/input/pointer/code/selection';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { layoutInlineWidgets } from '../../ide/quick_input/inline_widget';
 import { getSearchFieldLayout } from '../../ide/workbench/contrib/code_editor/inline_bar/layout';
 import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
+import { createTestCodeDocuments } from '../helpers/code_documents';
 
 const scope = WORKBENCH_POINTER_SCOPE;
 function pointer(x: number, pressedButtons: number = PointerButton.Primary, justPressedButtons = 0, justReleasedButtons = 0): PointerSnapshot {
@@ -35,7 +34,7 @@ function fieldFixture(t: TestContext, variant: 'tiny' | 'msx') {
 		assert.equal(available, true, 'a retired capture must not query an absent field rectangle');
 		lookups++; layout.layout(bar, '', '', 2); return layout;
 	});
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	setFieldText(field, 'abcdefghijklmnopqrstuvwxyz', true);
 	layout.layout(bar, '', '', 2); field.focusTarget.focus();
 	t.after(() => {
@@ -76,11 +75,13 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 
 	test(`${variant} source endpoint consumes admitted motion in a primary-release sample`, t => {
-		configureFontVariant(new VirtualHeadlessClock(), variant, 'lua');
+		configureFontVariant(variant);
 		const source = 'mmmmmm\nnnnnnn';
-		const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'hold.lua' }, domain: 0, path: 'hold.lua', source: { type: 'lua', resid: 'hold' } }, 'lua', source);
+		const { models, documents } = createTestCodeDocuments(t);
+		const model = models.retain({ location: { kind: 'workspace' as const, path: 'hold.lua' }, domain: 0, path: 'hold.lua', source: { type: 'lua', resid: 'hold' } }, 'lua', source);
 		const view = createCodeEditorViewState(); activeCodeEditor.attach(model, view);
-		t.after(() => { editorPointerState.pointerSelecting = false; activeCodeEditor.detach(); model.dispose(); });
+		editorViewState.layout.attach(documents.get(model));
+		t.after(() => { editorPointerState.pointerSelecting = false; activeCodeEditor.detach(); editorViewState.layout.dispose(); });
 		editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; editorViewState.codeAreaLeft = 0;
 		refreshWorkbenchLayout();
 		view.selectionAnchor = { row: 0, column: 1 }; view.cursorColumn = 1;
@@ -110,14 +111,16 @@ test('retiring a target preserves a sibling capture and consumes the interrupted
 });
 
 test('an empty workbench budget retires the real Find field before its next captured move', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'budget.lua' }, domain: 0, path: 'budget.lua', source: { type: 'lua', resid: 'budget' } }, 'lua', '-- source');
+	configureFontVariant('tiny');
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'budget.lua' }, domain: 0, path: 'budget.lua', source: { type: 'lua', resid: 'budget' } }, 'lua', '-- source');
 	activeCodeEditor.attach(model, createCodeEditorViewState());
+	editorViewState.layout.attach(documents.get(model));
 	t.after(() => {
 		inputFocus.setTarget(null); editorSearchState.visible = false; pointerCapture.cancel();
 		const released = pointer(0, 0, 0, PointerButton.Primary);
 		pointerCapture.dispatch(released, false, 0, scope); pointerCapture.endRoute(released);
-		activeCodeEditor.detach(); model.dispose();
+		activeCodeEditor.detach(); editorViewState.layout.dispose();
 	});
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	editorSearchState.visible = true; setFieldText(editorSearchState.field, 'retained_query', true);

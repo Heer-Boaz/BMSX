@@ -17,7 +17,6 @@ import type { EditorCommandId } from '../../ide/common/commands';
 import { showCommandPalette } from '../../ide/workbench/contrib/commands/quick_access';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { QuickPickModel } from '../../ide/workbench/services/quick_input/model';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { api } from '../../ide/runtime/overlay_api';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
@@ -42,7 +41,7 @@ const items = [
 ];
 
 function createPicker(t: TestContext, onDidChangeVisibility?: () => void): QuickInputController {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384;
 	editorViewState.viewportHeight = 288;
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
@@ -372,7 +371,7 @@ for (const phase of ['show', 'hide'] as const) test(`a visibility callback can r
 });
 
 for (const kind of ['pick', 'input'] as const) test(`a ${kind} replacing a context menu retains its actual return client, not its action subject`, t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
 	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });

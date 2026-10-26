@@ -1,12 +1,13 @@
 import { textLanguageConfiguration, type EditorDocumentMode, type TextLanguageConfiguration } from '../../language/configuration';
 import * as constants from '../../common/constants';
-import type { EditContext } from '../../common/models';
+import type { EditContext, Position } from '../../common/models';
+import { clamp } from '../../../machine/ts/common/clamp';
 import type { ResourceIdentity, RuntimeResource } from '../../common/resource';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import { getTextSnapshot } from '../text/source_text';
 import type { TextBuffer } from '../text/text_buffer';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
-import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } from '../text/text_change';
+import { mapTrackedTextRange, textChangesEndOffset, type EditorTextChange, type TrackedTextRange } from '../text/text_change';
 import type { EditorEditSource, EditorEditState } from './edit_state';
 import { EditorUndoRedoService, type EditorHistoryDirection } from './undo_redo_service';
 
@@ -31,6 +32,8 @@ export type EditorTextModelChangeKind = 'edit' | 'undo' | 'redo' | 'restore' | '
 export type EditorTextModelAppliedChanges = {
 	readonly version: number;
 	readonly startRow: number;
+	readonly endRow: number;
+	readonly lineCount: number;
 	readonly changes: readonly EditorTextChange[];
 };
 
@@ -118,6 +121,26 @@ export class EditorTextModel {
 
 	public get buffer(): TextBuffer {
 		return this.pieceTree;
+	}
+
+	public clampRow(row: number): number {
+		return clamp(row, 0, this.pieceTree.getLineCount() - 1);
+	}
+
+	public clampColumn(row: number, column: number): number {
+		const sourceRow = this.clampRow(row);
+		return clamp(column, 0, this.pieceTree.getLineEndOffset(sourceRow) - this.pieceTree.getLineStartOffset(sourceRow));
+	}
+
+	/** Source positions survive edits independently of any control's font or wrapping. */
+	public clampPosition(position: Position): Position {
+		const row = this.clampRow(position.row);
+		const column = this.clampColumn(row, position.column);
+		return row === position.row && column === position.column ? position : { row, column };
+	}
+
+	public clampOffset(offset: number): number {
+		return clamp(offset, 0, this.pieceTree.length);
 	}
 
 	public get version(): number {
@@ -523,7 +546,9 @@ export class EditorTextModel {
 		for (const ranges of this.trackedRangeSets) {
 			for (const range of ranges.values()) mapTrackedTextRange(range, changes);
 		}
-		const applied = { version: this.versionValue, startRow, changes };
+		this.pieceTree.positionAt(textChangesEndOffset(changes), editStartPosition);
+		const applied = { version: this.versionValue, startRow, endRow: editStartPosition.row,
+			lineCount: this.pieceTree.getLineCount(), changes };
 		for (const listener of this.appliedChangesListeners) listener(applied);
 		return applied;
 	}

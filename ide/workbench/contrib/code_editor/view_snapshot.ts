@@ -1,7 +1,6 @@
 import { clearSingleCursorSelection, getSingleCursorSelectionRange, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import { mapTextOffset, type EditorTextChange } from '../../../editor/text/text_change';
 import type { CodeEditorInput } from './editor_input';
-import { clamp } from '../../../../machine/ts/common/clamp';
 
 /** UTF-16 source locations plus code-view coordinates; no widget or subscription. */
 export type CodeEditorLocation = {
@@ -29,11 +28,11 @@ export function restoreCodeEditorView(input: CodeEditorInput, snapshot: CodeEdit
 	const { model, view } = input.context;
 	const position = { row: 0, column: 0 };
 	// A closed view's reading position can outlive edits from another view.
-	model.buffer.positionAt(clamp(snapshot.cursor, 0, model.buffer.length), position);
+	model.buffer.positionAt(model.clampOffset(snapshot.cursor), position);
 	view.cursorRow = position.row; view.cursorColumn = position.column;
 	if (snapshot.anchor === null) clearSingleCursorSelection(view);
 	else {
-		model.buffer.positionAt(clamp(snapshot.anchor, 0, model.buffer.length), position);
+		model.buffer.positionAt(model.clampOffset(snapshot.anchor), position);
 		setSingleCursorSelectionAnchor(view, position.row, position.column);
 	}
 	view.scrollRow = snapshot.scrollRow; view.scrollLeft = snapshot.scrollLeft;

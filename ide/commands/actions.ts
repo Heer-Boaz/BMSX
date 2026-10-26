@@ -9,7 +9,6 @@ import { deactivateEditor } from '../workbench/overlay_modes';
 import type { EditorActionRequest } from './action_request';
 import * as constants from '../common/constants';
 import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
-import { editorViewState } from '../editor/ui/view/state';
 import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import type { CartEditor } from '../cart_editor';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
@@ -135,5 +134,4 @@ function toggleThemeMode(): void {
 	constants.setIdeThemeVariant(nextVariant);
 	editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
 	setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
-	editorViewState.layout.invalidateAllHighlights();
 }

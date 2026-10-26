@@ -1,8 +1,8 @@
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
@@ -19,22 +19,23 @@ import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext, source: string, columnOffset = source.length) {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
 	const record = createScenarioTestSourceRecord('inline.lua', 1, source);
 	const sources = createScenarioTestSourceState([record]);
+	const { documents } = createTestCodeDocuments(t, editorTextModelService);
 	const model = editorTextModelService.retain(sources.luaResources[0], 'lua', source);
 	const input = new CodeEditorInput(model), view = input.context.view, position = { row: 0, column: 0 };
 	model.buffer.positionAt(columnOffset, position); view.cursorRow = position.row; view.cursorColumn = position.column;
-	const group = createTestEditorGroup();
+	const group = createTestEditorGroup(undefined, documents);
 	group.model.add(input); group.model.activate(input); activeCodeEditor.attach(model, view);
+	editorViewState.layout.attach(documents.get(model));
 	activeCodeEditor.focusTarget.focus();
 	const controller = new EditorCompletionController(sources, null, null, null), native = new CodeEditorTextInput();
 	const unbindBeforeContent = model.onWillChangeContent(() => {
 		activeCodeEditor.clearInlineEdit(); activeCodeEditor.clearVisualCursor();
 	});
 	const unbindContent = model.onDidChangeContent(event => {
-		editorViewState.layout.onDidChangeContent(model.buffer, event);
 		controller.updateAfterEdit(event.editContext);
 	});
 	editorRuntimeState.currentTimeMs = 1000;
@@ -49,7 +50,7 @@ function fixture(t: TestContext, source: string, columnOffset = source.length) {
 		assert.equal(native.replaceText(at, at, text), true);
 	};
 	const settle = () => { editorRuntimeState.currentTimeMs += 200; controller.processPending(0.2); };
-	return { model, view, controller, type, settle };
+	return { model, view, controller, type, settle, documents };
 }
 
 test('real native typing publishes one widget-owned inline edit; reading it does not read candidates or source', t => {
@@ -296,7 +297,7 @@ test('module completion preserves authored case and exact path replacement range
 test('widget publication is stable across font replacement but retires before source identity changes', t => {
 	const f = fixture(t, 'retu'); f.type('r'); f.settle();
 	const edit = activeCodeEditor.inlineEdit, version = edit.version;
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	configureFontVariant('msx', f.documents.get(f.model));
 	assert.equal(activeCodeEditor.inlineEdit, edit); assert.equal(edit.active, true); assert.equal(edit.version, version);
 	assert.equal(activeCodeEditor.setInlineEdit(edit.row, edit.startColumn, edit.endColumn, edit.text, edit.preserveCase), false);
 	assert.equal(edit.version, version, 'republishing identical intent cannot dirty layout');

@@ -453,6 +453,7 @@ function buildTabBase(theme: ThemeDefinition) {
 
 const DEFAULT_THEME_VARIANT: string = 'light';
 let activeThemeVariant: string = DEFAULT_THEME_VARIANT;
+const themeChangeListeners = new Set<() => void>();
 
 export let COLOR_FRAME: number;
 export let COLOR_TOP_BAR: number;
@@ -641,9 +642,15 @@ export let COLOR_PARAMETER_HINT_BORDER: number;
 export let COLOR_PARAMETER_HINT_TEXT: number;
 export let COLOR_PARAMETER_HINT_ACTIVE: number;
 
+export function onDidChangeIdeTheme(listener: () => void): () => void {
+	themeChangeListeners.add(listener);
+	return () => themeChangeListeners.delete(listener);
+}
+
 export function setIdeThemeVariant(variant: string): void {
 	activeThemeVariant = variant;
 	applyThemeDefinition(THEME_DEFINITIONS[variant]);
+	for (const listener of themeChangeListeners) listener();
 }
 
 export function getActiveIdeThemeVariant(): string {

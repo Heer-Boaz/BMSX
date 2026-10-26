@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import * as colors from '../../ide/common/constants';
@@ -23,7 +22,7 @@ const diagnostic: EditorDiagnostic = { row: 0, startColumn: 0, endColumn: 1,
 
 for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark'] as const) {
 	test(`Problems inactive selection preserves legible row geometry (${font}, ${theme})`, t => {
-		configureFontVariant(new VirtualHeadlessClock(), font, null);
+		configureFontVariant(font);
 		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
 		t.after(() => colors.setIdeThemeVariant(previousTheme));
 		const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
@@ -82,7 +81,7 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 }
 
 for (const empty of [false, true]) test(`Problems owns its panel/content clips (empty: ${empty})`, t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics(empty ? [] : [diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(empty ? -1 : 0);
 	t.after(() => controller.setFocused(false));
 	const overlay = createHostOverlayFixture(160, 96);
@@ -107,7 +106,7 @@ for (const empty of [false, true]) test(`Problems owns its panel/content clips (
 });
 
 test('Problems restores a nested caller clip and retains warm paint/layout storage', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const controller = new ProblemsPanelController();
 	controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
 	t.after(() => controller.setFocused(false));
@@ -153,7 +152,7 @@ test('Problems restores a nested caller clip and retains warm paint/layout stora
 });
 
 test('Problems padding and header cannot hover clipped row geometry', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const controller = new ProblemsPanelController();
 	controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(-1);
 	t.after(() => controller.setFocused(false));

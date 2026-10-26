@@ -34,14 +34,13 @@ export function centerCursorVertically(): void {
 }
 
 export function ensureCursorVisible(): void {
-	activeCodeEditor.view.cursorRow = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
-	const clampedLine = activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow);
-	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(clampedLine.length, activeCodeEditor.view.cursorColumn);
+	activeCodeEditor.view.cursorRow = activeCodeEditor.model.clampRow(activeCodeEditor.view.cursorRow);
+	activeCodeEditor.view.cursorColumn = activeCodeEditor.model.clampColumn(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 
 	const { rows, contentWidth, maxScrollLeft: docMaxScrollLeft } = resolveViewportCapacity();
 	const totalVisual = editorViewState.layout.getVisualLineCount();
 	const cursorVisual = resolveCursorVisualIndex();
-	const line = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
+	const line = editorViewState.layout.getViewLine(activeCodeEditor.view.cursorRow);
 	const inline = line.inline;
 	const lastVisual = inline === null ? cursorVisual : editorViewState.layout.displayToVisualIndex(activeCodeEditor.view.cursorRow,
 		Math.max(inline.startDisplay, inline.endDisplay - 1));
@@ -93,7 +92,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	const visualLines = editorViewState.layout.getVisualLines();
 	const clampedIndex = editorViewState.layout.clampVisualIndex(visualLines.length, visualIndex);
 	const segment = visualLines[clampedIndex];
-	const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, segment.row);
+	const entry = editorViewState.layout.getViewLine(segment.row);
 	const line = entry.src;
 	const segmentStart = editorViewState.layout.clampSegmentStart(line.length, segment.startColumn);
 	const segmentEnd = editorViewState.layout.clampSegmentEnd(line.length, segmentStart, segment.endColumn);
@@ -137,7 +136,7 @@ export function updateDesiredColumn(): void {
 	if (activeCodeEditor.view.cursorRow < 0 || activeCodeEditor.view.cursorRow >= activeCodeEditor.model.buffer.getLineCount()) {
 		return;
 	}
-	const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
+	const entry = editorViewState.layout.getViewLine(activeCodeEditor.view.cursorRow);
 	const highlight = entry.hi;
 	const cursorDisplay = editorViewState.layout.columnToDisplay(highlight, activeCodeEditor.view.cursorColumn);
 	let segmentDisplayStart = 0;
@@ -147,7 +146,7 @@ export function updateDesiredColumn(): void {
 		if (override) {
 			segmentDisplayStart = editorViewState.layout.visualIndexToSegment(override.visualIndex).startDisplay;
 		} else {
-			const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+			const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 			const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 			if (segment) {
 				segmentDisplayStart = segment.startDisplay;

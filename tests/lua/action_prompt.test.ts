@@ -13,7 +13,7 @@ import { ActionPrompt } from '../../ide/workbench/contrib/modal/action_prompt';
 
 function fixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock();
-	configureFontVariant(clock, DEFAULT_FONT_VARIANT, 'lua');
+	configureFontVariant(DEFAULT_FONT_VARIANT);
 	const input = new Input(clock, new HeadlessInputHub(), -1);
 	const focus = new InputFocusService(), capture = new PointerCaptureService();
 	const origin = focus.createTarget();

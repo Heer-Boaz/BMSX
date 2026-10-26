@@ -1,9 +1,8 @@
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import * as colors from '../../ide/common/constants';
 import { expandTabs } from '../../ide/common/text';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { CodeLayout } from '../../ide/editor/ui/code/layout';
 import { CodeLineProjection } from '../../ide/editor/ui/code/line_projection';
 import type { InlineEditState } from '../../ide/editor/ui/code_editor_state';
@@ -13,13 +12,14 @@ import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 function fixture(t: TestContext, text: string, variant: FontVariant = 'msx') {
 	const font = new EditorFont(variant);
 	const inactive: InlineEditState = { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: false };
-	const layout = new CodeLayout(font, { maxHighlightCache: 16, semanticDebounceMs: 200, clock: new VirtualHeadlessClock(),
-		getBuiltinIdentifiers: () => ({ epoch: 1, ids: [] }), computeWrapWidth: () => 384, inlineEdit: inactive });
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'projection.lua' }, domain: 0, path: 'projection.lua', source: { type: 'lua', resid: 'projection' } }, 'lua', text);
-	const source = layout.getCachedHighlight(model.buffer, 0);
+	const layout = new CodeLayout(font, { computeWrapWidth: () => 384, inlineEdit: inactive });
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'projection.lua' }, domain: 0, path: 'projection.lua', source: { type: 'lua', resid: 'projection' } }, 'lua', text);
+	layout.attach(documents.get(model));
+	const source = layout.measurements.getLine(0);
 	assert.equal(source.inline, null); assert.equal(source.src, text);
 	assert.equal(source.viewText, text); assert.equal(source.viewColumnToDisplay, source.hi.columnToDisplay);
-	t.after(() => { layout.invalidateAllHighlights(); model.dispose(); });
+	t.after(() => { layout.dispose(); });
 	return { font, model, layout, source, projection: new CodeLineProjection(font) };
 }
 
@@ -125,13 +125,13 @@ test('warm frames retain every array and string while only newly inserted glyphs
 	for (let index = 0; index < refs.length; index++) assert.equal([line.hi, line.hi.colors, line.hi.columnToDisplay, line.viewColumnToDisplay, line.displayToColumn, line.advancePrefix, line.inline][index], refs[index]);
 });
 
-test('a changed real source highlight invalidates the projection even when the source entry and inline revision are retained', t => {
+test('a changed real source highlight invalidates the projection even when the inline revision is retained', t => {
 	const f = fixture(t, 'abOLDcd');
 	const state: InlineEditState = { version: 1, active: true, row: 0, startColumn: 2, endColumn: 5, text: 'xy', preserveCase: false };
 	const line = f.projection.update(f.source, state), highlight = f.source.hi;
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 2, text: 'zz' }]);
-	const next = f.layout.getCachedHighlight(f.model.buffer, 0);
-	assert.equal(next, f.source); assert.notEqual(next.hi, highlight);
+	const next = f.layout.measurements.getLine(0);
+	assert.notEqual(next.hi, highlight);
 	assert.equal(f.projection.update(next, state), line); assert.equal(line.src, 'zzOLDcd'); assert.equal(line.hi.text, 'zzxycd');
 	assert.equal(f.model.buffer.getText(), 'zzOLDcd');
 });

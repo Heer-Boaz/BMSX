@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { semanticSnapshot } from './semantic_test_harness';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -36,7 +35,7 @@ function scene(path = 'viewport.lua') {
 }
 
 for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} responsive boundary uses measured columns and offset pane bounds`, t => {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const input = scene();
 	t.after(() => { input.dispose(); input.workingCopy.dispose(); });
 	const threshold = 2 * (editorViewState.font.advance('M') * 24 + 8 + colors.SCROLLBAR_WIDTH) + 1;
@@ -75,20 +74,20 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} responsiv
 test('a font change re-evaluates Scene composition without changing the retained compact section', t => {
 	const input = scene(); t.after(() => { input.dispose(); input.workingCopy.dispose(); });
 	const bounds = { left: 17, top: 31, right: 317, bottom: 200 };
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	input.section = 'details'; layoutSceneEditor(input, true, false, bounds);
 	assert.equal(input.layout.mode, 'split');
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	configureFontVariant('msx');
 	layoutSceneEditor(input, false, false, bounds);
 	assert.equal(input.layout.mode, 'details'); assert.equal(input.section, 'details');
 	assert.equal(input.outline.layout.visibleRowCount, 0);
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	layoutSceneEditor(input, false, false, bounds);
 	assert.equal(input.layout.mode, 'split'); assert.equal(input.section, 'details');
 });
 
 test('presentation-only Scene transitions retain source, field draft and both scroll positions', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const input = scene(); t.after(() => { input.dispose(); input.workingCopy.dispose(); });
 	const bounds = { left: 23, top: 37, right: 203, bottom: 72 };
 	input.section = 'details'; layoutSceneEditor(input, true, false, bounds);
@@ -117,7 +116,7 @@ test('presentation-only Scene transitions retain source, field draft and both sc
 });
 
 test('a fresh Scene view restores its pending Details scroll after its first compact outline-only layout', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const old = scene(); t.after(() => { old.dispose(); old.workingCopy.dispose(); });
 	const bounds = { left: 19, top: 33, right: 199, bottom: 68 };
 	old.section = 'details'; layoutSceneEditor(old, true, false, bounds);
@@ -144,7 +143,7 @@ test('a fresh Scene view restores its pending Details scroll after its first com
 });
 
 test('replacing selected Scene source with the same member name retires the Details view target', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const input = scene(); t.after(() => { input.dispose(); input.workingCopy.dispose(); });
 	input.section = 'details';
 	const snapshot = captureSceneEditorView(input), selected = snapshot.selected!;
@@ -165,7 +164,7 @@ test('replacing selected Scene source with the same member name retires the Deta
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`a long authored Scene basename retains compact navigation and More in a narrow ${variant} pane`, () => {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const input = scene(`scenes/${'long_authored_scene_'.repeat(12)}.lua`);
 	const width = variant === 'tiny' ? 78 : 118;
 	layoutSceneEditor(input, true, false, { left: 0, top: 24, right: width, bottom: 276 });
@@ -186,7 +185,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`a long authored Scene base
 
 for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 	test(`scene details measure and scroll in ${font}, ${width}px, independent of pane height`, t => {
-		configureFontVariant(new VirtualHeadlessClock(), font, null);
+		configureFontVariant(font);
 		editorViewState.viewportWidth = width; editorViewState.viewportHeight = 288;
 		editorViewState.codeAreaTop = 31; editorViewState.codeAreaBottom = 275;
 		const input = scene(); input.section = 'details';
@@ -243,7 +242,7 @@ for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 }
 
 test('scene painting publishes nested content clips and reuses quad storage on stable frames', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	editorViewState.codeAreaTop = 31; editorViewState.codeAreaBottom = 98;
 	const input = scene(); layoutSceneEditor(input, true, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
@@ -305,13 +304,13 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 });
 
 test('Scene intrinsic compact minimum uses current font before arrangement and does not demand its internal split', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const input = scene(); t.after(() => { input.dispose(); input.workingCopy.dispose(); });
 	const bounds = { left: 17, top: 31, right: 717, bottom: 231 };
 	input.section = 'details'; layoutSceneEditor(input, true, false, bounds);
 	const tiny = measureSceneEditorMinimumWidth(), arrangedFont = input.layout.font;
 	assert.equal(input.layout.splitMinimumWidth, tiny * 2 + 1);
-	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	configureFontVariant('msx');
 	const msx = measureSceneEditorMinimumWidth();
 	assert.ok(msx > tiny); assert.equal(input.layout.font, arrangedFont); assert.equal(input.section, 'details');
 	bounds.right = bounds.left + msx; layoutSceneEditor(input, false, false, bounds);

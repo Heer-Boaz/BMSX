@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import * as colors from '../../ide/common/constants';
@@ -13,17 +12,17 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
-configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+configureFontVariant('tiny');
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
 	const previous = { width: editorViewState.viewportWidth, height: editorViewState.viewportHeight,
 		left: editorViewState.codeAreaLeft, inset: editorChromeState.editorRightInset, variant: editorViewState.font.variant,
 		theme: colors.getActiveIdeThemeVariant() };
-	configureFontVariant(new VirtualHeadlessClock(), variant, null); colors.setIdeThemeVariant(theme);
+	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const overlay = createHostOverlayFixture(384, 288);
 	t.after(() => {
-		configureFontVariant(new VirtualHeadlessClock(), previous.variant, null); colors.setIdeThemeVariant(previous.theme);
+		configureFontVariant(previous.variant); colors.setIdeThemeVariant(previous.theme);
 		editorViewState.viewportWidth = previous.width; editorViewState.viewportHeight = previous.height;
 		editorViewState.codeAreaLeft = previous.left; editorChromeState.editorRightInset = previous.inset; refreshWorkbenchLayout();
 	});

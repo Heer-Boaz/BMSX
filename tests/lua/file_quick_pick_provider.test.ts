@@ -3,7 +3,6 @@ import { inputFocus } from '../../ide/input/focus';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -86,7 +85,7 @@ test('file queries have no path/pattern cutoff and reuse result records across s
 });
 
 test('same-path files from two sockets retain distinct original resources through shared picker acceptance', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const resources: RuntimeResource[] = [0, 1].map(domain => ({ location: { kind: 'workspace' as const, path: 'shared/source.lua' }, domain: domain as 0 | 1, path: 'shared/source.lua',
 		source: { resid: `module_${domain}`, type: 'lua' } }));

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import * as colors from '../../ide/common/constants';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { drawValueInput } from '../../ide/editor/ui/inline/value_input_render';
@@ -19,7 +18,7 @@ import { MultilineFieldViewport } from '../../ide/editor/ui/inline/multiline_vie
 import { drawMultilineField } from '../../ide/editor/ui/inline/multiline_render';
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} line edits paint active selection only for their actual focused field`, t => {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {});
 	const first = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => {}), second = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => {});
 	t.after(() => { inputFocus.setTarget(null); first.dispose(); second.dispose(); });
@@ -46,7 +45,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} line edits pain
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} a line-edit caret redraws its actual case-preserved glyph`, t => {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const uppercase = editorRuntimeState.uppercaseDisplay, visible = editorCaretState.cursorVisible;
 	t.after(() => { inputFocus.setTarget(null); editorRuntimeState.uppercaseDisplay = uppercase; editorCaretState.cursorVisible = visible; });
 	editorRuntimeState.uppercaseDisplay = true;
@@ -68,7 +67,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} a line-edit car
 });
 
 for (const multiline of [false, true]) test(`${multiline ? 'multiline' : 'single-line'} paint never publishes native caret geometry or makes it blink-dependent`, t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const field = new TextField(null, { singleLine: !multiline, allowSpace: true });
 	const bounds = { left: 8, top: 24, right: 120, bottom: 56 };
 	setFieldText(field, 'needle', true); field.focusTarget.focus();

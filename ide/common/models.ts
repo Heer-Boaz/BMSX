@@ -63,13 +63,6 @@ export type CodeLineView = {
 	inline: InlineLineRange | null;
 };
 
-export type CachedHighlight = CodeLineView & {
-	textVersion: number;
-	lineSignature: number;
-	builtinEpoch: number;
-	rowSignature: number;
-};
-
 export type SearchMatch = {
 	row: number;
 	start: number;

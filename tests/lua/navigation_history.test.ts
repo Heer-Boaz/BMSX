@@ -1,6 +1,5 @@
 import { inputFocus } from '../../ide/input/focus';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -12,7 +11,7 @@ import { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
 import { renameController } from '../../ide/workbench/contrib/code_editor/rename/controller';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { focusExecutionStop } from '../../ide/runtime_error/navigation';
@@ -24,6 +23,8 @@ import { ResourceEditorResolver } from '../../ide/workbench/services/editor/reso
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 
+test.afterEach(() => editorTextModelService.clear());
+
 class Location extends EditorPaneSelection {
 	public constructor(public readonly value: number) { super(); }
 	public matches(other: Location): boolean { return this.value === other.value; }
@@ -32,7 +33,7 @@ function entry(owner: EditorGroupView, path: string, value: number): NavigationH
 	return new NavigationHistoryEntry({ kind: 'resource', resource: { domain: 0, path }, editorId: WORKBENCH_TEXT_EDITOR_ID }, new Location(value), owner);
 }
 function code(path: string) {
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
+	const model = editorTextModelService.retain({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
 	return new CodeEditorInput(model);
 }
 
@@ -86,11 +87,11 @@ test('input close removes visual destinations from both stacks; resource destina
 });
 
 test('child pane construction and disposal cannot replace the frontend navigation owner', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
 	const input = code('main.lua'); group.openEditor(input);
-	t.after(() => { group.dispose(); input.dispose(); input.workingCopy.dispose(); });
+	t.after(() => { group.dispose(); input.dispose(); });
 	const retained = createNavigationEntry()!;
 	navigationState.back.push(retained);
 
@@ -117,11 +118,11 @@ test('child pane construction and disposal cannot replace the frontend navigatio
 });
 
 test('pane retirement releases pending and popped selections before a later completion', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
 	const input = code('retiring.lua'); group.openEditor(input);
-	t.after(() => { group.dispose(); input.dispose(); input.workingCopy.dispose(); });
+	t.after(() => { group.dispose(); input.dispose(); });
 	const pending = beginNavigationCapture()!;
 	const target = entry(group, 'closed.lua', 3);
 	navigationState.back.push(target);
@@ -150,7 +151,7 @@ test('matching resources and selections retain distinct capturing pane lifetimes
 });
 
 test('one explicit navigation records a departure before mutating the same retained input', t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
 	const input = code('same.lua'); group.openEditor(input);
@@ -173,7 +174,7 @@ test('one explicit navigation records a departure before mutating the same retai
 });
 
 test('history awaits the registered resource opener and restores a closed text input after hidden edits', async t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
 	const origin = code('origin.lua'); group.openEditor(origin);
@@ -210,7 +211,7 @@ test('history awaits the registered resource opener and restores a closed text i
 });
 
 test('Back activates a surviving visual preview without turning navigation into Keep Open', async t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
 	const origin = code('origin.lua'); group.openEditor(origin);
@@ -222,7 +223,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 		{} as RuntimeSourceState, { isFocused: () => false } as ResourcePanelController,
 		new ResourceEditorResolver([]), group, new EditorSearchController({} as RuntimeSourceState, renameController),
 	);
-	t.after(() => { group.dispose(); origin.workingCopy.dispose(); });
+	t.after(() => { group.dispose(); });
 	await navigation.goBackward();
 	assert.equal(group.model.activeTab, visual);
 	assert.equal(group.model.previewTab, visual);
@@ -233,7 +234,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 
 for (const route of ['resource', 'history'] as const) for (const interruption of ['new navigation', 'direct tab', 'same tab', 'teardown', 'owner disposal'] as const) {
 	test(`slow ${route} resolution cannot reactivate after ${interruption}`, async t => {
-		configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+		configureFontVariant('tiny');
 		const group = createTestEditorGroup();
 		t.after(initializeNavigationState(group));
 		const origin = code('origin.lua'); group.openEditor(origin);
@@ -283,7 +284,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 }
 
 test('a debugger continuation cannot decorate a tab chosen after its source attached', async t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
 	const origin = code('origin.lua'); group.openEditor(origin);
@@ -306,7 +307,7 @@ test('a debugger continuation cannot decorate a tab chosen after its source atta
 });
 
 test('cancelled resolution disposes its fresh candidate without disturbing the retained same-resource input', async t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
 	const input = code('retained.lua'); group.openEditor(input);
@@ -328,7 +329,7 @@ test('cancelled resolution disposes its fresh candidate without disturbing the r
 });
 
 test('a delayed resource open preserves a newer focus target in the same owning group', async t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
 	t.after(() => group.dispose());
@@ -357,7 +358,7 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 });
 
 test('async resource admission captures the departure before an in-control caret move', async t => {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
 	t.after(() => group.dispose());

@@ -20,7 +20,7 @@ const PRIMARY = PointerButton.Primary;
 
 function fixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
-	configureFontVariant(clock, 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
 	const picker = new QuickInputController(menu);
@@ -74,7 +74,7 @@ test('chooser query, geometry, outside release and session changes cancel pendin
 test('chooser scrollbar and fractional hit geometry share one axis while preserving the query focus', t => {
 	const { picker, pointer } = fixture(t), model = picker.model, view = model.viewport;
 	for (const variant of ['msx', 'tiny'] as const) {
-		configureFontVariant(new VirtualHeadlessClock(), variant, null); picker.update();
+		configureFontVariant(variant); picker.update();
 		const thumb = view.scrollbar.getThumb()!;
 		const x = thumb.left + 1, y = (thumb.top + thumb.bottom) / 2;
 		pointer(x, y, PRIMARY, PRIMARY);
@@ -111,7 +111,7 @@ test('Ctrl+Home/End reaches every result while unmodified Home/End still edits t
 });
 
 test('picker prepares visible rows lazily across scrolling, query replacement and font/width generations', t => {
-	const { picker, key, press, clock, open } = fixture(t), model = picker.model;
+	const { picker, key, press, open } = fixture(t), model = picker.model;
 	const presented = new Set<number>(), getRow = model.getRenderRow.bind(model);
 	t.mock.method(model, 'getRenderRow', (match: QuickPickMatch) => { presented.add(match.itemIndex); return getRow(match); });
 	open();
@@ -124,7 +124,7 @@ test('picker prepares visible rows lazily across scrolling, query replacement an
 	assert.equal(presented.has(99), true);
 	assert.equal(presented.has(50), false, 'scrolling does not prepare the invisible catalog between endpoints');
 	const oldRevision = first.textRevision;
-	configureFontVariant(clock, 'msx', null); picker.update();
+	configureFontVariant('msx'); picker.update();
 	assert.notEqual(last.textRevision, oldRevision);
 	assert.equal(first.textRevision, oldRevision, 'font changes only prepare currently visible rows');
 	key('ControlLeft', true); press('Home'); key('ControlLeft', false); picker.update();

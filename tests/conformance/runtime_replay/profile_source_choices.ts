@@ -9,10 +9,9 @@ import { createReferenceQuickPickProvider } from '../../../ide/workbench/contrib
 import { QuickInputController } from '../../../ide/workbench/services/quick_input/controller';
 import { configureFontVariant } from '../../../ide/editor/ui/view/view';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import { medianMilliseconds } from '../../helpers/performance';
 
-configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+configureFontVariant('tiny');
 editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 const menu = new ContextMenuController(inputFocus, pointerCapture);
 const picker = new QuickInputController(menu);

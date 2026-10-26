@@ -1,3 +1,5 @@
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -22,21 +24,11 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
 import { startSearchJob } from '../../ide/workbench/contrib/code_editor/find/search';
 import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
-import type { HostClock } from '../../hosts/common/clock';
 import { backspace, deleteForward, deleteWordBackward, deleteWordForward, indentSelectionOrLine, insertLineBreak, insertText, pasteText, unindentSelectionOrLine } from '../../ide/editor/editing/text_editing_and_selection';
 import { getSingleCursorSelectionRange, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { undo as undoActiveEdit, redo as redoActiveEdit } from '../../ide/editor/editing/undo_controller';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
-
-const editorTestClock: HostClock = {
-	now: () => 0,
-	dateNow: () => 0,
-	scheduleOnce: () => ({
-		cancel: () => {},
-		isActive: () => false,
-	}),
-};
 
 function luaResource(path: string): RuntimeResource {
 	return { location: { kind: 'workspace' as const, path },
@@ -364,13 +356,14 @@ test('applying a Source history selection does not lend its mutable anchor to th
 });
 
 test('backspace over a selection commits one model-owned undo element', t => {
-	const model = new EditorTextModel(luaResource('selection-backspace.lua'), 'lua', 'root');
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain(luaResource('selection-backspace.lua'), 'lua', 'root');
 	const input = new CodeEditorInput(model), view = input.context.view;
 	view.cursorColumn = 4;
 	view.selectionAnchor = { row: 0, column: 0 };
-	t.after(() => { activeCodeEditor.detach(); input.dispose(); model.dispose(); });
+	t.after(() => { activeCodeEditor.detach(); input.dispose(); });
 	activeCodeEditor.attach(model, view);
-	configureFontVariant(editorTestClock, DEFAULT_FONT_VARIANT, 'lua');
+	configureFontVariant(DEFAULT_FONT_VARIANT, documents.get(model));
 
 	backspace();
 	assert.equal(model.buffer.getText(), '');
@@ -383,13 +376,14 @@ test('backspace over a selection commits one model-owned undo element', t => {
 });
 
 test('backspace after Shift+End on an empty line publishes a collapsed caret when that line is removed', t => {
-	const model = new EditorTextModel(luaResource('empty-selection.lua'), 'lua', 'head\n');
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain(luaResource('empty-selection.lua'), 'lua', 'head\n');
 	const input = new CodeEditorInput(model), view = input.context.view;
 	view.cursorRow = 1;
 	setSingleCursorSelectionAnchor(view, 1, 0);
 	activeCodeEditor.attach(model, view);
-	configureFontVariant(editorTestClock, DEFAULT_FONT_VARIANT, 'lua');
-	t.after(() => { input.dispose(); activeCodeEditor.detach(); model.dispose(); });
+	configureFontVariant(DEFAULT_FONT_VARIANT, documents.get(model));
+	t.after(() => { input.dispose(); activeCodeEditor.detach(); });
 
 	backspace();
 	insertText('!');
@@ -420,13 +414,14 @@ test('ordinary text edits publish and retain a collapsed result selection, inclu
 		{ run: unindentSelectionOrLine, source: '\tabc', column: 2, result: 'abc' },
 	];
 	for (const entry of cases) {
-		const model = new EditorTextModel(luaResource('edit-selection.lua'), 'lua', entry.source);
+		const { models, documents } = createTestCodeDocuments(t);
+		const model = models.retain(luaResource('edit-selection.lua'), 'lua', entry.source);
 		const input = new CodeEditorInput(model), view = input.context.view;
 		view.cursorColumn = entry.column;
 		setSingleCursorSelectionAnchor(view, 0, entry.column);
 		activeCodeEditor.attach(model, view);
-		configureFontVariant(editorTestClock, DEFAULT_FONT_VARIANT, 'lua');
-		t.after(() => { input.dispose(); activeCodeEditor.detach(); model.dispose(); });
+		configureFontVariant(DEFAULT_FONT_VARIANT, documents.get(model));
+		t.after(() => { input.dispose(); activeCodeEditor.detach(); });
 		let events = 0;
 		model.onDidChangeContent(() => {
 			events += 1;
@@ -461,8 +456,31 @@ test('a local search job cannot continue against another model with the same ver
 		editorSearchState.job = null;
 	});
 
-	runBackgroundTasks({ now: () => 0 } as HostClock);
+	runBackgroundTasks(new VirtualHeadlessClock());
 
 	assert.equal(editorSearchState.job, null);
 	assert.deepEqual(editorSearchState.matches, []);
+});
+
+test('canonical source clamps survive document shrink without a font or layout', () => {
+	const model = new EditorTextModel(luaResource('source-boundaries.lua'), 'lua', 'long first line\nsecond line\nlast');
+	const retained = { row: 1, column: 3 }, offset = model.buffer.length;
+	assert.equal(model.clampPosition(retained), retained, 'valid source positions retain identity');
+	assert.equal(model.clampRow(-1), 0); assert.equal(model.clampRow(100), 2);
+	assert.equal(model.clampColumn(100, 100), 4);
+	assert.equal(model.clampOffset(-1), 0); assert.equal(model.clampOffset(offset + 1), offset);
+	let applied: import('../../ide/editor/model/text_model').EditorTextModelAppliedChanges;
+	model.onDidApplyChanges(event => { applied = event; });
+	model.pushEditOperations([{ offset: 0, deleteLength: offset, text: 'x\nyz' }]);
+	assert.equal(model.clampRow(100), 1);
+	assert.equal(model.clampColumn(100, 100), 2);
+	assert.deepEqual(model.clampPosition(retained), { row: 1, column: 2 });
+	assert.deepEqual(model.clampPosition({ row: -1, column: -1 }), { row: 0, column: 0 });
+	assert.equal(model.clampOffset(offset), 4);
+	const valid = { row: 0, column: 1 };
+	assert.equal(model.clampPosition(valid), valid);
+	assert.equal(applied!.startRow, 0);
+	assert.equal(applied!.endRow, 1);
+	assert.equal(applied!.lineCount, 2, 'post-apply extent describes the producer\'s final canonical text');
+	model.dispose();
 });

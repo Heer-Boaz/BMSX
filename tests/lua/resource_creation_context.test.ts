@@ -18,7 +18,7 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 
 function fixture(t: TestContext, path: string, canonicalPath: string, generated = false) {
 	const clock = new VirtualHeadlessClock();
-	configureFontVariant(clock, 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const source = { ...createScenarioTestSourceRecord(path, 1), normalized_source_path: canonicalPath, generated };
 	const sources = createScenarioTestSourceState([source]);

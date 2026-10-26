@@ -1,3 +1,5 @@
+import { CodeDocumentProjections } from './editor/ui/code/document_projections';
+import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { create_rect_bounds, write_rect_bounds } from '../machine/ts/common/rect';
 import { HomeInput } from './workbench/contrib/home/editor_input';
 import { HomeEditorPane } from './workbench/contrib/home/editor_pane';
@@ -120,7 +122,7 @@ import {
 	setExecutionStopHighlightForCurrentContext,
 	syncRuntimeErrorOverlayFromContext,
 } from './runtime_error/navigation';
-import { clearGotoHoverHighlight } from './editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight, getBuiltinIdentifiersSnapshot } from './editor/contrib/intellisense/engine';
 import { resetSemanticProjects } from './editor/contrib/intellisense/semantic/workspace/state';
 import { activeCodeEditor } from './editor/ui/code_editor_state';
 import { editorTextModelService } from './editor/model/model_service';
@@ -201,6 +203,7 @@ export type CartEditor = TextInputHost & {
 	readonly observedConversation: ObservedConversation;
 	readonly tools: WorkspaceToolService;
 	readonly diagnostics: ResourceDiagnosticsService;
+	readonly codeDocuments: CodeDocumentProjections;
 	readonly executionSuspended: boolean;
 	readonly guestInputRecipient: InputRecipient | null;
 	readonly isAvailable: boolean;
@@ -234,7 +237,7 @@ export type CartEditor = TextInputHost & {
 	readonly crossFileRename: CrossFileRenameManager;
 	isActive: boolean;
 	readonly acceptsInput: boolean;
-	readonly fontVariant: Parameters<typeof setFontVariant>[1];
+	readonly fontVariant: FontVariant;
 	activate: () => void;
 	deactivate: () => void;
 	onDidChangeActive(listener: (active: boolean) => void): () => void;
@@ -245,7 +248,7 @@ export type CartEditor = TextInputHost & {
 	draw: () => void;
 	shutdown: () => Promise<void>;
 	updateViewport: (viewport: Viewport) => void;
-	setFontVariant: (variant: Parameters<typeof setFontVariant>[1]) => void;
+	setFontVariant: (variant: FontVariant) => void;
 	showRuntimeErrorInChunk: (resource: ResourceIdentity, line: number, column: number, message: string, details?: RuntimeErrorDetails) => void;
 	showRuntimeError: (line: number, column: number, message: string, details?: RuntimeErrorDetails, path?: string) => void;
 	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
@@ -368,6 +371,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly gte: RuntimeGteHistory;
 	public readonly gpu: RuntimeGpuHistory;
 	public readonly diagnostics: ResourceDiagnosticsService;
+	public readonly codeDocuments: CodeDocumentProjections;
 	private readonly luaEvaluation: RuntimeLuaEvaluation;
 
 	public constructor(
@@ -381,7 +385,7 @@ export class RuntimeCartEditor implements CartEditor {
 		logOutput: LogOutput,
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
-		fontVariant: Parameters<typeof setFontVariant>[1],
+		fontVariant: FontVariant,
 		overlayRenderer: OverlayRenderer,
 		decodeImage: ImageDecoder,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
@@ -393,6 +397,9 @@ export class RuntimeCartEditor implements CartEditor {
 			actorExecution, frameNavigation, debuggerExecution } = workbench;
 		this.events = events; this.gte = gte; this.gpu = gpu;
 		this.diagnostics = diagnostics;
+		this.codeDocuments = new CodeDocumentProjections(editorTextModelService, {
+			clock, maxHighlightCache: 512, semanticDebounceMs: 200, getBuiltinIdentifiers: getBuiltinIdentifiersSnapshot,
+		});
 		this.luaEvaluation = luaEvaluation;
 		const behaviorSources = workbench.behaviorSources;
 		this.terminal = new BiosTerminal(runtime, input, guest, debuggerState, runtimeTasks, execution, rewind, fault);
@@ -703,7 +710,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		return consumed;
 	}
-	public get fontVariant(): Parameters<typeof setFontVariant>[1] { return editorViewState.fontVariant; }
+	public get fontVariant(): FontVariant { return editorViewState.fontVariant; }
 
 	public activate(): void {
 		this.menubar.cancelAlt();
@@ -980,6 +987,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.scenarioLab.dispose();
 				this.unsubscribeWorkspaceCursorMoved();
 				this.unsubscribeTextModelChanged();
+				this.codeDocuments.dispose();
 				editorTextModelService.clear();
 			}
 		}
@@ -993,20 +1001,16 @@ export class RuntimeCartEditor implements CartEditor {
 		this.resourcePanel.hide();
 	}
 
-	public setFontVariant(variant: Parameters<typeof setFontVariant>[1]): void {
+	public setFontVariant(variant: FontVariant): void {
 		if (!this.isAvailable) {
 			return;
 		}
 		const previousVariant = editorViewState.fontVariant;
 		const activeTab = this.editorGroup.panes.activePane?.input;
 		if (activeTab?.kind === 'code_editor') {
-			setFontVariant(
-				this.clock,
-				variant,
-				activeTab.context.model.mode,
-			);
+			setFontVariant(variant, this.codeDocuments.get(activeTab.workingCopy));
 		} else {
-			configureFontVariant(this.clock, variant, null);
+			configureFontVariant(variant);
 		}
 		this.resourcePanel.setFontMetrics(editorViewState.font);
 		rewrapRuntimeErrorOverlays(this.editorGroup);
@@ -1081,7 +1085,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private initialize(
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
-		fontVariant: Parameters<typeof setFontVariant>[1],
+		fontVariant: FontVariant,
 	): ResourcePanelController {
 		editorViewState.fontVariant = fontVariant;
 		constants.setIdeThemeVariant(constants.DEFAULT_THEME);
@@ -1103,13 +1107,13 @@ export class RuntimeCartEditor implements CartEditor {
 			resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,
 		}, resourcePanelWidthRatio);
 		if (!this.isAvailable) {
-			configureFontVariant(this.clock, editorViewState.fontVariant, null);
+			configureFontVariant(editorViewState.fontVariant);
 			resourcePanel.setFontMetrics(editorViewState.font);
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
 		editorTextModelService.clear();
-		configureFontVariant(this.clock, editorViewState.fontVariant, 'lua');
+		configureFontVariant(editorViewState.fontVariant);
 		resourcePanel.setFontMetrics(editorViewState.font);
 		applySearchFieldText(editorSearchState.query, true);
 		applyLineJumpFieldText(lineJumpState.value, true);

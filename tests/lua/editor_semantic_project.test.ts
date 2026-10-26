@@ -1,3 +1,8 @@
+import { CodeLayout } from '../../ide/editor/ui/code/layout';
+import { ActiveCodeEditorState } from '../../ide/editor/ui/code_editor_state';
+import { EditorFont } from '../../ide/editor/ui/view/font';
+import { advanceLuaSourceRevision } from '../../ide/runtime/source_registry';
+import { CodeDocumentProjections } from '../../ide/editor/ui/code/document_projections';
 import { luaSyntaxSnapshot } from '../helpers/lua_syntax_snapshot';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -519,8 +524,6 @@ test('diagnostics consume model deltas without replacing incremental baselines w
 test('scheduled syntax highlighting consumes current model deltas and invalidates a superseded request', async t => {
 	const { editorTextModelService } = await import('../../ide/editor/model/model_service');
 	const { resetSemanticProject, resetSemanticProjects } = await import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
-	const { CodeLayout } = await import('../../ide/editor/ui/code/layout');
-	const { EditorFont } = await import('../../ide/editor/ui/view/font');
 	const { VirtualHeadlessClock } = await import('../../hosts/node/headless/clock');
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = editorTextModelService.retain(resource(0, 'highlight_incremental.lua'), 'lua', source);
@@ -528,20 +531,23 @@ test('scheduled syntax highlighting consumes current model deltas and invalidate
 	const before = project.getFileData(model.resource.path)!;
 	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
 	const clock = new VirtualHeadlessClock();
-	const layout = new CodeLayout(new EditorFont('tiny'), { maxHighlightCache: 64, semanticDebounceMs: 0,
-		inlineEdit: { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: false },
-		clock, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }), computeWrapWidth: () => 320 });
-	model.onDidChangeContent(event => layout.onDidChangeContent(model.buffer, event));
-	t.after(() => { layout.invalidateAllHighlights(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
+	const documents = new CodeDocumentProjections(editorTextModelService, {
+		clock, maxHighlightCache: 64, semanticDebounceMs: 0,
+		getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }),
+	});
+	const document = documents.get(model);
+	const layout = new CodeLayout(new EditorFont('tiny'), { inlineEdit: new ActiveCodeEditorState().inlineEdit, computeWrapWidth: () => 320 });
+	t.after(() => { layout.dispose(); documents.dispose(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	const explicit = t.mock.method(project, 'updateDocument');
 	const analyze = t.mock.method(project, 'analyzeDocument');
-	layout.requestSemanticUpdate(model.buffer, model.version, model.resource);
+	layout.attach(document);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- superseded\n' }]);
 	clock.advance(0);
-	assert.equal(analyze.mock.callCount(), 0, 'a queued request cannot publish new text under its old model version');
-	layout.requestSemanticUpdate(model.buffer, model.version, model.resource);
+	assert.equal(analyze.mock.callCount(), 1, 'only the current model generation is analyzed after the queued request is superseded');
+	assert.equal(document.getSemanticFileData()!.source, model.buffer.getText());
+	document.requestSemanticUpdate();
 	clock.advance(0);
-	const current = layout.getSemanticFileData(model.buffer, model.version, model.resource);
+	const current = document.getSemanticFileData();
 	assert.equal(current.source, model.buffer.getText());
 	assert.ok(Array.from(current.chunk.tokens).includes(retained));
 	assert.equal(explicit.mock.callCount(), 0);
@@ -641,4 +647,47 @@ test('editor model edits, inactive documents and undo reuse unchanged binding bo
 	assert.equal(project.getFileData('reuse.lua')!.functionValueFlows[1], retained);
 	assert.equal(first.getFileData('reuse.lua'), old);
 	assert.equal(old.source, source);
+});
+
+
+test('semantic input generations advance for model and registry changes, never for analysis consumption', t => {
+	const models = new EditorTextModelService(), project = new EditorLuaSemanticProject(0, models);
+	const cartridge = sourceRegistry([['main.lua', "return require('dependency')"], ['dependency.lua', 'return { value = 1 }']]);
+	const sources = runtimeSources(sourceRegistry([['system.lua', 'return true']]), cartridge);
+	project.synchronizeRuntimeSources(sources);
+	t.after(() => { project.dispose(); models.clear(); });
+	const generations: number[] = [];
+	project.onDidInvalidate(() => generations.push(project.generation));
+	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
+	const firstGeneration = project.generation;
+	const dependency = models.retain(resource(0, 'dependency.lua'), 'lua', 'return { value = 2 }');
+	assert.equal(project.generation, firstGeneration + 1);
+	assert.deepEqual(generations, [firstGeneration + 1]);
+	assert.equal(parse.mock.callCount(), 0, 'input events only queue semantic work');
+	const initial = project.getSnapshot();
+	assert.equal(initial.getFileData('dependency.lua')!.source, dependency.buffer.getText());
+	assert.equal(project.generation, firstGeneration + 1);
+	assert.equal(generations.length, 1, 'analysis completion cannot invalidate its own input generation');
+	const parsed = parse.mock.callCount();
+	dependency.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edited dependency\n' }]);
+	assert.equal(project.generation, firstGeneration + 2);
+	assert.equal(parse.mock.callCount(), parsed);
+	project.getSnapshot();
+	assert.equal(generations.length, 2);
+	const registryPath = cartridge.records[0];
+	registryPath.src = "return require('dependency').value";
+	advanceLuaSourceRevision(cartridge, registryPath.source_path);
+	assert.equal(project.generation, firstGeneration + 3);
+	project.synchronizeRuntimeSources(sources);
+	assert.equal(project.getFileData('main.lua')!.source, registryPath.src);
+	assert.equal(project.generation, firstGeneration + 3);
+	assert.deepEqual(generations, [firstGeneration + 1, firstGeneration + 2, firstGeneration + 3],
+		'reconciling a published registry input does not publish it a second time');
+	const explicit = project.updateDocument('detached.lua', 'return 5');
+	const explicitGeneration = project.generation, snapshot = project.getSnapshot();
+	assert.equal(explicitGeneration, firstGeneration + 4);
+	assert.equal(project.updateDocument('detached.lua', 'return 5'), explicit);
+	assert.equal(project.generation, explicitGeneration, 'reusing identical canonical analysis does not create a new input generation');
+	assert.equal(project.getSnapshot(), snapshot);
+	assert.equal(generations.length, 4);
 });

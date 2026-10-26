@@ -36,7 +36,6 @@ import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 
 const resource = { location: { kind: 'workspace' as const, path: 'parent.lua' }, domain: 0 as const, path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
 const child = "return {duration_ms=100, tracks={{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}";
@@ -301,7 +300,7 @@ test('known unversioned animation recovery preserves source selections and histo
 });
 
 function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=1},{time_ms=100,value=2}}},{kind='event',keys={{time_ms=25,event='other'}}}}}") {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const oldScrollbars = editorViewState.scrollbarController;
 	editorViewState.scrollbarController = new ScrollbarController({ codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'),
@@ -431,7 +430,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} an actual prope
 		assert.equal(model.buffer.getText(), f.source); assert.equal(model.undo(), null);
 	}
 	for (const font of ['tiny', 'msx'] as const) {
-		configureFontVariant(new VirtualHeadlessClock(), font, null);
+		configureFontVariant(font);
 		const measured = measureAnimationEditor(editorViewState.font);
 		pane.layout({ ...f.bounds, right: measured.compactWidth, bottom: f.bounds.top + measured.compactHeight }); pane.update();
 		assert.equal(input.layout.mode, 'compact'); assert.equal(input.layout.detailsVisible, true);

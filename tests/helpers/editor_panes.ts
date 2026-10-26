@@ -1,3 +1,6 @@
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { CodeDocumentProjections } from '../../ide/editor/ui/code/document_projections';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import { ResourceViewerEditorPane } from '../../ide/workbench/contrib/resources/editor_pane';
 import type { KeyInputEvent } from '../../hosts/common/input/text';
@@ -81,7 +84,9 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 }
 
 class TestCodeEditorPane extends TestEditorPane<CodeEditorInput> {
-	public constructor(scope: InputFocusScope) { super(scope, activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)); }
+	public constructor(scope: InputFocusScope, documents: CodeDocumentProjections) {
+		super(scope, input => activateCodeEditorTab(input, documents.get(input.context.model)), input => new CodeEditorNavigationSelection(input));
+	}
 	public override setOptions(selection?: EditorTextSelection, navigationSelection?: CodeEditorNavigationSelection): void {
 		if (selection !== undefined) applyActiveCodeTabSelection(selection);
 		navigationSelection?.restore(this.input);
@@ -92,8 +97,20 @@ function activateViewInput(_input: EditorInput): void {
 }
 
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
-export function createTestEditorGroup(commands: EditorCommandRunner = { isEnabled: () => false, execute() {} }): EditorGroupView {
-	return new EditorGroupView({
+export function createTestEditorGroup(
+	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
+	documents?: CodeDocumentProjections,
+): EditorGroupView {
+	const ownsDocuments = documents === undefined;
+	if (documents === undefined) {
+		const builtins = { epoch: 0, ids: [] as string[] };
+		documents = new CodeDocumentProjections(editorTextModelService, {
+			clock: new VirtualHeadlessClock(), maxHighlightCache: 512, semanticDebounceMs: 200,
+			getBuiltinIdentifiers: () => builtins,
+		});
+	}
+	const codeDocuments = documents;
+	const group = new EditorGroupView({
 		home: scope => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(scope, activateViewInput),
 		play_session: scope => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(scope, activateViewInput),
 		animation: scope => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(scope, activateViewInput),
@@ -109,7 +126,7 @@ export function createTestEditorGroup(commands: EditorCommandRunner = { isEnable
 		conversation_observer: scope => new TestEditorPane<ConversationObserverInput>(scope, activateViewInput),
 		assistant: scope => new TestEditorPane<AssistantInput>(scope, activateViewInput),
 		workspace_edit_review: scope => new TestEditorPane<WorkspaceEditReviewInput>(scope, activateViewInput),
-		code_editor: scope => new TestCodeEditorPane(scope),
+		code_editor: scope => new TestCodeEditorPane(scope, codeDocuments),
 		resource_view: scope => new ResourceViewerEditorPane(scope),
 		aem_editor: scope => new TestEditorPane<AemEditorInput>(scope, activateViewInput),
 		lua_program: scope => new TestEditorPane<LuaProgramInput>(scope, activateViewInput),
@@ -118,4 +135,6 @@ export function createTestEditorGroup(commands: EditorCommandRunner = { isEnable
 		scene_editor: scope => new TestEditorPane<SceneEditorInput>(scope, activateViewInput),
 		cart_map: scope => new TestEditorPane<CartMapInput>(scope, activateViewInput),
 	}, commands);
+	if (ownsDocuments) group.onWillDispose(() => codeDocuments.dispose());
+	return group;
 }

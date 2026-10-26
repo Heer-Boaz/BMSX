@@ -39,7 +39,6 @@ import type { EditorCommandRunner } from '../../ide/common/commands';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
@@ -173,7 +172,7 @@ test('Actor Lab history restores the typed member and Details after choosing ano
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history restores requested split intent while the preview is withheld`, t => {
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	const f = fixture(); t.after(() => f.stop.dispose());
 	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
@@ -332,7 +331,7 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	};
 	const previousFont = editorViewState.font, previousLineHeight = editorViewState.lineHeight,
 		previousAdvance = editorViewState.charAdvance, previousScrollbar = editorViewState.scrollbarController;
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	editorViewState.scrollbarController = new ScrollbarController({
 		codeVertical: new Scrollbar('vertical'), codeHorizontal: new Scrollbar('horizontal'), resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal'),
@@ -556,7 +555,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor timeline 
 	const f = fixture(); t.after(() => f.stop.dispose());
 	const input = f.controller.resolveInput(); t.after(() => input.dispose());
 	const previousFont = editorViewState.font, previousHeight = editorViewState.lineHeight, previousAdvance = editorViewState.charAdvance;
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	t.after(() => { editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; editorViewState.charAdvance = previousAdvance; });
 	const bounds = { left: 0, top: 20, right: 384, bottom: 270 };
 	updateFullWidthWorkbenchLayout(input.layout, bounds);

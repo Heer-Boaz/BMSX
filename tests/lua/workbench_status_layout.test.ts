@@ -28,7 +28,7 @@ import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 
 function fixture(t: TestContext, variant: FontVariant, width = 384) {
 	const host = createHostFrameFixture();
-	configureFontVariant(host.clock, variant, null);
+	configureFontVariant(variant);
 	editorViewState.viewportWidth = width; editorViewState.viewportHeight = 288;
 	editorFeedbackState.message.visible = false;
 	const previousTheme = colors.getActiveIdeThemeVariant();

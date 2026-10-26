@@ -1,3 +1,4 @@
+import type { CodeDocumentProjection } from '../../../editor/ui/code/document_projection';
 import type { ResourceDomain } from '../../../common/resource';
 import type { CartEditor } from '../../../cart_editor';
 import type { CodeTabContext } from './model';
@@ -6,7 +7,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { syncRuntimeErrorOverlayFromContext } from '../../../runtime_error/navigation';
 import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
-import { clearGotoHoverHighlight, clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight, clearReferenceHighlights } from '../../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resetBlink } from '../../../editor/render/caret';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
@@ -30,14 +31,12 @@ export function applyActiveCodeTabSelection(selection: EditorTextSelection): voi
 	resetBlink();
 }
 
-export function activateCodeEditorTab(tab: CodeEditorInput): void {
+export function activateCodeEditorTab(tab: CodeEditorInput, document: CodeDocumentProjection): void {
 	const context = tab.context;
 	activeCodeEditor.attach(context.model, context.view);
-	editorViewState.layout.setDocumentMode(context.model.mode);
-	editorViewState.layout.markVisualLinesDirty();
-	editorViewState.layout.invalidateAllHighlights();
+	editorViewState.layout.attach(document);
 	syncRuntimeErrorOverlayFromContext(context);
-	requestSemanticRefresh();
+	document.requestSemanticUpdate();
 	updateDesiredColumn();
 	resetBlink();
 	clearEditorPointerSelectionState();

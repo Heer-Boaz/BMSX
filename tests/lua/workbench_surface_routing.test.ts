@@ -44,7 +44,6 @@ import { HostPauseReason } from '../../hosts/common/execution_control';
 import { ConversationObserverInput } from '../../ide/workbench/contrib/conversations/editor_input';
 import { ObservedConversation } from '../../ide/workbench/services/assistant/observed_conversation';
 import { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { AssistantConversation } from '../../ide/workbench/services/assistant/conversation';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
@@ -130,7 +129,7 @@ return { _objects = { actor, other } }` },
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview retirement drains a real guest hold without migrating it into the expanded primary client`, t => {
 	const { editor, host, pointer, input, pane } = actorFixture(t);
-	configureFontVariant(host.clock, variant, null); editor.update(0); pane.focus();
+	editor.setFontVariant(variant); editor.update(0); pane.focus();
 	const primary = inputFocus.target!, selected = input.outline.rows[input.outline.selectionIndex];
 	const center = () => ({ x: (input.previewBounds.left + input.previewBounds.right) / 2,
 		y: (input.previewBounds.top + input.previewBounds.bottom) / 2 });
@@ -170,7 +169,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
 	const selected = input.outline.rows[input.outline.selectionIndex], path = input.selectionPath;
 	for (const variant of ['tiny', 'msx'] as const) {
-		configureFontVariant(host.clock, variant, null); editor.update(0); pane.focus();
+		editor.setFontVariant(variant); editor.update(0); pane.focus();
 		const primary = inputFocus.target!;
 		assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.moveFocus(false), true);
 		const sash = inputFocus.target!;
@@ -212,7 +211,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 	assert.equal(details.locked, true); assert.ok(subject);
 	const detailsFocus = inputFocus.target!;
 	for (const variant of ['tiny', 'msx'] as const) {
-		configureFontVariant(host.clock, variant, null); editor.update(0);
+		editor.setFontVariant(variant); editor.update(0);
 		const model = graph.viewport.model;
 		for (const width of [256, 640]) {
 			editor.updateViewport({ width, height: 360 }); editor.update(0);
@@ -364,9 +363,9 @@ test('Conversations wrapping is invariant under translation of the editor client
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Assistant client translation and real Files reflow preserve the draft owner and selection`, t => {
-	const { editor, host } = fixture(t), input = new AssistantInput(editor.assistant);
+	const { editor } = fixture(t), input = new AssistantInput(editor.assistant);
 	t.after(() => input.dispose());
-	configureFontVariant(host.clock, variant, null);
+	editor.setFontVariant(variant);
 	editor.editorGroup.openEditor(input); editor.update(0);
 	insertValue(input.draft, 'A retained assistant draft wraps at the actual client width without changing its text or selection. '.repeat(6));
 	input.draft.setSelection(7, 31); editor.editorGroup.panes.activePane!.update(0);

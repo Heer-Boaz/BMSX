@@ -1,6 +1,5 @@
 import { EditorEditStateType, type EditorEditSource } from '../model/edit_state';
 import type { Position } from '../../common/models';
-import { clamp } from '../../../machine/ts/common/clamp';
 import type { EditorTextModel } from '../model/text_model';
 import { inputFocus } from '../../input/focus';
 import { clearSingleCursorSelection, setSingleCursorSelectionAnchor } from '../editing/cursor/state';
@@ -131,16 +130,12 @@ export class ActiveCodeEditorState {
 	public attach(model: EditorTextModel, view: CodeEditorViewState): void {
 		this.clearInlineEdit();
 		this.clearVisualCursor();
-		const buffer = model.buffer;
-		const lastRow = buffer.getLineCount() - 1;
-		view.cursorRow = clamp(view.cursorRow, 0, lastRow);
-		const lineLength = buffer.getLineEndOffset(view.cursorRow) - buffer.getLineStartOffset(view.cursorRow);
-		view.cursorColumn = clamp(view.cursorColumn, 0, lineLength);
+		view.cursorRow = model.clampRow(view.cursorRow);
+		view.cursorColumn = model.clampColumn(view.cursorRow, view.cursorColumn);
 		const anchor = view.selectionAnchor;
 		if (anchor !== null) {
-			anchor.row = clamp(anchor.row, 0, lastRow);
-			const anchorLineLength = buffer.getLineEndOffset(anchor.row) - buffer.getLineStartOffset(anchor.row);
-			anchor.column = clamp(anchor.column, 0, anchorLineLength);
+			anchor.row = model.clampRow(anchor.row);
+			anchor.column = model.clampColumn(anchor.row, anchor.column);
 		}
 		this.model = model;
 		this.view = view;

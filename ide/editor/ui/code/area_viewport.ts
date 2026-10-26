@@ -1,7 +1,6 @@
 import * as constants from '../../../common/constants';
 import { ensureVisualLines } from '../../common/text/layout';
 import { getCodeAreaBounds } from '../view/view';
-import { activeCodeEditor } from '../code_editor_state';
 import { editorViewState } from '../view/state';
 import type { CodeAreaBounds } from '../view/view';
 
@@ -96,7 +95,7 @@ export function resolveCodeAreaViewport(): CodeAreaViewport {
 	const metrics = resolveCodeAreaViewportMetrics(
 		bounds,
 		editorViewState.layout.getVisualLineCount(),
-		editorViewState.wordWrapEnabled ? 0 : editorViewState.layout.maxViewWidth(activeCodeEditor.model.buffer),
+		editorViewState.wordWrapEnabled ? 0 : editorViewState.layout.maxViewWidth(),
 	);
 
 	codeAreaViewport.codeTop = bounds.codeTop;

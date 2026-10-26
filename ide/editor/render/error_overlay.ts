@@ -174,7 +174,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	contentRight: number,
 	availableBottom: number): RuntimeErrorOverlayAnchor {
 	ensureVisualLines();
-	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, overlay.row, overlay.column);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
 	const visibleRowsCandidate = ((availableBottom - codeTop) / editorViewState.lineHeight) | 0;
 	const visibleRows = visibleRowsCandidate > 1 ? visibleRowsCandidate : 1;
 	const relativeRow = visualIndex - (activeCodeEditor.view.scrollRow | 0);
@@ -185,7 +185,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	if (!segment) {
 		return null;
 	}
-	const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, segment.row);
+	const entry = editorViewState.layout.getViewLine(segment.row);
 	const highlight = entry.hi;
 	const slice = editorViewState.layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft,
 		contentRight - textLeft, editorViewState.wordWrapEnabled);
@@ -207,7 +207,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 		return 'absent';
 	}
 	ensureVisualLines();
-	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, overlay.row, overlay.column);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
 	const visibleRows = editorViewState.cachedVisibleRowCount > 1 ? editorViewState.cachedVisibleRowCount : 1;
 	const visibleStart = activeCodeEditor.view.scrollRow | 0;
 	const visibleEnd = visibleStart + visibleRows - 1;
@@ -468,10 +468,8 @@ export function applyRuntimeErrorOverlay(
 	details?: RuntimeErrorDetails,
 	path: string = ''
 ): AppliedRuntimeErrorOverlay {
-	const buffer = activeCodeEditor.model.buffer;
-	const targetRow = editorViewState.layout.clampBufferRow(buffer, line - 1);
-	const currentLine = buffer.getLineContent(targetRow);
-	const targetColumn = editorViewState.layout.clampLineLength(currentLine.length, column - 1);
+	const targetRow = activeCodeEditor.model.clampRow(line - 1);
+	const targetColumn = activeCodeEditor.model.clampColumn(targetRow, column - 1);
 	activeCodeEditor.clearVisualCursor();
 	activeCodeEditor.view.cursorRow = targetRow;
 	activeCodeEditor.view.cursorColumn = targetColumn;

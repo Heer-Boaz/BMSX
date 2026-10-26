@@ -48,9 +48,8 @@ export function findFirstNonWhitespace(line: string, startColumn: number, endCol
  */
 export function setCursorPosition(row: number, column: number): void {
 	activeCodeEditor.clearVisualCursor();
-	const buffer = activeCodeEditor.model.buffer;
-	const targetRow = editorViewState.layout.clampBufferRow(buffer, row);
-	const targetColumn = editorViewState.layout.clampBufferColumn(buffer, targetRow, column);
+	const targetRow = activeCodeEditor.model.clampRow(row);
+	const targetColumn = activeCodeEditor.model.clampColumn(targetRow, column);
 	activeCodeEditor.view.cursorRow = targetRow;
 	activeCodeEditor.view.cursorColumn = targetColumn;
 	activeCodeEditor.emitCursorMoved();
@@ -69,7 +68,7 @@ export function moveCursorVertical(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const currentIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	const currentIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	const targetIndex = editorViewState.layout.clampVisualIndex(visualCount, currentIndex + delta);
 	const desired = activeCodeEditor.view.desiredColumn;
 	const desiredDisplay = activeCodeEditor.view.desiredDisplayOffset;
@@ -91,7 +90,7 @@ export function moveCursorHorizontal(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		return;
@@ -143,8 +142,7 @@ export function moveCursorHorizontal(delta: number): void {
 			}
 		}
 	}
-	const cursorLength = buffer.getLineEndOffset(activeCodeEditor.view.cursorRow) - buffer.getLineStartOffset(activeCodeEditor.view.cursorRow);
-	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(cursorLength, activeCodeEditor.view.cursorColumn);
+	activeCodeEditor.view.cursorColumn = activeCodeEditor.model.clampColumn(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	activeCodeEditor.emitCursorMoved();
 	updateDesiredColumn();
 	resetBlink();
@@ -289,7 +287,7 @@ export function moveCursorHome(playerInput: ModifierState): void {
 		activeCodeEditor.view.cursorColumn = 0;
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
 			activeCodeEditor.view.cursorRow = segment.row;
@@ -327,7 +325,7 @@ export function moveCursorEnd(playerInput: ModifierState): void {
 		activeCodeEditor.view.cursorColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
 			activeCodeEditor.view.cursorRow = segment.row;

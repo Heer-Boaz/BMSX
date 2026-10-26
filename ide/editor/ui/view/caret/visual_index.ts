@@ -6,5 +6,5 @@ export function resolveCursorVisualIndex(): number {
 	if (override) {
 		return override.visualIndex;
 	}
-	return editorViewState.layout.positionToVisualIndex(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	return editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 }

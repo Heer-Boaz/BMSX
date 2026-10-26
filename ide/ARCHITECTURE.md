@@ -53,6 +53,9 @@ text-model resolution, persistence and source-edit publication. Source-backed
 visual tools consume those models rather than keeping another authored copy.
 Diagnostics are indexed once by canonical model/version; Source presentation
 projects ready row markers through its own layout rather than an active-editor bucket.
+`CodeDocumentProjections` owns model-bound highlighting and semantic scheduling.
+Font-generation measurements are shared by attached views; each `CodeLayout`
+owns wrapping, visual rows and its control's inline-text projection.
 
 Contributions own concrete retained editor inputs. `EditorGroupView` owns its
 group model, pane cache, focus/capture scopes and tab-strip control. Tab layout,

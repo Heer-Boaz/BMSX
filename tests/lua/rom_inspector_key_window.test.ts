@@ -13,7 +13,6 @@ import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/edi
 import { RomMapKeyWindow } from '../../ide/workbench/contrib/rom_inspector/key_window';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
@@ -34,7 +33,7 @@ const area = { left: 0, top: 20, right: 384, bottom: 274 };
 
 function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light') {
 	const previousTheme = colors.getActiveIdeThemeVariant(), previousCommands = inputFocus.workbenchScope.commands;
-	configureFontVariant(new VirtualHeadlessClock(), variant, null); colors.setIdeThemeVariant(theme);
+	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 	const types: readonly AssetType[] = ['image', 'texture', 'audio', 'data', 'bin', 'collision_shape', 'romlabel', 'model', 'aem', 'lua', 'code'];
 	const assets: RomAsset[] = types.map((type, index) => ({ resid: type, type, start: 512 + index * 128, end: 608 + index * 128 }));
 	assets[7].model_texture_start = 1920; assets[7].model_texture_end = 1984;

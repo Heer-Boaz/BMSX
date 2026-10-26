@@ -5,7 +5,6 @@ import { resetBlink } from '../render/caret';
 import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import * as TextEditing from './text_editing_and_selection';
 import { activeCodeEditor } from '../ui/code_editor_state';
-import { editorViewState } from '../ui/view/state';
 
 export function toggleLineComments(): void {
 	const prefix = activeCodeEditor.model.language.lineComment;
@@ -63,16 +62,14 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 			}
 		}
 		applyUndoableReplace(activeCodeEditor.model.buffer.offsetAt(row, insertIndex), 0, insertion);
-		editorViewState.layout.invalidateLine(row);
 		shiftPositionsForInsertion(row, insertIndex, insertion.length);
 		changed = true;
 	}
 	if (!changed) {
 		return;
 	}
-	activeCodeEditor.view.cursorRow = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
-	const cursorLine = activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow);
-	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(cursorLine.length, activeCodeEditor.view.cursorColumn);
+	activeCodeEditor.view.cursorRow = activeCodeEditor.model.clampRow(activeCodeEditor.view.cursorRow);
+	activeCodeEditor.view.cursorColumn = activeCodeEditor.model.clampColumn(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	activeCodeEditor.view.selectionAnchor = TextEditing.clampSelectionPosition(activeCodeEditor.view.selectionAnchor);
 	markTextMutated();
 	resetBlink();
@@ -113,15 +110,13 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 			changed = true;
 		}
 		applyUndoableReplace(activeCodeEditor.model.buffer.offsetAt(row, commentIndex), removal, '');
-		editorViewState.layout.invalidateLine(row);
 		shiftPositionsForRemoval(row, commentIndex, removal);
 	}
 	if (!changed) {
 		return;
 	}
-	activeCodeEditor.view.cursorRow = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
-	const cursorLine = activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow);
-	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(cursorLine.length, activeCodeEditor.view.cursorColumn);
+	activeCodeEditor.view.cursorRow = activeCodeEditor.model.clampRow(activeCodeEditor.view.cursorRow);
+	activeCodeEditor.view.cursorColumn = activeCodeEditor.model.clampColumn(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	activeCodeEditor.view.selectionAnchor = TextEditing.clampSelectionPosition(activeCodeEditor.view.selectionAnchor);
 	markTextMutated();
 	resetBlink();

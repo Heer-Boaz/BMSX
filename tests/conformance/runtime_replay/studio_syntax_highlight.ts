@@ -18,11 +18,11 @@ export async function testStudioSyntaxHighlight(test: StudioFixture): Promise<vo
 	for (const [phase, key] of ["'idle'", "'walkBack'", "'idle'"].entries()) {
 		if (phase === 1) model.pushEditOperations([{ offset: prefix.indexOf('idle'), deleteLength: 4, text: 'walkBack' }]);
 		if (phase === 2) await press('ControlLeft', 'KeyZ');
-		await until(() => layout.getSemanticFileData(model.buffer, model.version, model.identity) !== null,
+		await until(() => layout.document.getSemanticFileData() !== null,
 			`syntax: semantic publication for phase ${phase}`);
 		for (const row of [1, 2, 3]) {
 			const expected = row === 1 ? key : "'idle'";
-			const cached = layout.getCachedHighlight(model.buffer, row);
+			const cached = layout.measurements.getLine(row);
 			const highlight = cached.hi;
 			const start = highlight.text.indexOf(expected);
 			check(start >= 0 && highlight.upperText.slice(start, start + expected.length) === expected,
@@ -30,7 +30,7 @@ export async function testStudioSyntaxHighlight(test: StudioFixture): Promise<vo
 			check(highlight.colors.slice(start, start + expected.length).every(color => color === COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING),
 				`syntax: phase ${phase}, row ${row} colors the full string, including both quotes`);
 			await frame();
-			check(layout.getCachedHighlight(model.buffer, row) === cached && cached.hi === highlight,
+			check(layout.measurements.getLine(row) === cached && cached.hi === highlight,
 				'syntax: an idle editor frame retains its highlighting and layout');
 		}
 	}

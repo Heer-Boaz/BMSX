@@ -313,7 +313,7 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 }
 
 function installWorkspaceRestoreView(): void {
-	configureFontVariant(workspaceEnvironment.clock, DEFAULT_FONT_VARIANT, null);
+	configureFontVariant(DEFAULT_FONT_VARIANT);
 }
 
 function testResource(

@@ -7,7 +7,6 @@ import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { inputFocus } from '../../ide/input/focus';
 import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
@@ -24,7 +23,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		{ measureDisplay: () => ({ left: 0, top: 0, width: 700, height: 288 }) }, host.input, host.audio, host.tasks,
 		host.execution, host.rewind, host.clock, new HeadlessClipboard(), new IdeMicrotaskQueue(), { log() {} }, 0.3,
 		{ width: 700, height: 288 }, sources, new Map(), unused, unused, unused);
-	editorRuntimeState.active = true; configureFontVariant(host.clock, variant, null);
+	editorRuntimeState.active = true; ide.editor.setFontVariant(variant);
 	host.input.setPointerAdmissionMode('routed');
 	const resource = sources.resourceByIdentity.get(resourceIdentityKey({ domain: 0, path: 'review.lua' }))!;
 	const model = editorTextModelService.retain(resource, 'lua', record.src);

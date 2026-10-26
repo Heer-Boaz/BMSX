@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { TAB_SPACES } from '../../ide/common/constants';
 import { measureTextRange } from '../../ide/editor/common/text/layout';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -29,7 +28,7 @@ const SOURCE = Array.from({ length: 60 }, (_, index) => `line_${index} = '  🐉
 
 function project(input: WorkspaceEditReviewInput, width: number, height: number, variant: 'tiny' | 'msx'): void {
 	input.reading.capture(input.viewport, input.rows);
-	configureFontVariant(new VirtualHeadlessClock(), variant, null);
+	configureFontVariant(variant);
 	layoutEditReviewRows(input, width, measureTextRange);
 	input.viewport.layout(0, 0, width, height, input.rows.length * editorViewState.lineHeight);
 	input.reading.restore(input.viewport, input.rows, editorViewState.lineHeight);

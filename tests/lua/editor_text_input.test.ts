@@ -1,3 +1,4 @@
+import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
@@ -6,7 +7,6 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { inputFocus } from '../../ide/input/focus';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { applyInlineFieldEditing, setFieldText } from '../../ide/editor/ui/inline/text_field';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { activeCodeEditor } from '../../ide/editor/ui/code_editor_state';
 import { CodeEditorTextInput } from '../../ide/workbench/contrib/code_editor/native_text_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
@@ -22,16 +22,16 @@ import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 
 function sourceRangeFixture(t: TestContext, source: string) {
-	configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
+	configureFontVariant('tiny');
 	applyViewportSize({ width: 78, height: 288 }); refreshWorkbenchLayout();
 	editorViewState.wordWrapEnabled = true;
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'range.lua' }, domain: 0, path: 'range.lua', source: { type: 'lua', resid: 'range' } }, 'lua', source);
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'range.lua' }, domain: 0, path: 'range.lua', source: { type: 'lua', resid: 'range' } }, 'lua', source);
 	const input = new CodeEditorInput(model), view = input.context.view;
-	activeCodeEditor.attach(model, view); activeCodeEditor.focusTarget.focus();
-	const unbind = model.onDidChangeContent(event => editorViewState.layout.onDidChangeContent(model.buffer, event));
+	activeCodeEditor.attach(model, view); editorViewState.layout.attach(documents.get(model)); activeCodeEditor.focusTarget.focus();
 	t.after(() => {
-		unbind(); input.dispose(); activeCodeEditor.focusTarget.release(); activeCodeEditor.detach(); editorViewState.layout.invalidateAllHighlights();
-		model.dispose(); clearBackgroundTasks();
+		input.dispose(); activeCodeEditor.focusTarget.release(); activeCodeEditor.detach(); editorViewState.layout.dispose();
+		clearBackgroundTasks();
 	});
 	return { model, view, layout: editorViewState.layout };
 }
@@ -41,7 +41,7 @@ test('native source caret projects the canonical tab and wrapped position before
 	const target = new CodeEditorTextInput(), visible = editorCaretState.cursorVisible;
 	t.after(() => { editorCaretState.cursorVisible = visible; });
 	target.setSelection(1, 1);
-	const viewport = resolveViewportCapacity(), entry = layout.getViewLine(model.buffer, 0);
+	const viewport = resolveViewportCapacity(), entry = layout.getViewLine(0);
 	const display = layout.columnToDisplay(entry.hi, 1);
 	for (const blink of [false, true]) {
 		editorCaretState.cursorVisible = blink;
@@ -65,7 +65,6 @@ test('prepared explicit multiline UTF16 range edits publish their internal caret
 	view.cursorRow = 0; view.cursorColumn = 1; setSingleCursorSelectionAnchor(view, 4, 2);
 	resolveViewportCapacity();
 	const oldVisualCount = layout.getVisualLineCount();
-	const invalidation = t.mock.method(layout, 'invalidateLine', layout.invalidateLine.bind(layout));
 	const observed: Array<{ kind: string; row: number; column: number; anchor: { row: number; column: number } | null }> = [];
 	const unbind = model.onDidChangeContent(event => observed.push({ kind: event.kind, row: view.cursorRow,
 		column: view.cursorColumn, anchor: view.selectionAnchor === null ? null : { ...view.selectionAnchor } }));
@@ -76,12 +75,11 @@ test('prepared explicit multiline UTF16 range edits publish their internal caret
 	prepareUndo('explicit-range', false); replaceTextRange(from, to, insertion, '\t😀'.length);
 	assert.equal(model.buffer.getText(), expected); assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 3);
 	assert.equal(view.selectionAnchor, null);
-	assert.deepEqual(invalidation.mock.calls.map(call => call.arguments[0]), [1, 2, 3], 'invalidation reaches beyond the internal first-line caret');
 	resolveViewportCapacity();
 	assert.ok(layout.getVisualLineCount() > oldVisualCount + 6, 'prewarmed later rows are replaced by their complete wrapped contents');
 	const lines = expected.split('\n');
 	for (let row = 0; row < lines.length; row++) {
-		const line = layout.getViewLine(model.buffer, row), segments = layout.getVisualLines().filter(segment => segment.row === row);
+		const line = layout.getViewLine(row), segments = layout.getVisualLines().filter(segment => segment.row === row);
 		assert.equal(segments.map(segment => line.hi.text.slice(segment.startDisplay, segment.endDisplay)).join(''), expandTabs(lines[row]));
 	}
 	undoSource();
@@ -154,11 +152,12 @@ test('native field constraints retain the accepted edit and its own cursor', () 
 
 test('native source replacement uses bounded canonical context and one shared Undo operation', t => {
 	const source = '-- header\r\nlocal label = "old"\r\nreturn label\r\n';
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'native.lua' }, domain: 0, path: 'native.lua', source: { type: 'lua', resid: 'native' } }, 'lua', source);
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'native.lua' }, domain: 0, path: 'native.lua', source: { type: 'lua', resid: 'native' } }, 'lua', source);
 	const input = new CodeEditorInput(model), view = input.context.view;
-	activeCodeEditor.attach(model, view); configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
+	activeCodeEditor.attach(model, view); configureFontVariant('tiny', documents.get(model));
 	const target = new CodeEditorTextInput();
-	t.after(() => { input.dispose(); activeCodeEditor.detach(); model.dispose(); clearBackgroundTasks(); });
+	t.after(() => { input.dispose(); activeCodeEditor.detach(); clearBackgroundTasks(); });
 	const from = source.indexOf('old'); target.setSelection(from, from + 3);
 	const context = target.readText();
 	assert.equal(context.offset, source.indexOf('local'));
@@ -172,11 +171,12 @@ test('native source replacement uses bounded canonical context and one shared Un
 });
 
 test('native source selection notifies its actual cursor owner only on change', t => {
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'cursor.lua' }, domain: 0, path: 'cursor.lua', source: { type: 'lua', resid: 'cursor' } }, 'lua', 'abc');
+	const { models, documents } = createTestCodeDocuments(t);
+	const model = models.retain({ location: { kind: 'workspace' as const, path: 'cursor.lua' }, domain: 0, path: 'cursor.lua', source: { type: 'lua', resid: 'cursor' } }, 'lua', 'abc');
 	const input = new CodeEditorInput(model);
-	activeCodeEditor.attach(model, input.context.view); configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
+	activeCodeEditor.attach(model, input.context.view); configureFontVariant('tiny', documents.get(model));
 	let moves = 0; const unbind = activeCodeEditor.onDidMoveCursor(() => moves++);
-	t.after(() => { unbind(); activeCodeEditor.detach(); input.dispose(); model.dispose(); clearBackgroundTasks(); });
+	t.after(() => { unbind(); activeCodeEditor.detach(); input.dispose(); clearBackgroundTasks(); });
 	const target = new CodeEditorTextInput(); target.setSelection(1, 2); target.setSelection(1, 2);
 	assert.equal(moves, 1); target.setSelection(2, 2); assert.equal(moves, 2);
 	assert.equal(model.canUndo, false);
