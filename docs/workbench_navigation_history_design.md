@@ -25,6 +25,9 @@ must store concrete editor destinations, not reinterpret every destination as
 - Each navigation entry owns its selection lifetime. Eviction, branch pruning,
   reset and input disposal release its subscriptions. Back/Forward restore under
   capture suppression and release the consumed entry after activation.
+  A pending request retains its departure while the destination remains owned
+  by its stack. Only an admitted opening moves the stacks; rejected or superseded
+  openings do not consume a still-live destination.
 - Text/resource inputs expose their registered resource-editor identity. A
   closed source tab is reopened through that registration, not through a stale
   input. Non-resource visual inputs are removed from history when disposed.

@@ -5,7 +5,7 @@ import { InputFocusScope, type InputFocusService, type InputFocusTarget } from '
 import { consumeIdeKey, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
-import { ActionPromptView, type ActionPromptAction, type ActionPromptChoice } from './action_prompt_view';
+import { ActionPromptView, type ActionPromptRequest, type ActionPromptChoice } from './action_prompt_view';
 
 const TRIGGER_KEYS = ['Enter', 'NumpadEnter', 'Space'] as const;
 const NAVIGATION_KEYS = ['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'] as const;
@@ -15,7 +15,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 	public readonly focusTarget: InputFocusTarget;
 	public readonly pointerScope = Symbol('action-prompt');
 	public readonly view = new ActionPromptView();
-	private action: ActionPromptAction | undefined;
+	private request: ActionPromptRequest | undefined;
 	private resolve: ((choice: ActionPromptChoice) => void) | undefined;
 	private returnFocus: InputFocusTarget | null = null;
 	private focused = 0;
@@ -34,26 +34,32 @@ export class ActionPrompt implements PointerCaptureTarget {
 		this.unbindBlur = this.focusTarget.onDidBlur(next => { if (!this.acceptsFocusTransfer(next)) this.close(); });
 	}
 
-	public get visible(): boolean { return this.action !== undefined; }
+	public get visible(): boolean { return this.request !== undefined; }
 	public get invocationOrigin(): InputFocusTarget | null { return this.returnFocus; }
 
-	public show(action: ActionPromptAction): Promise<ActionPromptChoice> {
+	public show(request: ActionPromptRequest): Promise<ActionPromptChoice> {
 		this.close();
 		this.capture.cancel();
 		this.returnFocus = this.focus.target;
-		this.action = action;
-		this.focused = 0;
-		this.view.update(action);
+		this.request = request;
+		this.focused = this.view.buttons.findIndex(button => button.choice === request.defaultChoice);
+		this.view.update(request);
 		const result = new Promise<ActionPromptChoice>(resolve => { this.resolve = resolve; });
 		this.focusTarget.focus();
 		this.onDidChangeVisibility();
 		return result;
 	}
 
+	/** An operation can retire only its own live decision, without reclaiming its old origin. */
+	public cancel(request: ActionPromptRequest): void {
+		if (this.request === request) this.close('cancel', false);
+	}
+
 	public close(choice: ActionPromptChoice = 'cancel', restoreFocus = true): void {
 		if (!this.visible) return;
+		if (choice === 'primary' && !this.request!.primaryEnabled) return;
 		const resolve = this.resolve!, returnFocus = this.returnFocus;
-		this.action = undefined; this.resolve = undefined; this.returnFocus = null;
+		this.request = undefined; this.resolve = undefined; this.returnFocus = null;
 		this.cancelPointer();
 		if (this.focusTarget.hasFocus || this.acceptsFocusTransfer(this.focus.target)) this.focus.setTarget(restoreFocus ? returnFocus : null);
 		this.onDidChangeVisibility();
@@ -91,7 +97,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 		if (!snapshot.valid || !snapshot.insideViewport) return -1;
 		const buttons = this.view.buttons;
 		for (let index = 0; index < buttons.length; index++) {
-			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, buttons[index].bounds)) return index;
+			if (buttons[index].enabled && point_in_rect(snapshot.viewportX, snapshot.viewportY, buttons[index].bounds)) return index;
 		}
 		return -1;
 	}
@@ -111,10 +117,13 @@ export class ActionPrompt implements PointerCaptureTarget {
 			consumeIdeKey(key, input);
 			this.cancelPointer();
 			const backward = key === 'ArrowLeft' || key === 'ArrowUp' || key === 'Tab' && modifiers === KeyModifier.shift;
-			this.focused = (this.focused + (backward ? -1 : 1) + this.view.buttons.length) % this.view.buttons.length;
+			do {
+				this.focused = (this.focused + (backward ? -1 : 1) + this.view.buttons.length) % this.view.buttons.length;
+			} while (!this.view.buttons[this.focused].enabled);
 			return;
 		}
 		if (!TRIGGER_KEYS.includes(input.code as typeof TRIGGER_KEYS[number]) || input.consumed) return;
+		if (!this.view.buttons[this.focused].enabled) { consumeIdeKey(input.code, input); return; }
 		if (input.down && !input.repeat && this.triggerKey === undefined) {
 			this.cancelPointer();
 			this.triggerKey = input.code;
@@ -124,7 +133,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 	}
 
 	public update(): void {
-		if (this.visible) this.view.update(this.action!);
+		if (this.visible) this.view.update(this.request!);
 	}
 
 	public draw(): void {

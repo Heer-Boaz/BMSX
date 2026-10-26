@@ -24,6 +24,6 @@ export class ConversationObserverInput extends ReadonlyEditorInput<'codex-conver
 			if (kind === 'reset') { this.selection.select(undefined); this.transcript.reset(); }
 			else if (kind === 'text') this.transcript.invalidate(conversation.entries[index]);
 		}) });
-		this.disposables.add({ dispose: () => { this.lifetime.abort(); conversation.disconnect(); } });
+		this.disposables.add({ dispose: () => this.lifetime.abort() });
 	}
 }

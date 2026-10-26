@@ -25,6 +25,7 @@ export async function chooseObservedConversation(group: EditorGroupView, input: 
 export function openObservedConversation(group: EditorGroupView, conversation: ObservedConversation, quickInput: QuickInputController): void {
 	const existing = group.model.tabs.find(input => input.kind === 'conversation_observer');
 	const input = existing ?? new ConversationObserverInput(conversation);
-	group.openEditor(input);
+	if (!group.openEditor(input)) return;
+	if (existing === undefined) input.onWillDispose(() => conversation.disconnect());
 	void chooseObservedConversation(group, input, quickInput);
 }

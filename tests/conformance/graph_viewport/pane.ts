@@ -67,7 +67,10 @@ export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 		home: unused,
 		code_editor: scope => pane = new GraphFixturePane(inputViews, scope), behavior_lens: unused, resource_view: unused, scenario_lab: unused, scene_editor: unused, cart_map: unused,
 		animation: unused, host_error: unused, build_log: unused,
-		rom_inspector: unused, event_viewer: unused, gte_debugger: unused, gpu_debugger: unused, terminal: unused, actor_lab: unused, game_view: unused, workspace_edit_review: unused, assistant: unused, aem_editor: unused, lua_program: unused, conversation_observer: unused }, { isEnabled: () => false, execute() {} });
+		rom_inspector: unused, event_viewer: unused, gte_debugger: unused, gpu_debugger: unused, terminal: unused, actor_lab: unused, game_view: unused, workspace_edit_review: unused, assistant: unused, aem_editor: unused, lua_program: unused, conversation_observer: unused }, { isEnabled: () => false, execute() {} }, async targets => {
+		for (const { group, input } of targets) group.removeEditor(input);
+		return true;
+	});
 	group.openEditor(inputs[0]);
 	for (let index = 1; index < inputs.length; index += 1) group.model.add(inputs[index]);
 	return { inputs, pane, group };

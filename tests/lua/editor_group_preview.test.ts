@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
@@ -7,6 +7,10 @@ import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { navigationState } from '../../ide/navigation/navigation_history';
+import { inputFocus } from '../../ide/input/focus';
+import { ValueInput } from '../../ide/editor/ui/inline/value_input';
+import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
 function scene(path: string) {
 	return new SceneEditorInput(new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', 'return {}'));
@@ -169,4 +173,102 @@ test('workbench preview replacement detaches the pane before disposal, and histo
 	group.openEditor(next); assert.equal(group.model.previewTab, null);
 	group.openEditor(kept, { pinned: false });
 	assert.equal(group.model.previewTab, null, 'preview opening an already kept input does not unpin it');
+});
+
+/** A real pending value control is attached to the group's current authored view. */
+function createPreviewDraft(t: TestContext) {
+	const group = createTestEditorGroup(), kept = scene('kept.lua'), current = scene('preview.lua');
+	group.openEditor(kept); group.openEditor(current, { pinned: false });
+	let publications = 0;
+	const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, value => {
+		assert.equal(group.panes.activePane?.input, current);
+		assert.ok(group.model.tabs.includes(current));
+		publications += 1;
+		current.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: `-- value ${value}\n` }]);
+	});
+	control.setValue(1); control.field.focusTarget.focus();
+	t.after(() => {
+		control.cancel(); inputFocus.setTarget(null); control.dispose(); group.dispose();
+		kept.workingCopy.dispose(); current.workingCopy.dispose();
+	});
+	return { group, kept, current, control, publications: () => publications };
+}
+
+test('preview admission publishes a valid focused draft before replacement can retire its clean model', t => {
+	const f = createPreviewDraft(t), next = scene('next.lua');
+	setFieldText(f.control.field, '2', false);
+	let retired = false;
+	f.current.onWillDispose(() => { retired = true; });
+	assert.equal(f.group.openEditor(next, { pinned: false }), true);
+	assert.equal(f.publications(), 1);
+	assert.equal(f.current.workingCopy.buffer.getText(), '-- value 2\nreturn {}');
+	assert.equal(f.current.isDirty(), true); assert.equal(retired, false);
+	assert.deepEqual(f.group.model.tabs, [f.kept, f.current, next]);
+	assert.equal(f.group.model.previewTab, next); assert.equal(f.group.panes.activePane?.input, next);
+	assert.equal(f.control.pending, false);
+});
+
+test('invalid preview admission preserves the view and draft and disposes only fresh offered inputs', t => {
+	const f = createPreviewDraft(t), next = scene('next.lua');
+	setFieldText(f.control.field, '-', false);
+	const generation = f.group.panes.openGeneration;
+	let retired = 0, offeredRetired = 0;
+	f.current.onWillDispose(() => { retired += 1; });
+	next.onWillDispose(() => { offeredRetired += 1; });
+	assert.equal(f.group.openEditor(next, { pinned: false }), false);
+	assert.equal(offeredRetired, 1);
+	const duplicate = new SceneEditorInput(f.current.workingCopy);
+	duplicate.onWillDispose(() => { offeredRetired += 1; });
+	assert.equal(f.group.openEditor(duplicate), false);
+	assert.equal(offeredRetired, 2);
+	assert.equal(f.group.openEditor(f.current), false);
+	assert.equal(retired, 0); assert.equal(f.publications(), 0);
+	assert.deepEqual(f.group.model.tabs, [f.kept, f.current]);
+	assert.equal(f.group.model.previewTab, f.current); assert.equal(f.group.model.activeTab, f.current);
+	assert.equal(f.group.panes.activePane?.input, f.current); assert.equal(f.group.panes.openGeneration, generation);
+	assert.equal(inputFocus.target, f.control.field.focusTarget);
+	assert.equal(f.control.pending, true); assert.equal(f.control.field.text, '-');
+	assert.equal(f.current.workingCopy.buffer.getText(), 'return {}'); assert.equal(f.current.isDirty(), false);
+});
+
+test('direct activation admits the current view draft before switching and leaves an invalid draft attached', t => {
+	const f = createPreviewDraft(t);
+	setFieldText(f.control.field, '-', false);
+	assert.equal(f.group.activate(f.kept.id), false);
+	assert.equal(f.group.model.activeTab, f.current); assert.equal(f.group.panes.activePane?.input, f.current);
+	assert.equal(inputFocus.target, f.control.field.focusTarget);
+	assert.equal(f.control.pending, true); assert.equal(f.publications(), 0);
+	setFieldText(f.control.field, '2', false);
+	assert.equal(f.group.activate(f.kept.id), true);
+	assert.equal(f.group.model.activeTab, f.kept); assert.equal(f.group.panes.activePane?.input, f.kept);
+	assert.equal(f.publications(), 1); assert.equal(f.current.isDirty(), true);
+	assert.equal(f.group.model.previewTab, null);
+});
+
+test('preserved-focus opens and activations do not publish another group control draft', t => {
+	const f = createPreviewDraft(t), other = createTestEditorGroup();
+	t.after(() => other.dispose());
+	setFieldText(f.control.field, '2', false);
+	const kept = scene('other-kept.lua'), next = scene('other-preview.lua');
+	assert.equal(other.openEditor(kept, { preserveFocus: true }), true);
+	assert.equal(other.openEditor(next, { pinned: false, preserveFocus: true }), true);
+	assert.equal(other.activate(kept.id, undefined, undefined, true), true);
+	assert.equal(f.publications(), 0); assert.equal(f.current.isDirty(), false);
+	assert.equal(f.control.pending, true); assert.equal(f.control.field.text, '2');
+	assert.equal(inputFocus.target, f.control.field.focusTarget);
+	assert.equal(f.group.model.previewTab, f.current); assert.equal(f.group.panes.activePane?.input, f.current);
+});
+
+test('resolved opening reports rejected draft admission without attachment or focus transfer', async t => {
+	const f = createPreviewDraft(t), next = scene('resolved.lua');
+	setFieldText(f.control.field, '-', false);
+	const back = [...navigationState.back], forward = [...navigationState.forward];
+	let retired = 0;
+	next.onWillDispose(() => { retired += 1; });
+	assert.equal(await f.group.openResolvedEditor(next, { pinned: false }), undefined);
+	assert.equal(retired, 1); assert.equal(f.publications(), 0);
+	assert.deepEqual(f.group.model.tabs, [f.kept, f.current]);
+	assert.equal(f.group.model.previewTab, f.current); assert.equal(f.group.panes.activePane?.input, f.current);
+	assert.equal(inputFocus.target, f.control.field.focusTarget); assert.equal(f.control.pending, true);
+	assert.deepEqual(navigationState.back, back); assert.deepEqual(navigationState.forward, forward);
 });

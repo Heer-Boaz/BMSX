@@ -46,6 +46,11 @@ import { updateFullWidthWorkbenchLayout } from '../../ide/workbench/common/layou
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 import { createTestEditorGroup } from '../helpers/editor_panes';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { ValueInput } from '../../ide/editor/ui/inline/value_input';
+import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
 /** Compiled guest representations, not JS table mocks. Actual cartlib construction is tested in the browser workflow. */
 const WORLD_SOURCE = `local fsm<const> = require('cartlib/fsm/fsm_component')
@@ -92,8 +97,33 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 		quickInput!, group, undefined!, f.actorExecution, f.rewind, sources,
 		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport });
 	controllerFixtures.push({ controller, group });
-	return { ...f, stop: inspection, actors, controller };
+	return { ...f, stop: inspection, actors, controller, group };
 }
+
+for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} stops at rejected focused draft admission`, t => {
+	configureFontVariant('tiny');
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+	const f = fixture(ENTRY, true, WORLD_SOURCE, [], quickInput);
+	const model = new EditorTextModel({ domain: -1, path: 'draft.lua', location: { kind: 'workspace', path: 'draft.lua' },
+		source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
+	const current = new CodeEditorInput(model);
+	f.group.openEditor(current);
+	const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, () => assert.fail('invalid draft cannot publish'));
+	control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
+	t.after(() => {
+		control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose();
+		f.group.clear(); model.dispose(); f.stop.dispose();
+	});
+	const offered = f.controller.resolveInput();
+	let retired = 0; offered.onWillDispose(() => { retired++; });
+	if (action === 'open') f.controller.open(); else f.controller.auditionEvent(-1, 'event');
+	assert.equal(retired, 1, 'the unadmitted Actor Lab candidate releases its resources');
+	assert.ok(f.group.model.activeTab === current); assert.ok(f.group.panes.activePane?.input === current);
+	assert.ok(inputFocus.target === control.field.focusTarget);
+	assert.equal(control.pending, true); assert.equal(control.field.text, '-');
+	assert.equal(quickInput.visible, false, 'a rejected editor cannot open a follow-on actor chooser');
+	assert.equal(model.buffer.getText(), 'return 1'); assert.equal(model.dirty, false);
+});
 
 test('viewport picking follows render order and cropped negative scale, using cached typed guest identities', t => {
 	const f = fixture(`local world<const> = require('cartlib/world/world')

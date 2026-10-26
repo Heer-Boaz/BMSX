@@ -19,6 +19,7 @@ import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import { InputChannel } from '../../hosts/common/input/channel';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
+import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { ImagePreviewCache } from '../../ide/workbench/ui/image_preview';
 import { ImagePreviewOverlay } from '../../ide/workbench/ui/image_preview_overlay';
@@ -55,6 +56,9 @@ import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
+
+const PROMPT_REQUEST: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
+	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
 
 function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: LuaSourceRegistry }) {
 	const host = createHostFrameFixture(authored === undefined ? undefined : createTestRuntime(authored.image.romBytes));
@@ -665,7 +669,7 @@ test('real popup and modal sources publish visibility before focus admission and
 	assert.equal(editor.surfaces.topBlockingSurface?.captureScope, editor.quickInput.pointerScope);
 	editor.quickInput.hide();
 	assert.equal(inputFocus.target, origin);
-	const decision = editor.actionPrompt.show('close');
+	const decision = editor.actionPrompt.show(PROMPT_REQUEST);
 	assert.equal(editor.actionPrompt.focusTarget.hasFocus, true);
 	assert.equal(editor.surfaces.topBlockingSurface?.captureScope, editor.actionPrompt.pointerScope);
 	assert.equal(editor.dispatchWheel({ x: 10, y: 200, deltaX: 0, deltaY: 1, attachmentDeltaY: 1,
@@ -818,7 +822,7 @@ test('actual Quick Input and action prompt retain their modal lifetime while the
 	assert.equal(editor.quickInput.visible, true);
 	editor.quickInput.hide();
 
-	const decision = editor.actionPrompt.show('close');
+	const decision = editor.actionPrompt.show(PROMPT_REQUEST);
 	const prompt = editor.surfaces.findByScope(editor.actionPrompt.pointerScope)!;
 	editor.contextMenu.show(100, 60, [{ type: 'command', command: 'save' }], editor.commands);
 	const promptMenu = editor.surfaces.findByScope(editor.contextMenu.pointerScope)!;
@@ -888,7 +892,7 @@ test('editor input retirement cancels its actual prompt and picker sessions with
 			{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
 		const origin = inputFocus.target!;
 		assert.ok(origin.guestInput, 'the actual game view input control invoked the session');
-		const decision = kind === 'prompt' ? editor.actionPrompt.show('reboot') : undefined;
+		const decision = kind === 'prompt' ? editor.actionPrompt.show(PROMPT_REQUEST) : undefined;
 		if (kind === 'picker') editor.quickInput.pick('Choose', '', () => new TextQuickPickProvider([
 			{ label: 'one', description: '', detail: '' },
 		]), () => {});
@@ -915,7 +919,7 @@ test('clearing an editor preserves root-origin and other live-owner modal sessio
 		for (const kind of ['prompt', 'picker']) {
 			editor.editorGroup.panes.openEditor(new HostErrorInput('existing'));
 			inputFocus.setTarget(owner);
-			const decision = kind === 'prompt' ? editor.actionPrompt.show('reboot') : undefined;
+			const decision = kind === 'prompt' ? editor.actionPrompt.show(PROMPT_REQUEST) : undefined;
 			if (kind === 'picker') editor.quickInput.pick('Choose', '', () => new TextQuickPickProvider([
 				{ label: 'one', description: '', detail: '' },
 			]), () => {});
@@ -1231,7 +1235,7 @@ test('real window hide and root-modal admission cancel true producer guest holds
 		remote.apply([{ type: 'pointer', x: 150, y: 150 }, { type: 'button', button: 'primary', down: true }]);
 		assert.equal(sample(), 1);
 		if (action === 'hide') { window.hide(); show(); }
-		else { const decision = editor.actionPrompt.show('close'); editor.actionPrompt.close(); await decision; }
+		else { const decision = editor.actionPrompt.show(PROMPT_REQUEST); editor.actionPrompt.close(); await decision; }
 		assert.equal(sample(), 0);
 		assert.equal(pointerCapture.draining, true);
 		remote.apply([{ type: 'button', button: 'secondary', down: true }]);

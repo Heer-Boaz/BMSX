@@ -3,10 +3,9 @@ import type { RuntimeResource } from '../../../common/models';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
 import {
 	createNavigationEntry,
-	takeBackwardNavigationEntry,
-	takeForwardNavigationEntry,
+	selectNavigationHistoryEntry,
 	withNavigationCaptureSuspended,
-	type NavigationHistoryEntry,
+	type NavigationHistorySelection,
 } from '../../../navigation/navigation_history';
 import {
 	resolveRuntimeResource,
@@ -54,7 +53,9 @@ export class EditorNavigationController {
 	}
 
 	public async goBackward(): Promise<void> {
-		const target = takeBackwardNavigationEntry(createNavigationEntry());
+		const edit = inputFocus.target?.edit;
+		if (edit?.pending === true && !edit.commit()) return;
+		const target = selectNavigationHistoryEntry('back', createNavigationEntry());
 		if (!target) {
 			return;
 		}
@@ -62,14 +63,17 @@ export class EditorNavigationController {
 	}
 
 	public async goForward(): Promise<void> {
-		const target = takeForwardNavigationEntry(createNavigationEntry());
+		const edit = inputFocus.target?.edit;
+		if (edit?.pending === true && !edit.commit()) return;
+		const target = selectNavigationHistoryEntry('forward', createNavigationEntry());
 		if (!target) {
 			return;
 		}
 		await this.openHistoryEntry(target);
 	}
 
-	private async openHistoryEntry(target: NavigationHistoryEntry): Promise<void> {
+	private async openHistoryEntry(pending: NavigationHistorySelection): Promise<void> {
+		const target = pending.target;
 		const group = target.owner;
 		const generation = group.panes.beginOpen();
 		const activation = inputFocus.revision;
@@ -77,26 +81,24 @@ export class EditorNavigationController {
 		try {
 			const destination = target.target;
 			if (destination.kind === 'input') {
-				withNavigationCaptureSuspended(() => {
-					// This live destination already belongs to the group. History does
-					// not turn a surviving preview into an explicit Keep Open request.
-					group.activate(destination.input.id, undefined, target.selection);
-				});
+				// This live destination already belongs to the group. History does
+				// not turn a surviving preview into an explicit Keep Open request.
+				if (!withNavigationCaptureSuspended(() => group.activate(destination.input.id, undefined, target.selection))) return;
 			} else {
 				const input = await this.editorResolver.resolveEditorInput(resolveRuntimeResource(this.sources, destination.resource)!, destination.editorId);
-				if (generation !== group.panes.openGeneration || target.isDisposed) {
+				if (generation !== group.panes.openGeneration || !pending.isCurrent) {
 					input.dispose();
 					return;
 				}
 				preserveFocus = activation !== inputFocus.revision;
-				withNavigationCaptureSuspended(() => {
-					group.openEditor(input, { pinned: false, navigationSelection: target.selection,
-					preserveFocus });
-				});
+				if (!withNavigationCaptureSuspended(() => group.openEditor(input, {
+					pinned: false, navigationSelection: target.selection, preserveFocus,
+				}))) return;
 			}
+			if (!pending.accept()) return;
 			if (!preserveFocus) this.resourcePanel.focusTarget.release();
 		} finally {
-			target.dispose();
+			pending.dispose();
 		}
 	}
 }

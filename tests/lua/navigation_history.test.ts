@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../ide/common/resource';
 import { inputFocus } from '../../ide/input/focus';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ import test from 'node:test';
 import {
 	NavigationHistoryEntry, areNavigationEntriesEqual, captureNavigation, createNavigationEntry, navigationState,
 	pushUniqueNavigationEntry, resetNavigationHistoryState, initializeNavigationState, beginNavigationCapture,
-	completeNavigation, takeBackwardNavigationEntry, takeForwardNavigationEntry, withNavigationCaptureSuspended,
+	completeNavigation, selectNavigationHistoryEntry, withNavigationCaptureSuspended,
 } from '../../ide/navigation/navigation_history';
 import { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
@@ -20,6 +21,9 @@ import type { ResourcePanelController } from '../../ide/workbench/contrib/resour
 import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
+import { ValueInput } from '../../ide/editor/ui/inline/value_input';
+import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
 test.afterEach(() => editorTextModelService.clear());
 
@@ -41,11 +45,15 @@ test('Back/Forward preserve the live destination, not an earlier captured cursor
 	const origin = entry(group, 'main.lua', 4);
 	const current = entry(group, 'enemy.lua', 37);
 	navigationState.back.push(origin);
-	assert.equal(takeBackwardNavigationEntry(current), origin);
+	const back = selectNavigationHistoryEntry('back', current)!;
+	assert.equal(back.target, origin);
+	assert.deepEqual(navigationState.back, [origin]); assert.deepEqual(navigationState.forward, []);
+	assert.equal(back.accept(), true);
 	assert.deepEqual(navigationState.forward, [current]);
-	assert.equal(takeForwardNavigationEntry(origin), current);
-	assert.deepEqual(navigationState.back, [origin]);
-	current.dispose(); resetNavigationHistoryState();
+	const returned = entry(group, 'main.lua', 4), forward = selectNavigationHistoryEntry('forward', returned)!;
+	assert.equal(forward.target, current); assert.equal(forward.accept(), true);
+	assert.deepEqual(navigationState.back, [returned]);
+	resetNavigationHistoryState();
 });
 
 test('bounded history owns disposal on duplicates, eviction, forward pruning and reset', t => {
@@ -58,12 +66,13 @@ test('bounded history owns disposal on duplicates, eviction, forward pruning and
 	for (let index = 1; index <= 64; index += 1) pushUniqueNavigationEntry(navigationState.back, entry(group, 'a.lua', index));
 	assert.equal(navigationState.back.length, 64);
 	assert.equal(first.selection!.isDisposed, true);
-	const returned = takeBackwardNavigationEntry(entry(group, 'b.lua', 7))!;
+	const returned = selectNavigationHistoryEntry('back', entry(group, 'b.lua', 7))!;
+	assert.equal(returned.accept(), true);
 	const forward = navigationState.forward[0];
 	returned.dispose(); resetNavigationHistoryState();
 	assert.equal(forward.selection!.isDisposed, true);
 	const unused = entry(group, 'c.lua', 2);
-	assert.equal(takeBackwardNavigationEntry(unused), null);
+	assert.equal(selectNavigationHistoryEntry('back', unused), null);
 	assert.equal(unused.selection!.isDisposed, true);
 });
 
@@ -115,7 +124,7 @@ test('child pane construction and disposal cannot replace the frontend navigatio
 	afterDisposal.dispose();
 });
 
-test('pane retirement releases pending and popped selections before a later completion', t => {
+test('pane retirement releases pending selections before a later completion', t => {
 	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
 	t.after(initializeNavigationState(group));
@@ -124,16 +133,17 @@ test('pane retirement releases pending and popped selections before a later comp
 	const pending = beginNavigationCapture()!;
 	const target = entry(group, 'closed.lua', 3);
 	navigationState.back.push(target);
-	const popped = takeBackwardNavigationEntry(createNavigationEntry())!;
-	assert.equal(popped, target);
+	const selected = selectNavigationHistoryEntry('back', createNavigationEntry())!;
+	assert.equal(selected.target, target);
 	assert.equal(pending.selection!.isDisposed, false);
-	assert.equal(popped.selection!.isDisposed, false);
+	assert.equal(selected.target.selection!.isDisposed, false);
 
 	group.dispose();
 	assert.equal(pending.isDisposed, true);
 	assert.equal(pending.selection!.isDisposed, true);
-	assert.equal(popped.isDisposed, true);
-	assert.equal(popped.selection!.isDisposed, true);
+	assert.equal(selected.isCurrent, false);
+	assert.equal(selected.target.selection!.isDisposed, true);
+	assert.equal(selected.accept(), false); selected.dispose();
 	assert.equal(navigationState.back.length, 0);
 	assert.equal(navigationState.forward.length, 0);
 	completeNavigation(pending);
@@ -163,8 +173,9 @@ test('one explicit navigation records a departure before mutating the same retai
 	assert.equal(areNavigationEntriesEqual(navigationState.back[0], original), true);
 	original.dispose();
 	const current = createNavigationEntry()!;
-	const target = takeBackwardNavigationEntry(current)!;
-	withNavigationCaptureSuspended(() => group.activate(input.id, undefined, target.selection)); target.dispose();
+	const selected = selectNavigationHistoryEntry('back', current)!;
+	withNavigationCaptureSuspended(() => group.activate(input.id, undefined, selected.target.selection));
+	assert.equal(selected.accept(), true);
 	const forward = navigationState.forward[0];
 	captureNavigation(() => { input.context.view.cursorRow = 1; });
 	assert.equal(navigationState.forward.length, 0);
@@ -267,7 +278,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 		const history = [...navigationState.back];
 		if (interruption === 'new navigation' || interruption === 'direct tab') {
 			assert.equal(active, newer);
-			assert.equal(history.length, 1, 'pending history I/O must not suppress the new departure');
+			assert.equal(history.length, route === 'history' ? 2 : 1, 'pending I/O neither consumes its destination nor suppresses the new departure');
 			assert.equal(navigationState.forward.length, 0);
 		}
 		finishOpen();
@@ -276,7 +287,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 		assert.deepEqual(navigationState.back, history, 'cancelled completion does not capture another navigation');
 		assert.equal(discarded, 1, 'release the unadmitted input, not the workspace text model');
 		assert.equal(older.workingCopy.buffer.getText().includes('local target'), true);
-		if (route === 'history') assert.equal(target.selection!.isDisposed, true);
+		if (route === 'history') assert.equal(target.selection!.isDisposed, interruption === 'owner disposal');
 		else target.dispose();
 	});
 }
@@ -387,4 +398,81 @@ test('async resource admission captures the departure before an in-control caret
 	assert.equal(navigationState.back.length, 1);
 	assert.equal(areNavigationEntriesEqual(navigationState.back[0], invocation), true);
 	assert.equal(areNavigationEntriesEqual(navigationState.back[0], later), false);
+});
+
+for (const direction of ['back', 'forward'] as const) test(`invalid focused draft does not consume ${direction} navigation or leave its current view`, async t => {
+	configureFontVariant('tiny');
+	const group = createTestEditorGroup();
+	t.after(initializeNavigationState(group));
+	t.after(() => group.dispose());
+	const first = code('first.lua'), second = code('second.lua');
+	group.openEditor(first); group.openEditor(second);
+	const navigation = new EditorNavigationController(
+		{ resourceByIdentity: new Map([first, second].map(input => [resourceIdentityKey(input.resource), input.workingCopy.resource])) } as RuntimeSourceState,
+		{ focusTarget: inputFocus.createTarget() } as ResourcePanelController,
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
+			createEditorInput: resource => new CodeEditorInput(editorTextModelService.get(resource)!) }]), group);
+	if (direction === 'forward') await navigation.goBackward();
+	const current = group.model.activeTab, focus = inputFocus.target!;
+	const back = [...navigationState.back], forward = [...navigationState.forward];
+	let attempts = 0;
+	focus.edit = { pending: true, commit() { attempts++; return false; } };
+	t.after(() => { focus.edit = undefined; });
+	if (direction === 'back') await navigation.goBackward(); else await navigation.goForward();
+	assert.equal(attempts, 1);
+	assert.ok(group.model.activeTab === current, 'failed validation preserves the admitted view');
+	assert.ok(inputFocus.target === focus, 'the invalid draft keeps its actual focus');
+	assert.equal(navigationState.back.length, back.length); assert.equal(navigationState.forward.length, forward.length);
+	assert.ok(navigationState.back.every((entry, index) => entry === back[index]), 'Back retains its original owned destinations');
+	assert.ok(navigationState.forward.every((entry, index) => entry === forward[index]), 'Forward retains its original owned destinations');
+});
+
+for (const direction of ['back', 'forward'] as const) test(`an invalid draft begun during ${direction} resolution retains the original destination for retry`, async t => {
+	configureFontVariant('tiny');
+	const group = createTestEditorGroup();
+	t.after(initializeNavigationState(group));
+	let control: ValueInput<number> | undefined;
+	t.after(() => { control?.cancel(); inputFocus.setTarget(null); control?.dispose(); group.dispose(); });
+	const first = code('first.lua'), second = code('second.lua');
+	group.openEditor(first); group.openEditor(second);
+	let blocked = false, finish!: () => void, rejectedCandidate: CodeEditorInput | undefined, retired = 0;
+	const gate = new Promise<void>(resolve => { finish = resolve; });
+	const navigation = new EditorNavigationController(
+		{ resourceByIdentity: new Map([first, second].map(input => [resourceIdentityKey(input.resource), input.workingCopy.resource])) } as RuntimeSourceState,
+		{ focusTarget: inputFocus.createTarget() } as ResourcePanelController,
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
+			createEditorInput: async resource => {
+				if (blocked) await gate;
+				const candidate = new CodeEditorInput(editorTextModelService.get(resource)!);
+				if (blocked && rejectedCandidate === undefined) {
+					rejectedCandidate = candidate;
+					candidate.onWillDispose(() => { retired += 1; });
+				}
+				return candidate;
+			} }]), group);
+	if (direction === 'forward') await navigation.goBackward();
+	const current = direction === 'back' ? second : first, destination = direction === 'back' ? first : second;
+	const back = [...navigationState.back], forward = [...navigationState.forward], target = navigationState[direction].at(-1)!;
+	blocked = true;
+	const pending = direction === 'back' ? navigation.goBackward() : navigation.goForward();
+	let publications = 0;
+	control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, value => {
+		publications += 1;
+		current.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: `-- value ${value}\n` }]);
+	});
+	control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
+	const focus = inputFocus.target;
+	finish(); await pending;
+	assert.equal(retired, 1); assert.equal(publications, 0);
+	assert.ok(group.model.activeTab === current); assert.ok(group.panes.activePane?.input === current);
+	assert.ok(inputFocus.target === focus); assert.equal(control.pending, true);
+	assert.equal(target.isDisposed, false); assert.equal(target.selection!.isDisposed, false);
+	assert.equal(navigationState.back.length, back.length); assert.equal(navigationState.forward.length, forward.length);
+	assert.ok(navigationState.back.every((entry, index) => entry === back[index]));
+	assert.ok(navigationState.forward.every((entry, index) => entry === forward[index]));
+	setFieldText(control.field, '2', false);
+	if (direction === 'back') await navigation.goBackward(); else await navigation.goForward();
+	assert.equal(publications, 1); assert.equal(current.workingCopy.dirty, true);
+	assert.ok(group.model.activeTab === destination); assert.ok(group.panes.activePane?.input === destination);
+	assert.equal(target.isDisposed, true); assert.equal(navigationState[direction].includes(target), false);
 });

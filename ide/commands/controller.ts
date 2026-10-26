@@ -48,7 +48,7 @@ import { getTextFileRuntimeSourceStatus } from '../workbench/services/working_co
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
-	'navigateBack', 'navigateForward', 'tabs.close', 'tabs.next', 'tabs.previous',
+	'tabs.next', 'tabs.previous',
 	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
 	'scenarioLab.play', 'play.reset', 'play.source',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
@@ -183,7 +183,7 @@ export class IdeCommandController {
 				} else this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
 				if (!this.debuggerState.plans.controlSuspended) this.execution.requestExecution(false);
 				return;
-			case 'tabs.close': group.close(group.model.activeTab!.id); return;
+			case 'tabs.close': void group.close(group.model.activeTab!.id, target); return;
 			case 'tabs.next': group.cycle(1); return;
 			case 'tabs.previous': group.cycle(-1); return;
 			case 'tabs.scrollLeft': case 'tabs.scrollRight':

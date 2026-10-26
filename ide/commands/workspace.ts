@@ -18,6 +18,18 @@ import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { EditorActionRequest } from './action_request';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
 import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
+import type { ActionPromptRequest } from '../workbench/contrib/modal/action_prompt_view';
+
+const ACTION_PROMPTS: Readonly<Record<Exclude<EditorActionRequest['action'], 'theme-toggle'>, ActionPromptRequest>> = {
+	'hot-resume': { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE HOT-RESUME?',
+		primary: 'SAVE & RESUME', secondary: 'RESUME WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
+	reboot: { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE REBOOT?',
+		primary: 'SAVE & REBOOT', secondary: 'REBOOT WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
+	run: { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE RUNNING?',
+		primary: 'SAVE & RUN', secondary: 'RUN WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
+	close: { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE BEFORE HIDING THE EDITOR?',
+		primary: 'SAVE & HIDE', secondary: 'HIDE WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
+};
 
 export function isEditorWorkspaceCommand(command: EditorCommandId): command is EditorWorkspaceCommandId {
 	switch (command) {
@@ -68,8 +80,8 @@ export function executeEditorWorkspaceCommand(
 			const requestAction = (request: EditorActionRequest): void => {
 				const dirtyWorkingCopies = editorTextModelService.dirtyWorkingCopies;
 				if (request.action !== 'theme-toggle' && dirtyWorkingCopies.length !== 0) {
-					void editor.actionPrompt.show(request.action).then(choice => {
-						if (choice !== 'cancel') return editor.commands.executeConfirmedAction(request, dirtyWorkingCopies, choice === 'save-continue');
+					void editor.actionPrompt.show(ACTION_PROMPTS[request.action]).then(choice => {
+						if (choice !== 'cancel') return editor.commands.executeConfirmedAction(request, dirtyWorkingCopies, choice === 'primary');
 					}).catch(error => editor.handleRuntimeTaskError(error, 'Source action failed'));
 					return;
 				}

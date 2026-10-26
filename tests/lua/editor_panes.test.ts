@@ -162,7 +162,10 @@ function createEditorPanes() {
 		scenario_lab: scope => new RecordingEditorPane<ScenarioLabInput>(scope),
 		scene_editor: scope => new RecordingEditorPane<SceneEditorInput>(scope),
 		cart_map: scope => new RecordingEditorPane<CartMapInput>(scope),
-	}, { isEnabled: () => false, execute() {} });
+	}, { isEnabled: () => false, execute() {} }, async targets => {
+		for (const { group, input } of targets) group.removeEditor(input);
+		return true;
+	});
 	return {
 		group,
 		codePane: () => codePane!,

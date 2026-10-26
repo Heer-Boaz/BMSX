@@ -1,3 +1,4 @@
+import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { openHome } from '../../ide/workbench/contrib/home/editor_input';
 import assert from 'node:assert/strict';
@@ -93,6 +94,8 @@ function openAemFixture(f: ReturnType<typeof fixture>, source = 'events:\n  stor
 test('ordinary Source close and reopen restores a plain reading memento in a fresh live view', t => {
 	const source = Array.from({ length: 100 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
 	const f = fixture(t, source), closedView = f.input.context.view;
+	// Another retained source-backed view keeps this dirty document alive through Source close.
+	f.editor.editorGroup.model.add(new SceneEditorInput(f.model));
 	closedView.cursorRow = 50; closedView.cursorColumn = 8;
 	closedView.selectionAnchor = { row: 49, column: 3 };
 	closedView.scrollRow = 35.5;
@@ -119,6 +122,7 @@ test('explicit Source opening and serialized view state take precedence over the
 	const source = Array.from({ length: 100 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
 	const f = fixture(t, source);
 	f.view.cursorRow = 50; f.view.cursorColumn = 8; f.view.scrollRow = 35.5;
+	f.editor.editorGroup.model.add(new SceneEditorInput(f.model));
 	f.editor.editorGroup.close(f.input.id);
 	const selected = resolveLuaCodeEditorInput(f.sources, f.model.resource);
 	f.editor.editorGroup.openEditor(selected, { selection: { row: 5, startColumn: 7, endColumn: 9 } });
@@ -140,6 +144,7 @@ test('ordinary Source reopen resolves both saved selection endpoints against tex
 	const f = fixture(t, source);
 	f.view.cursorRow = 50; f.view.cursorColumn = 8;
 	f.view.selectionAnchor = { row: 49, column: 3 };
+	f.model.completeSave(f.model.createSnapshot());
 	f.editor.editorGroup.close(f.input.id);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: 'return 1' }]);
 	const reopened = resolveLuaCodeEditorInput(f.sources, f.model.resource);
@@ -473,6 +478,7 @@ test('source presentation clears on workbench retirement and last-input close, t
 	f.editor.activate(); f.editor.update(0);
 	assert.ok(f.pane.code.model === f.model && f.editor.editorGroup.model.activeTab === f.input);
 	assert.ok(f.pane.code.runtimeError.activeOverlay === overlay); assert.equal(f.pane.code.runtimeError.executionStopRow, stop);
+	f.model.completeSave(f.model.createSnapshot());
 	f.editor.editorGroup.close(f.input.id);
 	assert.equal(f.editor.editorGroup.model.activeTab, null); assert.equal(f.pane.code.model, null);
 	assert.equal(f.pane.code.runtimeError.activeOverlay, null); assert.equal(f.pane.code.runtimeError.executionStopRow, null);
@@ -932,7 +938,7 @@ test('a stationary captured tab drag advances from the actual host frame without
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
 
-test('Home is an ordinary retained workspace editor and closing all editors leaves the group empty', t => {
+test('Home is an ordinary retained workspace editor and closing all editors leaves the group empty', async t => {
 	const f = fixture(t);
 	openHome(f.editor.editorGroup, '/workspace/current'); f.editor.update(0);
 	const home = f.editor.editorGroup.model.activeTab!;
@@ -955,7 +961,11 @@ test('Home is an ordinary retained workspace editor and closing all editors leav
 	assert.equal(f.model.version, f.version);
 	assert.equal(f.model.canUndo, true);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
-	while (f.editor.editorGroup.model.tabs.length > 0) f.editor.editorGroup.close(f.editor.editorGroup.model.tabs[0].id);
+	for (const input of [...f.editor.editorGroup.model.tabs]) {
+		const close = f.editor.editorGroup.close(input.id);
+		if (f.editor.actionPrompt.visible) { f.key('Tab'); f.key('Enter'); }
+		assert.equal(await close, true);
+	}
 	f.editor.update(0);
 	assert.equal(f.editor.editorGroup.model.activeTab, null);
 	assert.equal(f.editor.editorGroup.panes.activePane, null);

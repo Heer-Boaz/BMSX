@@ -135,20 +135,40 @@ export function withNavigationCaptureSuspended<T>(operation: () => T): T {
 	}
 }
 
-export function takeBackwardNavigationEntry(currentEntry: NavigationHistoryEntry | null): NavigationHistoryEntry | null {
-	if (navigationState.back.length === 0) {
-		currentEntry?.dispose();
-		return null;
+/** Resolution borrows a destination; only admitted navigation consumes its stack entry. */
+export class NavigationHistorySelection {
+	private finished = false;
+	public constructor(public readonly target: NavigationHistoryEntry,
+		private departure: NavigationHistoryEntry | null,
+		private readonly source: NavigationHistoryEntry[], private readonly destination: NavigationHistoryEntry[]) {}
+
+	public get isCurrent(): boolean {
+		return !this.finished && !this.target.isDisposed && this.source.at(-1) === this.target;
 	}
-	if (currentEntry !== null) pushUniqueNavigationEntry(navigationState.forward, currentEntry);
-	return navigationState.back.pop()!;
+
+	public accept(): boolean {
+		if (!this.isCurrent) return false;
+		this.source.pop();
+		if (this.departure !== null && !this.departure.isDisposed) pushUniqueNavigationEntry(this.destination, this.departure);
+		this.departure = null;
+		this.finished = true;
+		this.target.dispose();
+		return true;
+	}
+
+	public dispose(): void {
+		if (this.finished) return;
+		this.finished = true;
+		this.departure?.dispose();
+		this.departure = null;
+	}
 }
 
-export function takeForwardNavigationEntry(currentEntry: NavigationHistoryEntry | null): NavigationHistoryEntry | null {
-	if (navigationState.forward.length === 0) {
+export function selectNavigationHistoryEntry(direction: 'back' | 'forward', currentEntry: NavigationHistoryEntry | null): NavigationHistorySelection | null {
+	const source = navigationState[direction], target = source.at(-1);
+	if (target === undefined) {
 		currentEntry?.dispose();
 		return null;
 	}
-	if (currentEntry !== null) pushUniqueNavigationEntry(navigationState.back, currentEntry);
-	return navigationState.forward.pop()!;
+	return new NavigationHistorySelection(target, currentEntry, source, direction === 'back' ? navigationState.forward : navigationState.back);
 }

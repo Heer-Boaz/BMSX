@@ -7,7 +7,21 @@ import { setImmediate } from 'node:timers/promises';
 import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantEvent, AssistantReply } from '../../hosts/common/assistant_protocol';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { AssistantConversation } from '../../ide/workbench/services/assistant/conversation';
-import { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
+import { AssistantInput, openAssistant } from '../../ide/workbench/contrib/assistant/editor_input';
+import { AssistantChatCommands } from '../../ide/workbench/contrib/assistant/chat_commands';
+import { openObservedConversation } from '../../ide/workbench/contrib/conversations/quick_access';
+import { ObservedConversation } from '../../ide/workbench/services/assistant/observed_conversation';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { ValueInput } from '../../ide/editor/ui/inline/value_input';
+import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
+import { inputFocus } from '../../ide/input/focus';
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
@@ -365,13 +379,81 @@ for (const outcome of ['applied', 'discarded', 'stale'] as const) {
 test('closing the transient input invalidates handed-off rights; reopening does not replay the conversation', async t => {
 	const f = fixture(t), c = f.conversation;
 	await c.connect(); await c.sendPrompt('Read'); const proposal = await propose(f);
-	const view = new AssistantInput(c); view.dispose();
+	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const view = openAssistant(group, c)!; group.removeEditor(view);
 	assert.equal(c.state, 'disconnected'); assert.equal(proposal.state, 'stale');
 	assert.equal(f.connections[0].signal.aborted, true);
-	const reopened = new AssistantInput(c); t.after(() => reopened.dispose());
+	const reopened = openAssistant(group, c)!;
+	assert.ok(group.model.activeTab === reopened);
 	assert.ok(c.entries.length > 0); assert.equal(f.connections.length, 1);
 	await c.connect(); assert.equal(f.connections[1].commands.length, 0);
 	assert.throws(() => proposal.apply(), /stale|closed/i);
+});
+
+for (const command of ['assistant.commands', 'assistant.history', 'assistant.new', 'assistant.signIn'] as const) {
+	test(`${command} preserves the focused draft and conversation when editor admission is rejected`, async t => {
+		configureFontVariant('tiny');
+		const f = fixture(t), c = f.conversation;
+		if (command !== 'assistant.signIn') await c.connect();
+		const group = createTestEditorGroup(), current = new CodeEditorInput(f.model);
+		group.openEditor(current);
+		const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, () => assert.fail('invalid draft cannot publish'));
+		control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
+		const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+		const commands = new AssistantChatCommands(c, group, quickInput, new HeadlessClipboard());
+		t.after(() => {
+			control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose(); group.dispose();
+		});
+		const state = c.state, source = f.model.buffer.getText();
+		const requests = f.connections[0]?.commands.length;
+		assert.equal(commands.isEnabled(command), true);
+		commands.execute(command);
+		await setImmediate();
+		assert.ok(group.model.activeTab === current); assert.ok(group.panes.activePane?.input === current);
+		assert.equal(group.model.tabs.length, 1);
+		assert.ok(inputFocus.target === control.field.focusTarget);
+		assert.equal(control.pending, true); assert.equal(control.field.text, '-');
+		assert.equal(quickInput.visible, false, 'the rejected editor cannot launch its follow-on picker');
+		assert.equal(c.state, state, 'an unadmitted view cannot acquire or disconnect the workspace conversation');
+		assert.equal(f.connections.length, command === 'assistant.signIn' ? 0 : 1);
+		if (command !== 'assistant.signIn') {
+			assert.equal(f.connections[0].signal.aborted, false);
+			assert.equal(f.connections[0].commands.length, requests);
+		}
+		assert.equal(f.model.buffer.getText(), source);
+	});
+}
+
+test('a rejected observer view neither disconnects the shared observer nor requests history', async t => {
+	configureFontVariant('tiny');
+	const f = fixture(t), connection = new AbortController();
+	let requests = 0, closes = 0;
+	const conversation = new ObservedConversation(async () => ({ signal: connection.signal,
+		async send() { requests++; return { threads: [], nextCursor: null }; },
+		close() { closes++; connection.abort(); },
+	}));
+	await conversation.history();
+	const group = createTestEditorGroup(), current = new CodeEditorInput(f.model);
+	group.openEditor(current);
+	const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, () => assert.fail('invalid draft cannot publish'));
+	control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+	t.after(() => {
+		control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose(); group.dispose(); conversation.dispose();
+	});
+	openObservedConversation(group, conversation, quickInput);
+	await setImmediate();
+	assert.equal(requests, 1); assert.equal(closes, 0); assert.equal(connection.signal.aborted, false);
+	assert.equal(group.model.tabs.length, 1); assert.ok(group.model.activeTab === current);
+	assert.ok(inputFocus.target === control.field.focusTarget);
+	assert.equal(control.pending, true); assert.equal(control.field.text, '-'); assert.equal(quickInput.visible, false);
+	control.cancel();
+	openObservedConversation(group, conversation, quickInput);
+	await setImmediate();
+	const admitted = group.model.activeTab!;
+	assert.equal(admitted.kind, 'conversation_observer'); assert.equal(requests, 2);
+	group.removeEditor(admitted);
+	assert.equal(closes, 1); assert.equal(connection.signal.aborted, true, 'the admitted observer owns its eventual disconnect');
 });
 
 test('workspace clear retires an active connection synchronously', async t => {

@@ -28,6 +28,7 @@ import type {
 } from '../../ide/workbench/ui/tab/model';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
 import { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
+import type { CloseEditors } from '../../ide/workbench/services/editor/editor_close';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
 
 class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
@@ -98,10 +99,17 @@ class TestCodeEditorPane extends TestEditorPane<CodeEditorInput> {
 function activateViewInput(_input: EditorInput): void {
 }
 
+/** Mechanical group fixtures explicitly retire views without workspace close admission. */
+const retireTestEditors: CloseEditors = targets => {
+	for (const { group, input } of targets) group.removeEditor(input);
+	return Promise.resolve(true);
+};
+
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorGroup(
 	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
 	codePane?: (scope: InputFocusScope) => EditorPane<CodeEditorInput>,
+	closeEditors: CloseEditors = retireTestEditors,
 ): EditorGroupView {
 	const group = new EditorGroupView({
 		home: scope => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(scope, activateViewInput),
@@ -127,6 +135,6 @@ export function createTestEditorGroup(
 		scenario_lab: scope => new TestEditorPane<ScenarioLabInput>(scope, activateViewInput),
 		scene_editor: scope => new TestEditorPane<SceneEditorInput>(scope, activateViewInput),
 		cart_map: scope => new TestEditorPane<CartMapInput>(scope, activateViewInput),
-	}, commands);
+	}, commands, closeEditors);
 	return group;
 }

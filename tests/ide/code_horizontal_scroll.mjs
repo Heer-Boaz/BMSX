@@ -8,6 +8,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { setTimeout } from 'node:timers/promises';
 import { PNG } from 'pngjs';
 import { performHostControlAction } from '../../scripts/host_control/actions.mjs';
 
@@ -21,6 +22,19 @@ function paintedBounds(image, color, left, top, right, bottom) {
 		minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
 	}
 	return maxX < minX ? undefined : { left: minX, top: minY, right: maxX + 1, bottom: maxY + 1 };
+}
+
+// Frames do not acknowledge filesystem writes. Observe the actual Save output.
+async function expectSavedSource(file, expected) {
+	const deadline = performance.now() + 5000;
+	let actual;
+	do {
+		try { actual = await fs.readFile(file, 'utf8'); }
+		catch (error) { if (error.code !== 'ENOENT') throw error; }
+		if (actual === expected) return;
+		await setTimeout(20);
+	} while (performance.now() < deadline);
+	assert.equal(actual, expected, 'ordinary Save did not publish the exact authored source');
 }
 
 test('code horizontal pixelscroll reaches Unicode line end through real Studio user I/O', { timeout: 120000 }, async t => {
@@ -68,7 +82,7 @@ test('code horizontal pixelscroll reaches Unicode line end through real Studio u
 		await press('ControlLeft+ShiftLeft+KeyP'); await paste(query); await press('Enter'); await wait(3);
 	};
 	const capture = async label => {
-		assert.ok(Object.keys(captures).length < 12, 'the bounded user-I/O workflow exceeded twelve captures');
+		assert.ok(Object.keys(captures).length < 16, 'the bounded user-I/O workflow exceeded sixteen captures');
 		const frame = await send({ execute: 'capture' }); captures[label] = frame.path;
 		t.diagnostic(`${label}: ${frame.path}`); return frame;
 	};
@@ -131,6 +145,14 @@ test('code horizontal pixelscroll reaches Unicode line end through real Studio u
 				await press('ShiftLeft+End'); await press('ControlLeft+KeyC');
 				assert.equal((await send({ execute: 'clipboard-get' })).text, '…', 'the displayed last glyph must select exactly its original UTF-16 source suffix');
 				await press('ControlLeft+KeyW');
+				if (variant === 'tiny') {
+					await capture('light-tiny-dirty-close');
+					await press('Escape'); await press('ControlLeft+KeyC');
+					assert.equal((await send({ execute: 'clipboard-get' })).text, '…',
+						'Cancel must return to the original Source control and retain its selection');
+					await press('ControlLeft+KeyW'); await press('Enter'); await wait(3);
+					await expectSavedSource(path.join(workspace, 'carts/nemesis_s/cart.lua'), line);
+				}
 				await press('ControlLeft+Comma'); await press('ControlLeft+KeyA'); await paste('cart.lua');
 				await wait(3); await press('Enter'); await wait(3); await press('ControlLeft+KeyC');
 				assert.equal((await send({ execute: 'clipboard-get' })).text, '…',
@@ -142,6 +164,25 @@ test('code horizontal pixelscroll reaches Unicode line end through real Studio u
 		}
 		await press('ControlLeft+KeyZ'); pending = false;
 		assert.equal(await copyAll(), original, 'ordinary Undo did not restore the exact shipped source');
+		// The previous close saved the Unicode source. Undo is therefore dirty
+		// against that baseline, even though it restores the cartridge's source.
+		await press('ControlLeft+ShiftLeft+KeyT'); await palette('Toggle Theme');
+		await press('ControlLeft+KeyW'); await capture('dark-msx-dirty-close');
+		await press('Escape');
+		assert.equal(await copyAll(), original, 'Cancel must retain the restored source in the invoking view');
+		await press('ControlLeft+KeyW'); await press('Enter'); await wait(3);
+		await expectSavedSource(path.join(workspace, 'carts/nemesis_s/cart.lua'), original);
+		await press('ControlLeft+Comma'); await press('ControlLeft+KeyA'); await paste('cart.lua');
+		await wait(3); await press('Enter'); await wait(3);
+		assert.equal(await copyAll(), original);
+		await paste(original + '\n-- this unsaved suffix must be discarded\n');
+		await press('ControlLeft+KeyW'); await capture('dark-msx-discard-close');
+		await press('Tab'); await press('Enter'); await wait(3);
+		await press('ControlLeft+Comma'); await press('ControlLeft+KeyA'); await paste('cart.lua');
+		await wait(3); await press('Enter'); await wait(3);
+		assert.equal(await copyAll(), original, 'Discard must reopen the exact persisted source, not the retired draft');
+		assert.equal(await fs.readFile(path.join(workspace, 'carts/nemesis_s/cart.lua'), 'utf8'), original,
+			'Discard must not persist the abandoned source');
 		await capture('canonical-source-restored');
 	} finally {
 		if (pending) { await press('ControlLeft+KeyZ'); assert.equal(await copyAll(), original, 'failed-probe cleanup did not restore the source through Undo'); }

@@ -23,11 +23,15 @@ import { buildStatusLeftInfo } from '../../ide/workbench/render/status_bar_info'
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
+import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+
+const PROMPT_REQUEST: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
+	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const { models, documents, clock } = createTestCodeDocuments(t);
@@ -144,7 +148,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.equal(editor.quickInput.invocationOrigin, editor.resourcePanel.focusTarget);
 		draw(); assert.equal(status.mock.callCount(), 2, 'Files remains the context behind its own picker');
 		editor.quickInput.hide(); pane.focus();
-		const prompt = editor.actionPrompt.show('close');
+		const prompt = editor.actionPrompt.show(PROMPT_REQUEST);
 		editor.contextMenu.show(30, 40, [], editor.commands);
 		assert.equal(editor.contextMenu.invocationOrigin, editor.actionPrompt.focusTarget);
 		assert.equal(editor.actionPrompt.invocationOrigin, pane.code.focusTarget);

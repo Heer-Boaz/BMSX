@@ -280,9 +280,9 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				active: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			},
 			action: {
-				dialogBackground: THEME_TOKEN_TERMINAL_CYAN,
-				dialogBorder: THEME_TOKEN_BLACK,
-				dialogText: THEME_TOKEN_TEXT_GREY,
+				dialogBackground: THEME_TOKEN_NEAR_BLACK,
+				dialogBorder: THEME_TOKEN_MID_GREY,
+				dialogText: THEME_TOKEN_TERMINAL_GREY,
 				buttonBackground: THEME_TOKEN_TERMINAL_GREY,
 				buttonText: THEME_TOKEN_TEXT_GREY,
 			},
@@ -396,8 +396,8 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				active: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			},
 			action: {
-				dialogBackground: THEME_TOKEN_TERMINAL_CYAN,
-				dialogBorder: THEME_TOKEN_BLACK,
+				dialogBackground: THEME_TOKEN_SOFT_WHITE,
+				dialogBorder: THEME_TOKEN_MID_GREY,
 				dialogText: THEME_TOKEN_TEXT_GREY,
 				buttonBackground: THEME_TOKEN_TERMINAL_GREY,
 				buttonText: THEME_TOKEN_TEXT_GREY,

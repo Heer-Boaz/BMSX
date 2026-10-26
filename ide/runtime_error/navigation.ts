@@ -30,7 +30,7 @@ function resolveRuntimeErrorOverlayTarget(group: EditorGroupView): RuntimeErrorO
 export function focusRuntimeErrorOverlay(group: EditorGroupView): boolean {
 	const target = resolveRuntimeErrorOverlayTarget(group);
 	if (target === null) return false;
-	group.activate(target.input.id);
+	if (!group.activate(target.input.id)) return false;
 	const pane = group.panes.getPane('code_editor') as CodeEditorPane, code = pane.code, overlay = target.overlay;
 	const checkpoint = beginNavigationCapture();
 	overlay.hidden = false; overlay.hovered = false; overlay.hoverLine = -1; overlay.copyButtonHovered = false; overlay.layout = null;

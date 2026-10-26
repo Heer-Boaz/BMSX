@@ -56,13 +56,14 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 			if (conversation.accountRefreshing) this.editingQueuedId = undefined;
 			if (kind === 'text' && conversation.entries[index]?.kind === 'proposal') this.selection.select(conversation.entries[index]);
 		}) });
-		this.disposables.add({ dispose: () => conversation.disconnect() });
 		this.disposables.add({ dispose: () => { this.lifetime.abort(); this.attachments.clear(); } });
 	}
 }
 
-export function openAssistant(group: EditorGroupView, conversation: AssistantConversation): AssistantInput {
-	const input = group.model.tabs.find(input => input.kind === 'assistant') ?? new AssistantInput(conversation);
-	group.openEditor(input);
+export function openAssistant(group: EditorGroupView, conversation: AssistantConversation): AssistantInput | undefined {
+	const existing = group.model.tabs.find(input => input.kind === 'assistant');
+	const input = existing ?? new AssistantInput(conversation);
+	if (!group.openEditor(input)) return undefined;
+	if (existing === undefined) input.onWillDispose(() => conversation.disconnect());
 	return input;
 }

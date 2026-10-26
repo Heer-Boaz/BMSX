@@ -1,4 +1,5 @@
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
+import { EditorCloseController } from './workbench/services/editor/editor_close';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { create_rect_bounds, write_rect_bounds } from '../machine/ts/common/rect';
 import { HomeInput } from './workbench/contrib/home/editor_input';
@@ -192,6 +193,8 @@ export type CartEditor = TextInputHost & {
 	readonly gamePanel: GamePanel;
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorGroup: EditorGroupView;
+	readonly editorGroups: EditorGroupView[];
+	readonly editorClose: EditorCloseController;
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly paneSurface: WorkbenchSurface;
 	readonly editorInputSerializers: EditorInputSerializers;
@@ -260,6 +263,8 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly commands: IdeCommandController;
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorGroup: EditorGroupView;
+	public readonly editorGroups: EditorGroupView[] = [];
+	public readonly editorClose: EditorCloseController;
 	public readonly surfaces: WorkbenchSurfaceService;
 	public readonly paneSurface: WorkbenchSurface;
 	private readonly chromeScope = Symbol('workbench chrome');
@@ -388,6 +393,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.debuggerState = debuggerState;
 		this.overlayRenderer = overlayRenderer;
 		this.isAvailable = runtimeSourcesSupportIde(this.sources);
+		this.editorClose = new EditorCloseController(this.editorGroups, textFileSaves, this.actionPrompt, editorTextModelService);
 		this.commands = new IdeCommandController(
 			this,
 			sources,
@@ -450,7 +456,8 @@ export class RuntimeCartEditor implements CartEditor {
 				this.scenarioLab,
 				this.commands,
 				this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-		}, this.commands);
+		}, this.commands, this.editorClose.close);
+		this.editorGroups.push(this.editorGroup);
 		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, () => this.editorGroup.panes.activePane?.focus());
 		this.runtimeTimeline.focusScope.surfaceScope = this.chromeScope;
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
@@ -847,6 +854,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		this.editorClose.dispose();
 		inputFocus.workbenchScope.commands = undefined;
 		this.unbindHostInput();
 		this.unbindEditorInputRetirement();
@@ -890,7 +898,8 @@ export class RuntimeCartEditor implements CartEditor {
 			try {
 				await shutdownWorkspaceStorage();
 			} finally {
-				this.editorGroup.dispose();
+				for (const group of this.editorGroups) group.dispose();
+				this.editorGroups.length = 0;
 				this.unbindNavigation();
 				this.scenarioLab.dispose();
 				this.unsubscribeTextModelChanged();

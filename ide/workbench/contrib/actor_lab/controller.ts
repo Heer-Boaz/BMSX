@@ -76,7 +76,7 @@ export class ActorLabController {
 	public dispose(): void {
 		this.unbindGuest(); this.unbindReview();
 		if (this.current !== undefined) {
-			if (this.group.model.findById(this.current.id) === this.current) this.group.close(this.current.id);
+			if (this.group.model.findById(this.current.id) === this.current) this.group.removeEditor(this.current);
 			else this.current.dispose();
 		}
 	}
@@ -93,13 +93,13 @@ export class ActorLabController {
 	}
 	public open(): void {
 		const input = this.resolveInput();
-		this.group.openEditor(input);
+		if (!this.group.openEditor(input)) return;
 		if (input.actorHashId === 0) this.selectActor(input);
 	}
 	public auditionEvent(domain: ResourceDomain, name: string): void {
 		const input = this.resolveInput();
+		if (!this.group.openEditor(input)) return;
 		input.running = false;
-		this.group.openEditor(input);
 		if (input.domain === domain) this.refresh(input);
 		if (input.domain !== domain || input.actorHashId === 0) this.selectActor(input, () => { this.refresh(input); this.emitEvent(input, name); }, domain);
 		else this.emitEvent(input, name);
@@ -112,12 +112,12 @@ export class ActorLabController {
 			const actorHashId = (this.guest.readStringMember(choice.component, 'parent') as import('../../../../machine/ts/machine/cpu/table').Table).hashId;
 			const effectHashId = choice.effect.hashId, componentHashId = choice.component.hashId, key = this.guest.identity(choice.key);
 			const input = this.resolveInput();
+			if (!this.group.openEditor(input)) return;
 			input.domain = domain;
 			input.follow.stop(); input.stateGraph = undefined; input.presentation = 'outline'; input.historical = false;
 			input.actorHashId = actorHashId;
 			input.selectionPath = undefined;
 			input.running = false; input.dirty = true;
-			this.group.openEditor(input);
 			this.refresh(input);
 			const effect = input.runtime.roots[0]?.children.find(node => node.hashId === componentHashId)?.children
 				.find(node => node.hashId === effectHashId && this.guest.matchesIdentity(node.key, key));

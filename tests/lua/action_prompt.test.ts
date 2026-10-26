@@ -7,13 +7,21 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
+import { editorViewState } from '../../ide/editor/ui/view/state';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { ActionPrompt } from '../../ide/workbench/contrib/modal/action_prompt';
+import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
+import { api } from '../../ide/runtime/overlay_api';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
+
+const REQUEST: ActionPromptRequest = { title: 'Unsaved changes', message: 'Choose what happens to this source.',
+	primary: 'Save', secondary: 'Discard', primaryEnabled: true, defaultChoice: 'primary' };
 
 function fixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock();
 	configureFontVariant(DEFAULT_FONT_VARIANT);
+	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const input = new Input(clock, new HeadlessInputHub(), -1);
 	const focus = new InputFocusService(), capture = new PointerCaptureService();
 	const origin = focus.createTarget();
@@ -41,7 +49,7 @@ function fixture(t: TestContext) {
 
 test('modal owns focus until Escape is released, then returns it to the invoking control', async t => {
 	const f = fixture(t);
-	const result = f.prompt.show('reboot');
+	const result = f.prompt.show(REQUEST);
 	assert.equal(f.focus.target, f.prompt.focusTarget);
 	f.key('Escape', true);
 	for (let index = 0; index < 10; index++) f.frame();
@@ -56,7 +64,7 @@ test('modal owns focus until Escape is released, then returns it to the invoking
 
 test('Escape cancellation survives a modifier change before its release', async t => {
 	const f = fixture(t);
-	const result = f.prompt.show('reboot');
+	const result = f.prompt.show(REQUEST);
 	f.key('Escape', true);
 	f.key('ControlLeft', true);
 	f.key('Escape', false);
@@ -67,7 +75,7 @@ test('Escape cancellation survives a modifier change before its release', async 
 test('Tab and arrows keep focus in the dialog; confirmation is paired to a physical key release', async t => {
 	const f = fixture(t);
 	for (const key of ['Enter', 'NumpadEnter', 'Space']) {
-		const result = f.prompt.show('hot-resume');
+		const result = f.prompt.show(REQUEST);
 		f.press('Tab');
 		f.press('ArrowRight');
 		f.press('ArrowLeft');
@@ -76,9 +84,9 @@ test('Tab and arrows keep focus in the dialog; confirmation is paired to a physi
 		for (let index = 0; index < 10; index++) f.frame();
 		assert.equal(f.prompt.visible, true);
 		f.key(key, false);
-		assert.equal(await result, 'continue');
+		assert.equal(await result, 'secondary');
 	}
-	const result = f.prompt.show('reboot');
+	const result = f.prompt.show(REQUEST);
 	f.key('ShiftLeft', true); f.press('Tab'); f.key('ShiftLeft', false);
 	f.press('Enter');
 	assert.equal(await result, 'cancel');
@@ -86,7 +94,7 @@ test('Tab and arrows keep focus in the dialog; confirmation is paired to a physi
 
 test('pointer release outside or lost capture does not confirm; matching and coalesced clicks do', async t => {
 	const f = fixture(t);
-	const result = f.prompt.show('run');
+	const result = f.prompt.show(REQUEST);
 	f.pointer(0, 1, 1); f.pointer(-1, 0, 0, 1);
 	assert.equal(f.prompt.visible, true);
 	f.pointer(0, 1, 1); f.capture.cancel(); f.pointer(0, 0, 0, 1);
@@ -96,18 +104,18 @@ test('pointer release outside or lost capture does not confirm; matching and coa
 	f.pointer(0, 1, 1);
 	assert.equal(f.prompt.visible, true);
 	f.pointer(0, 0, 0, 1);
-	assert.equal(await result, 'save-continue');
+	assert.equal(await result, 'primary');
 	assert.equal(f.capture.active, false);
-	const cancel = f.prompt.show('reboot');
+	const cancel = f.prompt.show(REQUEST);
 	f.pointer(2, 0, 1, 1);
 	assert.equal(await cancel, 'cancel');
 });
 
 test('replacement, focus departure and disposal settle the old decision without reclaiming focus', async t => {
 	const f = fixture(t);
-	const first = f.prompt.show('reboot');
+	const first = f.prompt.show(REQUEST);
 	f.key('Enter', true);
-	const second = f.prompt.show('hot-resume');
+	const second = f.prompt.show({ ...REQUEST, message: 'A different pending decision.' });
 	assert.equal(await first, 'cancel');
 	f.key('Enter', false);
 	assert.equal(f.prompt.visible, true);
@@ -115,8 +123,86 @@ test('replacement, focus departure and disposal settle the old decision without 
 	destination.focus();
 	assert.equal(await second, 'cancel');
 	assert.equal(f.focus.target, destination);
-	const final = f.prompt.show('close');
+	const final = f.prompt.show(REQUEST);
 	f.prompt.dispose();
 	assert.equal(await final, 'cancel');
 	assert.equal(f.focus.target, destination);
+});
+
+for (const defaultChoice of ['primary', 'secondary', 'cancel'] as const) test(`Enter accepts the request's explicit ${defaultChoice} default`, async t => {
+	const f = fixture(t), result = f.prompt.show({ ...REQUEST, defaultChoice });
+	f.press('Enter');
+	assert.equal(await result, defaultChoice);
+});
+
+test('disabled primary cannot confirm and keyboard traversal skips it in both directions', async t => {
+	const f = fixture(t), request: ActionPromptRequest = { ...REQUEST, primaryEnabled: false, defaultChoice: 'cancel' };
+	const result = f.prompt.show(request);
+	f.pointer(0, 0, 1, 1);
+	f.prompt.close('primary');
+	assert.equal(f.prompt.visible, true);
+	f.press('Tab');
+	f.key('ShiftLeft', true); f.press('Tab'); f.key('ShiftLeft', false);
+	f.press('Enter');
+	assert.equal(await result, 'cancel');
+	const next = f.prompt.show(request);
+	f.press('ArrowRight'); f.press('Space');
+	assert.equal(await next, 'secondary');
+});
+
+test('an explicitly disabled primary default does not arm confirmation and can be left by ordinary navigation', async t => {
+	const f = fixture(t), result = f.prompt.show({ ...REQUEST, primaryEnabled: false });
+	f.press('Enter');
+	assert.equal(f.prompt.visible, true);
+	f.press('ArrowLeft'); f.press('Enter');
+	assert.equal(await result, 'cancel');
+});
+
+test('operation cancellation matches its live request and cannot restore a stale invocation', async t => {
+	const f = fixture(t), first: ActionPromptRequest = { ...REQUEST }, second: ActionPromptRequest = { ...REQUEST };
+	const old = f.prompt.show(first), current = f.prompt.show(second);
+	assert.equal(await old, 'cancel');
+	f.prompt.cancel(first);
+	assert.equal(f.prompt.visible, true);
+	assert.equal(f.focus.target, f.prompt.focusTarget);
+	f.prompt.cancel(second);
+	assert.equal(await current, 'cancel');
+	assert.equal(f.focus.target, null, 'owner retirement does not refocus its captured input');
+	const pending = f.prompt.show(first), sibling = f.focus.createTarget();
+	sibling.focus();
+	assert.equal(await pending, 'cancel');
+	f.prompt.cancel(first);
+	assert.equal(f.focus.target, sibling);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} prompt layout wraps request content and stacks buttons within the viewport only when invalidated`, async t => {
+	const f = fixture(t);
+	configureFontVariant(variant);
+	editorViewState.viewportWidth = 96; editorViewState.viewportHeight = 400;
+	const overlay = createHostOverlayFixture(384, 400);
+	const text = t.mock.method(api, 'blit_text_inline_with_font');
+	const measurement = t.mock.method(editorViewState.font, 'measureTextRange');
+	const request: ActionPromptRequest = { ...REQUEST, title: 'Project source context '.repeat(3),
+		message: `res/library/${'nested/'.repeat(80)}shared.lua` };
+	const result = f.prompt.show(request), measured = measurement.mock.callCount();
+	for (let frame = 0; frame < 10; frame++) f.prompt.update();
+	assert.equal(measurement.mock.callCount(), measured, 'unchanged retained content has no repeated layout measurement');
+	for (const width of [96, 384]) {
+		editorViewState.viewportWidth = width; f.prompt.update();
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		text.mock.resetCalls(); f.prompt.draw(); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
+		assert.ok(f.prompt.view.bounds.left >= 0 && f.prompt.view.bounds.right <= width);
+		assert.ok(f.prompt.view.bounds.top >= 0 && f.prompt.view.bounds.bottom <= editorViewState.viewportHeight);
+		// This is the focused wrapping contract: no rendered line escapes the laid-out dialog.
+		for (const call of text.mock.calls) {
+			const [line, x, y, , , font] = call.arguments;
+			assert.ok(x >= f.prompt.view.bounds.left && x + font.measure(line) <= f.prompt.view.bounds.right);
+			assert.ok(y >= f.prompt.view.bounds.top && y + font.lineHeight <= f.prompt.view.bounds.bottom);
+		}
+		const [primary, secondary, cancel] = f.prompt.view.buttons;
+		if (width === 96) assert.ok(primary.bounds.bottom <= secondary.bounds.top && secondary.bounds.bottom <= cancel.bounds.top);
+		else assert.equal(primary.bounds.top, cancel.bounds.top);
+	}
+	assert.ok(measurement.mock.callCount() > measured, 'viewport publication invalidates wrapped geometry');
+	f.prompt.close(); assert.equal(await result, 'cancel');
 });

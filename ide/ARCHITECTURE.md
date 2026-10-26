@@ -64,6 +64,13 @@ An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
 Source inputs own their model-to-view subscriptions. Closing one releases its
 view without disposing the canonical model or another input's view.
+`EditorCloseController` admits user closes across the frontend's groups, including
+composite working copies and last-view Save/Discard/Cancel decisions. It rechecks
+canonical state and surviving views after awaited decisions or writes.
+`TextFileSaveService` owns accepted writes and their captured source snapshots;
+groups own final view retirement. Forced owner teardown is separate from user
+close admission. Opening and activation settle the attached focused control's
+draft before changing group membership or pane attachment.
 The group's Source pane keeps plain reading mementos for ordinary reopening,
 separate from serialized view state and explicit navigation selections.
 Text history retains source selections and inert editing origins, not viewport

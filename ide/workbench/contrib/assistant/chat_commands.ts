@@ -67,11 +67,21 @@ export class AssistantChatCommands {
 		if (!this.isEnabled(command)) return;
 		const model = this.conversation;
 		switch (command) {
-			case 'assistant.history': void this.history(openAssistant(this.group, model)); break;
-			case 'assistant.new': openAssistant(this.group, model); void model.newConversation(); break;
-			case 'assistant.commands': this.commands(openAssistant(this.group, model)); break;
+			case 'assistant.history': {
+				const input = openAssistant(this.group, model);
+				if (input !== undefined) void this.history(input);
+				break;
+			}
+			case 'assistant.new':
+				if (openAssistant(this.group, model) !== undefined) void model.newConversation();
+				break;
+			case 'assistant.commands': {
+				const input = openAssistant(this.group, model);
+				if (input !== undefined) this.commands(input);
+				break;
+			}
 			case 'assistant.signIn':
-				openAssistant(this.group, model);
+				if (openAssistant(this.group, model) === undefined) break;
 				void model.connect().then(() => model.startLogin()); break;
 			case 'assistant.cancelLogin': void model.cancelLogin(); break;
 			case 'assistant.signOut': void model.signOut(); break;

@@ -50,7 +50,8 @@ export function createActualSourcePanes(t: TestContext, sameModel = false) {
 	const first = firstGroup.panes.getPane('code_editor') as CodeEditorPane;
 	let secondGroup: EditorGroupView;
 	secondGroup = createTestEditorGroup(editor.commands, scope => new CodeEditorPane(scope, secondGroup, editor, clipboard,
-		sources, ide.guest, ide.fault, host.runtime, ide.debugger, host.clock));
+		sources, ide.guest, ide.fault, host.runtime, ide.debugger, host.clock), editor.editorClose.close);
+	editor.editorGroups.push(secondGroup);
 	const firstBounds = { left: 0, top: 32, right: 384, bottom: 290 };
 	const secondBounds = { left: 400, top: 32, right: 800, bottom: 290 };
 	const surface = editor.surfaces.attach({ role: 'content', captureScope: secondGroup.captureScope,
@@ -67,7 +68,7 @@ export function createActualSourcePanes(t: TestContext, sameModel = false) {
 	const second = secondGroup.panes.getPane('code_editor') as CodeEditorPane;
 	const arrange = () => { firstGroup.panes.layout(firstBounds); secondGroup.panes.layout(secondBounds); };
 	const update = (milliseconds = 0) => {
-		host.clock.advance(milliseconds); editor.update(milliseconds / 1000); second.update(milliseconds / 1000); arrange(); runBackgroundTasks(host.clock);
+		host.clock.advance(milliseconds); editor.update(milliseconds / 1000); secondGroup.panes.activePane?.update(milliseconds / 1000); arrange(); runBackgroundTasks(host.clock);
 	};
 	const key = (code: string, modifiers = KeyModifier.none) => {
 		editor.dispatchKey(new KeyInputEvent(code, modifiers)); editor.dispatchKey(new KeyInputEvent(code, modifiers, false, false)); update();
@@ -77,7 +78,8 @@ export function createActualSourcePanes(t: TestContext, sameModel = false) {
 		editor.draw(); ide.overlayRenderer.endFrame(); return host.presenter.hostOverlayQueue.consumeOverlayFrame();
 	};
 	t.after(async () => {
-		surface.dispose(); secondGroup.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false);
+		surface.dispose(); editor.editorGroups.splice(editor.editorGroups.indexOf(secondGroup), 1); secondGroup.dispose();
+		inputFocus.setTarget(null); pointerCapture.interrupt(false);
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();
 	});
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); update();
