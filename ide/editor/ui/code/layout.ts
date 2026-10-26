@@ -138,6 +138,14 @@ export class CodeLayout {
 		this.refreshBuiltinIdentifiers();
 	}
 
+	public dispose(): void {
+		this.semanticTimer?.cancel();
+		this.semanticDispatchHandle?.cancel();
+		this.semanticTimer = null;
+		this.semanticDispatchHandle = null;
+		this.pendingSemantic = null;
+	}
+
 	public setDocumentMode(mode: EditorDocumentMode): void {
 		this.documentMode = mode;
 	}
@@ -233,6 +241,10 @@ export class CodeLayout {
 		if (this.semanticTimer) {
 			this.semanticTimer.cancel();
 			this.semanticTimer = null;
+		}
+		if (this.semanticDispatchHandle) {
+			this.semanticDispatchHandle.cancel();
+			this.semanticDispatchHandle = null;
 		}
 		this.annotationRowSig = null;
 		this.lastHotRowStart = 0;

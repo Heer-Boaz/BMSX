@@ -240,6 +240,7 @@ export function configureFontVariant(
 	variant: FontVariant,
 	activeDocumentMode: EditorDocumentMode | null,
 ): void {
+	editorViewState.layout?.dispose();
 	activeCodeEditor.clearVisualCursor();
 	editorViewState.fontVariant = variant;
 	editorViewState.font = new EditorFont(variant);

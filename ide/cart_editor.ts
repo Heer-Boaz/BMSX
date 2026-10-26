@@ -973,6 +973,7 @@ export class RuntimeCartEditor implements CartEditor {
 				await shutdownWorkspaceStorage();
 			} finally {
 				this.editorPanes.dispose();
+				editorViewState.layout.dispose();
 				this.scenarioLab.dispose();
 				this.unsubscribeWorkspaceCursorMoved();
 				this.unsubscribeTextModelChanged();
