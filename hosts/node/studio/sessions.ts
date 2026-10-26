@@ -56,6 +56,7 @@ export class StudioSessions {
 		if (this.builds === undefined) throw new Error('This server has no workspace build service');
 		const job = this.builds.get(request.buildRequestId);
 		if (job === undefined || job.state !== 'completed') throw new Error('Headless Studio requires a completed workspace build');
+		if (job.project === undefined) throw new Error('This build artifact is not admitted to a source project. Rebuild the project before starting headless Studio.');
 		const artifact = await this.builds.artifacts.read(job.artifact!);
 		const directory = this.builds.artifacts.directory(artifact.id);
 		const systemRomPath = join(directory, artifact.system.outputs.find(output => output.file.endsWith('.rom'))!.file);
@@ -64,7 +65,7 @@ export class StudioSessions {
 		const { HeadlessStudio } = await import('./headless');
 		const info: StudioHeadlessSessionInfo = { id: randomUUID(), kind: 'headless', title: artifact.target, tools: true, builds: false,
 			requestId: request.requestId, buildRequestId: request.buildRequestId, sourceAccess: request.sourceAccess, reviewApproval: 'agent' };
-		const host = await HeadlessStudio.open({ workspaceRoot: this.builds.workspace, systemRomPath,
+		const host = await HeadlessStudio.open({ workspaceRoot: this.builds.workspace, project: job.project, systemRomPath,
 			cartridgeSlots: [cartridgeRomPath, null], sourceAccess: request.sourceAccess, recoveryIdentity: request.requestId });
 		if (this.closing) { await host.shutdown(); throw new Error('Studio sessions are shutting down'); }
 		if (host.closed) throw new Error('Headless Studio exited during startup');

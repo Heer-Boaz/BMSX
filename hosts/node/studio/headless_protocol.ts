@@ -1,4 +1,5 @@
 import type { StudioHeadlessCloseResult, StudioSourceAccess, StudioToolOperation, StudioToolResult } from '../../common/studio_tools';
+import type { StudioProjectAdmission } from '../../common/studio_projects';
 import type { WorkspaceDirectoryEntry, WorkspaceRecord } from '../../../ide/workspace/record_provider';
 
 export type StudioWorkspaceOperation =
@@ -16,6 +17,7 @@ export type StudioWorkspaceReply = { readonly type: 'workspace-result'; readonly
 
 export type HeadlessStudioOptions = {
 	readonly workspaceRoot: string;
+	readonly project: StudioProjectAdmission;
 	readonly systemRomPath: string;
 	readonly cartridgeSlots: readonly [string | null, string | null];
 	readonly recoveryIdentity: string;

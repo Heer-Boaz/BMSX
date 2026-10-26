@@ -46,6 +46,12 @@ or install a cartridge. Project selection belongs at workspace attachment, not
 inside Home or a tool pane. Physical execution remains with the workbench's
 execution services and their explicit targets.
 
+The Node workspace project owner retains admitted source-context identities.
+Build receipts bind that admission to immutable artifact generations; native
+Studio recovery consumes the admitted project and its context/session namespace.
+Artifact identity, source-context identity and recovery-session identity are
+separate owners.
+
 ## Documents, inputs and panes
 
 `editor/model/` owns canonical text models. Workbench working-copy services own

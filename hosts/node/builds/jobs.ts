@@ -3,13 +3,14 @@ import { BuildRequestError } from './errors';
 import { fork, type ChildProcess } from 'node:child_process';
 import { finished } from 'node:stream/promises';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { isBuildTerminal, type StudioBuildRequest, type StudioBuildJob, type StudioBuildSnapshot, type StudioBuildChange } from '../../common/studio_builds';
 import { RomArtifactStore, type PreparedRomArtifact } from '../../../scripts/rompacker/artifacts';
 import type { MediaBuildOptions } from '../../../scripts/rompacker/build';
+import type { WorkspaceProjects } from '../workspace/projects';
 
 const RECENT_JOBS = 50, QUEUE_LIMIT = 8, LOG_BYTES = 256 * 1024;
 type WorkerMessage = { type: 'progress'; phase: string } | { type: 'prepared'; result: PreparedRomArtifact } | { type: 'failed'; error: string };
@@ -27,10 +28,11 @@ export class StudioBuildJobs {
 	private revision = 0;
 	public readonly artifacts: RomArtifactStore;
 
-	private constructor(public readonly workspace: string, public readonly root: string, private readonly ledger: BuildLedger) { this.artifacts = new RomArtifactStore(root); }
+	private constructor(public readonly workspace: string, public readonly root: string, private readonly ledger: BuildLedger,
+		public readonly projects: WorkspaceProjects) { this.artifacts = new RomArtifactStore(root); }
 
-	public static async open(workspace: string, root: string): Promise<StudioBuildJobs> {
-		const ledger = await BuildLedger.open(root), owner = new StudioBuildJobs(workspace, root, ledger);
+	public static async open(workspace: string, root: string, projects: WorkspaceProjects): Promise<StudioBuildJobs> {
+		const ledger = await BuildLedger.open(root), owner = new StudioBuildJobs(workspace, root, ledger, projects);
 		try {
 			await mkdir(join(root, 'jobs'), { recursive: true });
 			for (const previous of ledger.unfinished()) {
@@ -51,10 +53,6 @@ export class StudioBuildJobs {
 
 	public snapshot(): StudioBuildSnapshot { return { generation: this.ledger.generation, revision: this.revision, jobs: [...this.jobs.values()] }; }
 	public subscribe(listener: (change: StudioBuildChange) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-	public async targets(): Promise<string[]> {
-		const entries = await readdir(join(this.workspace, 'carts'), { withFileTypes: true });
-		return entries.filter(entry => entry.isDirectory() && /^[a-z0-9_-]+$/.test(entry.name)).map(entry => entry.name).sort();
-	}
 
 	public get(id: string): StudioBuildJob | undefined {
 		const retained = this.jobs.get(id);
@@ -78,12 +76,14 @@ export class StudioBuildJobs {
 	}
 
 	private async accept(request: StudioBuildRequest): Promise<StudioBuildJob> {
-		if (!(await this.targets()).includes(request.target)) throw new BuildRequestError(404, 'Unknown cartridge target');
+		if (this.closing) throw new BuildRequestError(503, 'Build service is shutting down');
+		if (!(await this.projects.targets()).includes(request.target)) throw new BuildRequestError(404, 'Unknown cartridge target');
+		const project = await this.projects.resolveCartridge(request.target);
 		// Admission is synchronous from here: concurrent discovery cannot overfill the queue
 		// or admit new work after close() has stopped admission.
 		if (this.closing) throw new BuildRequestError(503, 'Build service is shutting down');
 		if (this.queue.length >= QUEUE_LIMIT) throw new BuildRequestError(429, 'Build queue is full');
-		const job = this.changed({ request, state: 'queued', phase: 'Waiting to capture saved inputs', acceptedAt: Date.now(), updatedAt: Date.now() }, true);
+		const job = this.changed({ request, project, state: 'queued', phase: 'Waiting to capture saved inputs', acceptedAt: Date.now(), updatedAt: Date.now() }, true);
 		this.queue.push(request.requestId); this.pump();
 		return job;
 	}
@@ -147,7 +147,9 @@ export class StudioBuildJobs {
 		});
 		try {
 			job = this.transition(job, { state: 'running', phase: 'Capture inputs' });
-			const options: MediaBuildOptions = { domain: 'cart', target: job.request.target, debug: job.request.debug, optLevel: job.request.optLevel, force: false };
+			const options: MediaBuildOptions = { domain: 'cart', target: job.project!.target,
+				respath: join(job.project!.cartridge.projectRoot, 'res'), systemRoot: job.project!.system.projectRoot,
+				debug: job.request.debug, optLevel: job.request.optLevel, force: false };
 			running.child.send({ options, root: this.root, stage });
 			await exited;
 			log.end(); await logClosed;

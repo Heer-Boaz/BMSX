@@ -25,7 +25,7 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { loadRomToolingMedia } from '../../../toolchain/ts/rompack/media';
 import { IdeMicrotaskQueue } from '../../../ide/common/microtask_queue';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
-import { createRuntimeSourceState, developmentCartridgeSource } from '../../../ide/runtime/sources';
+import { createRuntimeSourceState } from '../../../ide/runtime/sources';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../../ide/workspace/records';
 import { WorkspaceSourceRecovery } from '../../../ide/workbench/services/working_copy/source_recovery';
 import { applyAllWorkspaceSourceOverrides, discoverWorkspaceSources } from '../../../ide/workspace/workspace';
@@ -75,8 +75,8 @@ class HeadlessStudioRuntime {
 		const media = await loadRomToolingMedia(systemRom, cartridgeSlots);
 		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
 		await openWorkspaceRecords(new WorkerWorkspaceRecordProvider(parentPort!));
-		this.recovery = new WorkspaceSourceRecovery({ identity: options.recoveryIdentity,
-			projectRootPath: developmentCartridgeSource(sources)?.projectRootPath ?? sources.systemProjectRootPath,
+		this.recovery = new WorkspaceSourceRecovery({ identity: options.recoveryIdentity, sourceContextId: options.project.cartridge.id,
+			projectRootPath: options.project.cartridge.projectRoot,
 			models: editorTextModelService, sources, clock: this.clock, logOutput: this.log });
 		const workspaceDirtyRecords = await this.recovery.initialize();
 		const observed = await discoverWorkspaceSources(sources);

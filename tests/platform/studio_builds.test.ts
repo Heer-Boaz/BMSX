@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { StudioBuildJobs } from '../../hosts/node/builds/jobs';
+import { WorkspaceProjects } from '../../hosts/node/workspace/projects';
 import { compareBuildVersions, isBuildTerminal, type StudioBuildRequest, type StudioBuildJob } from '../../hosts/common/studio_builds';
 import { BuildLedger } from '../../hosts/node/builds/ledger';
 import { parseCartridgePackage, parseSystemRomImage } from '../../machine/ts/rompack/image';
@@ -14,9 +15,10 @@ import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memor
 
 test('real worker builds, idempotent admission, cancellation and restart reconciliation', { timeout: 120000 }, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-jobs-'));
-	let jobs = await StudioBuildJobs.open(process.cwd(), root);
-	t.after(async () => { await jobs.close(); await rm(root, { recursive: true, force: true }); });
-	await assert.rejects(StudioBuildJobs.open(process.cwd(), root), /locked/);
+	let projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
+	let jobs = await StudioBuildJobs.open(process.cwd(), root, projects);
+	t.after(async () => { await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
+	await assert.rejects(StudioBuildJobs.open(process.cwd(), root, projects), /locked/);
 	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
 	const reordered = { optLevel: request.optLevel, debug: request.debug, target: request.target, requestId: request.requestId };
 	let running = 0;
@@ -43,6 +45,10 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	assert.equal(artifact.target, request.target);
 	assert.equal(artifact.system.name, 'bmsx-bios');
 	assert.equal(artifact.cart!.name, request.target);
+	assert.ok(result.project !== undefined);
+	assert.notEqual(result.project.system.id, result.project.cartridge.id);
+	assert.equal(result.project.system.projectRoot, artifact.system.recipe.projectRoot);
+	assert.equal(result.project.cartridge.projectRoot, artifact.cart!.recipe.projectRoot);
 	assert.deepEqual(artifact.system.outputs.map(output => output.file), ['system/bmsx-bios.debug.rom']);
 	assert.deepEqual(artifact.cart!.outputs.map(output => output.file), ['cpu_soak.debug.rom']);
 	for (const unit of [artifact.system, artifact.cart!]) {
@@ -64,17 +70,59 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	const interrupted = { ...request, requestId: randomUUID(), target: 'nemesis_s' };
 	await jobs.admit(interrupted);
 	assert.equal((await jobs.cancel(interrupted.requestId)).state, 'cancelled');
-	await jobs.close();
+	await jobs.close(); await projects.close();
 	// Startup reconciles the durable publication intent against the actual commit, never re-executes it.
 	const database = new DatabaseSync(join(root, 'jobs.sqlite'));
 	database.prepare("UPDATE jobs SET state='publishing', record=json_set(record, '$.state', 'publishing') WHERE id=?").run(request.requestId);
 	const lost = { ...first, request: { ...request, requestId: randomUUID() }, state: 'running' };
 	database.prepare('INSERT INTO jobs VALUES (?, ?, ?, ?)').run(lost.request.requestId, lost.acceptedAt, lost.state, JSON.stringify(lost));
 	database.close();
-	jobs = await StudioBuildJobs.open(process.cwd(), root);
+	projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
+	jobs = await StudioBuildJobs.open(process.cwd(), root, projects);
 	assert.equal((await jobs.get(request.requestId))!.state, 'completed');
 	assert.ok(compareBuildVersions(jobs.get(request.requestId)!.version, result.version) > 0);
 	assert.equal((await jobs.get(lost.request.requestId))!.state, 'interrupted');
+	// Context admission is durable workspace state, not the artifact's cache key.
+	// Two separate admissions of the same configuration can reuse the same bytes.
+	for (const directory of ['workspace', 'independent-admission']) {
+		await jobs.close(); await projects.close();
+		projects = new WorkspaceProjects(process.cwd(), join(root, directory));
+		jobs = await StudioBuildJobs.open(process.cwd(), root, projects);
+		const cachedRequest = { ...request, requestId: randomUUID() };
+		const finished = Promise.withResolvers<StudioBuildJob>();
+		const stop = jobs.subscribe(({ job }) => {
+			if (job.request.requestId === cachedRequest.requestId && isBuildTerminal(job.state)) finished.resolve(job);
+		});
+		await jobs.admit(cachedRequest);
+		const cached = await finished.promise; stop();
+		assert.equal(cached.state, 'completed', cached.error);
+		assert.equal(cached.artifact, result.artifact);
+		if (directory === 'workspace') assert.deepEqual(cached.project, result.project);
+		else {
+			assert.notEqual(cached.project!.cartridge.id, result.project.cartridge.id);
+			assert.notEqual(cached.project!.system.id, result.project.system.id);
+			assert.equal(cached.project!.cartridge.projectRoot, result.project.cartridge.projectRoot);
+		}
+	}
+	// An admitted selector is not required to be another directory or socket.
+	const alias = 'cpu_soak_alias', contextId = randomUUID();
+	const contexts = new DatabaseSync(join(root, 'independent-admission', 'source-contexts.sqlite'));
+	try {
+		contexts.prepare('INSERT INTO source_contexts(id, project_root) VALUES (?, ?)').run(contextId, result.project.cartridge.projectRoot);
+		contexts.prepare('INSERT INTO cartridge_selections(target, context_id) VALUES (?, ?)').run(alias, contextId);
+	} finally { contexts.close(); }
+	assert.ok((await jobs.projects.targets()).includes(alias));
+	const aliasRequest = { ...request, requestId: randomUUID(), target: alias };
+	const aliasDone = Promise.withResolvers<StudioBuildJob>();
+	const stopAlias = jobs.subscribe(({ job }) => {
+		if (job.request.requestId === aliasRequest.requestId && isBuildTerminal(job.state)) aliasDone.resolve(job);
+	});
+	await jobs.admit(aliasRequest);
+	const aliased = await aliasDone.promise; stopAlias();
+	assert.equal(aliased.state, 'completed', aliased.error);
+	assert.equal(aliased.project!.cartridge.id, contextId);
+	const aliasArtifact = await jobs.artifacts.read(aliased.artifact!);
+	assert.equal(aliasArtifact.cart!.recipe.projectRoot, result.project.cartridge.projectRoot);
 	console.log('artifact', result.artifact, 'system outputs', artifact.system.outputs.length, 'cart outputs', artifact.cart!.outputs.length);
 });
 
@@ -94,12 +142,13 @@ test('ledger upgrades existing receipts and orders lifetimes without persisting 
 	assert.deepEqual(migrated.version, { generation: 0, sequence: 0 });
 	const observedProgress = { generation: original.generation, sequence: 100 };
 	original.close();
-	const restarted = await StudioBuildJobs.open(process.cwd(), root);
+	const projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
+	const restarted = await StudioBuildJobs.open(process.cwd(), root, projects);
 	try {
 		const recovered = restarted.get(request.requestId)!;
 		assert.equal(recovered.state, 'interrupted');
 		assert.ok(compareBuildVersions(recovered.version, observedProgress) > 0);
-	} finally { await restarted.close(); }
+	} finally { await restarted.close(); await projects.close(); }
 });
 
 test('existing server exposes the same durable jobs to HTTP and MCP without a browser or account', { timeout: 120000 }, async t => {
@@ -154,16 +203,18 @@ test('a killed server releases ledger ownership and interrupts, rather than repl
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 2 };
 	const program = `import { StudioBuildJobs } from ${JSON.stringify(pathToFileURL(resolve('hosts/node/builds/jobs.ts')).href)};
-		const jobs = await StudioBuildJobs.open(${JSON.stringify(process.cwd())}, ${JSON.stringify(root)});
+        import { WorkspaceProjects } from ${JSON.stringify(pathToFileURL(resolve('hosts/node/workspace/projects.ts')).href)};
+		const jobs = await StudioBuildJobs.open(${JSON.stringify(process.cwd())}, ${JSON.stringify(root)}, new WorkspaceProjects(${JSON.stringify(process.cwd())}, ${JSON.stringify(join(root, 'workspace'))}));
 		jobs.subscribe(({job}) => { if(job.state === 'running') process.send('admitted'); });
 		await jobs.admit(${JSON.stringify(request)});`;
 	const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', program], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
 	const closed = once(child, 'exit'); t.after(async () => { child.kill('SIGKILL'); await closed; });
 	await once(child, 'message'); child.kill('SIGKILL'); await closed;
-	const replacement = await StudioBuildJobs.open(process.cwd(), root);
+	const projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
+	const replacement = await StudioBuildJobs.open(process.cwd(), root, projects);
 	try {
 		assert.equal(replacement.get(request.requestId)!.state, 'interrupted');
 		assert.equal((await replacement.admit(request)).state, 'interrupted');
 		assert.equal(replacement.snapshot().jobs.length, 1);
-	} finally { await replacement.close(); }
+	} finally { await replacement.close(); await projects.close(); }
 });

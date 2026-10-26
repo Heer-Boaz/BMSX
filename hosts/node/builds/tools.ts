@@ -19,7 +19,7 @@ export const BUILD_TOOLS = [
 ] satisfies Tool[];
 export async function callBuildTool(jobs: StudioBuildJobs, name: string, input: Record<string, unknown>): Promise<unknown> {
 	switch (name) {
-		case 'studio_build_targets': return jobs.targets();
+		case 'studio_build_targets': return jobs.projects.targets();
 		case 'studio_build_cart': return jobs.admit(decodeBuildRequest(input));
 		case 'studio_list_builds': return jobs.snapshot();
 		case 'studio_read_build': {

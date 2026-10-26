@@ -40,7 +40,7 @@ export async function handleBuildRequest(jobs: StudioBuildJobs, request: Incomin
 		const route = url.pathname.slice('/__bmsx__/builds'.length).split('/').filter(Boolean);
 		let result: unknown;
 		if (request.method === 'GET' && route.length === 0) result = jobs.snapshot();
-		else if (request.method === 'GET' && route[0] === 'targets') result = await jobs.targets();
+		else if (request.method === 'GET' && route[0] === 'targets') result = await jobs.projects.targets();
 		else if (route[0] === 'jobs') {
 			const id = buildRequestId(route[1]);
 			if (request.method === 'PUT' && route.length === 2) {

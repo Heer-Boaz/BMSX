@@ -100,8 +100,8 @@ const { StudioBuildJobs } = await import('../hosts/node/builds/jobs.ts');
 const { handleBuildRequest } = await import('../hosts/node/builds/api.ts');
 const { WorkspaceProjects } = await import('../hosts/node/workspace/projects.ts');
 const { handleProjectRequest } = await import('../hosts/node/workspace/projects_api.ts');
-const projects = new WorkspaceProjects(projectRoot);
-const buildJobs = await StudioBuildJobs.open(projectRoot, path.resolve(getArg('build-store', null, path.join(projectRoot, '.bmsx', 'builds'))));
+const projects = new WorkspaceProjects(projectRoot, path.resolve(getArg('project-state', null, path.join(projectRoot, '.bmsx', 'studio'))));
+const buildJobs = await StudioBuildJobs.open(projectRoot, path.resolve(getArg('build-store', null, path.join(projectRoot, '.bmsx', 'builds'))), projects);
 const studioSessions = new StudioSessions(buildJobs);
 const studioMcp = new StudioMcpApi(studioSessions, STUDIO_TOOLS, buildJobs, projects);
 const assistant = new CodexHttpApi({ tools: STUDIO_TOOLS,
@@ -317,9 +317,12 @@ let shutdown;
 const stop = () => {
 	// Stop admission, then join both the assistant process and accepted HTTP IO.
 	// Killing every socket here would interrupt an already accepted source save.
-	shutdown ??= Promise.all([buildJobs.close(), conversationViewers.close(), studioMcp.close(), studioSessions.close(), assistant.close(), new Promise((resolve, reject) => {
+	shutdown ??= Promise.allSettled([buildJobs.close(), conversationViewers.close(), studioMcp.close(), studioSessions.close(), assistant.close(), new Promise((resolve, reject) => {
 		server.close(error => error ? reject(error) : resolve());
-	})]).catch(error => { console.error(error); process.exitCode = 1; });
+	})]).then(async results => {
+		await projects.close();
+		for (const result of results) if (result.status === 'rejected') { console.error(result.reason); process.exitCode = 1; }
+	}).catch(error => { console.error(error); process.exitCode = 1; });
 };
 process.once('SIGTERM', stop);
 process.once('SIGINT', stop);

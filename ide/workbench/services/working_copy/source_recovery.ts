@@ -45,12 +45,13 @@ export async function restoreWorkspaceDirtyModels(models: EditorTextModelService
 }
 
 type RecoveryOptions = {
-	identity: string; projectRootPath: string; models: EditorTextModelService;
+	identity: string; sourceContextId: string; projectRootPath: string; models: EditorTextModelService;
 	sources: RuntimeSourceState; clock: HostClock; logOutput: LogOutput;
 };
 
 /** An isolated Studio's source-only recovery; never reads or writes the frontend session/layout. */
 export class WorkspaceSourceRecovery {
+	private readonly identity: string;
 	private readonly statePath: string;
 	private entries: WorkingCopyRecoveryEntry[] = [];
 	private readonly records = new Map<string, WorkspaceRecord>();
@@ -61,7 +62,8 @@ export class WorkspaceSourceRecovery {
 	private revision = 0;
 	private publishedRevision = 0;
 	public constructor(private readonly options: RecoveryOptions) {
-		this.statePath = joinWorkspacePaths(options.projectRootPath, WORKSPACE_METADATA_DIR, 'studio', options.identity, 'sources.json');
+		this.identity = joinWorkspacePaths(options.sourceContextId, options.identity);
+		this.statePath = joinWorkspacePaths(options.projectRootPath, WORKSPACE_METADATA_DIR, 'studio', this.identity, 'sources.json');
 	}
 
 	public async initialize(): Promise<ReadonlyMap<string, WorkspaceRecord>> {
@@ -72,7 +74,7 @@ export class WorkspaceSourceRecovery {
 				const record = await workspaceRecords.read(path);
 				if (record === null) throw new Error(`Incomplete source recovery: missing '${path}'.`);
 				return record;
-			}, this.options.identity);
+			}, this.identity);
 			for (const [path, record] of loaded) this.records.set(path, record);
 		}
 		return this.records;
@@ -106,11 +108,11 @@ export class WorkspaceSourceRecovery {
 		const revision = this.revision;
 		this.pending = this.pending.catch(() => undefined).then(async () => {
 			if (revision === this.publishedRevision) return;
-			const { models, sources, clock, identity } = this.options;
+			const { models, sources, clock } = this.options;
 			const generation = captureWorkspaceDirtySources(models, sources, clock, this.records);
-			await publishWorkspaceDirtySources(sources, generation.dirtyFiles, generation.dirtyRecords, this.entries, identity);
+			await publishWorkspaceDirtySources(sources, generation.dirtyFiles, generation.dirtyRecords, this.entries, this.identity);
 			await workspaceRecords.write(this.statePath, createWorkspaceRecord(clock, JSON.stringify({ dirtyFiles: generation.dirtyFiles })));
-			await pruneWorkspaceDirtySources(sources, this.entries, generation.dirtyFiles, identity);
+			await pruneWorkspaceDirtySources(sources, this.entries, generation.dirtyFiles, this.identity);
 			this.entries = generation.dirtyFiles;
 			this.records.clear();
 			for (const [path, record] of generation.dirtyRecords) this.records.set(path, record);
@@ -132,7 +134,7 @@ export class WorkspaceSourceRecovery {
 		this.stop(); this.stopped = true;
 		await this.pending;
 		await workspaceRecords.delete(this.statePath);
-		await pruneWorkspaceDirtySources(this.options.sources, this.entries, [], this.options.identity);
+		await pruneWorkspaceDirtySources(this.options.sources, this.entries, [], this.identity);
 		this.entries = []; this.records.clear();
 	}
 }

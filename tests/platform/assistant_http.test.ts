@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { build } from 'esbuild';
 import { CodexHttpApi } from '../../hosts/node/codex/http_api';
 import { StudioBuildJobs } from '../../hosts/node/builds/jobs';
+import { WorkspaceProjects } from '../../hosts/node/workspace/projects';
 import { isBuildTerminal, type StudioBuildJob } from '../../hosts/common/studio_builds';
 import { AssistantHttpConnection } from '../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../ide/browser/http_session';
@@ -300,8 +301,9 @@ test('a large screenshot crosses HTTP, native inference and queue events without
 
 test('embedded Codex calls server-owned build tools; disconnecting chat does not cancel the admitted producer', { timeout: 30000 }, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-build-'));
-	const jobs = await StudioBuildJobs.open(process.cwd(), root);
-	t.after(async () => { await jobs.close(); await rm(root, { recursive: true, force: true }); });
+	const projects = new WorkspaceProjects(process.cwd(), join(root, 'workspace'));
+	const jobs = await StudioBuildJobs.open(process.cwd(), root, projects);
+	t.after(async () => { await jobs.close(); await projects.close(); await rm(root, { recursive: true, force: true }); });
 	const request = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
 	const completed = Promise.withResolvers<StudioBuildJob>();
 	jobs.subscribe(({ job }) => { if (job.request.requestId === request.requestId && isBuildTerminal(job.state)) completed.resolve(job); });

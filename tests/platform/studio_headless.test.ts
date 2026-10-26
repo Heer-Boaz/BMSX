@@ -11,6 +11,21 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { StudioToolRequests } from '../../ide/workbench/services/assistant/tool_requests';
 import type { WorkspaceToolService } from '../../ide/workbench/services/assistant/tool_service';
 import { createStudioServer } from '../helpers/studio_server.mjs';
+import { StudioSessions } from '../../hosts/node/studio/sessions';
+import type { StudioBuildJobs } from '../../hosts/node/builds/jobs';
+
+test('an archived artifact without source admission cannot open an authoring Studio or read media', async t => {
+	let reads = 0;
+	const sessions = new StudioSessions({
+		subscribe() { return () => {}; },
+		get() { return { state: 'completed', artifact: 'archived-artifact' }; },
+		artifacts: { async read() { reads++; throw new Error('Media must not be read before source admission'); } },
+	} as unknown as StudioBuildJobs);
+	t.after(() => sessions.close());
+	await assert.rejects(sessions.startHeadless({ requestId: randomUUID(), buildRequestId: randomUUID(), sourceAccess: 'review' }));
+	assert.equal(reads, 0);
+	assert.equal(sessions.list().length, 0);
+});
 
 test('headless Studio owns runtime, source history, persistence and session lifetime without a browser', { timeout: 180000 }, async t => {
 	type Connection = { client: Client; transport: StreamableHTTPClientTransport };
@@ -146,7 +161,7 @@ test('headless Studio owns runtime, source history, persistence and session life
 	await call('studio_resolve_review', { toolContext: secondSource.toolContext, review: secondProposal.review, decision: 'apply' });
 	await delay(2600); // The ordinary debounced recovery owner, not a test-only flush.
 	for (const [identity, contents] of [[request.requestId, firstText + original], [secondRequest.requestId, secondText + original]]) {
-		const directory = join(f.root, 'carts/emptycart/.bmsx/studio', identity);
+		const directory = join(f.root, build.project.cartridge.projectRoot, '.bmsx/studio', build.project.cartridge.id, identity);
 		const recovery = JSON.parse(await readFile(join(directory, 'sources.json'), 'utf8'));
 		const entry = recovery.dirtyFiles.find((entry: { domain: number; path: string }) => entry.domain === 0 && entry.path === 'entry.lua');
 		assert.ok(entry);

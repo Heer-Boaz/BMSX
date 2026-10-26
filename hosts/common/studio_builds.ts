@@ -1,3 +1,5 @@
+import type { StudioProjectAdmission } from './studio_projects';
+
 /** Accepted workspace builds outlive their observers. Request IDs reconcile lost acknowledgements. */
 export type StudioBuildRequest = { requestId: string; target: string; debug: boolean; optLevel: 0 | 1 | 2 | 3 };
 export type StudioBuildState = 'queued' | 'running' | 'publishing' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
@@ -7,6 +9,8 @@ export type StudioBuildJob = {
 	request: StudioBuildRequest; state: StudioBuildState; phase: string; acceptedAt: number; updatedAt: number;
 	version: StudioBuildVersion;
 	artifact?: string; error?: string;
+	/** Historical artifact-only receipts have no authoring admission. */
+	project?: StudioProjectAdmission;
 };
 export type StudioBuildSnapshot = { generation: number; revision: number; jobs: readonly StudioBuildJob[] };
 export type StudioBuildChange = { revision: number; job: StudioBuildJob };
