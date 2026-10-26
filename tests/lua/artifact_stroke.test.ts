@@ -106,7 +106,9 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 	write_rect_bounds(input.mapBounds, 4, 40, 104, 46); write_rect_bounds(input.filterBounds, 32, 24, 124, 36);
 	input.list.layout(4, 52, 124, 120, 20); layoutWorkbenchActionBar(input.actions, 124, 10, 22, text => font.measure(text), font.renderFont(), 4);
 	const presentation = new RomInspectorPresentation(); presentation.update(input, true);
-	const output = frame(() => drawRomInspector(input, presentation, new TextField(), new SingleLineFieldViewport(), true));
+	const filter = new TextField(), filterViewport = new SingleLineFieldViewport();
+	filterViewport.layout(filter, input.filterBounds, { advanceChar: char => font.advance(char), spaceAdvance: font.advance(' '), tabSpaces: 4 }, font);
+	const output = frame(() => drawRomInspector(input, presentation, filter, filterViewport, true));
 	const paths: PolyRenderSubmission[] = [];
 	for (let index = 0; index < output.commandCount; index++) if (output.commandKinds[index] === Host2DKind.Poly) paths.push(output.commandRefs[index] as PolyRenderSubmission);
 	assert.equal(paths.length, 2); const span = presentation.selectedSpans[0];

@@ -17,10 +17,16 @@ type TextFieldRevision<T> = {
 	anchorColumn: number;
 };
 
+/** The arranged viewport projects current text and selection for native input on demand. */
+export interface InlineFieldCaretView {
+	updateNativeCaret(field: TextField): void;
+}
+
 /** Small input-control history, independent of resource-owned document history. */
 export class TextField<T = unknown> implements ClipboardTarget, TextInputTarget {
 	public revision = 0;
 	public readonly nativeCaret = { x: 0, y: 0, width: 0, height: 0 };
+	public caretView!: InlineFieldCaretView;
 	public annotations: readonly TextFieldAnnotation<T>[] = [];
 	public readOnly = false;
 	public text = '';
@@ -75,7 +81,7 @@ export class TextField<T = unknown> implements ClipboardTarget, TextInputTarget 
 		return true;
 	}
 
-	public caretRect(): typeof this.nativeCaret { return this.nativeCaret; }
+	public caretRect(): typeof this.nativeCaret { this.caretView.updateNativeCaret(this); return this.nativeCaret; }
 
 	public copy(): string | null { return selectedText(this); }
 	public cut(): void { deleteSelection(this); }

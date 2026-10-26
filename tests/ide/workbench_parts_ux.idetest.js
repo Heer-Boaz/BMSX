@@ -66,7 +66,7 @@ await t.frames(90);
 // let the old held move consume a later, genuinely fresh source press.
 const cancelledDivider = { x: gpu.layout.left + 12, y: gpu.layout.bottom, outside: gpu.layout.top - 1 };
 await focusTab(cart.input); await press('ControlLeft', 'Home');
-const initialCaret = t.activeEditorDocument().nativeCaret;
+const initialCaret = t.activeEditorDocument().focusTarget.textInput.caretRect();
 const freshSourcePoint = { x: initialCaret.x + initialCaret.width / 2, y: initialCaret.y + initialCaret.height / 2 };
 t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'the sash cancellation fixture did not begin in Source');
 t.controlInput([{ type: 'pointer', x: cancelledDivider.x, y: cancelledDivider.y }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
@@ -125,7 +125,7 @@ for (const font of ['tiny', 'msx']) {
 		await focusTab(cart.input); await press('ControlLeft', 'Home'); await press('ShiftLeft', 'ArrowRight');
 		await press('ControlLeft', 'KeyC'); // Seed the real host clipboard from authored Source.
 		t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'Source did not own the initial text/clipboard context');
-			const readingView = cart.input.context.view, visibleCaret = t.activeEditorDocument().nativeCaret;
+			const readingView = cart.input.context.view, visibleCaret = t.activeEditorDocument().focusTarget.textInput.caretRect();
 			// This is a real visible cell now; after scrolling it is not the offscreen caret.
 			const readingPoint = { x: visibleCaret.x + visibleCaret.width / 2, y: visibleCaret.y + visibleCaret.height / 2 };
 			t.controlInput([{ type: 'pointer', x: readingPoint.x, y: readingPoint.y }, { type: 'wheel', deltaY: 12.375 }]); await t.frames(3);

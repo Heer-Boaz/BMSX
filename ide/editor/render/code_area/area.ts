@@ -6,7 +6,7 @@ import { drawCodeAreaRows } from './rows';
 import { editorViewState } from '../../ui/view/state';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../ui/code/area_viewport';
-import { resolveCursorVisualIndex } from '../../ui/view/caret/visual_index';
+import { resolveCursorScreenInfo } from '../../ui/view/caret/screen_geometry';
 import type { CompletionPresentation } from '../completion';
 import type { SearchMatch } from '../../../common/models';
 import { api } from '../../../runtime/overlay_api';
@@ -31,10 +31,10 @@ export function renderCodeArea(
 	api.pushClipRect(viewport.textLeft, viewport.codeTop, viewport.contentRight, viewport.contentBottom);
 
 	const activeGotoHighlight = intellisenseUiState.gotoHoverHighlight;
-	const cursorInfo = drawCodeAreaRows(
+	const cursorInfo = resolveCursorScreenInfo(viewport);
+	drawCodeAreaRows(
 		viewport,
 		activeGotoHighlight,
-		resolveCursorVisualIndex(),
 		editorRuntimeState.uppercaseDisplay,
 		font,
 		referenceMatches,

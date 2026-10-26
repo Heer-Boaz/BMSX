@@ -19,6 +19,7 @@ import { prepareUndo } from '../../ide/editor/editing/undo_controller';
 import { resolveViewportCapacity } from '../../ide/editor/ui/view/caret/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 
 function sourceRangeFixture(t: TestContext, source: string) {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
@@ -35,6 +36,30 @@ function sourceRangeFixture(t: TestContext, source: string) {
 	});
 	return { model, view, layout: editorViewState.layout };
 }
+
+test('native source caret projects the canonical tab and wrapped position before paint independently of blink', t => {
+	const { model, view, layout } = sourceRangeFixture(t, '\tfirst\n' + 'local value = 12345; '.repeat(80) + 'return 7');
+	const target = new CodeEditorTextInput(), visible = editorCaretState.cursorVisible;
+	t.after(() => { editorCaretState.cursorVisible = visible; });
+	target.setSelection(1, 1);
+	const viewport = resolveViewportCapacity(), entry = layout.getViewLine(model.buffer, 0);
+	const display = layout.columnToDisplay(entry.hi, 1);
+	for (const blink of [false, true]) {
+		editorCaretState.cursorVisible = blink;
+		const caret = target.caretRect();
+		assert.equal(caret.x, viewport.textLeft + entry.advancePrefix[display]);
+		assert.equal(caret.y, viewport.codeTop); assert.equal(caret.height, editorViewState.lineHeight);
+		assert.equal(caret.width, layout.cursorWidth(entry, display));
+	}
+	target.setSelection(model.buffer.length, model.buffer.length);
+	const wrapped = { ...target.caretRect() }, revision = model.version;
+	assert.ok(wrapped.width > 0 && wrapped.height > 0);
+	assert.ok(wrapped.x >= viewport.textLeft && wrapped.x + wrapped.width <= viewport.contentRight);
+	assert.ok(wrapped.y >= viewport.codeTop && wrapped.y + wrapped.height <= viewport.contentBottom);
+	view.scrollRow = 0;
+	assert.equal(target.caretRect().width, 0); assert.equal(target.caretRect().height, 0);
+	assert.equal(model.version, revision); assert.equal(model.canUndo, false);
+});
 
 test('prepared explicit multiline UTF16 range edits publish their internal caret and invalidate the complete insertion', t => {
 	const source = 'head\nAAAA\nBBBB\nCCCC\nfoot', { model, view, layout } = sourceRangeFixture(t, source);

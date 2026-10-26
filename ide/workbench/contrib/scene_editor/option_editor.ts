@@ -14,7 +14,7 @@ export class SceneOptionEditor {
 	private input: SceneEditorInput | undefined;
 
 	public constructor(private readonly parent: InputFocusTarget,
-		private readonly beforeCommit: () => void, private readonly reveal: (property: SceneOptionProperty) => void,
+		private readonly beforeCommit: () => void, private readonly reveal: (property: SceneOptionProperty, index: number) => void,
 		private readonly sectionCommands: SceneEditorSectionCommands) {}
 
 	public bind(input: SceneEditorInput): void {
@@ -66,7 +66,7 @@ export class SceneOptionEditor {
 			&& this.input.details.bounds.left < this.input.details.bounds.right && this.input.details.bounds.top < this.input.details.bounds.bottom && !control.field.readOnly;
 		control.field.focusTarget.registerCommand('sceneEditor.details', this.sectionCommands.details);
 		control.field.focusTarget.registerCommand('sceneEditor.outline', this.sectionCommands.outline);
-		this.unbindFocus.push(control.field.focusTarget.onDidFocus(() => this.reveal(this.input!.optionProperties[index])));
+		this.unbindFocus.push(control.field.focusTarget.onDidFocus(() => this.reveal(this.input!.optionProperties[index], index)));
 		this.controls.push(control);
 	}
 

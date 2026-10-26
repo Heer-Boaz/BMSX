@@ -1,6 +1,5 @@
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../../machine/ts/common/rect';
 import { SingleLineFieldViewport } from '../../../../editor/ui/inline/single_line_viewport';
-import { getCursorOffset } from '../../../../editor/ui/inline/text_field';
 import type { TextField } from '../../../../editor/ui/inline/text_field_model';
 import type { EditorFont } from '../../../../editor/ui/view/font';
 import { editorViewState } from '../../../../editor/ui/view/state';
@@ -60,12 +59,6 @@ export class InlineBarFieldLayout {
 				Math.min(bar.bottom, bar.top + marginY + editorViewState.lineHeight + 2));
 		}
 		if (!this.visible) { this.hide(); return; }
-		this.viewport.update(this.field, this.bounds.right - this.bounds.left - 6,
-			editorViewState.inlineFieldMetricsRef, font.renderFont());
-		const caret = this.field.nativeCaret;
-		caret.x = this.bounds.left + 3 + this.viewport.advances[getCursorOffset(this.field)] - this.viewport.offset;
-		caret.y = this.bounds.top + 2;
-		caret.width = Math.min(this.viewport.caretWidth, this.bounds.right - 3 - caret.x);
-		caret.height = Math.min(editorViewState.lineHeight, this.bounds.bottom - caret.y);
+		this.viewport.layout(this.field, this.bounds, editorViewState.inlineFieldMetricsRef, font, bar);
 	}
 }

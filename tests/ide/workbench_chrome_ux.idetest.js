@@ -62,9 +62,9 @@ for (const font of ['tiny', 'msx']) {
 		t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'an Alt navigation chord also opened the menu');
 
 		// A pointer action also cancels the pending Alt gesture, even when it keeps
-		// the same source focus. The renderer owns this actual caret hit rectangle.
+			// the same source focus. Native input projects the current caret independently of paint.
 		await press('ControlLeft', 'Home');
-		const caret = t.activeEditorDocument().nativeCaret;
+			const caret = t.activeEditorDocument().focusTarget.textInput.caretRect();
 		t.controlInput([{ type: 'key', code: 'AltLeft', down: true }]); await t.frames(1);
 		t.controlInput([{ type: 'pointer', x: caret.x + caret.width / 2, y: caret.y + caret.height / 2 },
 			{ type: 'button', button: 'primary', down: true }]); await t.frames(1);

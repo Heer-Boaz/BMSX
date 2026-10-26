@@ -9,16 +9,18 @@ import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { setCursorFromOffset, setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { MarkdownSource } from '../../ide/common/markdown/source';
 import { TextStyle } from '../../ide/common/markdown/model';
+import { EditorFont } from '../../ide/editor/ui/view/font';
 
 const measure = (_text: string, start: number, end: number) => end - start;
 
 test('styled source measures each codepoint once and shares advances with wrapping, pointer and caret', () => {
-	const field = new TextField(), view = new MultilineFieldViewport(true), source = new MarkdownSource(), font = {};
+	const field = new TextField(), view = new MultilineFieldViewport(true), source = new MarkdownSource(), font = new EditorFont('tiny');
+	const bounds = { left: 0, top: 0, right: 20, bottom: font.lineHeight * 8 + 2 };
 	const text = '🐉 **bold** *wide italic* `code`\n\treturn';
 	setFieldText(field, text, false); source.update(text);
 	let measurements = 0;
 	const measure = (_text: string, _from: number, _to: number, style: TextStyle) => { measurements++; return style & TextStyle.Italic ? 2 : 1; };
-	view.update(field, 14, 8, measure, font, source.styles);
+	view.measure(field, 14, measure, font, source); view.layout(field, bounds, font);
 	assert.equal(measurements, [...text].filter(char => char !== '\n').length);
 	for (let rowIndex = 0; rowIndex < view.rows.length; rowIndex++) {
 		const row = view.rows[rowIndex];
@@ -30,7 +32,7 @@ test('styled source measures each codepoint once and shares advances with wrappi
 		}
 	}
 	const rows = view.rows.slice(), measured = measurements;
-	setCursorFromOffset(field, text.indexOf('italic')); view.update(field, 14, 8, measure, font, source.styles);
+	setCursorFromOffset(field, text.indexOf('italic')); view.measure(field, 14, measure, font, source); view.layout(field, bounds, font);
 	assert.equal(measurements, measured); assert.ok(view.rows.every((row, index) => row === rows[index]));
 	assert.ok(view.rows[view.cursorRow].offset <= text.indexOf('italic'));
 });
@@ -38,24 +40,38 @@ test('styled source measures each codepoint once and shares advances with wrappi
 test('multiline geometry measures whole codepoints once and keeps UTF-16 source offsets', () => {
 	const field = new TextField(), view = new MultilineFieldViewport(true);
 	setFieldText(field, 'a🐉b', true);
-	view.update(field, 20, 6, (text, start, end) => [...text.slice(start, end)].length, {});
+	view.measure(field, 20, (text, start, end) => [...text.slice(start, end)].length, {});
 	assert.deepEqual(view.rows[0].advances, [0, 1, 1, 2, 3]);
 	assert.equal(view.offsetAt(0, 1.4), 1); assert.equal(view.offsetAt(0, 1.6), 3);
 });
 
+test('multiline native input projects trusted text and selection in the last arranged client without a frame', () => {
+	const field = new TextField(), view = new MultilineFieldViewport(), font = new EditorFont('tiny');
+	const bounds = { left: 8, top: 24, right: 120, bottom: 24 + font.lineHeight * 3 + 2 };
+	setFieldText(field, 'one', true);
+	view.measure(field, 100, (text, from, to) => font.measure(text.slice(from, to)), font); view.layout(field, bounds, font);
+	assert.equal(field.replaceText(0, 3, 'one\ntwo'), true);
+	let caret = field.caretRect();
+	assert.equal(caret.x, bounds.left + 3 + font.measure('two')); assert.equal(caret.y, bounds.top + 2 + font.lineHeight);
+	field.setSelection(1, 1); caret = field.caretRect();
+	assert.equal(caret.x, bounds.left + 3 + font.measure('o')); assert.equal(caret.y, bounds.top + 2);
+});
+
 test('multiline fields preserve soft wrapping, empty lines and whole-codepoint pointer hits', () => {
-	const field = new TextField(), view = new MultilineFieldViewport(), font = {};
-	setFieldText(field, 'abcde\n\n🐉z', true); view.update(field, 3, 2, measure, font);
+	const field = new TextField(), view = new MultilineFieldViewport(), font = new EditorFont('tiny');
+	const bounds = { left: 0, top: 0, right: 9, bottom: font.lineHeight * 2 + 2 };
+	setFieldText(field, 'abcde\n\n🐉z', true); view.measure(field, 3, measure, font); view.layout(field, bounds, font);
 	assert.deepEqual(view.rows.map(row => [row.text, row.offset]), [['abc', 0], ['de', 3], ['', 6], ['🐉z', 7]]);
 	assert.equal(view.firstRow, 2); assert.equal(view.offsetAt(3, 1.1), 9);
-	setCursorFromOffset(field, 0); view.update(field, 3, 2, measure, font); assert.equal(view.firstRow, 0);
-	const rows = view.rows.slice(); view.update(field, 3, 2, measure, font); assert.ok(view.rows.every((row, index) => row === rows[index]));
+	setCursorFromOffset(field, 0); view.measure(field, 3, measure, font); view.layout(field, bounds, font); assert.equal(view.firstRow, 0);
+	const rows = view.rows.slice(); view.measure(field, 3, measure, font); view.layout(field, bounds, font); assert.ok(view.rows.every((row, index) => row === rows[index]));
 });
 
 
 test('multiline pointer selection retires on focus transfer and pane detachment', () => {
 	const field = new TextField(), view = new MultilineFieldViewport(), control = new MultilineFieldControl();
-	setFieldText(field, 'first\nsecond', false); view.update(field, 20, 2, measure, {});
+	const font = new EditorFont('tiny');
+	setFieldText(field, 'first\nsecond', false); view.measure(field, 20, measure, font); view.layout(field, { left: 0, top: 0, right: 30, bottom: 25 }, font);
 	control.rowHeight = 10; control.setInput(field, view, { left: 0, top: 0, right: 30, bottom: 25 });
 	const pointer = { valid: true, insideViewport: true, viewportX: 4, viewportY: 3,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
@@ -68,11 +84,12 @@ test('multiline pointer selection retires on focus transfer and pane detachment'
 });
 
 test('chat composer reuses word wrapping without losing source spaces or caret offsets', () => {
-	const field = new TextField(), view = new MultilineFieldViewport(true), font = {};
-	setFieldText(field, 'alpha beta gamma\n🐉 last', true); view.update(field, 11, 8, measure, font);
+	const field = new TextField(), view = new MultilineFieldViewport(true), font = new EditorFont('tiny');
+	const bounds = { left: 0, top: 0, right: 17, bottom: font.lineHeight * 8 + 2 };
+	setFieldText(field, 'alpha beta gamma\n🐉 last', true); view.measure(field, 11, measure, font); view.layout(field, bounds, font);
 	assert.deepEqual(view.rows.map(row => [row.text, row.offset]), [['alpha beta ', 0], ['gamma', 11], ['🐉 last', 17]]);
 	assert.equal(view.rows.slice(0, 2).map(row => row.text).join(''), field.lines[0]);
 	assert.equal(view.offsetAt(2, 1.1), 19);
-	setCursorFromOffset(field, 11); view.update(field, 11, 8, measure, font);
+	setCursorFromOffset(field, 11); view.measure(field, 11, measure, font); view.layout(field, bounds, font);
 	assert.equal(view.cursorRow, 1);
 });

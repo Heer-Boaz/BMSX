@@ -151,12 +151,12 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		// rows, then fit the composer to its content without measuring the draft twice.
 		// disable-next-line redundant_numeric_sanitization_pattern -- Layout constraint: reserve one editable row and at most a third of the pane, capped at six rows. This is the owning viewport boundary, not value sanitization.
 		const maxRows = Math.max(1, Math.min(6, Math.trunc((footerTop - layout.top) / (3 * editorViewState.lineHeight))));
-		input.draftMarkdown.update(input.draft.text, input.referenceStyles);
-		input.composer.update(input.draft, width - 14 - editorViewState.spaceAdvance, maxRows, measureStyledText, layout.font!, input.draftMarkdown.styles);
+		input.composer.measure(input.draft, Math.max(0, width - 14 - editorViewState.spaceAdvance), measureStyledText, layout.font!, input.draftMarkdown);
 		const composerBottom = footerTop - row - 6;
 		const composerTop = composerBottom - Math.min(maxRows, input.composer.rows.length) * editorViewState.lineHeight - 4;
 		const composerChanged = changed || input.composerBounds.top !== composerTop || input.composerBounds.bottom !== composerBottom;
 		if (composerChanged) write_rect_bounds(input.composerBounds, layout.left + 4, composerTop, layout.right - 4, composerBottom);
+		input.composer.layout(input.draft, input.composerBounds, layout.font!, layout);
 		const activityLabel = busy ? model.state === 'stopping' ? 'Stopping' : model.state === 'starting' ? 'Starting' : model.activity : '';
 		if (changed || activityLabel !== input.activityLabel || second !== input.activitySecond) {
 			input.activitySecond = second; input.activityLabel = activityLabel;
@@ -217,7 +217,7 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 			api.blit_text_inline_with_font(placeholder, bounds.left + 3, bounds.top + 2, 0, colors.COLOR_INPUT_PLACEHOLDER, font);
 			api.popClipRect();
 		}
-		drawMultilineField(input.draft, input.composer, bounds);
+		drawMultilineField(input.draft, input.composer);
 		if (input.attachments.images.length > 0) this.attachments.draw();
 		this.references.suggestions.draw();
 		this.previews.endFrame();

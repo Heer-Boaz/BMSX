@@ -107,7 +107,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 			this.details.focusTarget.onDidFocus(() => { this.input.section = 'details'; }),
 			...this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index))),
 		];
-		this.options = new SceneOptionEditor(this.details.focusTarget, () => this.update(), property => this.revealOption(property), sectionCommands);
+		this.options = new SceneOptionEditor(this.details.focusTarget, () => this.update(), (property, index) => this.revealOption(property, index), sectionCommands);
 		for (const direction of ['undo', 'redo'] as const) {
 			const historyCommand = {
 				isEnabled: () => !this.input.workingCopy.readOnly && (direction === 'undo' ? this.input.workingCopy.canUndo : this.input.workingCopy.canRedo),
@@ -153,7 +153,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 				if (this.controls[index].field.focusTarget.hasFocus) this.revealProperty(index);
 			}
 			for (let index = 0; index < this.options.controls.length; index += 1) {
-				if (this.options.controls[index].field.focusTarget.hasFocus) this.revealOption(this.input.optionProperties[index]);
+				if (this.options.controls[index].field.focusTarget.hasFocus) this.revealOption(this.input.optionProperties[index], index);
 			}
 		}
 		this.actionBar.update();
@@ -166,13 +166,13 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 			if (this.controls[index].field.readOnly) continue;
 			const bounds = this.input.properties[index].bounds;
 			if (bounds.bottom <= this.input.details.bounds.top || bounds.top >= this.input.details.bounds.bottom) continue;
-			this.controls[index].layout(bounds.right - bounds.left);
+			this.controls[index].layout(bounds, this.input.details.bounds);
 		}
 		for (let index = 0; index < this.options.controls.length; index++) {
 			if (this.options.controls[index].field.readOnly) continue;
 			const bounds = this.input.optionProperties[index].bounds;
 			if (bounds.bottom <= this.input.details.bounds.top || bounds.top >= this.input.details.bounds.bottom) continue;
-			this.options.controls[index].layout(bounds.right - bounds.left);
+			this.options.controls[index].layout(bounds, this.input.details.bounds);
 		}
 		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, this.input.workingCopy)];
 	}
@@ -200,12 +200,14 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		const bounds = this.input.properties[index].contentBounds;
 		this.input.details.scrollbar.reveal(bounds.top, bounds.bottom, 2);
 		layoutSceneEditor(this.input, false, false, this.contentBounds);
+		this.controls[index].layout(this.input.properties[index].bounds, this.input.details.bounds);
 	}
 
-	private revealOption(property: SceneOptionProperty): void {
+	private revealOption(property: SceneOptionProperty, index: number): void {
 		this.input.section = 'details';
 		this.input.details.scrollbar.reveal(property.contentBounds.top, property.contentBounds.bottom, 2);
 		layoutSceneEditor(this.input, false, false, this.contentBounds);
+		this.options.controls[index].layout(property.bounds, this.input.details.bounds);
 	}
 
 	private bindProperties(): void {

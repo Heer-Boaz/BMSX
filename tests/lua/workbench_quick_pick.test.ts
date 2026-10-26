@@ -33,6 +33,7 @@ import { WorkbenchPropertyEdit } from '../../ide/workbench/ui/property_edit';
 import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree, type WorkbenchPropertyElement } from '../../ide/workbench/ui/property_tree';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
 import type { DisposableStore } from '../../ide/common/lifecycle';
+import { EditorFont } from '../../ide/editor/ui/view/font';
 
 const items = [
 	{ label: 'scenes/root.lua', description: 'LUA / SLOT 0', detail: 'root', resourceId: 10 },
@@ -49,6 +50,24 @@ function createPicker(t: TestContext, onDidChangeVisibility?: () => void): Quick
 	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
+
+for (const kind of ['pick', 'input', 'replacement'] as const) test(`quick ${kind} publishes its configured native field at the actual focus boundary before paint`, t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget(); origin.focus();
+	if (kind === 'replacement') picker.input('Previous', '', 'old draft', async value => value, () => {});
+	const published: { text: string; x: number; y: number; width: number; height: number }[] = [];
+	t.after(inputFocus.onDidChangeTarget(() => {
+		if (inputFocus.target === picker.field.focusTarget) published.push({ text: picker.field.text, ...picker.field.caretRect() });
+	}));
+	if (kind === 'pick') picker.pick('Sources', '', () => new TextQuickPickProvider(items), () => {});
+	else picker.input('Value', '', 'new initial value', async value => value, () => {});
+	assert.ok(published.length > 0);
+	for (const caret of published) {
+		assert.equal(caret.text, kind === 'pick' ? '' : 'new initial value', 'focus publishes this session, not the previous field');
+		assert.ok(caret.width > 0 && caret.height > 0, 'native focus must not depend on a first paint');
+		assert.ok(caret.x >= picker.layout.field.left + 3 && caret.x + caret.width <= picker.layout.field.right - 3);
+		assert.ok(caret.y >= picker.layout.field.top + 2 && caret.y + caret.height <= picker.layout.field.bottom);
+	}
+});
 
 for (const enabledAtAccept of [true, false]) test(`Palette retains the actual provider origin when acceptance is ${enabledAtAccept ? 'admitted' : 'disabled'} after focus changes`, t => {
 	const picker = createPicker(t), origin = inputFocus.createTarget(), alias = inputFocus.createTarget(), replacement = inputFocus.createTarget();
@@ -173,6 +192,18 @@ test('source-bound quick input cancels its snapshot on content change and releas
 	model.undo();
 	assert.equal(picker.visible, true, 'the expired source session cannot hide a newer unrelated picker');
 	assert.equal(invalidations, 1);
+});
+
+test('a Quick Input opening callback can focus its actual field without preparing the session twice', t => {
+	const picker = createPicker(t);
+	let prepared = 0;
+	picker.pick('Commands', '', () => { prepared++; return new TextQuickPickProvider(items); }, () => {},
+		() => picker.field.focusTarget.focus());
+	assert.equal(prepared, 1);
+	assert.equal(picker.visible, true);
+	assert.ok(inputFocus.admittedTarget === picker.field.focusTarget);
+	assert.ok(picker.field.caretRect().width > 0);
+	picker.hide(); assert.equal(picker.visible, false);
 });
 
 test('quick input session resources end before accept, replacement, blur, cancellation and disposal', t => {
@@ -609,26 +640,26 @@ test('retained picker frames do not refilter, rebuild labels or measure the quer
 test('single-line viewport reveals the caret using whole proportional glyphs and refills after shrinking', () => {
 	const field = new TextField();
 	const view = new SingleLineFieldViewport();
-	const font = {};
+	const font = new EditorFont('tiny'), bounds = { left: 0, top: 0, right: 29, bottom: font.lineHeight + 2 };
 	let measurements = 0;
 	const metrics = { advanceChar: (char: string) => { measurements += 1; return char === 'W' ? 7 : 3; }, spaceAdvance: 3, tabSpaces: 4 };
 	setFieldText(field, 'WiWiWiWiWiWiWiWi', true);
-	view.update(field, 23, metrics, font);
+	view.layout(field, bounds, metrics, font);
 	assert.ok(view.start > 0);
 	assert.equal(view.end, field.text.length);
 	assert.ok(view.advances[field.cursorColumn] + view.caretWidth - view.offset <= 23);
 	const measured = measurements;
-	view.update(field, 23, metrics, font);
+	view.layout(field, bounds, metrics, font);
 	assert.equal(measurements, measured);
 	setCursorFromOffset(field, 0);
-	view.update(field, 23, metrics, font);
+	view.layout(field, bounds, metrics, font);
 	assert.equal(view.start, 0);
 	assert.equal(view.end, 4);
 	setCursorFromOffset(field, field.text.length);
-	view.update(field, 90, metrics, font);
+	view.layout(field, { ...bounds, right: 96 }, metrics, font);
 	assert.equal(view.start, 0);
 	setFieldText(field, 'Wi', true);
-	view.update(field, 23, metrics, font);
+	view.layout(field, bounds, metrics, font);
 	assert.equal(view.start, 0);
 	assert.equal(view.end, 2);
 });

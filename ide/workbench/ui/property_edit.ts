@@ -110,7 +110,7 @@ export class WorkbenchPropertyEdit<T> {
 			this.captionSource = row.element.label; this.captionWidth = width; this.captionFont = font;
 			this.caption = truncateMeasuredText(row.element.label, width - 8, measureTextRange);
 		}
-		this.control.layout(this.fieldBounds.right - this.fieldBounds.left);
+		this.control.layout(this.fieldBounds, this.workArea);
 		if (changed && this.surface !== undefined) this.surfaces.changed();
 	}
 	public handlePointer(snapshot: PointerSnapshot): boolean {

@@ -70,6 +70,7 @@ function fixture(t: TestContext) {
 		write_rect_bounds(input.mapBounds, left + 4, 46, left + width - 20, 52);
 		input.list.layout(left + 2, 58, left + width - 2, 280, input.model.rows.length * (font.lineHeight * 2 + 4));
 		layoutWorkbenchActionBar(input.actions, left + width - 4, 12, 16 + font.lineHeight, text => font.measure(text), font.renderFont(), left + 4);
+		filterViewport.layout(filter, input.filterBounds, { advanceChar: char => font.advance(char), spaceAdvance: font.advance(' '), tabSpaces: 4 }, font);
 	};
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);

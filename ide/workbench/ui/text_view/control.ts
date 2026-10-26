@@ -5,7 +5,7 @@ import * as colors from '../../../common/constants';
 import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { drawSingleLineField } from '../../../editor/ui/inline/single_line_render';
 import { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_viewport';
-import { applyInlineFieldEditing, applyInlineFieldPointer, getCursorOffset, selectAll, setFieldText } from '../../../editor/ui/inline/text_field';
+import { applyInlineFieldEditing, applyInlineFieldPointer, selectAll, setFieldText } from '../../../editor/ui/inline/text_field';
 import { TextField } from '../../../editor/ui/inline/text_field_model';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -101,7 +101,9 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 	public openFind(): void {
 		this.cancelPointer(); this.findVisible = true;
 		this.update(this.bounds, this.font, this.lineHeight);
-		this.findField.focusTarget.focus(); selectAll(this.findField); resetBlink();
+		selectAll(this.findField);
+		this.findViewport.layout(this.findField, this.findBounds, editorViewState.inlineFieldMetricsRef, this.font);
+		this.findField.focusTarget.focus(); resetBlink();
 	}
 	public closeFind(): void {
 		this.cancelPointer(); this.removeFind();
@@ -149,10 +151,7 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 			write_rect_bounds(this.findBounds, bounds.left + 3, top + 2, Math.max(bounds.left + 3, this.findCloseBounds.left - (showCount ? this.countWidth + 8 : 3)), Math.max(top + 2, bottom - 2));
 			this.arrangeFindFocus(bottom - top >= lineHeight + 8 && this.findBounds.right - this.findBounds.left > 6);
 			if (this.findArranged) {
-				this.findViewport.update(this.findField, this.findBounds.right - this.findBounds.left - 6, editorViewState.inlineFieldMetricsRef, font);
-				const caret = this.findField.nativeCaret;
-				caret.x = this.findBounds.left + 3 + this.findViewport.advances[getCursorOffset(this.findField)] - this.findViewport.offset;
-				caret.y = this.findBounds.top + 2; caret.width = this.findViewport.caretWidth; caret.height = lineHeight;
+				this.findViewport.layout(this.findField, this.findBounds, editorViewState.inlineFieldMetricsRef, font);
 			}
 			top = bottom;
 		}
@@ -176,7 +175,7 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 		api.fill_rect(field.left, field.top, field.right, field.bottom, 0, colors.COLOR_INPUT_BACKGROUND);
 		api.blit_rect(field.left, field.top, field.right, field.bottom, 0, this.findField.focusTarget.hasFocus ? colors.COLOR_FOCUS_BORDER : colors.COLOR_INPUT_OUTLINE);
 		api.pushClipRect(field.left + 1, field.top + 1, field.right - 1, field.bottom - 1);
-		drawSingleLineField(this.findField, this.findViewport, field, colors.COLOR_INPUT_TEXT); api.popClipRect();
+			drawSingleLineField(this.findField, this.findViewport, colors.COLOR_INPUT_TEXT); api.popClipRect();
 		if (field.right + this.countWidth + 4 <= this.findCloseBounds.left) api.blit_text_inline_with_font(this.count, field.right + 4, field.top + 2, 0, colors.COLOR_DESCRIPTION_TEXT, this.font.renderFont());
 		const close = this.findCloseBounds;
 		const pressed = this.gesture === 'close' && this.closeHovered;

@@ -4,13 +4,14 @@ import { clearSelection, deleteSelection, getSelectionRange, insertText } from '
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import { resetBlink } from '../../../editor/render/caret';
 import { revealCursor, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
+import { resolveNativeCodeCaret } from '../../../editor/ui/view/caret/screen_geometry';
 
 /** Native editing borrows the actual source widget; it does not own another document. */
 export class CodeEditorTextInput implements TextInputTarget {
 	private readonly position = { row: 0, column: 0 };
 	public get readOnly(): boolean { return activeCodeEditor.model.readOnly; }
 	public get revision(): number { return activeCodeEditor.model.version; }
-	public caretRect(): typeof activeCodeEditor.nativeCaret { return activeCodeEditor.nativeCaret; }
+	public caretRect(): typeof activeCodeEditor.nativeCaret { return resolveNativeCodeCaret(); }
 
 	public readText(): TextInputState {
 		const buffer = activeCodeEditor.model.buffer, view = activeCodeEditor.view;

@@ -173,8 +173,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 			input.list.layout(left + 2, input.mapBounds.bottom + 5, right - 2, layout.bottom, model.rows.length * (row * 2 + 4));
 			this.list.lineStep = row * 2 + 4;
 		}
-		this.filterViewport.update(this.filter, input.filterBounds.right - input.filterBounds.left - 6,
-			editorViewState.inlineFieldMetricsRef, layout.font!.renderFont());
+		this.filterViewport.layout(this.filter, input.filterBounds, editorViewState.inlineFieldMetricsRef, layout.font!, this.contentBounds);
 		this.actions.update();
 		const hint = input.actions.pressedCommand !== null ? undefined : this.actions.tooltipItem;
 		if (hint === undefined) this.actionTooltip.hide();

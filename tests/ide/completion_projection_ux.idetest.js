@@ -68,7 +68,7 @@ for (const variant of ['tiny', 'msx']) {
 		'repeated completion Undo lost the original issuing view');
 	await restore();
 	for (const target of ['before', 'ghost-right', 'surviving-paren']) {
-		const source = await middle('_tail'), caret = { ...t.activeEditorDocument().nativeCaret };
+		const source = await middle('_tail'), caret = { ...t.activeEditorDocument().focusTarget.textInput.caretRect() };
 		const x = caret.x + (target === 'before' ? -caret.width + 1 : target === 'ghost-right' ? caret.width - 1 : caret.width + 1);
 		await click(x, caret.y + 2);
 		const expectedColumn = target === 'before' ? 4 : target === 'ghost-right' ? 5 : 10;
@@ -84,7 +84,8 @@ t.controlInput([{ type: 'pointer', x: 222, y: 80 }, { type: 'button', button: 'p
 t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
 t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 for (const variant of ['tiny', 'msx']) {
-	const caret = t.activeEditorDocument().nativeCaret; await click(caret.x + 1, caret.y + 2);
+	// Re-focus through the retained Source tab; an offscreen caret is not a hit target.
+	await click(24, 4);
 	t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'the actual minimum-width source did not receive pointer focus');
 	for (const theme of ['light', 'dark']) {
 		await press('ControlLeft', 'End'); await press('Enter'); await type('title_scr'); await t.frames(12);

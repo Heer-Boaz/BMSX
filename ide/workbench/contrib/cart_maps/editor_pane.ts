@@ -160,7 +160,7 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 		else this.tooltip.hide();
 		if (this.input.layout.mode !== 'outline' && this.input.selected !== undefined) for (let axis = 0; axis < this.controls.length; axis++) {
 			const bounds = this.input.fieldBounds[axis];
-			this.controls[axis].layout(bounds.right - bounds.left);
+				this.controls[axis].layout(bounds, this.contentBounds);
 		}
 	}
 	public override focus(): void {

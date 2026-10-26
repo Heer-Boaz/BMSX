@@ -1,20 +1,17 @@
-import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { TextStyle } from '../../../common/markdown/model';
 import * as colors from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { drawInlineCaret } from '../../render/caret';
 import { drawStyledTextSpan } from '../../render/markdown';
-import { editorViewState } from '../view/state';
 import { resolveInlineFieldSelectionState } from './field_view';
 import type { TextField } from './text_field_model';
 import type { MultilineFieldViewport } from './multiline_viewport';
 
-export function drawMultilineField(field: TextField, view: MultilineFieldViewport, bounds: RectBounds): void {
+export function drawMultilineField(field: TextField, view: MultilineFieldViewport): void {
 	const selection = resolveInlineFieldSelectionState(field);
-	const left = bounds.left + 3;
-	const height = editorViewState.lineHeight;
-	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-	for (let index = view.firstRow, top = bounds.top + 2; index < view.rows.length && top + height <= bounds.bottom; index++, top += height) {
+	const left = view.textLeft, height = view.lineHeight, clip = view.clipBounds;
+	api.pushClipRect(clip.left, clip.top, clip.right, clip.bottom);
+	for (let index = view.firstRow, top = view.textTop; index < view.rows.length && top + height <= clip.bottom; index++, top += height) {
 		const row = view.rows[index];
 		const start = Math.max(0, selection.selectionStart - row.offset), end = Math.min(row.text.length, selection.selectionEnd - row.offset);
 		if (selection.hasSelection && start < end) {
@@ -36,8 +33,8 @@ export function drawMultilineField(field: TextField, view: MultilineFieldViewpor
 			if (from === styleEnd) styleIndex++;
 		}
 		if (field.focusTarget.hasFocus && view.cursorRow === index) {
-			const x = left + row.advances[selection.cursorOffset - row.offset];
-			drawInlineCaret(api, field, x, top, x + editorViewState.spaceAdvance, top + height, x, true);
+			const caret = view.caretBounds;
+			drawInlineCaret(api, field, view.renderFont, caret.left, caret.top, caret.right, caret.bottom, caret.left, true);
 		}
 	}
 	api.popClipRect();

@@ -40,6 +40,32 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 	return { edit, model, tree, row, root, pane, surfaces, owner, guest, parent, open, press, applied: () => applied };
 }
 
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} property input publishes its arranged native caret with its first focus notification before paint`, t => {
+	const f = fixture(t, variant), field = f.edit.control.field;
+	let published: { x: number; y: number; width: number; height: number } | undefined;
+	t.after(inputFocus.onDidChangeTarget(() => {
+		if (inputFocus.target === field.focusTarget) published = { ...field.caretRect() };
+	}));
+	f.open();
+	assert.ok(published !== undefined);
+	assert.ok(published.width > 0 && published.height > 0, 'native focus must not depend on a first paint');
+	assert.ok(published.x >= f.edit.fieldBounds.left + 3 && published.x + published.width <= f.edit.fieldBounds.right - 3);
+	assert.ok(published.y >= f.edit.fieldBounds.top + 2 && published.y + published.height <= f.edit.fieldBounds.bottom);
+	assert.equal(f.applied(), 0); assert.equal(f.model.buffer.getText(), 'return 17');
+});
+
+test('property native input projects a trusted replacement and selection against its arranged client before another update', t => {
+	const f = fixture(t), field = f.edit.control.field; f.open();
+	assert.equal(field.replaceText(0, 2, '99999'), true);
+	let caret = field.caretRect();
+	assert.equal(caret.x, f.edit.fieldBounds.left + 3 + editorViewState.font.measure('99999'));
+	assert.equal(caret.y, f.edit.fieldBounds.top + 2);
+	field.setSelection(1, 1); caret = field.caretRect();
+	assert.equal(caret.x, f.edit.fieldBounds.left + 3 + editorViewState.font.measure('9'));
+	assert.equal(caret.width, editorViewState.font.advance('9'));
+	assert.equal(f.applied(), 0); assert.equal(f.model.buffer.getText(), 'return 17');
+});
+
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} property edit has 24 readable font cells beyond a minimum pane and shares paint/hit/focus ownership`, t => {
 	const f = fixture(t, variant), { edit } = f; f.open();
 	assert.ok(edit.fieldBounds.right - edit.fieldBounds.left - 6 >= editorViewState.charAdvance * 24);

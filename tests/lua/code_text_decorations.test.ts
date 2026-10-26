@@ -46,7 +46,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		f.view.cursorColumn = f.line.src.length; setSingleCursorSelectionAnchor(f.view, 0, 0);
 		const originalColors = f.line.hi.colors.slice();
 		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
-		drawCodeAreaRows(f.viewport, null, 0, false, editorViewState.font.renderFont(), [], -1, [], -1, false, focused);
+		drawCodeAreaRows(f.viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, focused);
 		f.overlay.renderer.endFrame();
 		const frame = f.overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], rects: RectRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) {
@@ -201,7 +201,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		f.view.cursorColumn = f.line.src.length; setSingleCursorSelectionAnchor(f.view, 0, 0);
 		f.view.scrollLeft = f.line.advancePrefix[4] + 1.5;
 		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
-		drawCodeAreaRows(f.viewport, null, -1, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true);
+		drawCodeAreaRows(f.viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true);
 		f.overlay.renderer.endFrame();
 		let frame = f.overlay.queue.consumeOverlayFrame();
 		const background = frame.commandRefs[0] as RectRenderSubmission, glyph = frame.commandRefs[1] as GlyphRenderSubmission;
@@ -218,7 +218,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const viewport = { ...f.viewport, wrapEnabled: true, visualCount: layout.getVisualLineCount(), contentWidth: width,
 			contentRight: f.viewport.textLeft + width };
 		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
-		drawCodeAreaRows(viewport, null, -1, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true);
+		drawCodeAreaRows(viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true);
 		f.overlay.renderer.endFrame(); frame = f.overlay.queue.consumeOverlayFrame();
 		assert.equal(frame.commandCount, 2);
 		const wrappedBackground = frame.commandRefs[0] as RectRenderSubmission, wrappedGlyph = frame.commandRefs[1] as GlyphRenderSubmission;

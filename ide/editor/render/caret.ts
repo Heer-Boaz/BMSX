@@ -10,11 +10,12 @@ import { api } from '../../runtime/overlay_api';
 import { resetBlinkState } from '../ui/view/caret/blink';
 import { editorCaretState } from '../ui/view/caret/state';
 import { editorViewState } from '../ui/view/state';
-import { activeCodeEditor } from '../ui/code_editor_state';
+import type { EditorFont } from '../ui/view/font';
 
 export function drawInlineCaret(
 	api: Api,
 	field: TextField,
+	font: EditorFont,
 	left: number,
 	top: number,
 	right: number,
@@ -23,8 +24,6 @@ export function drawInlineCaret(
 	active: boolean,
 	caretColor: number = constants.CARET_COLOR
 ): void {
-	const caret = field.nativeCaret;
-	caret.x = left; caret.y = top; caret.width = right - left; caret.height = bottom - top;
 	if (!editorCaretState.cursorVisible) return;
 	const text = field.text;
 	const cursorIndex = getCursorOffset(field);
@@ -33,15 +32,13 @@ export function drawInlineCaret(
 	const inverseColorIndex = invertThemeToken(caretColor);
 	if (active) {
 		api.fill_rect_color(left, top, right, bottom, 0, caretValue);
-		drawEditorText(editorViewState.font, caretGlyph, cursorX, top, 0, inverseColorIndex, { preserveCase: true });
+		drawEditorText(font, caretGlyph, cursorX, top, 0, inverseColorIndex, { preserveCase: true });
 		return;
 	}
 	drawRectOutlineColor(left, top, right, bottom, 0, caretValue);
 }
 
 export function drawCursor(info: CursorScreenInfo, textX: number, active: boolean): void {
-	const caret = activeCodeEditor.nativeCaret;
-	caret.x = info.x; caret.y = info.y; caret.width = info.width; caret.height = info.height;
 	const cursorX = info.x;
 	const cursorY = info.y;
 	const caretLeft = Math.max(textX, cursorX - 1);

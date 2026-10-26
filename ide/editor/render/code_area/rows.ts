@@ -1,10 +1,9 @@
-import type { CursorScreenInfo, SearchMatch } from '../../../common/models';
+import type { SearchMatch } from '../../../common/models';
 import type { Font } from '../../../../machine/ts/render/shared/bmsx_font';
 import { drawEditorText } from '../text_renderer';
 import * as constants from '../../../common/constants';
 import { drawHighlightSlice } from './highlights';
 import { CodeRowDecorations } from './decorations';
-import { computeCursorScreenInfo } from './cursor';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './underlines';
 import { activeCodeEditor } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
@@ -22,7 +21,6 @@ const decorations = new CodeRowDecorations();
 export function drawCodeAreaRows(
 	viewport: CodeAreaViewport,
 	activeGotoHighlight: ActiveGotoHighlight,
-	cursorVisualIndex: number,
 	useUppercase: boolean,
 	renderFont: Font,
 	referenceMatches: readonly SearchMatch[],
@@ -31,8 +29,7 @@ export function drawCodeAreaRows(
 	searchActiveIndex: number,
 	searchHighlightsVisible: boolean,
 	cursorActive: boolean,
-): CursorScreenInfo {
-	let cursorInfo: CursorScreenInfo = null;
+): void {
 	for (let i = 0; i < viewport.rows; i += 1) {
 		const visualIndex = (activeCodeEditor.view.scrollRow | 0) + i;
 		const rowY = viewport.codeTop + i * editorViewState.lineHeight;
@@ -77,13 +74,5 @@ export function drawCodeAreaRows(
 			activeGotoHighlight,
 			decorations,
 		);
-		if (visualIndex === cursorVisualIndex) {
-			const cursorDisplay = editorViewState.layout.columnToDisplay(highlight, activeCodeEditor.view.cursorColumn);
-			const cursorLeft = lineLeft + advancePrefix[cursorDisplay];
-			if (cursorLeft + editorViewState.layout.cursorWidth(entry, cursorDisplay) > viewport.textLeft && cursorLeft < viewport.contentRight) {
-				cursorInfo = computeCursorScreenInfo(entry, renderText, lineLeft, rowY);
-			}
-		}
 	}
-	return cursorInfo;
 }

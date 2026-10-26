@@ -26,6 +26,6 @@ export function renderInlineBarField(layout: InlineBarFieldLayout, textColor: nu
 	if (layout.label.length === 0 && field.text.length === 0) {
 		api.blit_text_inline_with_font(placeholder, bounds.left + 3, y, 0, placeholderColor, font);
 	}
-	drawSingleLineField(field, layout.viewport, bounds, textColor);
+	drawSingleLineField(field, layout.viewport, textColor);
 	api.popClipRect();
 }

@@ -259,11 +259,11 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 	options.bind(input);
 	for (let index = 0; index < controls.length; index++) {
 		const bounds = input.properties[index].bounds;
-		controls[index].layout(bounds.right - bounds.left);
+		controls[index].layout(bounds, input.details.bounds);
 	}
 	for (let index = 0; index < options.controls.length; index++) {
 		const bounds = input.optionProperties[index].bounds;
-		options.controls[index].layout(bounds.right - bounds.left);
+		options.controls[index].layout(bounds, input.details.bounds);
 	}
 	t.after(() => { for (const control of controls) control.dispose(); options.clear(); });
 	const overlay = createHostOverlayFixture(384, 288); const stream = new HostOverlayQuadStream();

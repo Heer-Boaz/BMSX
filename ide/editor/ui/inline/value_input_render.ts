@@ -10,5 +10,5 @@ export function drawValueInput<Value>(input: ValueInput<Value>, bounds: RectBoun
 	api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0,
 		invalid ? constants.COLOR_CONTENT_ERROR_TEXT : input.field.focusTarget.hasFocus
 			? constants.COLOR_FOCUS_BORDER : constants.COLOR_INPUT_OUTLINE);
-	drawSingleLineField(input.field, input.viewport, bounds, invalid ? constants.COLOR_CONTENT_ERROR_TEXT : constants.COLOR_INPUT_TEXT);
+	drawSingleLineField(input.field, input.viewport, invalid ? constants.COLOR_CONTENT_ERROR_TEXT : constants.COLOR_INPUT_TEXT);
 }

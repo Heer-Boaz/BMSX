@@ -25,6 +25,7 @@ type QuickInputSession = {
 	returnFocus: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
 	readonly accept: () => void | Promise<void>;
+	prepare: (() => void) | undefined;
 };
 
 /** One transient workbench surface, independent of editor panes and their documents. */
@@ -63,6 +64,14 @@ export class QuickInputController implements PointerCaptureTarget {
 		private readonly acceptsFocusTransfer: (next: InputFocusTarget | null) => boolean = () => false) {
 		this.field.focusTarget.canFocus = () => this.session !== null;
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.field.focusTarget.onDidFocus(() => {
+			const session = this.session!;
+			if (session.prepare === undefined) return;
+			session.returnFocus = inputFocus.resolveTarget(session.returnFocus);
+			const prepare = session.prepare!;
+			session.prepare = undefined;
+			prepare();
+		});
 		this.field.onDidChangeText(() => {
 			this.cancelPointer();
 			this.scrollbarPointer.cancelPointer();
@@ -84,8 +93,24 @@ export class QuickInputController implements PointerCaptureTarget {
 		accept: (item: T) => void,
 		onWillShow?: (lifetime: DisposableStore) => void,
 	): void {
+		let provider: QuickPickProvider<T>;
 		const session: QuickInputSession = {
 			kind: 'pick', returnFocus: null, disposables: new DisposableStore(),
+			prepare: () => {
+				// Catalogs observe the invoking control after ordinary blur has published
+				// its draft, before native focus sees the new field presentation.
+				provider = provide(session.returnFocus, session.disposables);
+				if (this.session !== session) return;
+				this.title = title;
+				this.placeholder = placeholder;
+				this.model.setInput(provider);
+				this.labelsDirty = true;
+				setFieldText(this.field, '', true);
+				if (this.session !== session) return;
+				this.update();
+				resetBlink();
+				this.onDidChangeVisibility();
+			},
 			accept: () => {
 				const list = this.model.list;
 				if (list.selectionIndex === -1) return; // A real user choice is required.
@@ -94,20 +119,7 @@ export class QuickInputController implements PointerCaptureTarget {
 				accept(item);
 			},
 		};
-		if (!this.show(session, onWillShow)) return;
-		// Catalogs observe the invoking control after ordinary blur has published
-		// its draft. Reentrant focus/provider callbacks may replace this session.
-		const provider = provide(session.returnFocus, session.disposables);
-		if (this.session !== session) return;
-		this.title = title;
-		this.placeholder = placeholder;
-		this.model.setInput(provider);
-		this.labelsDirty = true;
-		setFieldText(this.field, '', true);
-		if (this.session !== session) return;
-		this.update();
-		resetBlink();
-		this.onDidChangeVisibility();
+		this.show(session, onWillShow);
 	}
 
 	/** Attach scoped resources before focus can publish source changes. Submission owns its operation. */
@@ -121,6 +133,16 @@ export class QuickInputController implements PointerCaptureTarget {
 	): void {
 		const session: QuickInputSession = {
 			kind: 'input', returnFocus: null, disposables: new DisposableStore(),
+			prepare: () => {
+				this.title = title;
+				this.placeholder = placeholder;
+				this.labelsDirty = true;
+				setFieldText(this.field, value, true);
+				if (this.session !== session) return;
+				this.update();
+				resetBlink();
+				this.onDidChangeVisibility();
+			},
 			accept: async () => {
 				if (this.field.readOnly) return; // One outstanding submission per input session.
 				this.field.readOnly = true;
@@ -143,15 +165,7 @@ export class QuickInputController implements PointerCaptureTarget {
 				accept(result);
 			},
 		};
-		if (!this.show(session, onWillShow)) return;
-		this.title = title;
-		this.placeholder = placeholder;
-		this.labelsDirty = true;
-		setFieldText(this.field, value, true);
-		if (this.session !== session) return;
-		this.update();
-		resetBlink();
-		this.onDidChangeVisibility();
+		this.show(session, onWillShow);
 	}
 
 	/** Publish the new owner before retiring callbacks; replacements keep the invoking context. */
@@ -172,6 +186,12 @@ export class QuickInputController implements PointerCaptureTarget {
 		if (this.session !== session) return false;
 		pointerCapture.cancel();
 		if (this.session !== session) return false;
+		if (this.field.focusTarget.hasFocus && session.prepare !== undefined) {
+			const prepare = session.prepare!;
+			session.prepare = undefined;
+			prepare();
+			if (this.session !== session) return false;
+		}
 		this.field.focusTarget.focus();
 		if (this.session !== session) return false;
 		session.returnFocus = inputFocus.resolveTarget(origin);
@@ -212,8 +232,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		if (!this.visible) return;
 		layoutQuickInput(this);
 		if (this.pressedRow !== undefined && this.pointerRevision !== this.model.viewport.revision) this.cancelPointer();
-		this.textViewport.update(this.field, this.layout.field.right - this.layout.field.left - 6,
-			editorViewState.inlineFieldMetricsRef, editorViewState.font);
+		this.textViewport.layout(this.field, this.layout.field, editorViewState.inlineFieldMetricsRef, editorViewState.font, this.layout.bounds);
 	}
 
 	public draw(): void { if (this.visible) drawQuickInput(this); }

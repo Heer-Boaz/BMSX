@@ -66,7 +66,7 @@ export function drawQuickInput(input: QuickInputController): void {
 	if (input.field.text.length === 0) {
 		api.blit_text_inline_with_font(input.placeholderText, field.left + 3, field.top + 2, 0, constants.COLOR_INPUT_PLACEHOLDER, font);
 	}
-	drawSingleLineField(input.field, input.textViewport, field, constants.COLOR_INPUT_TEXT);
+	drawSingleLineField(input.field, input.textViewport, constants.COLOR_INPUT_TEXT);
 	if (input.inputBox) {
 		api.pushClipRect(bounds.left + 4, field.bottom + 4, bounds.right - 4, bounds.bottom - 4);
 		for (let index = 0; index < input.layout.messageLines.length; index += 1) {

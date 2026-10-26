@@ -9,6 +9,7 @@ import { TextField } from './text_field_model';
 import { applyInlineFieldEditing, applyInlineFieldPointer, selectAll, setFieldText } from './text_field';
 import { SingleLineFieldViewport } from './single_line_viewport';
 import { editorViewState } from '../view/state';
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 
 export type ValueInputResult<Value> = { readonly value: Value } | { readonly error: string };
 export type ValueInputFormat<Value> = {
@@ -80,8 +81,8 @@ export class ValueInput<Value> implements InputEdit {
 
 	public dispose(): void { this.unbindKeyboard(); }
 
-	public layout(width: number): void {
-		this.viewport.update(this.field, width - 6, editorViewState.inlineFieldMetricsRef, editorViewState.font.renderFont());
+	public layout(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds> = bounds): void {
+		this.viewport.layout(this.field, bounds, editorViewState.inlineFieldMetricsRef, editorViewState.font, clip);
 	}
 
 	public handlePointer(textLeft: number, x: number, justPressed: boolean, pressed: boolean): void {
