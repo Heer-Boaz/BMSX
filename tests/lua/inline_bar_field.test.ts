@@ -19,7 +19,7 @@ import type { RuntimeSourceState } from '../../ide/runtime/sources';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace', path: 'inline.lua' }, domain: 0, path: 'inline.lua',
+	const model = models.retain({ sourceFilePath: 'inline.lua', location: { kind: 'workspace', path: 'inline.lua' }, domain: 0, path: 'inline.lua',
 		source: { type: 'lua', resid: 'inline' } }, 'lua', '-- source');
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
 	t.after(() => inputFocus.setTarget(null));

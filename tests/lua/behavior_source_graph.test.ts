@@ -19,7 +19,7 @@ import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../helpers/behavior_source_fixture';
 
 function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'behavior_fixture.lua' }, domain: 0, path: 'behavior_fixture.lua',
+	const model = new EditorTextModel({ sourceFilePath: 'behavior_fixture.lua', location: { kind: 'workspace' as const, path: 'behavior_fixture.lua' }, domain: 0, path: 'behavior_fixture.lua',
 		source: { resid: 'behavior_fixture', type: 'lua', source_path: 'behavior_fixture.lua', generated: false },
 	}, 'lua', source);
 	let analysis = buildLuaFileSemanticData(model.buffer.getText(), model.resource.path);

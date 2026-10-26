@@ -35,7 +35,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 
-const resource = { location: { kind: 'workspace' as const, path: 'parent.lua' }, domain: 0 as const, path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
+const resource = { sourceFilePath: 'parent.lua', location: { kind: 'workspace' as const, path: 'parent.lua' }, domain: 0 as const, path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
 const child = "return {duration_ms=100, tracks={{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}";
 
 test('overview key picking does not clear the active occurrence before resolving a hit', t => {

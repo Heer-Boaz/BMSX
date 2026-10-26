@@ -28,8 +28,8 @@ const PROVIDER = "-- 🐉 different UTF-16 offsets\r\nreturn function(owner)\r\n
 /** Consumer fixture: join real parsed binding/body occurrences, not a claim about the current recognizer. */
 function fixture() {
 	editorViewState.font = new EditorFont('tiny');
-	const main = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'main.lua' }, domain: 0, path: 'main.lua', source: { type: 'lua', resid: 'main' } }, 'lua', MAIN);
-	const provider = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'provider.lua' }, domain: 0, path: 'provider.lua', source: { type: 'lua', resid: 'provider' } }, 'lua', PROVIDER);
+	const main = new EditorTextModel({ sourceFilePath: 'main.lua', location: { kind: 'workspace' as const, path: 'main.lua' }, domain: 0, path: 'main.lua', source: { type: 'lua', resid: 'main' } }, 'lua', MAIN);
+	const provider = new EditorTextModel({ sourceFilePath: 'provider.lua', location: { kind: 'workspace' as const, path: 'provider.lua' }, domain: 0, path: 'provider.lua', source: { type: 'lua', resid: 'provider' } }, 'lua', PROVIDER);
 	const models = new Map([[main.resource.path, main], [provider.resource.path, provider]]);
 	function project(): BehaviorSourceDocument {
 		const analysis = buildLuaFileSemanticData(main.buffer.getText(), main.resource.path);
@@ -157,7 +157,7 @@ test('source correspondence does not transfer a selection to an equal-offset for
 test('a same-path source from another resource domain cannot inherit the previous occurrence', t => {
 	const f = fixture(); t.after(() => f.dispose());
 	f.view.selection = { kind: 'node', rowKey: 'provider-return' };
-	const systemProvider = new EditorTextModel({ location: { kind: 'workspace' as const, path: f.provider.identity.path }, domain: -1, path: f.provider.identity.path,
+	const systemProvider = new EditorTextModel({ sourceFilePath: f.provider.identity.path, location: { kind: 'workspace' as const, path: f.provider.identity.path }, domain: -1, path: f.provider.identity.path,
 		source: { type: 'lua', resid: 'system-provider' } }, 'lua', PROVIDER);
 	t.after(() => f.provider.dispose());
 	f.models.set(systemProvider.identity.path, systemProvider);

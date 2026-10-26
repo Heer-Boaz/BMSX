@@ -14,7 +14,7 @@ function fixture(t: TestContext, text: string, variant: FontVariant = 'msx') {
 	const inactive: InlineEditState = { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: false };
 	const layout = new CodeLayout(font, { computeWrapWidth: () => 384, inlineEdit: inactive });
 	const { models, documents } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'projection.lua' }, domain: 0, path: 'projection.lua', source: { type: 'lua', resid: 'projection' } }, 'lua', text);
+	const model = models.retain({ sourceFilePath: 'projection.lua', location: { kind: 'workspace' as const, path: 'projection.lua' }, domain: 0, path: 'projection.lua', source: { type: 'lua', resid: 'projection' } }, 'lua', text);
 	layout.attach(documents.get(model));
 	const source = layout.measurements.getLine(0);
 	assert.equal(source.inline, null); assert.equal(source.src, text);

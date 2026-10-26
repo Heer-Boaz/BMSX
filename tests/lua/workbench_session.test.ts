@@ -218,7 +218,7 @@ test('scene memento survives first layout and retains pending coordinates before
 
 test('resource viewer restoration uses the resource socket, not the active cart package', t => {
 	const f = fixture(t);
-	const resource = { location: { kind: 'workspace' as const, path: 'values.data' }, domain: 1 as const, path: 'values.data', source: { resid: 'values', type: 'data' as const } };
+	const resource = { sourceFilePath: 'values.data', location: { kind: 'workspace' as const, path: 'values.data' }, domain: 1 as const, path: 'values.data', source: { resid: 'values', type: 'data' as const } };
 	f.sources.resourceByIdentity.set('1\0values.data', resource);
 	f.sources.cartridgeSlots[0]!.package.data.values = { owner: 'game' };
 	f.sources.cartridgeSlots[1]!.package.data.values = { owner: 'extension' };
@@ -263,7 +263,7 @@ test('a persisted behavior snapshot is immutable across later model edits', t =>
 
 test('resource refresh replaces content, not the retained viewport or group membership', t => {
 	const f = fixture(t);
-	const resource = { location: { kind: 'workspace' as const, path: 'refresh.data' }, domain: 1 as const, path: 'refresh.data', source: { resid: 'refresh', type: 'data' as const } };
+	const resource = { sourceFilePath: 'refresh.data', location: { kind: 'workspace' as const, path: 'refresh.data' }, domain: 1 as const, path: 'refresh.data', source: { resid: 'refresh', type: 'data' as const } };
 	const data = f.sources.cartridgeSlots[1]!.package.data;
 	data.refresh = { revision: 'before' };
 	const input = new ResourceViewerInput(f.sources, resource);

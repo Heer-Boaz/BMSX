@@ -29,7 +29,7 @@ machines.register('profile', { initial = 'lane0', states = { ${Array.from({ leng
 	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, snapshot); });
 	const document = buildBehaviorSourceDocument(resource, snapshot);
 	const referenceIndexMs = medianMilliseconds(() => { indexStateMachineSource(document); });
-	const model = new EditorTextModel({ ...resource, location: { kind: 'workspace', path: resource.path }, source: { resid: 'fsm_profile', type: 'lua' } }, 'lua', source);
+	const model = new EditorTextModel({ sourceFilePath: resource.path, ...resource, location: { kind: 'workspace', path: resource.path }, source: { resid: 'fsm_profile', type: 'lua' } }, 'lua', source);
 	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const references = [...view.stateMachines.references.values()];
 	const selected = selectStateMachineSource(references.findLast(items => items[0].kind === 'state-outcome' && items[0].outcome.proof.kind === 'return')![0], view.source.models);

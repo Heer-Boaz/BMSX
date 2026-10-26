@@ -13,7 +13,7 @@ import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 
 function luaResource(path: string): RuntimeResource {
-	return { location: { kind: 'workspace' as const, path },
+	return { sourceFilePath: path, location: { kind: 'workspace' as const, path },
 		domain: 0,
 		path,
 		source: {

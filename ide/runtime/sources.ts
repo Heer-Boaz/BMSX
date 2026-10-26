@@ -34,7 +34,7 @@ import {
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
-import { stripProjectRootPrefix } from '../workspace/path';
+import { resolveWorkspacePath, stripProjectRootPrefix } from '../workspace/path';
 
 
 export const enum Blua32GlobalRegisterFile {
@@ -473,18 +473,9 @@ export function registerRuntimeLuaResource(
 	const key = resourceIdentityKeyFromParts(domain, source.source_path);
 	const previous = state.resourceByIdentity.get(key);
 	const location = retainLuaResourceLocation(previous?.location, source, runtimeLuaSourceRegistry(state, domain)!.projectRootPath);
-	if (previous) {
-		const becameLua = previous.source.type !== 'lua';
-		const locationChanged = previous.location !== location;
-		previous.source = source;
-		previous.location = location;
-		if (becameLua) {
-			state.luaResources.push(previous);
-			sortRuntimeResources(state.luaResources);
-		}
-		if (becameLua || locationChanged) state.resourceCatalogRevision++;
-		return previous;
-	}
+	const sourceFilePath = source.generated ? undefined : source.normalized_source_path;
+	const becameLua = previous !== undefined && previous.source.type !== 'lua';
+	const catalogChanged = previous === undefined || becameLua || previous.location !== location || previous.sourceFilePath !== sourceFilePath;
 	const resource = retainRuntimeResource(
 		previous,
 		state.resourceByIdentity,
@@ -493,12 +484,17 @@ export function registerRuntimeLuaResource(
 		source.source_path,
 		source,
 		location,
+		sourceFilePath,
 	);
-	state.luaResources.push(resource);
-	sortRuntimeResources(state.luaResources);
-	state.resources.push(resource);
-	sortRuntimeResources(state.resources);
-	state.resourceCatalogRevision++;
+	if (previous === undefined || becameLua) {
+		state.luaResources.push(resource);
+		sortRuntimeResources(state.luaResources);
+	}
+	if (previous === undefined) {
+		state.resources.push(resource);
+		sortRuntimeResources(state.resources);
+	}
+	if (catalogChanged) state.resourceCatalogRevision++;
 	return resource;
 }
 
@@ -539,7 +535,8 @@ export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
 		if (!resources.has(key)) {
 			const previous = previousResources.get(key);
 			retainRuntimeResource(previous, resources, key, authored.domain, authored.source.source_path, authored.source,
-				retainProjectResourceLocation(previous?.location, authored.projectRootPath, authored.source.source_path));
+				retainProjectResourceLocation(previous?.location, authored.projectRootPath, authored.source.source_path),
+				resolveWorkspacePath(authored.source.source_path, authored.projectRootPath));
 		}
 	}
 	sortRuntimeResources(state.luaResources);
@@ -581,14 +578,16 @@ function retainRuntimeResource(
 	path: string,
 	source: RuntimeResource['source'],
 	location: RuntimeResourceLocation,
+	sourceFilePath: string | undefined,
 ): RuntimeResource {
 	if (retained) {
 		retained.source = source;
 		retained.location = location;
+		retained.sourceFilePath = sourceFilePath;
 		resources.set(key, retained);
 		return retained;
 	}
-	const resource: RuntimeResource = { domain, path, source, location };
+	const resource: RuntimeResource = { domain, path, source, location, sourceFilePath };
 	resources.set(key, resource);
 	return resource;
 }
@@ -612,6 +611,7 @@ function retainLuaResources(
 			source.source_path,
 			source,
 			retainLuaResourceLocation(previous?.location, source, registry.projectRootPath),
+			source.generated ? undefined : source.normalized_source_path,
 		));
 	}
 }
@@ -639,6 +639,7 @@ function retainDataResources(
 			source.source_path,
 			source,
 			retainProjectResourceLocation(previous?.location, projectRootPath, source.source_path),
+			resolveWorkspacePath(source.source_path, projectRootPath),
 		);
 	}
 }

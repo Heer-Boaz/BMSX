@@ -22,7 +22,7 @@ import {
 	writeLocalWorkspaceRecord,
 	type WorkspaceRecord,
 } from '../../workspace/records';
-import { joinWorkspacePaths, resolveWorkspacePath } from '../../workspace/path';
+import { joinWorkspacePaths } from '../../workspace/path';
 import {
 	workspaceDirtyRecords,
 	workspaceState,
@@ -35,6 +35,7 @@ import {
 import type { CartEditor } from '../../cart_editor';
 import {
 	resolveRuntimeLuaSource,
+	resolveRuntimeResource,
 	runtimeSourceProjectRootPath,
 	type RuntimeSourceState,
 } from '../../runtime/sources';
@@ -235,7 +236,7 @@ export async function restoreWorkspaceStorageSession(
 				}
 				// Save can complete before recovery cleanup. Admit the checkpoint only
 				// against the same canonical record used to initialize its working copy.
-				const canonical = await loadWorkspaceSourceFile(resolveWorkspacePath(entry.path, root));
+				const canonical = await loadWorkspaceSourceFile(resolveRuntimeResource(runtimeSources, entry)!.sourceFilePath!);
 				if (canonical === null || entry.updatedAt >= canonical.updatedAt) dirtyFiles.push(entry);
 			}
 		}

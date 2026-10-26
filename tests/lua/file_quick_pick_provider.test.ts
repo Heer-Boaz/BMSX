@@ -12,7 +12,7 @@ import { buildResourceQuickPickItems } from '../../ide/workbench/contrib/resourc
 import { FileQuickPickProvider } from '../../ide/workbench/services/quick_input/file_provider';
 
 function fixture(paths: string[]) {
-	const resources: RuntimeResource[] = paths.map(path => ({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }));
+	const resources: RuntimeResource[] = paths.map(path => ({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }));
 	const items = buildResourceQuickPickItems(resources);
 	return { resources, items, provider: new FileQuickPickProvider(items) };
 }
@@ -87,7 +87,7 @@ test('file queries have no path/pattern cutoff and reuse result records across s
 test('same-path files from two sockets retain distinct original resources through shared picker acceptance', t => {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const resources: RuntimeResource[] = [0, 1].map(domain => ({ location: { kind: 'workspace' as const, path: 'shared/source.lua' }, domain: domain as 0 | 1, path: 'shared/source.lua',
+	const resources: RuntimeResource[] = [0, 1].map(domain => ({ sourceFilePath: 'shared/source.lua', location: { kind: 'workspace' as const, path: 'shared/source.lua' }, domain: domain as 0 | 1, path: 'shared/source.lua',
 		source: { resid: `module_${domain}`, type: 'lua' } }));
 	const items = buildResourceQuickPickItems(resources);
 	const provider = new FileQuickPickProvider(items);

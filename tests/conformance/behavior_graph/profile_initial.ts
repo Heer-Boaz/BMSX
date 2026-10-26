@@ -11,7 +11,7 @@ for (const states of [32, 1024]) {
 	for (const initial of ["initial='state0',", '']) {
 		const source = `local machines<const> = require('cartlib/fsm/library')
 machines.register('profile',{${initial}states={${Array.from({ length: states }, (_, index) => `state${index}={}`).join(',')}}})`;
-		const resource = { location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0 as const, path: 'profile.lua', source: { type: 'lua' as const, resid: 'profile' } };
+		const resource = { sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0 as const, path: 'profile.lua', source: { type: 'lua' as const, resid: 'profile' } };
 		const model = new EditorTextModel(resource, 'lua', source);
 		const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
 		const index = indexStateMachineSource(document);

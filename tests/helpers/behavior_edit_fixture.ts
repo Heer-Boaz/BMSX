@@ -17,9 +17,9 @@ export function createBehaviorEditFixture(t: TestContext, path: string, source: 
 	const oldFont = editorViewState.font;
 	editorViewState.font = new EditorFont('tiny');
 	const service = new EditorTextModelService();
-	const model = service.retain({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', source);
+	const model = service.retain({ location: { kind: 'workspace' as const, path }, sourceFilePath: path, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', source);
 	const models = new Map([[path, model]]);
-	for (const [path, text] of Object.entries(imports)) models.set(path, service.retain({ location: { kind: 'workspace' as const, path }, domain: 0, path,
+	for (const [path, text] of Object.entries(imports)) models.set(path, service.retain({ location: { kind: 'workspace' as const, path }, sourceFilePath: path, domain: 0, path,
 		source: { type: 'lua', resid: path } }, 'lua', text));
 	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(...[...models.values()]
 		.map(model => buildLuaFileSemanticData(model.buffer.getText(), model.resource.path))));

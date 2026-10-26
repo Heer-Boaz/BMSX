@@ -45,7 +45,7 @@ async function fixture(t: TestContext) {
 		tasks, execution, audio, new Map());
 	let resets = 0;
 	runtime.onStateReset = () => { resets++; service.didReplaceMachine(); };
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'entry.lua' }, domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
+	const model = models.retain({ sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
 	// Same resource/version in a different document owner must not enter this build.
 	editorTextModelService.retain(model.resource, 'lua', 'end end -- foreign workspace');
 	t.after(async () => {

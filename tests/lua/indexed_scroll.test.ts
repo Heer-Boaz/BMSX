@@ -85,7 +85,7 @@ test('property and resource rendering preserves the actual retained fractional r
 test('source scrolling retains fractional pixels while hit tests resolve source columns', t => {
 	configureFontVariant('tiny');
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'wheel.lua' }, domain: 0, path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
+	const model = models.retain({ sourceFilePath: 'wheel.lua', location: { kind: 'workspace' as const, path: 'wheel.lua' }, domain: 0, path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
 	const view = createCodeEditorViewState();
 	const code = createTestCodeControl(t, model, documents, clock, view);
 	code.wordWrapEnabled = false;
@@ -115,7 +115,7 @@ test('source scrolling retains fractional pixels while hit tests resolve source 
 
 test('Problems wheel integrates sub-row distances without changing selection or being undone by focused drawing', t => {
 	configureFontVariant('tiny');
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'problems.lua' }, domain: 0, path: 'problems.lua', source: { type: 'lua', resid: 'problems' } }, 'lua', 'x');
+	const model = new EditorTextModel({ sourceFilePath: 'problems.lua', location: { kind: 'workspace' as const, path: 'problems.lua' }, domain: 0, path: 'problems.lua', source: { type: 'lua', resid: 'problems' } }, 'lua', 'x');
 	const diagnostics: EditorDiagnostic[] = Array.from({ length: 10 }, (_, row) => ({ model, version: 1, row,
 		startColumn: 0, endColumn: 1, message: 'A diagnostic message that wraps across several narrow panel lines.', severity: 'error' }));
 	const controller = new ProblemsPanelController();
@@ -142,7 +142,7 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 
 test('Problems wheel prepares current variable-height layout after show, resize and diagnostic refresh without painting', t => {
 	configureFontVariant('tiny');
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'problems-layout.lua' }, domain: 0, path: 'problems-layout.lua', source: { type: 'lua', resid: 'problems-layout' } }, 'lua', 'x');
+	const model = new EditorTextModel({ sourceFilePath: 'problems-layout.lua', location: { kind: 'workspace' as const, path: 'problems-layout.lua' }, domain: 0, path: 'problems-layout.lua', source: { type: 'lua', resid: 'problems-layout' } }, 'lua', 'x');
 	const diagnostic = (message: string, row: number): EditorDiagnostic => ({ model, version: 1, row, startColumn: 0, endColumn: 1, message, severity: 'error' });
 	const diagnostics = [diagnostic('Short', 0), diagnostic('A diagnostic message that wraps across several narrow panel lines.', 1), diagnostic('Last', 2)];
 	const coverage = { ready: 1, pending: 0, unsupported: 0, failed: 0 };

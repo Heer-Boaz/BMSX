@@ -17,7 +17,7 @@ test('completion wheel scrolls continuously without changing selection; keyboard
 		resetSemanticProjects(editorTextModelService);
 		editorTextModelService.clear();
 	});
-	const resource = (path: string) => ({ location: { kind: 'workspace' as const, path }, domain: 0 as const, path, source: { resid: path, type: 'lua' as const, source_path: path } });
+	const resource = (path: string) => ({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0 as const, path, source: { resid: path, type: 'lua' as const, source_path: path } });
 	const importer = editorTextModelService.retain(resource('carts/example/main.lua'), 'lua', "local m = require('authoring/')");
 	for (let index = 0; index < 30; index += 1) editorTextModelService.retain(resource(`carts/example/authoring/module_${index}.lua`), 'lua', 'return {}');
 	const view = createCodeEditorViewState();

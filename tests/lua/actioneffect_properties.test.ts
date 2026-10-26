@@ -28,11 +28,11 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 
 function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Record<string, string>> = {}) {
 	configureFontVariant('tiny');
-	const resource = { location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
+	const resource = { sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 	const service = new EditorTextModelService();
 	const model = service.retain(resource, 'lua', source);
 	const models = new Map([[resource.path, model]]);
-	for (const [path, text] of Object.entries(imports)) models.set(path, service.retain({ location: { kind: 'workspace' as const, path }, domain: 0, path,
+	for (const [path, text] of Object.entries(imports)) models.set(path, service.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path,
 		source: { type: 'lua', resid: path } }, 'lua', text));
 	const document = () => buildBehaviorSourceDocument(resource, semanticSnapshot(...[...models.values()]
 		.map(model => buildLuaFileSemanticData(model.buffer.getText(), model.resource.path))));

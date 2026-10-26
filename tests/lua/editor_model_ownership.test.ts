@@ -25,7 +25,7 @@ import { undo as undoActiveEdit, redo as redoActiveEdit } from '../../ide/editor
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 
 function luaResource(path: string): RuntimeResource {
-	return { location: { kind: 'workspace' as const, path },
+	return { sourceFilePath: path, location: { kind: 'workspace' as const, path },
 		domain: 0,
 		path,
 		source: {

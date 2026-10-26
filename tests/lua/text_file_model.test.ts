@@ -16,7 +16,8 @@ for (const type of ['data', 'aem'] as const) {
 		t.after(async () => { models.clear(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
 		const sources = createScenarioTestSourceState([]);
 		const original = '# Keep this formatting\r\nvalue: "01"\r\n';
-		const resource: RuntimeResource = { location: { kind: 'workspace' as const, path: 'res/stage.yaml' }, domain: 0, path: 'res/stage.yaml',
+		const resource: RuntimeResource = { sourceFilePath: 'carts/nemesis_s/res/stage.yaml',
+			location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'res/stage.yaml' }, domain: 0, path: 'res/stage.yaml',
 			source: { type, resid: 'stage', sourcemeta: { text: original } } };
 		const [first, second] = await Promise.all([
 			resolveTextFileModel(models, sources, resource), resolveTextFileModel(models, sources, resource),
@@ -50,7 +51,7 @@ test('YAML installed-source equality is independent of saved identity and cached
 	const sources = createScenarioTestSourceState([]), models = new EditorTextModelService();
 	t.after(() => models.clear());
 	const source = '# exact authored bytes\r\nvalue: "01"\r\n';
-	const resource: RuntimeResource = { location: { kind: 'workspace' as const, path: 'res/stage.yaml' }, domain: 0, path: 'res/stage.yaml',
+	const resource: RuntimeResource = { sourceFilePath: 'res/stage.yaml', location: { kind: 'workspace' as const, path: 'res/stage.yaml' }, domain: 0, path: 'res/stage.yaml',
 		source: { type: 'data', resid: 'stage', sourcemeta: { text: source } } };
 	const model = models.retain(resource, 'yaml', source);
 	const reads = t.mock.method(model.buffer, 'getText');
@@ -80,7 +81,7 @@ test('YAML source provenance stays resource-domain specific and an empty package
 	const domains = [-1, 0, 1] as const;
 	for (const domain of domains) {
 		const source = domain === -1 ? '' : `value: ${domain}\n`;
-		const model = models.retain({ location: { kind: 'workspace' as const, path: 'res/stage.yaml' }, domain, path: 'res/stage.yaml',
+		const model = models.retain({ sourceFilePath: 'res/stage.yaml', location: { kind: 'workspace' as const, path: 'res/stage.yaml' }, domain, path: 'res/stage.yaml',
 			source: { type: 'data', resid: 'stage', sourcemeta: { text: source } } }, 'yaml', source);
 		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
 	}
@@ -88,4 +89,21 @@ test('YAML source provenance stays resource-domain specific and an empty package
 	cart.pushEditOperations([{ offset: 0, deleteLength: cart.buffer.length, text: 'value: 1\n' }]);
 	assert.equal(getTextFileRuntimeSourceStatus(sources, cart), 'pending', 'matching another domain is not installed equality');
 	assert.equal(getTextFileRuntimeSourceStatus(sources, models.get({ domain: 1, path: 'res/stage.yaml' })!), 'applied');
+});
+
+for (const type of ['data', 'aem'] as const) test(`${type} model resolution reads its admitted file address, not its execution domain's root`, async t => {
+	const files = new MemoryWorkspaceFiles(), models = new EditorTextModelService();
+	await openWorkspaceRecords(files);
+	t.after(async () => { models.clear(); clearWorkspaceSourceCaches(); await closeWorkspaceRecords(); });
+	const sources = createScenarioTestSourceState([]);
+	const sourceFilePath = 'shared/authoring/stage.yaml';
+	const resource: RuntimeResource = { domain: 0, path: 'res/stage.yaml', sourceFilePath,
+		location: { kind: 'workspace', path: sourceFilePath },
+		source: { type, resid: 'stage', sourcemeta: { text: 'value: packaged\n' } } };
+	files.records.set(sourceFilePath, { contents: 'value: admitted\n', updatedAt: 1 });
+	files.records.set('carts/nemesis_s/res/stage.yaml', { contents: 'value: unrelated\n', updatedAt: 2 });
+	const model = await resolveTextFileModel(models, sources, resource);
+	assert.equal(model.buffer.getText(), 'value: admitted\n');
+	assert.equal(model.persistedBaseline, 'value: admitted\n');
+	assert.equal(model.dirty, false);
 });

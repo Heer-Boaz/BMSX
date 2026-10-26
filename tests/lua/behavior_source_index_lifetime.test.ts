@@ -16,7 +16,7 @@ const SOURCE = "local trees<const> = require('cartlib/behaviour_tree/library')\n
 
 class CountingModel extends EditorTextModel {
 	public activeRangeSets = 0;
-	public constructor() { super({ location: { kind: 'workspace' as const, path: 'source.lua' }, domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', SOURCE); }
+	public constructor() { super({ sourceFilePath: 'source.lua', location: { kind: 'workspace' as const, path: 'source.lua' }, domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', SOURCE); }
 	public override trackRanges<Key>(ranges: ReadonlyMap<Key, TrackedTextRange>): () => void {
 		this.activeRangeSets += 1;
 		const release = super.trackRanges(ranges);

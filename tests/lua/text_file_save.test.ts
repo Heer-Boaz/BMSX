@@ -18,6 +18,7 @@ import { saveTextFileFromCommand } from '../../ide/commands/source_save';
 import type { CartEditor } from '../../ide/cart_editor';
 import { editorFeedbackState } from '../../ide/common/feedback_state';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
+import { resolveWorkspacePath } from '../../ide/workspace/path';
 
 class SaveStorage extends MemoryStorage {
 	public failure: Error | undefined;
@@ -65,7 +66,7 @@ async function fixture(t: TestContext) {
 		await closeWorkspaceRecords();
 		clearWorkspaceSourceCaches();
 	});
-	const yaml = (path = 'res/data/save.yaml') => models.retain({ location: { kind: 'project', projectRootPath: root, path }, domain: 0, path,
+	const yaml = (path = 'res/data/save.yaml') => models.retain({ sourceFilePath: resolveWorkspacePath(path, root), location: { kind: 'project', projectRootPath: root, path }, domain: 0, path,
 		source: { resid: path, type: 'data' } }, 'yaml', '# untouched\nvalue: 1\n');
 	return { saves, models, storage, files, clock, root, yaml, sources, lua, tasks,
 		failReadback(error: Error) { readbackFailure = error; } };
@@ -74,6 +75,19 @@ async function fixture(t: TestContext) {
 function setSource(model: EditorTextModel, source: string): void {
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 }
+
+for (const mode of ['yaml', 'aem'] as const) test(`${mode} Save writes its admitted file address rather than the cartridge root`, async t => {
+	const f = await fixture(t), sourceFilePath = `shared/authoring/save.${mode}`;
+	const model = f.models.retain({ domain: 0, path: 'res/save.yaml', sourceFilePath,
+		location: { kind: 'workspace', path: sourceFilePath }, source: { type: mode === 'aem' ? 'aem' : 'data', resid: 'save' } },
+		mode, 'value: original\n');
+	setSource(model, 'value: saved\n');
+	const result = await f.saves.save(model).completion;
+	assert.equal(result.status, 'saved');
+	assert.equal(f.files.records.get(sourceFilePath)!.contents, 'value: saved\n');
+	assert.equal(f.files.records.has(`${f.root}/res/save.yaml`), false);
+	assert.equal(model.dirty, false);
+});
 
 test('local storage failure keeps source dirty; recovery cannot masquerade as a saved file or replay on read', async t => {
 	const f = await fixture(t), model = f.yaml();
@@ -168,6 +182,26 @@ test('shutdown joins every accepted source save before its callers may tear down
 	await closing;
 	assert.equal(stopped, true);
 	assert.equal(model.dirty, false);
+});
+
+test('queued Saves retain their admitted file address across retained resource metadata refresh', async t => {
+	const f = await fixture(t), model = f.yaml(), sourceFilePath = model.resource.sourceFilePath!;
+	f.files.delayed = true;
+	setSource(model, 'value: first\n');
+	const first = f.saves.save(model);
+	setSource(model, 'value: second\n');
+	const second = f.saves.save(model);
+	model.refreshResource({ ...model.resource, sourceFilePath: 'shared/new-authority.yaml',
+		location: { kind: 'workspace', path: 'shared/new-authority.yaml' } });
+	await setImmediate();
+	f.files.writes[0].complete();
+	await first.completion;
+	await setImmediate();
+	assert.equal(f.files.writes[1].path, sourceFilePath);
+	f.files.writes[1].complete();
+	assert.equal((await second.completion).status, 'saved');
+	assert.equal(f.files.records.get(sourceFilePath)!.contents, 'value: second\n');
+	assert.equal(f.files.records.has('shared/new-authority.yaml'), false);
 });
 
 test('source persistence failure is an explicit outcome, does not complete the snapshot and allows a later save', async t => {
@@ -286,7 +320,7 @@ test('AEM build rejection reports saved source separately and does not poison th
 	const installedEventMap = {};
 	cartridge.package.audioevents.cue = installedEventMap;
 	const media = f.sources.currentBlua32Media;
-	const model = f.models.retain({ location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	const model = f.models.retain({ sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, '[');
 	const result = await f.saves.save(model).completion;
 	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail(`expected saved source and rejected AEM: ${JSON.stringify(result)}`);
@@ -311,7 +345,7 @@ for (const reason of ['module-not-installed', 'asset-not-installed'] as const) {
 		} else {
 			cartridge.installedBlua32Sources = new Map([['cartlib/aem', 'return {}']]);
 		}
-		const model = f.models.retain({ location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+		const model = f.models.retain({ sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 		setSource(model, '[');
 		const media = f.sources.currentBlua32Media;
 		const installedEventMap = cartridge.package.audioevents.cue;
@@ -332,7 +366,7 @@ for (const reason of ['module-not-installed', 'asset-not-installed'] as const) {
 test('inactive AEM saves source without attempting another domain\'s build or guest reload', async t => {
 	const f = await fixture(t);
 	f.sources.activeCartridgeSlot = -1;
-	const model = f.models.retain({ location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	const model = f.models.retain({ sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, '[');
 	const media = f.sources.currentBlua32Media;
 	const result = await f.saves.save(model).completion;
@@ -348,7 +382,7 @@ test('inactive AEM saves source without attempting another domain\'s build or gu
 
 test('runtime synchronization failure cannot be reported as a failed source write or an applied asset', async t => {
 	const f = await fixture(t);
-	const model = f.models.retain({ location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	const model = f.models.retain({ sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, 'events: {}');
 	const error = new Error('readback failed');
 	f.failReadback(error);

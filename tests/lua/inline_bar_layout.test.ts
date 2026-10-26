@@ -16,7 +16,7 @@ import { createTestCodeControl } from '../helpers/code_control';
 
 function fixture(t: TestContext, source = Array.from({ length: 200 }, () => 'x').join('\n')) {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace', path: 'inline.lua' }, domain: 0, path: 'inline.lua',
+	const model = models.retain({ sourceFilePath: 'inline.lua', location: { kind: 'workspace', path: 'inline.lua' }, domain: 0, path: 'inline.lua',
 		source: { type: 'lua', resid: 'inline' } }, 'lua', source);
 	const client = { left: 0, top: 10, right: 384, bottom: 270 };
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont('tiny'), client);

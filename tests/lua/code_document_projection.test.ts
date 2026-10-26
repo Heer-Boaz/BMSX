@@ -6,7 +6,7 @@ import { CodeLayout } from '../../ide/editor/ui/code/layout';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 
-const resource = { location: { kind: 'workspace' as const, path: 'projection.lua' }, domain: 0 as const,
+const resource = { sourceFilePath: 'projection.lua', location: { kind: 'workspace' as const, path: 'projection.lua' }, domain: 0 as const,
 	path: 'projection.lua', source: { type: 'lua' as const, resid: 'projection' } };
 
 test('two layouts share source glyphs but retain their own wrapping and injected text', t => {
@@ -121,7 +121,7 @@ test('equal paths and versions from distinct working-copy owners never share a d
 test('dormant document edits retire obsolete work without scheduling a successor until requested', t => {
 	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain(resource, 'lua', 'return value'), document = documents.get(model);
-	const dependency = models.retain({ location: { kind: 'workspace', path: 'dependency.lua' }, domain: 0,
+	const dependency = models.retain({ sourceFilePath: 'dependency.lua', location: { kind: 'workspace', path: 'dependency.lua' }, domain: 0,
 		path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'value = 1');
 	const project = getOrCreateSemanticProject(models, 0), analyze = t.mock.method(project, 'analyzeDocument');
 	const scheduled = t.mock.method(clock, 'scheduleOnce');
@@ -150,7 +150,7 @@ test('dormant document edits retire obsolete work without scheduling a successor
 test('an attached document refreshes dependency-only semantics without rebuilding its source geometry', t => {
 	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain(resource, 'lua', 'return value');
-	const dependency = models.retain({ location: { kind: 'workspace', path: 'dependency.lua' }, domain: 0,
+	const dependency = models.retain({ sourceFilePath: 'dependency.lua', location: { kind: 'workspace', path: 'dependency.lua' }, domain: 0,
 		path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'value = 1');
 	const document = documents.get(model), font = new EditorFont('tiny');
 	const layout = new CodeLayout(font, {

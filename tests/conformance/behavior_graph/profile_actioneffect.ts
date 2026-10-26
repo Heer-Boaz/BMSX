@@ -16,7 +16,7 @@ import { medianMilliseconds } from '../../helpers/performance';
 for (const registrations of [24, 1024]) {
 	const source = ACTIONEFFECT_SOURCE.slice(0, ACTIONEFFECT_SOURCE.indexOf('effects.register_effect'))
 		+ Array.from({ length: registrations }, (_, index) => `effects.register_effect('profile.${index}', blueprint)`).join('\n');
-	const resource = { location: { kind: 'workspace' as const, path: 'effect_profile.lua' }, domain: 0 as const, path: 'effect_profile.lua', source: { resid: 'effect_profile', type: 'lua' as const } };
+	const resource = { sourceFilePath: 'effect_profile.lua', location: { kind: 'workspace' as const, path: 'effect_profile.lua' }, domain: 0 as const, path: 'effect_profile.lua', source: { resid: 'effect_profile', type: 'lua' as const } };
 	const semantic = buildLuaFileSemanticData(source, resource.path);
 	const snapshot = semanticSnapshot(semantic);
 	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, snapshot); });

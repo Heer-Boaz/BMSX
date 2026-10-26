@@ -31,7 +31,7 @@ scenes.register('room', { objects = {
 
 function fixture(source = SOURCE) {
 	configureFontVariant('tiny');
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'room.lua' }, domain: 0, path: 'room.lua', source: { resid: 'room', type: 'lua' } }, 'lua', source);
+	const model = new EditorTextModel({ sourceFilePath: 'room.lua', location: { kind: 'workspace' as const, path: 'room.lua' }, domain: 0, path: 'room.lua', source: { resid: 'room', type: 'lua' } }, 'lua', source);
 	const input = new SceneEditorInput(model);
 	let boundSource = '';
 	const refresh = () => {

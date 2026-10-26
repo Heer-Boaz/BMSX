@@ -13,7 +13,7 @@ import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 
 function fixture(t: TestContext, source: string, variant: FontVariant, width = 384) {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'inline-view.lua' }, domain: 0, path: 'inline-view.lua',
+	const model = models.retain({ sourceFilePath: 'inline-view.lua', location: { kind: 'workspace' as const, path: 'inline-view.lua' }, domain: 0, path: 'inline-view.lua',
 		source: { type: 'lua', resid: 'inline-view', source_path: 'inline-view.lua' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant),
 		{ left: 0, top: 10, right: width, bottom: 270 });
@@ -56,7 +56,7 @@ test('visual cursor affinity is one retained widget record and retires before in
 	assert.equal(code.visualCursor, affinity, 'Home/End affinity survives its source-cursor publication');
 	code.setInlineEdit(0, 5, 10, 'n'); assert.equal(code.visualCursor, null);
 	code.clearInlineEdit(); code.captureVisualCursor(0, 5, 3);
-	const other = models.retain({ location: { kind: 'workspace' as const, path: 'other-view.lua' }, domain: 0, path: 'other-view.lua',
+	const other = models.retain({ sourceFilePath: 'other-view.lua', location: { kind: 'workspace' as const, path: 'other-view.lua' }, domain: 0, path: 'other-view.lua',
 		source: { type: 'lua', resid: 'other-view' } }, 'lua', 'local other = 1');
 	const document = documents.get(other);
 	assert.equal(code.visualCursor, affinity, 'resolving an unrelated document does not retarget this control');

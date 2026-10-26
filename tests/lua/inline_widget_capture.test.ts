@@ -27,7 +27,7 @@ function pointer(x: number, pressedButtons: number = PointerButton.Primary, just
 
 function codeFixture(t: TestContext, variant: 'tiny' | 'msx', source = '-- source') {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace', path: 'hold.lua' }, domain: 0, path: 'hold.lua',
+	const model = models.retain({ sourceFilePath: 'hold.lua', location: { kind: 'workspace', path: 'hold.lua' }, domain: 0, path: 'hold.lua',
 		source: { type: 'lua', resid: 'hold' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
 	t.after(() => {

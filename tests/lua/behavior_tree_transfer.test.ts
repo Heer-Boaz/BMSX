@@ -30,7 +30,7 @@ function rootList(document: BehaviorSourceDocument, index: number): BehaviorTree
 }
 
 function fixture(t: TestContext, source = ordinary, index = 0, origin = 0) {
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'transfer.lua' }, domain: 0, path: 'transfer.lua', source: { type: 'lua', resid: 'transfer' } }, 'lua', source);
+	const model = new EditorTextModel({ sourceFilePath: 'transfer.lua', location: { kind: 'workspace' as const, path: 'transfer.lua' }, domain: 0, path: 'transfer.lua', source: { type: 'lua', resid: 'transfer' } }, 'lua', source);
 	t.after(() => model.dispose());
 	const analysis = buildLuaFileSemanticData(source, model.resource.path);
 	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));

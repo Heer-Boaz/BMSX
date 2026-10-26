@@ -15,7 +15,7 @@ import {
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { runCompiledLua } from './cpu_test_harness';
 
-const resource: RuntimeResource = { location: { kind: 'workspace' as const, path: 'scene.lua' },
+const resource: RuntimeResource = { sourceFilePath: 'scene.lua', location: { kind: 'workspace' as const, path: 'scene.lua' },
 	domain: 0,
 	path: 'scene.lua',
 	source: {

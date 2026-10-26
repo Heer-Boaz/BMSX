@@ -5,9 +5,8 @@ import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_que
 import type { EditorTextModel, EditorTextModelSnapshot } from '../../../editor/model/text_model';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { applyAemSourceRevision, type AemSourceApplyResult } from '../../../runtime/aem';
-import { runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { persistWorkspaceSourceFile } from '../../../workspace/files';
-import { resolveWorkspacePath } from '../../../workspace/path';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import type { WorkspaceRecordPersistence } from '../../../workspace/records';
 
@@ -51,9 +50,10 @@ export class TextFileSaveService {
 		const previous = this.pending.get(model);
 		if (previous?.snapshot.version === model.version) return previous;
 		const snapshot = model.createSnapshot();
+		const sourceFilePath = model.resource.sourceFilePath;
 		// Admission captures the text now, not after the preceding write finishes.
-		const completion = (previous === undefined ? this.performSave(model, snapshot)
-			: previous.completion.then(() => this.performSave(model, snapshot))).then(result => {
+		const completion = (previous === undefined ? this.performSave(model, snapshot, sourceFilePath)
+			: previous.completion.then(() => this.performSave(model, snapshot, sourceFilePath))).then(result => {
 			operation.result = result;
 			return result;
 		}).finally(() => {
@@ -71,7 +71,7 @@ export class TextFileSaveService {
 		await Promise.all(Array.from(this.pending.values(), operation => operation.completion));
 	}
 
-	private async performSave(model: EditorTextModel, snapshot: EditorTextModelSnapshot): Promise<TextFileSaveResult> {
+	private async performSave(model: EditorTextModel, snapshot: EditorTextModelSnapshot, sourceFilePath: string | undefined): Promise<TextFileSaveResult> {
 		const resource = model.resource;
 		let persistence: WorkspaceRecordPersistence;
 		try {
@@ -81,8 +81,7 @@ export class TextFileSaveService {
 					break;
 				case 'yaml':
 				case 'aem': {
-					const path = resolveWorkspacePath(resource.path, runtimeSourceProjectRootPath(this.sources, resource.domain));
-					({ persistence } = await persistWorkspaceSourceFile(this.clock, path, snapshot.source, model.persistedBaseline));
+					({ persistence } = await persistWorkspaceSourceFile(this.clock, sourceFilePath!, snapshot.source, model.persistedBaseline));
 					break;
 				}
 			}

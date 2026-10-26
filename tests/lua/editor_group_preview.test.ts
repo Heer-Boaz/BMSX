@@ -13,7 +13,7 @@ import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
 function scene(path: string) {
-	return new SceneEditorInput(new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', 'return {}'));
+	return new SceneEditorInput(new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', 'return {}'));
 }
 
 test('one group preview replaces only its clean predecessor and keeps its tab position', () => {
@@ -64,7 +64,7 @@ test('already dirty documents cannot become previews; duplicate labels disambigu
 test('the authored audio file and its Source view share a working copy but retain distinct compact input labels', t => {
 	const group = new EditorTabGroupModel(), path = 'res/audio/events.aem.yaml';
 	t.after(() => group.clear());
-	const model = new EditorTextModel({ location: { kind: 'workspace', path }, domain: 0, path,
+	const model = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace', path }, domain: 0, path,
 		source: { type: 'aem', resid: 'events' } }, 'aem', '# authored\nevents: {}\n');
 	const audio = new AemEditorInput(model), filename = path.slice(path.lastIndexOf('/') + 1);
 	const code = new CodeEditorInput(model);
@@ -87,9 +87,9 @@ for (const distinction of ['path', 'domain'] as const) test(`same-name audio vie
 	const group = new EditorTabGroupModel(), path = 'res/audio/events.aem.yaml';
 	t.after(() => group.clear());
 	const otherPath = distinction === 'path' ? 'res/other/events.aem.yaml' : path;
-	const firstModel = new EditorTextModel({ location: { kind: 'workspace', path }, domain: 0, path,
+	const firstModel = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace', path }, domain: 0, path,
 		source: { type: 'aem', resid: 'events' } }, 'aem', 'events: {}\n');
-	const otherModel = new EditorTextModel({ location: { kind: 'workspace', path: otherPath }, domain: distinction === 'domain' ? 1 : 0, path: otherPath,
+	const otherModel = new EditorTextModel({ sourceFilePath: otherPath, location: { kind: 'workspace', path: otherPath }, domain: distinction === 'domain' ? 1 : 0, path: otherPath,
 		source: { type: 'aem', resid: 'other-events' } }, 'aem', 'events: {}\n');
 	const first = new AemEditorInput(firstModel), second = new AemEditorInput(otherModel);
 	const code = new CodeEditorInput(firstModel);

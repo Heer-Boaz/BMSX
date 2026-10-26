@@ -51,6 +51,8 @@ execution services and their explicit targets.
 `editor/model/` owns canonical text models. Workbench working-copy services own
 text-model resolution, persistence and source-edit publication. Source-backed
 visual tools consume those models rather than keeping another authored copy.
+The source catalog supplies canonical file addresses. Text-file loading, Save
+and canonical recovery comparison consume that admitted file authority.
 Diagnostics are indexed once by canonical model/version; Source presentation
 projects ready row markers through its own layout rather than an active-editor bucket.
 `CodeDocumentProjections` owns model-bound highlighting and semantic scheduling.

@@ -10,7 +10,7 @@ import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 for (const existing of [false, true]) test(`superseded map source opening disposes only its unadmitted candidate (${existing ? 'retained' : 'new'} source view)`, async t => {
 	const sources = createScenarioTestSourceState([]), group = createTestEditorGroup();
-	const resource = { location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+	const resource = { sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
 	const model = editorTextModelService.retain(resource, 'yaml', 'map_rows: ["m "]\n');
 	const input = new CartMapInput(model, 'nemesis');
 	t.after(() => {

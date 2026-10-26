@@ -7,7 +7,7 @@ import { AnimationKeyViewport } from '../../ide/workbench/contrib/animation/key_
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 
-const resource = { location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { resid: 'animation', type: 'lua' as const } };
+const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { resid: 'animation', type: 'lua' as const } };
 
 test('coincident key picking keeps the selected authored occurrence without overriding a nearer key', () => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=50,value=0},{time_ms=50,value=0},{time_ms=51,value=1}}}}}";

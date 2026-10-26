@@ -169,7 +169,7 @@ test('source and map edits share one history, and stale projections cannot write
 	const service = new EditorTextModelService();
 	t.after(() => service.clear());
 	for (const [path, source] of [['castle_map.yaml', castleSource], ['nemesis_s_stage.yaml', stageSource]]) {
-		const model = service.retain({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'data', resid: path } }, 'yaml', source);
+		const model = service.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'data', resid: path } }, 'yaml', source);
 		let operation: EditorModelEdit;
 		if (path === 'castle_map.yaml') {
 			const document = buildPietiousSource(source, model.version);

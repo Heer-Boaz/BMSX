@@ -124,7 +124,7 @@ for (const [label, kind, insertion, expectedCaret] of [
 
 test('an actual empty require-path candidate inserts at a zero-width range with one complete edit and exact history', t => {
 	const source = "local m = require('')", column = source.indexOf("')"), f = fixture(t, source, column);
-	editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'module/real.lua' }, domain: 0, path: 'module/real.lua',
+	editorTextModelService.retain({ sourceFilePath: 'module/real.lua', location: { kind: 'workspace' as const, path: 'module/real.lua' }, domain: 0, path: 'module/real.lua',
 		source: { type: 'lua', resid: 'real-module', source_path: 'module/real.lua' } }, 'lua', 'return {}');
 	const candidates = f.controller.listCompletionCandidates()!, item = candidates.filteredItems.find(item => item.insertText === 'module/real')!;
 	assert.equal(candidates.context.kind, 'module'); assert.equal(candidates.context.replaceFromColumn, column);
@@ -198,7 +198,7 @@ test('input retirement clears the published completion before another source att
 	assert.equal(f.code.inlineEdit.active, true);
 	f.controller.clearInput();
 	assert.equal(f.controller.session, null); assert.equal(f.code.inlineEdit.active, false);
-	const other = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'other.lua' }, domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
+	const other = editorTextModelService.retain({ sourceFilePath: 'other.lua', location: { kind: 'workspace' as const, path: 'other.lua' }, domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
 	const otherInput = new CodeEditorInput(other); t.after(() => otherInput.dispose());
 	f.code.attach(other, otherInput.context.view, f.documents.get(other)); f.settle();
 	assert.equal(f.controller.session, null); assert.equal(f.code.inlineEdit.active, false);
@@ -278,7 +278,7 @@ for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', '
 
 test('module completion preserves authored case and exact path replacement range', t => {
 	const source = "local m = require('art/P_tail')", f = fixture(t, source, source.indexOf('_tail'));
-	editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'art/Picture.lua' }, domain: 0, path: 'art/Picture.lua', source: { type: 'lua', resid: 'picture', source_path: 'art/Picture.lua' } }, 'lua', 'return {}');
+	editorTextModelService.retain({ sourceFilePath: 'art/Picture.lua', location: { kind: 'workspace' as const, path: 'art/Picture.lua' }, domain: 0, path: 'art/Picture.lua', source: { type: 'lua', resid: 'picture', source_path: 'art/Picture.lua' } }, 'lua', 'return {}');
 	f.type('i'); f.settle();
 	const edit = f.code.inlineEdit;
 	assert.equal(edit.active, true); assert.equal(edit.preserveCase, true); assert.equal(edit.text, 'cture');
@@ -294,7 +294,7 @@ test('widget publication is stable across font replacement but retires before so
 	assert.equal(f.code.inlineEdit, edit); assert.equal(edit.active, true); assert.equal(edit.version, version);
 	assert.equal(f.code.setInlineEdit(edit.row, edit.startColumn, edit.endColumn, edit.text, edit.preserveCase), false);
 	assert.equal(edit.version, version, 'republishing identical intent cannot dirty layout');
-	const other = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'other.lua' }, domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
+	const other = editorTextModelService.retain({ sourceFilePath: 'other.lua', location: { kind: 'workspace' as const, path: 'other.lua' }, domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
 	const otherInput = new CodeEditorInput(other), document = f.documents.get(other);
 	t.after(() => otherInput.dispose());
 	assert.equal(edit.active, true, 'constructing an unrelated input and document does not retire this control');

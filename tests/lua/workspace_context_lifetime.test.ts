@@ -6,7 +6,7 @@ import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy
 import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
 import { createScenarioTestSourceState, createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 
-const resource = { location: { kind: 'workspace' as const, path: 'proposal.lua' }, domain: 0 as const, path: 'proposal.lua', source: { type: 'lua' as const, resid: 'proposal' } };
+const resource = { sourceFilePath: 'proposal.lua', location: { kind: 'workspace' as const, path: 'proposal.lua' }, domain: 0 as const, path: 'proposal.lua', source: { type: 'lua' as const, resid: 'proposal' } };
 const edit = { version: 1, edits: [{ offset: 0, deleteLength: 1, text: 'new' }] };
 
 test('reopening the same resource/version cannot revive edit rights from a retired workspace', t => {

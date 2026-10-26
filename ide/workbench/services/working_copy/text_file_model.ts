@@ -1,9 +1,8 @@
 import type { ResourceIdentity, RuntimeResource } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorDocumentMode, EditorTextModel } from '../../../editor/model/text_model';
-import { resolveRuntimeLuaSource, resolveRuntimeResource, runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
+import { resolveRuntimeLuaSource, resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
 import { loadWorkspaceSourceFile, readWorkspaceLuaSourceText } from '../../../workspace/files';
-import { resolveWorkspacePath } from '../../../workspace/path';
 import { getTextSnapshotFingerprint, type TextSnapshotFingerprint } from '../../../editor/text/source_text';
 import { workspaceCanonicalSourceCache } from '../../../workspace/cache';
 
@@ -47,7 +46,7 @@ export function resolveLuaTextFileModel(
 ): EditorTextModel {
 	const source = resolveRuntimeLuaSource(sources, resource);
 	if (!source) throw new Error(`Missing Lua source for '${resource.path}'.`);
-	const canonical = workspaceCanonicalSourceCache.get(source.record.normalized_source_path);
+	const canonical = resource.sourceFilePath === undefined ? undefined : workspaceCanonicalSourceCache.get(resource.sourceFilePath);
 	const savedSource = canonical === undefined ? source.record.base_src : canonical.contents;
 	return models.retain(resource, 'lua', readWorkspaceLuaSourceText(source.registry, source.record), savedSource,
 		canonical === undefined ? null : canonical.contents);
@@ -67,8 +66,7 @@ export function resolveTextFileModel(
 		case 'aem': {
 			// Data stays in its authored YAML; never reconstruct it from cooked assets.
 			return models.resolve(resource, mode, async () => {
-				const root = runtimeSourceProjectRootPath(sources, resource.domain);
-				const source = await loadWorkspaceSourceFile(resolveWorkspacePath(resource.path, root));
+				const source = await loadWorkspaceSourceFile(resource.sourceFilePath!);
 				// A workspace file overlays the packaged authored base, just as for Lua.
 				// IO errors propagate; they never select another source authority.
 				if (source !== null) return { source: source.contents, persistedBaseline: source.contents };

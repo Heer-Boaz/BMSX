@@ -11,7 +11,7 @@ import { resolvePointerTextPosition, resolveTextPositionBounds } from '../../ide
 
 function fixture(t: TestContext, source: string, variant: FontVariant) {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'horizontal.lua' }, domain: 0, path: 'horizontal.lua',
+	const model = models.retain({ sourceFilePath: 'horizontal.lua', location: { kind: 'workspace' as const, path: 'horizontal.lua' }, domain: 0, path: 'horizontal.lua',
 		source: { type: 'lua', resid: 'horizontal', source_path: 'horizontal.lua' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant),
 		{ left: 0, top: 10, right: variant === 'tiny' ? 78 : 118, bottom: 270 });

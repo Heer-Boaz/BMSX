@@ -20,7 +20,7 @@ import { BEHAVIOR_SOURCE_FIXTURE } from '../helpers/behavior_source_fixture';
 
 const font = new Font({ variant: 'tiny' });
 function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'bt.lua' }, domain: 0, path: 'bt.lua', source: { type: 'lua', resid: 'bt' } }, 'lua', source);
+	const model = new EditorTextModel({ sourceFilePath: 'bt.lua', location: { kind: 'workspace' as const, path: 'bt.lua' }, domain: 0, path: 'bt.lua', source: { type: 'lua', resid: 'bt' } }, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), 'bt.lua')));
 	const document = project();
 	const definition = document.definitions[0];

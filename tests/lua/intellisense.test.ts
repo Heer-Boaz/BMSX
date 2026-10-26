@@ -101,7 +101,7 @@ function createIntellisenseSources(files: Record<string, string> = {}) {
 }
 
 function testLuaResource(path: string): RuntimeResource {
-	return { location: { kind: 'workspace' as const, path },
+	return { sourceFilePath: path, location: { kind: 'workspace' as const, path },
 		domain: SYSTEM_RESOURCE_DOMAIN,
 		path,
 		source: {
@@ -379,7 +379,7 @@ test('editor diagnostics share one retained project snapshot across open documen
 	});
 	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 	const contexts = Object.entries({ 'reader.lua': readerSource, 'declaration.lua': declarationSource }).map(([path, source]) =>
-		new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
+		new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
 
 	const initial = computeResourceDiagnostics(editorTextModelService, bridge, contexts);
 	assert.ok(!initial.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
@@ -403,7 +403,7 @@ test('diagnostics over more than 24 documents parse each generation once, includ
 		const path = `document_${index}.lua`;
 		const source = `return ${index}`;
 		files[path] = source;
-		contexts.push(new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
+		contexts.push(new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
 	}
 	const bridge = createIntellisenseSources(files);
 	const project = resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
@@ -1354,7 +1354,7 @@ test('context tokens ignore retained comment trivia and resolve declaration name
 	const { resetSemanticProject } = await workspaceStateModulePromise;
 	const source = 'local --[[decoy_name]] actual_name = 7 -- trailing_name\nreturn actual_name';
 	const path = 'comment_context.lua';
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path,
+	const model = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path,
 		source: { resid: path, type: 'lua', source_path: path, generated: false } }, 'lua', source);
 	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 	const { documents, clock } = createTestCodeDocuments(context);

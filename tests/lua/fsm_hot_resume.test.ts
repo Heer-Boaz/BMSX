@@ -410,7 +410,7 @@ return status == result.success, target.order
 
 test('source-owned BT moves change actual compiled task order and keep choice weights attached to their children', () => {
 	for (const [destination, expected] of [[0, 1213], [3, 1312]] as const) {
-		const resource = { location: { kind: 'workspace' as const, path: 'order.lua' }, domain: 0 as const, path: 'order.lua', source: { type: 'lua' as const, resid: 'order' } };
+		const resource = { sourceFilePath: 'order.lua', location: { kind: 'workspace' as const, path: 'order.lua' }, domain: 0 as const, path: 'order.lua', source: { type: 'lua' as const, resid: 'order' } };
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
 		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[0];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
@@ -448,7 +448,7 @@ return target.order, weighted.choices[${destination === 0 ? 1 : 3}].weight, weig
 });
 
 test('BT source removal changes actual compiled task order without deleting referenced definitions or choice weights', () => {
-	const resource = { location: { kind: 'workspace' as const, path: 'remove.lua' }, domain: 0 as const, path: 'remove.lua', source: { type: 'lua' as const, resid: 'remove' } };
+	const resource = { sourceFilePath: 'remove.lua', location: { kind: 'workspace' as const, path: 'remove.lua' }, domain: 0 as const, path: 'remove.lua', source: { type: 'lua' as const, resid: 'remove' } };
 	for (const [definitionIndex, index, expected] of [[0, 0, 123], [0, 1, 13], [0, 2, 112], [2, 1, 13]] as const) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
 		const analysis = buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path);
@@ -482,7 +482,7 @@ return target.order, #nested.children, nested.children[1] == leaf
 });
 
 test('BT source duplication executes the copied Lua uses and keeps choice weights, rather than cloning runtime nodes', () => {
-	const resource = { location: { kind: 'workspace' as const, path: 'duplicate.lua' }, domain: 0 as const, path: 'duplicate.lua', source: { type: 'lua' as const, resid: 'duplicate' } };
+	const resource = { sourceFilePath: 'duplicate.lua', location: { kind: 'workspace' as const, path: 'duplicate.lua' }, domain: 0 as const, path: 'duplicate.lua', source: { type: 'lua' as const, resid: 'duplicate' } };
 	for (const [definitionIndex, index, expected, sameValue] of [[0, 0, 11123, true], [0, 1, 112123, true], [0, 2, 11233, false], [2, 1, 112123, false]] as const) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
 		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[definitionIndex];
@@ -519,7 +519,7 @@ return target.order, #nested.children, same_value
 });
 
 test('language-owned field transfer changes actual compiled BT composition without a host graph or runtime clone', () => {
-	const resource = { location: { kind: 'workspace' as const, path: 'transfer.lua' }, domain: 0 as const, path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
+	const resource = { sourceFilePath: 'transfer.lua', location: { kind: 'workspace' as const, path: 'transfer.lua' }, domain: 0 as const, path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
 	for (const inward of [false, true]) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
 		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[0];
@@ -549,7 +549,7 @@ return target.order, #children, #nested.children
 });
 
 test('admitted BT transfers compile with actual source sharing and cartlib task order', () => {
-	const resource = { location: { kind: 'workspace' as const, path: 'admitted.lua' }, domain: 0 as const, path: 'admitted.lua', source: { type: 'lua' as const, resid: 'admitted' } };
+	const resource = { sourceFilePath: 'admitted.lua', location: { kind: 'workspace' as const, path: 'admitted.lua' }, domain: 0 as const, path: 'admitted.lua', source: { type: 'lua' as const, resid: 'admitted' } };
 	for (const inward of [false, true]) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
 		const semantic = buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path);
@@ -599,7 +599,7 @@ test('cartlib FSM and behaviour-tree instances retain semantic state across prog
 });
 
 test('visual initial edits rebind real cartlib definitions without forcing the living machine to restart', () => {
-	const resource = { location: { kind: 'workspace' as const, path: 'initial.lua' }, domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
+	const resource = { sourceFilePath: 'initial.lua', location: { kind: 'workspace' as const, path: 'initial.lua' }, domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
 	const model = new EditorTextModel(resource, 'lua', FSM_INITIAL_SOURCE);
 	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_INITIAL_SOURCE, resource.path)));
 	const target = [...indexStateMachineSource(document).initialTargets.values()].find(target => target.name === 'active')!;
@@ -767,7 +767,7 @@ return ${FSM_RETARGET_PATH_CASES.length}
 });
 
 test('a retargeted callback preserves live rebind identity, dispatch effects, guards and exit/entry ordering', () => {
-	const resource = { location: { kind: 'workspace' as const, path: 'execution.lua' }, domain: 0 as const, path: 'execution.lua', source: { type: 'lua' as const, resid: 'execution' } };
+	const resource = { sourceFilePath: 'execution.lua', location: { kind: 'workspace' as const, path: 'execution.lua' }, domain: 0 as const, path: 'execution.lua', source: { type: 'lua' as const, resid: 'execution' } };
 	const model = new EditorTextModel(resource, 'lua', FSM_RETARGET_EXECUTION_SOURCE);
 	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_RETARGET_EXECUTION_SOURCE, resource.path)));
 	const definition = document.definitions[0];

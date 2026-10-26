@@ -28,6 +28,7 @@ import { buildResourceQuickPickItems } from '../../ide/workbench/contrib/resourc
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { workspaceCanonicalSourceCache } from '../../ide/workspace/cache';
 
 function luaSource(path: string, resid: string, source: string): LuaSourceRecord {
 	return {
@@ -91,6 +92,53 @@ function dataResources(sources: ReturnType<typeof createTestRuntimeSourceState>)
 	}
 	return resources;
 }
+
+test('source admission publishes canonical file addresses for authored resources, not for generated Lua', () => {
+	const local = { ...luaSource('src/main.lua', 'main', 'return 1'), normalized_source_path: 'carts/test/src/main.lua' };
+	const shared = { ...luaSource('shared.lua', 'shared', 'return 2'), normalized_source_path: 'cartlib/shared.lua', sourceKind: 'library' as const };
+	const generated = { ...luaSource('generated.lua', 'generated', 'return 3'), generated: true };
+	const registry = sourceRegistry('carts/test', [local, shared, generated]);
+	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', []), [registry, null], 0);
+	sources.cartridgeSlots[0]!.romSource = romSource([
+		{ type: 'data', resid: 'stage', source_path: 'res/stage.yaml' },
+		{ type: 'aem', resid: 'events', source_path: 'res/events.aem.yaml' },
+	]);
+	rebuildRuntimeSourceResources(sources);
+	assert.equal(resolveRuntimeResource(sources, { domain: 0, path: 'src/main.lua' })!.sourceFilePath, local.normalized_source_path);
+	assert.equal(resolveRuntimeResource(sources, { domain: 0, path: 'shared.lua' })!.sourceFilePath, shared.normalized_source_path);
+	assert.equal(resolveRuntimeResource(sources, { domain: 0, path: 'generated.lua' })!.sourceFilePath, undefined);
+	assert.equal(resolveRuntimeResource(sources, { domain: 0, path: 'res/stage.yaml' })!.sourceFilePath, 'carts/test/res/stage.yaml');
+	assert.equal(resolveRuntimeResource(sources, { domain: 0, path: 'res/events.aem.yaml' })!.sourceFilePath, 'carts/test/res/events.aem.yaml');
+	registerWorkspaceTextSources(sources, 0, [{ type: 'data', resid: 'new', source_path: 'res/new.yaml' }]);
+	assert.equal(resolveRuntimeResource(sources, { domain: 0, path: 'res/new.yaml' })!.sourceFilePath, 'carts/test/res/new.yaml');
+});
+
+test('retained source admission refreshes its file address and catalog publication when its source record changes in place', () => {
+	const record = luaSource('shared.lua', 'shared', 'return 1');
+	const registry = sourceRegistry('carts/test', [record]);
+	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', []), [registry, null], 0);
+	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'shared.lua' })!;
+	const revision = sources.resourceCatalogRevision;
+	record.normalized_source_path = 'cartlib/relocated/shared.lua';
+	assert.ok(registerRuntimeLuaResource(sources, 0, record) === resource);
+	assert.equal(resource.sourceFilePath, record.normalized_source_path);
+	assert.ok(sources.resourceCatalogRevision > revision);
+	assert.equal(sources.resources.filter(candidate => candidate === resource).length, 1);
+});
+
+test('generated Lua has no canonical file baseline even when its virtual path matches a workspace record', t => {
+	t.after(() => { editorTextModelService.clear(); workspaceCanonicalSourceCache.clear(); });
+	const generated = { ...luaSource('generated.lua', 'generated', 'return 3'), generated: true };
+	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', []), [sourceRegistry('carts/test', [generated]), null], 0);
+	workspaceCanonicalSourceCache.set(generated.normalized_source_path, { contents: 'return 99', updatedAt: 1 });
+	const resource = resolveRuntimeResource(sources, { domain: 0, path: generated.source_path })!;
+	const model = resolveLuaTextFileModel(editorTextModelService, sources, resource);
+	assert.equal(model.buffer.getText(), generated.src);
+	assert.equal(model.lastSavedSource, generated.base_src);
+	assert.equal(model.persistedBaseline, null);
+	assert.equal(model.dirty, false);
+	assert.equal(model.readOnly, true);
+});
 
 test('runtime source owner retains Lua resource identity when its source record is replaced', () => {
 	const systemRegistry = sourceRegistry('machine/ts', [

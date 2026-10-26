@@ -321,7 +321,8 @@ function testResource(
 	domain: ResourceDomain = TEST_DOMAIN,
 	type: RuntimeResource['source']['type'] = 'lua',
 ): RuntimeResource {
-	return { location: { kind: 'workspace' as const, path },
+	return { location: { kind: 'project', projectRootPath: 'offline-cart', path },
+		sourceFilePath: resolveWorkspacePath(path, 'offline-cart'),
 		domain,
 		path,
 		source: {
@@ -1620,11 +1621,13 @@ test('YAML dirty session recovery restores exact unsaved source into a fresh wor
 });
 
 for (const type of ['data', 'aem'] as const) for (const savedAt of [10, 20, 30, null]) {
-	test(`${type} recovery compares its checkpoint with the saved source (${savedAt})`, async t => {
+	test(`${type} recovery compares its checkpoint with the saved source at its admitted address (${savedAt})`, async t => {
 		const storage = new MockStorage();
 		installBrowserWorkspace(t, storage);
 		const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], TEST_DOMAIN);
 		const resource = testResource(type === 'data' ? 'res/stage.yaml' : 'res/events.aem.yaml', TEST_DOMAIN, type);
+		resource.sourceFilePath = `shared/authoring/${resource.path}`;
+		resource.location = { kind: 'workspace', path: resource.sourceFilePath };
 		resource.source.sourcemeta = { text: 'value: packaged\n' };
 		sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 		const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', resource.domain, resource.path);
@@ -1632,7 +1635,7 @@ for (const type of ['data', 'aem'] as const) for (const savedAt of [10, 20, 30, 
 		const checkpoint = payload([{ domain: resource.domain, path: resource.path, updatedAt: 20 }]);
 		writeRecord(storage, 'offline-cart', buildWorkspaceDirtyRecordPath(dirtyPath, 20), draft, 20);
 		writeRecord(storage, 'offline-cart', workspaceStatePath('offline-cart'), JSON.stringify(checkpoint), 21);
-		const canonicalPath = resolveWorkspacePath(resource.path, 'offline-cart');
+		const canonicalPath = resource.sourceFilePath;
 		if (savedAt !== null) await workspaceFiles.write(canonicalPath, { contents: saved, updatedAt: savedAt }, true);
 		const restoredPayload = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
 		installWorkspaceRestoreView();

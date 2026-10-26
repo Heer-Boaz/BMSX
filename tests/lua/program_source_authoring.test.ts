@@ -21,7 +21,7 @@ import { programEntryTemplate, programFieldTemplates } from '../../ide/workbench
 function project(source: string, imports: readonly { path: string; source: string }[] = []) {
 	const file = buildLuaFileSemanticData(source, 'entry.lua');
 	const snapshot = semanticSnapshot(file, ...imports.map(item => buildLuaFileSemanticData(item.source, item.path)));
-	const models = new Map(snapshot.files.map(file => [file.file, new EditorTextModel({ location: { kind: 'workspace' as const, path: file.file }, domain: 0, path: file.file, source: { resid: file.file, type: 'lua' } }, 'lua', file.source)]));
+	const models = new Map(snapshot.files.map(file => [file.file, new EditorTextModel({ sourceFilePath: file.file, location: { kind: 'workspace' as const, path: file.file }, domain: 0, path: file.file, source: { resid: file.file, type: 'lua' } }, 'lua', file.source)]));
 	const occurrence = collectLuaPrograms({ domain: 0, path: file.file }, snapshot)[0];
 	const tree = createWorkbenchPropertyTree<LuaProgramProperty>();
 	if (occurrence !== undefined) projectLuaProgram(tree, occurrence, new LuaSourceReader(snapshot), file => models.get(file.file)!);

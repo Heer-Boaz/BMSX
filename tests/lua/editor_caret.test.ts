@@ -39,7 +39,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 
 	constants.setIdeThemeVariant(theme);
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace', path: 'caret.lua' }, domain: 0, path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', 'A');
+	const model = models.retain({ sourceFilePath: 'caret.lua', location: { kind: 'workspace', path: 'caret.lua' }, domain: 0, path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', 'A');
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
 	const darkBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME;
 	const lightBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT;

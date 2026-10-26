@@ -10,7 +10,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 
-const resource = { location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
+const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
 const source = `return { duration_ms=100, tracks={
 	{kind='value', interpolation='cubic', path={'x'}, keys={
 		{time_ms=0,value=0,arrive_tangent=0,leave_tangent=2},

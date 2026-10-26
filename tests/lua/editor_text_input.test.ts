@@ -19,7 +19,7 @@ import { resolveViewportCapacity } from '../../ide/editor/ui/view/caret/view';
 
 function sourceRangeFixture(t: TestContext, source: string) {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'range.lua' }, domain: 0, path: 'range.lua', source: { type: 'lua', resid: 'range' } }, 'lua', source);
+	const model = models.retain({ sourceFilePath: 'range.lua', location: { kind: 'workspace' as const, path: 'range.lua' }, domain: 0, path: 'range.lua', source: { type: 'lua', resid: 'range' } }, 'lua', source);
 	const input = new CodeEditorInput(model), view = input.context.view;
 	const code = createTestCodeControl(t, model, documents, clock, view, undefined, { left: 0, top: 10, right: 78, bottom: 270 });
 	code.focusTarget.focus();
@@ -147,7 +147,7 @@ test('native field constraints retain the accepted edit and its own cursor', () 
 test('native source replacement uses bounded canonical context and one shared Undo operation', t => {
 	const source = '-- header\r\nlocal label = "old"\r\nreturn label\r\n';
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'native.lua' }, domain: 0, path: 'native.lua', source: { type: 'lua', resid: 'native' } }, 'lua', source);
+	const model = models.retain({ sourceFilePath: 'native.lua', location: { kind: 'workspace' as const, path: 'native.lua' }, domain: 0, path: 'native.lua', source: { type: 'lua', resid: 'native' } }, 'lua', source);
 	const input = new CodeEditorInput(model), view = input.context.view;
 	const code = createTestCodeControl(t, model, documents, clock, view);
 	const target = new CodeEditorTextInput(code);
@@ -166,7 +166,7 @@ test('native source replacement uses bounded canonical context and one shared Un
 
 test('native source selection notifies its actual cursor owner only on change', t => {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'cursor.lua' }, domain: 0, path: 'cursor.lua', source: { type: 'lua', resid: 'cursor' } }, 'lua', 'abc');
+	const model = models.retain({ sourceFilePath: 'cursor.lua', location: { kind: 'workspace' as const, path: 'cursor.lua' }, domain: 0, path: 'cursor.lua', source: { type: 'lua', resid: 'cursor' } }, 'lua', 'abc');
 	const input = new CodeEditorInput(model);
 	const code = createTestCodeControl(t, model, documents, clock, input.context.view);
 	let moves = 0; const unbind = code.onDidMoveCursor(() => moves++);

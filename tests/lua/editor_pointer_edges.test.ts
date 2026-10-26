@@ -13,7 +13,7 @@ import { PointerButton, type PointerButtons } from '../../hosts/common/input/poi
 
 test('editor button edges belong to the pointer producer, not view activation or gesture cancellation', t => {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace', path: 'pointer.lua' }, domain: 0, path: 'pointer.lua', source: { type: 'lua', resid: 'pointer' } }, 'lua', 'return 1');
+	const model = models.retain({ sourceFilePath: 'pointer.lua', location: { kind: 'workspace', path: 'pointer.lua' }, domain: 0, path: 'pointer.lua', source: { type: 'lua', resid: 'pointer' } }, 'lua', 'return 1');
 	const widget = createTestCodeControl(t, model, documents, clock);
 	const pointer = new PointerInput(new VirtualHeadlessClock());
 	const player = new PlayerInput(1, 20);

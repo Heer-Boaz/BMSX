@@ -29,8 +29,8 @@ function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return old -- saved\n')]);
 	const models = new EditorTextModelService(), connection = new AbortController();
 	const storage = { getItem: () => null, setItem: () => assert.fail('Tools must not save'), removeItem: () => assert.fail('Tools must not delete') };
-	const yaml: RuntimeResource = { location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'res/data/stage.yaml' }, domain: 0, path: 'res/data/stage.yaml', source: { type: 'data', resid: 'stage' } };
-	const binary: RuntimeResource = { location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'art.png' }, domain: 0, path: 'art.png', source: { type: 'image', resid: 'art' } };
+	const yaml: RuntimeResource = { sourceFilePath: 'carts/nemesis_s/res/data/stage.yaml', location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'res/data/stage.yaml' }, domain: 0, path: 'res/data/stage.yaml', source: { type: 'data', resid: 'stage' } };
+	const binary: RuntimeResource = { sourceFilePath: 'carts/nemesis_s/art.png', location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'art.png' }, domain: 0, path: 'art.png', source: { type: 'image', resid: 'art' } };
 	sources.resourceByIdentity.set(resourceIdentityKey(yaml), yaml); sources.resourceByIdentity.set(resourceIdentityKey(binary), binary);
 	const yamlPath = 'carts/nemesis_s/res/data/stage.yaml';
 	const yamlSource = '# exact 🐉\r\nvalue: old\r\n';
@@ -267,7 +267,7 @@ test('diagnostics reject external malformed, unread and foreign receipts before 
 
 test('dependency changes retire diagnostic receipts even when the queried source version is unchanged', async t => {
 	const f = fixture(t), read = await f.read('cart.lua');
-	const dependency = f.models.retain({ location: { kind: 'workspace' as const, path: 'dependency.lua' }, domain: 0, path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'old = 1');
+	const dependency = f.models.retain({ sourceFilePath: 'dependency.lua', location: { kind: 'workspace' as const, path: 'dependency.lua' }, domain: 0, path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'old = 1');
 	await f.tools.execute('studio_read_diagnostics', { receipt: read.receipt });
 	dependency.pushEditOperations([{ offset: 0, deleteLength: 3, text: 'new' }]);
 	assert.equal(f.models.get(f.sources.luaResources[0])!.version, read.version);

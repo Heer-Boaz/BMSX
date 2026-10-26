@@ -11,7 +11,7 @@ import { createFsmStatePath, parseFsmStatePath } from '../../toolchain/ts/cartli
 import { FSM_RETARGET_PATH_CASES, FSM_RETARGET_PATH_SOURCE, FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
 
 function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
-	const resource = { location: { kind: 'workspace' as const, path: 'retarget.lua' }, domain: 0 as const, path: 'retarget.lua', source: { type: 'lua' as const, resid: 'retarget' } };
+	const resource = { sourceFilePath: 'retarget.lua', location: { kind: 'workspace' as const, path: 'retarget.lua' }, domain: 0 as const, path: 'retarget.lua', source: { type: 'lua' as const, resid: 'retarget' } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	t.after(() => model.dispose());
 	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));

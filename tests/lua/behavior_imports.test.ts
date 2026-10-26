@@ -117,7 +117,7 @@ test('an imported effect owns its list and scalar fields; source edit and Undo r
 	const code = "local effects<const> = require('cartlib/actioneffects'); effects.register_effect('imported', require('definition'))";
 	const effect = "return { period_ms = 40, blocked_tags = { 'busy' }, handler = function(owner) owner:act() end }";
 	const models = new Map(Object.entries({ 'main.lua': code, 'definition.lua': effect }).map(([path, source]) =>
-		[path, new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', source)]));
+		[path, new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', source)]));
 	t.after(() => { for (const model of models.values()) model.dispose(); });
 	const project = workspace({ 'main.lua': code, 'definition.lua': effect });
 	const mainModel = models.get('main.lua')!, sourceModel = models.get('definition.lua')!;

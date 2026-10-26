@@ -8,7 +8,7 @@ import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 const SOURCE = "local timing<const> = 7\nlocal effect<const> = { period_ms = (timing), -- keep this\n event = 'ready' }\nreturn effect";
 
 test('a submitted value is an isolated expression, not a second statement, printer or evaluated value', t => {
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'values.lua' }, domain: 0, path: 'values.lua', source: { type: 'lua', resid: 'values' } }, 'lua', SOURCE);
+	const model = new EditorTextModel({ sourceFilePath: 'values.lua', location: { kind: 'workspace' as const, path: 'values.lua' }, domain: 0, path: 'values.lua', source: { type: 'lua', resid: 'values' } }, 'lua', SOURCE);
 	t.after(() => model.dispose());
 	const file = buildLuaFileSemanticData(SOURCE, model.resource.path);
 	const statement = file.chunk.body.get(1)!;

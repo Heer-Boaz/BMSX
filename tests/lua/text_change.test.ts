@@ -5,7 +5,7 @@ import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel, type EditorTextModelContentChangeEvent } from '../../ide/editor/model/text_model';
 import { mapTextOffset, mapTrackedTextRange, textChangesEndOffset, type EditorTextChange } from '../../ide/editor/text/text_change';
 
-const resource: RuntimeResource = { location: { kind: 'workspace' as const, path: 'tracked.lua' },
+const resource: RuntimeResource = { sourceFilePath: 'tracked.lua', location: { kind: 'workspace' as const, path: 'tracked.lua' },
 	domain: 0, path: 'tracked.lua',
 	source: { resid: 'tracked.lua', type: 'lua', source_path: 'tracked.lua', generated: false },
 };

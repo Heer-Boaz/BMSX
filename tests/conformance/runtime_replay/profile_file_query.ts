@@ -17,7 +17,7 @@ const menu = new ContextMenuController(inputFocus, pointerCapture);
 const picker = new QuickInputController(menu);
 const names = ['source_controller', 'workspace_query', 'state_machine', 'action_effect', 'source_index', 'code_editor', 'entry_point', 'sprite_view'];
 for (const count of [128, 1024, 8192]) {
-	const resources: RuntimeResource[] = Array.from({ length: count }, (_, index) => ({ location: { kind: 'workspace' as const, path: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua` }, domain: 0,
+	const resources: RuntimeResource[] = Array.from({ length: count }, (_, index) => ({ sourceFilePath: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua`, location: { kind: 'workspace' as const, path: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua` }, domain: 0,
 		path: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua`, source: { type: 'lua', resid: `resource_${index}` } }));
 	const items = buildResourceQuickPickItems(resources);
 	for (const mode of ['literal', 'file'] as const) {

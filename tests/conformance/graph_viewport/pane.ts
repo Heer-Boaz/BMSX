@@ -56,7 +56,7 @@ export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 	const inputs = views.map((_, index) => {
 		const path = `graph-fixture-${index}.lua`;
 		return new GraphLayoutTestInput(
-			new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', ''),
+			new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', ''),
 			() => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')),
 		);
 	});

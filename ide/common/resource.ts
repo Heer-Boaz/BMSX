@@ -23,6 +23,8 @@ export type RuntimeResourceLocation =
 export type RuntimeResource = ResourceIdentity & {
 	source: RuntimeResourceSource;
 	location: RuntimeResourceLocation;
+	/** Admitted WorkspaceRecordProvider address; generated resources have no source file. */
+	sourceFilePath: string | undefined;
 };
 
 export type TextResourceCreationRequest = {

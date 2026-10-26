@@ -13,7 +13,7 @@ function overlay(): RuntimeErrorOverlay {
 
 test('runtime error retarget/clear revoke hover before replacing the active overlay', t => {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace', path: 'error.lua' }, domain: 0, path: 'error.lua', source: { type: 'lua', resid: 'error' } }, 'lua', 'return 1');
+	const model = models.retain({ sourceFilePath: 'error.lua', location: { kind: 'workspace', path: 'error.lua' }, domain: 0, path: 'error.lua', source: { type: 'lua', resid: 'error' } }, 'lua', 'return 1');
 	const code = createTestCodeControl(t, model, documents, clock);
 	const first = overlay(), second = overlay();
 	setActiveRuntimeErrorOverlay(code, first);

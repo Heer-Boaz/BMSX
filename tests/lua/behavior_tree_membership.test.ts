@@ -20,7 +20,7 @@ import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
 
 const font = new Font({ variant: 'tiny' });
 function fixture(source = BT_MEMBERSHIP_SOURCE, index = 0) {
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'membership.lua' }, domain: 0, path: 'membership.lua', source: { type: 'lua', resid: 'membership' } }, 'lua', source);
+	const model = new EditorTextModel({ sourceFilePath: 'membership.lua', location: { kind: 'workspace' as const, path: 'membership.lua' }, domain: 0, path: 'membership.lua', source: { type: 'lua', resid: 'membership' } }, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
 	const document = project();
 	const definition = document.definitions[index];

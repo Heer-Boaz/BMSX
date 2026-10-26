@@ -25,7 +25,7 @@ machines.register('fixture.inspect', {
 
 function fixture() {
 	editorViewState.font = new EditorFont('tiny');
-	const model = new EditorTextModel({ location: { kind: 'generated' as const, path: 'source_owned.lua' }, domain: 0, path: 'source_owned.lua', source: { type: 'lua', resid: 'independent', generated: true } }, 'lua', SOURCE);
+	const model = new EditorTextModel({ sourceFilePath: undefined, location: { kind: 'generated' as const, path: 'source_owned.lua' }, domain: 0, path: 'source_owned.lua', source: { type: 'lua', resid: 'independent', generated: true } }, 'lua', SOURCE);
 	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SOURCE, model.resource.path)));
 	const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 	view.definitionRowKey = document.definitions[0].rowKey;

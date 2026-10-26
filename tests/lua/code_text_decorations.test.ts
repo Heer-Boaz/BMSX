@@ -25,7 +25,7 @@ function createFixture(t: TestContext, variant: 'tiny' | 'msx', theme: 'light' |
 	const previousTheme = constants.getActiveIdeThemeVariant();
 	configureFontVariant(variant); constants.setIdeThemeVariant(theme);
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ location: { kind: 'workspace' as const, path: 'decoration.lua' }, domain: 0, path: 'decoration.lua', source: { type: 'lua', resid: 'decoration' } }, 'lua', source);
+	const model = models.retain({ sourceFilePath: 'decoration.lua', location: { kind: 'workspace' as const, path: 'decoration.lua' }, domain: 0, path: 'decoration.lua', source: { type: 'lua', resid: 'decoration' } }, 'lua', source);
 	const view = createCodeEditorViewState();
 	const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(variant));
 	code.wordWrapEnabled = false; code.layout.ensureVisualLines(false, 0, 1);

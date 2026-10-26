@@ -27,7 +27,7 @@ class MeasuredEditorFont extends EditorFont {
 
 for (const requirements of [1, 256, 4096]) {
 	const source = ACTIONEFFECT_SOURCE.replace("{ 'ready' }", `{ ${Array.from({ length: requirements }, (_, index) => `'tag.${index}'`).join(', ')} }`);
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0, path: 'effects.lua', source: { resid: 'effects', type: 'lua' } }, 'lua', source);
+	const model = new EditorTextModel({ sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0, path: 'effects.lua', source: { resid: 'effects', type: 'lua' } }, 'lua', source);
 	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 	const font = new MeasuredEditorFont('tiny');
 	editorViewState.font = font;

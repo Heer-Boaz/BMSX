@@ -40,8 +40,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) 
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	controller.attach(surfaces, owner, area, commands); controller.show();
 	const feedback: WorkbenchSurface = attachments.mock.calls.at(-1)!.result;
-	const models = [new EditorTextModel({ location: { kind: 'workspace' as const, path: 'scenes/intro.lua' }, domain: 0, path: 'scenes/intro.lua', source: { type: 'lua', resid: 'intro' } }, 'lua', source),
-		new EditorTextModel({ location: { kind: 'workspace' as const, path: 'scenes/cart.lua' }, domain: 1, path: 'scenes/cart.lua', source: { type: 'lua', resid: 'cart' } }, 'lua', source)];
+	const models = [new EditorTextModel({ sourceFilePath: 'scenes/intro.lua', location: { kind: 'workspace' as const, path: 'scenes/intro.lua' }, domain: 0, path: 'scenes/intro.lua', source: { type: 'lua', resid: 'intro' } }, 'lua', source),
+		new EditorTextModel({ sourceFilePath: 'scenes/cart.lua', location: { kind: 'workspace' as const, path: 'scenes/cart.lua' }, domain: 1, path: 'scenes/cart.lua', source: { type: 'lua', resid: 'cart' } }, 'lua', source)];
 	controller.setDiagnostics(models.map(model => diagnostic(model)), { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	controller.setSelectionIndex(-1);
 	const unbind = controller.focusTarget.bindKeyboard(event => controller.handleKeyboard(event, group));
@@ -165,7 +165,7 @@ test('automatic height stops materializing additional diagnostics at its existin
 });
 
 test('qualified feedback distinguishes duplicate basenames and retires on replacement, modality, hide and detach', t => {
-	const f = fixture(t), duplicate = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'other/intro.lua' }, domain: 1, path: 'other/intro.lua', source: { type: 'lua', resid: 'other' } }, 'lua', source);
+	const f = fixture(t), duplicate = new EditorTextModel({ sourceFilePath: 'other/intro.lua', location: { kind: 'workspace' as const, path: 'other/intro.lua' }, domain: 1, path: 'other/intro.lua', source: { type: 'lua', resid: 'other' } }, 'lua', source);
 	t.after(() => duplicate.dispose());
 	f.controller.setDiagnostics([diagnostic(f.models[0]), diagnostic(duplicate)], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	f.controller.setFocused(true); f.press('Home'); f.paint();
@@ -205,8 +205,8 @@ test('new row heights govern Home/End/Page and wheel hit geometry without changi
 test('Enter preserves the diagnostic model/version and exact source selection rather than the displayed basename', t => {
 	const f = fixture(t); editorTextModelService.clear(); f.group.model.clear();
 	t.after(initializeNavigationState(f.group));
-	const a = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'a/shared.lua' }, domain: 0, path: 'a/shared.lua', source: { type: 'lua', resid: 'a' } }, 'lua', source);
-	const b = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'b/shared.lua' }, domain: 1, path: 'b/shared.lua', source: { type: 'lua', resid: 'b' } }, 'lua', source);
+	const a = editorTextModelService.retain({ sourceFilePath: 'a/shared.lua', location: { kind: 'workspace' as const, path: 'a/shared.lua' }, domain: 0, path: 'a/shared.lua', source: { type: 'lua', resid: 'a' } }, 'lua', source);
+	const b = editorTextModelService.retain({ sourceFilePath: 'b/shared.lua', location: { kind: 'workspace' as const, path: 'b/shared.lua' }, domain: 1, path: 'b/shared.lua', source: { type: 'lua', resid: 'b' } }, 'lua', source);
 	t.after(() => { f.group.model.clear(); resetNavigationHistoryState(); editorTextModelService.clear(); });
 	f.controller.setDiagnostics([diagnostic(a), diagnostic(b, 7, 3)], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	f.controller.setFocused(true); f.paint(); f.press('End'); f.press('Enter');

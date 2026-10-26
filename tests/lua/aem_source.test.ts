@@ -7,6 +7,7 @@ import { createStructuredValueEdit } from '../../ide/language/yaml/structured_ed
 import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { projectAemSource } from '../../ide/workbench/contrib/aem/source';
 import { setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
+import { resolveWorkspacePath } from '../../ide/workspace/path';
 
 const documents = [
 	{ format: 'yaml', source: '# authored event map\nevents:\n  story:\n    channel: "music" # retain this comment\n    rules:\n      - go:\n          audio_id: "theme"\n  impact:\n    channel: "sfx"\n    rules: []\n' },
@@ -15,7 +16,7 @@ const documents = [
 
 function fixture(t: TestContext, format: 'yaml' | 'json', source: string) {
 	const path = `res/audio/events.aem.${format}`;
-	const resource: RuntimeResource = { domain: 0, path, location: { kind: 'project', projectRootPath: 'carts/test', path },
+	const resource: RuntimeResource = { sourceFilePath: resolveWorkspacePath(path, 'carts/test'), domain: 0, path, location: { kind: 'project', projectRootPath: 'carts/test', path },
 		source: { type: 'aem', resid: 'events', source_path: path } };
 	const model = new EditorTextModel(resource, 'aem', source), input = new AemEditorInput(model);
 	t.after(() => { input.dispose(); model.dispose(); });

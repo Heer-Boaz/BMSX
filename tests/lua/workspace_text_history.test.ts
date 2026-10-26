@@ -9,7 +9,7 @@ import { UNDO_HISTORY_LIMIT } from '../../ide/common/constants';
 function fixture(t: TestContext) {
 	const service = new EditorTextModelService();
 	t.after(() => service.clear());
-	const models = ['a.lua', 'b.lua', 'c.lua'].map((path, index) => service.retain({ location: { kind: 'workspace' as const, path }, domain: 0, path,
+	const models = ['a.lua', 'b.lua', 'c.lua'].map((path, index) => service.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path,
 		source: { type: 'lua', resid: path } }, 'lua', String(index)));
 	return { service, models, text: () => models.map(model => model.buffer.getText()),
 		plan: (selected = models): Map<EditorTextModel, EditorModelEdit> => new Map(selected.map(model => [model,

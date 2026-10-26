@@ -35,7 +35,7 @@ function entry(owner: EditorGroupView, path: string, value: number): NavigationH
 	return new NavigationHistoryEntry({ kind: 'resource', resource: { domain: 0, path }, editorId: WORKBENCH_TEXT_EDITOR_ID }, new Location(value), owner);
 }
 function code(path: string) {
-	const model = editorTextModelService.retain({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
+	const model = editorTextModelService.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
 	return new CodeEditorInput(model);
 }
 

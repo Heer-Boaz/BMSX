@@ -10,7 +10,7 @@ import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { getLuaTableFieldTriviaSpan } from '../../toolchain/ts/lua/syntax/table_fields';
 import { runCompiledLua } from './cpu_test_harness';
 
-const resource: RuntimeResource = { location: { kind: 'workspace' as const, path: 'table.lua' },
+const resource: RuntimeResource = { sourceFilePath: 'table.lua', location: { kind: 'workspace' as const, path: 'table.lua' },
 	domain: 0, path: 'table.lua',
 	source: { resid: 'table.lua', type: 'lua', source_path: 'table.lua', generated: false },
 };
