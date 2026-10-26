@@ -15,7 +15,7 @@ import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
-import { clearCodeEditorInputs, resolveCodeEditorInput, retainModelCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import type { EditorInputSerializers } from '../../ide/workbench/services/editor/editor_serialization';
 import { CodeEditorInputSerializer } from '../../ide/workbench/contrib/code_editor/editor_serializer';
@@ -87,7 +87,7 @@ function fixture(t: TestContext) {
 	const unsubscribe = editorTextModelService.onDidChangeContent((model, event) => {
 		behavior.onDidChangeContent(model, event); scene.onDidChangeContent(model, event);
 	});
-	t.after(() => { panes.dispose(); scenario.dispose(); runs.dispose(); unsubscribe(); editorTabGroup.clear(); clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
+	t.after(() => { panes.dispose(); scenario.dispose(); runs.dispose(); unsubscribe(); editorTabGroup.clear(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'definitions.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
 	return { sources, panes, behavior, scene, scenario, serializers, model, runtime };
@@ -96,7 +96,7 @@ function fixture(t: TestContext) {
 test('group round-trip restores ordered clean/dirty views, preview and distinct definitions sharing one hydrated model', async t => {
 	const f = fixture(t);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty 🐉\r\n' }]);
-	const code = resolveCodeEditorInput(retainModelCodeTabContext(f.model));
+	const code = new CodeEditorInput(f.model);
 	code.context.view.cursorRow = 2; code.context.view.cursorColumn = 8;
 	code.context.view.selectionAnchor = { row: 1, column: 3 }; code.context.view.scrollRow = 1; code.context.view.scrollLeft = 17.25;
 	editorTabGroup.initialize(code);
@@ -112,7 +112,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	scene.position = { outlineScroll: 1, detailsScroll: 17 }; editorTabGroup.add(scene);
 	const cleanResource = resolveRuntimeResource(f.sources, { domain: 1, path: 'definitions.lua' })!;
 	const cleanModel = editorTextModelService.retain(cleanResource, 'lua', '-- second slot');
-	const clean = resolveCodeEditorInput(retainModelCodeTabContext(cleanModel)); editorTabGroup.add(clean, { pinned: false });
+	const clean = new CodeEditorInput(cleanModel); editorTabGroup.add(clean, { pinned: false });
 	editorTabGroup.activate(lenses[1]);
 	const before = editorTabGroup.serialize(f.serializers);
 	assert.equal(editorTabGroup.serialize(f.serializers, before), before, 'unchanged checkpoint reuses immutable group');
@@ -148,7 +148,7 @@ test('changed canonical bytes retain topology but cannot adopt a same-length nam
 	const record = f.sources.cartridgeSlots[0]!.luaSources.records[0];
 	record.src = record.base_src = SOURCE.replaceAll('fixture.second', 'another.second');
 	f.sources.cartridgeSlots[0]!.luaSources.revision += 1;
-	f.panes.clearEditor(); editorTabGroup.clear(); clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
+	f.panes.clearEditor(); editorTabGroup.clear(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
 	await editorTabGroup.deserialize(value, f.serializers);
 	const restored = editorTabGroup.activeTab;
 	assert.ok(restored?.kind === 'behavior_lens');
@@ -195,7 +195,7 @@ for (const changeProvider of [false, true]) test(`behavior mementos fingerprint 
 test('source fingerprint is retained by buffer version and shared by views, not recomputed on cursor movement', t => {
 	const { model } = fixture(t);
 	const first = getTextSnapshotFingerprint(model.buffer);
-	const input = resolveCodeEditorInput(retainModelCodeTabContext(model));
+	const input = new CodeEditorInput(model);
 	const getText = t.mock.method(model.buffer, 'getText', () => assert.fail('stable snapshot reread source'));
 	for (let index = 0; index < 1000; index += 1) {
 		input.context.view.cursorColumn = index % 20;

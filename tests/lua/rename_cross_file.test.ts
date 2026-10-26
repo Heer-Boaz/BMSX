@@ -5,8 +5,7 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { createLuaSemanticFrontendFromSnapshot } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
 import { getOrCreateSemanticProject, resetSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { CrossFileRenameManager } from '../../ide/workbench/contrib/code_editor/rename/operations';
-import { buildCodeTabId } from '../../ide/workbench/ui/code_tab/contexts';
-import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
+import { buildCodeTabId } from '../../ide/workbench/ui/tab/id';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
@@ -72,8 +71,7 @@ test('cross file rename updates a retained background model without opening an e
 	editorTabGroup.initialize(resourceTab);
 	t.after(() => {
 		editorTabGroup.clear();
-		codeEditorInputManager.clear();
-		editorTextModelService.clear();
+			editorTextModelService.clear();
 	});
 
 	const definitionCol = mainSource.indexOf('state') + 1;
@@ -97,7 +95,7 @@ test('cross file rename updates a retained background model without opening an e
 	assert.equal(usageModel.buffer.getText(), 'print(worldState.value)');
 	assert.equal(editorTabGroup.tabs.length, 1);
 	assert.equal(editorTabGroup.activeTab, resourceTab);
-	assert.equal(codeEditorInputManager.get(buildCodeTabId(usageResource)), undefined);
+	assert.equal(editorTabGroup.findById(buildCodeTabId(usageResource)), undefined);
 
 	const updatedData = getOrCreateSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN).getFileData('usage.lua');
 	assert.ok(updatedData);

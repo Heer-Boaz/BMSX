@@ -27,7 +27,7 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
-import { resolveCodeEditorInput, retainModelCodeTabContext } from '../../ui/code_tab/contexts';
+import { CodeEditorInput } from '../code_editor/editor_input';
 import { openEditorTab } from '../../ui/tabs';
 import { sourceTabDescription } from '../../ui/tab/titles';
 import type { PointerHoverTarget } from '../../../input/pointer/hover';
@@ -118,7 +118,7 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 		}, item => {
 			const { model, offset } = item.location, position = { row: 0, column: 0 };
 			model.buffer.positionAt(offset, position);
-			openEditorTab(this.panes, resolveCodeEditorInput(retainModelCodeTabContext(model)), {
+			openEditorTab(this.panes, new CodeEditorInput(model), {
 				selection: { row: position.row, startColumn: position.column, endColumn: position.column },
 			});
 		}, lifetime => {
@@ -128,7 +128,7 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 		});
 	}
 	private reveal(models: readonly EditorTextModel[]): void {
-		for (const model of models) openEditorTab(this.panes, resolveCodeEditorInput(retainModelCodeTabContext(model)));
+		for (const model of models) openEditorTab(this.panes, new CodeEditorInput(model));
 	}
 	private async apply(input: WorkspaceEditReviewInput): Promise<void> {
 		try {

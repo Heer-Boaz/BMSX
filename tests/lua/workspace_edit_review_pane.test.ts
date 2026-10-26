@@ -13,11 +13,11 @@ import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
+import { createBlua32SystemSourceImage, resolveRuntimeResource } from '../../ide/runtime/sources';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { closeTab, getActiveTab, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
-import { createCodeEditorInput, retainEntryTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { WorkspaceEditReviewPane } from '../../ide/workbench/contrib/edit_review/editor_pane';
 import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
@@ -48,7 +48,7 @@ function fixture(t: TestContext) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	openEditorTab(editor.editorPanes, createCodeEditorInput(retainEntryTabContext(sources)));
+	openEditorTab(editor.editorPanes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	t.after(async () => { problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
 	const code = getActiveTab()!, model = activeCodeEditor.model!;

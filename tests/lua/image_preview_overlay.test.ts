@@ -26,13 +26,13 @@ import { createHostFrameFixture } from '../helpers/host_frame';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
-import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
+import { createBlua32SystemSourceImage, resolveRuntimeResource } from '../../ide/runtime/sources';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
 import { getActiveTab, getTabs, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
-import { createCodeEditorInput, retainEntryTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 
@@ -93,7 +93,7 @@ function workbenchFixture(t: TestContext) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	openEditorTab(editor.editorPanes, createCodeEditorInput(retainEntryTabContext(sources)));
+	openEditorTab(editor.editorPanes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	editorRuntimeState.active = true; editor.update(0);
 	const cache = new ImagePreviewCache(async () => pixels);
 	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.paneSurface, editor.commands);

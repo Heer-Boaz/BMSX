@@ -13,7 +13,6 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
-import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
@@ -28,7 +27,7 @@ function fixture(t: TestContext, path: string, canonicalPath: string, generated 
 	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
 	const editor = { quickInput: picker } as CartEditor;
 	t.after(() => {
-		picker.dispose(); menu.dispose(); editorTabGroup.clear(); codeEditorInputManager.clear();
+		picker.dispose(); menu.dispose(); editorTabGroup.clear();
 		editorTextModelService.clear(); inputFocus.setTarget(null);
 	});
 	return { clock, sources, editor, picker, resource };

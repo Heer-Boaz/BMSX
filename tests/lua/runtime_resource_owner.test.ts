@@ -25,11 +25,8 @@ import type { RawRomSource } from '../../toolchain/ts/rompack/source';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { ResourceFilesModel } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { buildResourceQuickPickItems } from '../../ide/workbench/contrib/resources/quick_access';
-import {
-	createLuaCodeTabContext,
-	retainEntryTabContext,
-} from '../../ide/workbench/ui/code_tab/contexts';
-import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
+import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 
 function luaSource(path: string, resid: string, source: string): LuaSourceRecord {
@@ -152,8 +149,8 @@ test('catalog location follows canonical source provenance without changing exec
 	assert.deepEqual(resource(0, neighbour.source_path).location, { kind: 'workspace', path: neighbour.normalized_source_path });
 	assert.equal(local.sourceKind, 'library'); assert.equal(testlib.sourceKind, 'source-only');
 	assert.equal(shared.program_module, true); assert.equal(testlib.program_module, false);
-	const systemModel = createLuaCodeTabContext(sources, systemShared).model;
-	const cartModel = createLuaCodeTabContext(sources, cartShared).model;
+	const systemModel = resolveLuaTextFileModel(editorTextModelService, sources, systemShared);
+	const cartModel = resolveLuaTextFileModel(editorTextModelService, sources, cartShared);
 	assert.ok(systemModel !== cartModel, 'provenance does not merge independently authored execution-context working copies');
 	assert.ok(systemModel.resource === systemShared); assert.ok(cartModel.resource === cartShared);
 	const location = cartShared.location, revision = sources.resourceCatalogRevision;
@@ -172,7 +169,7 @@ test('same runtime resource publishes changed provenance while retaining its can
 	const registry = sourceRegistry('carts/test', [source]);
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', []), [registry, null], 0);
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: source.source_path })!;
-	const model = createLuaCodeTabContext(sources, resource).model;
+	const model = resolveLuaTextFileModel(editorTextModelService, sources, resource);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]);
 	const bytes = model.buffer.getText(), revision = sources.resourceCatalogRevision;
 	const replacement = { ...source, normalized_source_path: `carts/test/${source.source_path}` };
@@ -180,7 +177,7 @@ test('same runtime resource publishes changed provenance while retaining its can
 	assert.ok(registerRuntimeLuaResource(sources, 0, replacement) === resource);
 	assert.deepEqual(resource.location, { kind: 'project', projectRootPath: 'carts/test', path: source.source_path });
 	assert.ok(sources.resourceCatalogRevision > revision, 'provenance is a catalog publication even when runtime identity and role are unchanged');
-	assert.ok(createLuaCodeTabContext(sources, resource).model === model);
+	assert.ok(resolveLuaTextFileModel(editorTextModelService, sources, resource) === model);
 	assert.equal(model.buffer.getText(), bytes); assert.equal(model.dirty, true);
 	model.undo(); assert.equal(model.buffer.getText(), source.src); assert.equal(model.dirty, false);
 });
@@ -212,8 +209,10 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 		.find(entry => entry.resource.path === retained.path && entry.resource.domain === retained.domain)!;
 	assert.strictEqual(searchEntry.resource, retained);
 
-	const context = createLuaCodeTabContext(sources, retained);
-	assert.strictEqual(context.model.resource, retained);
+	const input = resolveLuaCodeEditorInput(sources, retained);
+	t.after(() => input.dispose());
+	const model = input.workingCopy;
+	assert.strictEqual(model.resource, retained);
 
 	const replacement = luaSource(retained.path, 'cart-main', 'return 3');
 	registerLuaSourceRecord(cartridgeRegistry, replacement);
@@ -222,14 +221,12 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 	assert.strictEqual(files.selectedNode, panelNode);
 	assert.strictEqual(panelNode.element.resource, retained);
 	assert.strictEqual(panelNode.element.resource.source, replacement);
-	assert.strictEqual(context.model.resource.source, replacement);
+	assert.strictEqual(model.resource.source, replacement);
 });
 
-test('workspace entry tab opens the development cartridge instead of the booting BIOS', (t) => {
-	codeEditorInputManager.clear();
+test('fresh Source candidates keep their explicit authoring resource while the BIOS executes', (t) => {
 	editorTextModelService.clear();
 	t.after(() => {
-		codeEditorInputManager.clear();
 		editorTextModelService.clear();
 	});
 	const systemRegistry = sourceRegistry('machine/bios', [
@@ -247,12 +244,15 @@ test('workspace entry tab opens the development cartridge instead of the booting
 	);
 	sources.cartridgeSlots[0]!.rom.header.blua32ImageOffset = 64;
 
-	const context = retainEntryTabContext(sources);
-	assert.equal(context.model.resource.domain, 0);
-	assert.equal(context.model.resource.path, 'cart.lua');
-	context.view.cursorRow = 7;
-	assert.strictEqual(retainEntryTabContext(sources), context);
-	assert.equal(retainEntryTabContext(sources).view.cursorRow, 7);
+	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'cart.lua' })!;
+	const first = resolveLuaCodeEditorInput(sources, resource), second = resolveLuaCodeEditorInput(sources, resource);
+	t.after(() => { first.dispose(); second.dispose(); });
+	assert.equal(first.workingCopy.resource.domain, 0);
+	assert.equal(first.workingCopy.resource.path, 'cart.lua');
+	first.context.view.cursorColumn = 7;
+	assert.notEqual(first, second); assert.notEqual(first.context.view, second.context.view);
+	assert.equal(first.workingCopy, second.workingCopy);
+	assert.equal(second.context.view.cursorColumn, 0);
 });
 
 test('authoring catalog keeps loaded data accessible while the BIOS or either cartridge executes', () => {

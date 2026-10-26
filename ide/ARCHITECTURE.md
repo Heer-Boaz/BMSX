@@ -56,6 +56,10 @@ Contributions own concrete retained editor inputs; `workbench/ui/tab/` owns
 their group membership.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
+Source inputs own their model-to-view subscriptions. Closing one releases its
+view without disposing the canonical model or another input's view.
+The group's Source pane keeps plain reading mementos for ordinary reopening,
+separate from serialized view state and explicit navigation selections.
 Text history retains source selections and inert editing origins, not viewport
 coordinates or control references. Source history commands name their invoking
 view; sibling views track the canonical text changes independently.

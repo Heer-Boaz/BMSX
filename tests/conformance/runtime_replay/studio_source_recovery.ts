@@ -2,7 +2,8 @@ import type { SerializedCodeEditorInput } from '../../../ide/workbench/contrib/c
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
-import { findCodeTabContext } from '../../../ide/workbench/ui/code_tab/contexts';
+import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
+import { buildCodeTabId } from '../../../ide/workbench/ui/tab/id';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { workspaceState } from '../../../ide/workbench/workspace/state';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -20,7 +21,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	const model = lens.workingCopy;
 	const graph = lens.view.presentation;
 	const original = model.buffer.getText();
-	check(!model.dirty && !model.canUndo && findCodeTabContext(model.resource) === null, 'crossfoe: clean Lens model exists without a code view');
+	check(!model.dirty && !model.canUndo && editorTabGroup.findById(buildCodeTabId(model.resource)) === undefined, 'crossfoe: clean Lens model exists without a code view');
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await runPaletteCommand('Behavior Lens: Move BT Child Later');

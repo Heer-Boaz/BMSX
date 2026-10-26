@@ -1,2 +1,2 @@
-/** Stable identity of one retained code-editor input. */
+/** Logical Source matching key within an editor group; each input owns a distinct live view. */
 export type CodeEditorInputId = `code:${string}`;

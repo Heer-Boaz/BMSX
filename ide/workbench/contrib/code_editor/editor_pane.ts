@@ -58,6 +58,8 @@ import { CodeEditorNavigationSelection } from './navigation_selection';
 import { closeLineJump } from './find/line_jump';
 import { setActiveDiagnostics } from '../../../editor/contrib/diagnostics/state';
 import { ensureCursorVisible } from '../../../editor/ui/view/caret/view';
+import type { EditorTextModel } from '../../../editor/model/text_model';
+import { captureCodeEditorView, type CodeEditorLocation } from './view_snapshot';
 
 // A short source line remains readable without making the gutter part of its text budget.
 const SOURCE_READING_COLUMNS = 48;
@@ -71,6 +73,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	}
 
 	private readonly nativeText = new CodeEditorTextInput();
+	private readonly viewMementos = new WeakMap<EditorTextModel, CodeEditorLocation>();
 	private layoutWidth = -1;
 	private textTop = -1;
 	private textBottom = -1;
@@ -134,6 +137,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 	}
 
 	protected activate(): void {
+		this.input.initializeViewState(this.viewMementos.get(this.input.workingCopy));
 		activateCodeEditorTab(this.input);
 		this.layoutWidth = this.contentBounds.right - this.contentBounds.left;
 		activeCodeEditor.focusTarget.textInput = this.nativeText;
@@ -162,6 +166,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 
 	public override clearInput(): void {
 		storeCodeTabContext(this.input.context);
+		this.viewMementos.set(this.input.workingCopy, captureCodeEditorView(this.input));
 		pointerCapture.cancelTarget(this);
 		this.editor.completion.clearInput();
 		activeCodeEditor.focusTarget.release();

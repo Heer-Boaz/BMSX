@@ -9,13 +9,13 @@ import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
+import { createBlua32SystemSourceImage, resolveRuntimeResource } from '../../ide/runtime/sources';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { LuaProgramEditorPane } from '../../ide/workbench/contrib/lua_program/editor_pane';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { getActiveTab, openEditorTab } from '../../ide/workbench/ui/tabs';
-import { createCodeEditorInput, retainEntryTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createHostFrameFixture } from '../helpers/host_frame';
@@ -51,7 +51,7 @@ function fixture(t: TestContext, source: string) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	openEditorTab(editor.editorPanes, createCodeEditorInput(retainEntryTabContext(sources)));
+	openEditorTab(editor.editorPanes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	t.after(async () => {
 		const pane = editor.editorPanes.activePane;
 		if (pane instanceof SceneEditorPane) {

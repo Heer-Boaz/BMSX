@@ -7,9 +7,9 @@ import { inputFocus } from '../../ide/input/focus';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { applyInlineFieldEditing, setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { activeCodeEditor } from '../../ide/editor/ui/code_editor_state';
 import { CodeEditorTextInput } from '../../ide/workbench/contrib/code_editor/native_text_input';
-import { CodeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/view';
 import { clearBackgroundTasks } from '../../ide/common/background_tasks';
 import { expandTabs } from '../../ide/common/text';
@@ -26,12 +26,11 @@ function sourceRangeFixture(t: TestContext, source: string) {
 	applyViewportSize({ width: 78, height: 288 }); refreshWorkbenchLayout();
 	editorViewState.wordWrapEnabled = true;
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'range.lua' }, domain: 0, path: 'range.lua', source: { type: 'lua', resid: 'range' } }, 'lua', source);
-	const view = createCodeEditorViewState(), inputs = new CodeEditorInputManager();
-	inputs.register({ id: 'code:0\0range.lua', title: 'range.lua', model, view, runtimeErrorOverlay: null, executionStopRow: null });
+	const input = new CodeEditorInput(model), view = input.context.view;
 	activeCodeEditor.attach(model, view); activeCodeEditor.focusTarget.focus();
 	const unbind = model.onDidChangeContent(event => editorViewState.layout.onDidChangeContent(model.buffer, event));
 	t.after(() => {
-		unbind(); inputs.clear(); activeCodeEditor.focusTarget.release(); activeCodeEditor.detach(); editorViewState.layout.invalidateAllHighlights();
+		unbind(); input.dispose(); activeCodeEditor.focusTarget.release(); activeCodeEditor.detach(); editorViewState.layout.invalidateAllHighlights();
 		model.dispose(); clearBackgroundTasks();
 	});
 	return { model, view, layout: editorViewState.layout };
@@ -156,11 +155,10 @@ test('native field constraints retain the accepted edit and its own cursor', () 
 test('native source replacement uses bounded canonical context and one shared Undo operation', t => {
 	const source = '-- header\r\nlocal label = "old"\r\nreturn label\r\n';
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'native.lua' }, domain: 0, path: 'native.lua', source: { type: 'lua', resid: 'native' } }, 'lua', source);
-	const view = createCodeEditorViewState(), inputs = new CodeEditorInputManager();
-	inputs.register({ id: 'code:0\0native.lua', title: 'native.lua', model, view, runtimeErrorOverlay: null, executionStopRow: null });
+	const input = new CodeEditorInput(model), view = input.context.view;
 	activeCodeEditor.attach(model, view); configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
 	const target = new CodeEditorTextInput();
-	t.after(() => { inputs.clear(); activeCodeEditor.detach(); model.dispose(); clearBackgroundTasks(); });
+	t.after(() => { input.dispose(); activeCodeEditor.detach(); model.dispose(); clearBackgroundTasks(); });
 	const from = source.indexOf('old'); target.setSelection(from, from + 3);
 	const context = target.readText();
 	assert.equal(context.offset, source.indexOf('local'));
@@ -175,9 +173,10 @@ test('native source replacement uses bounded canonical context and one shared Un
 
 test('native source selection notifies its actual cursor owner only on change', t => {
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'cursor.lua' }, domain: 0, path: 'cursor.lua', source: { type: 'lua', resid: 'cursor' } }, 'lua', 'abc');
-	activeCodeEditor.attach(model, createCodeEditorViewState()); configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
+	const input = new CodeEditorInput(model);
+	activeCodeEditor.attach(model, input.context.view); configureFontVariant(new VirtualHeadlessClock(), 'tiny', 'lua');
 	let moves = 0; const unbind = activeCodeEditor.onDidMoveCursor(() => moves++);
-	t.after(() => { unbind(); activeCodeEditor.detach(); model.dispose(); clearBackgroundTasks(); });
+	t.after(() => { unbind(); activeCodeEditor.detach(); input.dispose(); model.dispose(); clearBackgroundTasks(); });
 	const target = new CodeEditorTextInput(); target.setSelection(1, 2); target.setSelection(1, 2);
 	assert.equal(moves, 1); target.setSelection(2, 2); assert.equal(moves, 2);
 	assert.equal(model.canUndo, false);

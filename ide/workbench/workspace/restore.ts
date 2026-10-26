@@ -4,9 +4,6 @@ import {
 	type RuntimeSourceState,
 } from '../../runtime/sources';
 import type { CartEditor } from '../../cart_editor';
-import {
-	clearCodeEditorInputs,
-} from '../ui/code_tab/contexts';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
 import { workspaceDirtyRecords } from './state';
@@ -25,7 +22,6 @@ export async function applyWorkspaceAutosavePayload(
 ): Promise<void> {
 	editor.editorPanes.clearEditor();
 	editorTabGroup.clear();
-	clearCodeEditorInputs();
 	editorTextModelService.clear();
 	editor.setFontVariant(payload.fontVariant);
 	await restoreWorkspaceDirtyModels(editorTextModelService, sources, payload.dirtyFiles, workspaceDirtyRecords);

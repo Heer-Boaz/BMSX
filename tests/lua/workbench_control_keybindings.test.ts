@@ -28,7 +28,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
+import { createBlua32SystemSourceImage, resolveRuntimeResource } from '../../ide/runtime/sources';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
@@ -36,7 +36,7 @@ import { createHostFrameFixture } from '../helpers/host_frame';
 import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { closeTab, getTabs, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
-import { createCodeEditorInput, retainEntryTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 
 /** Native key dispatch and real menu/popup owners in a source-backed workbench. */
@@ -59,7 +59,7 @@ function menuFixture(t: TestContext) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	openEditorTab(editor.editorPanes, createCodeEditorInput(retainEntryTabContext(sources)));
+	openEditorTab(editor.editorPanes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
 	const origin = inputFocus.target!, model = activeCodeEditor.model!, view = activeCodeEditor.view!;
 	view.cursorRow = 1; view.cursorColumn = 6;

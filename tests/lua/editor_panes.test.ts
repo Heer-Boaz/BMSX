@@ -28,12 +28,9 @@ import type {
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
-import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import { inputFocus } from '../../ide/input/focus';
 import { closeTab } from '../../ide/workbench/ui/tabs';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import { openBuildLog } from '../../ide/workbench/contrib/builds/editor_input';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import type { StudioBuildJob } from '../../hosts/common/studio_builds';
@@ -116,19 +113,8 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 
 function codeInput(id: 'code:0\0a.lua' | 'code:0\0b.lua'): CodeEditorInput {
 	const path = id.slice('code:0\0'.length);
-	const context: CodeTabContext = {
-		id,
-		title: id,
-		model: new EditorTextModel({ location: { kind: 'workspace' as const, path },
-			domain: 0,
-			path,
-			source: { resid: path, type: 'lua' },
-		}, 'lua', ''),
-		view: createCodeEditorViewState(),
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-	};
-	return new CodeEditorInput(context);
+	return new CodeEditorInput(new EditorTextModel({ location: { kind: 'workspace' as const, path },
+		domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', ''));
 }
 
 function resourceInput(): ResourceViewerInput {
@@ -246,7 +232,8 @@ test('Build Output opens the actual request identity once, retains its document,
 
 test('closing the last tab detaches its pane before disposal and leaves the group empty', () => {
 	const harness = createEditorPanes();
-	const context = codeInput('code:0\0a.lua').context;
+	const model = new EditorTextModel({ location: { kind: 'workspace', path: 'a.lua' },
+		domain: 0, path: 'a.lua', source: { resid: 'a.lua', type: 'lua' } }, 'lua', '');
 	class ClosingInput extends CodeEditorInput {
 		public disposals = 0;
 		public override dispose(): void {
@@ -255,8 +242,7 @@ test('closing the last tab detaches its pane before disposal and leaves the grou
 			super.dispose();
 		}
 	}
-	const input = new ClosingInput(context);
-	codeEditorInputManager.register(context);
+	const input = new ClosingInput(model);
 	editorTabGroup.initialize(input);
 	harness.editorPanes.openEditor(input);
 	try {
@@ -267,7 +253,7 @@ test('closing the last tab detaches its pane before disposal and leaves the grou
 		assert.equal(harness.editorPanes.activePane, null);
 	} finally {
 		harness.editorPanes.dispose();
-		editorTabGroup.clear(); codeEditorInputManager.clear(); context.model.dispose();
+		editorTabGroup.clear(); model.dispose();
 	}
 });
 
@@ -339,7 +325,7 @@ test('input blur completes against the old attached resource before the next pan
 test('same-input navigation blurs the old control before changing selection, while tab focus does not reactivate it', t => {
 	const harness = createEditorPanes();
 	const input = codeInput('code:0\0a.lua');
-	t.after(() => { harness.editorPanes.dispose(); input.dispose(); input.context.model.dispose(); });
+	t.after(() => { harness.editorPanes.dispose(); input.dispose(); input.workingCopy.dispose(); });
 	const selection = { row: 2, startColumn: 1, endColumn: 3 };
 	harness.editorPanes.openEditor(input, selection);
 	const pane = harness.codePane();

@@ -130,7 +130,12 @@ test('code horizontal pixelscroll reaches Unicode line end through real Studio u
 				await action({ execute: 'click', x: lastCaret.left + 2, y: top + 2 });
 				await press('ShiftLeft+End'); await press('ControlLeft+KeyC');
 				assert.equal((await send({ execute: 'clipboard-get' })).text, '…', 'the displayed last glyph must select exactly its original UTF-16 source suffix');
-				await capture(`${variant}-last-glyph-source-selection`);
+				await press('ControlLeft+KeyW');
+				await press('ControlLeft+Comma'); await press('ControlLeft+KeyA'); await paste('cart.lua');
+				await wait(3); await press('Enter'); await wait(3); await press('ControlLeft+KeyC');
+				assert.equal((await send({ execute: 'clipboard-get' })).text, '…',
+					'ordinary Source reopening must restore the selected suffix without reviving the closed view');
+				await capture(`${variant}-reopened-last-glyph-source-selection`);
 			});
 			assert.equal(await copyAll(), line, 'scrollbar, caret or pointer navigation changed source bytes'); await press('Home');
 			await press('ControlLeft+ShiftLeft+KeyT'); await wait(160);

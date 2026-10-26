@@ -33,7 +33,7 @@ import { testSceneMemberMoves } from './studio_scene_moves';
 import { testSceneFieldInsertion } from './studio_scene_insertion';
 import { testScenePlacementIdentity } from './studio_scene_identity';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { getCodeTabContexts } from '../../../ide/workbench/ui/code_tab/contexts';
+import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
 import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
@@ -319,8 +319,9 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(title() === faultActor, 'fault repair keeps the retained actor');
 	check(ide.fault.lastLuaCallStack.length === 0 && ide.fault.faultSnapshot === null, 'repair clears obsolete fault inspection');
 	check(runtimeErrorState.activeOverlay === null, 'repair removes the active error adornment');
-	for (const context of getCodeTabContexts()) {
-		check(context.runtimeErrorOverlay === null, 'repair removes error adornments from all retained code views');
+	for (const input of editorTabGroup.tabs) {
+		if (input.kind !== 'code_editor') continue;
+		check(input.context.runtimeErrorOverlay === null, 'repair removes error adornments from all retained code views');
 	}
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');

@@ -3,13 +3,12 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeResource } from '../../../common/resource';
 import { openEditorTab } from '../tabs';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
-import { resolveCodeEditorInput, retainLuaCodeTabContext, retainModelCodeTabContext } from './contexts';
-import { resolveTextFileModel } from '../../services/working_copy/text_file_model';
+import { CodeEditorInput } from '../../contrib/code_editor/editor_input';
+import { resolveLuaTextFileModel, resolveTextFileModel } from '../../services/working_copy/text_file_model';
 import type { EditorPanes } from '../../services/editor/editor_panes';
-import type { CodeEditorInput } from '../tab/model';
 
 export function resolveLuaCodeEditorInput(sources: RuntimeSourceState, resource: RuntimeResource): CodeEditorInput {
-	return resolveCodeEditorInput(retainLuaCodeTabContext(sources, resource));
+	return new CodeEditorInput(resolveLuaTextFileModel(editorTextModelService, sources, resource));
 }
 
 export async function resolveTextCodeEditorInput(
@@ -17,7 +16,7 @@ export async function resolveTextCodeEditorInput(
 	resource: RuntimeResource,
 ): Promise<CodeEditorInput> {
 	const model = await resolveTextFileModel(editorTextModelService, sources, resource);
-	return resolveCodeEditorInput(retainModelCodeTabContext(model));
+	return new CodeEditorInput(model);
 }
 
 export function openLuaCodeTab(

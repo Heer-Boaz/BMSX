@@ -5,7 +5,6 @@ import { CartMapController } from '../../ide/workbench/contrib/cart_maps/control
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { resolveTextCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
-import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { createTestEditorPanes } from '../helpers/editor_panes';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -17,7 +16,7 @@ for (const existing of [false, true]) test(`superseded map source opening dispos
 	const input = new CartMapInput(model, 'nemesis');
 	t.after(() => {
 		panes.dispose(); input.dispose(); editorTabGroup.clear();
-		codeEditorInputManager.clear(); editorTextModelService.clear();
+		editorTextModelService.clear();
 	});
 	const retained = existing ? await resolveTextCodeEditorInput(sources, resource) : undefined;
 	if (retained !== undefined) editorTabGroup.add(retained);
@@ -29,12 +28,18 @@ for (const existing of [false, true]) test(`superseded map source opening dispos
 	panes.beginOpen();
 	await new Promise<void>(resolve => setImmediate(resolve));
 	assert.equal(panes.activePane, null);
+	assert.equal(disposed.length, 1);
+	const candidate = disposed[0];
+	assert.equal(candidate.workingCopy, model);
 	if (retained !== undefined) {
-		assert.deepEqual(disposed, []);
+		assert.notEqual(candidate, retained);
+		assert.notEqual(candidate.context.view, retained.context.view);
 		assert.equal(editorTabGroup.findById(retained.id), retained);
-	} else {
-		assert.equal(disposed.length, 1);
-		assert.equal(disposed[0].workingCopy, model);
-		assert.equal(editorTabGroup.tabs.length, 0);
-	}
+		retained.context.view.cursorColumn = 3;
+	} else assert.equal(editorTabGroup.tabs.length, 0);
+	candidate.context.view.cursorColumn = 3;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- prefix\n' }]);
+	assert.equal(candidate.context.view.cursorRow, 0, 'discarded candidates no longer observe the canonical model');
+	if (retained !== undefined) assert.equal(retained.context.view.cursorRow, 1, 'the retained sibling keeps its binding');
+
 });

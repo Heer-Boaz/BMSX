@@ -10,7 +10,6 @@ import { BT_TRANSFER_SOURCE } from '../../helpers/behavior_transfer_fixture';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { EditorFont } from '../../../ide/editor/ui/view/font';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { createCodeEditorViewState } from '../../../ide/editor/ui/code_editor_state';
 import { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
 import { BehaviorLensInput } from '../../../ide/workbench/contrib/behavior_lens/editor_input';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
@@ -59,8 +58,7 @@ for (const documents of [4, 32, 128]) {
 		const model = new EditorTextModel(resource, 'lua', source);
 		const readText = model.buffer.getText.bind(model.buffer);
 		model.buffer.getText = () => { sourceReads += 1; return readText(); };
-		const code = new CodeEditorInput({ id: `code:0\0${resource.path}`, title: resource.path, model,
-			view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null });
+		const code = new CodeEditorInput(model);
 		codeInputs.push(code); group.add(code);
 		const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
 		for (const definition of document.definitions) {

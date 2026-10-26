@@ -18,11 +18,7 @@ import { buildBehaviorQuickPickItems } from '../../ide/workbench/contrib/behavio
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { QuickPickModel } from '../../ide/workbench/services/quick_input/model';
-import {
-	clearCodeEditorInputs,
-	createLuaCodeTabContext,
-	registerCodeTabContext,
-} from '../../ide/workbench/ui/code_tab/contexts';
+import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 
@@ -63,7 +59,7 @@ test('API-provider edits and Undo update the catalogue and open documents withou
 	const bridge = "return require('cartlib/fsm/library').register";
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', '')]),
 		[sourceRegistry('carts/fixture', [luaSource('actors.lua', source), luaSource('bridge.lua', bridge)]), null], 0);
-	t.after(() => { clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
+	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 	const main = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'actors.lua' })!, 'lua', source);
 	const provider = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'bridge.lua' })!, 'lua', bridge);
 	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
@@ -108,7 +104,6 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 		0,
 	);
 	t.after(() => {
-		clearCodeEditorInputs();
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
@@ -177,7 +172,6 @@ test('behavior registration index resolves separate FSM ids in the same Lua docu
 		0,
 	);
 	t.after(() => {
-		clearCodeEditorInputs();
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
@@ -211,7 +205,6 @@ test('kind-specific behavior picks select producer kinds, not names, files or qu
 		0,
 	);
 	t.after(() => {
-		clearCodeEditorInputs();
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
@@ -261,7 +254,6 @@ test('behavior registration index isolates domains and rebuilds on an authored d
 		0,
 	);
 	t.after(() => {
-		clearCodeEditorInputs();
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
@@ -278,9 +270,8 @@ test('behavior registration index isolates domains and rebuilds on an authored d
 	assert.strictEqual(index.resolve(1, 'action_effect', 'shared'), slot1Initial);
 
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: slot0Path })!;
-	const context = createLuaCodeTabContext(sources, resource);
-	registerCodeTabContext(context);
-	context.model.pushEditOperations([{
+	const model = resolveLuaTextFileModel(editorTextModelService, sources, resource);
+	model.pushEditOperations([{
 		offset: 0,
 		deleteLength: 0,
 		text: '-- authored edit\n',
@@ -291,8 +282,8 @@ test('behavior registration index isolates domains and rebuilds on an authored d
 	assert.notStrictEqual(slot0Edited, slot0Initial);
 	assert.strictEqual(index.resolve(1, 'action_effect', 'shared'), slot1Initial);
 
-	context.model.pushEditOperations([{
-		offset: context.model.buffer.length,
+	model.pushEditOperations([{
+		offset: model.buffer.length,
 		deleteLength: 0,
 		text: "\neffects.register_effect('shared', {})",
 	}]);

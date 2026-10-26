@@ -4,12 +4,10 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
-import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { EditorTabGroupModel, editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { openEditorTab } from '../../ide/workbench/ui/tabs';
 import { createTestEditorPanes } from '../helpers/editor_panes';
 import { navigationState } from '../../ide/navigation/navigation_history';
-import { buildCodeTabId } from '../../ide/workbench/ui/code_tab/contexts';
 
 function scene(path: string) {
 	return new SceneEditorInput(new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', 'return {}'));
@@ -33,8 +31,7 @@ test('one group preview replaces only its clean predecessor and keeps its tab po
 test('editing a shared model promotes its preview; Undo to clean never unpins it', () => {
 	const group = new EditorTabGroupModel();
 	const visual = scene('shared.lua');
-	const code = new CodeEditorInput({ id: 'code:0\0shared.lua', title: 'shared.lua', model: visual.workingCopy,
-		view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null });
+	const code = new CodeEditorInput(visual.workingCopy);
 	group.add(code); group.add(visual, { pinned: false });
 	code.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edit\n' }]);
 	assert.equal(group.previewTab, null); assert.equal(visual.isDirty(), true);
@@ -67,8 +64,7 @@ test('the authored audio file and its Source view share a working copy but retai
 	const model = new EditorTextModel({ location: { kind: 'workspace', path }, domain: 0, path,
 		source: { type: 'aem', resid: 'events' } }, 'aem', '# authored\nevents: {}\n');
 	const audio = new AemEditorInput(model), filename = path.slice(path.lastIndexOf('/') + 1);
-	const code = new CodeEditorInput({ id: buildCodeTabId(model.resource), title: filename, model,
-		view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null });
+	const code = new CodeEditorInput(model);
 	// Filename equality is the input's resource-label contract, not incidental UI wording.
 	assert.equal(audio.title, filename); assert.equal(code.title, filename);
 	assert.ok(audio.workingCopy === code.workingCopy && audio.resource === model.resource);
@@ -93,8 +89,7 @@ for (const distinction of ['path', 'domain'] as const) test(`same-name audio vie
 	const otherModel = new EditorTextModel({ location: { kind: 'workspace', path: otherPath }, domain: distinction === 'domain' ? 1 : 0, path: otherPath,
 		source: { type: 'aem', resid: 'other-events' } }, 'aem', 'events: {}\n');
 	const first = new AemEditorInput(firstModel), second = new AemEditorInput(otherModel);
-	const code = new CodeEditorInput({ id: buildCodeTabId(firstModel.resource), title: path.slice(path.lastIndexOf('/') + 1), model: firstModel,
-		view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null });
+	const code = new CodeEditorInput(firstModel);
 	group.add(first); group.add(second); group.add(code, { pinned: false });
 	assert.equal(first.title, second.title); assert.equal(first.shortDescription, second.shortDescription);
 	assert.notEqual(first.id, second.id); assert.notEqual(first.workingCopy, second.workingCopy);

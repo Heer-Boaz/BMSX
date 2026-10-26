@@ -9,7 +9,6 @@ import type { SerializedEditorInput } from '../../ide/workbench/services/editor/
 import './test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
@@ -49,16 +48,10 @@ import { ConsoleLogOutput, LogLevel } from '../../hosts/common/log';
 import { RecordingLogOutput } from '../../ide/testing/recording_log_output';
 
 const testLogOutput = new RecordingLogOutput(new ConsoleLogOutput());
-import {
-	buildCodeTabId,
-	createCodeEditorInput,
-	createLuaCodeTabContext,
-	findCodeTabContext,
-	registerCodeTabContext,
-} from '../../ide/workbench/ui/code_tab/contexts';
-import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { buildCodeTabId } from '../../ide/workbench/ui/tab/id';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import {
 	applyWorkspaceAutosavePayload,
@@ -109,7 +102,6 @@ import {
 } from '../../ide/workbench/workspace/models';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { initializeTabs, openEditorTab } from '../../ide/workbench/ui/tabs';
-import { retainEntryTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { resolveTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { WORKBENCH_RESOURCE_VIEWER_ID } from '../../ide/workbench/contrib/resources/editor_input';
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
@@ -319,7 +311,6 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	storage.clear();
 	clearWorkspaceSourceCaches();
 	editorTabGroup.clear();
-	codeEditorInputManager.clear();
 	editorTextModelService.clear();
 	globalThis.fetch = ORIGINAL_FETCH;
 }
@@ -345,20 +336,10 @@ function testResource(
 	};
 }
 
-function installCodeContext(path: string, source: string, domain: ResourceDomain = TEST_DOMAIN): CodeTabContext {
-	const resource = testResource(path, domain);
-	const model = editorTextModelService.retain(resource, 'lua', '');
+function installDirtyModel(path: string, source: string, domain: ResourceDomain = TEST_DOMAIN): EditorTextModel {
+	const model = editorTextModelService.retain(testResource(path, domain), 'lua', '');
 	model.restoreDirtySource(source);
-	const context: CodeTabContext = {
-		id: buildCodeTabId(resource),
-		title: path,
-		model,
-		view: createCodeEditorViewState(),
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-	};
-	registerCodeTabContext(context);
-	return context;
+	return model;
 }
 
 function sourceRegistry(
@@ -422,11 +403,10 @@ function payload(
 
 function codeInputSnapshot(path: string, text: string, domain: ResourceDomain, cursor = 0, anchor: number | null = null, scrollLeft = 0): SerializedEditorInput {
 	const model = new EditorTextModel(testResource(path, domain), 'lua', text);
-	const context: CodeTabContext = { id: buildCodeTabId(model.resource), title: path, model, view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null };
+	const input = new CodeEditorInput(model), context = input.context;
 	context.view.cursorColumn = cursor;
 	context.view.selectionAnchor = anchor === null ? null : { row: 0, column: anchor };
 	context.view.scrollLeft = scrollLeft;
-	const input = createCodeEditorInput(context);
 	const value = new CodeEditorInputSerializer(null).serialize(input);
 	input.dispose(); model.dispose();
 	return { kind: 'code_editor', value };
@@ -523,7 +503,6 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 	);
 	t.after(() => {
 		editorTabGroup.clear();
-		codeEditorInputManager.clear();
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 		clearWorkspaceSourceCaches();
@@ -531,9 +510,9 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 
 	assert.equal(resolveRuntimeLuaSource(sources, { domain: 0, path: 'entry.lua' })!.record.src, 'return "slot 0"');
 	assert.equal(resolveRuntimeLuaSource(sources, { domain: 1, path: 'entry.lua' })!.record.src, 'return "slot 1"');
-	const slot0Context = installCodeContext('entry.lua', 'return "slot 0"', 0);
-	const slot1Context = installCodeContext('entry.lua', 'return "slot 1"', 1);
-	assert.notEqual(slot0Context.id, slot1Context.id);
+	const slot0Model = installDirtyModel('entry.lua', 'return "slot 0"', 0);
+	const slot1Model = installDirtyModel('entry.lua', 'return "slot 1"', 1);
+	assert.notEqual(buildCodeTabId(slot0Model.resource), buildCodeTabId(slot1Model.resource));
 	assert.notEqual(
 		buildWorkspaceDirtyEntryPath('offline-cart', 0, 'entry.lua'),
 		buildWorkspaceDirtyEntryPath('offline-cart', 1, 'entry.lua'),
@@ -548,7 +527,7 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 	assert.equal(readWorkspaceLuaSourceText(slot0Sources, slot0Sources.records[0]), 'return "slot 0 edit"');
 	assert.equal(readWorkspaceLuaSourceText(slot1Sources, slot1Sources.records[0]), 'return "slot 1"');
 	assert.equal(slot0Project.getFileData('entry.lua')!.source, 'return "slot 0"', 'a base-cache write is not an edit of the retained model');
-	slot0Context.model.pushEditOperations([{ offset: 14, deleteLength: 0, text: ' edit' }]);
+	slot0Model.pushEditOperations([{ offset: 14, deleteLength: 0, text: ' edit' }]);
 	assert.equal(slot0Project.getFileData('entry.lua')!.source, 'return "slot 0 edit"');
 	assert.equal(slot1Project.getFileData('entry.lua')!.source, 'return "slot 1"');
 });
@@ -599,17 +578,13 @@ test('workspace restore preserves explicit tab order and an active dirty system 
 	assert.equal(activeContext.model.resource.domain, SYSTEM_RESOURCE_DOMAIN);
 	assert.equal(activeContext.model.resource.path, systemPath);
 	assert.equal(editorTabGroup.tabs.length, 2);
-	assert.equal(activeTab.id, activeContext.id);
-	const systemContext = findCodeTabContext({
-		domain: SYSTEM_RESOURCE_DOMAIN,
-		path: systemPath,
-	})!;
+	const systemContext = editorTabGroup.findById(buildCodeTabId({ domain: SYSTEM_RESOURCE_DOMAIN, path: systemPath }))!.context;
 	assert.equal(systemContext.model.dirty, true);
 	assert.equal(getTextSnapshot(systemContext.model.buffer), '-- dirty system source');
 	assert.equal(systemContext.view.cursorColumn, 7);
 	assert.equal(systemContext.view.scrollLeft, 3);
 	assert.deepEqual(systemContext.view.selectionAnchor, { row: 0, column: 2 });
-	assert.equal(editorTabGroup.tabs.some(tab => tab.id === systemContext.id), true);
+	assert.equal(editorTabGroup.tabs.some(tab => tab.kind === 'code_editor' && tab.context === systemContext), true);
 });
 
 test('canonical source cache keys identical resource paths by physical project path', async (t) => {
@@ -899,7 +874,8 @@ test('Lua model and code-view admission preserve effective overrides without mak
 	assert.equal(model.lastSavedSource, '-- saved source');
 	assert.equal(model.dirty, true);
 	editorTextModelService.clear();
-	const context = createLuaCodeTabContext(sources, resource);
+	const input = resolveLuaCodeEditorInput(sources, resource), context = input.context;
+	t.after(() => input.dispose());
 	assert.equal(context.model.buffer.getText(), '-- effective unsaved source');
 	assert.equal(context.model.lastSavedSource, '-- saved source');
 	assert.equal(context.model.dirty, true);
@@ -966,8 +942,8 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 		rejected,
 	);
 	assert.equal(registry.records[0].src, '-- newer rom source');
-	assert.equal(findCodeTabContext({ domain: TEST_DOMAIN, path: 'entry.lua' })!.model.dirty, false);
-	assert.equal(findCodeTabContext({ domain: TEST_DOMAIN, path: 'entry.lua' })!.view.cursorColumn, 0);
+	assert.equal(editorTabGroup.findById(buildCodeTabId({ domain: TEST_DOMAIN, path: 'entry.lua' }))!.context.model.dirty, false);
+	assert.equal(editorTabGroup.findById(buildCodeTabId({ domain: TEST_DOMAIN, path: 'entry.lua' }))!.context.view.cursorColumn, 0);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', dirtyRecordPath)!.contents, '-- stale dirty edit');
 });
 
@@ -1043,12 +1019,8 @@ test('a dirty working copy can acquire its first code view after the content bac
 	const backup = workspaceState.localGeneration!;
 	assert.equal(backup.payload.dirtyFiles.length, 1);
 	assert.equal(backup.payload.editorGroup.inputs.length, 0);
-	const context: CodeTabContext = {
-		id: buildCodeTabId(resource), title: 'entry.lua', model, view: createCodeEditorViewState(),
-		runtimeErrorOverlay: null, executionStopRow: null,
-	};
-	registerCodeTabContext(context);
-	editorTabGroup.initialize(createCodeEditorInput(context));
+	const input = new CodeEditorInput(model), context = input.context;
+	editorTabGroup.initialize(input);
 	context.view.cursorRow = 1;
 	context.view.cursorColumn = 3;
 	const version = model.version;
@@ -1066,7 +1038,7 @@ test('a dirty working copy can acquire its first code view after the content bac
 	installWorkspaceRestoreView();
 	await restoreWorkspaceStorageSession(editorStub(sources) as any, sources,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, restored, new Set());
-	const restoredContext = findCodeTabContext(resource)!;
+	const restoredContext = editorTabGroup.findById(buildCodeTabId(resource))!.context;
 	assert.notStrictEqual(restoredContext.model, model);
 	assert.equal(restoredContext.model.buffer.getText(), '-- cart source\n-- visual edit');
 	assert.equal(restoredContext.model.dirty, true);
@@ -1078,17 +1050,16 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	await startAutosaveSession(t, storage);
-	const activeContext = installCodeContext('src/foo.lua', '-- dirty foreground');
-	const backgroundContext = installCodeContext('src/bar.lua', '-- dirty background');
-	const activeTab = createCodeEditorInput(activeContext);
-	const backgroundTab = createCodeEditorInput(backgroundContext);
+	const activeTab = new CodeEditorInput(installDirtyModel('src/foo.lua', '-- dirty foreground'));
+	const activeContext = activeTab.context;
+	const backgroundTab = new CodeEditorInput(installDirtyModel('src/bar.lua', '-- dirty background'));
 	editorTabGroup.initialize(activeTab);
 	editorTabGroup.add(backgroundTab);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	const firstGeneration = workspaceState.localGeneration!;
 	const activeIndex = firstGeneration.payload.editorGroup.inputs.findIndex(entry => codeInputState(entry).source.resource.path === activeContext.model.resource.path);
-	const backgroundIndex = firstGeneration.payload.editorGroup.inputs.findIndex(entry => codeInputState(entry).source.resource.path === backgroundContext.model.resource.path);
+	const backgroundIndex = firstGeneration.payload.editorGroup.inputs.findIndex(entry => codeInputState(entry).source.resource.path === backgroundTab.workingCopy.resource.path);
 	const dirtyPutCount = server.requests.filter(request =>
 		request.method === 'PUT' && request.path.includes('/.bmsx/dirty/')).length;
 
@@ -1120,10 +1091,12 @@ test('view metadata belongs to the emitting model even when a different tab is a
 	const storage = new MockStorage();
 	installWorkspaceServer(t, storage);
 	await startAutosaveSession(t, storage);
-	const first = installCodeContext('same.lua', '-- first', 0);
-	const second = installCodeContext('same.lua', '-- second', -1);
-	editorTabGroup.initialize(createCodeEditorInput(second));
-	editorTabGroup.add(createCodeEditorInput(first));
+	const firstInput = new CodeEditorInput(installDirtyModel('same.lua', '-- first', 0));
+	const first = firstInput.context;
+	const secondInput = new CodeEditorInput(installDirtyModel('same.lua', '-- second', -1));
+	const second = secondInput.context;
+	editorTabGroup.initialize(secondInput);
+	editorTabGroup.add(firstInput);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	first.view.cursorColumn = 2;
@@ -1142,9 +1115,8 @@ test('clean views persist without source backups and unchanged checkpoints do no
 	const sources = await startAutosaveSession(t, storage);
 	const resource = resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', '-- cart source');
-	const context: CodeTabContext = { id: buildCodeTabId(resource), title: 'entry.lua', model, view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null };
-	registerCodeTabContext(context);
-	editorTabGroup.initialize(createCodeEditorInput(context));
+	const input = new CodeEditorInput(model), context = input.context;
+	editorTabGroup.initialize(input);
 	context.view.cursorColumn = 3;
 	const revision = workspaceState.requestedRevision;
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
@@ -1179,16 +1151,16 @@ test('record generation stays unique when the host clock does not advance', asyn
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage, new MockClock(true));
 	await startAutosaveSession(t, storage);
-	const context = installCodeContext('src/foo.lua', '-- dirty A');
+	const model = installDirtyModel('src/foo.lua', '-- dirty A');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	const firstTimestamp = workspaceDirtyRecords.get(dirtyPath)!.updatedAt;
 	const firstRecordPath = buildWorkspaceDirtyRecordPath(dirtyPath, firstTimestamp);
 
-	context.model.pushEditOperations([{
+	model.pushEditOperations([{
 		offset: 0,
-		deleteLength: context.model.buffer.length,
+		deleteLength: model.buffer.length,
 		text: '-- dirty B',
 	}]);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
@@ -1204,7 +1176,7 @@ test('local dirty write failure does not advance retained records or local revis
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
 	const sources = await startAutosaveSession(t, storage);
-	installCodeContext('src/foo.lua', '-- dirty edit');
+	installDirtyModel('src/foo.lua', '-- dirty edit');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
 	storage.failWritePrefix = buildWorkspaceStorageKey('offline-cart', dirtyPath);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
@@ -1220,7 +1192,7 @@ test('failed local state write preserves the previous manifest and immutable dir
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
 	await startAutosaveSession(t, storage);
-	const context = installCodeContext('src/foo.lua', '-- dirty A');
+	const model = installDirtyModel('src/foo.lua', '-- dirty A');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
 	const statePath = workspaceStatePath('offline-cart');
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
@@ -1229,9 +1201,9 @@ test('failed local state write preserves the previous manifest and immutable dir
 	const previousRecordPath = buildWorkspaceDirtyRecordPath(dirtyPath, previousRecord.updatedAt);
 	const previousStateRecord = readLocalWorkspaceRecord(storage, 'offline-cart', statePath)!;
 
-	context.model.pushEditOperations([{
+	model.pushEditOperations([{
 		offset: 0,
-		deleteLength: context.model.buffer.length,
+		deleteLength: model.buffer.length,
 		text: '-- dirty B',
 	}]);
 	storage.failWriteKey = buildWorkspaceStorageKey('offline-cart', statePath);
@@ -1260,7 +1232,7 @@ test('failed dirty PUT retains the local generation and converges on an explicit
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	await startAutosaveSession(t, storage);
-	installCodeContext('src/foo.lua', '-- dirty edit');
+	installDirtyModel('src/foo.lua', '-- dirty edit');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
 	const statePath = workspaceStatePath('offline-cart');
 	server.fail('PUT', dirtyPath);
@@ -1293,12 +1265,12 @@ test('local session write failure reports once, keeps recovery and schedules no 
 		async write() { writes++; throw failure; },
 	};
 	await startAutosaveSession(t, storage, 'offline-cart', files);
-	const context = installCodeContext('src/foo.lua', '-- keep this edit');
+	const model = installDirtyModel('src/foo.lua', '-- keep this edit');
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	const previousErrors = testLogOutput.messages.filter(message => message.level === LogLevel.Error).length;
 	await flushRequestedAutosave();
 	assert.equal(writes, 1);
-	assert.equal(context.model.dirty, true);
+	assert.equal(model.dirty, true);
 	assert.ok(workspaceRecords);
 	assert.equal(clock.activeCount, 0);
 	assert.equal(testLogOutput.messages.filter(message => message.level === LogLevel.Error).length, previousErrors + 1);
@@ -1311,7 +1283,7 @@ test('failed state PUT leaves the previous remote generation recoverable and ret
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	await startAutosaveSession(t, storage);
-	const context = installCodeContext('src/foo.lua', '-- dirty A');
+	const model = installDirtyModel('src/foo.lua', '-- dirty A');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
 	const statePath = workspaceStatePath('offline-cart');
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
@@ -1320,9 +1292,9 @@ test('failed state PUT leaves the previous remote generation recoverable and ret
 	const previousRecordPath = buildWorkspaceDirtyRecordPath(dirtyPath, previousRecord.updatedAt);
 	const previousStateRecord = server.files.get(statePath)!;
 
-	context.model.pushEditOperations([{
+	model.pushEditOperations([{
 		offset: 0,
-		deleteLength: context.model.buffer.length,
+		deleteLength: model.buffer.length,
 		text: '-- dirty B',
 	}]);
 	server.fail('PUT', statePath);
@@ -1346,8 +1318,8 @@ test('remote sync publishes the exact dirty records retained with its state gene
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	await startAutosaveSession(t, storage);
-	installCodeContext('src/a.lua', '-- A1');
-	const contextB = installCodeContext('src/b.lua', '-- B1');
+	installDirtyModel('src/a.lua', '-- A1');
+	const modelB = installDirtyModel('src/b.lua', '-- B1');
 	const dirtyPathA = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/a.lua');
 	const dirtyPathB = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/b.lua');
 	const statePath = workspaceStatePath('offline-cart');
@@ -1364,9 +1336,9 @@ test('remote sync publishes the exact dirty records retained with its state gene
 	const dirtyRecordPathB = buildWorkspaceDirtyRecordPath(dirtyPathB, firstEntryB.updatedAt);
 	await Promise.resolve();
 
-	contextB.model.pushEditOperations([{
+	modelB.pushEditOperations([{
 		offset: 0,
-		deleteLength: contextB.model.buffer.length,
+		deleteLength: modelB.buffer.length,
 		text: '-- B2',
 	}]);
 	persistWorkspaceSessionLocally();
@@ -1392,7 +1364,7 @@ test('failed dirty DELETE retries on an explicit checkpoint and stale orphan can
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	const sources = await startAutosaveSession(t, storage);
-	const context = installCodeContext('entry.lua', '-- dirty edit');
+	const model = installDirtyModel('entry.lua', '-- dirty edit');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'entry.lua');
 	const statePath = workspaceStatePath('offline-cart');
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
@@ -1403,7 +1375,7 @@ test('failed dirty DELETE retries on an explicit checkpoint and stale orphan can
 	);
 	assert.equal(server.files.has(dirtyRecordPath), true);
 
-	context.model.completeSave(context.model.createSnapshot());
+	model.completeSave(model.createSnapshot());
 	server.fail('DELETE', dirtyPath);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	cancelWorkspaceAutosave();
@@ -1438,7 +1410,7 @@ test('workspace reconfiguration waits for the active autosave task', async (t) =
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	const sources = await startAutosaveSession(t, storage, 'root-a');
-	installCodeContext('src/foo.lua', '-- dirty edit');
+	installDirtyModel('src/foo.lua', '-- dirty edit');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('root-a', TEST_DOMAIN, 'src/foo.lua');
 	let releaseWrite: () => void;
 	const blocked = new Promise<void>(resolve => { releaseWrite = resolve; });
@@ -1461,7 +1433,7 @@ test('workspace reconfiguration is not blocked by an old remote replica failure'
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	await startAutosaveSession(t, storage, 'root-a');
-	installCodeContext('src/foo.lua', '-- locally recoverable edit');
+	installDirtyModel('src/foo.lua', '-- locally recoverable edit');
 	const statePath = workspaceStatePath('root-a');
 	server.fail('PUT', statePath);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
@@ -1483,7 +1455,7 @@ test('workspace reconfiguration commits a pending debounced edit locally', async
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
 	const sources = await startAutosaveSession(t, storage, 'root-a');
-	installCodeContext('src/foo.lua', '-- pending edit');
+	installDirtyModel('src/foo.lua', '-- pending edit');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('root-a', TEST_DOMAIN, 'src/foo.lua');
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 
@@ -1508,7 +1480,7 @@ test('dirty restore consumes retained snapshot content without a second transpor
 		TEST_DOMAIN,
 	);
 	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
-	const context = installCodeContext('src/foo.lua', '-- clean source');
+	const model = installDirtyModel('src/foo.lua', '-- clean source');
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
 	workspaceDirtyRecords.set(dirtyPath, { contents: '-- restored dirty edit', updatedAt: 1 });
 	const requests = server.requests.length;
@@ -1518,8 +1490,8 @@ test('dirty restore consumes retained snapshot content without a second transpor
 		updatedAt: 1,
 	}]);
 	assert.equal(server.requests.length, requests);
-	assert.equal(getTextSnapshot(context.model.buffer), '-- restored dirty edit');
-	assert.equal(context.model.dirty, true);
+	assert.equal(getTextSnapshot(model.buffer), '-- restored dirty edit');
+	assert.equal(model.dirty, true);
 });
 
 test('workspace restore resolves persisted identity to the retained runtime resource', async (t) => {
@@ -1556,7 +1528,7 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 	const model = editorTextModelService.get(retained)!;
 	assert.strictEqual(model.resource, retained);
 	assert.equal(model.buffer.getText(), '-- restored edit');
-	assert.equal(findCodeTabContext(retained), null);
+	assert.equal(editorTabGroup.findById(buildCodeTabId(retained)), undefined);
 	assert.deepEqual(debuggerState.breakpoints.get({ domain: -1, path: 'base.lua' }), new Set([4]));
 	assert.deepEqual(debuggerState.breakpoints.get(retained), new Set([3, 9]));
 	assert.equal(debuggerState.breakpoints.get({ domain: 1, path: 'stale.lua' }).size, 0);
@@ -1591,7 +1563,7 @@ test('workspace recovery hydrates a dirty working copy without creating an edito
 	assert.equal(model.mode, 'aem');
 	assert.equal(model.buffer.getText(), '{ "version": 1 }');
 	assert.equal(model.dirty, true);
-	assert.equal(findCodeTabContext(resource), null);
+	assert.equal(editorTabGroup.findById(buildCodeTabId(resource)), undefined);
 	assert.equal(editorTabGroup.tabs.length, 0);
 	assert.equal(editorTabGroup.activeTab, null);
 	assert.equal([...editorTextModelService.models].length, 1);
@@ -1736,10 +1708,10 @@ test('runtime source capture reads the resource model independently of the activ
 		[registry, null],
 		TEST_DOMAIN,
 	);
-	const context = installCodeContext('src/foo.lua', '-- tab buffer');
-	const codeTab = createCodeEditorInput(context);
+	const model = installDirtyModel('src/foo.lua', '-- tab buffer');
+	const codeTab = new CodeEditorInput(model);
 	editorTabGroup.initialize(codeTab);
-	assert.equal(captureCurrentLuaSource(editorTextModelService, sources, context.model.resource).source, '-- tab buffer');
+	assert.equal(captureCurrentLuaSource(editorTextModelService, sources, model.resource).source, '-- tab buffer');
 	const resource = testResource('image.png', TEST_DOMAIN, 'image');
 	const resourceTab = new ResourceViewerInput({
 			resource,
@@ -1749,19 +1721,19 @@ test('runtime source capture reads the resource model independently of the activ
 	});
 	editorTabGroup.add(resourceTab);
 	editorTabGroup.activate(resourceTab);
-	assert.equal(captureCurrentLuaSource(editorTextModelService, sources, context.model.resource).source, '-- tab buffer');
+	assert.equal(captureCurrentLuaSource(editorTextModelService, sources, model.resource).source, '-- tab buffer');
 });
 
 test('runtime source capture retains documents whose buffer differs from installed media', (t) => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
-	const context = installCodeContext('src/foo.lua', '-- revision 2');
+	const model = installDirtyModel('src/foo.lua', '-- revision 2');
 	const registry = sourceRegistry('-- revision 2', 'offline-cart', 'src/foo.lua');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
 	sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map([['src.foo', '-- revision 1']]);
 	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources), [{
-		version: context.model.version,
-		stateId: context.model.createSnapshot().stateId,
+		version: model.version,
+		stateId: model.createSnapshot().stateId,
 		domain: TEST_DOMAIN,
 		path: 'src/foo.lua',
 		source: '-- revision 2',
@@ -1770,7 +1742,7 @@ test('runtime source capture retains documents whose buffer differs from install
 
 test('runtime source capture pins available library edits before their first import', (t) => {
 	installBrowserWorkspace(t, new MockStorage());
-	installCodeContext('cartlib/registry.lua', '-- edited library');
+	installDirtyModel('cartlib/registry.lua', '-- edited library');
 	const registry = sourceRegistry('-- packed library', '', 'cartlib/registry.lua', 'library', false);
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
 	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources).map(source => [source.path, source.source]),
@@ -1780,7 +1752,7 @@ test('runtime source capture pins available library edits before their first imp
 test('runtime source capture excludes source-only Lua documents', (t) => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
-	installCodeContext('tests/example_assert.lua', '-- edited test');
+	installDirtyModel('tests/example_assert.lua', '-- edited test');
 	const registry = sourceRegistry('-- packed test', 'offline-cart', 'tests/example_assert.lua', 'source-only', false);
 	const sources = createTestRuntimeSourceState(
 		sourceRegistry('-- system source'),
@@ -1795,7 +1767,7 @@ test('runtime source capture excludes source-only Lua documents', (t) => {
 test('captured program documents remain authoritative over a later workspace refresh', (t) => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
-	const context = installCodeContext('src/foo.lua', '-- installed source');
+	const model = installDirtyModel('src/foo.lua', '-- installed source');
 	const registry = sourceRegistry('-- installed source', 'offline-cart', 'src/foo.lua');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
 	const snapshots = captureLuaTextModelSources(editorTextModelService, sources);
@@ -1803,11 +1775,11 @@ test('captured program documents remain authoritative over a later workspace ref
 	applyLuaTextModelSources(sources, snapshots);
 	assert.equal(sources.cartridgeBlua32MediaDirty[TEST_DOMAIN], false, 'unchanged input must not request a rebuild');
 	registry.records[0].src = '-- subsequently saved source';
-	context.model.pushEditOperations([{ offset: context.model.buffer.length, deleteLength: 0, text: '\n-- subsequent typing' }]);
+	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- subsequent typing' }]);
 	applyLuaTextModelSources(sources, snapshots);
 	assert.equal(readWorkspaceLuaSourceText(registry, registry.records[0]), snapshots[0].source);
 	assert.equal(sources.cartridgeBlua32MediaDirty[TEST_DOMAIN], true);
-	assert.equal(getTextFileRuntimeSourceStatus(sources, context.model), 'pending');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
 });
 
 test('AEM status has no assumed source baseline and failed apply does not restore a previous acknowledgement', (t) => {
@@ -1830,10 +1802,9 @@ test('AEM status has no assumed source baseline and failed apply does not restor
 test('installed source status follows actual media rather than model epochs or saved state', (t) => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
-	const context = installCodeContext('src/foo.lua', '-- edited source');
+	const model = installDirtyModel('src/foo.lua', '-- edited source');
 	const registry = sourceRegistry('-- installed source', 'offline-cart', 'src/foo.lua');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
-	const model = context.model;
 	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
 	model.completeSave(model.createSnapshot());
 	assert.equal(model.dirty, false);
@@ -1879,9 +1850,9 @@ test('source application status keeps equal module paths in their physical execu
 		[sourceRegistry('-- slot zero', 'cart-zero', 'src/foo.lua'), sourceRegistry('-- slot one', 'cart-one', 'src/foo.lua')],
 		TEST_DOMAIN,
 	);
-	const system = installCodeContext('src/foo.lua', '-- system', -1).model;
-	const zero = installCodeContext('src/foo.lua', '-- slot zero', 0).model;
-	const one = installCodeContext('src/foo.lua', '-- slot one', 1).model;
+	const system = installDirtyModel('src/foo.lua', '-- system', -1);
+	const zero = installDirtyModel('src/foo.lua', '-- slot zero', 0);
+	const one = installDirtyModel('src/foo.lua', '-- slot one', 1);
 	assert.equal(getTextFileRuntimeSourceStatus(sources, system), 'applied');
 	assert.equal(getTextFileRuntimeSourceStatus(sources, zero), 'applied');
 	assert.equal(getTextFileRuntimeSourceStatus(sources, one), 'applied');
@@ -1911,7 +1882,7 @@ test('library source status and saves follow installed membership rather than pa
 		const registry = sourceRegistry('-- library', '', path, 'library', false);
 		const sources = createTestRuntimeSourceState(sourceRegistry('-- system source', 'machine/bios'), [registry, null], TEST_DOMAIN);
 		if (installed) sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map([[registry.records[0].module_path, '-- library']]);
-		const model = installCodeContext(path, '-- library').model;
+		const model = installDirtyModel(path, '-- library');
 		assert.equal(getTextFileRuntimeSourceStatus(sources, model), installed ? 'applied' : 'source_only');
 		await saveLuaResourceSource(workspaceEnvironment.clock, sources, { domain: TEST_DOMAIN, path }, '-- changed library');
 		assert.equal(registry.records[0].program_module, false);
@@ -1970,7 +1941,7 @@ test('built-in resolution admits source without opening tabs or stealing the pre
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], 0);
 	const panes = createTestEditorPanes(); t.after(() => panes.dispose());
 	initializeTabs(panes);
-	openEditorTab(panes, createCodeEditorInput(retainEntryTabContext(sources)));
+	openEditorTab(panes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!));
 	const entry = editorTabGroup.activeTab;
 	const aem = testResource('res/cue.aem.yaml', 0, 'aem');
 	workspaceCanonicalSourceCache.set('offline-cart/res/cue.aem.yaml', { contents: 'events: {}', updatedAt: 0 });

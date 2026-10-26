@@ -122,9 +122,8 @@ test('an explicit Source history receiver restores text selection without restor
 
 test('history capture treats wrapped scroll rows as view coordinates, not text positions', t => {
 	const model = new EditorTextModel(resource, 'lua', 'local very_long_line = 123456789');
-	const view = createCodeEditorViewState();
+	const input = new CodeEditorInput(model), view = input.context.view;
 	view.cursorColumn = 6; view.scrollRow = 5; view.scrollLeft = 10.25;
-	const input = new CodeEditorInput({ id: 'code:0\0positions.lua', title: 'positions', model, view, runtimeErrorOverlay: null, executionStopRow: null });
 	const selection = new CodeEditorNavigationSelection(input);
 	t.after(() => { selection.dispose(); input.dispose(); model.dispose(); });
 	assert.equal(selection.snapshot.cursor, 6); assert.equal(selection.snapshot.scrollRow, 5); assert.equal(selection.snapshot.scrollLeft, 10.25);

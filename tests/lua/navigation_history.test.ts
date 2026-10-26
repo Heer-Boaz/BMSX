@@ -18,7 +18,6 @@ import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { setActiveTab, openEditorTab } from '../../ide/workbench/ui/tabs';
 import { focusExecutionStop } from '../../ide/runtime_error/navigation';
 import type { CartEditor } from '../../ide/cart_editor';
-import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
@@ -35,7 +34,7 @@ function entry(owner: EditorPanes, path: string, value: number): NavigationHisto
 }
 function code(path: string) {
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
-	return new CodeEditorInput({ id: `code:0\0${path}`, title: path, model, view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null });
+	return new CodeEditorInput(model);
 }
 
 test('Back/Forward preserve the live destination, not an earlier captured cursor', t => {
@@ -184,7 +183,7 @@ test('history awaits the registered resource opener and restores a closed text i
 	const target = new NavigationHistoryEntry({ kind: 'resource', ...closed.toResourceEditor() }, selection, panes);
 	navigationState.back.push(target); closed.dispose();
 	const prefix = '-- 🐉 moved\n'; closed.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]);
-	const reopened = new CodeEditorInput({ ...closed.context, view: createCodeEditorViewState() });
+	const reopened = new CodeEditorInput(closed.workingCopy);
 	const resource = reopened.workingCopy.resource;
 	let finishOpen!: () => void;
 	const openGate = new Promise<void>(resolve => { finishOpen = resolve; });

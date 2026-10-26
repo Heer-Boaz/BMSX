@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { codeEditorEditState, createCodeEditorViewState } from '../../../ide/editor/ui/code_editor_state';
-import { CodeEditorInputManager } from '../../../ide/workbench/ui/code_tab/input_manager';
+import { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
 import { EditorFont } from '../../../ide/editor/ui/view/font';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { captureBehaviorSourceBookmark, resolveBehaviorSourceBookmark } from '../../../ide/workbench/contrib/behavior_lens/source_bookmark';
@@ -39,13 +39,10 @@ trees.register('profile', { root = { type = 'sequence', children = {${'leaf,'.re
 	model.dispose();
 }
 
-for (const registeredCodeInput of [false, true]) {
+for (const retainedCodeInput of [false, true]) {
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'typing.lua' }, domain: 0, path: 'typing.lua', source: { type: 'lua', resid: 'typing' } }, 'lua', 'abc');
-	const view = createCodeEditorViewState();
-	const inputs = new CodeEditorInputManager();
-	if (registeredCodeInput) inputs.register({
-		id: 'code:0\0typing.lua', title: 'typing.lua', model, view, runtimeErrorOverlay: null, executionStopRow: null,
-	});
+	const input = retainedCodeInput ? new CodeEditorInput(model) : null;
+	const view = input === null ? createCodeEditorViewState() : input.context.view;
 	const typingAndUndoMicroseconds = medianMilliseconds(() => {
 		for (let i = 0; i < 1000; i += 1) {
 			model.prepareUndo('typing', false, 0, codeEditorEditState.of({
@@ -59,8 +56,8 @@ for (const registeredCodeInput of [false, true]) {
 		}
 	});
 	assert.equal(model.buffer.getText(), 'abc');
-	assert.equal(view.cursorColumn, registeredCodeInput ? 3 : 0);
-	console.log(JSON.stringify({ registeredCodeInput, typingAndUndoMicroseconds,
+	assert.equal(view.cursorColumn, retainedCodeInput ? 3 : 0);
+	console.log(JSON.stringify({ retainedCodeInput, typingAndUndoMicroseconds,
 		boundary: '1000 cycles per sample; includes code snapshot values/tags, PieceTree, record/events and Undo, optionally retained input event routing. No active widget or GC profiling.' }));
-	inputs.clear(); model.dispose();
+	input?.dispose(); model.dispose();
 }

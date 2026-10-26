@@ -140,7 +140,6 @@ import { handleTextEditorPointerInput, handleWorkbenchChromePointer, handleWorkb
 import { clearEditorPointerSelectionState, editorPointerState } from './input/pointer/state';
 import { handleEditorWheelInput, handleWorkbenchChromeWheel, handleWorkbenchPaneWheel } from './input/pointer/wheel';
 import {
-	clearCodeEditorInputs,
 	getActiveCodeTabContext,
 } from './workbench/ui/code_tab/contexts';
 import {
@@ -1109,7 +1108,6 @@ export class RuntimeCartEditor implements CartEditor {
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
-		clearCodeEditorInputs();
 		editorTextModelService.clear();
 		configureFontVariant(this.clock, editorViewState.fontVariant, 'lua');
 		resourcePanel.setFontMetrics(editorViewState.font);

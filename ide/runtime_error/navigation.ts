@@ -1,11 +1,9 @@
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from '../editor/ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../navigation/navigation_history';
-import { isTabActive, openEditorTab } from '../workbench/ui/tabs';
-import {
-	getActiveCodeTabContext,
-	getCodeTabContexts,
-	resolveCodeEditorInput,
-} from '../workbench/ui/code_tab/contexts';
+import { isTabActive, setActiveTab } from '../workbench/ui/tabs';
+import { editorTabGroup } from '../workbench/ui/tab/group_model';
+import type { CodeEditorInput } from '../workbench/contrib/code_editor/editor_input';
+import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
 import { showEditorMessage } from '../common/feedback_state';
 import type { RuntimeErrorOverlay } from '../editor/contrib/runtime_error/model';
 import type { CodeTabContext } from '../workbench/ui/code_tab/model';
@@ -32,28 +30,19 @@ import type { EditorPanes } from '../workbench/services/editor/editor_panes';
 import type { ResourceIdentity } from '../common/resource';
 import { resetPointerClickTracking } from '../input/pointer/state';
 
-type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
+type RuntimeErrorOverlayTarget = { input: CodeEditorInput; overlay: RuntimeErrorOverlay };
 
 function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget | null {
-	const activeContext = getActiveCodeTabContext();
-	if (activeContext && activeContext.runtimeErrorOverlay) {
-		return { context: activeContext, overlay: activeContext.runtimeErrorOverlay };
+	const active = editorTabGroup.activeTab;
+	if (active?.kind === 'code_editor' && active.context.runtimeErrorOverlay !== null) {
+		return { input: active, overlay: active.context.runtimeErrorOverlay };
 	}
-	for (const context of getCodeTabContexts()) {
-		if (context.runtimeErrorOverlay) {
-			return { context, overlay: context.runtimeErrorOverlay };
+	for (const input of editorTabGroup.tabs) {
+		if (input.kind === 'code_editor' && input.context.runtimeErrorOverlay !== null) {
+			return { input, overlay: input.context.runtimeErrorOverlay };
 		}
 	}
 	return null;
-}
-
-function activateRuntimeErrorContext(editorPanes: EditorPanes, target: CodeTabContext): void {
-	const input = resolveCodeEditorInput(target);
-	if (!isTabActive(target.id)) {
-		openEditorTab(editorPanes, input);
-		return;
-	}
-	syncRuntimeErrorOverlayFromContext(target);
 }
 
 export function focusRuntimeErrorOverlay(editorPanes: EditorPanes): boolean {
@@ -61,7 +50,8 @@ export function focusRuntimeErrorOverlay(editorPanes: EditorPanes): boolean {
 	if (!target) {
 		return false;
 	}
-	activateRuntimeErrorContext(editorPanes, target.context);
+	if (!isTabActive(target.input.id)) setActiveTab(editorPanes, target.input.id);
+	else syncRuntimeErrorOverlayFromContext(target.input.context);
 	const overlay = target.overlay;
 	const navigationCheckpoint = beginNavigationCapture();
 	overlay.hidden = false;
@@ -94,8 +84,9 @@ export function rewrapRuntimeErrorOverlays(): void {
 		visited.add(activeOverlay);
 		rewrapRuntimeErrorOverlay(activeOverlay);
 	}
-	for (const context of getCodeTabContexts()) {
-		const overlay = context.runtimeErrorOverlay;
+	for (const input of editorTabGroup.tabs) {
+		if (input.kind !== 'code_editor') continue;
+		const overlay = input.context.runtimeErrorOverlay;
 		if (overlay && !visited.has(overlay)) {
 			visited.add(overlay);
 			rewrapRuntimeErrorOverlay(overlay);
@@ -105,8 +96,9 @@ export function rewrapRuntimeErrorOverlays(): void {
 
 export function clearAllRuntimeErrorOverlays(): void {
 	setActiveRuntimeErrorOverlay(null);
-	for (const context of getCodeTabContexts()) {
-		context.runtimeErrorOverlay = null;
+	for (const input of editorTabGroup.tabs) {
+		if (input.kind !== 'code_editor') continue;
+		input.context.runtimeErrorOverlay = null;
 	}
 	clearExecutionStopHighlights();
 }
@@ -129,8 +121,9 @@ export function setExecutionStopHighlightForCurrentContext(row: number): void {
 
 export function clearExecutionStopHighlights(): void {
 	clearExecutionStopHighlight();
-	for (const context of getCodeTabContexts()) {
-		context.executionStopRow = null;
+	for (const input of editorTabGroup.tabs) {
+		if (input.kind !== 'code_editor') continue;
+		input.context.executionStopRow = null;
 	}
 }
 

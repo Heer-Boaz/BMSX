@@ -18,12 +18,13 @@ import { editorSearchState, lineJumpState } from '../../ide/workbench/contrib/co
 import { renameController } from '../../ide/workbench/contrib/code_editor/rename/controller';
 import { editorCaretState } from '../../ide/editor/ui/view/caret/state';
 import { runtimeErrorState } from '../../ide/editor/contrib/runtime_error/state';
+import { focusRuntimeErrorOverlay } from '../../ide/runtime_error/navigation';
 import { PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN } from '../../ide/common/constants';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture, WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { api } from '../../ide/runtime/overlay_api';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { createBlua32SystemSourceImage, registerWorkspaceTextSources } from '../../ide/runtime/sources';
+import { createBlua32SystemSourceImage, registerWorkspaceTextSources, resolveRuntimeResource } from '../../ide/runtime/sources';
 import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { getProblemsPanelBounds } from '../../ide/workbench/contrib/problems/panel/layout';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
@@ -33,7 +34,10 @@ import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { closeTab, getActiveTab, openEditorTab, setActiveTab } from '../../ide/workbench/ui/tabs';
-import { createCodeEditorInput, retainEntryTabContext, retainLuaCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { CodeEditorInputSerializer } from '../../ide/workbench/contrib/code_editor/editor_serializer';
+import { getSingleCursorSelectionRange } from '../../ide/editor/editing/cursor/state';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -64,7 +68,7 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	openEditorTab(editor.editorPanes, createCodeEditorInput(retainEntryTabContext(sources)));
+	openEditorTab(editor.editorPanes, resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
 	t.after(async () => {
 		problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null);
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
@@ -91,6 +95,67 @@ function openAemFixture(f: ReturnType<typeof fixture>, source = 'events:\n  stor
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["events","story","channel"]');
 	return { input, model, source };
 }
+
+test('ordinary Source close and reopen restores a plain reading memento in a fresh live view', t => {
+	const source = Array.from({ length: 100 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
+	const f = fixture(t, source), closedView = f.input.context.view;
+	closedView.cursorRow = 50; closedView.cursorColumn = 8;
+	closedView.selectionAnchor = { row: 49, column: 3 };
+	closedView.scrollRow = 35.5;
+	const duplicate = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	duplicate.context.view.cursorRow = 2;
+	openEditorTab(f.editor.editorPanes, duplicate);
+	assert.equal(getActiveTab(), f.input, 'an offered duplicate cannot replace the admitted view');
+	closeTab(f.editor.editorPanes, f.input.id);
+	const reopened = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	openEditorTab(f.editor.editorPanes, reopened);
+	assert.equal(getActiveTab(), reopened); assert.notEqual(reopened, f.input);
+	assert.notEqual(reopened.context.view.editSource, closedView.editSource);
+	assert.equal(reopened.workingCopy, f.model); assert.equal(f.model.dirty, true);
+	assert.equal(reopened.context.view.cursorRow, 50); assert.equal(reopened.context.view.cursorColumn, 8);
+	assert.deepEqual(reopened.context.view.selectionAnchor, { row: 49, column: 3 });
+	// Reading coordinates are the memento's actual data contract, not a pixel layout assertion.
+	assert.equal(reopened.context.view.scrollRow, 35.5);
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- prefix\n' }]);
+	assert.equal(reopened.context.view.cursorRow, 51);
+	assert.equal(closedView.cursorRow, 50, 'remembering reading position cannot keep the closed view subscribed');
+});
+
+test('explicit Source opening and serialized view state take precedence over the group reading memento', async t => {
+	const source = Array.from({ length: 100 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
+	const f = fixture(t, source);
+	f.view.cursorRow = 50; f.view.cursorColumn = 8; f.view.scrollRow = 35.5;
+	closeTab(f.editor.editorPanes, f.input.id);
+	const selected = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	openEditorTab(f.editor.editorPanes, selected, { selection: { row: 5, startColumn: 7, endColumn: 9 } });
+	assert.equal(selected.context.view.cursorRow, 5); assert.equal(selected.context.view.cursorColumn, 7);
+	closeTab(f.editor.editorPanes, selected.id);
+	const persisted = new CodeEditorInput(f.model);
+	persisted.context.view.cursorRow = 12; persisted.context.view.cursorColumn = 8; persisted.context.view.scrollRow = 3;
+	const serializer = new CodeEditorInputSerializer(f.sources), state = serializer.serialize(persisted);
+	persisted.dispose();
+	const restored = await serializer.deserialize(state);
+	openEditorTab(f.editor.editorPanes, restored);
+	assert.equal(restored.context.view.cursorRow, 12); assert.equal(restored.context.view.cursorColumn, 8);
+	assert.equal(restored.context.view.scrollRow, 3);
+	assert.equal(restored.workingCopy, f.model); assert.equal(f.model.dirty, true);
+});
+
+test('ordinary Source reopen resolves both saved selection endpoints against text shortened while closed', t => {
+	const source = Array.from({ length: 80 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
+	const f = fixture(t, source);
+	f.view.cursorRow = 50; f.view.cursorColumn = 8;
+	f.view.selectionAnchor = { row: 49, column: 3 };
+	closeTab(f.editor.editorPanes, f.input.id);
+	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: 'return 1' }]);
+	const reopened = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	openEditorTab(f.editor.editorPanes, reopened);
+	assert.equal(getActiveTab(), reopened); assert.equal(reopened.workingCopy, f.model);
+	assert.equal(reopened.context.view.cursorRow, 0); assert.equal(reopened.context.view.cursorColumn, f.model.buffer.length);
+	assert.equal(getSingleCursorSelectionRange(reopened.context.view), null);
+	assert.equal(f.view.cursorRow, 50, 'the closed view remains retired rather than tracking the shortened document');
+	assert.equal(f.model.buffer.getText(), 'return 1'); assert.equal(f.model.dirty, true);
+});
 
 for (const format of ['yaml', 'json'] as const) {
 	test(`AEM ${format} Source opens its selected AST position in the same undoable working copy`, async t => {
@@ -342,7 +407,7 @@ test('actual inspector and source attachments preserve user-opened Files and Pro
 	assert.equal(getActiveTab()!.kind, 'gpu_debugger'); unchanged();
 	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0);
 	assert.ok(getActiveTab() === f.input); assert.ok(activeCodeEditor.model === f.model); assert.ok(activeCodeEditor.view === f.view); unchanged();
-	openEditorTab(f.editor.editorPanes, createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(50)))); f.editor.update(0); unchanged();
+	openEditorTab(f.editor.editorPanes, resolveLuaCodeEditorInput(f.sources, f.resource(50))); f.editor.update(0); unchanged();
 	assert.ok(getActiveTab()!.resource === f.resource(50));
 	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0); unchanged();
 	f.key('KeyZ', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canRedo, true);
@@ -372,7 +437,7 @@ test('actual inspector and source attachments leave Call Hierarchy expansion and
 	};
 	f.editor.commands.execute('gpuDebugger'); f.editor.update(0); unchanged();
 	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0); unchanged();
-	openEditorTab(f.editor.editorPanes, createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(50)))); f.editor.update(0); unchanged();
+	openEditorTab(f.editor.editorPanes, resolveLuaCodeEditorInput(f.sources, f.resource(50))); f.editor.update(0); unchanged();
 	panel.setSelectionIndex(1); panel.collapseSelectedCallHierarchyNode();
 	assert.equal(panel.itemCount, firstLevel, 'the same retained hierarchy still owns its expanded branch');
 	panel.setFocused(true); panel.hide();
@@ -391,7 +456,7 @@ test('outgoing source presentation retires without clearing the retained context
 	assert.ok(context.runtimeErrorOverlay === overlay); assert.equal(context.executionStopRow, stop);
 	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0);
 	assert.ok(runtimeErrorState.activeOverlay === overlay); assert.equal(runtimeErrorState.executionStopRow, stop);
-	const other = createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(50)));
+	const other = resolveLuaCodeEditorInput(f.sources, f.resource(50));
 	openEditorTab(f.editor.editorPanes, other); f.editor.update(0);
 	assert.equal(runtimeErrorState.activeOverlay, null); assert.equal(runtimeErrorState.executionStopRow, null);
 	assert.ok(context.runtimeErrorOverlay === overlay); assert.equal(context.executionStopRow, stop);
@@ -416,6 +481,13 @@ test('source presentation clears on workbench retirement and last-input close, t
 	closeTab(f.editor.editorPanes, f.input.id);
 	assert.equal(getActiveTab(), null); assert.equal(activeCodeEditor.model, null);
 	assert.equal(runtimeErrorState.activeOverlay, null); assert.equal(runtimeErrorState.executionStopRow, null);
+	assert.equal(focusRuntimeErrorOverlay(f.editor.editorPanes), false);
+	assert.equal(getActiveTab(), null, 'a closed error view cannot regain admission through overlay focus');
+	const reopened = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	t.after(() => reopened.dispose());
+	assert.equal(reopened.workingCopy, f.model);
+	assert.equal(reopened.context.runtimeErrorOverlay, null);
+	assert.equal(reopened.context.executionStopRow, null);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
@@ -570,7 +642,7 @@ test('retiring Problems does not cancel the actual sibling tab-strip scrollbar g
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(73);
 	for (let index = 40; index < 48; index++) openEditorTab(f.editor.editorPanes,
-		createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(index))));
+		resolveLuaCodeEditorInput(f.sources, f.resource(index)));
 	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0);
 	const thumb = editorChromeState.tabScrollbar.getThumb()!; assert.ok(thumb !== null);
 	const x = (thumb.left + thumb.right) / 2, y = (thumb.top + thumb.bottom) / 2;
@@ -749,7 +821,7 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 	f.editor.dispatchPointer({ x: dividerX + 32, y: dividerY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 17 });
 	for (let index = 40; index < 48; index++) openEditorTab(f.editor.editorPanes,
-		createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(index))));
+		resolveLuaCodeEditorInput(f.sources, f.resource(index)));
 	setActiveTab(f.editor.editorPanes, f.input.id); f.editor.update(0);
 	const tabThumb = editorChromeState.tabScrollbar.getThumb()!; assert.ok(tabThumb !== null);
 	const tabX = (tabThumb.left + tabThumb.right) / 2, tabY = (tabThumb.top + tabThumb.bottom) / 2;
@@ -806,7 +878,7 @@ for (const stage of ['visible', 'pending', 'pending-roundtrip'] as const) test(`
 
 test('completion readonly subscription belongs only to the attached canonical model', t => {
 	const f = fixture(t), previous = f.model;
-	const other = createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(50)));
+	const other = resolveLuaCodeEditorInput(f.sources, f.resource(50));
 	const model = other.context.model, subscribe = model.onDidChangeReadOnly;
 	let subscriptions = 0;
 	t.mock.method(model, 'onDidChangeReadOnly', listener => {
@@ -838,7 +910,7 @@ test('completion readonly subscription belongs only to the attached canonical mo
 test('a stationary captured tab drag advances from the actual host frame without pointer polling or guest execution', t => {
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
 	for (let index = 40; index < 52; index++) {
-		openEditorTab(f.editor.editorPanes, createCodeEditorInput(retainLuaCodeTabContext(f.sources, f.resource(index))));
+		openEditorTab(f.editor.editorPanes, resolveLuaCodeEditorInput(f.sources, f.resource(index)));
 		f.editor.update(0);
 	}
 	const input = getActiveTab()!, bounds = editorChromeState.tabButtonBounds.get(input.id)!;

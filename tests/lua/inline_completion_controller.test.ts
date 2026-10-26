@@ -6,9 +6,8 @@ import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/sem
 import { setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { activeCodeEditor, codeEditorEditState, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { activeCodeEditor, codeEditorEditState } from '../../ide/editor/ui/code_editor_state';
 import { undo as undoSource, redo as redoSource } from '../../ide/editor/editing/undo_controller';
-import { CodeEditorViewBinding } from '../../ide/editor/ui/code_editor_view_binding';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/view';
 import { inputFocus } from '../../ide/input/focus';
@@ -16,7 +15,6 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { CodeEditorTextInput } from '../../ide/workbench/contrib/code_editor/native_text_input';
 import { EditorCompletionController } from '../../ide/workbench/contrib/code_editor/suggest/completion_controller';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
-import { buildCodeTabId } from '../../ide/workbench/ui/code_tab/contexts';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
@@ -26,13 +24,10 @@ function fixture(t: TestContext, source: string, columnOffset = source.length) {
 	const record = createScenarioTestSourceRecord('inline.lua', 1, source);
 	const sources = createScenarioTestSourceState([record]);
 	const model = editorTextModelService.retain(sources.luaResources[0], 'lua', source);
-	const view = createCodeEditorViewState(), position = { row: 0, column: 0 };
+	const input = new CodeEditorInput(model), view = input.context.view, position = { row: 0, column: 0 };
 	model.buffer.positionAt(columnOffset, position); view.cursorRow = position.row; view.cursorColumn = position.column;
-	const input = new CodeEditorInput({ id: buildCodeTabId(model.resource), title: 'inline.lua', model, view,
-		runtimeErrorOverlay: null, executionStopRow: null });
 	editorTabGroup.add(input); editorTabGroup.activate(input); activeCodeEditor.attach(model, view);
 	activeCodeEditor.focusTarget.focus();
-	const binding = new CodeEditorViewBinding(model, view);
 	const controller = new EditorCompletionController(sources, null, null, null), native = new CodeEditorTextInput();
 	const unbindBeforeContent = model.onWillChangeContent(() => {
 		activeCodeEditor.clearInlineEdit(); activeCodeEditor.clearVisualCursor();
@@ -43,7 +38,7 @@ function fixture(t: TestContext, source: string, columnOffset = source.length) {
 	});
 	editorRuntimeState.currentTimeMs = 1000;
 	t.after(() => {
-		unbindBeforeContent(); unbindContent(); binding.dispose();
+		unbindBeforeContent(); unbindContent();
 		controller.dispose(); inputFocus.setTarget(null); editorTabGroup.clear(); activeCodeEditor.detach();
 		resetSemanticProjects(editorTextModelService); editorTextModelService.clear();
 	});
@@ -209,7 +204,8 @@ test('input retirement clears the published completion before another source att
 	f.controller.clearInput();
 	assert.equal(f.controller.session, null); assert.equal(activeCodeEditor.inlineEdit.active, false);
 	const other = editorTextModelService.retain({ location: { kind: 'workspace' as const, path: 'other.lua' }, domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
-	activeCodeEditor.attach(other, createCodeEditorViewState()); f.settle();
+	const otherInput = new CodeEditorInput(other); t.after(() => otherInput.dispose());
+	activeCodeEditor.attach(other, otherInput.context.view); f.settle();
 	assert.equal(f.controller.session, null); assert.equal(activeCodeEditor.inlineEdit.active, false);
 	const tab = new KeyInputEvent('Tab', KeyModifier.none);
 	assert.equal(f.controller.handleKeybindings(tab), false); assert.equal(tab.consumed, false);
@@ -310,7 +306,8 @@ test('widget publication is stable across font replacement but retires before so
 		assert.equal(activeCodeEditor.model, f.model);
 		return lineCount();
 	});
-	activeCodeEditor.attach(other, createCodeEditorViewState());
+	const otherInput = new CodeEditorInput(other); t.after(() => otherInput.dispose());
+	activeCodeEditor.attach(other, otherInput.context.view);
 	assert.equal(edit.active, false); assert.equal(edit.version, version + 1);
 	assert.equal(activeCodeEditor.setInlineEdit(0, 0, 5, 'example'), true);
 	activeCodeEditor.detach(); assert.equal(edit.active, false); assert.equal(activeCodeEditor.model, null);

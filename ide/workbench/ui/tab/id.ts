@@ -1,4 +1,10 @@
 import type { CodeEditorInputId } from '../../../common/editor_context';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
+
+/** Logical Source matching key within an editor group, not a live view identity. */
+export function buildCodeTabId(resource: ResourceIdentity): CodeEditorTabId {
+	return `code:${resourceIdentityKey(resource)}`;
+}
 
 export type CodeEditorTabId = CodeEditorInputId;
 export type ResourceViewerTabId = `resource:${string}`;

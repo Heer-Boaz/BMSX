@@ -1,7 +1,7 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { codeEditorInputManager } from '../../../ide/workbench/ui/code_tab/input_manager';
-import { buildCodeTabId } from '../../../ide/workbench/ui/code_tab/contexts';
+import { buildCodeTabId } from '../../../ide/workbench/ui/tab/id';
+import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { getProblemsPanelBounds, problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
@@ -20,7 +20,7 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const actor = title(), position = cycles(), media = ide.sources.currentBlua32Media;
 	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: 'scenes/root.lua' })!;
-	check(codeEditorInputManager.get(buildCodeTabId(resource)) === undefined, 'resource context: scene has never had a code input');
+	check(editorTabGroup.findById(buildCodeTabId(resource)) === undefined, 'resource context: scene has never had a code input');
 	ide.editor.sceneEditor.openResource(resource);
 	await frame();
 	const scene = getActiveTab();
@@ -30,7 +30,7 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	await until(() => ide.diagnostics.get(resource)!.status === 'ready', 'resource context: background analysis of visual-only source');
 	const marker = ide.diagnostics.diagnostics.find(item => item.model === model && item.message.includes('missing_from_scene_context'))!;
 	check(marker !== undefined && marker.version === model.version, 'resource context: resource marker identifies exact model revision');
-	check(codeEditorInputManager.get(buildCodeTabId(resource)) === undefined && getActiveTab() === scene,
+	check(editorTabGroup.findById(buildCodeTabId(resource)) === undefined && getActiveTab() === scene,
 		'resource context: analysis neither requires nor creates a code input');
 	const yaml = ide.sources.resources.find(item => item.domain === 0 && item.path.endsWith('nemesis_s_stage.yaml'))!;
 	await resolveTextFileModel(editorTextModelService, ide.sources, yaml);
