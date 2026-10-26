@@ -106,20 +106,37 @@ for (const variant of ['tiny', 'msx'] as const) test(`GTE ${variant} Details is 
 });
 
 test('GTE Details follows selected owned evidence, retires held activation and preserves expired snapshots', t => {
-	const f = fixture(t), { input, details } = f; details.show();
-	const captured = Array.from(input.selected.beforeData), first = details.inspector.model.rows[0].element;
+	const f = fixture(t, 'msx', true), { input, details } = f;
+	const model = f.models.retain(f.resource!, 'lua', PROGRAM);
+	details.show();
+	const captured = f.history.snapshot(input.selected.sequence), rows = details.inspector.model.rows, first = rows[0].element;
+	const source = inputFocus.getCommand('gte.source', details.window.focusTarget)!;
+	assert.equal(source.isEnabled(), true, 'the held Source attempt starts with actual navigation authority');
 	f.issue(); f.issue(); input.update(); f.synchronize(); details.update();
-	assert.equal(input.selected.sequence, 0); assert.match(input.detailsWindow.title, /expired/);
-	assert.deepEqual(Array.from(input.selected.beforeData), captured); assert.equal(f.formats(), 1);
-	details.inspector.focusTarget.focus(); f.press('ArrowDown'); f.key('Enter', true);
+	assert.equal(input.selected.sequence, captured.sequence); assert.ok(input.selected.sequence < input.history.firstSequence);
+	assert.ok(input.selected.image === captured.image); assert.equal(input.selected.pc, captured.pc);
+	assert.deepEqual(input.selected.beforeData, captured.beforeData); assert.deepEqual(input.selected.afterData, captured.afterData);
+	assert.deepEqual(input.selected.beforeControl, captured.beforeControl); assert.deepEqual(input.selected.afterControl, captured.afterControl);
+	assert.ok(details.inspector.model.rows === rows); assert.ok(rows[0].element === first); assert.equal(f.formats(), 1);
+	details.inspector.focusTarget.focus(); f.press('ArrowDown');
+	assert.equal(details.inspector.model.selectionIndex, 1); assert.equal(source.isEnabled(), true);
+	f.key('Enter', true);
 	input.select(input.history.firstSequence); f.synchronize(); details.update(); f.key('Enter', false);
 	assert.equal(f.sourceOpens(), 0); assert.equal(f.formats(), 2);
-	assert.notEqual(details.inspector.model.rows[0].element, first);
-	assert.doesNotMatch(input.detailsWindow.title, /expired/);
-	input.clear(); input.update(); f.synchronize(); details.update();
-	assert.equal(input.detailsWindow.open, true); assert.equal(input.detailsWindow.title, 'GTE Details');
-	assert.deepEqual(details.inspector.model.rows.map(row => row.element.label), ['No command selected']);
-	assert.equal(f.formats(), 2); assert.equal(inputFocus.getCommand('gte.source', details.window.focusTarget)!.isEnabled(), false);
+	assert.ok(details.inspector.model.rows === rows); assert.ok(rows[0].element !== first);
+	assert.ok(input.selected.sequence >= input.history.firstSequence && input.selected.sequence < input.history.endSequence);
+	assert.equal(source.isEnabled(), true);
+	details.inspector.focusTarget.focus(); f.press('Home'); f.press('ArrowDown'); f.press('Enter');
+	assert.equal(f.sourceOpens(), 1, 'a fresh Source release is admitted for the replacement observation');
+	const properties = new Set(rows.map(row => row.element));
+	f.key('Enter', true); input.clear(); input.update(); f.synchronize(); details.update(); f.key('Enter', false);
+	assert.equal(f.sourceOpens(), 1, 'Clear retires the old Source hold before publishing an empty subject');
+	assert.equal(input.detailsWindow.open, true); assert.equal(input.selected.sequence, -1); assert.ok(input.selected.image === null);
+	assert.equal(input.history.count, 0); assert.ok(f.source.location === undefined); assert.equal(source.isEnabled(), false);
+	assert.ok(rows.every(row => !properties.has(row.element)), 'Clear retires every property element owned by the captured register document');
+	assert.equal(f.formats(), 2);
+	inputFocus.executeCommand('gte.source', details.window.focusTarget); assert.equal(f.sourceOpens(), 1);
+	assert.equal(model.buffer.getText(), PROGRAM); assert.equal(model.canUndo, false);
 	inputFocus.executeCommand('window.hide', details.inspector.focusTarget); assert.equal(input.detailsWindow.open, false);
 });
 

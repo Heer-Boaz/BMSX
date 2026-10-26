@@ -24,7 +24,6 @@ import { api } from '../../ide/runtime/overlay_api';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
-import type { RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx') {
 	configureFontVariant(new VirtualHeadlessClock(), variant, null);
@@ -300,31 +299,37 @@ test('GPU selection producer retires its owned chooser and active capture before
 	assert.equal(f.picker.visible, true, 'the retired observation cannot close a replacement picker owned elsewhere'); f.picker.hide();
 });
 
-for (const variant of ['tiny', 'msx'] as const) test(`GPU ${variant} untextured Fill UV and cleared Diagram expose textual evidence without inventing a plot`, t => {
+for (const variant of ['tiny', 'msx'] as const) test(`GPU ${variant} untextured Fill UV and cleared Diagram retire their operand plot without replacing the window`, t => {
 	const f = fixture(t, variant), { input, details } = f;
 	f.write([0x02000080, 0x00100010, 0x00040008]); input.update(); input.select(input.history.endSequence - 1);
-	input.inspectorPage = 'diagram'; input.view = 'uv'; details.show();
-	const overlay = createHostOverlayFixture(384, 288);
-	const paint = () => {
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.surfaces.draw(api); overlay.renderer.endFrame();
-		return overlay.queue.consumeOverlayFrame();
-	};
-	const check = (expected: string) => {
-		const frame = paint(), glyphs: GlyphRenderSubmission[] = [], rects: RectRenderSubmission[] = [];
-		for (let index = 0; index < frame.commandCount; index++) {
-			if (frame.commandKinds[index] === Host2DKind.Glyphs) glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
-			else if (frame.commandKinds[index] === Host2DKind.Rect) rects.push(frame.commandRefs[index] as RectRenderSubmission);
-		}
-		assert.equal(input.inspectorPage, 'diagram'); assert.equal(input.view, 'uv'); assert.equal(details.canvas.points.length, 0);
-		const bodyText = glyphs.filter(run => run.x === 4 && run.y >= 0 && run.y < input.diagram.height).map(run => run.items).join(' ');
-		assert.ok(bodyText.includes(expected), 'the complete measured absent-operands explanation is visible at Home');
-		assert.equal(rects.some(rect => rect.area.left === 4 && rect.area.right === input.diagram.bounds.right - input.diagram.bounds.left - 4
-			&& rect.area.top >= 0 && rect.area.bottom > rect.area.top), false, 'no plot rectangle is published when no graphical operands exist');
-		assert.ok(details.canvas.contentHeight <= input.diagram.height, 'absence text does not reserve an empty graphic-height spacer');
-	};
-	check('No texture coordinates in this operation.');
-	input.clear(); input.update(); details.update(); check('No operation selected');
-	assert.equal(input.selected.sequence, -1); assert.equal(input.detailsWindow.open, true);
+	input.inspectorPage = 'diagram'; input.view = 'geometry'; details.show();
+	const window = details.window.surface, client = details.window.clientSurface, captured = input.selected;
+	assert.ok(window !== undefined && client !== undefined);
+	const sequence = captured.sequence, words = Array.from(captured.words.subarray(0, captured.wordCount)), cycles = f.runtime.machine.scheduler.nowCycles;
+	for (const method of ['pushClipRect', 'popClipRect', 'fill_rect', 'blit_text_inline_with_font'] as const) t.mock.method(api, method, () => {});
+	const border = t.mock.method(api, 'blit_rect', () => {}), segments = t.mock.method(api, 'polyline', () => {});
+	f.press('Home'); details.update();
+	assert.ok(details.presentation.points.length > 0 && details.canvas.points.length > 0);
+	details.canvas.draw(input, details.presentation, input.diagram.scrollTop, input.diagram.scrollTop + input.diagram.height);
+	assert.ok(border.mock.callCount() > 0 && segments.mock.callCount() > 0, 'the captured Fill first supplies a real drawable operand plot');
+	input.view = 'uv'; details.update(); f.press('Home'); details.update();
+	assert.equal(input.diagram.scrollTop, 0); assert.equal(details.presentation.textured, false);
+	assert.equal(details.presentation.points.length, 0); assert.equal(details.canvas.points.length, 0);
+	assert.ok(input.selected === captured); assert.equal(input.selected.sequence, sequence);
+	assert.deepEqual(Array.from(input.selected.words.subarray(0, input.selected.wordCount)), words);
+	border.mock.resetCalls(); segments.mock.resetCalls();
+	details.canvas.draw(input, details.presentation, input.diagram.scrollTop, input.diagram.scrollTop + input.diagram.height);
+	assert.equal(border.mock.callCount(), 0); assert.equal(segments.mock.callCount(), 0, 'UV cannot draw a stale geometry plot for an untextured operation');
+	input.clear(); input.update(); details.update(); f.press('Home'); details.update();
+	assert.equal(input.inspectorPage, 'diagram'); assert.equal(input.view, 'uv'); assert.equal(input.diagram.scrollTop, 0);
+	assert.equal(input.selected.sequence, -1); assert.equal(input.selected.wordCount, 0); assert.equal(input.history.count, 0);
+	assert.equal(details.presentation.vertices.length, 0); assert.equal(details.presentation.points.length, 0); assert.equal(details.presentation.edges.length, 0);
+	assert.equal(details.canvas.points.length, 0); assert.equal(input.detailsWindow.open, true);
+	assert.ok(details.window.surface === window); assert.ok(details.window.clientSurface === client);
+	border.mock.resetCalls(); segments.mock.resetCalls();
+	details.canvas.draw(input, details.presentation, input.diagram.scrollTop, input.diagram.scrollTop + input.diagram.height);
+	assert.equal(border.mock.callCount(), 0); assert.equal(segments.mock.callCount(), 0, 'Clear cannot draw an operand plot from inactive backing words');
+	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles);
 });
 
 test('GPU Clear keeps the Words page open without rendering or copying its retired operand', t => {
