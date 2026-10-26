@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { LuaSymbolEntry } from '../../toolchain/ts/lua/semantic_contracts';
+import type { EditorLuaSymbolEntry } from '../../ide/editor/contrib/intellisense/engine';
+import { resourceIdentityKeyFromParts } from '../../ide/common/resource';
 import { buildSymbolQuickPickItems } from '../../ide/workbench/contrib/code_editor/symbols/quick_access';
 import { SymbolQuickPickProvider } from '../../ide/workbench/contrib/code_editor/symbols/quick_pick_provider';
 import { QuickPickHighlightSet } from '../../ide/workbench/services/quick_input/highlight_set';
 import type { QuickPickHighlight, QuickPickProjection } from '../../ide/workbench/services/quick_input/provider';
 
 function fixture(scope: 'file' | 'workspace', declarations: [string, string][]) {
-	const symbols: LuaSymbolEntry[] = declarations.map(([path, source], index) => ({ name: path, path, kind: 'function',
-		location: { path: source, range: { startLine: index + 1, startColumn: 1, endLine: index + 1, endColumn: path.length + 1 } } }));
+	const symbols: EditorLuaSymbolEntry[] = declarations.map(([path, source], index) => ({ name: path, path, kind: 'function',
+		resource: { domain: 0, path: source },
+		location: { path: resourceIdentityKeyFromParts(0, source), range: { startLine: index + 1, startColumn: 1, endLine: index + 1, endColumn: path.length + 1 } } }));
 	const items = buildSymbolQuickPickItems(symbols, scope);
 	return { symbols, items, provider: new SymbolQuickPickProvider(items, scope) };
 }

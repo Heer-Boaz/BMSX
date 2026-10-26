@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SemanticCallWorklist } from '../../toolchain/ts/lua/semantic/call_graph';
@@ -183,7 +184,7 @@ test('fact relations publish forward, inverse and extent changes without synthet
 
 test('creation of a retained access invalidates its previously absent lookup only for that base', () => {
 	const file = buildLuaFileSemanticData('local first = {}\nlocal second = {}', 'paths.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const terms = summaries.terms;
 	const first = terms.compileSource(declarationValueSource(file.decls.find(entry => entry.name === 'first')!.id));
 	const second = terms.compileSource(declarationValueSource(file.decls.find(entry => entry.name === 'second')!.id));
@@ -205,7 +206,7 @@ test('creation of a retained access invalidates its previously absent lookup onl
 
 test('call work items are keyed by site and owner frame, and only dependent work is rescheduled', () => {
 	const file = buildLuaFileSemanticData('local function run() end\nrun()', 'work.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const work = new SemanticCallWorklist(summaries.terms.dependencies);
 	const facts = new SemanticDependencyIndex(summaries.terms.dependencies);
@@ -240,7 +241,7 @@ test('unrelated public member and function queries keep solved query work curren
 local function second() return { right = 22 } end
 local left_result = first()
 local right_result = second()`, 'independent.lua');
-	const queries = new LuaSemanticQueryStore([file], new Map());
+	const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 	const left = declarationValueSource(file.decls.find(entry => entry.name === 'left_result')!.id);
 	const right = declarationValueSource(file.decls.find(entry => entry.name === 'right_result')!.id);
 	const first = declarationValueSource(file.decls.find(entry => entry.name === 'first')!.id);
@@ -259,7 +260,7 @@ local right_result = second()`, 'independent.lua');
 
 test('write-index dependencies follow both the base and the requested member name', () => {
 	const file = buildLuaFileSemanticData('local first = { left = 11 }\nlocal second = { right = 22 }', 'writes.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const first = demand.staticWrites(summaries.terms.nameId('left'))[0];
 	const second = demand.staticWrites(summaries.terms.nameId('right'))[0];
@@ -281,7 +282,7 @@ test('write-index dependencies follow both the base and the requested member nam
 
 test('a new actual frame invalidates a summary-context query, but not another summary', () => {
 	const file = buildLuaFileSemanticData('local function first() end\nlocal function second() end\nfirst()\nsecond()', 'frames.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const frames = new InstantiationFrames(summaries.terms.dependencies);
 	const queries = new SemanticQueryEvaluation(summaries.terms.dependencies);
@@ -302,7 +303,7 @@ test('a new actual frame invalidates a summary-context query, but not another su
 
 test('an empty prototype join wakes when the first prototype fact arrives', () => {
 	const file = buildLuaFileSemanticData('local prototype = { marker = 11 }\nlocal object = {}', 'prototype.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const instantiation = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('no call in this fixture'));
 	const members = new SemanticMemberQuery(summaries, instantiation);
@@ -351,7 +352,7 @@ test('repeated dependency reads preserve every parent after nested evaluations a
 
 test('complete member reads share their negative result without manufacturing a member path', () => {
 	const file = buildLuaFileSemanticData('local object = {}\nlocal other = { added = true }', 'read.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const instantiation = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('no call in this fixture'));
 	const members = new SemanticMemberQuery(summaries, instantiation);
@@ -376,7 +377,7 @@ test('prototype join refinement revisits changed owners instead of the complete 
 	const lines = ['local unrelated = {}'];
 	for (let index = 0; index < 32; index += 1) lines.push(`local object_${index} = {}\nlocal prototype_${index} = {}`);
 	const file = buildLuaFileSemanticData(lines.join('\n'), 'joins.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const instantiation = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('no call in this fixture'));
 	const members = new SemanticMemberQuery(summaries, instantiation);

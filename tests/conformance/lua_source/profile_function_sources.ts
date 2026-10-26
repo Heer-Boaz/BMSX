@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { parseLuaChunk } from '../../../toolchain/ts/lua/analysis/parse';
@@ -24,7 +25,7 @@ for (const [declarationStyle, functions] of [['function', 32], ['function', 1024
 	const file = buildLuaFileSemanticData(source, 'profile.lua', parsed);
 	let summaryCount = 0;
 	const summaryMilliseconds = medianMilliseconds(() => {
-		const identities = new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() });
+		const identities = new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() });
 		summaryCount = new FunctionSummaryStore([file], identities).count;
 	});
 	assert.equal(summaryCount, functions);
@@ -32,11 +33,11 @@ for (const [declarationStyle, functions] of [['function', 32], ['function', 1024
 	assert.equal(reference.name, 'token');
 	let targetCount = 0;
 	const queryMilliseconds = medianMilliseconds(() => {
-		const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path: file.file, source, analysis: file }]);
+		const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: file.file, source, analysis: file }]));
 		targetCount = snapshot.symbolResolver.resolveReferenceTargets(reference).length;
 	});
 	assert.equal(targetCount, 1);
-	const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path: file.file, source, analysis: file }]);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: file.file, source, analysis: file }]));
 	assert.equal(snapshot.symbolResolver.resolveReferenceTargets(reference).length, 1);
 	let retainedCount = 0;
 	const retainedQueryMicroseconds = medianMilliseconds(() => {

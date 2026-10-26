@@ -37,7 +37,7 @@ export function projectAnimationDetails(tree: WorkbenchPropertyTree<AnimationPro
 			if (producer !== undefined) resolveModel(producer.source.file);
 			appendWorkbenchTreeNode(tree, null, { kind: 'property', source, field, producer, label: name === null ? field.kind === LuaTableFieldKind.Array ? `[${index + 1}]` : '[source key]' : name,
 				value: readLuaExpressionPreview(model.buffer, source.file.chunk.locations, field.value),
-				description: `${source.file.file}:${range.start.line}`, warning: !source.structural, displayLabel: '', displayValue: '', displayValueLeft: 0 });
+				description: `${model.resource.path}:${range.start.line}`, warning: !source.structural, displayLabel: '', displayValue: '', displayValueLeft: 0 });
 		}
 	}
 	rebuildWorkbenchTreeRows(tree, null);

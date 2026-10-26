@@ -1,3 +1,4 @@
+import { resourceIdentityKey, type ResourceIdentity } from '../../../../common/resource';
 import type { CodeEditorPane } from '../editor_pane';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { resolveReferenceLookup } from '../../../../editor/contrib/references/lookup';
@@ -13,13 +14,13 @@ import type { QuickPickItem } from '../../../services/quick_input/provider';
 export type ReferenceQuickPickItem = QuickPickItem & { readonly source: ReferenceSource };
 
 export function createReferenceQuickPickProvider(
-	sources: readonly ReferenceSource[], path: string, line: number, column: number,
+	sources: readonly ReferenceSource[], identity: ResourceIdentity, line: number, column: number,
 ): TextQuickPickProvider<ReferenceQuickPickItem> {
 	let initialItemIndex = 0;
 	const items = sources.map((source, index) => {
 		const range = source.range;
-		if (range.path === path && sourcePositionInRange(line, column, range)) initialItemIndex = index;
-		return { source, label: source.lineText, description: range.path,
+		if (range.path === resourceIdentityKey(identity) && sourcePositionInRange(line, column, range)) initialItemIndex = index;
+		return { source, label: source.lineText, description: source.resource.path,
 			detail: `${source.kind === 'definition' ? 'DEF' : 'REF'} ${range.start.line}:${range.start.column}` };
 	});
 	return new TextQuickPickProvider(items, initialItemIndex);
@@ -44,7 +45,7 @@ export function openReferenceSearch(pane: CodeEditorPane): void {
 		pane.code.references.apply(result.info, result.initialIndex);
 		lifetime.add({ dispose: () => pane.code.references.clear() });
 		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => pane.editor.quickInput.hide()));
-		return createReferenceQuickPickProvider(references, resource.path, row + 1, column + 1);
-	}, item => navigateToLuaDefinition(pane, resource.domain, definitionLocationFromSourceRange(item.source.range)),
+		return createReferenceQuickPickProvider(references, resource, row + 1, column + 1);
+	}, item => navigateToLuaDefinition(pane, item.source.resource, definitionLocationFromSourceRange(item.source.range)),
 		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));
 }

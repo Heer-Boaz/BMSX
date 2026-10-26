@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
@@ -7,7 +8,7 @@ import { walkLuaAst } from '../../toolchain/ts/lua/syntax/ast/traversal';
 import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 
 test('static syntax is indexed once per file without running value inference', t => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['types.lua']));
 	const file = workspace.updateFile('types.lua', `struct shape
 	x: word
 end
@@ -46,7 +47,7 @@ return sizeof(shape)`);
 });
 
 test('retained type bodies use each snapshot position table and parent scope', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['retained.lua']));
 	const source = '-- retain body\n'.repeat(80) + `struct shape
 	x: word
 end
@@ -80,7 +81,7 @@ return sizeof(shape)`;
 });
 
 test('global type publication follows immutable file precedence across replacement and removal', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['first.lua', 'second.lua', 'reader.lua']));
 	const first = workspace.updateFile('first.lua', 'struct shape\nx: word\nend');
 	const second = workspace.updateFile('second.lua', 'struct shape\ny: word\nend');
 	const reader = workspace.updateFile('reader.lua', 'return sizeof(shape)');
@@ -104,7 +105,7 @@ test('shared syntax does not merge static declarations from different files', ()
 	const left = buildLuaFileSemanticData(source, 'left.lua', parsed);
 	const right = buildLuaFileSemanticData(source, 'right.lua', parsed);
 	assert.equal(left.chunk, right.chunk);
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['left.lua', 'right.lua']));
 	workspace.updateFiles([left, right]);
 	const query = workspace.getSnapshot().symbolResolver.staticDeclarations;
 	const leftType = query.typeAt(left, 'shape', left.chunk.span)!;

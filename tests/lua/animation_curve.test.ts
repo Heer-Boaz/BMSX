@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animation/source';
 import { AnimationKeyViewport } from '../../ide/workbench/contrib/animation/key_viewport';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
@@ -18,7 +18,7 @@ const source = `return { duration_ms=100, tracks={
 	{kind='value',interpolation='linear',path={'y'},keys={{time_ms=200,value=1}}}}}`;
 
 test('written cubic geometry agrees with the native Hermite slopes at O0 and O3', () => {
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document);
 	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
 	assert.equal(view.extentMaximum, 200, 'same-unit lanes share the written extent');
@@ -49,7 +49,7 @@ test('a step channel has no authored value before its first key, as in the nativ
 		`, { optLevel, modules: [{ path: 'animation', source }] });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	}
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
 	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230);
 	view.setView(0, 25); view.curve.update(view);
@@ -59,7 +59,7 @@ test('a step channel has no authored value before its first key, as in the nativ
 });
 
 test('curve previews and view navigation do not mutate written keys or invent normalized tangents', () => {
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document); view.range.layout(0, 0, 206, 20);
 	view.curve.preview('leave', 3); view.preview(10);
 	assert.equal(view.curve.fieldValue(view, 0, 'leave'), 3);
@@ -74,13 +74,13 @@ test('curve previews and view navigation do not mutate written keys or invent no
 	assert.deepEqual(view.curve.paths[0], [view.xAt(-100), view.curve.yAt(0), view.xAt(-1), view.curve.yAt(0)]);
 	view.fit();
 	view.bind(document.tracks[1], 0, document); assert.equal(view.range.maximum, 200);
-	const dynamic = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData("return {tracks={{kind='value',interpolation='cubic',keys={{u=0,value=0,arrive_tangent=0,leave_tangent=0}}}}}", resource.path)))!;
+	const dynamic = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile("return {tracks={{kind='value',interpolation='cubic',keys={{u=0,value=0,arrive_tangent=0,leave_tangent=0}}}}}", resource)], [])))!;
 	view.bind(dynamic.tracks[0], 0, dynamic); assert.equal(view.curve.available, false);
 });
 
 test('native steep slopes have bounded screen handles without changing their authored magnitude', () => {
 	const source = "return {duration_ms=1000,tracks={{kind='value',interpolation='cubic',keys={{time_ms=500,value=0,arrive_tangent=0,leave_tangent=12},{time_ms=501,value=1,arrive_tangent=0,leave_tangent=0}}}}}";
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document);
 	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
 	const handle = view.curve.leaveHandle;
@@ -99,7 +99,7 @@ test('cubic display requires the slopes used by native segments, not unused endp
 		["return {tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=100,value=100,arrive_tangent=0},{time_ms=0,value=0,leave_tangent=2}}}}}", 43.75],
 		["return {tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=50,value=7}}}}}", 7],
 	] as const) {
-		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document);
 		assert.equal(view.curve.available, true);
 		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
@@ -111,7 +111,7 @@ test('cubic display requires the slopes used by native segments, not unused endp
 			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		}
 	}
-	const missing = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData("return {tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0},{time_ms=1,value=1}}}}}", resource.path)))!;
+	const missing = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile("return {tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0},{time_ms=1,value=1}}}}}", resource)], [])))!;
 	const view = new AnimationKeyViewport(); view.bind(missing.tracks[0], 0, missing);
 	assert.equal(view.curve.available, true, 'known values remain editable without a supplied slope');
 	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
@@ -120,7 +120,7 @@ test('cubic display requires the slopes used by native segments, not unused endp
 
 test('moving an endpoint past its neighbor does not consume an unwritten slope during preview', () => {
 	const source = "return {tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=0,value=0,leave_tangent=2},{time_ms=100,value=100,arrive_tangent=0}}}}}";
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	for (const [index, moved] of [[0, 150], [1, -50]] as const) {
 		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], index, document);
 		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.setView(-100, 200); view.curve.update(view);
@@ -145,7 +145,7 @@ test('moving an endpoint past its neighbor does not consume an unwritten slope d
 test('curve fit includes the analytical Hermite and quadratic extrema', () => {
 	for (const [arrive, maximum] of [[0, 32 / 27], [-8, 2]]) {
 		const source = `return {tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=8},{time_ms=1,value=0,arrive_tangent=${arrive},leave_tangent=0}}}}}`;
-		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
 		assert.ok(Math.abs(view.curve.minimum + maximum * 0.2) < 1e-12);
 		assert.ok(Math.abs(view.curve.maximum - maximum * 1.2) < 1e-12);
@@ -158,7 +158,7 @@ test('known scalar keys and segments remain editable around unresolved source fi
 			? '{time_ms=0,value=0,arrive_tangent=0,leave_tangent=1},{time_ms=100,value=100,arrive_tangent=1,leave_tangent=0},{time_ms=200,value=25,arrive_tangent=unknown,leave_tangent=0},{time_ms=300,value=75,arrive_tangent=0}'
 			: '{time_ms=0,value=0},{time_ms=100,value=100},{time_ms=200,value=unknown},{time_ms=300,value=75},{time_ms=400,value=80}';
 		const source = `return {tracks={{kind='value',interpolation='${interpolation}',keys={${keys}}}}}`;
-		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 1, document);
 		assert.equal(view.curve.available, true, 'one unresolved field does not remove the scalar editor');
 		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
@@ -185,7 +185,7 @@ test('known scalar keys and segments remain editable around unresolved source fi
 
 test('unresolved key positions do not acquire inferred segment neighbors or endpoint clamps', () => {
 	const source = "return {tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=0},{time_ms=unknown,value=50},{time_ms=100,value=100}}}}}";
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], 0, document);
 	view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.setView(-50, 150);
 	view.curve.update(view);
@@ -196,7 +196,7 @@ test('unresolved key positions do not acquire inferred segment neighbors or endp
 });
 
 test('source bounds are retained across selection and recalculated for a new source generation', () => {
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const track = document.tracks[0], firstValue = track.keys[0].value!, value = firstValue.value;
 	let reads = 0;
 	Object.defineProperty(firstValue, 'value', { get() { reads++; return value; } });
@@ -206,7 +206,7 @@ test('source bounds are retained across selection and recalculated for a new sou
 	view.bind(track, 1, document);
 	assert.equal(reads, 0, 'changing selection must not refit the same authored curve');
 	const previousMaximum = view.curve.maximum;
-	const changed = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source.replace('value=100', 'value=200'), resource.path)))!;
+	const changed = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source.replace('value=100', 'value=200'), resource)], [])))!;
 	view.bind(changed.tracks[0], 1, changed);
 	assert.ok(view.curve.maximum > previousMaximum);
 });
@@ -216,8 +216,8 @@ test('negative authored values and slopes survive graphical editing and source r
 return {tracks={{kind='value',interpolation='cubic',keys={
 	{time_ms=first,value=-2,arrive_tangent=slope,leave_tangent=-4},
 	{time_ms=1,value=0,arrive_tangent=-8,leave_tangent=0}}}}}`;
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
-	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const key = input.document.tracks[0].keys[0];
 	assert.equal(key.coordinate!.value, -25);
 	assert.equal(key.arrive!.value, -8);
@@ -225,7 +225,7 @@ return {tracks={{kind='value',interpolation='cubic',keys={
 	assert.equal(authoring.canEditCurveField(input, key, 'arrive'), false, 'an alias is readable, not a literal field to overwrite');
 	assert.equal(authoring.canEditCurveField(input, key, 'value'), true);
 	authoring.editCurveKey(input, key, undefined, 'value', -3);
-	const changed = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path)))!;
+	const changed = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), resource)], [])))!;
 	assert.equal(changed.tracks[0].keys[0].value!.value, -3);
 	input.keys.bind(changed.tracks[0], 0, changed);
 	assert.equal(input.keys.curve.available, true);
@@ -234,11 +234,11 @@ return {tracks={{kind='value',interpolation='cubic',keys={
 });
 
 test('the curve commits time and value as one native source edit and idle geometry does no projection work', () => {
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
-	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
 	authoring.editCurveKey(input, input.document.tracks[0].keys[1], 120, 'value', 200);
-	const changed = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path)))!;
+	const changed = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), resource)], [])))!;
 	assert.equal(changed.tracks[0].keys[1].coordinate!.value, 120);
 	assert.equal(changed.tracks[0].keys[1].value!.value, 200);
 	input.keys.bind(changed.tracks[0], 1, changed);

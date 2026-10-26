@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../ide/common/resource';
 import { createBehaviorEditFixture } from '../helpers/behavior_edit_fixture';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -81,7 +82,7 @@ test('imported transition edits and source bookmarks belong to the literal, not 
 		const f = fixture(t, FSM_RETARGET_IMPORTED_SOURCE, 1, 'left', slot, outcome, {
 			'branch.lua': branch, 'callback.lua': FSM_RETARGET_CALLBACK_SOURCE, 'observer.lua': 'return function() return nil end',
 		});
-		const provider = f.models.get('branch.lua')!, callback = f.models.get('callback.lua')!;
+		const provider = f.models.get(resourceIdentityKey({ domain: 0, path: 'branch.lua' }))!, callback = f.models.get(resourceIdentityKey({ domain: 0, path: 'callback.lua' }))!;
 		assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.anchor, provider, callback]),
 			'only represented declarations and editable return evidence join Save/Undo, not every callback dependency');
 		assert.equal(f.model, slot === 'update' ? callback : provider);
@@ -94,7 +95,7 @@ test('imported transition edits and source bookmarks belong to the literal, not 
 		assert.equal(f.model.buffer.getText(), original.slice(0, edit.offset) + edit.text + original.slice(edit.offset + edit.deleteLength));
 		assert.equal(untouched.buffer.getText(), otherSource);
 		assert.equal(f.anchor.version, 1); assert.equal(f.input.isDirty(), true);
-		assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, f.model.resource.path);
+		assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, resourceIdentityKey(f.model.resource));
 		const changed = f.model.buffer.getText();
 		f.model.completeSave(f.model.createSnapshot());
 		assert.equal(f.input.isDirty(), false);

@@ -21,6 +21,7 @@ import {
 	type LuaTableConstructorExpression,
 } from '../syntax/ast';
 import type { LuaCompletion } from '../analysis/completion';
+import type { LuaProjectModuleBindings } from './module_resolution';
 
 declare const ownedValueBrand: unique symbol;
 export type OwnedValueID = number & { readonly [ownedValueBrand]: true };
@@ -44,7 +45,8 @@ export type SemanticLiteralValue =
 export type SemanticValueRoot =
 	| { kind: 'declaration'; declId: SymbolID }
 	| { kind: 'global'; symbolKey: string }
-	| { kind: 'module'; module: string }
+	| { kind: 'module_import'; referrer: string; specifier: string }
+	| { kind: 'module_export'; file: string }
 	| OwnedValueRoot
 	| { kind: 'literal'; literal: SemanticLiteralValue }
 	| { kind: 'unknown' };
@@ -90,7 +92,7 @@ export type DeclarationValueEntry = {
 };
 
 export type ModuleValueEntry = {
-	readonly module: string;
+	readonly file: string;
 	readonly source: SemanticValueSource;
 	readonly statement: LuaReturnStatement;
 	/** Written module returns that bypass this export site, not additional exports. */
@@ -157,9 +159,16 @@ export function declarationValueSource(declId: SymbolID): DeclarationSemanticVal
 	};
 }
 
-export function moduleValueSource(module: string): SemanticValueSource {
+export function moduleImportValueSource(referrer: string, specifier: string): SemanticValueSource {
 	return {
-		root: { kind: 'module', module },
+		root: { kind: 'module_import', referrer, specifier },
+		steps: [],
+	};
+}
+
+export function moduleExportValueSource(file: string): SemanticValueSource {
+	return {
+		root: { kind: 'module_export', file },
 		steps: [],
 	};
 }
@@ -264,8 +273,11 @@ export function semanticValueRootKey(root: SemanticValueRoot): string {
 		case 'global':
 			key = `g\0${root.symbolKey.length}\0${root.symbolKey}`;
 			break;
-		case 'module':
-			key = `m\0${root.module.length}\0${root.module}`;
+		case 'module_import':
+			key = `i\0${root.referrer.length}\0${root.referrer}\0${root.specifier.length}\0${root.specifier}`;
+			break;
+		case 'module_export':
+			key = `m\0${root.file.length}\0${root.file}`;
 			break;
 		case 'owned':
 			key = `o\0${root.id}`;
@@ -375,8 +387,14 @@ export function semanticValueSourcesEqual(
 				return false;
 			}
 			break;
-		case 'module':
-			if (right.root.kind !== 'module' || left.root.module !== right.root.module) {
+		case 'module_import':
+			if (right.root.kind !== 'module_import' || left.root.referrer !== right.root.referrer
+				|| left.root.specifier !== right.root.specifier) {
+				return false;
+			}
+			break;
+		case 'module_export':
+			if (right.root.kind !== 'module_export' || left.root.file !== right.root.file) {
 				return false;
 			}
 			break;
@@ -434,4 +452,5 @@ export type WorkspaceValueFileFacts = {
 export type WorkspaceValueFactsInput = {
 	files: readonly WorkspaceValueFileFacts[];
 	globalValues: ReadonlyMap<string, SymbolID>;
+	moduleBindings: LuaProjectModuleBindings;
 };

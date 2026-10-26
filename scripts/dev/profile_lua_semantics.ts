@@ -9,9 +9,11 @@ import {
 } from '../../toolchain/ts/lua/semantic/model';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 
 type LuaSource = {
 	path: string;
+	modulePath: string;
 	source: string;
 };
 
@@ -55,8 +57,10 @@ function collectLuaSources(workspaceRoot: string, directory: string, sources: Lu
 		if (stats.isDirectory()) {
 			collectLuaSources(workspaceRoot, absolutePath, sources);
 		} else if (name.endsWith('.lua')) {
+			const sourcePath = path.relative(workspaceRoot, absolutePath);
 			sources.push({
-				path: path.relative(workspaceRoot, absolutePath),
+				path: sourcePath,
+				modulePath: toLuaModulePath(sourcePath),
 				source: readFileSync(absolutePath, 'utf8'),
 			});
 		}
@@ -125,7 +129,6 @@ if (sources.length < 2) {
 	throw new Error('Semantic profiling requires at least two Lua sources to verify retained file identity.');
 }
 
-const workspace = new LuaSemanticWorkspace();
 const analyses = new Array<FileSemanticData>(sources.length);
 const coldAnalysisStartedAt = performance.now();
 for (let index = 0; index < sources.length; index += 1) {
@@ -134,6 +137,15 @@ for (let index = 0; index < sources.length; index += 1) {
 }
 const coldAnalysisMs = performance.now() - coldAnalysisStartedAt;
 
+const moduleFiles = new Map(sources.map(source => [source.modulePath, source.path]));
+const modules = new Map(moduleFiles);
+for (const file of analyses) {
+	for (const reference of file.moduleReferences) {
+		const target = moduleFiles.get(reference.value) ?? moduleFiles.get(toLuaModulePath(reference.value));
+		if (target !== undefined) modules.set(reference.value, target);
+	}
+}
+const workspace = new LuaSemanticWorkspace(new Map(sources.map(source => [source.path, modules])));
 const coldIndexStartedAt = performance.now();
 workspace.updateFiles(analyses);
 const coldIndexMs = performance.now() - coldIndexStartedAt;

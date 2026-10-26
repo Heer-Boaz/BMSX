@@ -1,9 +1,10 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FunctionSummaryStore } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import { appendValueIndex, appendValueMember, declarationValueSource, globalValueSource, literalValueSource, moduleValueSource, semanticValueSourceKey, semanticValueSourcesEqual, type SemanticLiteralValue } from '../../toolchain/ts/lua/semantic/value_graph';
+import { appendValueIndex, appendValueMember, declarationValueSource, globalValueSource, literalValueSource, moduleExportValueSource, semanticValueSourceKey, semanticValueSourcesEqual, type SemanticLiteralValue } from '../../toolchain/ts/lua/semantic/value_graph';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { semanticSymbolAt } from './semantic_test_harness';
 
@@ -53,7 +54,7 @@ test('implicit receiver and closure share syntax but not bound value identity', 
 	assert.ok(outer.ownedValues.some(value => value === receiver));
 	assert.ok(outer.ownedValues.includes(inner.functionValue));
 	assert.ok(!inner.ownedValues.includes(inner.functionValue), 'a closure is constructed in its lexical owner');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const outerSummary = summaries.list().find(summary => summary.source === outer)!;
 	assert.equal(summaries.terms.summaryOwner(summaries.terms.compileSource(receiver)), outerSummary.id);
 });
@@ -80,7 +81,7 @@ test('module aliases use new provider origins without mutating retained consumer
 		'return provider.item',
 	].join('\n'), 'consumer.lua');
 	const first = buildLuaFileSemanticData('return { item = true }', 'provider.lua');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['consumer.lua', 'provider.lua']));
 	workspace.updateFiles([first, consumer]);
 	const oldSnapshot = workspace.getSnapshot();
 	assert.equal(semanticSymbolAt(oldSnapshot, consumer.file, 2, 17)!.range.start.line, 1);
@@ -97,7 +98,7 @@ test('module aliases use new provider origins without mutating retained consumer
 
 test('a retained canonical root still receives classification from later compiled raw roots', () => {
 	const file = buildLuaFileSemanticData('local index<const> = 3', 'literal.lua');
-	const identities = new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() });
+	const identities = new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() });
 	const terms = new FunctionSummaryStore([file], identities).terms;
 	const declaration = declarationValueSource(file.decls[0].id);
 	const declaredTerm = terms.compileSource(declaration);
@@ -109,7 +110,7 @@ test('a retained canonical root still receives classification from later compile
 });
 
 test('literal roots retain typed payloads and primitive identities without encoded-kind probes', () => {
-	const identities = new WorkspaceValueIdentityIndex({ files: [], globalValues: new Map() });
+	const identities = new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([]).map(file => file.file)), files: [], globalValues: new Map() });
 	const literals: SemanticLiteralValue[] = [
 		{ kind: 'string', value: '1' }, { kind: 'number', value: 1 },
 		{ kind: 'boolean', value: true }, { kind: 'string', value: 'true' },
@@ -141,7 +142,7 @@ test('value-source keys preserve component boundaries for arbitrary strings and 
 	const pairs = [
 		[appendValueMember(root, 'a\0m\0b'), appendValueMember(appendValueMember(root, 'a'), 'b')],
 		[declarationValueSource('binding\0m\0field'), appendValueMember(declarationValueSource('binding'), 'field')],
-		[moduleValueSource('module\0m\0field'), appendValueMember(moduleValueSource('module'), 'field')],
+		[moduleExportValueSource('module\0m\0field'), appendValueMember(moduleExportValueSource('module'), 'field')],
 		[appendValueIndex(root, appendValueMember(globalValueSource('key'), 'field')),
 			appendValueMember(appendValueIndex(root, globalValueSource('key')), 'field')],
 	];

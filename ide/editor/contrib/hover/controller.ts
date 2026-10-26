@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../../common/resource';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -63,7 +64,7 @@ export class CodeEditorHoverController {
 			this.clear();
 			return;
 		}
-		const path = this.code.model.resource.path;
+		const path = resourceIdentityKey(this.code.model.resource);
 		const textVersion = this.code.model.version;
 		const wrapWidth = Math.max(
 			this.code.spaceAdvance,
@@ -114,7 +115,7 @@ export class CodeEditorHoverController {
 				this.fault,
 				this.runtime,
 				evaluatableExpression.expression,
-				this.code.model.resource.domain,
+				this.code.model.resource,
 				snapshot.getFileData(path)!,
 				evaluatableExpression.range.start.line,
 				evaluatableExpression.range.start.column,
@@ -161,7 +162,6 @@ export class CodeEditorHoverController {
 		const lineWidths = wrappedLines.map(line => this.code.font.measure(line));
 		this.code.hoverTooltip = {
 			contentLines: wrappedLines, lineWidths,
-			path,
 			row: range.start.line - 1,
 			startColumn: range.start.column - 1,
 			endColumn: range.end.column,

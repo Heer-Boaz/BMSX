@@ -1,5 +1,6 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
-import { SYSTEM_RESOURCE_DOMAIN, CARTRIDGE_RESOURCE_DOMAINS, type ResourceDomain } from '../../../common/resource';
+import { SYSTEM_RESOURCE_DOMAIN, CARTRIDGE_RESOURCE_DOMAINS, resourceIdentityKey, type ResourceDomain, type ResourceIdentity } from '../../../common/resource';
+import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import type { EditorTextEdit, EditorTextModel } from '../../../editor/model/text_model';
 import { readLuaSourceRange } from '../../../language/lua/source_edits';
 import { parseLuaFieldValueEdit } from '../../../language/lua/field_value_edit';
@@ -25,7 +26,8 @@ export type ToolBehaviorNode = Omit<BehaviorSourceNode, 'rowKey' | 'children'> &
 };
 export type ToolBehaviorDocument = {
 	readonly behavior: string; readonly syntaxComplete: boolean; readonly root: string;
-	readonly sources: readonly { domain: ResourceDomain; path: string; version: number; readOnly: boolean }[];
+	/** Opaque range addresses map directly to their admitted source identities. */
+	readonly sources: readonly { file: string; domain: ResourceDomain; path: string; version: number; readOnly: boolean }[];
 	readonly nodes: readonly ToolBehaviorNode[];
 	readonly entries: readonly { kind: 'initial' | 'concurrent'; owner: string; origin: string; target: { kind: 'state'; node: string } | Extract<StateMachineSourceOutcome['target'], { kind: 'unresolved' }> }[];
 	readonly transitions: readonly { origin: string; node: string; kind: string; outcomes: readonly {
@@ -107,14 +109,15 @@ export class WorkspaceBehaviorTools {
 		if (existing !== undefined) return existing;
 		const registration = this.registrations.get(handle);
 		if (registration === undefined) throw new StudioToolInputError('Behavior handle does not belong to this source context');
-		const capture = (path: string) => {
-			const resource = resolveRuntimeResource(this.sources, { domain: registration.resource.domain, path })!;
+		const project = getOrCreateSemanticProject(this.context.models, registration.resource.domain);
+		const capture = (identity: ResourceIdentity) => {
+			const resource = resolveRuntimeResource(this.sources, identity)!;
 			return this.context.read(resolveLuaTextFileModel(this.context.models, this.sources, resource));
 		};
-		const root = capture(registration.resource.path);
+		const root = capture(registration.resource);
 		const document = this.documents.get(root.model);
 		const definition = document.definitions.find(item => item.rowKey === registration.rowKey)!;
-		const files = new Map(document.files.map(file => [file.file, capture(file.file)]));
+		const files = new Map(document.files.map(file => [file.file, capture(project.getResourceIdentity(file.file))]));
 		const ordered: BehaviorSourceNode[] = [], handles = new Map<string, string>();
 		function collect(node: BehaviorSourceNode): void {
 			handles.set(node.rowKey, `${handle}/node/${ordered.length}`); ordered.push(node);
@@ -157,7 +160,7 @@ export class WorkspaceBehaviorTools {
 			})),
 		}));
 		const data: ToolBehaviorDocument = { behavior: handle, syntaxComplete: document.syntaxComplete, root: handles.get(definition.rowKey)!, nodes, entries, transitions,
-			sources: [...files.values()].map(({ model, version }) => ({ ...model.identity, version, readOnly: model.readOnly })) };
+			sources: [...files.values()].map(({ model, version }) => ({ file: resourceIdentityKey(model.resource), ...model.identity, version, readOnly: model.readOnly })) };
 		this.reads.set(handle, data);
 		return data;
 	}

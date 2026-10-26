@@ -1,4 +1,5 @@
-import { semanticSnapshot } from './semantic_test_harness';
+import { resourceIdentityKey } from '../../ide/common/resource';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -17,8 +18,10 @@ import { captureBehaviorSourceBookmark, behaviorSourceBookmarksEqual, resolveBeh
 import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavior_lens/source_correspondence';
 import { selectStateMachineSource, stateMachineSourceRange } from '../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
+
+const API_MODULES = ['cartlib/fsm/library'];
 
 const MAIN = `local fsm<const> = require('cartlib/fsm/library')
 local callback<const> = function(owner) return '../active' end
@@ -30,11 +33,11 @@ function fixture() {
 	editorViewState.font = new EditorFont('tiny');
 	const main = new EditorTextModel({ sourceFilePath: 'main.lua', location: { kind: 'workspace' as const, path: 'main.lua' }, domain: 0, path: 'main.lua', source: { type: 'lua', resid: 'main' } }, 'lua', MAIN);
 	const provider = new EditorTextModel({ sourceFilePath: 'provider.lua', location: { kind: 'workspace' as const, path: 'provider.lua' }, domain: 0, path: 'provider.lua', source: { type: 'lua', resid: 'provider' } }, 'lua', PROVIDER);
-	const models = new Map([[main.resource.path, main], [provider.resource.path, provider]]);
-	function project(): BehaviorSourceDocument {
-		const analysis = buildLuaFileSemanticData(main.buffer.getText(), main.resource.path);
-		const dependency = buildLuaFileSemanticData(provider.buffer.getText(), provider.resource.path);
-		const document = buildBehaviorSourceDocument(main.identity, semanticSnapshot(analysis));
+	const models = new Map([[resourceIdentityKey(main.resource), main], [resourceIdentityKey(provider.resource), provider]]);
+	function project(dependencyModel = provider): BehaviorSourceDocument {
+		const analysis = buildResourceLuaSemanticFixtureFile(main.buffer.getText(), main.resource);
+		const dependency = buildResourceLuaSemanticFixtureFile(dependencyModel.buffer.getText(), dependencyModel.resource);
+		const document = buildBehaviorSourceDocument(main.identity, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], API_MODULES)));
 		const definition = document.definitions[0];
 		assert.ok(definition.behaviorKind === 'state_machine');
 		const original = definition.transitions[0];
@@ -97,7 +100,7 @@ test('binding and callback markers use their own resource, buffer and UTF-16 coo
 test('inspection reads foreign evidence without opening a code tab or dirtying either working copy', t => {
 	const f = fixture(); t.after(() => f.dispose()); f.chooseReturn();
 	const items = buildBehaviorInspection(f.view);
-	const returned = items.find(item => item.source?.range.path === 'provider.lua')!;
+	const returned = items.find(item => item.source?.range.path === resourceIdentityKey(f.provider.resource))!;
 	assert.equal(returned.value, "RETURN '../active'");
 	assert.equal(f.main.version, 1); assert.equal(f.provider.version, 1);
 	assert.equal(f.main.canUndo, false); assert.equal(f.provider.canUndo, false);
@@ -131,7 +134,7 @@ test('equal coordinates in another file or socket do not identify the same sourc
 	otherFile.path[last] = { ...otherFile.path[last], resource: f.main.identity };
 	assert.equal(behaviorSourceBookmarksEqual(bookmark, otherFile), false);
 	assert.equal(resolveBehaviorSourceBookmark(otherFile, f.view), undefined);
-	const dependency = buildLuaFileSemanticData(PROVIDER, f.provider.identity.path);
+	const dependency = buildResourceLuaSemanticFixtureFile(PROVIDER, f.provider.identity);
 	const expression = dependency.chunk.body.get(0)!;
 	assert.ok(expression.kind === LuaSyntaxKind.ReturnStatement);
 	const location = luaSourceRangeToTextLocation(f.models, dependency.chunk.locations.range(expression.span));
@@ -148,7 +151,7 @@ test('source correspondence does not transfer a selection to an equal-offset for
 	const start = { row: 0, column: 0 }, end = { row: 0, column: 0 };
 	f.main.buffer.positionAt(old.start, start);
 	f.main.buffer.positionAt(old.end - 1, end);
-	const range = { path: f.main.resource.path, start: { line: start.row + 1, column: start.column + 1 }, end: { line: end.row + 1, column: end.column + 1 } };
+	const range = { path: resourceIdentityKey(f.main.resource), start: { line: start.row + 1, column: start.column + 1 }, end: { line: end.row + 1, column: end.column + 1 } };
 	const replacement = { ...providerNode, authoredRange: range, occurrenceRange: range };
 	installBehaviorLensDocument(f.view, { ...document, definitions: [{ ...definition, children: [...definition.children.slice(0, -1), replacement] }] });
 	assert.equal(f.view.selection, null);
@@ -159,8 +162,7 @@ test('a same-path source from another resource domain cannot inherit the previou
 	f.view.selection = { kind: 'node', rowKey: 'provider-return' };
 	const systemProvider = new EditorTextModel({ sourceFilePath: f.provider.identity.path, location: { kind: 'workspace' as const, path: f.provider.identity.path }, domain: -1, path: f.provider.identity.path,
 		source: { type: 'lua', resid: 'system-provider' } }, 'lua', PROVIDER);
-	t.after(() => f.provider.dispose());
-	f.models.set(systemProvider.identity.path, systemProvider);
-	installBehaviorLensDocument(f.view, f.project());
+	f.models.set(resourceIdentityKey(systemProvider.resource), systemProvider);
+	installBehaviorLensDocument(f.view, f.project(systemProvider));
 	assert.equal(f.view.selection, null);
 });

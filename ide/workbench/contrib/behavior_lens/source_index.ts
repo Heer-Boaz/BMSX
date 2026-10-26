@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../../common/resource';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextLocation } from '../../../editor/text/text_location';
 import { luaSourceRangeToTextLocation } from '../../../language/lua/source_location';
@@ -21,7 +22,7 @@ export class BehaviorSourceIndex {
 		const models = new Map<string, EditorTextModel>();
 		const rangesByModel = new Map<EditorTextModel, Map<BehaviorSourceRowKey, TrackedTextLocation>>();
 		for (const file of document.files) {
-			const owner = file.file === model.resource.path ? model : resolveModel(file.file);
+			const owner = file.file === resourceIdentityKey(model.resource) ? model : resolveModel(file.file);
 			models.set(file.file, owner);
 			rangesByModel.set(owner, new Map());
 			this.subscriptions.push(owner.onWillChangeContent(() => this.invalidate()));

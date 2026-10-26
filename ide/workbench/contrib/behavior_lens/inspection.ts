@@ -22,10 +22,11 @@ export function buildBehaviorInspection(view: BehaviorLensViewState): readonly B
 	const result: BehaviorInspectionProperty[] = [];
 	const selected = view.source.nodesByRowKey.get(view.selection!.rowKey)!;
 	function source(label: string, description: string, range: LuaSourceRange, stateSelection?: StateMachineDetail['source']): void {
-		const location = `${range.path}:${range.start.line}:${range.start.column}`;
-		result.push({ label: uppercaseOutsideStrings(label), value: uppercaseOutsideStrings(readLuaSourceRange(view.source.models.get(range.path)!.buffer, range)),
+		const model = view.source.models.get(range.path)!;
+		const location = `${model.resource.path}:${range.start.line}:${range.start.column}`;
+		result.push({ label: uppercaseOutsideStrings(label), value: uppercaseOutsideStrings(readLuaSourceRange(model.buffer, range)),
 			description: description.length === 0 ? location : `${location}\n${uppercaseOutsideStrings(description)}`,
-			warning: false, source: { resource: { domain: view.resource.domain, path: range.path }, range, stateSelection } });
+			warning: false, source: { resource: model.resource, range, stateSelection } });
 	}
 	if (selected.behaviorKind === 'state_machine') {
 		for (const detail of buildStateMachineDetails(view)) {

@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
@@ -36,11 +37,11 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 	public constructor(public readonly workingCopy: EditorTextModel, public readonly programKind: LuaProgramKind, span: TrackedTextRange, guest: SuspendedGuestSession) {
 		super(`program:${nextInputId++}`, 'lua_program', programKind === 'progression' ? 'PROGRESSION' : 'INPUT BINDINGS', true);
 		this.occurrenceRange = { ...span };
-		this.sourceModels.set(workingCopy.resource.path, workingCopy);
+		this.sourceModels.set(resourceIdentityKey(workingCopy.resource), workingCopy);
 		this.setWorkingCopies(new Set(this.sourceModels.values()));
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
 		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
-			if (this.sourceModels.get(model.resource.path) === model) this.invalidateProjection();
+			if (this.sourceModels.get(resourceIdentityKey(model.resource)) === model) this.invalidateProjection();
 			if (this.workingCopy === model) mapTrackedTextRange(this.occurrenceRange, event.changes);
 		}) });
 		this.disposables.add({ dispose: guest.onDidInvalidate(reason => {

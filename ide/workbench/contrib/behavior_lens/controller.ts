@@ -2,8 +2,9 @@ import type { BehaviorLensNavigationSelection } from './navigation_selection';
 import { captureNavigation } from '../../../navigation/navigation_history';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { editorTextModelService } from '../../../editor/model/model_service';
+import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
-import { resolveRuntimeResource, resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
+import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { type EditorOpenOptions } from '../../ui/tab/group_model';
 import type { EditorNavigationController } from '../resources/navigation';
@@ -113,8 +114,9 @@ export class BehaviorLensController {
 
 	/** Source-derived input creation is independent of group admission and pane layout. */
 	public createInput(model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind']): BehaviorLensInput {
-		return new BehaviorLensInput(model, createBehaviorLensViewState(this.documents.get(model), model, presentation, path => {
-			const resource = resolveRuntimeResourceForContext(this.sources, model.resource.domain, path)!;
+		const project = getOrCreateSemanticProject(editorTextModelService, model.resource.domain);
+		return new BehaviorLensInput(model, createBehaviorLensViewState(this.documents.get(model), model, presentation, address => {
+			const resource = resolveRuntimeResource(this.sources, project.getResourceIdentity(address))!;
 			return resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 		}), this.createGraphLayoutEngine);
 	}
@@ -271,14 +273,14 @@ export class BehaviorLensController {
 			}
 			finishBehaviorLensNavigation(view);
 		}
-		this.navigation.focusChunkSourceForContext(source.resource.domain, source.resource.path, {
+		this.navigation.focusChunkSource(source.resource, {
 			row: source.range.start.line - 1, startColumn: source.range.start.column - 1, endColumn: source.range.start.column - 1,
 		});
 	}
 
 	public openWrittenSource(input: BehaviorLensInput, range: LuaSourceRange): void {
 		const view = input.view;
-		this.navigation.focusChunkSourceForContext(view.resource.domain, range.path, {
+		this.navigation.focusChunkSource(view.source.models.get(range.path)!.resource, {
 			row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1,
 		});
 	}
@@ -397,9 +399,8 @@ export class BehaviorLensController {
 		if (range === null) {
 			return;
 		}
-		this.navigation.focusChunkSourceForContext(
-			view.resource.domain,
-			range.path,
+		this.navigation.focusChunkSource(
+			view.source.models.get(range.path)!.resource,
 			{
 				row: range.start.line - 1,
 				startColumn: range.start.column - 1,
@@ -410,11 +411,11 @@ export class BehaviorLensController {
 
 	private openDefinitionSource(view: BehaviorLensViewState): void {
 		if (view.definitionRowKey === null) {
-			this.navigation.focusChunkSourceForContext(view.resource.domain, view.resource.path);
+			this.navigation.focusChunkSource(view.resource);
 			return;
 		}
 		const range = view.source.nodesByRowKey.get(view.definitionRowKey)!.occurrenceRange;
-		this.navigation.focusChunkSourceForContext(view.resource.domain, range.path, {
+		this.navigation.focusChunkSource(view.source.models.get(range.path)!.resource, {
 			row: range.start.line - 1,
 			startColumn: range.start.column - 1,
 			endColumn: range.start.column - 1,

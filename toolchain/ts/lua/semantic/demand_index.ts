@@ -16,7 +16,7 @@ import {
 } from './function_summary';
 import {
 	declarationValueSource,
-	moduleValueSource,
+	moduleExportValueSource,
 	type CallValueEntry,
 } from './value_graph';
 
@@ -133,7 +133,7 @@ export class SemanticDemandIndex {
 			for (let moduleIndex = 0; moduleIndex < file.moduleValues.length; moduleIndex += 1) {
 				const entry = file.moduleValues[moduleIndex];
 				const alias: SummaryAlias = {
-					target: summaries.terms.compileSource(moduleValueSource(entry.module)),
+					target: summaries.terms.compileSource(moduleExportValueSource(entry.file)),
 					source: summaries.terms.compileSource(entry.source),
 					relation: 'value',
 				};

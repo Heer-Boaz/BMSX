@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
@@ -43,7 +44,7 @@ for (const optLevel of [0, 3] as const) {
 }
 
 test('semantic frontend caching keeps the domain policy outside immutable syntax snapshots', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['capture.lua']));
 	workspace.updateFile('capture.lua', 'return __bmsx_next');
 	const snapshot = workspace.getSnapshot();
 	const bios = createEditorSemanticFrontend(snapshot, -1);

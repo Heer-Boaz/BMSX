@@ -55,7 +55,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	const media = ide.sources.currentBlua32Media;
 	const original = model.buffer.getText();
 	const field = titlePositionField();
-	const range = project.getFileData(model.resource.path)!.chunk.locations.range(field.value.span);
+	const range = project.getFileData(model.resource)!.chunk.locations.range(field.value.span);
 	const start = model.buffer.offsetAt(range.start.line - 1, range.start.column - 1);
 	const end = model.buffer.offsetAt(range.end.line - 1, range.end.column);
 	// Simulate hand-authored grouping/trivia, which the old unary-range edit destroyed.

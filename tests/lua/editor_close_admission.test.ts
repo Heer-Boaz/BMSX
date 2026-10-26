@@ -9,6 +9,8 @@ import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
+import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 
 /** Only the filesystem is controlled; close, prompt, working copies and Save are the real workbench owners. */
 class CloseFiles implements WorkspaceRecordProvider {
@@ -374,6 +376,7 @@ test('a close reentered by the focused draft commit joins its original operation
 
 test('closing a genuine imported-effect lens considers every represented working copy before any Discard', async t => {
 	const f = await fixture(t), main = f.firstInput.workingCopy, imported = f.secondInput.workingCopy;
+	registerLuaSourceRecord(f.sources.systemLuaSources, createScenarioTestSourceRecord('cartlib/actioneffects.lua', 0, ''));
 	const registration = "local effects<const> = require('cartlib/actioneffects')\neffects.register_effect('close.fixture', require('second'))";
 	const definition = "return { period_ms = 40, blocked_tags = { 'busy' }, handler = function(owner) owner:act() end }";
 	f.first.code.focusTarget.textInput!.replaceText(0, main.buffer.length, registration);

@@ -11,7 +11,7 @@ import {
 	type Ref,
 	type SymbolID,
 } from './model';
-import { toLuaModulePath } from '../module_path';
+import type { LuaProjectModuleBindings } from './module_resolution';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,
@@ -137,7 +137,6 @@ export type LuaSemanticFrontendFile = {
 
 export type LuaSemanticFrontend = {
 	snapshot: LuaSemanticWorkspaceSnapshot;
-	readonly moduleTargetsByAlias: ReadonlyMap<string, string>;
 	getFile(path: string): LuaSemanticFrontendFile;
 	findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null;
@@ -156,9 +155,10 @@ export type LuaSemanticFrontend = {
 
 export function buildLuaSemanticFrontend(
 	sources: ReadonlyArray<LuaSemanticFrontendSource>,
+	moduleBindings: LuaProjectModuleBindings,
 	options: LuaSemanticFrontendOptions = {},
 ): LuaSemanticFrontend {
-	const snapshot = buildLuaSemanticWorkspaceSnapshot(sources);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(sources, moduleBindings);
 	return buildLuaSemanticFrontendFromSnapshot(snapshot, options);
 }
 
@@ -176,7 +176,6 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 	private readonly extraGlobalNames: readonly string[] | undefined;
 	private readonly globalSymbols: readonly LuaSymbolEntry[];
 	private readonly knownGlobalNames: ReadonlySet<string>;
-	public readonly moduleTargetsByAlias: ReadonlyMap<string, string>;
 	private readonly files: Map<string, LuaSemanticFrontendFile> = new Map();
 
 	constructor(snapshot: LuaSemanticWorkspaceSnapshot, options: LuaSemanticFrontendOptions) {
@@ -191,7 +190,6 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			this.builtinDescriptors,
 			this.extraGlobalNames,
 		);
-		this.moduleTargetsByAlias = buildModuleTargetAliasMap(snapshot.files);
 	}
 
 	public getFile(path: string): LuaSemanticFrontendFile {
@@ -215,7 +213,6 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			source,
 			diagnostics,
 			this.knownGlobalNames,
-			this.moduleTargetsByAlias,
 			this.snapshot,
 		);
 		this.files.set(path, file);
@@ -417,10 +414,9 @@ function createBoundFile(
 	source: FileSemanticData,
 	diagnostics: readonly LuaStaticDiagnostic[],
 	knownGlobalNames: ReadonlySet<string>,
-	moduleTargetsByAlias: ReadonlyMap<string, string>,
 	snapshot: LuaSemanticWorkspaceSnapshot,
 ): LuaSemanticFrontendFile {
-	const requireTargetsByStart = collectRequireNavigationTargets(source, moduleTargetsByAlias, snapshot);
+	const requireTargetsByStart = collectRequireNavigationTargets(source, snapshot);
 	const boundReferences = new Map<Ref, LuaBoundReference>();
 	const bindReference = (ref: Ref): LuaBoundReference => {
 		let reference = boundReferences.get(ref);
@@ -558,15 +554,14 @@ type LuaRequireNavigationTarget = {
 
 function collectRequireNavigationTargets(
 	source: FileSemanticData,
-	moduleTargetsByAlias: ReadonlyMap<string, string>,
 	snapshot: LuaSemanticWorkspaceSnapshot,
 ): LuaRequireNavigationTarget[] {
 	const targets: LuaRequireNavigationTarget[] = [];
 	for (let index = 0; index < source.moduleReferences.length; index += 1) {
 		const reference = source.moduleReferences[index];
 		const moduleName = reference.value;
-		const targetPath = moduleTargetsByAlias.get(moduleName);
-		if (!targetPath) {
+		const targetPath = snapshot.resolveModule(source.file, moduleName);
+		if (targetPath === undefined) {
 			continue;
 		}
 		const targetSource = snapshot.getFileData(targetPath);
@@ -580,20 +575,6 @@ function collectRequireNavigationTargets(
 		});
 	}
 	return targets;
-}
-
-function buildModuleTargetAliasMap(
-	files: readonly FileSemanticData[],
-): Map<string, string> {
-	const aliases = new Map<string, string>();
-	for (let index = 0; index < files.length; index += 1) {
-		const file = files[index];
-		const modulePath = toLuaModulePath(file.file);
-		if (!aliases.has(modulePath)) {
-			aliases.set(modulePath, file.file);
-		}
-	}
-	return aliases;
 }
 
 function classifyReference(

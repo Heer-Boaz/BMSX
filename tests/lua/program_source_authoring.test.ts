@@ -5,9 +5,10 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { lintCartSources } from '../../scripts/rompacker/cart_lua_linter_runtime';
 import { actionStringScenarioSource } from '../../ide/workbench/contrib/scenario_lab/actionstring';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
+import { resourceIdentityKey } from '../../ide/common/resource';
 import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import { collectLuaPrograms, projectLuaProgram, type LuaProgramProperty } from '../../ide/workbench/contrib/lua_program/source';
 import { createWorkbenchPropertyTree } from '../../ide/workbench/ui/property_tree';
@@ -19,10 +20,14 @@ import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavio
 import { programEntryTemplate, programFieldTemplates } from '../../ide/workbench/contrib/lua_program/schema';
 
 function project(source: string, imports: readonly { path: string; source: string }[] = []) {
-	const file = buildLuaFileSemanticData(source, 'entry.lua');
-	const snapshot = semanticSnapshot(file, ...imports.map(item => buildLuaFileSemanticData(item.source, item.path)));
-	const models = new Map(snapshot.files.map(file => [file.file, new EditorTextModel({ sourceFilePath: file.file, location: { kind: 'workspace' as const, path: file.file }, domain: 0, path: file.file, source: { resid: file.file, type: 'lua' } }, 'lua', file.source)]));
-	const occurrence = collectLuaPrograms({ domain: 0, path: file.file }, snapshot)[0];
+	const file = buildResourceLuaSemanticFixtureFile(source, { domain: 0, path: 'entry.lua' });
+	const files = [file, ...imports.map(item => buildResourceLuaSemanticFixtureFile(item.source, { domain: 0, path: item.path }))];
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture(files,
+		['cartlib/progression', 'cartlib/input/actioneffect/actioneffect_component', 'cartlib/actioneffects']));
+	const models = new Map(files.map(file => [file.file, new EditorTextModel({ sourceFilePath: file.resource.path,
+		location: { kind: 'workspace' as const, path: file.resource.path }, ...file.resource,
+		source: { resid: file.resource.path, type: 'lua' } }, 'lua', file.source)]));
+	const occurrence = collectLuaPrograms(file.resource, snapshot)[0];
 	const tree = createWorkbenchPropertyTree<LuaProgramProperty>();
 	if (occurrence !== undefined) projectLuaProgram(tree, occurrence, new LuaSourceReader(snapshot), file => models.get(file.file)!);
 	return { occurrence, snapshot, tree, models };
@@ -38,16 +43,16 @@ test('program source recognition resolves cartlib imports and reexports rather t
 test('imported authored tables stay attached to their original shared models', () => {
 	const f = project("local p = require('cartlib/progression'); local spec = require('spec'); p.compile_program(spec)", [{ path: 'spec.lua', source: "return { rules = { {id='r', on='hit', set={{key='done',value=true}}} }, filters={}, handlers={} }" }]);
 	const property = f.tree.rows.find(row => row.element.key === '["rules",1,"on"]')!.element;
-	assert.equal(property.file.file, 'spec.lua');
+	assert.equal(property.file.file, resourceIdentityKey({ domain: 0, path: 'spec.lua' }));
 	assert.ok(property.container!.structural);
-	const model = f.models.get('spec.lua')!, before = model.buffer.getText();
+	const model = f.models.get(resourceIdentityKey({ domain: 0, path: 'spec.lua' }))!, before = model.buffer.getText();
 	model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, property.file.chunk, property.container!.table, property.container!.table.fields.length, ['apply_once = true']));
 	assert.ok(model.buffer.getText().includes('apply_once = true'));
 	model.history.undo(model);
 	assert.equal(model.buffer.getText(), before);
 	const entry = f.tree.rows.find(row => row.element.key === '["rules",1]')!.element;
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, entry.file.chunk.locations, entry.file.chunk.tokens, entry.field!));
-	assert.equal(buildLuaFileSemanticData(model.buffer.getText(), 'spec.lua').syntaxError, null);
+	assert.equal(buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource).syntaxError, null);
 	model.history.undo(model);
 	assert.equal(model.buffer.getText(), before);
 });
@@ -137,8 +142,8 @@ test('new modules are canonical source recognized by their actual editors', () =
 		assert.equal(project(source).occurrence.kind, kind);
 	}
 	const effect = newLuaSource('action_effect', 'effects/chime.lua');
-	const file = buildLuaFileSemanticData(effect, 'effects/chime.lua');
-	const definition = buildBehaviorSourceDocument({domain: 0, path: file.file}, semanticSnapshot(file)).definitions[0];
+	const file = buildResourceLuaSemanticFixtureFile(effect, { domain: 0, path: 'effects/chime.lua' });
+	const definition = buildBehaviorSourceDocument(file.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file], ['cartlib/actioneffects']))).definitions[0];
 	assert.equal(definition.behaviorKind, 'action_effect');
 });
 

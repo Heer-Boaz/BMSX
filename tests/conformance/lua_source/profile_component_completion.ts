@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../../toolchain/ts/lua/semantic/frontend';
@@ -13,7 +14,7 @@ const sources = ['cartlib', 'machine/bios/res', 'carts/nemesis_s'].flatMap(root 
 const path = 'carts/nemesis_s/enemies/noot.lua';
 const original = sources.find(source => source.path === path)!.source;
 const sourceUtf16 = sources.reduce((total, source) => total + source.source.length, 0);
-const workspace = new LuaSemanticWorkspace();
+const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(sources.map(source => source.path)));
 workspace.updateFiles(sources.map(source => buildLuaFileSemanticData(source.source, source.path)));
 const samples = [
 	['cold', original],

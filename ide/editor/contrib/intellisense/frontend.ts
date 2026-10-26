@@ -15,7 +15,7 @@ export function buildEditorSemanticSnapshot(
 ): LuaSemanticWorkspaceSnapshot {
 	const project = getOrCreateSemanticProject(editorTextModelService, identity.domain);
 	project.synchronizeRuntimeSources(sources);
-	project.analyzeDocument(identity.path, buffer);
+	project.analyzeDocument(identity, buffer);
 	return project.getSnapshot();
 }
 

@@ -1,4 +1,4 @@
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
 import { EditorFont } from '../../ide/editor/ui/view/font';
@@ -9,7 +9,7 @@ import type { ElkNode } from 'elkjs/lib/elk-api';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { NodeGraphLayoutEngine } from '../../ide/node/graph_layout';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import type { GraphLayoutEngineFactory } from '../../ide/workbench/services/graph_layout/engine';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
@@ -30,7 +30,7 @@ function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = 
 	Object.assign(editorViewState, { font: new EditorFont('tiny') });
 	const resource = { sourceFilePath: 'graph.lua', location: { kind: 'workspace' as const, path: 'graph.lua' }, domain: 0 as const, path: 'graph.lua', source: { resid: 'graph', type: 'lua' as const } };
 	const model = new EditorTextModel(resource, 'lua', source);
-	const document = () => buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path)));
+	const document = () => buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), resource)], ['cartlib/fsm/library'])));
 	const view = createBehaviorLensViewState(document(), model, 'state-graph', assert.fail);
 	const input = new BehaviorLensInput(model, view, factory);
 	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });

@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
@@ -10,11 +11,11 @@ for (const callers of [1, 64, 256, 1024]) {
 	const file = buildLuaFileSemanticData(lines.join('\n'), 'contexts.lua');
 	const call = file.functionValueFlows.find(flow => flow.calls.length === 1)!.calls[0];
 	const coldQueryMilliseconds = medianMilliseconds(() => {
-		const queries = new LuaSemanticQueryStore([file], new Map());
+		const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 		const contexts = queries.callContexts(call);
 		assert.equal(contexts.filter(context => context.ownerFrame > 0).length, callers);
 	});
-	const queries = new LuaSemanticQueryStore([file], new Map());
+	const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 	const retained = queries.callContexts(call);
 	const before = queries.metrics();
 	let count = 0;
@@ -36,12 +37,12 @@ for (const callers of [1, 64, 256, 1024]) {
 	const file = buildLuaFileSemanticData(lines.join('\n'), 'source_calls.lua');
 	const call = file.functionValueFlows.find(flow => flow.calls.length === 1)!.calls[0];
 	const coldQueryMilliseconds = medianMilliseconds(() => {
-		const queries = new LuaSemanticQueryStore([file], new Map());
+		const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 		const graph = queries.callSources(call);
 		assert.equal(graph.heads.filter(call => call.caller.kind === 'invocation').length, callers);
 		assert.equal(graph.calls.filter(call => call.caller.kind === 'module').length, callers);
 	});
-	const queries = new LuaSemanticQueryStore([file], new Map());
+	const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 	const retained = queries.callSources(call);
 	const before = queries.metrics();
 	let count = 0;

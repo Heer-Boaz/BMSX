@@ -1,3 +1,6 @@
+import { editorTextModelService } from '../../model/model_service';
+import { getOrCreateSemanticProject } from '../intellisense/semantic/workspace/state';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { CodeEditorContext } from '../../ui/code_editor_state';
 import { buildEditorSemanticFrontend } from '../intellisense/frontend';
@@ -8,6 +11,7 @@ import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 
 export type LuaDefinitionTarget = {
 	location: LuaDefinitionLocation;
+	resource: ResourceIdentity;
 	name: string;
 	namePath: readonly string[];
 	kind: SemanticSymbolKind | 'module';
@@ -33,10 +37,11 @@ export function queryDefinitionsAt(
 		context.model.resource,
 		context.model.buffer,
 	);
-	const navigation = frontend.getFile(context.model.resource.path).findNavigationAt(row + 1, column + 1);
+	const navigation = frontend.getFile(resourceIdentityKey(context.model.resource)).findNavigationAt(row + 1, column + 1);
 	if (!navigation) {
 		return null;
 	}
+	const project = getOrCreateSemanticProject(editorTextModelService, context.model.resource.domain);
 	const definitions = new Array<LuaDefinitionTarget>(navigation.targets.length);
 	for (let index = 0; index < navigation.targets.length; index += 1) {
 		const target = navigation.targets[index];
@@ -44,6 +49,7 @@ export function queryDefinitionsAt(
 			const declaration = target.declaration;
 			definitions[index] = {
 				location: definitionLocationFromSourceRange(target.range),
+				resource: project.getResourceIdentity(target.range.path),
 				name: declaration.name,
 				namePath: declaration.namePath,
 				kind: declaration.kind,
@@ -51,6 +57,7 @@ export function queryDefinitionsAt(
 		} else {
 			definitions[index] = {
 				location: definitionLocationFromSourceRange(target.range),
+				resource: project.getResourceIdentity(target.range.path),
 				name: target.moduleName,
 				namePath: [target.moduleName],
 				kind: 'module',

@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SemanticDemandIndex } from '../../toolchain/ts/lua/semantic/demand_index';
@@ -19,7 +20,7 @@ local function walk(value, next)
 end
 walk(first, second)
 walk(second, first)`, 'inputs.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const query = new SemanticInstantiationQuery(summaries, demand, () => {});
 	const summary = summaries.list()[0];
@@ -64,7 +65,7 @@ local first = walk(${'{ next = '.repeat(depth)}left${' }'.repeat(depth)})
 local second = walk(${'{ next = '.repeat(depth)}right${' }'.repeat(depth)})
 return first.left, second.right`;
 			for (const order of [['first', 'second'], ['second', 'first']]) {
-				const workspace = new LuaSemanticWorkspace();
+				const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['chains.lua']));
 				workspace.updateFile('chains.lua', source);
 				const snapshot = workspace.getSnapshot();
 				const file = snapshot.getFileData('chains.lua')!;
@@ -107,7 +108,7 @@ end`);
 	);
 	let retainedLeaves: Record<string, string[]> | undefined;
 	for (const order of [['left_leaf', 'right_leaf'], ['right_leaf', 'left_leaf']]) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['fanout.lua']));
 		workspace.updateFile('fanout.lua', lines.join('\n'));
 		const snapshot = workspace.getSnapshot();
 		const file = snapshot.getFileData('fanout.lua')!;
@@ -134,7 +135,7 @@ local function walk(value, key)
 end
 local result = walk(root, 1)
 return result.marker`;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['indexed.lua']));
 	workspace.updateFile('indexed.lua', source);
 	const snapshot = workspace.getSnapshot();
 	const result = snapshot.getFileData('indexed.lua')!.decls.find(entry => entry.name === 'result')!;
@@ -147,7 +148,7 @@ test('an unmodelled index retains the existing aggregate-element representation'
 	const source = `local function read(items, key) return items[key] end
 local result = read({ { found = true } }, 1 + 0)
 return result.found`;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['unknown_index.lua']));
 	workspace.updateFile('unknown_index.lua', source);
 	const snapshot = workspace.getSnapshot();
 	const result = snapshot.getFileData('unknown_index.lua')!.decls.find(entry => entry.name === 'result')!;
@@ -156,7 +157,7 @@ return result.found`;
 });
 
 test('a cyclic object graph reaches a fixed point without executing the program', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['cycle.lua']));
 	workspace.updateFile('cycle.lua', `local node = { marker = true }
 node.next = node
 local function walk(value) return walk(value.next) or value end
@@ -176,7 +177,7 @@ local function run(callback, next)
 end
 local result = run(first, second)
 return result.late`;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['callbacks.lua']));
 	workspace.updateFile('callbacks.lua', source);
 	const snapshot = workspace.getSnapshot();
 	const result = snapshot.getFileData('callbacks.lua')!.decls.find(entry => entry.name === 'result')!;
@@ -191,7 +192,7 @@ for (const [name, body, argument, expected] of [
 	['nested', 'return items.value.data', '{ value = create() }', 'nested'],
 ] as const) {
 	test(`value demand follows a deferred non-call result through a parameter ${name}`, () => {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['values.lua']));
 		workspace.updateFile('values.lua', `local function create() return { found = true, data = { nested = true } } end
 local function run(items) ${body} end
 local selected = run(${argument})
@@ -217,7 +218,7 @@ local first = store({ item = left, left }, red)
 local second = store({ item = right, right }, blue)
 return first.red, second.blue`;
 		for (const order of [['first', 'second'], ['second', 'first']]) {
-			const workspace = new LuaSemanticWorkspace();
+			const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['storage.lua']));
 			workspace.updateFile('storage.lua', source);
 			const snapshot = workspace.getSnapshot();
 			for (const name of order) {
@@ -241,7 +242,7 @@ local first = left.inner.value
 local second = right.inner.value
 return selected.right, first.left, second.right`;
 	for (const order of [['selected', 'first', 'second'], ['second', 'first', 'selected']]) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 		workspace.updateFile('aliases.lua', source);
 		const snapshot = workspace.getSnapshot();
 		for (const name of order) {
@@ -255,7 +256,7 @@ return selected.right, first.left, second.right`;
 
 test('reading a missing member does not create a location in the term store', () => {
 	const file = buildLuaFileSemanticData('local object = { existing = true }', 'locations.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const query = new SemanticInstantiationQuery(summaries, new SemanticDemandIndex([file], summaries), () => assert.fail('no calls'));
 	const members = new SemanticMemberQuery(summaries, query);
 	const source = declarationValueSource(file.decls.find(entry => entry.name === 'object')!.id);
@@ -273,7 +274,7 @@ test('function queries solve deferred read producers before retaining their answ
 local function create() return { value = target } end
 local function extract(items) return items.item.value end
 local result = extract({ item = create() })`, 'functions.lua');
-	const query = new LuaSemanticQueryStore([file], new Map());
+	const query = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 	const result = declarationValueSource(file.decls.find(entry => entry.name === 'result')!.id);
 	const target = file.decls.find(entry => entry.name === 'target')!;
 	assert.deepEqual(query.functions(result), [target.id], 'no preceding member query primes the answer');
@@ -288,7 +289,7 @@ test('a parameter key alone does not make an indexed write escape its local tabl
 	storage[key] = 11
 end
 local function outer(key) scratch(key) end`, 'effects.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const outer = summaries.list()[1];
 	assert.deepEqual(demand.compositionCalls(outer.id), []);
@@ -308,7 +309,7 @@ local first = left({ next = { leaf_left = true } })
 local second = right({ next = { leaf_right = true } })
 return first.token.left, second.token.right, first.item.leaf_left, second.item.leaf_right`;
 	for (const order of [['first', 'second'], ['second', 'first']]) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['closures.lua']));
 		workspace.updateFile('closures.lua', source);
 		const snapshot = workspace.getSnapshot();
 		for (const name of order) {

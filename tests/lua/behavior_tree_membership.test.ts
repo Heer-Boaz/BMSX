@@ -1,11 +1,11 @@
-import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { layoutBehaviorTreeGraph } from '../../ide/workbench/contrib/behavior_lens/graph_geometry';
 import { projectBehaviorTreeGraph } from '../../ide/workbench/contrib/behavior_lens/graph_projection';
@@ -21,7 +21,7 @@ import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
 const font = new Font({ variant: 'tiny' });
 function fixture(source = BT_MEMBERSHIP_SOURCE, index = 0) {
 	const model = new EditorTextModel({ sourceFilePath: 'membership.lua', location: { kind: 'workspace' as const, path: 'membership.lua' }, domain: 0, path: 'membership.lua', source: { type: 'lua', resid: 'membership' } }, 'lua', source);
-	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
+	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource)], ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result'])));
 	const document = project();
 	const definition = document.definitions[index];
 	assert.ok(definition.behaviorKind === 'behavior_tree');

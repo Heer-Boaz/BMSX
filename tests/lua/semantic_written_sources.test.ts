@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData, buildLuaSemanticWorkspaceSnapshot, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -8,7 +9,7 @@ import { runCompiledLua } from './cpu_test_harness';
 
 function sourceQuery(source: string) {
 	const file = buildLuaFileSemanticData(source, 'sources.lua');
-	const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path: file.file, source, analysis: file }]);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: file.file, source, analysis: file }]));
 	return { file, query: snapshot.symbolResolver.writtenSources };
 }
 
@@ -59,7 +60,7 @@ local function inspect(...)
  left, right = ${value}
  sink(1, ${value})
 end`;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['grouped.lua']));
 	workspace.updateFile('grouped.lua', source(expression));
 	const open = workspace.getSnapshot();
 	workspace.updateFile('grouped.lua', source(`((${expression}))`));
@@ -285,7 +286,7 @@ return object:pick(false) == object, object:pick(true).field == 8`);
 test('source global contributions include writes from all files, with no same-name local merging', () => {
 	const first = buildLuaFileSemanticData('shared = 1; return shared', 'first.lua');
 	const second = buildLuaFileSemanticData('shared = unknown_value; local shared = 9; return shared', 'second.lua');
-	const snapshot = buildLuaSemanticWorkspaceSnapshot([first, second].map(analysis => ({ path: analysis.file, source: analysis.source, analysis })));
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([first, second].map(analysis => ({ path: analysis.file, source: analysis.source, analysis }))));
 	const query = snapshot.symbolResolver.writtenSources;
 	const global = query.trace(query.expression(first, (first.chunk.body.get(1)! as LuaReturnStatement).expressions[0]));
 	assert.equal(global.terminals.length, 1);
@@ -316,7 +317,7 @@ return value, other`);
 test('unbound globals and definitions from another source retain their file owner', () => {
 	const definition = buildLuaFileSemanticData('shared_value = { task = "walk" }', 'definition.lua');
 	const consumer = buildLuaFileSemanticData('return shared_value, missing_value', 'consumer.lua');
-	const snapshot = buildLuaSemanticWorkspaceSnapshot([definition, consumer].map(analysis => ({ path: analysis.file, source: analysis.source, analysis })));
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([definition, consumer].map(analysis => ({ path: analysis.file, source: analysis.source, analysis }))));
 	const query = snapshot.symbolResolver.writtenSources;
 	const returned = consumer.chunk.body.get(0)! as LuaReturnStatement;
 	const known = query.trace(query.expression(consumer, returned.expressions[0]));
@@ -329,7 +330,7 @@ test('unbound globals and definitions from another source retain their file owne
 });
 
 test('new workspace generations share binder facts but not old source-query answers', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['consumer.lua', 'definition.lua']));
 	const consumer = buildLuaFileSemanticData('return shared_value', 'consumer.lua');
 	workspace.updateFiles([consumer]);
 	const before = workspace.getSnapshot();
@@ -387,7 +388,7 @@ test('imports follow the canonical export and ordinary aliases in their original
 		'module<const>\nreturn { task = "walk" }', 'return function(value) return value end']) {
 		const library = buildLuaFileSemanticData(source, 'library/definition.lua');
 		const consumer = buildLuaFileSemanticData('local imported = require("library/definition"); return imported', 'consumer.lua');
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['library/definition.lua', 'consumer.lua']));
 		workspace.updateFiles([library, consumer]);
 		const query = workspace.getSnapshot().symbolResolver.writtenSources;
 		const result = consumer.chunk.body.get(1)! as LuaReturnStatement;
@@ -409,7 +410,7 @@ test('reexports retain each written module edge, including cyclic imports', () =
 	const leaf = buildLuaFileSemanticData('return {}', 'leaf.lua');
 	const middle = buildLuaFileSemanticData('local alias = require("leaf"); return alias', 'middle.lua');
 	const consumer = buildLuaFileSemanticData('return require("middle")', 'consumer.lua');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['leaf.lua', 'middle.lua', 'consumer.lua']));
 	workspace.updateFiles([leaf, middle, consumer]);
 	const query = workspace.getSnapshot().symbolResolver.writtenSources;
 	const expression = (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions[0];
@@ -432,7 +433,7 @@ test('reexports retain each written module edge, including cyclic imports', () =
 test('factory exports move the unresolved call boundary to the provider, not the importer', () => {
 	const library = buildLuaFileSemanticData('local function create() return {} end; return create()', 'library.lua');
 	const consumer = buildLuaFileSemanticData('return require("library")', 'consumer.lua');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['library.lua', 'consumer.lua']));
 	workspace.updateFiles([library, consumer]);
 	const query = workspace.getSnapshot().symbolResolver.writtenSources;
 	const trace = query.trace(query.expression(consumer, (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions[0]));
@@ -452,7 +453,7 @@ test('unshaped and missing modules are boundaries, not invented constructor expo
 		assert.equal(library.syntaxError, null);
 		assert.equal(library.moduleValues.length, 0);
 		const consumer = buildLuaFileSemanticData('return require("library"), require("missing")', 'consumer.lua');
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['library.lua', 'consumer.lua']));
 		workspace.updateFiles([library, consumer]);
 		const query = workspace.getSnapshot().symbolResolver.writtenSources;
 		for (const expression of (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions) {
@@ -470,7 +471,7 @@ if external_condition then return { early = true } end
 do if other_condition then return end end
 return { canonical = true }`, 'library.lua');
 	const consumer = buildLuaFileSemanticData('return require("library")', 'consumer.lua');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['library.lua', 'consumer.lua']));
 	workspace.updateFiles([library, consumer]);
 	assert.equal(library.moduleValues.length, 1);
 	const entry = library.moduleValues[0];
@@ -493,13 +494,14 @@ return { canonical = true }`, 'library.lua');
 test('adding and editing an export replaces module answers without reparsing its importer', () => {
 	const consumer = buildLuaFileSemanticData('return require("library")', 'consumer.lua');
 	const expression = (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions[0];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['consumer.lua']));
 	workspace.updateFiles([consumer]);
 	const before = workspace.getSnapshot().symbolResolver.writtenSources;
 	const missing = before.trace(before.expression(consumer, expression));
 	assert.equal(missing.boundaries[0].reason, 'module');
 	const library = buildLuaFileSemanticData('return {}', 'library.lua');
 	workspace.updateFiles([library]);
+	workspace.setModuleBindings(createPathModuleBindingsFixture(['consumer.lua', 'library.lua']));
 	const after = workspace.getSnapshot();
 	assert.equal(after.getFileData(consumer.file), consumer);
 	const query = after.symbolResolver.writtenSources;

@@ -2,7 +2,7 @@ import type { SearchMatch } from '../../../../common/models';
 import type { ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
 import type { LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/index';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../../runtime/sources';
+import { resolveRuntimeResource, type RuntimeSourceState } from '../../../../runtime/sources';
 import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
 import { updateDesiredColumn, ensureCursorVisible } from '../../../../editor/ui/view/caret/caret';
 import { resetBlinkState } from '../../../../editor/ui/view/caret/blink';
@@ -77,7 +77,7 @@ export class CrossFileRenameManager {
 		for (const reference of info.query.references) add(info.snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span));
 		const result = new Map<EditorTextModel, EditorModelEdit>();
 		for (const [path, locations] of ranges) {
-			const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
+			const resource = resolveRuntimeResource(this.sources, project.getResourceIdentity(path))!;
 			const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 			if (currentSnapshot !== info.snapshot || getTextSnapshot(model.buffer) !== info.snapshot.getFileData(path)!.source) {
 				throw new EditorWorkspaceEditConflict(model);

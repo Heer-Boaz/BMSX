@@ -42,7 +42,7 @@ import { LuaCompletionAnalysis, type LuaCompletion } from '../analysis/completio
 import type { LuaSyntaxError } from '../errors';
 import { createSymbolId, type SemanticSymbolKind, type SymbolID } from './symbols';
 import type { SemanticTokenFact, SemanticRole } from './tokens';
-import { toLuaModulePath } from '../module_path';
+import type { LuaProjectModuleBindings } from './module_resolution';
 import { LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS } from '../builtin_descriptors';
 import {
 	findLuaModuleExport,
@@ -58,7 +58,7 @@ import {
 	semanticValueSourceKey,
 	literalExpressionValueSource,
 	NIL_VALUE_SOURCE,
-	moduleValueSource,
+	moduleImportValueSource,
 	ownedValueSource,
 	unknownValueSource,
 	type CallValueEntry,
@@ -81,6 +81,7 @@ import {
 
 export type { SymbolID } from './symbols';
 export type { SemanticScope } from './scope_facts';
+export type { LuaModuleBindings, LuaProjectModuleBindings } from './module_resolution';
 
 const EMPTY_FILE_PATHS: readonly string[] = [];
 
@@ -199,6 +200,10 @@ export class LuaSemanticWorkspaceSnapshot {
 		return this.symbolResolver.getFileData(path);
 	}
 
+	public resolveModule(referrer: string, specifier: string): string | undefined {
+		return this.symbolResolver.resolveModule(referrer, specifier);
+	}
+
 	public listGlobalDecls(): readonly Decl[] {
 		if (this.globalDecls === undefined) {
 			const globals: Decl[] = [];
@@ -222,8 +227,9 @@ function createWorkspaceSnapshotFromIndex(index: LuaProjectIndex): LuaSemanticWo
 
 export function buildLuaSemanticWorkspaceSnapshot(
 	sources: ReadonlyArray<LuaSemanticWorkspaceSnapshotInput>,
+	moduleBindings: LuaProjectModuleBindings,
 ): LuaSemanticWorkspaceSnapshot {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(moduleBindings);
 	const analyses = new Array<FileSemanticData>(sources.length);
 	for (let index = 0; index < sources.length; index += 1) {
 		const source = sources[index];
@@ -402,12 +408,23 @@ class LuaProjectIndex {
 	private readonly globalsSources: Map<string, Map<SymbolID, Decl>> = new Map();
 	private readonly fileOrder: Map<string, number> = new Map();
 	public orderedFiles: readonly FileSemanticData[] = [];
-	public symbolResolver: WorkspaceSymbolResolver;
+	private resolver: WorkspaceSymbolResolver | undefined;
 	private version = 0;
 	private nextFileOrder = 1;
 
-	constructor() {
-		this.symbolResolver = this.buildWorkspaceSymbolResolver();
+	constructor(private moduleBindings: LuaProjectModuleBindings) {}
+
+	public get symbolResolver(): WorkspaceSymbolResolver {
+		if (this.resolver === undefined) this.resolver = this.buildWorkspaceSymbolResolver();
+		return this.resolver;
+	}
+
+	public setModuleBindings(bindings: LuaProjectModuleBindings): boolean {
+		if (bindings === this.moduleBindings) return false;
+		this.moduleBindings = bindings;
+		this.resolver = undefined;
+		this.version += 1;
+		return true;
 	}
 
 	public updateFile(file: string, source: string, input?: ParsedLuaChunk | SourceChangeMap): FileSemanticData {
@@ -552,6 +569,7 @@ class LuaProjectIndex {
 			declarations: this.symbols.snapshot(),
 			globalStorage: Array.from(this.storageContributions.values()),
 			globals,
+			moduleBindings: this.moduleBindings,
 		});
 	}
 
@@ -571,7 +589,7 @@ class LuaProjectIndex {
 
 	private commitFileChanges(): void {
 		this.orderedFiles = this.buildOrderedFiles();
-		this.symbolResolver = this.buildWorkspaceSymbolResolver();
+		this.resolver = undefined;
 		this.version += 1;
 	}
 }
@@ -883,7 +901,7 @@ class SemanticBuilder {
 					});
 				} else if (statement === this.moduleExport) {
 					this.moduleValue = {
-						module: toLuaModulePath(this.path), source: returnValue,
+						file: this.path, source: returnValue,
 						statement, bypassingReturns: this.bypassingModuleReturns,
 					};
 				} else this.bypassingModuleReturns.push(statement);
@@ -1141,7 +1159,7 @@ class SemanticBuilder {
 							flow: this.functionValueFlowStack[this.functionValueFlowStack.length - 1]?.id });
 					}
 				}
-				const valueSource = requireArgument ? moduleValueSource(requireArgument.value) : callResult;
+				const valueSource = requireArgument ? moduleImportValueSource(this.path, requireArgument.value) : callResult;
 				this.readValuesBySyntax.set(expression, valueSource);
 				return { namePath: null, decl: null, valueSource };
 			}
@@ -2195,8 +2213,18 @@ function buildFunctionNamePath(name: LuaFunctionName): string[] {
 }
 
 export class LuaSemanticWorkspace {
-	private readonly index = new LuaProjectIndex();
+	private readonly index: LuaProjectIndex;
 	private snapshot: LuaSemanticWorkspaceSnapshot = null;
+
+	constructor(moduleBindings: LuaProjectModuleBindings) {
+		this.index = new LuaProjectIndex(moduleBindings);
+	}
+
+	public setModuleBindings(bindings: LuaProjectModuleBindings): boolean {
+		if (!this.index.setModuleBindings(bindings)) return false;
+		this.snapshot = null;
+		return true;
+	}
 
 	public get version(): number {
 		return this.index.getVersion();

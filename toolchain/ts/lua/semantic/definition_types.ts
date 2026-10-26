@@ -2,11 +2,11 @@ import { LuaDefinitionAliases, directAliasRoot, type LuaDefinitionAliasComponent
 import type { HashLookup } from '../../collections/hash_map';
 import { LuaSyntaxKind } from '../syntax/ast';
 import type { Decl, FileSemanticData, SymbolID } from './model';
+import type { LuaProjectModuleBindings } from './module_resolution';
 import type {
 	CallValueEntry,
 	FunctionValueFlowEntry,
 	MemberValueEntry,
-	ModuleValueEntry,
 	SemanticValueRoot,
 	SemanticValueSource,
 	ValueAssignmentEntry,
@@ -98,7 +98,6 @@ export class LuaDefinitionTypes {
 	private readonly files = new Map<string, FileSemanticData>();
 	private readonly aliases: LuaDefinitionAliases;
 	private readonly keyedMembers = new Map<string, readonly MemberFact[]>();
-	private readonly moduleExports = new Map<string, readonly ModuleValueEntry[]>();
 	private readonly prototypeSites = new Map<string, readonly PrototypeSite[]>();
 	private readonly prototypes = new Map<string, readonly LuaDefinitionShape[]>();
 	private readonly normal = new DefinitionEvaluation('normal');
@@ -112,6 +111,7 @@ export class LuaDefinitionTypes {
 		files: readonly FileSemanticData[],
 		private readonly declarations: HashLookup<SymbolID, Decl>,
 		private readonly globals: ReadonlyMap<string, readonly SymbolID[]>,
+		private readonly moduleBindings: LuaProjectModuleBindings,
 	) {
 		for (const file of files) this.files.set(file.file, file);
 		this.aliases = new LuaDefinitionAliases(declarations, this.files, globals);
@@ -197,18 +197,6 @@ export class LuaDefinitionTypes {
 		return facts;
 	}
 
-	private exportsOf(module: string): readonly ModuleValueEntry[] {
-		let exports = this.moduleExports.get(module);
-		if (exports === undefined) {
-			const merged: ModuleValueEntry[] = [];
-			for (const file of this.files.values()) {
-				for (const entry of file.moduleValues) if (entry.module === module) merged.push(entry);
-			}
-			this.moduleExports.set(module, exports = merged);
-		}
-		return exports;
-	}
-
 	private sitesKeyed(key: string): readonly PrototypeSite[] {
 		let sites = this.prototypeSites.get(key);
 		if (sites === undefined) {
@@ -289,9 +277,12 @@ export class LuaDefinitionTypes {
 				for (const definition of definitions) appendShapes(shapes, this.declarationValues(evaluation, definition));
 				return shapes;
 			}
-			case 'module': {
+			case 'module_import':
+			case 'module_export': {
+				const target = root.kind === 'module_export' ? root.file : this.moduleBindings.get(root.referrer)!.get(root.specifier);
+				if (target === undefined) return EMPTY_SHAPES;
 				const shapes: LuaDefinitionShape[] = [];
-				for (const exported of this.exportsOf(root.module)) appendShapes(shapes, this.evaluate(evaluation, exported.source, EMPTY_BINDING, depth + 1));
+				for (const exported of this.files.get(target)!.moduleValues) appendShapes(shapes, this.evaluate(evaluation, exported.source, EMPTY_BINDING, depth + 1));
 				return shapes;
 			}
 			case 'owned':

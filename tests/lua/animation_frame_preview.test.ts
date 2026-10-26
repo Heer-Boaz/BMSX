@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
 import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animation/source';
 import { AnimationFramePreview } from '../../ide/workbench/contrib/animation/frame_preview';
@@ -21,7 +21,7 @@ test('only a proven sprite factory treats a native frame value as a packed image
 	finalizePackedRomAssets(assets);
 	rom.index.entries.push(...assets);
 	const document = buildAnimationSourceDocument({ domain: 0, path: 'animation.lua' },
-		semanticSnapshot(buildLuaFileSemanticData("return {frames={'sprite'}}", 'animation.lua')))!;
+		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile("return {frames={'sprite'}}", { domain: 0, path: 'animation.lua' })], [])))!;
 	const preview = new AnimationFramePreview(); t.after(() => preview.dispose());
 	preview.update(document, 0, 0, sources);
 	assert.equal(preview.bitmap, undefined, 'a timeline value is not an image even if its string matches a packed asset');

@@ -1,3 +1,4 @@
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 // node node_modules/tsx/dist/cli.mjs --expose-gc --tsconfig tsconfig.base.json \
 //   scripts/analysis/profile_lua_syntax_lifetime.ts /tmp/pietious-workspace.json
 import { readFileSync } from 'node:fs';
@@ -23,7 +24,8 @@ export const retainedOwners: {
 // Keep construction temporaries off the measurement frame's stack. Without
 // this boundary and an event-loop turn, V8 can retain dead temporary roots.
 function retainSnapshot(files: readonly LuaSemanticWorkspaceSnapshotInput[]): LuaSemanticWorkspaceSnapshot {
-	const workspace = new LuaSemanticWorkspace();
+	const modules = new Map(files.map(file => [toLuaModulePath(file.path), file.path]));
+	const workspace = new LuaSemanticWorkspace(new Map(files.map(file => [file.path, modules])));
 	workspace.updateFiles(files.map(file => buildLuaFileSemanticData(file.source, file.path)));
 	return workspace.getSnapshot();
 }

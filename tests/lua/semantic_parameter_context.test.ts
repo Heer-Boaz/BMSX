@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -18,7 +19,7 @@ test('written formal bindings have a location per call, distinct from the input 
 		'change(original)',
 		'change(original)',
 	].join('\n'), 'parameters.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const query = new SemanticInstantiationQuery(summaries, demand, () => {});
 	const summary = summaries.list()[0];
@@ -58,7 +59,7 @@ test('binding writes determine parameter storage, including unknown RHS and nest
 		'local function capture(value) local function set() value = 12 end return set end',
 		'local function shadow(value) local function inner(value) value = 42 end return value end',
 	].join('\n'), 'bindings.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	for (const [name, written] of [
 		['read', false], ['arithmetic', true], ['replace', true], ['capture', true], ['shadow', false], ['inner', true],
 	] as const) {
@@ -84,7 +85,7 @@ test('rebinding a parameter cannot merge the actual argument and replacement obj
 		'return original.original, original.replacement, replacement.original, selected.replacement',
 	].join('\n');
 	for (const names of [['original', 'replacement', 'selected'], ['selected', 'replacement', 'original']]) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['parameters.lua']));
 		workspace.updateFile('parameters.lua', source);
 		const snapshot = workspace.getSnapshot();
 		const file = snapshot.getFileData('parameters.lua')!;
@@ -101,7 +102,7 @@ test('rebinding a parameter cannot merge the actual argument and replacement obj
 });
 
 test('parameter rebinding stays local when the argument is another formal', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['forward.lua']));
 	workspace.updateFile('forward.lua', [
 		'local original<const> = { original = true }',
 		'local replacement<const> = { replacement = true }',
@@ -116,7 +117,7 @@ test('parameter rebinding stays local when the argument is another formal', () =
 });
 
 test('a closure rebinds its captured formal without rebinding the original argument', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['capture.lua']));
 	workspace.updateFile('capture.lua', [
 		'local original<const> = { original = true }',
 		'local replacement<const> = { replacement = true }',
@@ -137,7 +138,7 @@ test('a closure rebinds its captured formal without rebinding the original argum
 });
 
 test('a called closure can also replace an ordinary captured local', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['local.lua']));
 	workspace.updateFile('local.lua', [
 		'local function make()',
 		'\tlocal value = { initial = true }',
@@ -160,7 +161,7 @@ test('writing through a parameter still modifies the shared argument object', ()
 		'attach(original)',
 		'return original.original, original.attached',
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['mutation.lua']));
 	workspace.updateFile('mutation.lua', source);
 	const snapshot = workspace.getSnapshot();
 	const original = snapshot.getFileData('mutation.lua')!.decls.find(entry => entry.name === 'original' && entry.kind === 'constant')!;
@@ -177,7 +178,7 @@ test('an omitted argument does not become shared writable storage', () => {
 		'initialize()',
 		'initialize()',
 	].join('\n'), 'omitted.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const query = new SemanticInstantiationQuery(summaries, new SemanticDemandIndex([file], summaries), () => {});
 	const summary = summaries.list()[0];
 	const first = query.instantiate(file.callValues[0], summary.id, 0, 0, [], undefined);
@@ -188,7 +189,7 @@ test('an omitted argument does not become shared writable storage', () => {
 });
 
 test('calls keep parameter and replacement pairs separate', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['pairs.lua']));
 	workspace.updateFile('pairs.lua', [
 		'local left<const> = { left = true }',
 		'local right<const> = { right = true }',
@@ -214,7 +215,7 @@ for (const [name, body, argument] of [
 	['element', 'local result; for _, factory in ipairs(items) do result = factory() end; return result', '{ create() }'],
 ] as const) {
 	test(`producer demand follows a deferred callback through a parameter ${name}`, () => {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['callbacks.lua']));
 		workspace.updateFile('callbacks.lua', [
 			'local function create() return function() return { found = true } end end',
 			`local function run(items) ${body} end`,
@@ -231,7 +232,7 @@ for (const depth of [1, 2, 4]) {
 	test(`indexed writes through a written formal retain ${depth} nested member locations`, () => {
 		const path = '.inner'.repeat(depth);
 		const storage = '{ inner = '.repeat(depth) + '{}' + ' }'.repeat(depth);
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['storage.lua']));
 		workspace.updateFile('storage.lua', [
 			`local left<const> = ${storage}`,
 			`local right<const> = ${storage}`,

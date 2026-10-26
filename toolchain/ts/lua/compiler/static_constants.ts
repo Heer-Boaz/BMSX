@@ -124,7 +124,7 @@ export class StaticConstants {
 	private moduleExport(file: FileSemanticData, expression: LuaExpression): ConstExportValue | undefined {
 		const target = getLuaModuleAliasTarget(file, readLuaExpressionSource(file, expression));
 		if (target === null || target.memberPath.length === 0) return undefined;
-		const path = this.frontend.moduleTargetsByAlias.get(target.module);
+		const path = this.frontend.snapshot.resolveModule(target.referrer, target.module);
 		if (path === undefined) return undefined;
 		const module = this.modules.modulesByPath.get(path);
 		return module?.constModule ? module.exportConstValueByPathKey.get(buildModuleExportPathKey(target.memberPath)) : undefined;

@@ -1,7 +1,7 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorDiagnostic } from '../../../common/models';
-import type { ResourceDomain } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceDomain } from '../../../common/resource';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { createEditorSemanticFrontend } from '../../../editor/contrib/intellisense/frontend';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
@@ -18,11 +18,11 @@ export function computeResourceDiagnostics(owner: EditorTextModelService, source
 	for (const [domain, batch] of batches) {
 		const project = getOrCreateSemanticProject(owner, domain);
 		project.synchronizeRuntimeSources(sources);
-		for (const model of batch) project.analyzeDocument(model.identity.path, model.buffer);
+		for (const model of batch) project.analyzeDocument(model.identity, model.buffer);
 		const snapshot = project.getSnapshot();
 		const frontend = createEditorSemanticFrontend(snapshot, domain);
 		for (const model of batch) {
-			const path = model.identity.path;
+			const path = resourceIdentityKey(model.identity);
 			const syntaxError = snapshot.getFileData(path)!.syntaxError;
 			if (syntaxError !== null) {
 				result.push({ model, version: model.version, row: syntaxError.line - 1,

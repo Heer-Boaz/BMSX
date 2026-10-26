@@ -1,3 +1,4 @@
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 // node --import tsx scripts/analysis/profile_lua_signature_edits.ts workspace.json file.lua [...]
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -14,7 +15,8 @@ import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 const [dumpPath, ...paths] = process.argv.slice(2);
 assert(dumpPath && paths.length, 'Usage: profile_lua_signature_edits.ts workspace.json file.lua [...]');
 const files: { path: string; source: string }[] = JSON.parse(readFileSync(dumpPath, 'utf8'));
-const workspace = new LuaSemanticWorkspace();
+const modules = new Map(files.map(file => [toLuaModulePath(file.path), file.path]));
+const workspace = new LuaSemanticWorkspace(new Map(files.map(file => [file.path, modules])));
 workspace.updateFiles(files.map(file => buildLuaFileSemanticData(file.source, file.path)));
 const baseline = workspace.getSnapshot();
 const builtins = getLuaBuiltinDescriptorLookup(getDefaultLuaBuiltinDescriptors());

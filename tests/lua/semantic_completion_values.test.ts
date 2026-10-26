@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LuaCompletion } from '../../toolchain/ts/lua/analysis/completion';
@@ -17,7 +18,7 @@ test('written empty, nil and unmodeled returns remain distinct first-value facts
 		'local function mixed(enabled) if enabled then return function() return 7 end else return nil end end',
 	].join('\n');
 	const file = buildLuaFileSemanticData(source, 'returns.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const nil = summaries.terms.compileSource(NIL_VALUE_SOURCE);
 	const checked: string[] = [];
 	for (const summary of summaries.list()) {
@@ -51,7 +52,7 @@ test('body fallthrough adds nil to the same instantiated return relation as the 
 		'return chosen == nil',
 	].join('\n');
 	const file = buildLuaFileSemanticData(source, 'choose.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const summary = summaries.list().find(item => item.source.expression.parameters.length === 1)!;
 	assert.equal(summary.source.completion, LuaCompletion.Fallthrough);
 	assert.equal(summary.source.returns.length, 1, 'implicit completion is not a fabricated written return');
@@ -72,7 +73,7 @@ test('known and unmodeled written returns both contribute rather than reporting 
 		'local callback<const> = function() return 7 end',
 		'local function choose(enabled, value) if enabled then return callback else return value + 1 end end',
 	].join('\n'), 'unknown-return.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const summary = summaries.list().find(item => item.source.expression.parameters.length === 2)!;
 	assert.equal(summary.returns.length, 2);
 	assert.ok(summary.returns.includes(summaries.terms.unknown()));
@@ -86,7 +87,7 @@ test('non-exiting bodies do not manufacture nil while unresolved jumps retain un
 		'local function jumping() goto result; if false then ::result:: return 9 end end',
 	].join('\n');
 	const file = buildLuaFileSemanticData(source, 'jumps.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	assert.deepEqual(summaries.list()[0].returns, []);
 	assert.equal(summaries.list()[1].source.completion, LuaCompletion.Unresolved);
 	assert.deepEqual(summaries.list()[1].returns, [summaries.terms.unknown()]);
@@ -98,7 +99,7 @@ test('non-exiting bodies do not manufacture nil while unresolved jumps retain un
 });
 
 test('completion belongs to immutable bound bodies and survives unchanged-file snapshot sharing', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['provider.lua', 'consumer.lua']));
 	workspace.updateFile('provider.lua', 'return function(enabled) if enabled then return 9 end end');
 	workspace.updateFile('consumer.lua', "local provider<const> = require('provider'); return provider(false)");
 	const before = workspace.getSnapshot();

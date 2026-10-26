@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
@@ -20,7 +21,7 @@ function functionNames(snapshot: LuaSemanticWorkspaceSnapshot, name: string, fil
 test('written alias cycles publish complete answers regardless of the first queried root', () => {
 	const source = 'local sink, alias\nsink = alias\nalias = sink\nalias = function(value) return value + 1 end';
 	for (const order of [['sink', 'alias'], ['alias', 'sink']]) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 		workspace.updateFile('aliases.lua', source);
 		const snapshot = workspace.getSnapshot();
 		for (const name of order) assert.deepEqual(functionNames(snapshot, name), ['aliases.lua:alias']);
@@ -39,7 +40,7 @@ test('one alias component retains all written exits in query-independent order',
 	].join('\n');
 	let expected: string[] | undefined;
 	for (const first of ['first', 'second', 'third']) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 		workspace.updateFile('aliases.lua', source);
 		const snapshot = workspace.getSnapshot();
 		const actual = functionNames(snapshot, first);
@@ -52,7 +53,7 @@ test('one alias component retains all written exits in query-independent order',
 
 test('zero-step global alias cycles can cross file boundaries', () => {
 	for (const first of ['left', 'right']) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['left.lua', 'right.lua']));
 		workspace.updateFile('left.lua', 'left = right');
 		workspace.updateFile('right.lua', 'right = left\nright = function(value) return value end');
 		const snapshot = workspace.getSnapshot();
@@ -65,7 +66,7 @@ test('zero-step global alias cycles can cross file boundaries', () => {
 test('cyclic table aliases expose the same members after warming either root', () => {
 	const source = 'local first, second\nfirst = second\nsecond = first\nsecond = { run = function(value) return value end }';
 	for (const order of [['first', 'second'], ['second', 'first']]) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 		workspace.updateFile('aliases.lua', source);
 		const snapshot = workspace.getSnapshot();
 		for (const name of order) {
@@ -76,7 +77,7 @@ test('cyclic table aliases expose the same members after warming either root', (
 });
 
 test('alias components retain snapshot lifetime when a cycle is split and restored', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	const source = 'local first, second\nfirst = second\nsecond = first\nsecond = function(value) return value end';
 	workspace.updateFile('aliases.lua', source);
 	const before = workspace.getSnapshot();
@@ -92,7 +93,7 @@ test('alias components retain snapshot lifetime when a cycle is split and restor
 });
 
 test('member steps remain value projections rather than alias edges', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	workspace.updateFile('aliases.lua', 'local owner = { child = { own = 1 } }\nlocal alias = owner.child');
 	const snapshot = workspace.getSnapshot();
 	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(declaration(snapshot, 'alias').id))
@@ -111,7 +112,7 @@ test('prototype lookup can consume a cyclic alias without inheriting normal-phas
 		'derived:shared()',
 	].join('\n');
 	for (const warm of [false, true]) {
-		const frontend = buildLuaSemanticFrontend([{ path: 'aliases.lua', source }]);
+		const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'aliases.lua', source }]));
 		if (warm) {
 			frontend.snapshot.symbolResolver.getMembers(declarationValueSource(declaration(frontend.snapshot, 'alias').id));
 		}
@@ -121,7 +122,7 @@ test('prototype lookup can consume a cyclic alias without inheriting normal-phas
 });
 
 test('an alias-only cycle with no written shape stays unknown', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	workspace.updateFile('aliases.lua', 'local first, second\nfirst = second\nsecond = first');
 	const snapshot = workspace.getSnapshot();
 	assert.deepEqual(functionNames(snapshot, 'first'), []);
@@ -129,14 +130,14 @@ test('an alias-only cycle with no written shape stays unknown', () => {
 });
 
 test('a self-alias keeps its written terminal without recursively evaluating itself', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	workspace.updateFile('aliases.lua', 'local value\nvalue = value\nvalue = function(arg) return arg end');
 	assert.deepEqual(functionNames(workspace.getSnapshot(), 'value'), ['aliases.lua:value']);
 });
 
 test('a newly discovered cycle can depend on an already evaluated alias component', () => {
 	const source = 'local leaf = function(value) return value end\nlocal first, second\nfirst = second\nsecond = first\nsecond = leaf';
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	workspace.updateFile('aliases.lua', source);
 	const snapshot = workspace.getSnapshot();
 	for (const name of ['leaf', 'second', 'first']) {
@@ -148,7 +149,7 @@ test('alias component ordering follows edited source order rather than syntax al
 	const first = 'local first\n', second = 'local second\n';
 	const body = 'first = second\nsecond = first\nfirst = function(value) return value end\nsecond = function(value) return value + 1 end';
 	const source = first + second + body;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	workspace.updateFile('aliases.lua', source);
 	const before = workspace.getSnapshot();
 	assert.deepEqual(functionNames(before, 'first'), ['aliases.lua:first', 'aliases.lua:second']);
@@ -158,7 +159,7 @@ test('alias component ordering follows edited source order rather than syntax al
 	]);
 	workspace.updateFile('aliases.lua', second + first + body, changes);
 	const edited = workspace.getSnapshot();
-	const cold = new LuaSemanticWorkspace();
+	const cold = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	cold.updateFile('aliases.lua', second + first + body);
 	assert.deepEqual(functionNames(edited, 'first'), ['aliases.lua:second', 'aliases.lua:first']);
 	assert.deepEqual(functionNames(edited, 'first'), functionNames(cold.getSnapshot(), 'first'));
@@ -168,13 +169,13 @@ test('alias component ordering follows edited source order rather than syntax al
 test('a long written-alias chain does not consume the host call stack', () => {
 	const lines = ['local alias_0 = function(value) return value end'];
 	for (let index = 1; index <= 3000; index++) lines.push(`local alias_${index} = alias_${index - 1}`);
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	workspace.updateFile('aliases.lua', lines.join('\n'));
 	assert.deepEqual(functionNames(workspace.getSnapshot(), 'alias_3000'), ['aliases.lua:alias_0']);
 });
 
 test('raw global values retain every authored table and function occurrence', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	workspace.updateFile('aliases.lua', [
 		'owner = { first = 1 }',
 		'owner = { second = 2 }',
@@ -201,7 +202,7 @@ test('raw global values retain every authored table and function occurrence', ()
 
 test('global alias components retain all cross-file exits regardless of warmed occurrence', () => {
 	for (const warm of ['left', 'right', 'leftExit', 'rightExit']) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['left.lua', 'right.lua']));
 		workspace.updateFile('left.lua', 'left = right\nleft = function(left_arg) return left_arg end');
 		workspace.updateFile('right.lua', 'right = left\nright = function(right_arg) return right_arg end');
 		const snapshot = workspace.getSnapshot();
@@ -219,7 +220,7 @@ test('global alias components retain all cross-file exits regardless of warmed o
 });
 
 test('global definition maps remain snapshot-owned across removal and restoration of writes', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['aliases.lua']));
 	const source = 'value = { first = 1 }\nvalue = { second = 2 }';
 	workspace.updateFile('aliases.lua', source);
 	const before = workspace.getSnapshot();
@@ -234,7 +235,7 @@ test('global definition maps remain snapshot-owned across removal and restoratio
 });
 
 test('compiler imports do not resolve to authored global require functions', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['module.lua', 'aliases.lua']));
 	workspace.updateFile('module.lua', 'return { member = 1 }');
 	workspace.updateFile('aliases.lua', [
 		'require = function(name) return name end',

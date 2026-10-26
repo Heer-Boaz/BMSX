@@ -1,3 +1,4 @@
+import type { EditorLuaSemanticProject } from '../intellisense/semantic/workspace/project';
 import type {
 	LuaCallHierarchyItem,
 	LuaCallHierarchyOutgoingCall,
@@ -45,6 +46,7 @@ export class CallHierarchyModel {
 		private readonly frontend: LuaSemanticFrontend,
 		rootSymbolIds: readonly SymbolID[],
 		rootExpression: string,
+		public readonly project: Pick<EditorLuaSemanticProject, 'getResourceIdentity'>,
 		private readonly allowedPaths?: ReadonlySet<string>,
 	) {
 		this.title = `Call Hierarchy: ${rootExpression}`;
@@ -77,7 +79,7 @@ export class CallHierarchyModel {
 		const children = new Array<CallHierarchyNode>(calls.length);
 		for (let index = 0; index < calls.length; index += 1) {
 			const call = calls[index];
-			const child = createIncomingNode(node.id, call.from, call.fromRanges);
+			const child = createIncomingNode(node.id, call.from, call.fromRanges, this.project);
 			children[index] = child;
 		}
 		this.incomingByNodeId.set(node.id, children);
@@ -120,6 +122,7 @@ function createIncomingNode(
 	parentId: string,
 	item: LuaCallHierarchyItem,
 	fromRanges: readonly LuaSourceRange[],
+	project: Pick<EditorLuaSemanticProject, 'getResourceIdentity'>,
 ): CallHierarchyNode {
 	const id = `${parentId}>${item.key}`;
 	const location = definitionLocationFromSourceRange(item.range);
@@ -127,7 +130,7 @@ function createIncomingNode(
 		return {
 			kind: 'chunk',
 			id,
-			name: item.label,
+			name: project.getResourceIdentity(item.range.path).path,
 			location,
 			fromRanges,
 		};

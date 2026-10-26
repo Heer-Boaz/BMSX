@@ -1,3 +1,4 @@
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 // npx tsx --tsconfig tsconfig.base.json scripts/analysis/profile_lua_nested_binding.ts \
 //   workspace.json director.lua:define_director_fsm player/player.lua:define_player_fsm
 import assert from 'node:assert/strict';
@@ -11,7 +12,8 @@ import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 const [dump, ...sites] = process.argv.slice(2);
 assert(dump && sites.length, 'Provide a workspace dump and path:function sites');
 const inputs: { path: string; source: string }[] = JSON.parse(readFileSync(dump, 'utf8'));
-const workspace = new LuaSemanticWorkspace();
+const modules = new Map(inputs.map(input => [toLuaModulePath(input.path), input.path]));
+const workspace = new LuaSemanticWorkspace(new Map(inputs.map(input => [input.path, modules])));
 workspace.updateFiles(inputs.map(input => buildLuaFileSemanticData(input.source, input.path)));
 const initial = workspace.getSnapshot();
 const warmup = 20, samples = 80;

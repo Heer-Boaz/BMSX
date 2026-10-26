@@ -117,6 +117,7 @@ export function lintShadowedRequireAliasStatements(
 						const moduleAlias = initializer && statement.attributes[index] !== null
 							? resolveModuleAliasInitializer(
 								initializer,
+								context.lint.locations.path,
 								context.moduleAliasLookup,
 								requireIsBuiltin,
 							)

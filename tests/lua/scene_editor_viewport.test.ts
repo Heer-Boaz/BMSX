@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { semanticSnapshot } from './semantic_test_harness';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
@@ -29,7 +29,7 @@ import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submi
 function scene(path = 'viewport.lua') {
 	const model = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: 'viewport', type: 'lua' } }, 'lua', SCENE_VIEWPORT_SOURCE);
 	const input = new SceneEditorInput(model);
-	installSceneOutline(input, buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SCENE_VIEWPORT_SOURCE, path))));
+	installSceneOutline(input, buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SCENE_VIEWPORT_SOURCE, model.resource)], ['cartlib/world/scene_library']))));
 	selectSceneOutlineRow(input, 1);
 	return input;
 }
@@ -154,7 +154,7 @@ test('replacing selected Scene source with the same member name retires the Deta
 	input.workingCopy.pushEditOperations([{ offset: selected.span.start, deleteLength: replacement.length, text: replacement }]);
 	mapSceneEditorView(snapshot, changes);
 	const text = input.workingCopy.buffer.getText();
-	installSceneOutline(input, buildSceneSourceDocument(input.workingCopy.resource, semanticSnapshot(buildLuaFileSemanticData(text, input.workingCopy.resource.path))));
+	installSceneOutline(input, buildSceneSourceDocument(input.workingCopy.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(text, input.workingCopy.resource)], ['cartlib/world/scene_library']))));
 	restoreSceneEditorView(input, snapshot);
 	assert.equal(selected.span.start, selected.span.end, 'a complete replacement retires the tracked source occurrence');
 	assert.ok(input.outline.rows.some(row => row.element.label === originalLabel), 'a same-named source occurrence still exists');

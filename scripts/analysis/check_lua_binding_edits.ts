@@ -1,3 +1,4 @@
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 // npx tsx --tsconfig tsconfig.base.json scripts/analysis/check_lua_binding_edits.ts workspace.json
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -10,7 +11,8 @@ assert(dump, 'Provide a dumped workspace');
 const inputs: { path: string; source: string }[] = JSON.parse(readFileSync(dump, 'utf8'));
 let files = 0, edits = 0, reboundFunctions = 0, reusedFunctions = 0;
 for (const input of inputs) {
-	const workspace = new LuaSemanticWorkspace();
+	const modules = new Map([[toLuaModulePath(input.path), input.path]]);
+	const workspace = new LuaSemanticWorkspace(new Map([[input.path, modules]]));
 	const old = workspace.updateFile(input.path, input.source);
 	const flow = old.functionValueFlows.find(flow => flow.expression.body.body.length > 0);
 	if (flow === undefined) continue;

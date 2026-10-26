@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -9,7 +10,7 @@ import { runCompiledLua } from './cpu_test_harness';
 function queries(source: string, providers: Readonly<Record<string, string>> = {}) {
 	const file = buildLuaFileSemanticData(source, 'consumer.lua');
 	const files = [file, ...Object.entries(providers).map(([path, source]) => buildLuaFileSemanticData(source, path))];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(files.map(file => file.file)));
 	workspace.updateFiles(files);
 	const resolver = workspace.getSnapshot().symbolResolver;
 	const values = resolver.contextualSources;

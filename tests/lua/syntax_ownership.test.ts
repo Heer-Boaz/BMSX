@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseLuaChunk, parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
@@ -26,7 +27,7 @@ test('a compiler-owned syntax tree is bound and compiled without relexing or rep
 	t.mock.method(LuaLexer.prototype, 'scanTokensWithRecovery', () => assert.fail('retained source must not be relexed'));
 	t.mock.method(LuaParser.prototype, 'parseChunk', () => assert.fail('retained source must not be reparsed'));
 	t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery', () => assert.fail('retained source must not be reparsed'));
-	const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path, source, chunk: parsed.chunk }]);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path, source, chunk: parsed.chunk }]));
 	assert.equal(snapshot.getFileData(path)!.chunk, parsed.chunk);
 	assert.doesNotThrow(() => compileLuaChunkToProgram(parsed.chunk, [], { entrySource: source, optLevel: 0 }));
 	assert.doesNotThrow(() => compileLuaChunkToProgram(parsed.chunk, [], { entrySource: source, optLevel: 3 }));

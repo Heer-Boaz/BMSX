@@ -1,9 +1,10 @@
-import { semanticSnapshot } from './semantic_test_harness';
+import { resourceIdentityKey } from '../../ide/common/resource';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -31,11 +32,11 @@ function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Rec
 	const resource = { sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 	const service = new EditorTextModelService();
 	const model = service.retain(resource, 'lua', source);
-	const models = new Map([[resource.path, model]]);
-	for (const [path, text] of Object.entries(imports)) models.set(path, service.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path,
+	const models = new Map([[resourceIdentityKey(resource), model]]);
+	for (const [path, text] of Object.entries(imports)) models.set(resourceIdentityKey({ domain: 0, path }), service.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path,
 		source: { type: 'lua', resid: path } }, 'lua', text));
-	const document = () => buildBehaviorSourceDocument(resource, semanticSnapshot(...[...models.values()]
-		.map(model => buildLuaFileSemanticData(model.buffer.getText(), model.resource.path))));
+	const document = () => buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([...[...models.values()]
+		.map(model => buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource))], ['cartlib/actioneffects'])));
 	const view = createBehaviorLensViewState(document(), model, 'properties', path => models.get(path)!);
 	const input = new BehaviorLensInput(model, view, () => assert.fail('property inputs must not construct a graph-layout engine'));
 	input.onWillDispose(() => service.clear());
@@ -87,7 +88,7 @@ fx.register_effect('other', require('other'))`;
 	const f = fixture(root, 0, { 'blueprint.lua': blueprint, 'tags.lua': "return { 'busy' }",
 		'other.lua': 'return { period_ms = 99 }', 'callback.lua': 'return function() error("not evaluated") end' });
 	const { edit, openProperty } = propertyEditFixture(t, f);
-	const provider = f.models.get('blueprint.lua')!, tags = f.models.get('tags.lua')!, other = f.models.get('other.lua')!;
+	const provider = f.models.get(resourceIdentityKey({ domain: 0, path: 'blueprint.lua' }))!, tags = f.models.get(resourceIdentityKey({ domain: 0, path: 'tags.lua' }))!, other = f.models.get(resourceIdentityKey({ domain: 0, path: 'other.lua' }))!;
 	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } });
 	assert.equal(f.input.readOnly, false, 'a read-only registration does not make a writable provider read-only');
 	assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, provider, tags]));
@@ -103,7 +104,7 @@ fx.register_effect('other', require('other'))`;
 	};
 	change('period_ms', '40 * 2');
 	assert.equal(provider.buffer.getText(), blueprint.replace('40', '40 * 2'));
-	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, provider.resource.path);
+	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, resourceIdentityKey(provider.resource));
 	assert.equal(readLuaSourceRange(provider.buffer, selectedBehaviorLensSourceRange(f.view)!), 'period_ms = 40 * 2',
 		'a named property retains the newly written field selection in its imported owner');
 	assert.equal(f.model.buffer.getText(), root);
@@ -111,7 +112,7 @@ fx.register_effect('other', require('other'))`;
 	assert.equal(f.input.isDirty(), true);
 	change("'busy'", "'Busy Changed'");
 	assert.equal(tags.buffer.getText(), "return { 'Busy Changed' }");
-	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, tags.resource.path);
+	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, resourceIdentityKey(tags.resource));
 	assert.equal(readLuaSourceRange(tags.buffer, selectedBehaviorLensSourceRange(f.view)!), "'Busy Changed'",
 		'a requirement entry retains only its written expression, not the registration or parent list');
 	assert.equal(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label, "'Busy Changed'");
@@ -133,7 +134,7 @@ fx.register_effect('other', require('other'))`;
 	assert.equal(tags.lastSavedSource, "return { 'Busy Changed' }");
 	// Removing a written import must not forget edits made to that source in this input.
 	change('blocked_tags', "{ 'local' }");
-	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, provider.resource.path);
+	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, resourceIdentityKey(provider.resource));
 	assert.equal(readLuaSourceRange(provider.buffer, selectedBehaviorLensSourceRange(f.view)!), "{ 'local' }");
 	assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, provider, tags]));
 	provider.undo(); f.refresh();

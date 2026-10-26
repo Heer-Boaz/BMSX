@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -17,7 +18,7 @@ function edit(workspace: LuaSemanticWorkspace, offset: number, deletedLength: nu
 }
 
 test('body edits skip unchanged sibling subtrees and retain their finished facts', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local item = { field = 1 }\n${padding}local function changed()\n${body}return item end\n`
 		+ `local function retained()\n${body}return function() return item.field end end\nreturn retained()`;
 	const old = workspace.updateFile('reuse.lua', source);
@@ -43,7 +44,7 @@ test('body edits skip unchanged sibling subtrees and retain their finished facts
 });
 
 test('leading edits reattach file scopes without visiting retained bodies', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local item = {}\n${padding}function item:read()\n${body}published = self; return self end\n${padding}`;
 	const old = workspace.updateFile('reuse.lua', source);
 	const snapshot = workspace.getSnapshot();
@@ -59,7 +60,7 @@ test('leading edits reattach file scopes without visiting retained bodies', () =
 });
 
 for (const name of ['future', 'item']) test(`consumed lexical ${name === 'future' ? 'misses' : 'bindings'} invalidate even through nested functions`, () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local item = { field = 1 }\n${padding}local function retained()\n${padding}return function() return ${name}.field end end\n${padding}`;
 	const old = workspace.updateFile('reuse.lua', source);
 	const expression = old.functionValueFlows[1].expression;
@@ -73,7 +74,7 @@ for (const name of ['future', 'item']) test(`consumed lexical ${name === 'future
 });
 
 test('unconsumed local insertions do not invalidate retained bodies', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local item = { field = 1 }\n${padding}local function retained()\n${body}return item end\n${padding}`;
 	workspace.updateFile('reuse.lua', source);
 	const current = edit(workspace, source.indexOf('do end') + 40 * 'do end\n'.length, 0, 'local unrelated = 2\n');
@@ -82,7 +83,7 @@ test('unconsumed local insertions do not invalidate retained bodies', () => {
 });
 
 test('reused raw bodies receive current builtin projections and preserve prior snapshots', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local function retained()\n${padding}return setmetatable({}, {}) end\n${padding}`;
 	const old = workspace.updateFile('reuse.lua', source);
 	assert.equal(old.functionValueFlows[0].assignments.length, 3);
@@ -104,7 +105,7 @@ test('independent cold syntax generations and different file owners cannot share
 });
 
 test('cached lexical writes keep their enclosing storage and body-owned flow', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local item = {}\n${padding}local function write(input)\n${padding}item = input; item.field = input end\n${padding}`;
 	const old = workspace.updateFile('reuse.lua', source);
 	const priorWrites = old.declarationValues.filter(write => write.flow !== undefined);
@@ -116,7 +117,7 @@ test('cached lexical writes keep their enclosing storage and body-owned flow', (
 });
 
 test('loop-bound closures retain unknown numeric reads and nested lexical facts', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local item = {}\nfor index = 1, 3 do\n${padding}local function read()\n${body}return index end\n${padding}end\n${padding}`;
 	const old = workspace.updateFile('reuse.lua', source);
 	assert.equal(old.functionValueFlows[0].returns[0].firstValue.root.kind, 'unknown');
@@ -127,7 +128,7 @@ test('loop-bound closures retain unknown numeric reads and nested lexical facts'
 });
 
 test('recursive const closures and explicit self parameters preserve lexical activation', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local item = {}\n${padding}local recur<const> = function(self)\n${padding}return recur(self) end\nfunction item.read(self)\n${body}return self end\n${padding}`;
 	const old = workspace.updateFile('reuse.lua', source);
 	const current = edit(workspace, source.length, 0, 'do end\n');
@@ -137,7 +138,7 @@ test('recursive const closures and explicit self parameters preserve lexical act
 });
 
 test('editing an outer body reuses nested bodies without retaining their previous parent attachment', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local item = { field = 1 }\n${padding}local function outer()\n${padding}local function inner()\n${body}return item.field end\n${padding}return inner end\n${padding}`;
 	const old = workspace.updateFile('reuse.lua', source);
 	const inner = old.functionValueFlows[0];
@@ -155,7 +156,7 @@ test('editing an outer body reuses nested bodies without retaining their previou
 });
 
 test('cached descendants propagate lexical misses through every retained ancestor', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `${padding}local function outer()\n${padding}return function()\n${padding}return function() return future.field end end end\n${padding}`;
 	const old = workspace.updateFile('reuse.lua', source);
 	// First rebind outer while retaining its child: validation itself must
@@ -171,7 +172,7 @@ test('cached descendants propagate lexical misses through every retained ancesto
 });
 
 test('nested raw builtin sites compose using writes outside a reused outer contribution', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `${padding}local function outer()\n${padding}return function() return setmetatable({}, {}) end end\n${padding}`;
 	const old = workspace.updateFile('reuse.lua', source);
 	const current = edit(workspace, source.length, 0, 'setmetatable = custom\n');
@@ -181,7 +182,7 @@ test('nested raw builtin sites compose using writes outside a reused outer contr
 });
 
 test('moving retained locals into a nested block invalidates captured member scopes', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `do\n${padding}${padding}local item = {}\n${padding}local function inner() item.field = 1 end\n${padding}end`;
 	const old = workspace.updateFile('reuse.lua', source);
 	const offset = 3 + padding.length;
@@ -199,7 +200,7 @@ test('moving retained locals into a nested block invalidates captured member sco
 });
 
 test('nested member publications invalidate when their external lexical scope changes', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['reuse.lua']));
 	const source = `local function outer()\n${padding}local item = {}\nlocal function middle()\nlocal function inner() item.field = 1 end\nreturn inner end\nreturn middle end`;
 	const old = workspace.updateFile('reuse.lua', source);
 	const current = edit(workspace, source.indexOf('do end'), 0, 'do end; ');

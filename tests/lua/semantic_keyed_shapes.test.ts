@@ -1,10 +1,11 @@
+import { createPathModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
 
 function completedNames(body: string): string[] {
 	const source = `${body}\nreturn selected.marker`;
-	const frontend = buildLuaSemanticFrontend([{ path: 'shape.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'shape.lua', source }]));
 	const context = frontend.getFile('shape.lua').findMemberCompletionContextAt(source.split('\n').length, 'return selected.'.length + 1)!;
 	return frontend.snapshot.symbolResolver.getWholeProgramMembers(context.receiver).map(declaration => declaration.name);
 }
@@ -132,7 +133,7 @@ for (const buckets of [false, true]) for (const chains of [false, true]) for (co
 		for i=1,#factories do add(factories[i]()) end
 		local selected=store[first]${buckets ? '[1]' : ''}
 		selected:move()`;
-		const frontend = buildLuaSemanticFrontend([{ path: 'keyed.lua', source }]);
+		const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'keyed.lua', source }]));
 		const file = frontend.getFile('keyed.lua');
 		const context = file.findMemberCompletionContextAt(source.split('\n').length, source.split('\n').at(-1)!.indexOf('move') + 1)!;
 		const names = () => frontend.snapshot.symbolResolver.getWholeProgramMembers(context.receiver).map(declaration => declaration.name);
@@ -185,10 +186,10 @@ for (const topLevel of [true, false]) test(`constructor query follows external r
 	 'end',
 	 ...(topLevel ? ['register()', "spawn(object_id)"] : ['local function boot()', ' register()', " spawn(object_id)", 'end', 'boot()']),
 	];
-	const frontend = buildLuaSemanticFrontend([
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([
 		{ path: 'construct.lua', source: lines.join('\n') },
 		{ path: 'ids.lua', source: "object_id = 'example'" },
-	]);
+	]));
 	const file = frontend.getFile('construct.lua');
 	const usageIndex = lines.findIndex(line => line.includes('found:move'));
 	const context = file.findMemberCompletionContextAt(usageIndex + 1, 8)!;

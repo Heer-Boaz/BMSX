@@ -34,6 +34,7 @@ import {
 } from './call_signature';
 import { resolveStaticLuaExpressionPath } from './expression_path';
 import { getLuaWrittenDeclarations } from './written_declarations';
+import type { LuaProjectModuleBindings } from './module_resolution';
 
 export type LuaStaticDiagnostic = {
 	row: number;
@@ -139,6 +140,7 @@ export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnostic
 
 export function computeLuaProjectDiagnostics(
 	sources: ReadonlyArray<LuaProjectSource>,
+	moduleBindings: LuaProjectModuleBindings,
 	options: LuaProjectDiagnosticOptions = {},
 ): Map<string, LuaStaticDiagnostic[]> {
 	const results = new Map<string, LuaStaticDiagnostic[]>();
@@ -163,7 +165,7 @@ export function computeLuaProjectDiagnostics(
 	if (snapshotInputs.length === 0) {
 		return results;
 	}
-	const snapshot = buildLuaSemanticWorkspaceSnapshot(snapshotInputs);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(snapshotInputs, moduleBindings);
 	const globalSymbols = buildGlobalSymbols(snapshot.listGlobalDecls(), snapshot.symbolResolver);
 	for (let index = 0; index < snapshot.files.length; index += 1) {
 		const file = snapshot.files[index];

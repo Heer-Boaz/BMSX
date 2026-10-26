@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -20,7 +21,7 @@ test('each write belongs to its executing function, not the captured declaration
 	const [left, right] = file.functionValueFlows;
 	const values = file.declarationValues.filter(entry => entry.declId === selected.id);
 	assert.deepEqual(values.map(entry => entry.flow), [undefined, left.id, right.id]);
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const target = summaries.terms.compileSource(declarationValueSource(selected.id));
 	for (const [index, value] of [11, 22].entries()) {
 		assert.deepEqual(summaries.list()[index].aliases, [{
@@ -56,7 +57,7 @@ local function install()
  object.task = 'same'
  object.task = 'same'
 end`, 'equal-fields.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const summary = summaries.list()[0];
 	const fields = file.decls.filter(declaration => declaration.name === 'task');
 	assert.equal(fields.length, 3, 'each written member owns its definition occurrence');
@@ -89,7 +90,7 @@ test('member replacement summaries contain their own values rather than a module
 		'local function left() api.selected = 11 end',
 		'local function right() api.selected = 22 end',
 	].join('\n'), 'members.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	for (const [index, value] of [11, 22].entries()) {
 		const summary = summaries.list()[index];
 		assert.equal(summary.writes.length, 1);
@@ -109,7 +110,7 @@ test('nested writes do not acquire the outer function that declared their destin
 	const selected = file.decls.find(declaration => declaration.name === 'selected')!;
 	const values = file.declarationValues.filter(entry => entry.declId === selected.id);
 	assert.deepEqual(values.map(entry => entry.flow), [outer.id, inner.id]);
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const target = summaries.terms.compileSource(declarationValueSource(selected.id));
 	assert.deepEqual(summaries.list()[0].aliases.filter(alias => alias.target === target).map(alias => alias.source),
 		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 11 }))]);
@@ -123,7 +124,7 @@ test('a module write stays a module effect even when a function first named the 
 		'local function install() api.selected = 11 end',
 		'api.selected = 22',
 	].join('\n'), 'module-write.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const writes = demand.staticWrites(summaries.terms.nameId('selected'));
 	assert.equal(writes.length, 1);
@@ -141,7 +142,7 @@ test('a module write stays a module effect even when a function first named the 
 });
 
 test('the public resolver sees a module replacement after a function introduced the field', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['module-write.lua']));
 	workspace.updateFile('module-write.lua', [
 		'local api<const> = {}',
 		'local function install() api.selected = { from_function = true } end',
@@ -165,7 +166,7 @@ test('instantiation publishes only the selected function writes, with compiled B
 		'return after_left, selected',
 	].join('\n');
 	const file = buildLuaFileSemanticData(source, 'execute.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const query = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('literal setters contain no calls'));
 	const selected = file.decls.find(entry => entry.name === 'selected')!;

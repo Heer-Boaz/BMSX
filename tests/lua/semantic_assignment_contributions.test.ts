@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -38,7 +39,7 @@ test('written contributions retain equal-valued occurrences and self-assignment 
 	assert.equal(contributions[4].flow, flow.id);
 	assert.equal(contributions[4].syntax, flow.expression.body.body.get(0)!);
 	assert.equal(contributions[5].syntax, flow.expression.body.body.get(1)!);
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	assert.equal(summaries.list()[0].aliases.length, 1, 'summary terms deduplicate values without erasing written occurrences');
 	assert.deepEqual(runCompiledLua(source), [1]);
 });
@@ -61,7 +62,7 @@ test('unmodeled expressions and compound writes retain unknown rather than alias
 	assert.equal(contributions[1].source.root.kind, 'unknown');
 	assert.equal(contributions[2].source.root.kind, 'unknown');
 	assert.equal(contributions[1].source, contributions[2].source, 'the abstract unknown is retained without per-expression allocation');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	assert.ok(summaries.list()[0].aliases.some(item => item.source === summaries.terms.unknown()));
 	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'compound.lua', optimization), [14]);
 
@@ -194,10 +195,10 @@ test('unknown constants and exports do not collapse unrelated storage identities
 	const second = buildLuaFileSemanticData('return 7 + 8', 'second.lua');
 	assert.ok(first.declarationValues.every(item => item.relation === 'value' && item.source.root.kind === 'unknown'));
 	assert.equal(first.moduleValues[0].source.root.kind, 'unknown');
-	const identities = new WorkspaceValueIdentityIndex({ files: [first, second], globalValues: new Map() });
+	const identities = new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([first, second]).map(file => file.file)), files: [first, second], globalValues: new Map() });
 	const roots = first.declarationValues.map(item => identities.canonicalRoot(identities.rawRootId({ kind: 'declaration', declId: item.declId })));
 	for (const file of [first, second]) {
-		roots.push(identities.canonicalRoot(identities.rawRootId({ kind: 'module', module: file.moduleValues[0].module })));
+		roots.push(identities.canonicalRoot(identities.rawRootId({ kind: 'module_export', file: file.moduleValues[0].file })));
 	}
 	roots.push(identities.canonicalRoot(identities.rawRootId(first.moduleValues[0].source.root)));
 	assert.equal(new Set(roots).size, roots.length);
@@ -206,7 +207,7 @@ test('unknown constants and exports do not collapse unrelated storage identities
 test('instantiation publishes a captured unknown write only from the called body', () => {
 	const source = 'local selected = 7; local function change() selected = 1 + 2 end; change(); return selected';
 	const file = buildLuaFileSemanticData(source, 'called-write.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const query = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('the written body has no nested calls'));
 	const selected = file.decls.find(item => item.name === 'selected')!;
@@ -234,7 +235,7 @@ test('equal scalar and unknown alternatives never establish a shared member-writ
 			'right.right_only = true',
 			'return left.right_only',
 		].join('\n');
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['unrelated.lua']));
 		workspace.updateFile('unrelated.lua', source);
 		assert.deepEqual(semanticSymbolsAt(workspace.getSnapshot(), 'unrelated.lua', 6, 14), [], value);
 		for (const optimization of [0, 3] as const) {
@@ -251,7 +252,7 @@ test('scalar alternatives cannot join unrelated prototype owners', () => {
 		'setmetatable(left, { __index = { left_only = true } })',
 		'return right.left_only',
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['prototypes.lua']));
 	workspace.updateFile('prototypes.lua', source);
 	assert.deepEqual(semanticSymbolsAt(workspace.getSnapshot(), 'prototypes.lua', 5, 15), []);
 	// Publish the real boot primitive from a system module, before startup clears
@@ -271,7 +272,7 @@ test('scalar alternatives cannot join unrelated prototype owners', () => {
 
 test('term identity classification is fixed before const aliases or their access paths are compiled', () => {
 	const file = buildLuaFileSemanticData('local key<const> = "same"; local table<const> = {}', 'classification.lua');
-	const identities = new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() });
+	const identities = new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() });
 	const summaries = new FunctionSummaryStore([file], identities);
 	const terms = summaries.terms;
 	const key = terms.compileSource(declarationValueSource(file.decls[0].id));
@@ -305,7 +306,7 @@ test('iteration contributions keep their producer syntax, not fabricated initial
 for (const iterator of ['pairs', 'ipairs']) test(`${iterator} table projections require expanded iterator results and retain old generations`, () => {
 	const source = (iterators: string) => `local entries = { 17, 23 }
 for key, value in ${iterators} do end`;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['iterators.lua']));
 	workspace.updateFile('iterators.lua', source(`${iterator}(entries)`));
 	const open = workspace.getSnapshot();
 	workspace.updateFile('iterators.lua', source(`(${iterator}(entries))`));
@@ -330,7 +331,7 @@ for key, value in ${iterators} do end`;
 });
 
 test('written origins belong to immutable file facts, not the current workspace text', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['provider.lua', 'consumer.lua']));
 	workspace.updateFile('provider.lua', 'local value = 1; value = 1; return value');
 	workspace.updateFile('consumer.lua', "return require('provider')");
 	const before = workspace.getSnapshot();

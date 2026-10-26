@@ -1,4 +1,4 @@
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -19,7 +19,7 @@ import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field
 import { createBehaviorTreeChildDuplicateEdits, createBehaviorTreeChildRemovalEdits } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { BehaviorTreeTransferAnalysis } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
 import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
 import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
@@ -412,7 +412,7 @@ test('source-owned BT moves change actual compiled task order and keep choice we
 	for (const [destination, expected] of [[0, 1213], [3, 1312]] as const) {
 		const resource = { sourceFilePath: 'order.lua', location: { kind: 'workspace' as const, path: 'order.lua' }, domain: 0 as const, path: 'order.lua', source: { type: 'lua' as const, resid: 'order' } };
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[0];
+		const definition = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(BT_ORDER_SOURCE, resource)], ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result']))).definitions[0];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok(branch.role === 'children' && branch.source.kind === 'section');
@@ -428,7 +428,7 @@ return status == result.success, target.order, #children, children.note == 'meta
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, expected, 3, true]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
-		const weighted = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[2];
+		const weighted = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(BT_ORDER_SOURCE, resource)], ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result']))).definitions[2];
 		assert.ok(weighted.behaviorKind === 'behavior_tree' && weighted.root?.kind === 'node');
 		const choices = weighted.root.branches[0];
 		assert.ok(choices.role === 'choices' && choices.source.kind === 'section');
@@ -451,8 +451,8 @@ test('BT source removal changes actual compiled task order without deleting refe
 	const resource = { sourceFilePath: 'remove.lua', location: { kind: 'workspace' as const, path: 'remove.lua' }, domain: 0 as const, path: 'remove.lua', source: { type: 'lua' as const, resid: 'remove' } };
 	for (const [definitionIndex, index, expected] of [[0, 0, 123], [0, 1, 13], [0, 2, 112], [2, 1, 13]] as const) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const analysis = buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path);
-		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(analysis)).definitions[definitionIndex];
+		const analysis = buildResourceLuaSemanticFixtureFile(BT_ORDER_SOURCE, resource);
+		const definition = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result']))).definitions[definitionIndex];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
@@ -485,7 +485,7 @@ test('BT source duplication executes the copied Lua uses and keeps choice weight
 	const resource = { sourceFilePath: 'duplicate.lua', location: { kind: 'workspace' as const, path: 'duplicate.lua' }, domain: 0 as const, path: 'duplicate.lua', source: { type: 'lua' as const, resid: 'duplicate' } };
 	for (const [definitionIndex, index, expected, sameValue] of [[0, 0, 11123, true], [0, 1, 112123, true], [0, 2, 11233, false], [2, 1, 112123, false]] as const) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[definitionIndex];
+		const definition = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(BT_ORDER_SOURCE, resource)], ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result']))).definitions[definitionIndex];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
@@ -522,7 +522,7 @@ test('language-owned field transfer changes actual compiled BT composition witho
 	const resource = { sourceFilePath: 'transfer.lua', location: { kind: 'workspace' as const, path: 'transfer.lua' }, domain: 0 as const, path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
 	for (const inward of [false, true]) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[0];
+		const definition = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(BT_ORDER_SOURCE, resource)], ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result']))).definitions[0];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const outer = definition.root.branches[0];
 		assert.ok(outer.role === 'children' && outer.source.kind === 'section');
@@ -552,8 +552,8 @@ test('admitted BT transfers compile with actual source sharing and cartlib task 
 	const resource = { sourceFilePath: 'admitted.lua', location: { kind: 'workspace' as const, path: 'admitted.lua' }, domain: 0 as const, path: 'admitted.lua', source: { type: 'lua' as const, resid: 'admitted' } };
 	for (const inward of [false, true]) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const semantic = buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path);
-		const document = buildBehaviorSourceDocument(resource, semanticSnapshot(semantic));
+		const semantic = buildResourceLuaSemanticFixtureFile(BT_ORDER_SOURCE, resource);
+		const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([semantic], ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result'])));
 		const definition = document.definitions[0];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const outer = definition.root.branches[0];
@@ -601,7 +601,7 @@ test('cartlib FSM and behaviour-tree instances retain semantic state across prog
 test('visual initial edits rebind real cartlib definitions without forcing the living machine to restart', () => {
 	const resource = { sourceFilePath: 'initial.lua', location: { kind: 'workspace' as const, path: 'initial.lua' }, domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
 	const model = new EditorTextModel(resource, 'lua', FSM_INITIAL_SOURCE);
-	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_INITIAL_SOURCE, resource.path)));
+	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(FSM_INITIAL_SOURCE, resource)], ['cartlib/fsm/library'])));
 	const target = [...indexStateMachineSource(document).initialTargets.values()].find(target => target.name === 'active')!;
 	model.pushEditOperations(createStateMachineInitialEdits(model.buffer, target));
 	const { cpu } = createCartlibProgramHarness(`
@@ -734,7 +734,7 @@ return ${FSM_PATH_CASES.length}
 
 test('retarget descriptors compile to the exact cartlib anchor and guarded/concurrent step plan', () => {
 	const resource = { domain: 0 as const, path: 'retarget.lua' };
-	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_RETARGET_PATH_SOURCE, resource.path)));
+	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(FSM_RETARGET_PATH_SOURCE, resource)], ['cartlib/fsm/library'])));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	const checks = FSM_RETARGET_PATH_CASES.map((entry, index) => {
@@ -769,7 +769,7 @@ return ${FSM_RETARGET_PATH_CASES.length}
 test('a retargeted callback preserves live rebind identity, dispatch effects, guards and exit/entry ordering', () => {
 	const resource = { sourceFilePath: 'execution.lua', location: { kind: 'workspace' as const, path: 'execution.lua' }, domain: 0 as const, path: 'execution.lua', source: { type: 'lua' as const, resid: 'execution' } };
 	const model = new EditorTextModel(resource, 'lua', FSM_RETARGET_EXECUTION_SOURCE);
-	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_RETARGET_EXECUTION_SOURCE, resource.path)));
+	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(FSM_RETARGET_EXECUTION_SOURCE, resource)], ['cartlib/fsm/library'])));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	const transition = definition.transitions[0];

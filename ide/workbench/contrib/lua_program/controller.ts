@@ -6,7 +6,7 @@ import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { luaSourceRangeToTextRange, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
-import { resolveRuntimeResource, resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
+import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { EditorNavigationController } from '../resources/navigation';
@@ -97,7 +97,7 @@ export class LuaProgramController {
 		projectLuaProgram(input.tree, input.occurrence, reader, file => {
 			let model = input.sourceModels.get(file.file);
 			if (model === undefined) {
-				const resource = resolveRuntimeResourceForContext(this.sources, input.workingCopy.resource.domain, file.file)!;
+				const resource = resolveRuntimeResource(this.sources, project.getResourceIdentity(file.file))!;
 				model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 				input.sourceModels.set(file.file, model);
 			}
@@ -112,7 +112,7 @@ export class LuaProgramController {
 		const row = input.liveVisible ? undefined : input.tree.rows[input.tree.selectionIndex]?.element;
 		const file = row?.file ?? input.occurrence?.file;
 		const range = file === undefined ? undefined : file.chunk.locations.range((row?.expression ?? input.occurrence!.call.expression).span);
-		this.navigation.focusChunkSourceForContext(input.workingCopy.resource.domain, file?.file ?? input.workingCopy.resource.path,
+		this.navigation.focusChunkSource(file === undefined ? input.workingCopy.resource : input.sourceModels.get(file.file)!.resource,
 			range === undefined ? null : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
 	public chooseInstance(input: LuaProgramInput): void {

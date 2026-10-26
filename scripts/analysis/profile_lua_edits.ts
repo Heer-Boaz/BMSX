@@ -1,3 +1,4 @@
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 // npx tsx --tsconfig tsconfig.base.json scripts/analysis/profile_lua_edits.ts \
 //   /tmp/pietious-workspace.json director.lua player/player.lua
 import assert from 'node:assert/strict';
@@ -19,7 +20,8 @@ import { SourceChangeMap, type SourceTextChange } from '../../toolchain/ts/text/
 const [dumpPath, ...paths] = process.argv.slice(2);
 assert(dumpPath && paths.length, 'Usage: profile_lua_edits.ts workspace.json file.lua [file.lua ...]');
 const files: { path: string; source: string }[] = JSON.parse(readFileSync(dumpPath, 'utf8'));
-const workspace = new LuaSemanticWorkspace();
+const modules = new Map(files.map(file => [toLuaModulePath(file.path), file.path]));
+const workspace = new LuaSemanticWorkspace(new Map(files.map(file => [file.path, modules])));
 workspace.updateFiles(files.map(file => buildLuaFileSemanticData(file.source, file.path)));
 const baseline = workspace.getSnapshot();
 const warmup = 20;

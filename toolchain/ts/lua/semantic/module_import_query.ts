@@ -1,6 +1,6 @@
 import type { FileSemanticData } from './model';
-import { getLuaModuleAliasTarget, type ModuleAliasTarget } from './module_bindings';
-import { toLuaModulePath } from '../module_path';
+import { getLuaModuleAliasTarget, type LuaModuleImportTarget, type ModuleAliasTarget } from './module_bindings';
+import type { LuaProjectModuleBindings } from './module_resolution';
 
 type Resolution = boolean | 'resolving';
 type ModuleResolutions = Map<string, Map<number, Resolution>>;
@@ -12,47 +12,55 @@ type ModuleResolutions = Map<string, Map<number, Resolution>>;
  */
 export class LuaModuleImportQuery {
 	private readonly exports = new Map<string, ModuleAliasTarget | null>();
-	private readonly resolutions = new Map<ModuleAliasTarget, ModuleResolutions>();
+	private readonly resolutions = new Map<LuaModuleImportTarget, Map<string, ModuleResolutions>>();
 
-	public constructor(files: readonly FileSemanticData[]) {
+	public constructor(files: readonly FileSemanticData[], private readonly moduleBindings: LuaProjectModuleBindings) {
 		for (const file of files) {
-			const module = toLuaModulePath(file.file);
 			const entry = file.moduleValues[0];
-			this.exports.set(module, this.exports.has(module) || file.syntaxError !== null
+			this.exports.set(file.file, file.syntaxError !== null
 				|| entry === undefined || entry.bypassingReturns.length !== 0 ? null : getLuaModuleAliasTarget(file, entry.source));
 		}
 	}
 
 	/** Target objects are retained API descriptors; results live with this snapshot. */
-	public matchesImport(source: ModuleAliasTarget, target: ModuleAliasTarget): boolean {
+	public matchesImport(source: ModuleAliasTarget, target: LuaModuleImportTarget): boolean {
 		const remaining = this.removeSuffix(target.memberPath, target.memberPath.length, source.memberPath);
 		if (remaining < 0) return false;
-		if (source.module === target.module) return remaining === 0;
+		const bindings = this.moduleBindings.get(source.referrer)!;
+		const sourceFile = bindings.get(source.module);
+		const targetFile = bindings.get(target.module);
+		if (sourceFile === undefined || targetFile === undefined) return false;
+		if (sourceFile === targetFile) return remaining === 0;
 		// A terminal module already has its answer in the export index. Do not
 		// allocate a second negative cache for it under every requested API.
-		if (!this.exports.get(source.module)) return false;
-		let resolutions = this.resolutions.get(target);
+		if (!this.exports.get(sourceFile)) return false;
+		let targets = this.resolutions.get(target);
+		if (targets === undefined) {
+			targets = new Map();
+			this.resolutions.set(target, targets);
+		}
+		let resolutions = targets.get(targetFile);
 		if (resolutions === undefined) {
 			resolutions = new Map();
-			this.resolutions.set(target, resolutions);
+			targets.set(targetFile, resolutions);
 		}
-		const retained = resolutions.get(source.module)?.get(remaining);
+		const retained = resolutions.get(sourceFile)?.get(remaining);
 		if (retained !== undefined) return retained === true;
-		return this.resolve(source.module, remaining, target, resolutions);
+		return this.resolve(sourceFile, remaining, targetFile, target.memberPath, resolutions);
 	}
 
-	private resolve(module: string, remaining: number, target: ModuleAliasTarget, resolutions: ModuleResolutions): boolean {
+	private resolve(file: string, remaining: number, targetFile: string, targetPath: readonly string[], resolutions: ModuleResolutions): boolean {
 		const pending: { readonly entries: Map<number, Resolution>; readonly remaining: number }[] = [];
 		let result: boolean;
 		for (;;) {
-			if (module === target.module) {
+			if (file === targetFile) {
 				result = remaining === 0;
 				break;
 			}
-			let entries = resolutions.get(module);
+			let entries = resolutions.get(file);
 			if (entries === undefined) {
 				entries = new Map();
-				resolutions.set(module, entries);
+				resolutions.set(file, entries);
 			}
 			const retained = entries.get(remaining);
 			if (retained !== undefined) {
@@ -61,17 +69,22 @@ export class LuaModuleImportQuery {
 			}
 			entries.set(remaining, 'resolving');
 			pending.push({ entries, remaining });
-			const alias = this.exports.get(module);
+			const alias = this.exports.get(file);
 			if (alias === undefined || alias === null) {
 				result = false;
 				break;
 			}
-			remaining = this.removeSuffix(target.memberPath, remaining, alias.memberPath);
+			remaining = this.removeSuffix(targetPath, remaining, alias.memberPath);
 			if (remaining < 0) {
 				result = false;
 				break;
 			}
-			module = alias.module;
+			const next = this.moduleBindings.get(alias.referrer)!.get(alias.module);
+			if (next === undefined) {
+				result = false;
+				break;
+			}
+			file = next;
 		}
 		for (const entry of pending) entry.entries.set(entry.remaining, result);
 		return result;

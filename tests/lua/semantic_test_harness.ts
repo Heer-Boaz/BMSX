@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import {
 	buildLuaSemanticFrontendFromSnapshot,
 	type LuaSemanticPositionTarget,
@@ -7,7 +8,7 @@ import { findLuaSemanticOccurrenceAt } from '../../toolchain/ts/lua/semantic/pos
 
 /** Retain the fixture's binder identities, including recovered syntax, in a real workspace. */
 export function semanticSnapshot(...files: readonly FileSemanticData[]): LuaSemanticWorkspaceSnapshot {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(files.map(file => file.file)));
 	workspace.updateFiles(files);
 	return workspace.getSnapshot();
 }

@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
@@ -34,7 +35,7 @@ for (const usage of [
 ]) for (const nested of [false, true]) test(`type value diagnostic: ${nested ? 'lexical' : 'root'} ${usage}`, () => {
 	const prefix = nested ? 'local run = function()\n' : '';
 	const source = prefix + TYPE_DECLARATION + usage + (nested ? '\nend\nreturn run()' : '');
-	const frontend = buildLuaSemanticFrontend([{ path: 'type_value.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'type_value.lua', source }]));
 	const firstColumn = usage.indexOf('shape', usage.startsWith('local shape') ? 'local shape'.length : 0);
 	assert.deepEqual(frontend.getFile('type_value.lua').diagnostics, [{
 		row: nested ? 4 : 3,
@@ -51,10 +52,10 @@ for (const usage of [
 test('type diagnostics follow the resolved global declaration across files', () => {
 	const source = 'return shape';
 	const typeSource = TYPE_DECLARATION + 'return 1';
-	const frontend = buildLuaSemanticFrontend([
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([
 		{ path: 'types.lua', source: typeSource },
 		{ path: 'consumer.lua', source },
-	]);
+	]));
 	assert.deepEqual(frontend.getFile('types.lua').diagnostics, []);
 	assert.deepEqual(frontend.getFile('consumer.lua').diagnostics, [{
 		row: 0, startColumn: 7, endColumn: 12, message: TYPE_VALUE_ERROR, severity: 'error',
@@ -103,12 +104,12 @@ local nested = function(...)
 end
 -- shape in a comment and a string is not an identifier use.
 return read(3), nested(), object.shape, object['shape'], ptr.value, sizeof(shape), offsetof(shape.value), 'shape' == 'shape'`;
-	assert.deepEqual(buildLuaSemanticFrontend([{ path: 'type_shadow.lua', source }]).getFile('type_shadow.lua').diagnostics, []);
+	assert.deepEqual(buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'type_shadow.lua', source }])).getFile('type_shadow.lua').diagnostics, []);
 	assert.deepEqual(runCompiledLua(source, 'type_shadow.lua', optLevel), [4, 21, 7, 7, 11, 4, 0, true]);
 });
 
 test('retained diagnostic snapshots do not reinterpret a type as a later global value', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['types.lua', 'consumer.lua']));
 	workspace.updateFile('types.lua', TYPE_DECLARATION);
 	workspace.updateFile('consumer.lua', 'return shape');
 	const old = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
@@ -125,10 +126,10 @@ test('retained diagnostic snapshots do not reinterpret a type as a later global 
 });
 
 test('identifier diagnostic lookup does not materialize navigation target lists or run value inference', t => {
-	const frontend = buildLuaSemanticFrontend([
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([
 		{ path: 'types.lua', source: TYPE_DECLARATION },
 		{ path: 'reader.lua', source: 'local count<const> = 1\ncount = 2\nreturn shape, count, missing' },
-	]);
+	]));
 	const resolver = frontend.snapshot.symbolResolver;
 	const targets = t.mock.method(resolver, 'resolveReferenceTargets');
 	const baseline = resolver.getSemanticQueryMetrics();

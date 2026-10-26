@@ -1,3 +1,4 @@
+import type { ResourceIdentity } from '../../../../common/resource';
 import { measureTextRange } from '../../../../editor/common/text/layout';
 import {
 	CallHierarchyDirection,
@@ -13,6 +14,7 @@ export type CallHierarchyPanelItem = {
 	line: string;
 	contentStartColumn: number;
 	location: LuaDefinitionLocation;
+	resource: ResourceIdentity;
 	callHierarchyNodeId: string;
 	callHierarchyExpandable: boolean;
 	callHierarchyExpanded: boolean;
@@ -76,9 +78,10 @@ function appendCallHierarchyNode(
 		? direction === CallHierarchyDirection.CallsTo ? 'CALLERS OF ' : 'CALLS FROM '
 		: '';
 	items.push({
-		line: `${indent}${directionLabel}${marker}${node.name} (${buildLocationLabel(node.location)})`,
+		line: `${indent}${directionLabel}${marker}${node.name} (${buildLocationLabel(node.location, model.project.getResourceIdentity(node.location.path))})`,
 		contentStartColumn: indent.length + directionLabel.length + marker.length,
 		location: node.location,
+		resource: model.project.getResourceIdentity(node.location.path),
 		callHierarchyNodeId: node.id,
 		callHierarchyExpandable: expandable,
 		callHierarchyExpanded: expanded,
@@ -90,9 +93,10 @@ function appendCallHierarchyNode(
 	for (let index = 0; index < node.fromRanges.length; index += 1) {
 		const range = node.fromRanges[index];
 		items.push({
-			line: `${childIndent}  ${computeSourceLabel(range.path)}:${range.start.line}`,
+			line: `${childIndent}  ${computeSourceLabel(model.project.getResourceIdentity(range.path).path)}:${range.start.line}`,
 			contentStartColumn: childIndent.length + 2,
 			location: definitionLocationFromSourceRange(range),
+			resource: model.project.getResourceIdentity(range.path),
 			callHierarchyNodeId: buildCallSiteId(node.id, range),
 			callHierarchyExpandable: false,
 			callHierarchyExpanded: false,
@@ -106,8 +110,8 @@ function appendCallHierarchyNode(
 	}
 }
 
-function buildLocationLabel(location: LuaDefinitionLocation): string {
-	return `${computeSourceLabel(location.path)}:${location.range.startLine}`;
+function buildLocationLabel(location: LuaDefinitionLocation, resource: ResourceIdentity): string {
+	return `${computeSourceLabel(resource.path)}:${location.range.startLine}`;
 }
 
 function buildCallSiteId(parentId: string, range: LuaSourceRange): string {

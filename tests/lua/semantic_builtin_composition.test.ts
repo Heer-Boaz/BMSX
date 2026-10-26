@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -55,7 +56,7 @@ test('iterator projection conflicts are file-global while lexical shadows stay l
 test('editing a global operation conflict changes composition, not retained prior answers', () => {
 	const source = 'local function read()\n' + '-- body boundary\n'.repeat(80)
 		+ 'return setmetatable({}, {})\nend\n' + 'do end\n'.repeat(80);
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['edits.lua']));
 	const old = workspace.updateFile('edits.lua', source);
 	const insertion = 'setmetatable = custom\n';
 	const current = workspace.updateFile('edits.lua', source + insertion,
@@ -71,7 +72,7 @@ test('editing a global operation conflict changes composition, not retained prio
 test('global require writes do not shadow compiler module syntax but lexical parameters do', () => {
 	const file = buildLuaFileSemanticData("require = replacement; local value = require('module'); local function read(require) return require('local') end", 'imports.lua');
 	assert.deepEqual(file.moduleReferences.map(reference => reference.value), ['module']);
-	assert.equal(file.declarationValues.find(write => write.syntax.kind === LuaSyntaxKind.LocalAssignmentStatement)!.source.root.kind, 'module');
+	assert.equal(file.declarationValues.find(write => write.syntax.kind === LuaSyntaxKind.LocalAssignmentStatement)!.source.root.kind, 'module_import');
 	assert.equal(file.functionValueFlows[0].returns[0].firstValue.root.kind, 'owned');
 });
 
@@ -79,6 +80,6 @@ test('iterator projections consume the already bound argument, including compile
 	const file = buildLuaFileSemanticData("for key, value in pairs(require('items')) do end", 'iterator_import.lua');
 	const value = file.decls.find(decl => decl.name === 'value')!;
 	const source = file.declarationValuesByDeclaration.get(value.id)![0].source;
-	assert.deepEqual(source.root, { kind: 'module', module: 'items' });
+	assert.deepEqual(source.root, { kind: 'module_import', referrer: file.file, specifier: 'items' });
 	assert.deepEqual(source.steps, [{ kind: 'element' }]);
 });

@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { SemanticDemandIndex } from '../../../toolchain/ts/lua/semantic/demand_index';
 import { FunctionSummaryStore } from '../../../toolchain/ts/lua/semantic/function_summary';
@@ -15,7 +16,7 @@ for (const callSites of [32, 256]) {
 	const files = [file];
 	const globalValues = new Map();
 	const queryMilliseconds = medianMilliseconds(() => {
-		const summaries = new FunctionSummaryStore(files, new WorkspaceValueIdentityIndex({ files, globalValues }));
+		const summaries = new FunctionSummaryStore(files, new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture((files).map(file => file.file)), files, globalValues }));
 		const demand = new SemanticDemandIndex(files, summaries);
 		assert.equal(demand.directTargets(file.callValues[0]).length, 1);
 		assert.equal(demand.directTargets(file.callValues[1]).length, 0);

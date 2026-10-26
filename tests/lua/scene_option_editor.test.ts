@@ -9,8 +9,8 @@ import { SceneOptionEditor } from '../../ide/workbench/contrib/scene_editor/opti
 import { layoutSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
@@ -37,7 +37,7 @@ function fixture(source = SOURCE) {
 	const refresh = () => {
 		if (boundSource === model.buffer.getText()) return;
 		boundSource = model.buffer.getText();
-		installSceneOutline(input, buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(boundSource, 'room.lua'))));
+		installSceneOutline(input, buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(boundSource, model.resource)], ['cartlib/world/scene_library']))));
 		selectSceneOutlineRow(input, 1);
 		layoutSceneEditor(input, true, false, { left: 0, top: 24, right: 384, bottom: 276 });
 		editor.bind(input);

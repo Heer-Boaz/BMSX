@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -26,7 +27,7 @@ test('call hierarchy presentation follows named lexical scopes, not execution fl
 test('anonymous calls follow edited parent attachments while the previous generation stays unchanged', () => {
 	const source = 'local function outer()\n' + '-- parser boundary\n'.repeat(80)
 		+ 'return function() target() end\nend';
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['owners.lua']));
 	const old = workspace.updateFile('owners.lua', source);
 	const oldCallers = getLuaCallHierarchyCallers(old);
 	const offset = source.indexOf('outer');
@@ -48,7 +49,7 @@ test('anonymous calls follow edited parent attachments while the previous genera
 });
 
 test('public incoming hierarchy groups anonymous calls by named owner and module', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['hierarchy.lua']));
 	const file = workspace.updateFile('hierarchy.lua', [
 		'local function target() end',
 		'local function outer()',

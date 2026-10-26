@@ -1,5 +1,5 @@
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture, type ResourceLuaSemanticFixtureFile } from './lua_semantic_project';
 import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
-import { semanticSnapshot } from '../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -11,8 +11,10 @@ import { installBehaviorLensDocument, prepareBehaviorLensLayout, selectBehaviorL
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavior_lens/source_correspondence';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
-import { buildLuaFileSemanticData, type FileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { BT_ORDER_SOURCE } from './behavior_order_fixture';
+
+const API_MODULES = ['cartlib/behaviour_tree/library'];
 
 export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_SOURCE, definition = 0) {
 	const previous = { font: editorViewState.font, viewportWidth: editorViewState.viewportWidth, viewportHeight: editorViewState.viewportHeight,
@@ -20,10 +22,10 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 	t.after(() => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, editorAreaTop: 24, editorAreaBottom: 276 });
 	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'order.lua' }, sourceFilePath: 'order.lua', domain: 0, path: 'order.lua', source: { type: 'lua', resid: 'order' } }, 'lua', source);
-	let analysis: FileSemanticData;
+	let analysis: ResourceLuaSemanticFixtureFile;
 	const project = () => {
-		analysis = buildLuaFileSemanticData(model.buffer.getText(), model.resource.path);
-		return buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
+		analysis = buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource);
+		return buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], API_MODULES)));
 	};
 	const document = project();
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);

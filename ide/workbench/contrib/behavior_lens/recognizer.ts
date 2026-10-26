@@ -1,6 +1,6 @@
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import type { ResourceIdentity } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import { collectBehaviorRegistrations, type BehaviorRegistration } from './registrations';
 import { buildActionEffectBody } from './action_effect';
 import { buildBehaviorTreeDefinition } from './behavior_tree';
@@ -29,7 +29,7 @@ export function buildBehaviorSourceDocument(
 	resource: ResourceIdentity,
 	snapshot: LuaSemanticWorkspaceSnapshot,
 ): BehaviorSourceDocument {
-	const analysis = snapshot.getFileData(resource.path)!;
+	const analysis = snapshot.getFileData(resourceIdentityKey(resource))!;
 	const reader = new LuaSourceReader(snapshot);
 	reader.files.add(analysis);
 	const { registrations } = collectBehaviorRegistrations(resource, reader);

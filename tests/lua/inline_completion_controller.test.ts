@@ -2,6 +2,7 @@ import { createTestCodeControl } from '../helpers/code_control';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
+import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
@@ -43,7 +44,7 @@ function fixture(t: TestContext, source: string, columnOffset = source.length) {
 		assert.equal(native.replaceText(at, at, text), true);
 	};
 	const settle = () => { clock.advance(200); controller.processPending(0.2); };
-	return { code, model, view, controller, type, settle, documents, clock };
+	return { code, model, view, controller, type, settle, documents, clock, sources };
 }
 
 test('real native typing publishes one widget-owned inline edit; reading it does not read candidates or source', t => {
@@ -126,6 +127,7 @@ test('an actual empty require-path candidate inserts at a zero-width range with 
 	const source = "local m = require('')", column = source.indexOf("')"), f = fixture(t, source, column);
 	editorTextModelService.retain({ sourceFilePath: 'module/real.lua', location: { kind: 'workspace' as const, path: 'module/real.lua' }, domain: 0, path: 'module/real.lua',
 		source: { type: 'lua', resid: 'real-module', source_path: 'module/real.lua' } }, 'lua', 'return {}');
+	registerLuaSourceRecord(f.sources.cartridgeSlots[0]!.luaSources, createScenarioTestSourceRecord('module/real.lua', 1, 'return {}'));
 	const candidates = f.controller.listCompletionCandidates()!, item = candidates.filteredItems.find(item => item.insertText === 'module/real')!;
 	assert.equal(candidates.context.kind, 'module'); assert.equal(candidates.context.replaceFromColumn, column);
 	assert.equal(candidates.context.replaceToColumn, column); assert.ok(item);
@@ -279,6 +281,7 @@ for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', '
 test('module completion preserves authored case and exact path replacement range', t => {
 	const source = "local m = require('art/P_tail')", f = fixture(t, source, source.indexOf('_tail'));
 	editorTextModelService.retain({ sourceFilePath: 'art/Picture.lua', location: { kind: 'workspace' as const, path: 'art/Picture.lua' }, domain: 0, path: 'art/Picture.lua', source: { type: 'lua', resid: 'picture', source_path: 'art/Picture.lua' } }, 'lua', 'return {}');
+	registerLuaSourceRecord(f.sources.cartridgeSlots[0]!.luaSources, createScenarioTestSourceRecord('art/Picture.lua', 1, 'return {}'));
 	f.type('i'); f.settle();
 	const edit = f.code.inlineEdit;
 	assert.equal(edit.active, true); assert.equal(edit.preserveCase, true); assert.equal(edit.text, 'cture');

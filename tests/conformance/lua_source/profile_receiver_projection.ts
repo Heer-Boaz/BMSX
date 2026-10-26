@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture } from '../../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { buildLuaFileSemanticData, buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 import { medianMilliseconds } from '../../helpers/performance';
@@ -22,12 +23,12 @@ for (const receivers of [32, 256]) {
 	const input = [{ path: file.file, source, analysis: file }];
 	let targetCount = 0;
 	const queryMilliseconds = medianMilliseconds(() => {
-		const snapshot = buildLuaSemanticWorkspaceSnapshot(input);
+		const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture(input));
 		targetCount = 0;
 		for (const reference of references) targetCount += snapshot.symbolResolver.resolveReferenceTargets(reference).length;
 	});
 	assert.equal(targetCount, receivers);
-	const snapshot = buildLuaSemanticWorkspaceSnapshot(input);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture(input));
 	for (let index = 0; index < references.length; index += 1) {
 		assert.deepEqual(snapshot.symbolResolver.resolveReferenceTargets(references[index]), [declarations[index].id]);
 	}

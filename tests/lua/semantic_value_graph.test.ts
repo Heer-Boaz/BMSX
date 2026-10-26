@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { wholeProgramSymbolAt, wholeProgramSymbolsAt } from './semantic_test_harness';
@@ -20,7 +21,7 @@ test('semantic workspace projects observed parameter members without merging arg
 		'read_common(right)',
 		'return left.right_only, right.left_only',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const common = wholeProgramSymbolsAt(snapshot, 'main.lua', 4, memberColumn(lines[3], 'common'));
@@ -54,7 +55,7 @@ test('semantic workspace retains every same-name method definition across value 
 		'left:run()',
 		'right:run()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const targets = wholeProgramSymbolsAt(snapshot,
@@ -73,7 +74,7 @@ test('semantic workspace retains every same-name method definition across value 
 
 test('semantic workspace hides base methods overridden by a derived class', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['base.lua', 'derived.lua', 'main.lua']));
 	workspace.updateFile('base.lua', [
 		'local base<const> = {}',
 		'function base:run() end',
@@ -119,7 +120,7 @@ test('semantic workspace retains member writes through reused table elements', a
 		'initialize(entries[1])',
 		'clear(entries[1])',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const counts = wholeProgramSymbolAt(workspace.getSnapshot(),
 		'main.lua',
@@ -144,7 +145,7 @@ test('semantic workspace propagates table elements through standard generic iter
 		'\tentry:run()',
 		'end',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const target = wholeProgramSymbolAt(workspace.getSnapshot(),
 		'main.lua',
@@ -174,7 +175,7 @@ test('semantic workspace does not assign builtin iterator semantics to a shadowi
 		'\tentry:run()',
 		'end',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 
 	assert.equal(
@@ -196,7 +197,7 @@ test('semantic workspace propagates values through higher-order calls', async ()
 		'invoke(initialize, item)',
 		'return item.ready',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const ready = wholeProgramSymbolAt(workspace.getSnapshot(),
 		'main.lua',
@@ -220,7 +221,7 @@ test('semantic workspace follows function values through table member aliases', 
 		'local pipeline<const> = { step = program.evaluate }',
 		'pipeline.step(component)',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const wait = wholeProgramSymbolAt(workspace.getSnapshot(),
 		'main.lua',
@@ -245,7 +246,7 @@ test('semantic workspace projects callbacks stored in aggregate arguments', asyn
 		'end',
 		'invoke({ callback = callback })',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const run = wholeProgramSymbolAt(
 		workspace.getSnapshot(),
@@ -274,7 +275,7 @@ test('aggregate callbacks project through dynamically resolved methods', async (
 		'local instance<const> = setmetatable({}, component)',
 		'instance:invoke({ callback = callback })',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const run = wholeProgramSymbolAt(
 		workspace.getSnapshot(),
@@ -308,7 +309,7 @@ test('aggregate callback projections retain their callsite roles', async () => {
 		'invoke({ callback = left_callback }, left)',
 		'invoke({ callback = right_callback }, right)',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const targetAt = (line: number, name: string) => wholeProgramSymbolAt(
@@ -340,7 +341,7 @@ test('aggregate callback projections converge through forwarding functions', asy
 		'end',
 		'forward({ callback = callback })',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const run = wholeProgramSymbolAt(
 		workspace.getSnapshot(),
@@ -365,7 +366,7 @@ test('unresolved aggregate members do not open unrelated final-name effects', as
 		'\tprojectile.source:blit()',
 		'end',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 
 	assert.equal(
@@ -396,7 +397,7 @@ test('semantic workspace evaluates every dynamic callee before resolving argumen
 		'local selected<const> = classes[1].new(manager.world)',
 		'return selected.left_value, selected.right_value',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const left = wholeProgramSymbolAt(snapshot, 'main.lua', 12, lines[11].indexOf('left_value') + 1);
@@ -422,7 +423,7 @@ test('semantic workspace retains every object-return branch', async () => {
 		'local selected<const> = select_value(true)',
 		'return selected.left_value, selected.right_value',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const left = wholeProgramSymbolAt(snapshot, 'main.lua', 10, lines[9].indexOf('left_value') + 1);
@@ -447,7 +448,7 @@ test('semantic workspace keeps function return values contextual to each callsit
 		'return selected_left.left_only, selected_left.right_only,',
 		'\tselected_right.right_only, selected_right.left_only',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
@@ -490,7 +491,7 @@ test('semantic workspace keeps bound nested calls attached to their lexical clos
 		'return selected_left.left_only, selected_left.right_only,',
 		'\tselected_right.right_only, selected_right.left_only',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
@@ -534,7 +535,7 @@ test('semantic workspace keeps parameter-indexed return values contextual to eac
 		'selected_left:right_only()',
 		'selected_right:left_only()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	let snapshot = workspace.getSnapshot();
 
@@ -577,7 +578,7 @@ test('semantic workspace keeps parameter-keyed table writes contextual to each i
 		'selected_left:right_only()',
 		'selected_right:left_only()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
@@ -610,7 +611,7 @@ test('semantic workspace reads index keys as values through reciprocal table map
 		'objects[first]:right_only()',
 		'objects[second]:left_only()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	for (const line of [14, 16]) {
@@ -637,7 +638,7 @@ test('semantic workspace maps numeric loop keys to the shared table element doma
 		'\tslot:disable()',
 		'end',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const target = wholeProgramSymbolAt(
 		workspace.getSnapshot(),
@@ -664,7 +665,7 @@ test('semantic workspace reads literal table entries through a numeric loop key'
 		'\tslot:right_only()',
 		'end',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
@@ -693,7 +694,7 @@ test('semantic workspace keeps literal table indices disjoint from the element d
 		'slots[1]:left_only()',
 		'slots[1]:right_only()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
@@ -719,7 +720,7 @@ test('semantic workspace summarizes recursive value flow without unbounded call 
 		'walk(root)',
 		'return root.visited',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const visited = wholeProgramSymbolAt(workspace.getSnapshot(),
 		'main.lua',
@@ -745,7 +746,7 @@ test('semantic workspace widens recursive local aliases into one call context', 
 		'propagate(source, target)',
 		'return target.visited',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const visited = wholeProgramSymbolAt(
 		workspace.getSnapshot(),
@@ -789,7 +790,7 @@ test('semantic workspace passes colon-call receivers through nested method calls
 		'selected_left:right_only()',
 		'selected_right:left_only()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
@@ -820,7 +821,7 @@ test('candidate call names do not instantiate an unresolved receiver', async () 
 		'end',
 		'return producer',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['acquire.lua', 'consumer.lua', 'producer.lua']));
 	workspace.updateFile('acquire.lua', 'return function() return {} end');
 	workspace.updateFile('consumer.lua', consumerLines.join('\n'));
 	workspace.updateFile('producer.lua', producerLines.join('\n'));
@@ -855,7 +856,7 @@ test('semantic workspace retains projected receiver effects through ordinary fun
 		'local instance<const> = setmetatable({}, actor)',
 		'consume(instance)',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const inherited = wholeProgramSymbolAt(
 		workspace.getSnapshot(),
@@ -888,7 +889,7 @@ test('semantic workspace observes the current metatable after repeated setmetata
 		'left_metatable:right_only()',
 		'right_metatable:left_only()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
@@ -909,7 +910,7 @@ test('semantic workspace follows ordinary Lua metatable identity through getmeta
 		'value:run()',
 		'metatable:run()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
@@ -930,7 +931,7 @@ test('semantic workspace applies metatables to values passed through function pa
 		'apply_prototype(derived, base)',
 		'derived:inherited()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const usageLine = lines.length;
 	const result = wholeProgramSymbolAt(workspace.getSnapshot(),
@@ -950,7 +951,7 @@ test('semantic workspace preserves both value alternatives of Lua and-or express
 		'local selected<const> = primary or fallback',
 		'return selected.primary_value, selected.fallback_value',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const primary = wholeProgramSymbolAt(snapshot, 'main.lua', 4, lines[3].indexOf('primary_value') + 1);
@@ -975,7 +976,7 @@ test('semantic workspace retains every prototype alternative of an abstract valu
 		'selected:left_only()',
 		'selected:right_only()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const left = wholeProgramSymbolAt(snapshot, 'main.lua', 8, memberColumn(lines[7], 'left_only'));
@@ -1001,7 +1002,7 @@ test('semantic workspace publishes direct method receiver members without execut
 		'end',
 		'read(value)',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const blink = wholeProgramSymbolAt(workspace.getSnapshot(),
 		'main.lua',
@@ -1025,7 +1026,7 @@ test('semantic summaries project implicit self onto the declared receiver', asyn
 		'local right<const> = {}',
 		'function right:target() end',
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['methods.lua']));
 	workspace.updateFile('methods.lua', source);
 	const target = wholeProgramSymbolAt(workspace.getSnapshot(), 'methods.lua', 4, 7);
 
@@ -1082,7 +1083,7 @@ test('semantic workspace resolves fields injected by a generic instance factory 
 		"catalog.define('spectator', spectator)",
 		'return spectator',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['catalog.lua', 'factory.lua', 'actor.lua', 'spectator.lua', 'main.lua']));
 	workspace.updateFile('catalog.lua', catalogSource);
 	workspace.updateFile('factory.lua', factoryLines.join('\n'));
 	workspace.updateFile('actor.lua', actorLines.join('\n'));
@@ -1202,7 +1203,7 @@ test('semantic workspace retains contextual prototype effects through configurat
 		'end',
 		'return spectator',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['channel.lua', 'base.lua', 'catalog.lua', 'factory.lua', 'actor.lua', 'spectator.lua', 'main.lua']));
 	workspace.updateFile('channel.lua', channelLines.join('\n'));
 	workspace.updateFile('base.lua', baseLines.join('\n'));
 	workspace.updateFile('catalog.lua', catalogLines.join('\n'));
@@ -1306,7 +1307,7 @@ test('semantic workspace follows co-attached extension effects through a generic
 		'end',
 		'return consumer',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['host.lua', 'controller.lua', 'consumer.lua', 'noise.lua', 'monitor.lua', 'main.lua']));
 	workspace.updateFile('host.lua', hostLines.join('\n'));
 	workspace.updateFile('controller.lua', controllerLines.join('\n'));
 	workspace.updateFile('consumer.lua', consumerLines.join('\n'));
@@ -1392,7 +1393,7 @@ test('generic host calls do not apply an unrelated extension lifecycle effect', 
 		'end',
 		'return consumer',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['host.lua', 'controller.lua', 'noise.lua', 'consumer.lua', 'main.lua']));
 	workspace.updateFile('host.lua', hostLines.join('\n'));
 	workspace.updateFile('controller.lua', [
 		'local controller<const> = {}',
@@ -1451,7 +1452,7 @@ test('generic host lifecycle effects stay with the receiver of their attachment 
 		'end',
 		'return right',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['host.lua', 'controller.lua', 'visual.lua', 'left.lua', 'right.lua', 'main.lua']));
 	workspace.updateFile('host.lua', [
 		'local host<const> = {}',
 		'host.__index = host',
@@ -1529,7 +1530,7 @@ test('semantic workspace projects extension effects through retained factory agg
 		'end',
 		'return actor',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['catalog.lua', 'host.lua', 'controller.lua', 'actor.lua', 'main.lua']));
 	workspace.updateFile('catalog.lua', [
 		'local definitions<const> = {}',
 		'local catalog<const> = {}',
@@ -1610,7 +1611,7 @@ test('semantic workspace propagates member effects through forwarding call summa
 		'outer(map, item)',
 		'return item.ready',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const ready = wholeProgramSymbolAt(
 		workspace.getSnapshot(),
@@ -1645,7 +1646,7 @@ test('forwarding call summaries preserve callsite receiver identity', async () =
 		'local yes<const> = written.ready',
 		'local no<const> = untouched.ready',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 

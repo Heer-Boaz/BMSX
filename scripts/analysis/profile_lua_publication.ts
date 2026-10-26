@@ -1,3 +1,4 @@
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 // npx tsx --tsconfig tsconfig.base.json scripts/analysis/profile_lua_publication.ts workspace.json
 import { readFileSync } from 'node:fs';
 import { cpus } from 'node:os';
@@ -10,9 +11,10 @@ const initialParseBindMilliseconds = performance.now() - bindStart;
 const keys = files.flatMap(file => file.decls.map(decl => decl.id));
 const times = { initialPublication: [] as number[], firstGlobals: [] as number[], allDeclarationLookups: [] as number[] };
 const warmup = 10, samples = 30;
+const modules = new Map(sources.map(source => [toLuaModulePath(source.path), source.path]));
 let found = 0;
 for (let pass = 0; pass < warmup + samples; pass++) {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(new Map(sources.map(source => [source.path, modules])));
 	const start = performance.now();
 	workspace.updateFiles(files);
 	const snapshot = workspace.getSnapshot();

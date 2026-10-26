@@ -1,3 +1,4 @@
+import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { openHome } from '../../ide/workbench/contrib/home/editor_input';
@@ -9,9 +10,9 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { ClipboardContents } from '../../hosts/common/clipboard';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
-import { resourceIdentityKeyFromParts } from '../../ide/common/resource';
+import { resourceIdentityKey, resourceIdentityKeyFromParts } from '../../ide/common/resource';
 import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
-import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { editorTextModelService, EditorTextModelService } from '../../ide/editor/model/model_service';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../ide/editor/ui/view/view';
@@ -33,7 +34,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { CodeEditorInputSerializer } from '../../ide/workbench/contrib/code_editor/editor_serializer';
 import { getSingleCursorSelectionRange } from '../../ide/editor/editing/cursor/state';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
+import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
@@ -420,9 +421,13 @@ test('actual inspector and source attachments leave Call Hierarchy expansion and
 	const calls = 'local function target() end\n'
 		+ Array.from({ length: 20 }, (_, index) => `local function caller_${index}() target() end`).join('\n') + '\n'
 		+ Array.from({ length: 40 }, (_, index) => `local function leaf_${index}() caller_0() end`).join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source: calls }]);
-	const symbol = frontend.findSymbolsByPosition('calls.lua', 1, 16)!;
-	const hierarchy = new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target');
+	const project = new EditorLuaSemanticProject(-1, new EditorTextModelService());
+	const callsResource = { domain: -1 as const, path: 'calls.lua' };
+	project.updateDocument(callsResource, calls);
+	t.after(() => project.dispose());
+	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
+	const symbol = frontend.findSymbolsByPosition(resourceIdentityKey(callsResource), 1, 16)!;
+	const hierarchy = new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target', project);
 	panel.showCallHierarchy(hierarchy); panel.prepareLayout();
 	const firstLevel = panel.itemCount;
 	panel.setSelectionIndex(1); panel.expandSelectedCallHierarchyNode();
@@ -717,9 +722,13 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 		const calls = 'local function target() end\n'
 			+ Array.from({ length: 20 }, (_, index) => `local function caller_${index}() target() end`).join('\n') + '\n'
 			+ Array.from({ length: 40 }, (_, index) => `local function leaf_${index}() caller_0() end`).join('\n');
-		const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source: calls }]);
-		const symbol = frontend.findSymbolsByPosition('calls.lua', 1, 16)!;
-		panel.showCallHierarchy(new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target'));
+		const project = new EditorLuaSemanticProject(-1, new EditorTextModelService());
+		const callsResource = { domain: -1 as const, path: 'calls.lua' };
+		project.updateDocument(callsResource, calls);
+		t.after(() => project.dispose());
+		const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
+		const symbol = frontend.findSymbolsByPosition(resourceIdentityKey(callsResource), 1, 16)!;
+		panel.showCallHierarchy(new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target', project));
 		panel.setSelectionIndex(1); const firstLevel = panel.itemCount; panel.expandSelectedCallHierarchyNode();
 		assert.ok(panel.itemCount > firstLevel); panel.setSelectionIndex(25);
 	}

@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import { semanticAnswers } from './semantic_test_harness';
 import { getLuaSemanticAnnotations } from '../../toolchain/ts/lua/semantic/tokens';
 import { luaSyntaxSnapshot } from '../helpers/lua_syntax_snapshot';
@@ -37,7 +38,7 @@ test('binding consumes the supplied syntax generation independently of other doc
 test('workspace construction retains an explicitly supplied parse generation', () => {
 	const cached = buildLuaFileSemanticData(original, path);
 	const parsed = parseLuaChunkWithRecovery(original, path);
-	const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path, source: original, parsed }]);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path, source: original, parsed }]));
 	assert.notEqual(parsed.chunk, cached.chunk);
 	assert.equal(snapshot.getFileData(path)!.chunk, parsed.chunk);
 	assert.notEqual(buildLuaFileSemanticData(original, path).chunk, parsed.chunk,
@@ -45,7 +46,7 @@ test('workspace construction retains an explicitly supplied parse generation', (
 });
 
 test('workspace updates publish explicit generations even when source text is equal', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path]));
 	const first = workspace.updateFile(path, original);
 	const old = workspace.getSnapshot();
 	const parsed = parseLuaChunkWithRecovery(original, path);
@@ -84,7 +85,7 @@ const edits = [
 
 for (const [name, edited] of edits) {
 	test(`workspace edit matches fresh parse/bind and preserves old snapshots: ${name}`, () => {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path, 'consumer.lua']));
 		workspace.updateFile(path, original);
 		workspace.updateFile('consumer.lua', "local item<const> = require('edit')\nitem:run()");
 		const retained = workspace.getSnapshot();
@@ -99,7 +100,7 @@ for (const [name, edited] of edits) {
 			assert.deepEqual(luaSyntaxSnapshot(updated.chunk), luaSyntaxSnapshot(parsed.chunk));
 			assert.deepEqual(updated.syntaxError, parsed.syntaxError);
 			assert.deepEqual(getLuaSemanticAnnotations(updated), getLuaSemanticAnnotations(fresh));
-			const cold = new LuaSemanticWorkspace();
+			const cold = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path, 'consumer.lua']));
 			cold.updateFiles([fresh, buildLuaFileSemanticData(consumer!.source, consumer!.file,
 				parseLuaChunkWithRecovery(consumer!.source, consumer!.file))]);
 			assert.deepEqual(semanticAnswers(workspace.getSnapshot()), semanticAnswers(cold.getSnapshot()));
@@ -111,7 +112,7 @@ for (const [name, edited] of edits) {
 }
 
 test('public workspace edit maps retain lexical islands and match fresh binding through repair and undo', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path]));
 	let source = original + '\n-- retained suffix\n'.repeat(80);
 	const initial = workspace.updateFile(path, source);
 	const retained = workspace.getSnapshot();
@@ -130,7 +131,7 @@ test('public workspace edit maps retain lexical islands and match fresh binding 
 		]);
 		source = source.slice(0, edit.offset) + edit.inserted + source.slice(edit.offset + edit.deletedLength);
 		const updated = workspace.updateFile(path, source, changes);
-		const coldWorkspace = new LuaSemanticWorkspace();
+		const coldWorkspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path]));
 		coldWorkspace.updateFile(path, source);
 		const cold = coldWorkspace.getSnapshot();
 		assert.deepEqual(luaSyntaxSnapshot(updated.chunk), luaSyntaxSnapshot(cold.getFileData(path)!.chunk));

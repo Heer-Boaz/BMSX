@@ -1,8 +1,8 @@
 # Shared behavior source tools
 
-## Design gate
+## Design references
 
-References studied before implementation:
+The ownership boundaries follow these production implementations:
 
 * [VS Code bulk text edits](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/bulkEdit/browser/bulkTextEdits.ts):
   resource-owned models and expected versions are independent of an editor view;
@@ -33,6 +33,12 @@ partial resolution, and FSM entry/possible-outcome relations. They do not claim
 that a branch executes or that a runtime guard succeeds. Repeated semantic ids
 and shared constructors remain distinct authored registration occurrences.
 
+Each `sources` entry maps its opaque `file` address to the actual source
+identity (`domain`, `path`), captured version and read-only state. Source ranges
+use that address in `range.path`; consumers resolve it through `sources`, not
+by decoding the address or assuming the registration's domain. The logical
+resource path remains a label, not filesystem authority.
+
 The first source-edit operations are FSM initial selection; BT child removal,
 duplication and adjacent ordering; and ActionEffect expression replacement.
 The ordinary visual commands and tools use the same admission facts and syntax
@@ -52,53 +58,18 @@ comments. No new source serialization or cartlib ABI is introduced.
 
 ## Representation and performance
 
-This slice is IDE source tooling only: no machine, BIOS, cartlib, C++ or guest
-value representation changes. No runtime hot-path callsites are modified.
+Behavior source tools consume Studio source facts, independently of machine,
+BIOS, cartlib and guest-value representations. They do not execute guest code.
 Work occurs only on an explicit source query/edit or a normal Lens generation
 update. Registration discovery is shallow; full topology is lazy. Reads reuse
 workspace generation caches; the tool transport projection is built once per
 requested registration and reused, without pixel layout or guest evaluation.
 
-## Still open in the complete toolset
+## Source versus runtime
 
-These source tools are **not** semantic live Actor/FSM/BT/ActionEffect inspection
-or mutation. Raw live values already have separate inspection tools. Actor
-operations must respect World mutation boundaries and borrowed runtime-value
-lifetimes rather than reuse source handles. FSM transition retargeting and BT
-cross-parent transfer also remain separate source operations: their existing
-consumer-impact review must not be skipped. Cart/frame Terminal context,
-cross-turn test-debugger control, and Save/build/install acceptance remain on the
-full runtime-tools plan.
-
-## Validation (2026-09-24)
-
-* Ten new source-tool tests cover supplied (not global) working copies, cached
-  reads without reparsing, duplicate/unresolved registrations, imported shared
-  FSM parents and actual transition proof, absent initial insertion, all four BT
-  list edits, ActionEffect expression boundaries, generated/recovered source,
-  foreign/expired handles, dependency changes, disconnect and ordinary Undo.
-* The real browser -> authorized HTTP -> native Codex app-server -> deterministic
-  local Responses fixture exercises all five tools on software, WebGL2 and
-  WebGPU. Per backend: three prompts, twelve model requests, one connection, no
-  review polling. Keyboard/pointer review Apply updates the actual FSM graph,
-  BT graph and effect properties; ordinary Undo/Redo retains exact source.
-  Completed screenshots were inspected, including
-  `/tmp/bmsx-studio-chat/behavior-webgpu-{review-0,builder-0,builder-1,builder-2}.png`.
-  Fixture setup edits working copies programmatically: this is automated
-  integration/visible-control evidence, not UI-only development or live-model
-  reasoning/account authentication.
-* Full Lua suite: 2495 pass, one skip. Rompacker: 182 pass. Full assistant suite:
-  42 pass; the final semantic-tool tests also pass independently on all three
-  backends. The ordinary WebGL2 Studio workflow completes 9086 host frames,
-  including existing builder edits, navigation, history and test debugging.
-* Browser Studio/Node tooling builds and product typechecks pass. Tests-project
-  typechecking has 95 existing diagnostics (96 before; one obsolete extra edit
-  argument removed). Normalized comparison introduces none. Strict architecture
-  audit: zero issues; core parity, indentation and diff checks pass. No C++,
-  machine, BIOS or cartlib code changed in this source-only slice.
-* `profile_behavior_tools.ts` measures 96/3072 synthetic registrations: cold
-  discovery about 11/64 ms; first three reads including whole-file topology
-  about 6/49 ms. Warm retained-projection lookup medians were 0.02/0.06 us in
-  the batched in-process probe. Those numbers exclude transport, rendering and
-  model latency, and are not a total-Studio-frame or runtime benchmark. Repeated
-  reads retain identical projections and no extra parser calls.
+Authored registration tools and live Actor/FSM/BT/ActionEffect inspection have
+separate subjects and lifetimes. Runtime operations retain their explicit
+physical target and borrowed-value lifetime; source handles cannot name a
+running instance. Source transition or transfer edits use their owning
+consumer-impact review. Source review, Save, build and installation remain
+separate operations.

@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { SemanticTermStore, type TermID } from '../../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../../toolchain/ts/lua/semantic/identity';
@@ -9,7 +10,7 @@ for (const objects of [32, 256]) {
 	let evaluations = 0;
 	const milliseconds = medianMilliseconds(() => {
 		const terms = new SemanticTermStore(
-			new WorkspaceValueIdentityIndex({ files: [], globalValues: new Map() }), new Map(), new Map(),
+			new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([]).map(file => file.file)), files: [], globalValues: new Map() }), new Map(), new Map(),
 		);
 		const queries = new SemanticQueryResults<TermID>(terms.dependencies);
 		const names = [terms.nameId('existing'), terms.nameId('later')];

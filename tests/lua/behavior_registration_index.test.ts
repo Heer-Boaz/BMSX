@@ -1,4 +1,5 @@
-import { semanticSnapshot } from './semantic_test_harness';
+import { resourceIdentityKey } from '../../ide/common/resource';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { BehaviorSourceIndex } from '../../ide/workbench/contrib/behavior_lens/source_index';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
@@ -16,11 +17,13 @@ import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import { buildBehaviorQuickPickItems } from '../../ide/workbench/contrib/behavior_lens/quick_access';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { QuickPickModel } from '../../ide/workbench/services/quick_input/model';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
+
+const API_MODULES = ['cartlib/fsm/library','cartlib/behaviour_tree/library','cartlib/actioneffects'];
 
 function luaSource(path: string, source: string): LuaSourceRecord {
 	return {
@@ -48,8 +51,9 @@ function sourceRegistry(projectRootPath: string, records: readonly LuaSourceReco
 		can_boot_from_source: true,
 		revision: 0,
 	};
-	for (let index = 0; index < records.length; index += 1) {
-		registerLuaSourceRecord(registry, records[index]);
+	const admitted = projectRootPath === 'machine/bios' ? [...records, ...API_MODULES.map(module => luaSource(`${module}.lua`, ''))] : records;
+	for (let index = 0; index < admitted.length; index += 1) {
+		registerLuaSourceRecord(registry, admitted[index]);
 	}
 	return registry;
 }
@@ -68,16 +72,16 @@ test('API-provider edits and Undo update the catalogue and open documents withou
 	const document = documents.get(main);
 	assert.equal(document.definitions.length, 2);
 	const project = getOrCreateSemanticProject(editorTextModelService, 0);
-	const analysis = project.getFileData(main.resource.path);
+	const analysis = project.getFileData(main.resource);
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return replacement' }]);
 	assert.deepEqual(index.getRegistrations(0), []);
 	assert.equal(documents.get(main).definitions.length, 0);
-	assert.equal(project.getFileData(main.resource.path), analysis);
+	assert.equal(project.getFileData(main.resource), analysis);
 	assert.equal(main.dirty, false);
 	provider.undo();
 	assert.deepEqual(index.getRegistrations(0).map(entry => entry.semanticId), ['one', 'two']);
 	assert.deepEqual(documents.get(main).definitions.map(entry => entry.rowKey), document.definitions.map(entry => entry.rowKey));
-	assert.equal(project.getFileData(main.resource.path), analysis);
+	assert.equal(project.getFileData(main.resource), analysis);
 	assert.equal(provider.dirty, false);
 });
 
@@ -109,7 +113,7 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	});
 	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
 	const registrations = index.getRegistrations(0);
-	const definitionKeys = buildBehaviorSourceDocument({ domain: 0, path }, semanticSnapshot(buildLuaFileSemanticData(source, path)))
+	const definitionKeys = buildBehaviorSourceDocument({ domain: 0, path }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { domain: 0, path: path })], API_MODULES)))
 		.definitions.map(node => node.rowKey);
 	assert.deepEqual(registrations.map(registration => registration.rowKey), definitionKeys);
 	assert.equal(new Set(definitionKeys).size, 5);
@@ -351,7 +355,7 @@ test('an added module export refreshes cached behavior ids and topology without 
 	const after = documents.get(main);
 	assert.notEqual(after, before);
 	assert.equal(after.definitions[0].resolution, 'complete');
-	assert.equal(after.definitions[0].authoredRange.path, 'definition.lua');
+	assert.equal(after.definitions[0].authoredRange.path, resourceIdentityKey({ domain: 0, path: 'definition.lua' }));
 	assert.equal(index.getRegistrations(0)[0].semanticId, 'new.export');
 	assert.equal(main.version, 1);
 	id.undo(); provider.undo();

@@ -13,7 +13,7 @@ export type DefinitionQuickPickItem = QuickPickItem & { readonly target: LuaDefi
 
 export function buildDefinitionQuickPickItems(definitions: readonly LuaDefinitionTarget[]): DefinitionQuickPickItem[] {
 	return definitions.map(target => ({ target, label: target.namePath.length === 0 ? target.name : target.namePath.join('.'),
-		description: target.location.path,
+		description: target.resource.path,
 		detail: `${target.kind === 'module' ? 'MOD' : symbolKindLabel(semanticSymbolKindToLuaSymbolKind(target.kind))} ${target.location.range.startLine}:${target.location.range.startColumn}`,
 	}));
 }
@@ -27,14 +27,14 @@ export function openDefinitionSearch(pane: CodeEditorPane, row: number, column: 
 		return false;
 	}
 	if (query.definitions.length === 1) {
-		navigateToLuaDefinition(pane, resource.domain, query.definitions[0].location);
+		navigateToLuaDefinition(pane, query.definitions[0].resource, query.definitions[0].location);
 		return true;
 	}
 	pane.code.references.clear();
 	pane.editor.quickInput.pick(`DEFINITIONS: ${query.label}`, 'Type to filter definitions', (_origin, lifetime) => {
 		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => pane.editor.quickInput.hide()));
 		return new TextQuickPickProvider(buildDefinitionQuickPickItems(query.definitions));
-	}, item => navigateToLuaDefinition(pane, resource.domain, item.target.location),
+	}, item => navigateToLuaDefinition(pane, item.target.resource, item.target.location),
 		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));
 	return true;
 }

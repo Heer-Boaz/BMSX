@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData, buildLuaSemanticWorkspaceSnapshot, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -15,7 +16,7 @@ test('each written member function owns its definition occurrence and function f
 	assert.deepEqual(file.memberValues.map(member => member.declId), definitions.map(decl => decl.id));
 	const read = file.refs.find(ref => ref.name === 'run' && !ref.isWrite)!;
 	assert.equal(read.target, undefined, 'binding must not bake an earlier navigation winner into a member read');
-	const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path: file.file, source: file.source, analysis: file }]);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: file.file, source: file.source, analysis: file }]));
 	assert.deepEqual(snapshot.symbolResolver.resolveReferenceTargets(read), definitions.map(decl => decl.id));
 	assert.deepEqual(snapshot.symbolResolver.resolveCallableTargets(file.callSites[0]), definitions.map(decl => decl.id));
 });
@@ -50,7 +51,7 @@ test('nested local member paths stay local without a prior field navigation witn
 test('constructor member values do not cross between repeated assignments to one lexical binding', () => {
 	const file = buildLuaFileSemanticData(`local object = { slot = { first = true } }
 object = { slot = { second = true } }`, 'constructors.lua');
-	const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path: file.file, source: file.source, analysis: file }]);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: file.file, source: file.source, analysis: file }]));
 	const object = file.decls.find(decl => decl.name === 'object')!;
 	const sources = file.declarationValuesByDeclaration.get(object.id)!;
 	for (const [index, expected] of ['first', 'second'].entries()) {
@@ -69,7 +70,7 @@ object.run()`, 'string-keys.lua');
 	assert.notEqual(first.declId, second.declId);
 	assert.deepEqual(first.owner, second.owner);
 	assert.equal(first.name, second.name);
-	const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path: file.file, source: file.source, analysis: file }]);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: file.file, source: file.source, analysis: file }]));
 	assert.deepEqual(snapshot.symbolResolver.resolveReferenceTargets(file.refs.find(ref => ref.name === 'run' && !ref.isWrite)!), [first.declId, second.declId]);
 	assert.deepEqual(snapshot.symbolResolver.resolveWholeProgramCallableTargets(file.callSites[0]), [first.declId, second.declId]);
 });
@@ -79,7 +80,7 @@ test('adding and removing a sibling member writer recomposes navigation without 
 	const source = 'local object = {}\nfunction object.run(first) end\n'
 		+ '-- unchanged reader boundary\n'.repeat(80)
 		+ 'local function read() return object.run() end\nreturn read';
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path]));
 	const original = workspace.updateFile(path, source);
 	const old = workspace.getSnapshot();
 	const read = original.refs.find(ref => ref.name === 'run' && !ref.isWrite)!;
@@ -93,7 +94,7 @@ test('adding and removing a sibling member writer recomposes navigation without 
 	] as const) {
 		const edited = workspace.updateFile(path, text, change);
 		const snapshot = workspace.getSnapshot();
-		const cold = buildLuaSemanticWorkspaceSnapshot([{ path, source: text }]);
+		const cold = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path, source: text }]));
 		const editedRead = edited.refs.find(ref => ref.name === 'run' && !ref.isWrite)!;
 		assert.equal(snapshot.symbolResolver.resolveReferenceTargets(editedRead).length, count);
 		const project = (current: typeof snapshot) => {
@@ -116,7 +117,7 @@ for (const [name, source] of [
 	['parameter', 'local function install(object)\nobject.run = function(value) end\nobject.run()\nend'],
 ] as const) {
 	test(`exact authored member paths retain navigation without a receiver value: ${name}`, () => {
-		const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path: 'written-path.lua', source }]);
+		const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: 'written-path.lua', source }]));
 		const file = snapshot.getFileData('written-path.lua')!;
 		const definition = file.decls.find(decl => decl.name === 'run')!;
 		const read = file.refs.find(ref => ref.name === 'run' && !ref.isWrite)!;
@@ -131,7 +132,7 @@ test('unknown and dynamic receivers keep written occurrence identity without inv
 		"('text').run = function(value) end;\n('text').run()",
 		'objects[key].run = function(value) end\nobjects[key].run()',
 	]) {
-		const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path: 'unknown-path.lua', source }]);
+		const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: 'unknown-path.lua', source }]));
 		const file = snapshot.getFileData('unknown-path.lua')!;
 		const definition = file.decls.find(decl => decl.name === 'run')!;
 		const write = file.refs.find(ref => ref.name === 'run' && ref.isWrite)!;
@@ -164,7 +165,7 @@ test('hover deduplicates written headers without merging navigation definitions'
 		['local object = {}\nobject.field = 1\nobject.field = 2\nreturn object.field', ['(field) object.field']],
 		['local object = {}\nfunction object.run(value) end\nfunction object.run(value) end\nfunction object.run(other, extra) end\nreturn object.run', ['(function) object.run(value)', '(function) object.run(other, extra)']],
 	] as const) {
-		const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path: 'hover-members.lua', source }]);
+		const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: 'hover-members.lua', source }]));
 		const file = snapshot.getFileData('hover-members.lua')!;
 		const read = file.refs.find(ref => ref.referenceKind === 'member' && !ref.isWrite)!;
 		const position = file.chunk.locations.range(read.span).start;

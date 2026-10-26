@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import { findOrderedSourceSpanEntryAtPosition } from '../../toolchain/ts/lua/semantic/source_range';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -14,7 +15,7 @@ const definitions = [
 ].join('\n');
 
 test('shifted body facts retain identity while presentation belongs to each generation', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['identity.lua']));
 	const source = padding + definitions;
 	const first = workspace.updateFile('identity.lua', source);
 	const retained = workspace.getSnapshot();
@@ -54,7 +55,7 @@ test('rebinding one supplied occurrence keeps its declaration identity, while fi
 });
 
 test('editing a same-file global witness cannot make allocation order choose navigation', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['globals.lua', 'reader.lua']));
 	const source = 'bss counter: word\n' + padding + 'bss counter: word';
 	const first = workspace.updateFile('globals.lua', source);
 	const reader = workspace.updateFile('reader.lua', 'return counter');
@@ -67,7 +68,7 @@ test('editing a same-file global witness cannot make allocation order choose nav
 	assert.equal(current.decls[1].id, first.decls[1].id, 'later witness is shared');
 	assert.deepEqual(workspace.getSnapshot().symbolResolver.resolveReferenceTargets(reader.refs[0]), [current.decls[0].id]);
 	assert.deepEqual(retained.symbolResolver.resolveReferenceTargets(reader.refs[0]), [first.decls[0].id]);
-	const cold = new LuaSemanticWorkspace();
+	const cold = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['globals.lua', 'reader.lua']));
 	const fresh = cold.updateFile('globals.lua', edited);
 	const freshReader = cold.updateFile('reader.lua', 'return counter');
 	assert.deepEqual(cold.getSnapshot().symbolResolver.resolveReferenceTargets(freshReader.refs[0]), [fresh.decls[0].id]);
@@ -76,7 +77,7 @@ test('editing a same-file global witness cannot make allocation order choose nav
 
 test('new earlier lexical bindings change captured references without changing shared declaration identities', () => {
 	const source = 'local value = 1\n' + padding + 'local function read() return value end\nreturn read';
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['capture.lua']));
 	const first = workspace.updateFile('capture.lua', source);
 	const retained = workspace.getSnapshot();
 	const offset = source.indexOf(padding);
@@ -93,7 +94,7 @@ test('new earlier lexical bindings change captured references without changing s
 });
 
 test('shared binder spans resolve through retained and shifted location owners without mutation', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['spans.lua']));
 	const source = padding + definitions;
 	const old = workspace.updateFile('spans.lua', source);
 	const spans = [...old.decls, ...old.refs].map(fact => ({ ...fact.span }));
@@ -140,7 +141,7 @@ test('binding stores spans without materializing a source range for each fact', 
 
 test('ordered span lookup keeps inclusive endpoints without range or position materialization', t => {
 	const source = padding + Array.from({ length: 64 }, (_, index) => `local value_${index} = ${index}`).join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['lookup.lua']));
 	const old = workspace.updateFile('lookup.lua', source);
 	const current = workspace.updateFile('lookup.lua', '\n' + source,
 		SourceChangeMap.unchanged(source.length).append([{ offset: 0, deletedLength: 0, insertedLength: 1 }]));

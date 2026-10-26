@@ -1,4 +1,3 @@
-import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -9,7 +8,8 @@ import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import type { BehaviorRecognizerContext } from '../../ide/workbench/contrib/behavior_lens/source';
 import type { StateMachineSourceDefinition, StateMachineSourceState } from '../../ide/workbench/contrib/behavior_lens/state_machine_model';
 import { bindStateMachineSourcePath, indexStateMachineScopes } from '../../ide/workbench/contrib/behavior_lens/state_machine_scope';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { parseFsmStatePath } from '../../toolchain/ts/cartlib/fsm/state_path';
 import type { LuaSyntaxSpan } from '../../toolchain/ts/lua/syntax/source_locations';
 import { FSM_BEHAVIOR_SOURCE, FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
@@ -18,8 +18,8 @@ function fixture(source = FSM_BEHAVIOR_SOURCE) {
 	const resource = { sourceFilePath: 'fsm_fixture.lua', location: { kind: 'workspace' as const, path: 'fsm_fixture.lua' }, domain: 0 as const, path: 'fsm_fixture.lua',
 		source: { resid: 'fsm_fixture', type: 'lua' as const, source_path: 'fsm_fixture.lua', generated: false } };
 	const model = new EditorTextModel(resource, 'lua', source);
-	const analysis = buildLuaFileSemanticData(source, resource.path);
-	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(analysis));
+	const analysis = buildResourceLuaSemanticFixtureFile(source, resource);
+	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], ['cartlib/fsm/library'])));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	return { model, analysis, document, definition, read: (node: { span: LuaSyntaxSpan }) => readLuaSourceRange(model.buffer, analysis.chunk.locations.range(node.span)) };
@@ -38,7 +38,7 @@ function stateAt(root: StateMachineSourceDefinition | StateMachineSourceState, .
 }
 
 function context(f: ReturnType<typeof fixture>): BehaviorRecognizerContext {
-	return { reader: new LuaSourceReader(semanticSnapshot(f.analysis)),
+	return { reader: new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([f.analysis], ['cartlib/fsm/library']))),
 		anchor: '', registrationRange: f.definition.occurrenceRange, sourceIncomplete: f.analysis.syntaxError !== null, behaviorKind: 'state_machine' };
 }
 

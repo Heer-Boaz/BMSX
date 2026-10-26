@@ -2,7 +2,8 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
+import { resourceIdentityKey } from '../../ide/common/resource';
+import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { searchMatchFromSourceRange } from '../../ide/editor/navigation/source_range';
 import { buildReferenceSources } from '../../ide/editor/contrib/references/sources';
@@ -18,22 +19,26 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { subscribeToLuaModelChanges } from '../../ide/editor/contrib/intellisense/model_lifetime';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
-import type { LuaSymbolEntry } from '../../toolchain/ts/lua/semantic_contracts';
+import type { EditorLuaSymbolEntry } from '../../ide/editor/contrib/intellisense/engine';
 import type { LuaDefinitionTarget } from '../../ide/editor/contrib/definitions/query';
 import { SOURCE_CHOICES_DEFINITIONS, SOURCE_CHOICES_USAGE } from '../fixtures/studio/source_choices';
 
-function referenceFixture() {
-	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('definitions.lua', SOURCE_CHOICES_DEFINITIONS);
-	workspace.updateFile('usage.lua', SOURCE_CHOICES_USAGE);
-	const snapshot = workspace.getSnapshot();
+const definitionResource = { domain: 0 as const, path: 'definitions.lua' };
+const usageResource = { domain: 0 as const, path: 'usage.lua' };
+
+function referenceFixture(t: TestContext) {
+	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
+	project.updateDocuments([{ resource: definitionResource, source: SOURCE_CHOICES_DEFINITIONS },
+		{ resource: usageResource, source: SOURCE_CHOICES_USAGE }]);
+	t.after(() => project.dispose());
+	const snapshot = project.getSnapshot();
 	for (const file of snapshot.files) assert.equal(file.syntaxError, null);
 	const frontend = buildLuaSemanticFrontendFromSnapshot(snapshot);
-	const query = frontend.findReferencesByPosition('usage.lua', 6, 10)!;
+	const query = frontend.findReferencesByPosition(resourceIdentityKey(usageResource), 6, 10)!;
 	assert.ok(query);
-	const info = { query, snapshot, expression: query.label,
-		matches: query.references.filter(reference => reference.file === 'usage.lua').map(reference => searchMatchFromSourceRange(snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span))) };
-	return { workspace, info };
+	const info = { query, snapshot, project, expression: query.label,
+		matches: query.references.filter(reference => reference.file === resourceIdentityKey(usageResource)).map(reference => searchMatchFromSourceRange(snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span))) };
+	return { project, info };
 }
 
 function pickerFixture(t: TestContext) {
@@ -45,17 +50,17 @@ function pickerFixture(t: TestContext) {
 	return picker;
 }
 
-test('reference choices use workspace source identity, not the current-file highlight index', () => {
-	const { info } = referenceFixture();
+test('reference choices use workspace source identity, not the current-file highlight index', t => {
+	const { info } = referenceFixture(t);
 	const highlights = new ReferenceState();
 	highlights.apply(info, 1);
 	assert.equal(highlights.getActiveIndex(), 1);
 	const sources = buildReferenceSources(info);
-	assert.deepEqual(sources.map(source => [source.range.path, source.range.start.line, source.kind]), [
+	assert.deepEqual(sources.map(source => [source.resource.path, source.range.start.line, source.kind]), [
 		['definitions.lua', 1, 'definition'], ['definitions.lua', 7, 'reference'],
 		['usage.lua', 1, 'reference'], ['usage.lua', 6, 'reference'],
 	]);
-	const provider = createReferenceQuickPickProvider(sources, 'usage.lua', 6, 10);
+	const provider = createReferenceQuickPickProvider(sources, usageResource, 6, 10);
 	const projection = provider.getPicks('');
 	assert.equal(projection.selectionIndex, 3);
 	assert.equal(provider.items[projection.matches[3].itemIndex].source, sources[3]);
@@ -63,18 +68,18 @@ test('reference choices use workspace source identity, not the current-file high
 	assert.equal(provider.getPicks('definitions.lua').selectionIndex, 0);
 	assert.equal(provider.getPicks('no such source').selectionIndex, -1);
 	assert.equal(provider.getPicks('').selectionIndex, 3);
-	assert.equal(createReferenceQuickPickProvider(sources, 'unrelated.lua', 1, 1).getPicks('').selectionIndex, 0,
+	assert.equal(createReferenceQuickPickProvider(sources, { domain: 0, path: 'unrelated.lua' }, 1, 1).getPicks('').selectionIndex, 0,
 		'no containing occurrence is a valid navigation context; choose the first result');
 });
 
-test('reference text and range identities come from the captured snapshot, read once per file', () => {
-	const { workspace, info } = referenceFixture();
+test('reference text and range identities come from the captured snapshot, read once per file', t => {
+	const { project, info } = referenceFixture(t);
 	const lookups: string[] = [];
 	const getFileData = info.snapshot.getFileData.bind(info.snapshot);
 	info.snapshot.getFileData = path => { lookups.push(path); return getFileData(path); };
-	workspace.updateFile('usage.lua', '-- later source generation\n' + SOURCE_CHOICES_USAGE);
+	project.updateDocument(usageResource, '-- later source generation\n' + SOURCE_CHOICES_USAGE);
 	const sources = buildReferenceSources(info);
-	assert.deepEqual(lookups.sort(), ['definitions.lua', 'usage.lua']);
+	assert.deepEqual(lookups.sort(), [resourceIdentityKey(definitionResource), resourceIdentityKey(usageResource)]);
 	assert.equal(sources[0].range, info.query.targets[0].range);
 	assert.equal(sources[0].lineText, 'source_choice_beacon = 1');
 	for (const source of sources.slice(1)) assert.ok(info.query.references.some(reference => getFileData(reference.file)!.chunk.locations.range(reference.span) === source.range));
@@ -83,11 +88,11 @@ test('reference text and range identities come from the captured snapshot, read 
 });
 
 test('symbol choices retain same-name declarations and match case-insensitively', () => {
-	const symbols: LuaSymbolEntry[] = [
-		{ name: 'mixed_case', path: 'owner.mixed_case', kind: 'function',
-			location: { path: 'first/shared.lua', range: { startLine: 1, startColumn: 2, endLine: 1, endColumn: 10 } } },
-		{ name: 'mixed_case', path: 'owner.mixed_case', kind: 'function',
-			location: { path: 'second/shared.lua', range: { startLine: 7, startColumn: 4, endLine: 7, endColumn: 12 } } },
+	const symbols: EditorLuaSymbolEntry[] = [
+		{ name: 'mixed_case', path: 'owner.mixed_case', kind: 'function', resource: { domain: 0, path: 'first/shared.lua' },
+			location: { path: resourceIdentityKey({ domain: 0, path: 'first/shared.lua' }), range: { startLine: 1, startColumn: 2, endLine: 1, endColumn: 10 } } },
+		{ name: 'mixed_case', path: 'owner.mixed_case', kind: 'function', resource: { domain: 0, path: 'second/shared.lua' },
+			location: { path: resourceIdentityKey({ domain: 0, path: 'second/shared.lua' }), range: { startLine: 7, startColumn: 4, endLine: 7, endColumn: 12 } } },
 	];
 	const items = buildSymbolQuickPickItems(symbols, 'workspace');
 	assert.equal(items[0].symbol, symbols[0]); assert.equal(items[1].symbol, symbols[1]);
@@ -100,19 +105,20 @@ test('symbol choices retain same-name declarations and match case-insensitively'
 
 test('definition choices keep module and declaration targets, including unqualified names', () => {
 	const targets: LuaDefinitionTarget[] = [
-		{ name: 'plain', namePath: [], kind: 'local', location: { path: 'a.lua', range: { startLine: 1, startColumn: 7, endLine: 1, endColumn: 11 } } },
-		{ name: 'library', namePath: ['library'], kind: 'module', location: { path: 'library.lua', range: { startLine: 1, startColumn: 1, endLine: 5, endColumn: 3 } } },
+		{ name: 'plain', namePath: [], kind: 'local', resource: { domain: 0, path: 'a.lua' }, location: { path: resourceIdentityKey({ domain: 0, path: 'a.lua' }), range: { startLine: 1, startColumn: 7, endLine: 1, endColumn: 11 } } },
+		{ name: 'library', namePath: ['library'], kind: 'module', resource: { domain: -1, path: 'library.lua' }, location: { path: resourceIdentityKey({ domain: -1, path: 'library.lua' }), range: { startLine: 1, startColumn: 1, endLine: 5, endColumn: 3 } } },
 	];
 	const items = buildDefinitionQuickPickItems(targets);
 	assert.equal(items[0].target, targets[0]); assert.equal(items[0].label, 'plain');
 	assert.equal(items[1].target, targets[1]);
+	assert.deepEqual(items.map(item => item.description), ['a.lua', 'library.lua'], 'labels use authored resource paths, not opaque semantic addresses');
 });
 
 test('initial source choice is revealed and accepted through the shared picker without index translation', t => {
 	const picker = pickerFixture(t);
-	const { info } = referenceFixture();
+	const { info } = referenceFixture(t);
 	const sources = buildReferenceSources(info);
-	const provider = createReferenceQuickPickProvider(sources, 'usage.lua', 6, 10);
+	const provider = createReferenceQuickPickProvider(sources, usageResource, 6, 10);
 	editorViewState.viewportHeight = 80;
 	const origin = inputFocus.createTarget(); origin.focus();
 	let accepted = false;

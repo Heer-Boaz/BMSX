@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace, type FileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -12,7 +13,7 @@ function writtenFiles(workspace: LuaSemanticWorkspace, reader: FileSemanticData)
 }
 
 test('publication retains declaration lookup and unread global lists across replacements and removal', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['first.lua', 'second.lua', 'third.lua']));
 	const first = buildLuaFileSemanticData('shared = { old = 1 }; local hidden = 2', 'first.lua');
 	const second = buildLuaFileSemanticData('shared = { second = 3 }', 'second.lua');
 	workspace.updateFiles([first, second]);
@@ -33,7 +34,7 @@ test('publication retains declaration lookup and unread global lists across repl
 });
 
 test('navigation precedence and written-source insertion order remain distinct after publication', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['first.lua', 'second.lua', 'reader.lua']));
 	const first = buildLuaFileSemanticData('shared = { first = 1 }', 'first.lua');
 	const second = buildLuaFileSemanticData('shared = { second = 2 }', 'second.lua');
 	const reader = buildLuaFileSemanticData('return shared', 'reader.lua');
@@ -53,7 +54,7 @@ test('navigation precedence and written-source insertion order remain distinct a
 });
 
 test('two replacements in one batch publish the final facts without retaining intermediate symbols', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['batch.lua']));
 	const first = buildLuaFileSemanticData('first = 1', 'batch.lua');
 	const second = buildLuaFileSemanticData('second = 2', 'batch.lua');
 	workspace.updateFiles([first, second]);
@@ -77,7 +78,7 @@ test('global publications preserve occurrences while symbol lookup uses the last
 	assert.equal(file.decls[0].id, file.decls[1].id);
 	assert.deepEqual(file.globalDecls, file.decls);
 	assert.deepEqual(file.globalStorageDecls, file.decls);
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['duplicate.lua']));
 	workspace.updateFiles([file]);
 	const snapshot = workspace.getSnapshot();
 	assert.deepEqual(snapshot.listGlobalDecls(), file.decls);
@@ -88,7 +89,7 @@ test('global publications preserve occurrences while symbol lookup uses the last
 });
 
 test('same-file global navigation follows source order rather than symbol-ID spelling', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['order.lua', 'reader.lua']));
 	const source = '\nbss counter: word' + '\n'.repeat(8) + 'bss counter: word';
 	const file = buildLuaFileSemanticData(source, 'order.lua');
 	const reader = buildLuaFileSemanticData('return counter', 'reader.lua');
@@ -106,7 +107,7 @@ test('publication and lazy global enumeration do not inspect unchanged declarati
 			const bound = buildLuaFileSemanticData('local value = 1; shared = value', `file_${index}.lua`);
 			files.push({ ...bound, get decls() { reads++; return bound.decls; } });
 		}
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([...files.map(file => file.file), 'edited.lua']));
 		workspace.updateFiles(files);
 		const old = workspace.getSnapshot();
 		reads = 0;

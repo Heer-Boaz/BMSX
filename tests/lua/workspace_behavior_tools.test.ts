@@ -14,12 +14,15 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
+import { resourceIdentityKey, resourceIdentityKeyFromParts } from '../../ide/common/resource';
+import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 
-function fixture(t: TestContext, files: Record<string, string>, generated: string[] = []) {
+function fixture(t: TestContext, files: Record<string, string>, apiModules: readonly string[], generated: string[] = []) {
 	const records = Object.entries(files).map(([path, source]) => ({ ...createScenarioTestSourceRecord(path, 1, source), generated: generated.includes(path) }));
 	const sources = createScenarioTestSourceState(records), models = new EditorTextModelService();
+	for (const module of apiModules) registerLuaSourceRecord(sources.systemLuaSources, createScenarioTestSourceRecord(`${module}.lua`, 0, ''));
 	const documents = new BehaviorSourceDocuments(models, sources), connection = new AbortController();
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const guest = new SuspendedGuestSession(runtime);
@@ -49,8 +52,8 @@ test('semantic tools use the supplied unsaved workspace and shared generation wi
 fsm.register('one', {initial='idle',states={idle={},active={}}})
 fsm.register('one', {states={other={}}})
 fsm.register(unknown_id(), make_definition())`;
-	const f = fixture(t, { 'cart.lua': source });
-	const model = f.models.retain(f.sources.luaResources[0], 'lua', source);
+	const f = fixture(t, { 'cart.lua': source }, ['cartlib/fsm/library']);
+	const model = f.models.retain(f.sources.luaResources.find(resource => resource.domain === 0 && resource.path === 'cart.lua')!, 'lua', source);
 	model.pushEditOperations([{ offset: source.indexOf("'one'"), deleteLength: 5, text: "'dirty'" }]);
 	const tools = f.tools(), catalog = await list(tools);
 	assert.deepEqual(catalog.map(item => item.semanticId), ['dirty', 'one', null]);
@@ -59,7 +62,7 @@ fsm.register(unknown_id(), make_definition())`;
 	assert.equal(editorTextModelService.get(model.identity), undefined);
 	const data = await read(tools, catalog[0].behavior), document = f.documents.get(model);
 	assert.equal(data.syntaxComplete, true);
-	assert.deepEqual(data.sources, [{ domain: 0, path: 'cart.lua', version: model.version, readOnly: false }]);
+	assert.deepEqual(data.sources, [{ file: resourceIdentityKey(model.identity), domain: 0, path: 'cart.lua', version: model.version, readOnly: false }]);
 	assert.equal(data.nodes[0].label, document.definitions[0].label);
 	assert.equal(data.nodes.filter(node => node.actions.includes('fsm.set_initial')).length, 1);
 	assert.equal(data.entries[0].target.kind, 'state');
@@ -84,11 +87,11 @@ fsm.register('shared',body)`;
 	const body = `-- 🐉 exact imported definition\r\nreturn {initial = ( --[[intent]] 'idle'), states = {
 idle={on={go='../active'}}, active={update=function() return '../idle' end}
 }}`;
-	const f = fixture(t, { 'cart.lua': source, 'body.lua': body }), tools = f.tools();
+	const f = fixture(t, { 'cart.lua': source, 'body.lua': body }, ['cartlib/fsm/library']), tools = f.tools();
 	const documents = t.mock.method(f.documents, 'get');
 	const catalog = await list(tools), data = await read(tools, catalog[1].behavior);
 	const state = data.nodes.find(node => node.kind === 'state' && node.actions.includes('fsm.set_initial'))!;
-	assert.equal(state.authoredRange.path, 'body.lua');
+	assert.equal(state.authoredRange.path, resourceIdentityKeyFromParts(0, 'body.lua'));
 	assert.equal(data.transitions.length, 2);
 	for (const transition of data.transitions) {
 		assert.ok(data.nodes.some(node => node.node === transition.origin));
@@ -97,7 +100,7 @@ idle={on={go='../active'}}, active={update=function() return '../idle' end}
 			assert.equal(outcome.target.kind, 'path');
 			const target = outcome.target;
 			if (target.kind === 'path') assert.ok(data.nodes.some(node => node.node === target.target));
-			assert.equal(outcome.range.path, 'body.lua');
+			assert.equal(outcome.range.path, resourceIdentityKeyFromParts(0, 'body.lua'));
 		}
 	}
 	const main = f.models.get({ domain: 0, path: 'cart.lua' })!, owner = f.models.get({ domain: 0, path: 'body.lua' })!;
@@ -117,22 +120,22 @@ idle={on={go='../active'}}, active={update=function() return '../idle' end}
 
 test('missing FSM initial is inserted from proven membership, while unknown, generated and recovered sources never gain write rights', async t => {
 	const register = (body: string) => `local fsm<const> = require('cartlib/fsm/library'); fsm.register('fixture',${body})`;
-	const f = fixture(t, { 'cart.lua': register('{states={a={}, b={}}}') }), tools = f.tools();
+	const f = fixture(t, { 'cart.lua': register('{states={a={}, b={}}}') }, ['cartlib/fsm/library']), tools = f.tools();
 	const data = await read(tools, (await list(tools))[0].behavior), node = data.nodes.find(node => node.kind === 'state')!;
 	const result = await tools.execute('studio_propose_fsm_initial', { state: node.node }); assert.ok(result.kind === 'proposal');
 	result.proposal.apply(); assert.match(f.models.get({ domain: 0, path: 'cart.lua' })!.buffer.getText(), /initial = 'a'/);
 	for (const source of [register('{initial=choose(),states={a={}}}'), register('{states={[key]={},a={}}}'), register('{states={a={}}}') + '\nlocal broken =']) {
-		const g = fixture(t, { 'cart.lua': source }), next = g.tools();
+		const g = fixture(t, { 'cart.lua': source }, ['cartlib/fsm/library']), next = g.tools();
 		assert.ok((await read(next, (await list(next))[0].behavior)).nodes.every(node => node.actions.length === 0));
 	}
-	const generated = fixture(t, { 'cart.lua': register('{states={a={}}}') }, ['cart.lua']), next = generated.tools();
+	const generated = fixture(t, { 'cart.lua': register('{states={a={}}}') }, ['cartlib/fsm/library'], ['cart.lua']), next = generated.tools();
 	const generatedData = await read(next, (await list(next))[0].behavior);
 	assert.equal(generatedData.sources[0].readOnly, true);
 	assert.ok(generatedData.nodes.every(node => node.actions.length === 0));
 });
 
 for (const operation of ['remove', 'duplicate', 'move_up', 'move_down'] as const) test(`BT ${operation} uses the graph's exact indexed source member and keeps ordinary history`, async t => {
-	const f = fixture(t, { 'tree.lua': BT_ORDER_SOURCE }), tools = f.tools();
+	const f = fixture(t, { 'tree.lua': BT_ORDER_SOURCE }, ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result']), tools = f.tools();
 	const data = await read(tools, (await list(tools))[0].behavior);
 	const line = BT_ORDER_SOURCE.slice(0, BT_ORDER_SOURCE.indexOf('nested;')).split('\n').length;
 	const node = data.nodes.find(node => node.actions.includes(`bt.${operation}`) && node.occurrenceRange.start.line === line)!;
@@ -155,7 +158,7 @@ test('ActionEffect expression edit replaces the written field, not its initializ
 	const source = `local effects<const> = require('cartlib/actioneffects')
 local duration<const> = 10
 effects.register_effect('fx', {cooldown_ms=(--[[keep]] duration), required_tags={'live'}, handler=invoke})`;
-	const f = fixture(t, { 'effect.lua': source }), tools = f.tools();
+	const f = fixture(t, { 'effect.lua': source }, ['cartlib/actioneffects']), tools = f.tools();
 	const data = await read(tools, (await list(tools))[0].behavior);
 	const property = data.nodes.find(node => node.write?.expression.includes('duration'))!;
 	assert.ok(property.actions.includes('effect.set_value'));
@@ -172,12 +175,12 @@ effects.register_effect('fx', {cooldown_ms=(--[[keep]] duration), required_tags=
 	assert.ok(result.kind === 'proposal'); result.proposal.apply();
 	assert.ok(model.buffer.getText().includes('local duration<const> = 10'));
 	assert.equal(model.buffer.getText(), source.replace('duration), required', '-7.5), required'));
-	assert.equal(write.file.file, 'effect.lua');
+	assert.equal(write.file.file, resourceIdentityKey(model.identity));
 	model.undo(); assert.equal(model.buffer.getText(), source);
 });
 
 test('foreign, unadmitted and expired semantic references cannot be refreshed or mutate the working copy', async t => {
-	const f = fixture(t, { 'cart.lua': "local fsm<const> = require('cartlib/fsm/library'); fsm.register('f',{states={a={},b={}}})", 'other.lua': 'return 1' });
+	const f = fixture(t, { 'cart.lua': "local fsm<const> = require('cartlib/fsm/library'); fsm.register('f',{states={a={},b={}}})", 'other.lua': 'return 1' }, ['cartlib/fsm/library']);
 	const tools = f.tools(), catalog = await list(tools), data = await read(tools, catalog[0].behavior), other = f.tools();
 	const node = data.nodes.find(node => node.actions.includes('fsm.set_initial'))!;
 	await assert.rejects(other.execute('studio_read_behavior', { behavior: catalog[0].behavior }), /does not belong/);
@@ -196,7 +199,7 @@ test('foreign, unadmitted and expired semantic references cannot be refreshed or
 
 test('semantic proposals share disconnect and dependency-change retirement with textual reviews', async t => {
 	for (const disconnect of [true, false]) {
-		const f = fixture(t, { 'cart.lua': "local fsm<const> = require('cartlib/fsm/library'); fsm.register('f',{states={a={}}})", 'other.lua': 'return 1' });
+		const f = fixture(t, { 'cart.lua': "local fsm<const> = require('cartlib/fsm/library'); fsm.register('f',{states={a={}}})", 'other.lua': 'return 1' }, ['cartlib/fsm/library']);
 		const tools = f.tools(), data = await read(tools, (await list(tools))[0].behavior);
 		const result = await tools.execute('studio_propose_fsm_initial', { state: data.nodes.find(node => node.actions.length !== 0)!.node });
 		assert.ok(result.kind === 'proposal');

@@ -2,7 +2,9 @@ import { ContextMenuController } from '../../../ide/workbench/services/context_m
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import assert from 'node:assert/strict';
-import { LuaSemanticWorkspace } from '../../../toolchain/ts/lua/semantic/model';
+import { EditorLuaSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/project';
+import { EditorTextModelService } from '../../../ide/editor/model/model_service';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../ide/common/resource';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../../toolchain/ts/lua/semantic/frontend';
 import { buildReferenceSources } from '../../../ide/editor/contrib/references/sources';
 import { createReferenceQuickPickProvider } from '../../../ide/workbench/contrib/code_editor/references/quick_access';
@@ -17,22 +19,23 @@ const menu = new ContextMenuController(inputFocus, pointerCapture);
 const picker = new QuickInputController(menu);
 const accept = () => assert.fail('profiling must not accept a source choice');
 for (const fileCount of [1, 16, 128]) {
-	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('declaration.lua', 'navigation_beacon = 1\n');
+	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
+	project.updateDocument({ domain: 0, path: 'declaration.lua' }, 'navigation_beacon = 1\n');
 	for (let file = 0; file < fileCount; file += 1) {
-		workspace.updateFile(`file_${file}.lua`, Array.from({ length: 8 }, (_, line) => `local value_${line} = navigation_beacon`).join('\n'));
+		project.updateDocument({ domain: 0, path: `file_${file}.lua` }, Array.from({ length: 8 }, (_, line) => `local value_${line} = navigation_beacon`).join('\n'));
 	}
-	const snapshot = workspace.getSnapshot();
-	const query = buildLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition('file_0.lua', 1, 20)!;
+	const origin: ResourceIdentity = { domain: 0, path: 'file_0.lua' };
+	const snapshot = project.getSnapshot();
+	const query = buildLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition(resourceIdentityKey(origin), 1, 20)!;
 	assert.ok(query);
-	const info = { snapshot, query, expression: query.label, matches: [] };
+	const info = { snapshot, project, query, expression: query.label, matches: [] };
 	const sources = buildReferenceSources(info);
 	assert.equal(sources.length, fileCount * 8 + 1);
 	// Semantic snapshot/query construction is outside these projection measurements.
 	const sourceMilliseconds = medianMilliseconds(() => { buildReferenceSources(info); });
 	const openMilliseconds = medianMilliseconds(() => picker.pick('REFERENCES', 'Filter',
-		() => createReferenceQuickPickProvider(buildReferenceSources(info), 'file_0.lua', 1, 20), accept));
-	const provider = createReferenceQuickPickProvider(sources, 'file_0.lua', 1, 20);
+		() => createReferenceQuickPickProvider(buildReferenceSources(info), origin, 1, 20), accept));
+	const provider = createReferenceQuickPickProvider(sources, origin, 1, 20);
 	const queries = ['', 'navigation', 'file_0', 'value_7 file_0', 'absent'];
 	const queryMicroseconds = queries.map(query => ({ query, microseconds: medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) provider.getPicks(query);
@@ -43,5 +46,6 @@ for (const fileCount of [1, 16, 128]) {
 	console.log(JSON.stringify({ fileCount: fileCount + 1, choiceCount: sources.length, sourceMilliseconds,
 		openMilliseconds, queryMicroseconds, warmMicrosecondsPerFrame: warmMilliseconds / 100,
 		presentedRows: picker.layout.renderRows.length }));
+	project.dispose();
 }
 picker.dispose(); menu.dispose();

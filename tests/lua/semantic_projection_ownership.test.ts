@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SemanticDemandIndex } from '../../toolchain/ts/lua/semantic/demand_index';
@@ -15,7 +16,7 @@ local original = { field = outside }
 local function factory(input)
 	function original:configure() self.field = input end
 end`, 'origins.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const field = summaries.terms.nameId('field');
 	const moduleWrites = demand.staticWrites(field);
@@ -32,7 +33,7 @@ test('receiver selection retains each writing body once without discarding its d
 	const file = buildLuaFileSemanticData(`local original = {}
 function original:first() self.field = 11; self.field = 22 end
 function original:second() self.field = 33 end`, 'writers.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const demand = new SemanticDemandIndex([file], summaries);
 	const name = summaries.terms.nameId('field');
 	assert.deepEqual(demand.receiverWriters(name), summaries.list().map(summary => summary.id));
@@ -58,7 +59,7 @@ function original:configure()
 end
 return original.field, selected`;
 		const file = buildLuaFileSemanticData(source, 'uncalled.lua');
-		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 		const demand = new SemanticDemandIndex([file], summaries);
 		const query = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('uncalled body cannot enqueue a call'));
 		const field = summaries.terms.nameId('field');
@@ -96,7 +97,7 @@ function original:configure() self.field = 22 end
 original.configure(actual)
 return original.field, actual.field`;
 		const file = buildLuaFileSemanticData(source, 'called.lua');
-		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 		const demand = new SemanticDemandIndex([file], summaries);
 		const query = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('literal writer contains no calls'));
 		const field = summaries.terms.nameId('field');
@@ -124,7 +125,7 @@ for (const projectFirst of [true, false]) {
 	test(`projected and module writes coexist without duplicate publication; project first = ${projectFirst}`, () => {
 		const file = buildLuaFileSemanticData(`local original = { field = 11 }
 function original:configure() self.field = 22 end`, 'both.lua');
-		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 		const demand = new SemanticDemandIndex([file], summaries);
 		const query = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('no calls'));
 		const name = summaries.terms.nameId('field');
@@ -154,7 +155,7 @@ function original:read() return self.field, self.other end
 return original`;
 	const file = buildLuaFileSemanticData(source, 'navigation.lua');
 	for (const order of [['field', 'other'], ['other', 'field']]) {
-		const query = new LuaSemanticQueryStore([file], new Map());
+		const query = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 		const receiver = file.functionValueFlows[1].parameters[0];
 		for (const name of order) {
 			const declaration = file.decls.find(entry => entry.name === name)!;
@@ -175,7 +176,7 @@ function original:read() return self.field.token end`;
 		const receiver = file.functionValueFlows[2].parameters[0];
 		const token = file.decls.find(entry => entry.name === 'token')!;
 		const field = file.decls.find(entry => entry.name === 'field')!;
-		const query = new LuaSemanticQueryStore([file], new Map());
+		const query = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 		for (const name of order) {
 			assert.deepEqual(name === 'field'
 				? query.member(receiver, name)
@@ -193,7 +194,7 @@ local function factory()
 	local captured = { token = true }
 	function original:configure() self.field = captured end
 end`, 'lexical.lua');
-		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 		const demand = new SemanticDemandIndex([file], summaries);
 		const query = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('no calls'));
 		const token = summaries.terms.nameId('token');

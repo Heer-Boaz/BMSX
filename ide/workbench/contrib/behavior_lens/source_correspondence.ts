@@ -1,4 +1,4 @@
-import type { ResourceIdentity } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import { trackedTextLocationsEqual } from '../../../editor/text/text_location';
 import type { EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { BehaviorSourceIndex } from './source_index';
@@ -56,14 +56,14 @@ export function reconcileBehaviorLensSource(
 		for (const node of previous) {
 			const span = oldRanges.get(node.rowKey)!;
 			if (span.start === span.end) continue;
-			const resource = span.resource.path;
+			const resource = resourceIdentityKey(span.resource);
 			let previousByStart = previousByResource.get(resource);
 			if (previousByStart === undefined) { previousByStart = new Map(); previousByResource.set(resource, previousByStart); }
 			previousByStart.set(span.start, node);
 		}
 		for (const node of nodes) {
 			const span = source.ranges.get(node.rowKey)!;
-			const candidate = previousByResource.get(span.resource.path)?.get(span.start);
+			const candidate = previousByResource.get(resourceIdentityKey(span.resource))?.get(span.start);
 			const prior = candidate !== undefined && trackedTextLocationsEqual(oldRanges.get(candidate.rowKey)!, span)
 				&& candidate.kind === node.kind && candidate.behaviorKind === node.behaviorKind ? candidate : undefined;
 			if (prior !== undefined) {

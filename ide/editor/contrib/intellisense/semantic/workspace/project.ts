@@ -1,3 +1,4 @@
+import { toLuaModulePath } from '../../../../../../toolchain/ts/lua/module_path';
 import { SourceChangeMap } from '../../../../../../toolchain/ts/text/source_changes';
 import { updateLuaChunk, type ParsedLuaChunk } from '../../../../../../toolchain/ts/lua/analysis/parse';
 import {
@@ -14,7 +15,10 @@ import {
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	type ResourceDomain,
+	type ResourceIdentity,
+	resourceIdentityKey,
 } from '../../../../../common/resource';
+import type { LuaModuleBindings } from '../../../../../../toolchain/ts/lua/semantic/module_resolution';
 import { readWorkspaceLuaSourceText } from '../../../../../workspace/files';
 import type { EditorTextModelService } from '../../../../model/model_service';
 import type { EditorTextModel } from '../../../../model/text_model';
@@ -22,7 +26,7 @@ import { getTextSnapshot } from '../../../../text/source_text';
 import type { TextBuffer } from '../../../../text/text_buffer';
 
 export type SemanticDocumentInput = {
-	path: string;
+	resource: ResourceIdentity;
 	source: string;
 	parsed?: ParsedLuaChunk;
 };
@@ -34,7 +38,7 @@ type ModelAnalysisBaseline = {
 };
 
 type ProjectBaseSource = {
-	readonly domain: ResourceDomain;
+	readonly resource: ResourceIdentity;
 	readonly registry: LuaSourceRegistry;
 	readonly record: LuaSourceRecord;
 };
@@ -44,10 +48,19 @@ type ProjectBaseSource = {
 // Runtime registries provide the base; retained models and explicit document
 // inputs own the newer source regardless of which view happens to be active.
 export class EditorLuaSemanticProject {
-	private readonly workspace = new LuaSemanticWorkspace();
+	private readonly workspace = new LuaSemanticWorkspace(new Map());
 	private readonly documentPaths = new Set<string>();
 	private readonly pendingPaths = new Set<string>();
 	private readonly modelBaselines = new Map<string, ModelAnalysisBaseline>();
+	private readonly resourcesByAddress = new Map<string, ResourceIdentity>();
+	private systemModuleBindings: LuaModuleBindings = new Map();
+	private primaryModuleBindings: LuaModuleBindings = new Map();
+	private moduleBindingsDirty = false;
+	private readonly fileModuleBindings = new Map<string, {
+		readonly analysis: FileSemanticData | undefined;
+		readonly scope: LuaModuleBindings;
+		readonly bindings: LuaModuleBindings;
+	}>();
 	private baseSources: ReadonlyMap<string, ProjectBaseSource> = new Map();
 	private readonly modelSubscriptions: readonly (() => void)[];
 	private readonly invalidationListeners = new Set<() => void>();
@@ -67,20 +80,21 @@ export class EditorLuaSemanticProject {
 		const queueModel = (model: EditorTextModel): void => {
 			if (model.mode === 'lua'
 				&& (model.resource.domain === domain || model.resource.domain === SYSTEM_RESOURCE_DOMAIN)) {
-				this.pendingPaths.add(model.resource.path);
+				const address = this.admitResource(model.identity);
+				this.pendingPaths.add(address);
 				this.invalidate();
 			}
 		};
 		this.modelSubscriptions = [
 			models.onDidAddModel(queueModel),
 			models.onDidApplyChanges((model, event) => {
-				const baseline = this.modelBaselines.get(model.resource.path);
+				const baseline = this.modelBaselines.get(resourceIdentityKey(model.identity));
 				if (baseline?.model === model) baseline.changes = baseline.changes.append(event.changes);
 				queueModel(model);
 			}),
 			models.onDidRemoveModel(model => {
-				if (this.modelBaselines.get(model.resource.path)?.model === model) this.modelBaselines.delete(model.resource.path);
-				if (model.mode === 'lua' && model.resource.domain === domain) this.documentPaths.delete(model.resource.path);
+				if (this.modelBaselines.get(resourceIdentityKey(model.identity))?.model === model) this.modelBaselines.delete(resourceIdentityKey(model.identity));
+				if (model.mode === 'lua' && model.resource.domain === domain) this.documentPaths.delete(resourceIdentityKey(model.identity));
 				queueModel(model);
 			}),
 		];
@@ -144,22 +158,30 @@ export class EditorLuaSemanticProject {
 		}
 		registries.push({ domain: SYSTEM_RESOURCE_DOMAIN, registry: systemRegistry });
 		const nextBaseSources = new Map<string, ProjectBaseSource>();
+		const systemModules = new Map<string, string>();
+		const primaryModules = new Map<string, string>();
 		for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
 			const { domain, registry } = registries[registryIndex];
 			for (let recordIndex = 0; recordIndex < registry.records.length; recordIndex += 1) {
 				const record = registry.records[recordIndex];
-				const path = record.source_path;
-				if (nextBaseSources.has(path)) {
-					continue;
-				}
-				nextBaseSources.set(path, { domain, registry, record });
-				this.pendingPaths.add(path);
+				const resource = { domain, path: record.source_path };
+				const address = this.admitResource(resource);
+				nextBaseSources.set(address, { resource, registry, record });
+				(domain === SYSTEM_RESOURCE_DOMAIN ? systemModules : primaryModules).set(record.module_path, address);
+				this.pendingPaths.add(address);
 			}
 		}
 
 		for (const path of this.baseSources.keys()) {
 			if (!nextBaseSources.has(path)) this.pendingPaths.add(path);
 		}
+		// Initial editor namespace policy, broader than compiler public BIOS imports:
+		// cartridge modules shadow BIOS modules, while system files use system scope.
+		const primaryScope = new Map(systemModules);
+		for (const [specifier, address] of primaryModules) primaryScope.set(specifier, address);
+		this.systemModuleBindings = systemModules;
+		this.primaryModuleBindings = primaryScope;
+		this.moduleBindingsDirty = true;
 		this.baseSources = nextBaseSources;
 		this.primaryRegistry = primaryRegistry;
 		this.primaryRevision = primaryRegistry === undefined ? -1 : primaryRegistry.revision;
@@ -170,20 +192,15 @@ export class EditorLuaSemanticProject {
 
 	private synchronizeDocuments(): void {
 		if (this.runtimeSourcesDirty) this.refreshRuntimeSources(this.runtimeSources);
-		if (this.pendingPaths.size === 0) return;
+		if (this.pendingPaths.size === 0) { this.publishModuleBindings(); return; }
 		const changedAnalyses: FileSemanticData[] = [];
 		const removedPaths: string[] = [];
 		for (const path of this.pendingPaths) {
 			const base = this.baseSources.get(path);
-			let model = this.models.get({ domain: this.domain, path });
-			if (model === undefined) {
-				if (this.documentPaths.has(path)) {
-					this.modelBaselines.delete(path);
-					continue;
-				}
-				if (this.domain !== SYSTEM_RESOURCE_DOMAIN && base?.domain !== this.domain) {
-					model = this.models.get({ domain: SYSTEM_RESOURCE_DOMAIN, path });
-				}
+			const model = this.models.get(this.getResourceIdentity(path));
+			if (model === undefined && this.documentPaths.has(path)) {
+				this.modelBaselines.delete(path);
+				continue;
 			}
 			const baseline = this.modelBaselines.get(path);
 			if (baseline?.model === model && model !== undefined && baseline.version === model.version) continue;
@@ -208,25 +225,30 @@ export class EditorLuaSemanticProject {
 		}
 		this.pendingPaths.clear();
 		this.workspace.updateFiles(changedAnalyses, removedPaths);
+		if (changedAnalyses.length !== 0 || removedPaths.length !== 0) this.moduleBindingsDirty = true;
+		this.publishModuleBindings();
 	}
 
 	/** Retained buffers consume queued edits; detached buffers supply a full source generation. */
-	public analyzeDocument(path: string, buffer: TextBuffer): FileSemanticData {
-		const model = this.models.get({ domain: this.domain, path });
+	public analyzeDocument(resource: ResourceIdentity, buffer: TextBuffer): FileSemanticData {
+		const path = this.admitResource(resource);
+		const model = this.models.get(resource);
 		if (model !== undefined && model.buffer === buffer) {
 			if (this.modelBaselines.get(path)?.model !== model) this.pendingPaths.add(path);
 			this.synchronizeDocuments();
 			return this.workspace.getFileData(path)!;
 		}
-		return this.updateDocument(path, getTextSnapshot(buffer));
+		return this.updateDocument(resource, getTextSnapshot(buffer));
 	}
 
-	public updateDocument(path: string, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
+	public updateDocument(resource: ResourceIdentity, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
+		const path = this.admitResource(resource);
 		this.modelBaselines.delete(path);
 		this.documentPaths.add(path);
 		const previous = this.workspace.getFileData(path);
 		const result = this.workspace.updateFile(path, source, parsed);
-		if (result !== previous) this.invalidate();
+		if (result !== previous) { this.moduleBindingsDirty = true; this.invalidate(); }
+		this.publishModuleBindings();
 		return result;
 	}
 
@@ -234,25 +256,72 @@ export class EditorLuaSemanticProject {
 		const changedAnalyses: FileSemanticData[] = [];
 		for (let index = 0; index < inputs.length; index += 1) {
 			const input = inputs[index];
-			this.modelBaselines.delete(input.path);
-			this.documentPaths.add(input.path);
-			const existing = this.workspace.getFileData(input.path);
+			const path = this.admitResource(input.resource);
+			this.modelBaselines.delete(path);
+			this.documentPaths.add(path);
+			const existing = this.workspace.getFileData(path);
 			if (!existing || existing.source !== input.source
 				|| (input.parsed !== undefined && existing.chunk !== input.parsed.chunk)) {
 				changedAnalyses.push(buildLuaFileSemanticData(
 					input.source,
-					input.path,
+					path,
 					input.parsed,
 				));
 			}
 		}
 		this.workspace.updateFiles(changedAnalyses);
-		if (changedAnalyses.length > 0) this.invalidate();
+		if (changedAnalyses.length > 0) { this.moduleBindingsDirty = true; this.invalidate(); }
+		this.publishModuleBindings();
 	}
 
-	public getFileData(path: string): FileSemanticData | undefined {
+	public getFileData(resource: ResourceIdentity): FileSemanticData | undefined {
 		this.synchronizeDocuments();
-		return this.workspace.getFileData(path);
+		return this.workspace.getFileData(resourceIdentityKey(resource));
+	}
+
+	/** Preferred import names come from admitted module metadata, not written-spelling aliases. */
+	public getModuleCatalog(resource: ResourceIdentity): LuaModuleBindings {
+		this.synchronizeDocuments();
+		return resource.domain === SYSTEM_RESOURCE_DOMAIN ? this.systemModuleBindings : this.primaryModuleBindings;
+	}
+
+	/** Semantic file addresses stay opaque outside their owning project. */
+	public getResourceIdentity(address: string): ResourceIdentity {
+		return this.resourcesByAddress.get(address)!;
+	}
+
+	private admitResource(resource: ResourceIdentity): string {
+		const address = resourceIdentityKey(resource);
+		if (!this.resourcesByAddress.has(address)) {
+			this.resourcesByAddress.set(address, { domain: resource.domain, path: resource.path });
+			this.moduleBindingsDirty = true;
+		}
+		return address;
+	}
+
+	private publishModuleBindings(): void {
+		if (!this.moduleBindingsDirty) return;
+		const bindings = new Map<string, LuaModuleBindings>();
+		for (const [address, resource] of this.resourcesByAddress) {
+			const scope = resource.domain === SYSTEM_RESOURCE_DOMAIN ? this.systemModuleBindings : this.primaryModuleBindings;
+			const analysis = this.workspace.getFileData(address);
+			let cached = this.fileModuleBindings.get(address);
+			if (cached === undefined || cached.analysis !== analysis || cached.scope !== scope) {
+				let aliases: Map<string, string> | undefined;
+				if (analysis !== undefined) for (const reference of analysis.moduleReferences) {
+					if (scope.has(reference.value)) continue;
+					const target = scope.get(toLuaModulePath(reference.value));
+					if (target === undefined) continue;
+					if (aliases === undefined) aliases = new Map(scope);
+					aliases.set(reference.value, target);
+				}
+				cached = { analysis, scope, bindings: aliases === undefined ? scope : aliases };
+				this.fileModuleBindings.set(address, cached);
+			}
+			bindings.set(address, cached.bindings);
+		}
+		this.workspace.setModuleBindings(bindings);
+		this.moduleBindingsDirty = false;
 	}
 
 	public getSnapshot(): LuaSemanticWorkspaceSnapshot {

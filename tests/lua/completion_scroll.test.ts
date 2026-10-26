@@ -1,6 +1,7 @@
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
+import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { test } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import type { WheelInputSnapshot } from '../../ide/common/models';
@@ -10,7 +11,7 @@ import { drawCompletionPopupWithRenderer } from '../../ide/editor/render/complet
 import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { api } from '../../ide/runtime/overlay_api';
 import { CompletionController } from '../../ide/workbench/contrib/code_editor/suggest/completion_controller';
-import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 test('completion wheel scrolls continuously without changing selection; keyboard navigation reveals its selection', t => {
 	t.after(() => {
@@ -19,7 +20,12 @@ test('completion wheel scrolls continuously without changing selection; keyboard
 	});
 	const resource = (path: string) => ({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0 as const, path, source: { resid: path, type: 'lua' as const, source_path: path } });
 	const importer = editorTextModelService.retain(resource('carts/example/main.lua'), 'lua', "local m = require('authoring/')");
-	for (let index = 0; index < 30; index += 1) editorTextModelService.retain(resource(`carts/example/authoring/module_${index}.lua`), 'lua', 'return {}');
+	const sources = createScenarioTestSourceState([{ ...createScenarioTestSourceRecord(importer.resource.path, 1, importer.buffer.getText()), module_path: 'main' }]);
+	for (let index = 0; index < 30; index += 1) {
+		const path = `carts/example/authoring/module_${index}.lua`;
+		editorTextModelService.retain(resource(path), 'lua', 'return {}');
+		registerLuaSourceRecord(sources.cartridgeSlots[0]!.luaSources, { ...createScenarioTestSourceRecord(path, 1, 'return {}'), module_path: `authoring/module_${index}` });
+	}
 	const view = createCodeEditorViewState();
 	view.cursorColumn = importer.buffer.getText().indexOf("')");
 	const { documents, clock } = createTestCodeDocuments(t, editorTextModelService);
@@ -28,7 +34,7 @@ test('completion wheel scrolls continuously without changing selection; keyboard
 		protected override isCompletionReady() { return true; }
 		protected override isCompletionContextActive() { return true; }
 	}
-	const controller = new ReadyCompletionController(code, createScenarioTestSourceState([]), null, null, null);
+	const controller = new ReadyCompletionController(code, sources, null, null, null);
 	t.after(() => controller.clearInput());
 	controller.handleKeybindings(new KeyInputEvent('Space', KeyModifier.ctrl));
 	const session = controller.session!;

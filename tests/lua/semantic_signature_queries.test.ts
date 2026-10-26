@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
@@ -9,7 +10,7 @@ test('signature queries use the bound callee rather than the latest same-name de
 		'local function g(x) return x end\ndo local function g(x) return x + 1 end end\nlocal function f(a, b) g(a) end',
 		'local function g(x) return x + 1 end\nlocal function f(a, b) local function g(x) return x end; g(a) end',
 	]) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['signatures.lua']));
 		const file = workspace.updateFile('signatures.lua', source);
 		const declaration = file.decls.find(decl => decl.name === 'f')!;
 		assert.equal('signature' in declaration, false, 'a declaration is not mutable inferred metadata');
@@ -20,14 +21,14 @@ test('signature queries use the bound callee rather than the latest same-name de
 });
 
 test('a shadowed parameter name does not make the original parameter required', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['parameters.lua']));
 	const file = workspace.updateFile('parameters.lua', 'local function f(value) do local value = {}; print(value.x) end; return value end');
 	const declaration = file.decls.find(decl => decl.name === 'f')!;
 	assert.equal(workspace.getSnapshot().symbolResolver.getFunctionSignatures(declaration.id)[0].minimumArgumentCount, 0);
 });
 
 test('hover presents written function headers without required-argument analysis', t => {
-	const frontend = buildLuaSemanticFrontend([{ path: 'header.lua', source: 'local function run(first, second) return first + second end\nrun(1, 2)' }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'header.lua', source: 'local function run(first, second) return first + second end\nrun(1, 2)' }]));
 	const inference = t.mock.method(frontend.snapshot.symbolResolver, 'getFunctionSignatures', () => {
 		throw new Error('hover must not request required-argument inference');
 	});
@@ -37,12 +38,12 @@ test('hover presents written function headers without required-argument analysis
 });
 
 test('distinct written functions assigned to one binding retain distinct signatures', () => {
-	const frontend = buildLuaSemanticFrontend([{ path: 'multiple.lua', source: [
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'multiple.lua', source: [
 		'local callback',
 		'callback = function(first) return first + 1 end',
 		'callback = function(second, third) return second + third end',
 		'callback(1)',
-	].join('\n') }]);
+	].join('\n') }]));
 	const signature = frontend.provideSignatureHelp('multiple.lua', 4, 10)!;
 	assert.deepEqual(signature.signatures.map(item => item.label), ['callback(first)', 'callback(second, third)']);
 	assert.equal(signature.activeSignature, 0);
@@ -51,7 +52,7 @@ test('distinct written functions assigned to one binding retain distinct signatu
 test('editing a signature dependency replaces only the new snapshot answer', () => {
 	const source = 'local function g(x) return x end\n' + '-- retained body\n'.repeat(80)
 		+ 'local function f(a, b) g(a) end';
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['dependencies.lua']));
 	const old = workspace.updateFile('dependencies.lua', source);
 	const before = workspace.getSnapshot();
 	const declaration = old.decls.find(decl => decl.name === 'f')!;
@@ -75,14 +76,14 @@ test('only the unshadowed builtin type can establish a parameter guard', () => {
 		{ sources: [{ path: 'guard.lua', source: body + '\nfunction type(value) return "table" end' }], minimum: 1 },
 		{ sources: [{ path: 'guard.lua', source: body }, { path: 'shadow.lua', source: 'function type(value) return "table" end' }], minimum: 1 },
 	]) {
-		const frontend = buildLuaSemanticFrontend(sources);
+		const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture(sources));
 		const declaration = frontend.snapshot.getFileData('guard.lua')!.decls.find(decl => decl.name === 'run')!;
 		assert.equal(frontend.snapshot.symbolResolver.getFunctionSignatures(declaration.id)[0].minimumArgumentCount, minimum);
 	}
 });
 
 test('global builtin shadowing invalidates signature answers without rebinding the guarded file', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['guard.lua', 'shadow.lua']));
 	const file = workspace.updateFile('guard.lua', 'local function run(value) if type(value) == "table" then return value.x end end');
 	const id = file.decls.find(decl => decl.name === 'run')!.id;
 	const before = workspace.getSnapshot();
@@ -99,7 +100,7 @@ test('global builtin shadowing invalidates signature answers without rebinding t
 
 test('a type comparison to nil does not prove a parameter is present', () => {
 	for (const condition of ['type(value) == "nil"', '"nil" == type(value)']) {
-		const frontend = buildLuaSemanticFrontend([{ path: 'nil.lua', source: `local function run(value) if ${condition} then return value.x end end` }]);
+		const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'nil.lua', source: `local function run(value) if ${condition} then return value.x end end` }]));
 		const declaration = frontend.snapshot.getFileData('nil.lua')!.decls.find(decl => decl.name === 'run')!;
 		assert.equal(frontend.snapshot.symbolResolver.getFunctionSignatures(declaration.id)[0].minimumArgumentCount, 1);
 	}
@@ -111,7 +112,7 @@ test('arity forwarding treats aliases as unknown regardless of value-query histo
 			const source = cyclic
 				? 'local sink, alias\nsink = alias\nalias = sink\nalias = function(x) return x + 1 end\nlocal function f(a, b) sink(a) end\nf()'
 				: 'local function leaf(x) return x + 1 end\nlocal alias = leaf\nlocal function f(a, b) alias(a) end\nf()';
-			const frontend = buildLuaSemanticFrontend([{ path: 'alias.lua', source }]);
+			const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'alias.lua', source }]));
 			const file = frontend.snapshot.getFileData('alias.lua')!;
 			const resolver = frontend.snapshot.symbolResolver;
 			if (warmAlias) resolver.resolveDefinitionFunctionTargets(file.decls.find(decl => decl.name === 'alias')!.id);
@@ -121,7 +122,7 @@ test('arity forwarding treats aliases as unknown regardless of value-query histo
 });
 
 test('a directly written anonymous callee participates in local arity forwarding', () => {
-	const frontend = buildLuaSemanticFrontend([{ path: 'literal.lua', source: 'local function f(a, b) (function(value) return value + 1 end)(a) end' }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'literal.lua', source: 'local function f(a, b) (function(value) return value + 1 end)(a) end' }]));
 	const file = frontend.snapshot.getFileData('literal.lua')!;
 	assert.equal(frontend.snapshot.symbolResolver.getFunctionSignatures(file.decls.find(decl => decl.name === 'f')!.id)[0].minimumArgumentCount, 1);
 });

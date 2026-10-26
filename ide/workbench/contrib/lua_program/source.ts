@@ -5,7 +5,7 @@ import { findNamedLuaTableField, staticLuaTableFieldName } from '../../../../too
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { readLuaExpressionPreview, readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import type { ResourceIdentity } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import type { WorkbenchPropertyElement, WorkbenchPropertyTree } from '../../ui/property_tree';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 
@@ -31,7 +31,7 @@ export type LuaProgramProperty = WorkbenchPropertyElement & {
 
 /** Recognizes the cartlib producer call, not a same-named user function. */
 export function collectLuaPrograms(resource: ResourceIdentity, snapshot: LuaSemanticWorkspaceSnapshot): LuaProgramOccurrence[] {
-	const file = snapshot.getFileData(resource.path)!;
+	const file = snapshot.getFileData(resourceIdentityKey(resource))!;
 	const result: LuaProgramOccurrence[] = [];
 	for (const call of file.callSites) {
 		if (call.expression.method !== null) continue;
@@ -85,7 +85,7 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 		const range = file.chunk.locations.range(expression.span);
 		const element: LuaProgramProperty = { kind: table === undefined ? 'property' : 'group', key, path, label,
 			value: table === undefined ? readLuaExpressionPreview(model.buffer, file.chunk.locations, expression) : `${table.fields.length} fields`,
-			description: `${file.file}:${range.start.line}${table !== undefined && !structural ? ' / Dynamic table: edit written fields; structural editing unavailable.' : ''}`,
+			description: `${model.resource.path}:${range.start.line}${table !== undefined && !structural ? ' / Dynamic table: edit written fields; structural editing unavailable.' : ''}`,
 			warning: written === undefined || table !== undefined && !structural, displayLabel: '', displayValue: '', displayValueLeft: 0,
 			file, expression, valueExpression: value, inlineEditable: range.start.line === range.end.line, field, container,
 			table: table === undefined ? undefined : { file: owner!, table, structural },

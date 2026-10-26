@@ -8,7 +8,7 @@ import { getOrCreateSemanticProject, resetSemanticProject } from '../../ide/edit
 import { CrossFileRenameManager } from '../../ide/workbench/contrib/code_editor/rename/operations';
 import { buildCodeTabId } from '../../ide/workbench/ui/tab/id';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
-import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
+import { resourceIdentityKey, SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { resolveRuntimeResource } from '../../ide/runtime/sources';
@@ -58,6 +58,7 @@ test('cross file rename updates a retained background model without opening an e
 	const workspace = resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 	workspace.synchronizeRuntimeSources(sources);
 
+	const mainResource = resolveRuntimeResource(sources, { domain: SYSTEM_RESOURCE_DOMAIN, path: 'main.lua' })!;
 	const usageResource = resolveRuntimeResource(sources, {
 		domain: SYSTEM_RESOURCE_DOMAIN,
 		path: 'usage.lua',
@@ -67,23 +68,23 @@ test('cross file rename updates a retained background model without opening an e
 	group.model.initialize(resourceTab);
 	t.after(() => {
 		group.dispose();
-			editorTextModelService.clear();
+		editorTextModelService.clear();
 	});
 
 	const definitionCol = mainSource.indexOf('state') + 1;
-	const resolution = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('main.lua', 1, definitionCol);
+	const resolution = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition(resourceIdentityKey(mainResource), 1, definitionCol);
 	assert.ok(resolution);
 
 	const otherRanges = resolution!.references
-		.filter(ref => ref.file === 'usage.lua')
+		.filter(ref => ref.file === resourceIdentityKey(usageResource))
 		.map(ref => workspace.getSnapshot().getFileData(ref.file)!.chunk.locations.range(ref.span));
 	assert.ok(otherRanges.length > 0);
 
 	const manager = new CrossFileRenameManager(sources);
 	const plan = manager.prepareRename(SYSTEM_RESOURCE_DOMAIN,
-		{ query: resolution!, snapshot: workspace.getSnapshot(), matches: [], expression: 'state' }, 'worldState');
+		{ query: resolution!, snapshot: workspace.getSnapshot(), project: workspace, matches: [], expression: 'state' }, 'worldState');
 	editorTextModelService.history.applyEdits(plan);
-	const mainModel = editorTextModelService.get({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'main.lua' })!;
+	const mainModel = editorTextModelService.get(mainResource)!;
 	assert.equal(mainModel.buffer.getText(), mainSource.replaceAll('state', 'worldState'));
 
 	const usageModel = editorTextModelService.get(usageResource)!;
@@ -93,7 +94,7 @@ test('cross file rename updates a retained background model without opening an e
 	assert.equal(group.model.activeTab, resourceTab);
 	assert.equal(group.model.findById(buildCodeTabId(usageResource)), undefined);
 
-	const updatedData = getOrCreateSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN).getFileData('usage.lua');
+	const updatedData = getOrCreateSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN).getFileData(usageResource);
 	assert.ok(updatedData);
 	assert.equal(updatedData!.source.trim(), 'print(worldState.value)');
 
@@ -106,12 +107,12 @@ test('cross file rename updates a retained background model without opening an e
 
 	mainModel.undo();
 	const snapshot = workspace.getSnapshot();
-	const nextQuery = createLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition('main.lua', 1, definitionCol)!;
+	const nextQuery = createLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition(resourceIdentityKey(mainResource), 1, definitionCol)!;
 	assert.ok(nextQuery);
 	registerLuaSourceRecord(registry, { ...registry.records[1], resid: 'late', source_path: 'late.lua', normalized_source_path: 'late.lua',
 		module_path: 'late', src: 'print(state.value)', base_src: 'print(state.value)' });
 	const version = mainModel.version;
 	assert.throws(() => manager.prepareRename(SYSTEM_RESOURCE_DOMAIN,
-		{ query: nextQuery, snapshot, matches: [], expression: 'state' }, 'tooLate'), EditorWorkspaceEditConflict);
+		{ query: nextQuery, snapshot, project: workspace, matches: [], expression: 'state' }, 'tooLate'), EditorWorkspaceEditConflict);
 	assert.equal(mainModel.version, version, 'source discovery cannot apply a reference query that omitted the new file');
 });

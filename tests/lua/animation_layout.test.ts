@@ -18,7 +18,7 @@ function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
 	const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
-	const input = new AnimationEditorInput(model);
+	const input = new AnimationEditorInput(model, model.resource.domain);
 	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1); controller.selectProperty(input, 0);
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {});
 	const keys = new AnimationKeyControl(parent, controller, controller.authoring); keys.setInput(input);

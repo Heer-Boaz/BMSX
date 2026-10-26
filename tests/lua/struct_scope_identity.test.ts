@@ -308,6 +308,27 @@ return { nested = { count = 3 }, cells = cells }` },
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [28, 28, 9]);
 });
 
+for (const optLevel of [0, 3] as const) test(`O${optLevel}: written import aliases preserve exact module bindings and static dimensions`, () => {
+	const modules = [
+		{ path: 'foo.lua', source: 'module<const>\nreturn { count = 2 }' },
+		{ path: 'res/res/foo.lua', source: 'module<const>\nreturn { count = 3 }' },
+	].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk }));
+	for (const imports of [
+		["local exact<const> = require('res/foo')", "local prefixed<const> = require('res/res/foo')"],
+		["local prefixed<const> = require('res/res/foo')", "local exact<const> = require('res/foo')"],
+	]) {
+		const source = [...imports, "local ordinary<const> = require('foo.lua')",
+			'struct record', '\tfirst: word[exact.count]', '\tsecond: word[prefixed.count]', '\tthird: word[ordinary.count]',
+			'end', 'return sizeof(record), exact.count, prefixed.count, ordinary.count'].join('\n');
+		const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'entry').chunk, modules, {
+			entrySource: source, programDomain: 'system', optLevel,
+		});
+		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [32, 3, 3, 2]);
+	}
+});
+
 for (const initializer of [
 	'local dynamic = function(...) return 2, 3 end; local n<const> = dynamic()',
 	'local dynamic = function(...) return 2, 3 end; local first<const>, n<const> = dynamic()',

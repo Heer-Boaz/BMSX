@@ -1,11 +1,12 @@
+import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { findNamedLuaTableField } from '../../toolchain/ts/lua/syntax/table_fields';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animation/source';
 import { AnimationKeyViewport } from '../../ide/workbench/contrib/animation/key_viewport';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -15,8 +16,8 @@ import { newLuaSource } from '../../ide/workbench/contrib/resources/create/sourc
 
 const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
 function project(source: string, imports: readonly { path: string; source: string }[] = []) {
-	return buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path),
-		...imports.map(item => buildLuaFileSemanticData(item.source, item.path))));
+	return buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource),
+		...imports.map(item => buildResourceLuaSemanticFixtureFile(item.source, { domain: resource.domain, path: item.path }))], [])));
 }
 
 test('track captions preserve authored names, callback references and real property bindings without invented targets', () => {
@@ -68,9 +69,9 @@ test('imported key definitions retain their authored owner and coordinate domain
 	const document = project("return {frame_duration=20,duration_ms=100,tracks=require('tracks')}", [{ path: 'tracks.lua',
 		source: "return {{kind='value',interpolation='linear',path={'visual','offset_x'},keys={{time_ms=100,value=20},{time_ms=0,value=0}}}}" }])!;
 	const track = document.tracks[0];
-	assert.equal(document.root.file.file, 'animation.lua');
-	assert.equal(track.source!.file.file, 'tracks.lua');
-	assert.equal(track.keys[0].source!.file.file, 'tracks.lua');
+	assert.equal(document.root.file.file, resourceIdentityKey(resource));
+	assert.equal(track.source!.file.file, resourceIdentityKey({ domain: 0, path: 'tracks.lua' }));
+	assert.equal(track.keys[0].source!.file.file, resourceIdentityKey({ domain: 0, path: 'tracks.lua' }));
 	assert.equal(track.unit, 'time_ms');
 	assert.deepEqual(track.keys.map(key => key.coordinate!.value), [100, 0]);
 	const viewport = new AnimationKeyViewport();

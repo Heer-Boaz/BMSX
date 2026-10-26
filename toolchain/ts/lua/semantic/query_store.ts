@@ -13,6 +13,7 @@ import { SemanticQueryResults } from './query_dependencies';
 import { LuaSourceCallQuery, type LuaSourceCallGraph } from './source_call_graph';
 import { LuaSourceValueQuery } from './source_value_query';
 import type { LuaWrittenSourceQuery } from './written_sources';
+import type { LuaProjectModuleBindings } from './module_resolution';
 import type {
 	CallValueEntry,
 	SemanticValueSource,
@@ -62,8 +63,9 @@ export class LuaSemanticQueryStore {
 	constructor(
 		files: readonly FileSemanticData[],
 		globalValues: ReadonlyMap<string, SymbolID>,
+		moduleBindings: LuaProjectModuleBindings,
 	) {
-		const input: WorkspaceValueFactsInput = { files, globalValues };
+		const input: WorkspaceValueFactsInput = { files, globalValues, moduleBindings };
 		const identities = new WorkspaceValueIdentityIndex(input);
 		this.summaries = new FunctionSummaryStore(files, identities);
 		this.memberResults = new SemanticQueryResults<SymbolID>(this.summaries.terms.dependencies);

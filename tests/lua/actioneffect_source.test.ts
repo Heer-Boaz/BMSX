@@ -1,8 +1,8 @@
-import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LuaSyntaxKind, LuaTableFieldKind } from '../../toolchain/ts/lua/syntax/ast';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { SourceTableIssue } from '../../ide/workbench/contrib/behavior_lens/source';
@@ -13,7 +13,7 @@ import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../helpers/act
 
 const resource = { sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 function document(source: string) {
-	return buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
+	return buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/actioneffects'])));
 }
 
 test('ActionEffect fields retain typed source properties and requirement entries on the same outline occurrences', () => {

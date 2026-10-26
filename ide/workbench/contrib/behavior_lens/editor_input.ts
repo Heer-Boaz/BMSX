@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { mapBehaviorLensSourceRanges } from './source_correspondence';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
@@ -43,7 +44,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
 			if (model.mode !== 'lua' || (model.resource.domain !== view.resource.domain && model.resource.domain !== -1)) return;
 			view.source.invalidate();
-			if (view.source.models.get(model.resource.path) === model) mapBehaviorLensSourceRanges(view, model.resource, event);
+			if (view.source.models.get(resourceIdentityKey(model.resource)) === model) mapBehaviorLensSourceRanges(view, model.resource, event);
 			this.invalidatePresentation();
 		}) });
 	}

@@ -15,7 +15,7 @@ export function codeContextMenuItems(token: EditorContextToken | null) {
 /** The popup retains this Source control's action target independently of later focus. */
 export function openCodeContextMenu(pane: CodeEditorPane, row: number, column: number, x: number, y: number, keyboard = false): void {
 	const code = pane.code, editor = pane.editor, model = code.model;
-	const token = resolveContextMenuToken(code, row, column, model.resource.path);
+	const token = resolveContextMenuToken(code, row, column);
 	code.focusTarget.focus();
 	editor.contextMenu.show(x, y, codeContextMenuItems(token), {
 		isEnabled: (command, target) => editor.commands.isEnabled(command, target),

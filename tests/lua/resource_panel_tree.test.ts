@@ -1,8 +1,10 @@
+import { resourceIdentityKey } from '../../ide/common/resource';
+import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { CartEditor } from '../../ide/cart_editor';
 import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
-import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { editorTextModelService, EditorTextModelService } from '../../ide/editor/model/model_service';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
@@ -16,7 +18,7 @@ import { ResourcePanelController } from '../../ide/workbench/contrib/resources/p
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
-import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
+import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
@@ -102,9 +104,13 @@ test('hide/show and Call Hierarchy presentation retain the actual selected folde
 	f.panel.setScroll(10); const scroll = f.panel.scroll;
 	assert.ok(scroll > 0); f.panel.hide(); f.panel.show(); f.panel.prepareLayout();
 	assert.equal(f.panel.files.selectedNode, folder); assert.equal(folder.collapsed, true); assert.equal(f.panel.scroll, scroll);
-	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source: 'local function target() end\nlocal function caller() target() end' }]);
-	const symbol = frontend.findSymbolsByPosition('calls.lua', 1, 16)!;
-	f.panel.showCallHierarchy(new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target')); f.panel.prepareLayout();
+	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
+	const resource = { domain: 0 as const, path: 'calls.lua' };
+	project.updateDocument(resource, 'local function target() end\nlocal function caller() target() end');
+	t.after(() => project.dispose());
+	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
+	const symbol = frontend.findSymbolsByPosition(resourceIdentityKey(resource), 1, 16)!;
+	f.panel.showCallHierarchy(new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target', project)); f.panel.prepareLayout();
 	f.panel.hide(); f.panel.show(); f.panel.prepareLayout();
 	assert.equal(f.panel.files.selectedNode, folder); assert.equal(folder.collapsed, true); assert.equal(f.panel.scroll, scroll);
 });
@@ -136,9 +142,13 @@ test('clean catalog updates preserve hover and cached measurements; a real publi
 
 test('panel refresh owns the active view without rebuilding Call Hierarchy or updating a hidden Files catalog', t => {
 	const f = fixture(t);
-	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source: 'local function target() end\nlocal function caller() target() end' }]);
-	const target = frontend.findSymbolsByPosition('calls.lua', 1, 16)!;
-	const model = new CallHierarchyModel(frontend, [target.targets[0].id], 'target');
+	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
+	const resource = { domain: 0 as const, path: 'calls.lua' };
+	project.updateDocument(resource, 'local function target() end\nlocal function caller() target() end');
+	t.after(() => project.dispose());
+	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
+	const target = frontend.findSymbolsByPosition(resourceIdentityKey(resource), 1, 16)!;
+	const model = new CallHierarchyModel(frontend, [target.targets[0].id], 'target', project);
 	f.panel.showCallHierarchy(model);
 	const incoming = t.mock.method(model, 'resolveIncomingCalls'), outgoing = t.mock.method(model, 'resolveOutgoingCalls');
 	const hasChildren = t.mock.method(model, 'hasChildren');

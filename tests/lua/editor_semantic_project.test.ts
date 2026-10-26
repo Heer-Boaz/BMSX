@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../ide/common/resource';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import { advanceLuaSourceRevision } from '../../ide/runtime/source_registry';
@@ -89,25 +90,25 @@ test('document syntax survives unrelated reads and is isolated across domains wi
 	models.retain(resource(1, 'same.lua'), 'lua', 'return { right = 2 }');
 	for (let index = 0; index < 40; index++) models.retain(resource(0, `other_${index}.lua`), 'lua', `return ${index}`);
 	const initial = first.getSnapshot();
-	const firstSyntax = initial.getFileData('same.lua')!.chunk;
-	const secondSyntax = second.getFileData('same.lua')!.chunk;
+	const firstSyntax = initial.getFileData(resourceIdentityKey({ domain: 0, path: 'same.lua' }))!.chunk;
+	const secondSyntax = second.getFileData({ domain: 1, path: 'same.lua' })!.chunk;
 	const count = parse.mock.callCount();
 	for (let index = 0; index < 40; index++) {
-		assert.equal(first.getFileData('same.lua')!.chunk, firstSyntax);
-		assert.equal(second.getFileData('same.lua')!.chunk, secondSyntax);
-		assert.equal(first.getFileData(`other_${index}.lua`)!.chunk.source, `return ${index}`);
+		assert.equal(first.getFileData({ domain: 0, path: 'same.lua' })!.chunk, firstSyntax);
+		assert.equal(second.getFileData({ domain: 1, path: 'same.lua' })!.chunk, secondSyntax);
+		assert.equal(first.getFileData({ domain: 0, path: `other_${index}.lua` })!.chunk.source, `return ${index}`);
 	}
 	assert.notEqual(firstSyntax, secondSyntax);
 	assert.equal(parse.mock.callCount(), count, 'reads never reparse because other files evicted syntax');
 	left.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- first\n' }]);
 	left.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- second\n' }]);
 	assert.equal(parse.mock.callCount(), count, 'model events queue work only');
-	const updated = first.getFileData('same.lua')!;
+	const updated = first.getFileData({ domain: 0, path: 'same.lua' })!;
 	assert.equal(parse.mock.callCount(), count + 1, 'coalesced edits parse once');
 	assert.equal(updated.chunk.source, '-- second\n-- first\nreturn { left = 1 }');
-	assert.equal(initial.getFileData('same.lua')!.chunk, firstSyntax);
+	assert.equal(initial.getFileData(resourceIdentityKey({ domain: 0, path: 'same.lua' }))!.chunk, firstSyntax);
 	assert.equal(firstSyntax.source, 'return { left = 1 }');
-	assert.equal(second.getFileData('same.lua')!.chunk, secondSyntax);
+	assert.equal(second.getFileData({ domain: 1, path: 'same.lua' })!.chunk, secondSyntax);
 });
 
 test('editor document source remains authoritative across a newer runtime registry generation', () => {
@@ -116,13 +117,13 @@ test('editor document source remains authoritative across a newer runtime regist
 	const sources = runtimeSources(system, cartridge);
 	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
 	project.synchronizeRuntimeSources(sources);
-	project.updateDocument('entry.lua', 'return "editor"');
+	project.updateDocument({ domain: 0, path: 'entry.lua' }, 'return "editor"');
 
 	cartridge.records[0].src = 'return "new rom"';
 	cartridge.revision += 1;
 	project.synchronizeRuntimeSources(sources);
 
-	assert.equal(project.getFileData('entry.lua')?.source, 'return "editor"');
+	assert.equal(project.getFileData({ domain: 0, path: 'entry.lua' })?.source, 'return "editor"');
 });
 
 test('editor semantic project removes files that disappear from a replaced runtime registry', () => {
@@ -133,17 +134,17 @@ test('editor semantic project removes files that disappear from a replaced runti
 	]));
 	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
 	project.synchronizeRuntimeSources(sources);
-	assert.ok(project.getFileData('removed.lua'));
+	assert.ok(project.getFileData({ domain: 0, path: 'removed.lua' }));
 
 	sources.cartridgeSlots[0] = {
 		luaSources: sourceRegistry([['entry.lua', 'return "replacement"']]),
 	} as RuntimeSourceState['cartridgeSlots'][0];
 	project.synchronizeRuntimeSources(sources);
 
-	assert.equal(project.getFileData('removed.lua'), undefined);
+	assert.equal(project.getFileData({ domain: 0, path: 'removed.lua' }), undefined);
 });
 
-test('cartridge semantic projects prefer cartridge modules while retaining system-only modules', () => {
+test('cartridge module bindings prefer cartridge files while retaining both source identities', () => {
 	const system = sourceRegistry([
 		['shared.lua', 'return "system"'],
 		['system_only.lua', 'return "system only"'],
@@ -153,8 +154,12 @@ test('cartridge semantic projects prefer cartridge modules while retaining syste
 	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
 	project.synchronizeRuntimeSources(sources);
 
-	assert.equal(project.getFileData('shared.lua')?.source, 'return "cartridge"');
-	assert.equal(project.getFileData('system_only.lua')?.source, 'return "system only"');
+	assert.equal(project.getFileData({ domain: 0, path: 'shared.lua' })?.source, 'return "cartridge"');
+	assert.equal(project.getFileData({ domain: -1, path: 'system_only.lua' })?.source, 'return "system only"');
+	assert.equal(project.getFileData({ domain: -1, path: 'shared.lua' })?.source, 'return "system"');
+	const snapshot = project.getSnapshot();
+	assert.equal(snapshot.resolveModule(resourceIdentityKey({ domain: 0, path: 'shared.lua' }), 'shared'), resourceIdentityKey({ domain: 0, path: 'shared.lua' }));
+	assert.equal(snapshot.resolveModule(resourceIdentityKey({ domain: -1, path: 'shared.lua' }), 'shared'), resourceIdentityKey({ domain: -1, path: 'shared.lua' }));
 });
 
 test('semantic projects seed retained models without a code tab or a behavior view', () => {
@@ -163,7 +168,7 @@ test('semantic projects seed retained models without a code tab or a behavior vi
 	const project = new EditorLuaSemanticProject(0, models);
 	project.synchronizeRuntimeSources(runtimeSources(sourceRegistry([['system.lua', 'return true']]),
 		sourceRegistry([['hidden.lua', 'return "rom"']])));
-	assert.equal(project.getSnapshot().getFileData('hidden.lua')!.source, 'return "unsaved"');
+	assert.equal(project.getSnapshot().getFileData(resourceIdentityKey({ domain: 0, path: 'hidden.lua' }))!.source, 'return "unsaved"');
 });
 
 test('model addition and hidden dependency edits are visible at the next semantic read, including Undo', () => {
@@ -172,7 +177,7 @@ test('model addition and hidden dependency edits are visible at the next semanti
 	project.synchronizeRuntimeSources(runtimeSources(sourceRegistry([['system.lua', 'return true']]),
 		sourceRegistry([['main.lua', "return require('dependency')"], ['dependency.lua', 'return {}']])));
 	const old = project.getSnapshot();
-	const importer = old.getFileData('main.lua')!;
+	const importer = old.getFileData(resourceIdentityKey({ domain: 0, path: 'main.lua' }))!;
 	const statement = importer.chunk.body.get(0)!;
 	assert.equal(statement.kind, LuaSyntaxKind.ReturnStatement);
 	if (statement.kind !== LuaSyntaxKind.ReturnStatement) throw new Error('fixture must return its import');
@@ -182,17 +187,17 @@ test('model addition and hidden dependency edits are visible at the next semanti
 	const model = models.retain(resource(0, 'dependency.lua'), 'lua', 'return {}');
 	assert.equal(project.getSnapshot(), old, 'opening unchanged source is not an edit');
 	model.pushEditOperations([{ offset: 8, deleteLength: 0, text: 'value = 1' }]);
-	assert.equal(old.getFileData('dependency.lua')!.source, 'return {}', 'snapshots remain immutable');
+	assert.equal(old.getFileData(resourceIdentityKey({ domain: 0, path: 'dependency.lua' }))!.source, 'return {}', 'snapshots remain immutable');
 	const edited = project.getSnapshot();
 	assert.notEqual(edited, old);
-	assert.equal(edited.getFileData('dependency.lua')!.source, 'return {value = 1}');
-	assert.equal(edited.getFileData('main.lua'), old.getFileData('main.lua'));
+	assert.equal(edited.getFileData(resourceIdentityKey({ domain: 0, path: 'dependency.lua' }))!.source, 'return {value = 1}');
+	assert.equal(edited.getFileData(resourceIdentityKey({ domain: 0, path: 'main.lua' })), old.getFileData(resourceIdentityKey({ domain: 0, path: 'main.lua' })));
 	const query = edited.symbolResolver.writtenSources;
 	const trace = query.trace(query.expression(importer, statement.expressions[0]));
 	assert.equal(trace.terminals[0].file.source, 'return {value = 1}');
 	assert.equal(oldTrace.terminals[0].file.source, 'return {}');
 	model.undo();
-	assert.equal(project.getFileData('dependency.lua')!.source, 'return {}');
+	assert.equal(project.getFileData({ domain: 0, path: 'dependency.lua' })!.source, 'return {}');
 });
 
 test('factory source origins follow a hidden working copy through edit and Undo without touching the importer', t => {
@@ -203,13 +208,13 @@ test('factory source origins follow a hidden working copy through edit and Undo 
 	project.synchronizeRuntimeSources(runtimeSources(sourceRegistry([['system.lua', 'return true']]),
 		sourceRegistry([['main.lua', "local function consume(value) end; consume(require('dependency'))"], ['dependency.lua', provider]])));
 	const initial = project.getSnapshot();
-	const importer = initial.getFileData('main.lua')!;
+	const importer = initial.getFileData(resourceIdentityKey({ domain: 0, path: 'main.lua' }))!;
 	const site = importer.callSites.find(site => site.reference?.name === 'consume')!;
 	const model = models.retain(resource(0, 'dependency.lua'), 'lua', provider);
 	const version = model.version;
 	function read() {
 		const snapshot = project.getSnapshot();
-		assert.equal(snapshot.getFileData('main.lua'), importer);
+		assert.equal(snapshot.getFileData(resourceIdentityKey({ domain: 0, path: 'main.lua' })), importer);
 		const resolver = snapshot.symbolResolver;
 		const query = resolver.contextualSources;
 		const head = resolver.callSources(site).heads[0];
@@ -217,7 +222,7 @@ test('factory source origins follow a hidden working copy through edit and Undo 
 		assert.equal(trace.terminals.length, 1);
 		const source = trace.terminals[0].source;
 		assert.ok(source.kind === 'function-return');
-		assert.equal(source.file, snapshot.getFileData(model.resource.path));
+		assert.equal(source.file, snapshot.getFileData(resourceIdentityKey(model.resource)));
 		return { source, text: readLuaSourceRange(model.buffer, source.file.chunk.locations.range(source.entry.statement.span)) };
 	}
 	const first = read();
@@ -254,7 +259,7 @@ test('queued model changes do not enumerate retained models on content changes o
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- second\n' }]);
 	assert.equal(models.enumerations, seeded);
 	assert.equal(sourceReads, previousReads, 'content callbacks queue paths; they do not read/parse new source');
-	assert.equal(project.getFileData('hidden.lua')!.source, '-- second\n-- first\nreturn {}');
+	assert.equal(project.getFileData({ domain: 0, path: 'hidden.lua' })!.source, '-- second\n-- first\nreturn {}');
 	assert.equal(sourceReads, previousReads + 1, 'two queued changes bind only the latest text');
 	assert.equal(models.enumerations, seeded);
 });
@@ -267,25 +272,25 @@ test('model removal releases source to the current registry and removes model-on
 	project.synchronizeRuntimeSources(sources);
 	models.retain(resource(0, 'main.lua'), 'lua', 'return "unsaved"');
 	models.retain(resource(0, 'new.lua'), 'lua', 'return "new"');
-	project.updateDocument('main.lua', 'return "unsaved"');
+	project.updateDocument({ domain: 0, path: 'main.lua' }, 'return "unsaved"');
 	cartridge.records[0].src = 'return "new base"';
 	cartridge.revision += 1;
 	project.synchronizeRuntimeSources(sources);
-	assert.equal(project.getFileData('main.lua')!.source, 'return "unsaved"');
-	assert.ok(project.getFileData('new.lua'));
+	assert.equal(project.getFileData({ domain: 0, path: 'main.lua' })!.source, 'return "unsaved"');
+	assert.ok(project.getFileData({ domain: 0, path: 'new.lua' }));
 	models.clear();
-	assert.equal(project.getFileData('main.lua')!.source, 'return "new base"');
-	assert.equal(project.getFileData('new.lua'), undefined);
+	assert.equal(project.getFileData({ domain: 0, path: 'main.lua' })!.source, 'return "new base"');
+	assert.equal(project.getFileData({ domain: 0, path: 'new.lua' }), undefined);
 });
 
 test('clear and re-add before a query publishes the new model rather than a removed source', () => {
 	const models = new EditorTextModelService();
 	const project = new EditorLuaSemanticProject(0, models);
 	models.retain(resource(0, 'main.lua'), 'lua', 'return 1');
-	assert.equal(project.getFileData('main.lua')!.source, 'return 1');
+	assert.equal(project.getFileData({ domain: 0, path: 'main.lua' })!.source, 'return 1');
 	models.clear();
 	models.retain(resource(0, 'main.lua'), 'lua', 'return 2');
-	assert.equal(project.getFileData('main.lua')!.source, 'return 2');
+	assert.equal(project.getFileData({ domain: 0, path: 'main.lua' })!.source, 'return 2');
 });
 
 test('identical paths in two cart domains have separate model overlays', () => {
@@ -294,14 +299,14 @@ test('identical paths in two cart domains have separate model overlays', () => {
 	const right = new EditorLuaSemanticProject(1, models);
 	const model = models.retain(resource(0, 'same.lua'), 'lua', 'return "left"');
 	models.retain(resource(1, 'same.lua'), 'lua', 'return "right"');
-	assert.equal(left.getFileData('same.lua')!.source, 'return "left"');
+	assert.equal(left.getFileData({ domain: 0, path: 'same.lua' })!.source, 'return "left"');
 	const rightSnapshot = right.getSnapshot();
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
 	assert.equal(right.getSnapshot(), rightSnapshot);
-	assert.equal(rightSnapshot.getFileData('same.lua')!.source, 'return "right"');
+	assert.equal(rightSnapshot.getFileData(resourceIdentityKey({ domain: 1, path: 'same.lua' }))!.source, 'return "right"');
 });
 
-test('SYSTEM models update cart projects unless the cart supplies that resource', () => {
+test('SYSTEM models retain their own facts when cartridge bindings select a namesake', () => {
 	const models = new EditorTextModelService();
 	const system = sourceRegistry([['shared.lua', 'return "system"'], ['system_only.lua', 'return "base"']]);
 	const sources = runtimeSources(system, sourceRegistry([['shared.lua', 'return "cart"']]));
@@ -310,11 +315,11 @@ test('SYSTEM models update cart projects unless the cart supplies that resource'
 	cart.synchronizeRuntimeSources(sources); firmware.synchronizeRuntimeSources(sources);
 	models.retain(resource(-1, 'shared.lua'), 'lua', 'return "system edit"');
 	const dependency = models.retain(resource(-1, 'system_only.lua'), 'lua', 'return "dependency edit"');
-	assert.equal(cart.getFileData('shared.lua')!.source, 'return "cart"');
-	assert.equal(firmware.getFileData('shared.lua')!.source, 'return "system edit"');
-	assert.equal(cart.getFileData('system_only.lua')!.source, 'return "dependency edit"');
+	assert.equal(cart.getFileData({ domain: 0, path: 'shared.lua' })!.source, 'return "cart"');
+	assert.equal(firmware.getFileData({ domain: -1, path: 'shared.lua' })!.source, 'return "system edit"');
+	assert.equal(cart.getFileData({ domain: -1, path: 'system_only.lua' })!.source, 'return "dependency edit"');
 	dependency.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edited\n' }]);
-	assert.equal(cart.getFileData('system_only.lua')!.source, '-- edited\nreturn "dependency edit"');
+	assert.equal(cart.getFileData({ domain: -1, path: 'system_only.lua' })!.source, '-- edited\nreturn "dependency edit"');
 });
 
 test('registry replacement can shadow and uncover a retained SYSTEM model without another edit', () => {
@@ -324,13 +329,15 @@ test('registry replacement can shadow and uncover a retained SYSTEM model withou
 	const project = new EditorLuaSemanticProject(0, models);
 	models.retain(resource(-1, 'shared.lua'), 'lua', 'return "system edit"');
 	project.synchronizeRuntimeSources(sources);
-	assert.equal(project.getFileData('shared.lua')!.source, 'return "system edit"');
+	assert.equal(project.getFileData({ domain: -1, path: 'shared.lua' })!.source, 'return "system edit"');
 	sources.cartridgeSlots[0] = { luaSources: sourceRegistry([['shared.lua', 'return "cart"']]) } as RuntimeSourceState['cartridgeSlots'][0];
 	project.synchronizeRuntimeSources(sources);
-	assert.equal(project.getFileData('shared.lua')!.source, 'return "cart"');
+	assert.equal(project.getFileData({ domain: 0, path: 'shared.lua' })!.source, 'return "cart"');
+	assert.equal(project.getSnapshot().resolveModule(resourceIdentityKey({ domain: 0, path: 'shared.lua' }), 'shared'), resourceIdentityKey({ domain: 0, path: 'shared.lua' }));
+	assert.equal(project.getFileData({ domain: -1, path: 'shared.lua' })!.source, 'return "system edit"');
 	sources.cartridgeSlots[0] = { luaSources: sourceRegistry([['entry.lua', 'return true']]) } as RuntimeSourceState['cartridgeSlots'][0];
 	project.synchronizeRuntimeSources(sources);
-	assert.equal(project.getFileData('shared.lua')!.source, 'return "system edit"');
+	assert.equal(project.getFileData({ domain: -1, path: 'shared.lua' })!.source, 'return "system edit"');
 });
 
 test('disposing a semantic project disconnects its model subscriptions', () => {
@@ -362,14 +369,14 @@ test('explicit editor parses replace same-text generations without replacing ret
 	t.after(() => { project.dispose(); models.clear(); });
 	const path = 'explicit.lua';
 	const source = 'local value = 1; return value';
-	project.updateDocument(path, source);
+	project.updateDocument({ domain: 0, path: path }, source);
 	const old = project.getSnapshot();
-	const parsed = parseLuaChunkWithRecovery(source, path);
-	project.updateDocuments([{ path, source, parsed }]);
+	const parsed = parseLuaChunkWithRecovery(source, resourceIdentityKey({ domain: 0, path: path }));
+	project.updateDocuments([{ resource: { domain: 0, path: path }, source, parsed }]);
 	const updated = project.getSnapshot();
-	assert.equal(updated.getFileData(path)!.chunk, parsed.chunk);
-	assert.notEqual(old.getFileData(path)!.chunk, parsed.chunk);
-	project.updateDocuments([{ path, source, parsed }]);
+	assert.equal(updated.getFileData(resourceIdentityKey({ domain: 0, path: path }))!.chunk, parsed.chunk);
+	assert.notEqual(old.getFileData(resourceIdentityKey({ domain: 0, path: path }))!.chunk, parsed.chunk);
+	project.updateDocuments([{ resource: { domain: 0, path: path }, source, parsed }]);
 	assert.equal(project.getSnapshot(), updated);
 });
 
@@ -379,23 +386,23 @@ test('model deltas compose across multiple events and preserve lexical identitie
 	t.after(() => { project.dispose(); models.clear(); });
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = models.retain(resource(0, 'composed.lua'), 'lua', source);
-	const first = project.getFileData('composed.lua')!;
+	const first = project.getFileData({ domain: 0, path: 'composed.lua' })!;
 	const tail = Array.from(first.chunk.tokens).find(token => token.lexeme === 'value_70')!;
 	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- first\n' }]);
 	model.pushEditOperations([{ offset: 3, deleteLength: 5, text: 'changed' }]);
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n' }]);
 	assert.equal(parse.mock.callCount(), 0, 'event callbacks compose lengths without parsing');
-	const edited = project.getFileData('composed.lua')!;
+	const edited = project.getFileData({ domain: 0, path: 'composed.lua' })!;
 	assert.equal(parse.mock.callCount(), 1);
 	assert.equal(edited.source, model.buffer.getText());
 	assert.ok(Array.from(edited.chunk.tokens).includes(tail), 'unchanged lexical blocks survive the composed edit');
 	model.undo(); model.undo(); model.undo();
-	const undone = project.getFileData('composed.lua')!;
+	const undone = project.getFileData({ domain: 0, path: 'composed.lua' })!;
 	assert.equal(undone.source, source);
 	assert.ok(Array.from(undone.chunk.tokens).includes(tail));
 	model.redo(); model.redo(); model.redo();
-	const redone = project.getFileData('composed.lua')!;
+	const redone = project.getFileData({ domain: 0, path: 'composed.lua' })!;
 	assert.equal(redone.source, edited.source);
 	assert.ok(Array.from(redone.chunk.tokens).includes(tail));
 	assert.equal(first.source, source);
@@ -407,20 +414,20 @@ test('explicit same-text parses replace the model baseline and the next model an
 	t.after(() => { project.dispose(); models.clear(); });
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = models.retain(resource(0, 'explicit_model.lua'), 'lua', source);
-	project.analyzeDocument(model.resource.path, model.buffer);
+	project.analyzeDocument(model.resource, model.buffer);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- pending\n' }]);
-	const parsed = parseLuaChunkWithRecovery(model.buffer.getText(), model.resource.path);
-	project.updateDocuments([{ path: model.resource.path, source: model.buffer.getText(), parsed }]);
-	assert.equal(project.analyzeDocument(model.resource.path, model.buffer).chunk, parsed.chunk,
+	const parsed = parseLuaChunkWithRecovery(model.buffer.getText(), resourceIdentityKey(model.resource));
+	project.updateDocuments([{ resource: model.resource, source: model.buffer.getText(), parsed }]);
+	assert.equal(project.analyzeDocument(model.resource, model.buffer).chunk, parsed.chunk,
 		'the pending model event cannot replace a supplied same-text parse');
 	const retained = parsed.tokens.get(parsed.tokens.length - 2);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- next\n' }]);
-	assert.ok(Array.from(project.analyzeDocument(model.resource.path, model.buffer).chunk.tokens).includes(retained));
+	assert.ok(Array.from(project.analyzeDocument(model.resource, model.buffer).chunk.tokens).includes(retained));
 	const detached = new EditorTextModelService();
 	t.after(() => detached.clear());
 	const other = detached.retain(resource(0, model.resource.path), 'lua', 'return 77');
-	assert.equal(project.analyzeDocument(model.resource.path, other.buffer).source, 'return 77', 'detached buffers are explicit full-source input');
-	assert.equal(project.analyzeDocument(model.resource.path, model.buffer).source, model.buffer.getText(), 'retained input reestablishes its own baseline');
+	assert.equal(project.analyzeDocument(model.resource, other.buffer).source, 'return 77', 'detached buffers are explicit full-source input');
+	assert.equal(project.analyzeDocument(model.resource, model.buffer).source, model.buffer.getText(), 'retained input reestablishes its own baseline');
 });
 
 test('ownership changes discard queued deltas before SYSTEM models are uncovered or a path is re-added', t => {
@@ -430,20 +437,20 @@ test('ownership changes discard queued deltas before SYSTEM models are uncovered
 	const sources = runtimeSources(sourceRegistry([['shared.lua', 'return 1']]), sourceRegistry([['entry.lua', 'return 0']]));
 	const system = models.retain(resource(-1, 'shared.lua'), 'lua', 'return 1');
 	project.synchronizeRuntimeSources(sources);
-	assert.equal(project.getFileData('shared.lua')!.source, 'return 1');
+	assert.equal(project.getFileData({ domain: -1, path: 'shared.lua' })!.source, 'return 1');
 	system.pushEditOperations([{ offset: 7, deleteLength: 1, text: '222' }]);
 	sources.cartridgeSlots[0] = { luaSources: sourceRegistry([['shared.lua', 'return 33333']]) } as RuntimeSourceState['cartridgeSlots'][0];
 	project.synchronizeRuntimeSources(sources);
-	assert.equal(project.getFileData('shared.lua')!.source, 'return 33333');
+	assert.equal(project.getFileData({ domain: 0, path: 'shared.lua' })!.source, 'return 33333');
 	system.pushEditOperations([{ offset: 7, deleteLength: 3, text: '4' }]);
 	sources.cartridgeSlots[0] = { luaSources: sourceRegistry([['entry.lua', 'return 0']]) } as RuntimeSourceState['cartridgeSlots'][0];
 	project.synchronizeRuntimeSources(sources);
-	assert.equal(project.getFileData('shared.lua')!.source, 'return 4');
+	assert.equal(project.getFileData({ domain: -1, path: 'shared.lua' })!.source, 'return 4');
 	system.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- discarded\n' }]);
 	models.clear();
 	const next = models.retain(resource(-1, 'shared.lua'), 'lua', 'return 56789');
 	next.pushEditOperations([{ offset: 7, deleteLength: 5, text: '6' }]);
-	assert.equal(project.getFileData('shared.lua')!.source, 'return 6');
+	assert.equal(project.getFileData({ domain: -1, path: 'shared.lua' })!.source, 'return 6');
 });
 
 test('actual editor frontend and context token queries consume queued model edits instead of publishing full-source replacements', async t => {
@@ -459,16 +466,16 @@ test('actual editor frontend and context token queries consume queued model edit
 
 	t.after(() => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	const initial = buildEditorSemanticSnapshot(sources, model.resource, model.buffer);
-	const retained = initial.getFileData(path)!.chunk.tokens.get(initial.getFileData(path)!.chunk.tokens.length - 2);
+	const retained = initial.getFileData(resourceIdentityKey(model.resource))!.chunk.tokens.get(initial.getFileData(resourceIdentityKey(model.resource))!.chunk.tokens.length - 2);
 	const explicit = t.mock.method(project, 'updateDocument');
 	const { documents, clock } = createTestCodeDocuments(t, editorTextModelService);
 	const code = createTestCodeControl(t, model, documents, clock);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- frontend\n' }]);
 	const next = buildEditorSemanticSnapshot(sources, model.resource, model.buffer);
-	assert.ok(Array.from(next.getFileData(path)!.chunk.tokens).includes(retained));
+	assert.ok(Array.from(next.getFileData(resourceIdentityKey(model.resource))!.chunk.tokens).includes(retained));
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- context\n' }]);
-	assert.equal(resolveContextMenuToken(code, 2, 7, path)?.text, 'value_0');
-	assert.ok(Array.from(project.getFileData(path)!.chunk.tokens).includes(retained));
+	assert.equal(resolveContextMenuToken(code, 2, 7)?.text, 'value_0');
+	assert.ok(Array.from(project.getFileData({ domain: 0, path: path })!.chunk.tokens).includes(retained));
 	assert.equal(explicit.mock.callCount(), 0, 'model-backed frontend calls must not reset the incremental baseline');
 });
 
@@ -486,12 +493,12 @@ test('queued edits for multiple models publish one workspace batch and full-sour
 	const snapshot = project.getSnapshot();
 	assert.equal(publish.mock.callCount(), 1);
 	assert.equal(publish.mock.calls[0].arguments[0].length, 2);
-	assert.equal(snapshot.getFileData('left.lua')!.source, 'return 123456');
-	assert.equal(snapshot.getFileData('right.lua')!.source, 'return 234567');
+	assert.equal(snapshot.getFileData(resourceIdentityKey({ domain: 0, path: 'left.lua' }))!.source, 'return 123456');
+	assert.equal(snapshot.getFileData(resourceIdentityKey({ domain: 0, path: 'right.lua' }))!.source, 'return 234567');
 	left.pushEditOperations([{ offset: 7, deleteLength: 6, text: '3' }]);
-	project.updateDocument('left.lua', 'local unrelated = "a different source length"; return unrelated');
+	project.updateDocument({ domain: 0, path: 'left.lua' }, 'local unrelated = "a different source length"; return unrelated');
 	left.pushEditOperations([{ offset: 7, deleteLength: 1, text: '4' }]);
-	assert.equal(project.getFileData('left.lua')!.source, 'return 4', 'model deltas are not applied to an explicit replacement baseline');
+	assert.equal(project.getFileData({ domain: 0, path: 'left.lua' })!.source, 'return 4', 'model deltas are not applied to an explicit replacement baseline');
 });
 
 test('diagnostics consume model deltas without replacing incremental baselines with explicit strings', async t => {
@@ -509,13 +516,13 @@ test('diagnostics consume model deltas without replacing incremental baselines w
 
 	t.after(() => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	project.synchronizeRuntimeSources(sources);
-	const before = project.getFileData(path)!;
+	const before = project.getFileData({ domain: 0, path: path })!;
 	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
 	const explicit = t.mock.method(project, 'updateDocuments');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- diagnostics\n' }]);
 	computeResourceDiagnostics(editorTextModelService, sources, [model]);
 	assert.equal(explicit.mock.callCount(), 0);
-	assert.ok(Array.from(project.getFileData(path)!.chunk.tokens).includes(retained));
+	assert.ok(Array.from(project.getFileData({ domain: 0, path: path })!.chunk.tokens).includes(retained));
 	computeResourceDiagnostics(editorTextModelService, sources, [model]);
 	assert.equal(explicit.mock.callCount(), 0, 'repeated diagnostics preserve the model-owned baseline');
 });
@@ -527,7 +534,7 @@ test('scheduled syntax highlighting consumes current model deltas and invalidate
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = editorTextModelService.retain(resource(0, 'highlight_incremental.lua'), 'lua', source);
 	const project = resetSemanticProject(editorTextModelService, 0);
-	const before = project.getFileData(model.resource.path)!;
+	const before = project.getFileData(model.resource)!;
 	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
 	const clock = new VirtualHeadlessClock();
 	const documents = new CodeDocumentProjections(editorTextModelService, {
@@ -559,14 +566,14 @@ test('public listeners registered before a lazy semantic project observe current
 	let observed = 0;
 	let applied: import('../../ide/editor/model/text_model').EditorTextModelAppliedChanges;
 	models.onDidChangeContent((changed, event) => {
-		const actual = project.getFileData(changed.resource.path)!;
+		const actual = project.getFileData(changed.resource)!;
 		assert.equal(actual.source, changed.buffer.getText());
-		assert.deepEqual(luaSyntaxSnapshot(actual.chunk), luaSyntaxSnapshot(parseLuaChunkWithRecovery(changed.buffer.getText(), changed.resource.path).chunk));
+		assert.deepEqual(luaSyntaxSnapshot(actual.chunk), luaSyntaxSnapshot(parseLuaChunkWithRecovery(changed.buffer.getText(), resourceIdentityKey(changed.resource)).chunk));
 		assert.equal(event.version, applied.version);
 		assert.equal(event.changes, applied.changes, 'internal/public phases share one computed delta array');
 		observed++;
 	});
-	model.onDidChangeContent(() => assert.equal(project.getFileData(model.resource.path)!.source, model.buffer.getText()));
+	model.onDidChangeContent(() => assert.equal(project.getFileData(model.resource)!.source, model.buffer.getText()));
 	models.onDidApplyChanges((changed, event) => {
 		assert.equal(changed.version, event.version);
 		applied = event;
@@ -584,7 +591,7 @@ test('public listeners registered before a lazy semantic project observe current
 	model.restoreDirtySource('return 4444');
 	model.revert();
 	assert.equal(observed, 8);
-	assert.equal(project.getFileData(model.resource.path)!.source, 'return 1');
+	assert.equal(project.getFileData(model.resource)!.source, 'return 1');
 });
 
 test('first public callback of a compound edit and Undo/Redo sees every applied model delta', t => {
@@ -598,9 +605,9 @@ test('first public callback of a compound edit and Undo/Redo sees every applied 
 		const snapshot = project.getSnapshot();
 		for (const model of [left, right]) {
 			assert.equal(versions.get(model), model.version, 'all internal phases finish before the first public phase');
-			const actual = snapshot.getFileData(model.resource.path)!;
+			const actual = snapshot.getFileData(resourceIdentityKey(model.resource))!;
 			assert.equal(actual.source, model.buffer.getText());
-			assert.deepEqual(luaSyntaxSnapshot(actual.chunk), luaSyntaxSnapshot(parseLuaChunkWithRecovery(model.buffer.getText(), model.resource.path).chunk));
+			assert.deepEqual(luaSyntaxSnapshot(actual.chunk), luaSyntaxSnapshot(parseLuaChunkWithRecovery(model.buffer.getText(), resourceIdentityKey(model.resource)).chunk));
 		}
 		observed++;
 	});
@@ -615,8 +622,8 @@ test('first public callback of a compound edit and Undo/Redo sees every applied 
 	left.undo();
 	right.redo();
 	assert.equal(observed, 6);
-	assert.equal(project.getFileData(left.resource.path)!.source, 'return 11');
-	assert.equal(project.getFileData(right.resource.path)!.source, 'return 222');
+	assert.equal(project.getFileData(left.resource)!.source, 'return 11');
+	assert.equal(project.getFileData(right.resource)!.source, 'return 222');
 });
 
 test('editor model edits, inactive documents and undo reuse unchanged binding bodies', t => {
@@ -628,22 +635,22 @@ test('editor model edits, inactive documents and undo reuse unchanged binding bo
 	const model = models.retain(resource(0, 'reuse.lua'), 'lua', source);
 	const inactive = models.retain(resource(0, 'inactive.lua'), 'lua', 'return {}');
 	const first = project.getSnapshot();
-	const old = first.getFileData('reuse.lua')!;
+	const old = first.getFileData(resourceIdentityKey({ domain: 0, path: 'reuse.lua' }))!;
 	const retained = old.functionValueFlows[1];
 	const offset = source.indexOf('local function changed()') + 'local function changed()\n'.length + 20 * 'do end\n'.length;
 	model.pushEditOperations([{ offset, deleteLength: 0, text: 'do end; ' }]);
 	model.pushEditOperations([{ offset, deleteLength: 0, text: 'do end; ' }]);
-	const edited = project.getFileData('reuse.lua')!;
+	const edited = project.getFileData({ domain: 0, path: 'reuse.lua' })!;
 	assert.equal(edited.bindingWork.reusedFunctions, 1);
 	assert.equal(edited.functionValueFlows[1], retained);
-	assert.equal(project.getFileData('inactive.lua'), first.getFileData('inactive.lua'));
+	assert.equal(project.getFileData({ domain: 0, path: 'inactive.lua' }), first.getFileData(resourceIdentityKey({ domain: 0, path: 'inactive.lua' })));
 	model.undo();
-	assert.equal(project.getFileData('reuse.lua')!.functionValueFlows[1], retained);
+	assert.equal(project.getFileData({ domain: 0, path: 'reuse.lua' })!.functionValueFlows[1], retained);
 	model.redo();
-	assert.equal(project.getFileData('reuse.lua')!.functionValueFlows[1], retained);
+	assert.equal(project.getFileData({ domain: 0, path: 'reuse.lua' })!.functionValueFlows[1], retained);
 	inactive.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed elsewhere\n' }]);
-	assert.equal(project.getFileData('reuse.lua')!.functionValueFlows[1], retained);
-	assert.equal(first.getFileData('reuse.lua'), old);
+	assert.equal(project.getFileData({ domain: 0, path: 'reuse.lua' })!.functionValueFlows[1], retained);
+	assert.equal(first.getFileData(resourceIdentityKey({ domain: 0, path: 'reuse.lua' })), old);
 	assert.equal(old.source, source);
 });
 
@@ -663,7 +670,7 @@ test('semantic input generations advance for model and registry changes, never f
 	assert.deepEqual(generations, [firstGeneration + 1]);
 	assert.equal(parse.mock.callCount(), 0, 'input events only queue semantic work');
 	const initial = project.getSnapshot();
-	assert.equal(initial.getFileData('dependency.lua')!.source, dependency.buffer.getText());
+	assert.equal(initial.getFileData(resourceIdentityKey({ domain: 0, path: 'dependency.lua' }))!.source, dependency.buffer.getText());
 	assert.equal(project.generation, firstGeneration + 1);
 	assert.equal(generations.length, 1, 'analysis completion cannot invalidate its own input generation');
 	const parsed = parse.mock.callCount();
@@ -677,14 +684,14 @@ test('semantic input generations advance for model and registry changes, never f
 	advanceLuaSourceRevision(cartridge, registryPath.source_path);
 	assert.equal(project.generation, firstGeneration + 3);
 	project.synchronizeRuntimeSources(sources);
-	assert.equal(project.getFileData('main.lua')!.source, registryPath.src);
+	assert.equal(project.getFileData({ domain: 0, path: 'main.lua' })!.source, registryPath.src);
 	assert.equal(project.generation, firstGeneration + 3);
 	assert.deepEqual(generations, [firstGeneration + 1, firstGeneration + 2, firstGeneration + 3],
 		'reconciling a published registry input does not publish it a second time');
-	const explicit = project.updateDocument('detached.lua', 'return 5');
+	const explicit = project.updateDocument({ domain: 0, path: 'detached.lua' }, 'return 5');
 	const explicitGeneration = project.generation, snapshot = project.getSnapshot();
 	assert.equal(explicitGeneration, firstGeneration + 4);
-	assert.equal(project.updateDocument('detached.lua', 'return 5'), explicit);
+	assert.equal(project.updateDocument({ domain: 0, path: 'detached.lua' }, 'return 5'), explicit);
 	assert.equal(project.generation, explicitGeneration, 'reusing identical canonical analysis does not create a new input generation');
 	assert.equal(project.getSnapshot(), snapshot);
 	assert.equal(generations.length, 4);

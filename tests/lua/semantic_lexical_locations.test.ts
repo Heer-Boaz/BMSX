@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
@@ -13,7 +14,7 @@ function bindingAt(file: FileSemanticData, name: string, offset: number) {
 test('lexical boundaries retain relative occurrence points through a shifted generation', () => {
 	const source = '-- retained boundary\n'.repeat(80)
 		+ 'local function read(arg) local value = arg; return value end\nreturn read';
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['points.lua']));
 	const first = workspace.updateFile('points.lua', source);
 	const retainedScope = first.scopes[1];
 	const retainedDeclaration = first.decls.find(decl => decl.name === 'value')!;
@@ -81,7 +82,7 @@ test('root scope owns EOF while its exclusive endpoint lies one position after i
 test('scope identity survives inserted siblings while parent attachment belongs to each generation', () => {
 	const source = '-- lexical padding\n'.repeat(80)
 		+ 'local function read(arg) do local value = arg; print(value) end end\nreturn read';
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['scope_ids.lua']));
 	const old = workspace.updateFile('scope_ids.lua', source);
 	const root = old.scopes[0];
 	const body = old.scopes[1];

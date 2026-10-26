@@ -166,7 +166,7 @@ test('stationary Source hover consumes modifier changes while a sibling retains 
 	f.editor.dispatchKey(new KeyInputEvent('ControlLeft', KeyModifier.none, false, false)); f.update();
 	assert.equal(b.gotoHoverHighlight, null); assert.equal(a.gotoHoverHighlight, null);
 	f.editor.dispatchKey(new KeyInputEvent('AltLeft', KeyModifier.alt)); f.update();
-	assert.notEqual(b.hoverTooltip, null); assert.equal(b.hoverTooltip.path, b.model.resource.path);
+	assert.notEqual(b.hoverTooltip, null);
 	assert.equal(a.hoverTooltip, null); assert.ok(inputFocus.target === a.focusTarget, 'hover never transfers keyboard focus from its sibling');
 	f.editor.dispatchKey(new KeyInputEvent('AltLeft', KeyModifier.none, false, false)); f.update();
 	assert.equal(b.hoverTooltip, null); assert.equal(a.hoverTooltip, null);

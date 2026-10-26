@@ -1,8 +1,9 @@
 import { createTestEditorGroup } from '../helpers/editor_panes';
+import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animation/source';
 import { animationDefinitionFamily, collectAnimationDefinitions } from '../../ide/workbench/contrib/animation/definitions';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
@@ -13,7 +14,8 @@ import { AnimationInputSerializer } from '../../ide/workbench/contrib/animation/
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
-import { resolveRuntimeResource } from '../../ide/runtime/sources';
+import { rebuildRuntimeSourceResources, resolveRuntimeResource } from '../../ide/runtime/sources';
+import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -43,7 +45,7 @@ test('overview key picking does not clear the active occurrence before resolving
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
 	const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
-	const input = new AnimationEditorInput(model);
+	const input = new AnimationEditorInput(model, model.resource.domain);
 	input.tracks.layout.contentTop = 0; input.tracks.layout.rowHeight = 20; input.tracks.layout.visibleRowCount = 3;
 	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1);
 	input.overview.layout(0, 0, 106, 60); input.keys.range.layout(0, 0, 106, 20);
@@ -66,14 +68,14 @@ test('overview key picking does not clear the active occurrence before resolving
 
 test('clip trim edits the written parent once, preserves child time and imported ownership at O0/O3', () => {
 	const source = "-- untouched\nreturn {duration_ms=100,subsequences={{duration_ms=100,sequence=require('child')}}}\n";
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
-	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path), buildLuaFileSemanticData(child, 'child.lua')))!;
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource), buildResourceLuaSemanticFixtureFile(child, { domain: 0, path: 'child.lua' })], [])))!;
 	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
 	const clip = input.document.clips[0];
-	assert.equal(clip.sequence!.file.file, 'child.lua');
+	assert.equal(clip.sequence!.file.file, resourceIdentityKey({ domain: 0, path: 'child.lua' }));
 	assert.equal(authoring.canEditClip(input, clip, 'start'), true);
 	authoring.editClip(input, clip, 'start', 25, 75);
-	const changed = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path), buildLuaFileSemanticData(child, 'child.lua')))!;
+	const changed = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), resource), buildResourceLuaSemanticFixtureFile(child, { domain: 0, path: 'child.lua' })], [])))!;
 	assert.equal(changed.clips[0].start!.value, 25);
 	assert.equal(changed.clips[0].duration!.value, 75);
 	assert.equal(changed.clips[0].clipIn!.value, 25);
@@ -98,14 +100,14 @@ test('multi-field curve and clip edits preserve independently authored field ord
 		"-- clip comment\nreturn {subsequences={{clip_in_ms=0,duration_ms=100,start_time_ms=0,sequence={duration_ms=100,tracks={}}}}}",
 	];
 	for (let index = 0; index < cases.length; index++) {
-		const source = cases[index], model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
-		input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const source = cases[index], model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+		input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 		const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
 		if (index === 0) authoring.editCurveKey(input, input.document.tracks[0].keys[0], 1200, 'value', 2000);
 		else authoring.editClip(input, input.document.clips[0], 'start', 25, 75);
-		const file = buildLuaFileSemanticData(model.buffer.getText(), resource.path);
+		const file = buildResourceLuaSemanticFixtureFile(model.buffer.getText(), resource);
 		assert.equal(file.syntaxError, null, 'an edit may not depend on native fields being written in a particular order');
-		const document = buildAnimationSourceDocument(resource, semanticSnapshot(file))!;
+		const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file], [])))!;
 		if (index === 0) {
 			assert.equal(document.tracks[0].keys[0].coordinate!.value, 1200);
 			assert.equal(document.tracks[0].keys[0].value!.value, 2000);
@@ -124,15 +126,15 @@ test('a multiline clip trim inserts missing transport fields as one syntax batch
 	for (const separator of [',', ';']) for (const trailing of ['', separator]) for (const newline of ['\n', '\r\n']) {
 		const source = ['-- parent', 'return {subsequences={{', `\tduration_ms=100${separator}`,
 			`\tsequence=require('child')${trailing} -- child stays here`, '}}}'].join(newline);
-		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
+		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
 		t.after(() => { input.dispose(); model.dispose(); });
-		input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path), buildLuaFileSemanticData(child, 'child.lua')))!;
+		input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource), buildResourceLuaSemanticFixtureFile(child, { domain: 0, path: 'child.lua' })], [])))!;
 		const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
 		let changes = 0; model.onDidChangeContent(() => changes++);
 		authoring.editClip(input, input.document.clips[0], 'start', 25, 75);
-		const changed = model.buffer.getText(), file = buildLuaFileSemanticData(changed, resource.path);
+		const changed = model.buffer.getText(), file = buildResourceLuaSemanticFixtureFile(changed, resource);
 		assert.equal(file.syntaxError, null);
-		const document = buildAnimationSourceDocument(resource, semanticSnapshot(file, buildLuaFileSemanticData(child, 'child.lua')))!;
+		const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file, buildResourceLuaSemanticFixtureFile(child, { domain: 0, path: 'child.lua' })], [])))!;
 		assert.equal(document.clips[0].start!.value, 25);
 		assert.equal(document.clips[0].duration!.value, 75);
 		assert.equal(document.clips[0].clipIn!.value, 25);
@@ -153,7 +155,7 @@ test('a multiline clip trim inserts missing transport fields as one syntax batch
 
 test('sprite frame definitions are admitted by their imported factory and retain named/source array order', () => {
 	const source = "local sprite=require('cartlib/component/sprite_animation_component'); return sprite.factory({animation='idle',animations={idle={frames={'idle.1','idle.2'},frame_run=2},hit={frames={'hit.1'},frame_duration_ms=20}}})";
-	const file = buildLuaFileSemanticData(source, resource.path), snapshot = semanticSnapshot(file);
+	const file = buildResourceLuaSemanticFixtureFile(source, resource), snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file], ['cartlib/component/sprite_animation_component']));
 	const definitions = collectAnimationDefinitions(resource, snapshot);
 	assert.equal(definitions.length, 2);
 	for (const definition of definitions) {
@@ -161,7 +163,7 @@ test('sprite frame definitions are admitted by their imported factory and retain
 		const family = animationDefinitionFamily(document.reader, file, document.root);
 		assert.equal(family, 'sprite');
 		assert.equal(document.framesSource!.array, true);
-		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
+		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
 		input.document = { ...document, family }; input.selectedSource = document.root;
 		const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
 		assert.equal(authoring.canAddFrame(input), true);
@@ -174,7 +176,7 @@ test('sprite frame definitions are admitted by their imported factory and retain
 test('all authored track templates compile through the actual native program and preserve event and tag key domains', () => {
 	const tracks = ANIMATION_TRACK_TEMPLATES.map(item => item.create("{'x'}")).join(',');
 	const source = `return {duration_ms=1000,tracks={${tracks}}}`;
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	assert.equal(document.tracks.length, 7);
 	const tag = document.tracks.find(track => track.kind === 'tag')!;
 	assert.deepEqual(tag.keys.map(key => key.coordinate!.value), [0, 100]);
@@ -189,16 +191,17 @@ test('all authored track templates compile through the actual native program and
 test('imported sprite configuration retains its actual consumer and selected source occurrence through edits and recovery', async t => {
 	const config = "-- canonical frames\nreturn {frames={'idle.1','idle.2'},frame_run=2}\n";
 	const caller = "local sprite=require('cartlib/component/sprite_animation_component'); return sprite.factory(require('parent'))";
-	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, config), createScenarioTestSourceRecord('caller.lua', 1, caller)]);
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, config), createScenarioTestSourceRecord('caller.lua', 1, caller),
+		createScenarioTestSourceRecord('cartlib/component/sprite_animation_component.lua', 1, 'return {factory=function(definition) return definition end}')]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', config);
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
 	const controller = new AnimationEditorController(sources, group, undefined!, undefined!);
 	const project = getOrCreateSemanticProject(editorTextModelService, 0); project.synchronizeRuntimeSources(sources);
 	const snapshot = project.getSnapshot(), factory = collectAnimationDefinitions({ domain: 0, path: 'caller.lua' }, snapshot)[0];
-	assert.equal(factory.file.file, resource.path);
+	assert.equal(factory.file.file, resourceIdentityKey(resource));
 	assert.equal(collectAnimationDefinitions(resource, snapshot)[0].consumer, undefined);
-	assert.equal(factory.consumer!.file, 'caller.lua', 'raw exports cannot swallow consumer-specific provenance');
-	const input = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, factory.file.chunk.locations.range(factory.table.span)), 'sprite', factory.consumer!.file);
+	assert.equal(factory.consumer!.file, resourceIdentityKey({ domain: 0, path: 'caller.lua' }), 'raw exports cannot swallow consumer-specific provenance');
+	const input = new AnimationEditorInput(model, model.resource.domain, luaSourceRangeToTextRange(model.buffer, factory.file.chunk.locations.range(factory.table.span)), 'sprite', factory.consumer!.file);
 	const consumer = controller.modelFor(input, factory.consumer!);
 	group.model.add(input);
 	t.after(() => { group.model.clear(); input.dispose(); editorTextModelService.clear(); });
@@ -214,7 +217,7 @@ test('imported sprite configuration retains its actual consumer and selected sou
 	assert.equal(input.details.selectionIndex, 1, 'the selected field tracks its shared working copy');
 	const serializer = new AnimationInputSerializer(sources, controller);
 	const restored = await serializer.deserialize(serializer.serialize(input));
-	assert.equal(restored.consumerPath, 'caller.lua');
+	assert.equal(restored.consumerPath, resourceIdentityKey({ domain: 0, path: 'caller.lua' }));
 	assert.equal(restored.document!.family, 'sprite');
 	assert.equal(restored.details.selectionIndex, 1); restored.dispose();
 	consumer.pushEditOperations([{ offset: 0, deleteLength: consumer.buffer.getText().length, text: "return require('parent')" }]); controller.refresh(input);
@@ -226,13 +229,61 @@ test('imported sprite configuration retains its actual consumer and selected sou
 	assert.ok(model.buffer.getText().startsWith('-- canonical frames\n'));
 });
 
+test('an imported BIOS animation definition retains cart semantic scope through open, refresh and recovery', async t => {
+	const biosResource = { domain: -1 as const, path: 'bios_frames.lua' };
+	const callerResource = { domain: 0 as const, path: 'caller.lua' };
+	const config = "return {frames={'bios.1','bios.2'},frame_run=2}";
+	const caller = "local sprite=require('cartlib/component/sprite_animation_component'); return sprite.factory(require('bios_frames'))";
+	const sources = createScenarioTestSourceState([
+		createScenarioTestSourceRecord(callerResource.path, 1, caller),
+		createScenarioTestSourceRecord('cartlib/component/sprite_animation_component.lua', 1, 'return {factory=function(definition) return definition end}'),
+	]);
+	registerLuaSourceRecord(sources.systemLuaSources, createScenarioTestSourceRecord(biosResource.path, 1, config, 'machine/bios/bios_frames.lua'));
+	rebuildRuntimeSourceResources(sources);
+	const group = createTestEditorGroup();
+	const navigated: Parameters<EditorNavigationController['focusChunkSource']>[] = [];
+	const navigation = { focusChunkSource: (...args: Parameters<EditorNavigationController['focusChunkSource']>) => { navigated.push(args); return Promise.resolve(undefined); } } as EditorNavigationController;
+	const controller = new AnimationEditorController(sources, group, navigation, undefined!);
+	const project = getOrCreateSemanticProject(editorTextModelService, callerResource.domain);
+	project.synchronizeRuntimeSources(sources);
+	const definition = collectAnimationDefinitions(callerResource, project.getSnapshot())[0];
+	assert.equal(definition.file.file, resourceIdentityKey(biosResource));
+	assert.equal(definition.consumer!.file, resourceIdentityKey(callerResource));
+	const input = controller.openDefinition(callerResource.domain, definition);
+	t.after(() => { group.model.clear(); group.dispose(); input.dispose(); editorTextModelService.clear(); });
+	assert.equal(input.projectDomain, callerResource.domain);
+	assert.deepEqual(input.workingCopy.identity, biosResource);
+	assert.equal(input.document!.family, 'sprite');
+	assert.equal(controller.openDefinition(callerResource.domain, definition), input, 'open reuses the same definition inside its owning semantic project');
+	controller.selectTrack(input, input.tracks.rows.length - 1); controller.selectProperty(input, 1);
+	controller.openSource(input);
+	assert.deepEqual(navigated[0][0], input.workingCopy.resource, 'source navigation uses the imported definition owner, not the cart scope');
+	const consumer = controller.modelFor(input, definition.consumer!);
+	consumer.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- cart revision\n' }]);
+	controller.refresh(input);
+	assert.equal(input.projectDomain, callerResource.domain);
+	assert.equal(input.document!.family, 'sprite', 'the cart consumer remains in scope after refresh of a BIOS working copy');
+	const serializer = new AnimationInputSerializer(sources, controller), saved = JSON.parse(serializer.serialize(input));
+	assert.equal(saved.projectDomain, callerResource.domain);
+	assert.equal(saved.source.resource.domain, biosResource.domain);
+	assert.equal(saved.consumer, resourceIdentityKey(callerResource));
+	assert.equal(saved.detail.path, resourceIdentityKey(biosResource));
+	const restored = await serializer.deserialize(JSON.stringify(saved)); t.after(() => restored.dispose());
+	assert.equal(restored.projectDomain, callerResource.domain);
+	assert.equal(restored.workingCopy, input.workingCopy);
+	assert.equal(restored.consumerPath, resourceIdentityKey(callerResource));
+	assert.equal(restored.document!.family, 'sprite');
+	controller.openSource(restored);
+	assert.deepEqual(navigated[1][0], input.workingCopy.resource);
+});
+
 test('a selected mixed-coordinate lane remains Source after a shared working-copy revision', t => {
 	const source = "return {tracks={{kind='event',keys={{time_ms=0,event='first'}}},{kind='event',keys={{frame=1,event='second'},{u=1,event='third'}}}}}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
 	const controller = new AnimationEditorController(sources, group, undefined!, undefined!);
-	const input = new AnimationEditorInput(model); group.model.add(input);
+	const input = new AnimationEditorInput(model, model.resource.domain); group.model.add(input);
 	t.after(() => { group.model.clear(); input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.selectTrack(input, 2);
 	assert.equal(input.keys.unit, undefined);
@@ -249,7 +300,7 @@ test('animation recovery restores the native cursor after the document admits it
 		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 		const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
 		const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
-		const input = new AnimationEditorInput(model);
+		const input = new AnimationEditorInput(model, model.resource.domain);
 		controller.refresh(input); controller.selectTrack(input, 1);
 		input.keys.setView(0.2, 0.8); input.keys.setCursor(0.625); input.keys.snap = false;
 		input.activeClient = 'keys'; input.columnSplit.ratio = 0.9; input.rowSplit.ratio = 0.1;
@@ -267,34 +318,36 @@ test('animation recovery restores the native cursor after the document admits it
 	}
 });
 
-test('known unversioned animation recovery preserves source selections and history while new presentation uses its declared defaults', async t => {
+test('versioned animation recovery persists project ownership and opaque source selections without legacy path inference', async t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',keys={{time_ms=0,value=1},{time_ms=100,value=2}}}}}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
 	const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
-	const input = new AnimationEditorInput(model);
+	const input = new AnimationEditorInput(model, model.resource.domain);
 	t.after(() => { input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1); controller.selectProperty(input, 0);
 	input.tracks.scroll = 1; input.keys.setView(10, 90); input.keys.setCursor(50);
 	input.activeClient = 'details'; input.columnSplit.resize(0.45); input.rowSplit.resize(0.4);
 	const serializer = new AnimationInputSerializer(sources, controller);
 	const current = JSON.parse(serializer.serialize(input));
-	assert.equal(current.version, 1);
-	const legacy = { source: current.source, definition: current.definition, label: current.label, consumer: current.consumer,
-		dependencies: current.dependencies, track: current.track, key: current.key, detail: current.detail,
-		scroll: current.scroll, cursor: current.cursor, view: current.view };
-	const restored = await serializer.deserialize(JSON.stringify(legacy)); t.after(() => restored.dispose());
+	assert.equal(current.version, 2);
+	assert.equal(current.projectDomain, resource.domain);
+	for (const selection of [current.track, current.key, current.detail]) assert.equal(selection.path, resourceIdentityKey(resource));
+	const restored = await serializer.deserialize(JSON.stringify(current)); t.after(() => restored.dispose());
+	assert.equal(restored.projectDomain, resource.domain);
 	assert.equal(restored.workingCopy, model); assert.equal(model.buffer.getText(), source); assert.equal(model.undo(), null);
 	assert.deepEqual(restored.trackSelection, input.trackSelection); assert.deepEqual(restored.keySelection, input.keySelection);
 	assert.deepEqual(restored.detailSelection, input.detailSelection); assert.equal(restored.tracks.scroll, input.tracks.scroll);
 	assert.equal(restored.keys.range.minimum, 10); assert.equal(restored.keys.range.maximum, 90); assert.equal(restored.keys.cursor, 50);
-	assert.equal(restored.activeClient, 'tracks');
-	assert.equal(restored.columnSplit.ratio, restored.columnSplit.defaultRatio); assert.equal(restored.rowSplit.ratio, restored.rowSplit.defaultRatio);
+	assert.equal(restored.activeClient, input.activeClient);
+	assert.equal(restored.columnSplit.ratio, input.columnSplit.ratio); assert.equal(restored.rowSplit.ratio, input.rowSplit.ratio);
 	const models = [...editorTextModelService.models];
-	await assert.rejects(serializer.deserialize(JSON.stringify({ ...current, version: 2,
-		source: { ...current.source, resource: { ...current.source.resource, path: 'not-retained.lua' } } })),
-		/Unsupported animation editor view version '2'/);
-	assert.deepEqual([...editorTextModelService.models], models, 'unknown formats are rejected before resolving or retaining a model');
+	for (const version of [undefined, 1, 3]) {
+		await assert.rejects(serializer.deserialize(JSON.stringify({ ...current, version,
+			source: { ...current.source, resource: { ...current.source.resource, path: 'not-retained.lua' } } })),
+			new RegExp(`Unsupported animation editor view version '${version}'`));
+		assert.deepEqual([...editorTextModelService.models], models, 'unsupported formats are rejected before resolving or retaining a model');
+	}
 });
 
 function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=1},{time_ms=100,value=2}}},{kind='event',keys={{time_ms=25,event='other'}}}}}") {
@@ -303,9 +356,9 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
 	const navigated: unknown[][] = [];
-	const navigation = { focusChunkSourceForContext: (...args: unknown[]) => navigated.push(args) } as unknown as EditorNavigationController;
+	const navigation = { focusChunkSource: (...args: unknown[]) => navigated.push(args) } as unknown as EditorNavigationController;
 	const controller = new AnimationEditorController(sources, undefined!, navigation, undefined!);
-	const input = new AnimationEditorInput(model), menu = new ContextMenuController(inputFocus, pointerCapture);
+	const input = new AnimationEditorInput(model, model.resource.domain), menu = new ContextMenuController(inputFocus, pointerCapture);
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	const measured = measureAnimationEditor(editorViewState.font);
@@ -343,7 +396,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Animation conte
 	assert.equal(menu.model.rows.find(row => row.command === 'animation.earlier')!.enabled, false);
 	const range = property.source.file.chunk.locations.range(property.field.span);
 	menu.model.selectedIndex = menu.model.rows.findIndex(row => row.command === 'animation.source'); menu.accept();
-	assert.deepEqual(f.navigated, [[0, resource.path, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
+	assert.deepEqual(f.navigated, [[f.model.resource, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
 	assert.equal(inputFocus.target, details);
 	pane.focus(); details.getCommand('contextMenu')!.run();
 	assert.equal(menu.visible, true); assert.equal(menu.invocationOrigin, details); menu.hide();
@@ -397,7 +450,7 @@ test('secondary context on the current clip lane replaces its former Details-pro
 	assert.equal(f.menu.model.rows.find(row => row.command === 'animation.edit')!.enabled, false);
 	const range = clip.file.chunk.locations.range(clip.field.span);
 	f.menu.model.selectedIndex = f.menu.model.rows.findIndex(row => row.command === 'animation.source'); f.menu.accept();
-	assert.deepEqual(f.navigated, [[0, resource.path, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
+	assert.deepEqual(f.navigated, [[f.model.resource, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
 });
 

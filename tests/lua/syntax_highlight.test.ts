@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 import { getLuaSemanticAnnotations } from '../../toolchain/ts/lua/semantic/tokens';
 import assert from 'node:assert/strict';
@@ -41,7 +42,7 @@ test('quoted property definitions retain their full raw spelling for dot-member 
 	for (const key of ["'idle'", '"idle"', "'id\\x6ce'", '[=[idle]=]']) {
 		for (const definition of [`local states = { [ ${key} ] = {} }`, `local states = {}; states[ ${key} ] = {}`]) {
 			const source = `${definition}\nreturn states.idle`;
-			const frontend = buildLuaSemanticFrontend([{ path: 'navigation.lua', source }]);
+			const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'navigation.lua', source }]));
 			const navigation = frontend.getFile('navigation.lua').findNavigationAt(2, 15);
 			assert.ok(navigation);
 			assert.equal(navigation.targets.length, 1);
@@ -104,7 +105,7 @@ test('named table key spans stop at the identifier while quoted keys retain raw 
 
 test('semantic annotations project relative facts through their own source generation', () => {
 	const source = '-- retained lexical boundary\n'.repeat(80) + 'local object = { named = 42 }\nreturn object.named';
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['annotations.lua']));
 	const old = workspace.updateFile('annotations.lua', source);
 	const annotations = getLuaSemanticAnnotations(old);
 	const current = workspace.updateFile('annotations.lua', '\n' + source,

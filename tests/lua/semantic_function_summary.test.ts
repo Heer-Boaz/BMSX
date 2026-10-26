@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -14,7 +15,7 @@ test('function summaries retain an uncalled receiver write', () => {
 		'end',
 		'return attachment',
 	].join('\n'), 'attachment.lua');
-	const identities = new WorkspaceValueIdentityIndex({
+	const identities = new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)),
 		files: [file],
 		globalValues: new Map(),
 	});

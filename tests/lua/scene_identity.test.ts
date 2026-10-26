@@ -11,9 +11,9 @@ import { layoutSceneEditor } from '../../ide/workbench/contrib/scene_editor/layo
 import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
-import { semanticSnapshot } from './semantic_test_harness';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
@@ -29,7 +29,7 @@ function scene(t: TestContext, domain: 0 | 1 = 0) {
 	const path = 'scenes/room.lua';
 	const model = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain, path, source: { resid: path, type: 'lua' } }, 'lua', SOURCE);
 	const input = new SceneEditorInput(model);
-	installSceneOutline(input, buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SOURCE, path))));
+	installSceneOutline(input, buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SOURCE, model.resource)], ['cartlib/world/scene_library']))));
 	selectSceneOutlineRow(input, 1);
 	t.after(() => { input.dispose(); model.dispose(); });
 	return input;

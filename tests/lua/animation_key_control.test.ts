@@ -1,8 +1,8 @@
 import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { AnimationKeyControl } from '../../ide/workbench/contrib/animation/key_control';
@@ -22,8 +22,8 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 test('a key beneath a coincident tangent endpoint owns the pointer gesture', t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,leave_tangent=0},{time_ms=32,value=0,arrive_tangent=0,leave_tangent=0},{time_ms=100,value=0,arrive_tangent=0}}}}}";
 	const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
-	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	input.trackIndex = 0;
 	input.keys.bind(input.document.tracks[0], 0, input.document);
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
@@ -50,8 +50,8 @@ test('a key beneath a coincident tangent endpoint owns the pointer gesture', t =
 test('key capture preserves grab offset and commits only a physical drop; click, source invalidation and focus loss do not edit', t => {
 	const source = "return {duration_ms=1000,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100.25,value=1}}}}}";
 	const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
-	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	input.trackIndex = 0;
 	input.keys.bind(input.document.tracks[0], -1, input.document);
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
@@ -95,7 +95,7 @@ test('key capture preserves grab offset and commits only a physical drop; click,
 	const proposed = input.keys.dragValue;
 	pointerCapture.dispatch(pointer(origin + 55, 0, 0, primary), false, 0);
 	assert.equal(commits, 1);
-	const updated = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path)))!;
+	const updated = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), resource)], [])))!;
 	assert.equal(updated.tracks[0].keys[1].coordinate!.value, proposed);
 	model.undo(); assert.equal(model.buffer.getText(), source);
 	assert.equal(model.undo(), null, 'one drop is one history operation');
@@ -104,8 +104,8 @@ test('key capture preserves grab offset and commits only a physical drop; click,
 test('frame and clip axes navigate without a scalar track or a document edit', t => {
 	const source = "return {frames={'first','second'},subsequences={{start_ms=50,duration_ms=100,sequence={}}}}";
 	const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
-	input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
 	const unexpected = () => { throw new Error('axis navigation does not edit or select a scalar key'); };
 	const control = new AnimationKeyControl(parent, { selectKey: unexpected }, {
@@ -149,8 +149,8 @@ test('tangent direction uses both pointer axes and commits one native slope with
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=2},{time_ms=100,value=100,arrive_tangent=2,leave_tangent=0}}}}}";
 	for (const field of ['leave', 'arrive'] as const) {
 		const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
-		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
-		input.document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+		input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 		input.trackIndex = 0;
 		const keyIndex = field === 'leave' ? 0 : 1;
 		input.keys.bind(input.document.tracks[0], keyIndex, input.document);
@@ -176,7 +176,7 @@ test('tangent direction uses both pointer axes and commits one native slope with
 		assert.equal(model.buffer.getText(), source);
 		pointerCapture.dispatch(pointer(x + delta, 0, 0, primary), false, 0);
 		const changed = model.buffer.getText();
-		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(changed, resource.path)))!;
+		const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(changed, resource)], [])))!;
 		assert.ok(Math.abs(document.tracks[0].keys[keyIndex][field]!.value! - 1) < 1e-12);
 		assert.equal(document.tracks[0].keys[keyIndex].coordinate!.value, keyIndex === 0 ? 0 : 100);
 		for (const optLevel of [0, 3] as const) {

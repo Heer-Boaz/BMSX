@@ -2,7 +2,8 @@ import { ContextMenuController } from '../../../ide/workbench/services/context_m
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import assert from 'node:assert/strict';
-import type { LuaSymbolEntry } from '../../../toolchain/ts/lua/semantic_contracts';
+import type { EditorLuaSymbolEntry } from '../../../ide/editor/contrib/intellisense/engine';
+import { resourceIdentityKey } from '../../../ide/common/resource';
 import { buildSymbolQuickPickItems } from '../../../ide/workbench/contrib/code_editor/symbols/quick_access';
 import { SymbolQuickPickProvider } from '../../../ide/workbench/contrib/code_editor/symbols/quick_pick_provider';
 import { TextQuickPickProvider } from '../../../ide/workbench/services/quick_input/text_provider';
@@ -17,10 +18,13 @@ const menu = new ContextMenuController(inputFocus, pointerCapture);
 const picker = new QuickInputController(menu);
 const names = ['spawn_enemy', 'update_scene', 'before_enter', 'apply_effect', 'start_timeline', 'select_target', 'execute_task', 'dispatch_event'];
 for (const count of [128, 1024, 8192]) {
-	const symbols: LuaSymbolEntry[] = Array.from({ length: count }, (_, index) => ({ name: names[index % names.length],
+	const symbols: EditorLuaSymbolEntry[] = Array.from({ length: count }, (_, index) => {
+		const resource = { domain: 0 as const, path: `workspace/controller_${index % 16}/actor_${index}.lua` };
+		return { name: names[index % names.length], resource,
 		path: `actor_${index}.${names[index % names.length]}`, kind: 'function',
-		location: { path: `workspace/controller_${index % 16}/actor_${index}.lua`,
-			range: { startLine: index + 1, startColumn: 1, endLine: index + 1, endColumn: 10 } } }));
+		location: { path: resourceIdentityKey(resource),
+			range: { startLine: index + 1, startColumn: 1, endLine: index + 1, endColumn: 10 } } };
+	});
 	for (const scope of ['file', 'workspace'] as const) {
 		const items = buildSymbolQuickPickItems(symbols, scope);
 		for (const mode of ['literal', 'symbol'] as const) {

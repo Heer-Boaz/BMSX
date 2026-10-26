@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -12,8 +13,8 @@ test('project identity includes the working-copy owner and unchanged queries reu
 	const projectA = getOrCreateSemanticProject(first, 0), projectB = getOrCreateSemanticProject(second, 0);
 	assert.notEqual(projectA, projectB);
 	const snapshotA = projectA.getSnapshot(), snapshotB = projectB.getSnapshot();
-	assert.equal(snapshotA.getFileData('same.lua')!.source, 'return 1');
-	assert.equal(snapshotB.getFileData('same.lua')!.source, 'return 2');
+	assert.equal(snapshotA.getFileData(resourceIdentityKey({ domain: 0, path: 'same.lua' }))!.source, 'return 1');
+	assert.equal(snapshotB.getFileData(resourceIdentityKey({ domain: 0, path: 'same.lua' }))!.source, 'return 2');
 	const parser = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
 	for (let query = 0; query < 1000; query++) {
 		assert.equal(getOrCreateSemanticProject(first, 0).getSnapshot(), snapshotA);
@@ -21,10 +22,10 @@ test('project identity includes the working-copy owner and unchanged queries reu
 	}
 	assert.equal(parser.mock.callCount(), 0);
 	a.pushEditOperations([{ offset: 7, deleteLength: 1, text: '3' }]);
-	assert.equal(projectA.getSnapshot().getFileData('same.lua')!.source, 'return 3');
+	assert.equal(projectA.getSnapshot().getFileData(resourceIdentityKey({ domain: 0, path: 'same.lua' }))!.source, 'return 3');
 	assert.equal(projectB.getSnapshot(), snapshotB);
 	assert.equal(b.version, 1);
-	assert.equal(snapshotA.getFileData('same.lua')!.source, 'return 1', 'retained generations stay immutable');
+	assert.equal(snapshotA.getFileData(resourceIdentityKey({ domain: 0, path: 'same.lua' }))!.source, 'return 1', 'retained generations stay immutable');
 });
 
 test('model teardown retires only its projects and a reopened matching source cannot revive them', t => {
@@ -41,8 +42,8 @@ test('model teardown retires only its projects and a reopened matching source ca
 	assert.equal(reopened.version, 1);
 	const replacement = getOrCreateSemanticProject(first, 0);
 	assert.notEqual(replacement, project);
-	assert.equal(replacement.getSnapshot().getFileData('same.lua')!.source, 'return 3');
-	assert.equal(old.getFileData('same.lua')!.source, 'return 1');
+	assert.equal(replacement.getSnapshot().getFileData(resourceIdentityKey({ domain: 0, path: 'same.lua' }))!.source, 'return 3');
+	assert.equal(old.getFileData(resourceIdentityKey({ domain: 0, path: 'same.lua' }))!.source, 'return 1');
 	assert.equal(getOrCreateSemanticProject(second, 0).getSnapshot(), other);
 });
 

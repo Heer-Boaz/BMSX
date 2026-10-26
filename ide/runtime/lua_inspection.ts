@@ -216,12 +216,13 @@ export function readRuntimeLuaValue(
 	fault: RuntimeFaultState,
 	guest: SuspendedGuestSession,
 	analysis: FileSemanticData,
-	domain: ResourceDomain,
+	identity: ResourceIdentity,
 	parts: readonly string[],
 	line: number,
 	column: number,
 ): RuntimeLuaInspectionValue {
-	const record = resolveRuntimeLuaSource(sources, { domain, path: analysis.file })!.record;
+	const domain = identity.domain;
+	const record = resolveRuntimeLuaSource(sources, identity)!.record;
 	const installed = domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemInstalledBlua32Sources : sources.cartridgeSlots[domain]!.installedBlua32Sources;
 	const installedSource = installed.get(record.module_path);
@@ -264,7 +265,7 @@ export function readRuntimeLuaValue(
 		const receiver = analysis.scopesById.get(binding.scope)!.implicitSelfValue!;
 		declaration = analysis.chunk.locations.range(receiver.root.syntax.span);
 	} else declaration = analysis.chunk.locations.range(binding.declaration.span);
-	// The binder owns workspace paths; installed symbols own canonical module paths.
+	// The binder owns opaque file addresses; installed symbols own canonical module paths.
 	const definition = { ...declaration, path: record.module_path };
 	const cpu = runtime.machine.cpu;
 	const faultFrames = fault.faultSnapshot === null ? undefined : fault.lastCpuFaultSnapshot;

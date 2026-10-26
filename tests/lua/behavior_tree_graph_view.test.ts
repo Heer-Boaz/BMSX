@@ -1,4 +1,3 @@
-import { semanticSnapshot } from './semantic_test_harness';
 import { rects_intersect } from '../../machine/ts/common/rect';
 import { layoutBehaviorTreeGraph } from '../../ide/workbench/contrib/behavior_lens/graph_geometry';
 import assert from 'node:assert/strict';
@@ -7,7 +6,8 @@ import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
 import { selectBehaviorLensDefinition, prepareBehaviorLensLayout, installBehaviorLensDocument } from '../../ide/workbench/contrib/behavior_lens/layout';
@@ -21,7 +21,7 @@ import { BEHAVIOR_SOURCE_FIXTURE } from '../helpers/behavior_source_fixture';
 const font = new Font({ variant: 'tiny' });
 function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
 	const model = new EditorTextModel({ sourceFilePath: 'bt.lua', location: { kind: 'workspace' as const, path: 'bt.lua' }, domain: 0, path: 'bt.lua', source: { type: 'lua', resid: 'bt' } }, 'lua', source);
-	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), 'bt.lua')));
+	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource)], ['cartlib/behaviour_tree/library'])));
 	const document = project();
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'behavior_tree');

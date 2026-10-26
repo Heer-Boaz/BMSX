@@ -1,4 +1,4 @@
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -10,7 +10,9 @@ import { installBehaviorLensDocument } from '../../ide/workbench/contrib/behavio
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { BehaviorSourceIndex } from '../../ide/workbench/contrib/behavior_lens/source_index';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+
+const API_MODULES = ['cartlib/behaviour_tree/library'];
 
 const SOURCE = "local trees<const> = require('cartlib/behaviour_tree/library')\ntrees.register('fixture', { root = { type = 'wait', duration_ticks = 1 } })";
 
@@ -26,7 +28,7 @@ class CountingModel extends EditorTextModel {
 
 test('multiple source-index users share model tracking until the last release', () => {
 	const model = new CountingModel();
-	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SOURCE, model.resource.path)));
+	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SOURCE, model.resource)], API_MODULES)));
 	const first = BehaviorSourceIndex.acquire(document, model, assert.fail);
 	const second = BehaviorSourceIndex.acquire(document, model, assert.fail);
 	assert.equal(first, second); assert.equal(first.model, model);
@@ -52,7 +54,7 @@ test('retained behavior inputs release retired generations and retain hidden-vie
 	editorViewState.font = new EditorFont('tiny');
 	t.after(() => { editorViewState.font = font; });
 	const model = new CountingModel();
-	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
+	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource)], API_MODULES)));
 	const document = project();
 	const first = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), () => assert.fail('BT does not create an FSM layout engine'));
 	const hidden = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), () => assert.fail('BT does not create an FSM layout engine'));
@@ -79,7 +81,7 @@ test('source positions are updated before any feature forwards the edit notifica
 	editorViewState.font = new EditorFont('tiny');
 	t.after(() => { editorViewState.font = font; });
 	const model = new CountingModel();
-	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SOURCE, model.resource.path)));
+	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SOURCE, model.resource)], API_MODULES)));
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	const span = view.source.ranges.get(document.definitions[0].rowKey)!;
 	const start = span.start;
@@ -92,7 +94,7 @@ test('source positions are updated before any feature forwards the edit notifica
 
 test('a text roundtrip can reuse binder facts without reviving collapsed markers or deleting a newer lease', () => {
 	const model = new CountingModel();
-	const document = buildBehaviorSourceDocument(model.identity, semanticSnapshot(buildLuaFileSemanticData(SOURCE, model.resource.path)));
+	const document = buildBehaviorSourceDocument(model.identity, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SOURCE, model.resource)], API_MODULES)));
 	const hidden = BehaviorSourceIndex.acquire(document, model, assert.fail);
 	const key = document.definitions[0].rowKey;
 	const original = { ...hidden.ranges.get(key)! };

@@ -1,6 +1,6 @@
 import type { CodeDocumentProjection } from '../../../editor/ui/code/document_projection';
 import type { CodeEditorControl } from '../../../editor/ui/code_editor_control';
-import type { ResourceDomain } from '../../../common/resource';
+import type { ResourceIdentity } from '../../../common/resource';
 import type { CodeTabContext } from './model';
 import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
@@ -37,9 +37,9 @@ export function activateCodeEditorTab(code: CodeEditorControl, tab: CodeEditorIn
 	clearEditorPointerSelectionState(code);
 }
 
-export function navigateToLuaDefinition(pane: CodeEditorPane, domain: ResourceDomain, definition: LuaDefinitionLocation): void {
+export function navigateToLuaDefinition(pane: CodeEditorPane, resource: ResourceIdentity, definition: LuaDefinitionLocation): void {
 	pane.code.references.clear();
-	pane.navigation.focusChunkSourceForContext(domain, definition.path, {
+	void pane.navigation.focusChunkSource(resource, {
 		row: definition.range.startLine - 1,
 		startColumn: definition.range.startColumn - 1,
 		endColumn: definition.range.startColumn - 1,

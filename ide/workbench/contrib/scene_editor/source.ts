@@ -6,9 +6,9 @@ import {
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { FileSemanticData, LuaCallSite, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import { getLuaModuleAliasTarget, type ModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
+import { getLuaModuleAliasTarget, type LuaModuleImportTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { LuaModuleImportQuery } from '../../../../toolchain/ts/lua/semantic/module_import_query';
-import type { ResourceIdentity } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import type {
 	SceneSourceDefinition,
 	SceneSourceDocument,
@@ -17,7 +17,7 @@ import type {
 	SceneSourcePosition,
 } from './model';
 
-const SCENE_REGISTRATION: ModuleAliasTarget = { module: 'cartlib/world/scene_library', memberPath: ['register'] };
+const SCENE_REGISTRATION: LuaModuleImportTarget = { module: 'cartlib/world/scene_library', memberPath: ['register'] };
 
 /**
  * Projects direct scene-library definitions from retained syntax and semantic
@@ -28,7 +28,7 @@ export function buildSceneSourceDocument(
 	snapshot: LuaSemanticWorkspaceSnapshot,
 	previous?: SceneSourceDocument,
 ): SceneSourceDocument {
-	const analysis = snapshot.getFileData(resource.path)!;
+	const analysis = snapshot.getFileData(resourceIdentityKey(resource))!;
 	const imports = snapshot.symbolResolver.moduleImports;
 	let unchanged = previous !== undefined && previous.analysis === analysis;
 	const scenes: SceneSourceDefinition[] = [];
@@ -72,7 +72,7 @@ export function buildSceneSourceDocument(
 /** Recognized registrations remain discoverable while their authored arguments are incomplete. */
 export function hasSceneSourceDefinitions(resource: ResourceIdentity, snapshot: LuaSemanticWorkspaceSnapshot): boolean {
 	const imports = snapshot.symbolResolver.moduleImports;
-	const analysis = snapshot.getFileData(resource.path)!;
+	const analysis = snapshot.getFileData(resourceIdentityKey(resource))!;
 	return analysis.callSites.some(call => isSceneRegistration(analysis, call, imports));
 }
 

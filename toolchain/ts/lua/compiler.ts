@@ -113,7 +113,7 @@ import {
 import { PROGRAM_BOOT_GLOBAL_NAMES, SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET, type ProgramCompileDomain } from './compiler/system_boot_symbols';
 import { LuaSyntaxError } from './errors';
 import { stringLiteralValue } from './syntax/literals';
-import { Decl } from './semantic/model';
+import { buildLuaFileSemanticData, type Decl } from './semantic/model';
 import {
 	IMPLICIT_SELF_SYMBOL_HANDLE,
 	getBoundDeclaration as getResolvedDeclaration,
@@ -5936,20 +5936,33 @@ function buildCompilerSemanticFrontend(
 	options: CompileOptions,
 	programDomain: ProgramCompileDomain,
 ): LuaSemanticFrontend {
+	const entrySource = requireEntrySource(options, entryChunk.locations.path);
 	const sources = [{
 		path: entryChunk.locations.path,
-		source: requireEntrySource(options, entryChunk.locations.path),
+		source: entrySource,
 		chunk: entryChunk,
+		analysis: buildLuaFileSemanticData(entrySource, entryChunk.locations.path, undefined, entryChunk),
 	}];
+	const moduleFiles = new Map<string, string>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
+		const source = requireModuleSource(module);
+		moduleFiles.set(module.path, module.path);
 		sources.push({
 			path: module.path,
-			source: requireModuleSource(module),
+			source,
 			chunk: module.chunk,
+			analysis: buildLuaFileSemanticData(source, module.path, undefined, module.chunk),
 		});
 	}
-	return buildLuaSemanticFrontend(sources, {
+	const moduleBindings = new Map(moduleFiles);
+	for (const source of sources) {
+		for (const reference of source.analysis.moduleReferences) {
+			const target = moduleFiles.get(reference.value) ?? moduleFiles.get(toLuaModulePath(reference.value));
+			if (target !== undefined) moduleBindings.set(reference.value, target);
+		}
+	}
+	return buildLuaSemanticFrontend(sources, new Map(sources.map(source => [source.path, moduleBindings])), {
 		extraGlobalNames: PROGRAM_BOOT_GLOBAL_NAMES[programDomain],
 	});
 }

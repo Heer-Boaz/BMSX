@@ -1,5 +1,6 @@
+import { resourceIdentityKey } from '../../ide/common/resource';
+import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import { RuntimeBreakpoints } from '../../ide/runtime/breakpoints';
-import { semanticSnapshot } from './semantic_test_harness';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import './test_setup';
 import assert from 'node:assert/strict';
@@ -25,7 +26,8 @@ import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_le
 import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { SceneEditorController } from '../../ide/workbench/contrib/scene_editor/controller';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
@@ -61,7 +63,11 @@ function registry(root: string, text: string): LuaSourceRegistry {
 
 function fixture(t: TestContext) {
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), lineHeight: 6, viewportWidth: 384, viewportHeight: 288, editorAreaTop: 24, editorAreaBottom: 120 });
-	const sources = createTestRuntimeSourceState(registry('system', '-- system'), [registry('game', SOURCE), registry('extension', '-- second slot')], 0);
+	const system = registry('system', '-- system');
+	for (const module of ['cartlib/behaviour_tree/library', 'cartlib/world/scene_library']) {
+		registerLuaSourceRecord(system, createScenarioTestSourceRecord(`${module}.lua`, 0, '', `system/${module}.lua`));
+	}
+	const sources = createTestRuntimeSourceState(system, [registry('game', SOURCE), registry('extension', '-- second slot')], 0);
 	const group = createTestEditorGroup();
 	const behavior = new BehaviorLensController(sources, null, group, null, new BehaviorSourceDocuments(editorTextModelService, sources), () => assert.fail('metadata must not start an FSM layout worker'), null, null);
 	const scene = new SceneEditorController(sources, group, null);
@@ -154,12 +160,12 @@ for (const changeProvider of [false, true]) test(`behavior mementos fingerprint 
 	const f = fixture(t);
 	const dependencyResource = resolveRuntimeResource(f.sources, { domain: 0, path: 'tests/first_assert.lua' })!;
 	const provider = editorTextModelService.retain(dependencyResource, 'lua', '-- test one');
-	const document = buildBehaviorSourceDocument(f.model.identity, semanticSnapshot(buildLuaFileSemanticData(SOURCE, f.model.resource.path)));
+	const document = buildBehaviorSourceDocument(f.model.identity, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SOURCE, f.model.resource)], ['cartlib/behaviour_tree/library', 'cartlib/world/scene_library'])));
 	// Exercise the serializer's read-many contract independently of recognizer coverage.
-	const dependency = buildLuaFileSemanticData(provider.buffer.getText(), provider.resource.path);
+	const dependency = buildResourceLuaSemanticFixtureFile(provider.buffer.getText(), provider.resource);
 	const files = [...document.files, { file: dependency.file, revision: dependency.revision }];
 	const view = createBehaviorLensViewState({ ...document, files }, f.model, 'graph', path => {
-		assert.equal(path, provider.resource.path); return provider;
+		assert.equal(path, resourceIdentityKey(provider.resource)); return provider;
 	});
 	const input = new BehaviorLensInput(f.model, view, assert.fail);
 	selectBehaviorLensDefinition(view, document.definitions[1].rowKey);

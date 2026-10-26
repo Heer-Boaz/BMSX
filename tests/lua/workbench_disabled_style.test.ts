@@ -91,7 +91,7 @@ for (const theme of ['dark', 'light']) {
 		test(`${theme}/${variant} the animation pane paints its own body beneath its actions`, t => {
 			const f = fixture(t, theme, variant), bounds = { left: 4, top: 26, right: 380, bottom: 268 };
 			const model = new EditorTextModel({ sourceFilePath: 'empty.lua', location: { kind: 'workspace' as const, path: 'empty.lua' }, domain: 0, path: 'empty.lua', source: { resid: 'empty', type: 'lua' } }, 'lua', 'return { tracks = {} }');
-			const input = new AnimationEditorInput(model);
+			const input = new AnimationEditorInput(model, model.resource.domain);
 			t.after(() => { input.dispose(); model.dispose(); });
 			layoutWorkbenchActionBar(input.actionBar, bounds.right - 4, bounds.top, bounds.top + f.font.lineHeight + 6,
 				text => f.font.measure(text), f.font.renderFont(), bounds.left + 4);

@@ -1,4 +1,4 @@
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
 import { NodeGraphLayoutEngine } from '../../ide/node/graph_layout';
@@ -14,21 +14,23 @@ import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavio
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
 import type { BehaviorSourceNode } from '../../ide/workbench/contrib/behavior_lens/model';
 import type { BehaviorTreeSourceNode } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../helpers/behavior_source_fixture';
+
+const API_MODULES = ['cartlib/fsm/library','cartlib/behaviour_tree/library','cartlib/actioneffects'];
 
 function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
 	const model = new EditorTextModel({ sourceFilePath: 'behavior_fixture.lua', location: { kind: 'workspace' as const, path: 'behavior_fixture.lua' }, domain: 0, path: 'behavior_fixture.lua',
 		source: { resid: 'behavior_fixture', type: 'lua', source_path: 'behavior_fixture.lua', generated: false },
 	}, 'lua', source);
-	let analysis = buildLuaFileSemanticData(model.buffer.getText(), model.resource.path);
-	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
+	let analysis = buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource);
+	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], API_MODULES)));
 	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline', assert.fail), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(input.view, model.resource, event));
 	assert.ok(input.view.presentation.kind === 'outline');
 	return { model, input, get analysis() { return analysis; }, view: input.view, outline: input.view.presentation, refresh() {
-		analysis = buildLuaFileSemanticData(model.buffer.getText(), model.resource.path);
+		analysis = buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource);
 		installBehaviorLensDocument(input.view, project());
 	} };
 }

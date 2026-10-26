@@ -524,11 +524,12 @@ export class SemanticTermStore {
 		if (root.kind === 'literal' && root.literal.kind === 'number') {
 			this.numericLiteralTerms[term] = true;
 		}
-		if (root.kind === 'declaration' || root.kind === 'global' || root.kind === 'module' || root.kind === 'owned') {
+		if (root.kind === 'declaration' || root.kind === 'global' || root.kind === 'module_import'
+			|| root.kind === 'module_export' || root.kind === 'owned') {
 			this.indexableRootTerms[term] = true;
 		}
 		if (root.kind === 'global') this.globalRootTerms[term] = true;
-		if (root.kind === 'module') {
+		if (root.kind === 'module_import' || root.kind === 'module_export') {
 			this.moduleRootTerms[term] = true;
 		}
 		if (root.kind === 'unknown'

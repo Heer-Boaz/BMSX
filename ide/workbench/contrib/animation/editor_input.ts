@@ -1,3 +1,4 @@
+import { resourceIdentityKey, type ResourceDomain } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
@@ -52,20 +53,21 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 		mode: 'compact', rowHeight: 0, tracksVisible: true, keysVisible: false, detailsVisible: false };
 	public status = '';
 	private readonly projectionListeners = new Set<() => void>();
-	public constructor(public readonly workingCopy: EditorTextModel, definitionRange?: TrackedTextRange,
+	public constructor(public readonly workingCopy: EditorTextModel, public readonly projectDomain: ResourceDomain, definitionRange?: TrackedTextRange,
 		public readonly definitionLabel = computeResourceTabTitle(workingCopy.resource), public readonly consumerPath?: string) {
 		super(`animation:${nextInputId++}`, 'animation', `ANIM ${definitionLabel}`, true);
 		this.definitionRange = definitionRange === undefined ? undefined : { ...definitionRange };
-		this.sourceModels.set(workingCopy.resource.path, workingCopy);
+		this.sourceModels.set(resourceIdentityKey(workingCopy.resource), workingCopy);
 		this.publishModels();
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
 		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
-			if (this.sourceModels.get(model.resource.path) !== model) return;
+			const address = resourceIdentityKey(model.resource);
+			if (this.sourceModels.get(address) !== model) return;
 			this.invalidateProjection();
 			if (this.workingCopy === model && this.definitionRange !== undefined) mapTrackedTextRange(this.definitionRange, event.changes);
-			if (this.trackSelection?.path === model.resource.path) mapTrackedTextRange(this.trackSelection.range, event.changes);
-			if (this.keySelection?.path === model.resource.path) mapTrackedTextRange(this.keySelection.range, event.changes);
-			if (this.detailSelection?.path === model.resource.path) mapTrackedTextRange(this.detailSelection.range, event.changes);
+			if (this.trackSelection?.path === address) mapTrackedTextRange(this.trackSelection.range, event.changes);
+			if (this.keySelection?.path === address) mapTrackedTextRange(this.keySelection.range, event.changes);
+			if (this.detailSelection?.path === address) mapTrackedTextRange(this.detailSelection.range, event.changes);
 		}) });
 	}
 	public publishModels(): void { this.setWorkingCopies(new Set(this.sourceModels.values())); }

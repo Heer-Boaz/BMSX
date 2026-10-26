@@ -30,7 +30,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const resource = { domain: 0 as const, path: 'body.lua', source: { type: 'lua' as const, resid: 'body.lua' } };
 		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 		const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
-		const input = new AnimationEditorInput(model);
+		const input = new AnimationEditorInput(model, model.resource.domain);
 		// These deferred authoring services are not used by source projection, layout or this read-only renderer.
 		const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
 		controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 0);

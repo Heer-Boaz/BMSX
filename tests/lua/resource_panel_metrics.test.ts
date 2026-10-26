@@ -1,7 +1,10 @@
+import { resourceIdentityKey } from '../../ide/common/resource';
+import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { CartEditor } from '../../ide/cart_editor';
 import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
+import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
@@ -9,7 +12,7 @@ import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
-import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
+import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
@@ -67,9 +70,13 @@ test('same-variant publication and warmed metric reads reuse measurements and sl
 
 test('call hierarchy disclosure hit ranges consume the same published font as row measurements', t => {
 	const f = fixture(t, 'tiny');
-	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source: 'local function target() end\nlocal function caller() target() end' }]);
-	const target = frontend.findSymbolsByPosition('calls.lua', 1, 16)!;
-	f.panel.showCallHierarchy(new CallHierarchyModel(frontend, [target.targets[0].id], 'target'));
+	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
+	const resource = { domain: 0 as const, path: 'calls.lua' };
+	project.updateDocument(resource, 'local function target() end\nlocal function caller() target() end');
+	t.after(() => project.dispose());
+	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
+	const target = frontend.findSymbolsByPosition(resourceIdentityKey(resource), 1, 16)!;
+	f.panel.showCallHierarchy(new CallHierarchyModel(frontend, [target.targets[0].id], 'target', project));
 	const index = 0;
 	const metric = f.panel.getItemMetrics(index);
 	f.publish('msx');
@@ -84,9 +91,13 @@ test('call hierarchy disclosure hit ranges consume the same published font as ro
 for (const first of ['tiny', 'msx'] as const) {
 	test(`${first} inactive Files measurements refresh on entry after a Call Hierarchy font change`, t => {
 		const f = fixture(t, first), rows = f.panel.files.tree.rows, selected = f.panel.files.selectedNode;
-		const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source: 'local function target() end\nlocal function caller() target() end' }]);
-		const target = frontend.findSymbolsByPosition('calls.lua', 1, 16)!;
-		f.panel.showCallHierarchy(new CallHierarchyModel(frontend, [target.targets[0].id], 'target'));
+		const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
+		const resource = { domain: 0 as const, path: 'calls.lua' };
+		project.updateDocument(resource, 'local function target() end\nlocal function caller() target() end');
+		t.after(() => project.dispose());
+		const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
+		const target = frontend.findSymbolsByPosition(resourceIdentityKey(resource), 1, 16)!;
+		f.panel.showCallHierarchy(new CallHierarchyModel(frontend, [target.targets[0].id], 'target', project));
 		f.publish(first === 'tiny' ? 'msx' : 'tiny');
 		f.panel.hide(); f.panel.show(); f.panel.prepareLayout();
 		assert.equal(f.panel.files.tree.rows, rows); assert.equal(f.panel.files.selectedNode, selected);

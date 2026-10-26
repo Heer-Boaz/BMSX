@@ -187,7 +187,7 @@ export class CodeDocumentProjection {
 			if (this.pendingSemantic !== pending) return;
 			this.pendingSemantic = null;
 			let file: FileSemanticData | null = null, error: string | null = null;
-			try { file = this.project!.analyzeDocument(this.model.identity.path, this.model.buffer); }
+			try { file = this.project!.analyzeDocument(this.model.identity, this.model.buffer); }
 			catch (failure) { error = failure instanceof Error ? failure.message : String(failure); }
 			this.semanticFileData = file;
 			this.semanticVersion = pending.version;

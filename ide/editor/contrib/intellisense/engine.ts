@@ -28,6 +28,8 @@ import { getLuaTextContext, LuaTextContext } from '../../../common/text';
 import type { EditorContextToken, LuaCompletionItem } from '../../../common/models';
 import {
 	type ResourceDomain,
+	type ResourceIdentity,
+	resourceIdentityKey,
 } from '../../../common/resource';
 import { KEYWORDS, isLuaTrivia, LuaTokenType, type LuaToken } from '../../../../toolchain/ts/lua/syntax/token';
 import type { TextBuffer } from '../../text/text_buffer';
@@ -38,7 +40,9 @@ import { createEditorSemanticFrontend } from './frontend';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 
-const globalSymbolsCache = new WeakMap<LuaSemanticWorkspaceSnapshot, LuaSymbolEntry[]>();
+export type EditorLuaSymbolEntry = LuaSymbolEntry & { readonly resource: ResourceIdentity };
+
+const globalSymbolsCache = new WeakMap<LuaSemanticWorkspaceSnapshot, EditorLuaSymbolEntry[]>();
 
 export function buildMemberCompletionItems(
 	sources: RuntimeSourceState,
@@ -47,12 +51,12 @@ export function buildMemberCompletionItems(
 	runtime: Runtime,
 	chain: readonly string[],
 	operator: '.' | ':',
-	domain: ResourceDomain,
+	identity: ResourceIdentity,
 	analysis: FileSemanticData,
 	line: number,
 	column: number,
 ): LuaCompletionItem[] {
-	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, domain, chain, line, column);
+	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, chain, line, column);
 	if (resolved.kind !== 'value' || guest.kind(resolved.value) !== SuspendedGuestValueKind.Table) return [];
 	const response = buildSuspendedGuestTableMemberCompletionEntries(guest, resolved.value, operator);
 	if (response.length === 0) {
@@ -77,7 +81,7 @@ export function buildMemberCompletionItems(
 	return items;
 }
 
-function extractIdentifierExpression(code: CodeEditorControl, buffer: TextBuffer, row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
+function extractIdentifierExpression(code: CodeEditorControl, buffer: TextBuffer, row: number, column: number): { expression: string; startColumn: number; endColumn: number; } {
 	if (row < 0 || row >= buffer.getLineCount()) {
 		return null;
 	}
@@ -89,7 +93,7 @@ function extractIdentifierExpression(code: CodeEditorControl, buffer: TextBuffer
 	if (line.length === 0) {
 		return null;
 	}
-	const tokenMatch = findContextMenuTokenMatch(code, row, safeColumn, path, buffer);
+	const tokenMatch = findContextMenuTokenMatch(code, row, safeColumn, buffer);
 	if (tokenMatch && tokenMatch.token.type === LuaTokenType.String) {
 		return null;
 	}
@@ -234,9 +238,9 @@ type ContextMenuTokenMatch = {
 	chunk: LuaChunk;
 };
 
-function findContextMenuTokenMatch(code: CodeEditorControl,row: number, column: number, path: string, buffer: TextBuffer): ContextMenuTokenMatch {
+function findContextMenuTokenMatch(code: CodeEditorControl,row: number, column: number, buffer: TextBuffer): ContextMenuTokenMatch {
 	const chunk = getOrCreateSemanticProject(editorTextModelService, code.model.resource.domain)
-		.analyzeDocument(path, buffer).chunk;
+		.analyzeDocument(code.model.identity, buffer).chunk;
 	const { tokens, locations } = chunk;
 	const targetLine = row + 1;
 	let adjacent: ContextMenuTokenMatch = null;
@@ -286,7 +290,7 @@ function findContextMenuTokenMatch(code: CodeEditorControl,row: number, column: 
 	return adjacent;
 }
 
-function resolveIdentifierExpressionForKeyword(code: CodeEditorControl,row: number, match: ContextMenuTokenMatch, path: string): { expression: string; startColumn: number; endColumn: number; } {
+function resolveIdentifierExpressionForKeyword(code: CodeEditorControl,row: number, match: ContextMenuTokenMatch): { expression: string; startColumn: number; endColumn: number; } {
 	if (match.token.type !== LuaTokenType.Local && match.token.type !== LuaTokenType.Function) {
 		return null;
 	}
@@ -302,7 +306,7 @@ function resolveIdentifierExpressionForKeyword(code: CodeEditorControl,row: numb
 		if (token.type !== LuaTokenType.Identifier) {
 			continue;
 		}
-		return extractIdentifierExpression(code, code.model.buffer, row, position.column - 1, path);
+		return extractIdentifierExpression(code, code.model.buffer, row, position.column - 1);
 	}
 	return null;
 }
@@ -327,7 +331,7 @@ function buildContextMenuToken(
 	};
 }
 
-export function resolveContextMenuToken(code: CodeEditorControl,row: number, column: number, path: string): EditorContextToken {
+export function resolveContextMenuToken(code: CodeEditorControl,row: number, column: number): EditorContextToken {
 	const buffer = code.model.buffer;
 	if (row < 0 || row >= buffer.getLineCount()) {
 		return null;
@@ -340,7 +344,7 @@ export function resolveContextMenuToken(code: CodeEditorControl,row: number, col
 	if (getLuaTextContext(buffer, row, safeColumn) === LuaTextContext.Comment) {
 		return null;
 	}
-	const expression = extractIdentifierExpression(code, buffer, row, safeColumn, path);
+	const expression = extractIdentifierExpression(code, buffer, row, safeColumn);
 	if (expression) {
 		const segmentText = line.slice(expression.startColumn, expression.endColumn);
 		const isKeyword = KEYWORDS.has(segmentText);
@@ -356,11 +360,11 @@ export function resolveContextMenuToken(code: CodeEditorControl,row: number, col
 			);
 		}
 	}
-	const match = findContextMenuTokenMatch(code, row, safeColumn, path, buffer);
+	const match = findContextMenuTokenMatch(code, row, safeColumn, buffer);
 	if (!match) {
 		return null;
 	}
-	const keywordExpression = resolveIdentifierExpressionForKeyword(code, row, match, path);
+	const keywordExpression = resolveIdentifierExpressionForKeyword(code, row, match);
 	if (keywordExpression) {
 		const keywordText = line.slice(keywordExpression.startColumn, keywordExpression.endColumn);
 		return buildContextMenuToken(
@@ -443,14 +447,14 @@ export function inspectLuaRuntimeExpression(
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	expression: string,
-	domain: ResourceDomain,
+	identity: ResourceIdentity,
 	analysis: FileSemanticData,
 	line: number,
 	column: number,
 ): LuaRuntimeInspection | null {
 	const chain = parseLuaIdentifierChain(expression);
 	if (chain === null) return null;
-	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, domain, chain, line, column);
+	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, chain, line, column);
 	if (resolved.kind === 'unavailable') {
 		return { expression, lines: [RUNTIME_UNAVAILABLE_LABELS[resolved.reason]], valueType: 'unknown', state: 'unavailable' };
 	}
@@ -466,24 +470,25 @@ const RUNTIME_UNAVAILABLE_LABELS = {
 	not_a_table: 'unavailable: member parent is not a table',
 } as const;
 
-export function listLuaSymbols(sources: RuntimeSourceState, domain: ResourceDomain, path: string): LuaSymbolEntry[] {
+export function listLuaSymbols(sources: RuntimeSourceState, domain: ResourceDomain, path: string): EditorLuaSymbolEntry[] {
 	const source = resolveRuntimeLuaSourceForContext(sources, domain, path);
 	if (!source) {
 		return [];
 	}
 	const project = getOrCreateSemanticProject(editorTextModelService, domain);
 	project.synchronizeRuntimeSources(sources);
-	const analysis = project.getFileData(source.record.source_path);
+	const analysis = project.getFileData({ domain: source.domain, path: source.record.source_path });
 	if (!analysis) {
 		return [];
 	}
 	const declarations = analysis.decls;
-	const symbols = new Array<LuaSymbolEntry>(declarations.length);
+	const symbols = new Array<EditorLuaSymbolEntry>(declarations.length);
 	for (let index = 0; index < declarations.length; index += 1) {
 		const declaration = declarations[index];
 		const location = definitionLocationFromSourceRange(analysis.chunk.locations.range(declaration.span));
 		symbols[index] = {
 			name: declaration.name,
+			resource: project.getResourceIdentity(analysis.file),
 			path: declaration.namePath.length > 0
 				? declaration.namePath.join('.')
 				: declaration.name,
@@ -502,7 +507,7 @@ export function listLuaSymbols(sources: RuntimeSourceState, domain: ResourceDoma
 	return symbols;
 }
 
-export function listGlobalLuaSymbols(sources: RuntimeSourceState, domain: ResourceDomain): LuaSymbolEntry[] {
+export function listGlobalLuaSymbols(sources: RuntimeSourceState, domain: ResourceDomain): EditorLuaSymbolEntry[] {
 	const project = getOrCreateSemanticProject(editorTextModelService, domain);
 	project.synchronizeRuntimeSources(sources);
 	const snapshot = project.getSnapshot();
@@ -510,21 +515,22 @@ export function listGlobalLuaSymbols(sources: RuntimeSourceState, domain: Resour
 	if (cached) {
 		return cached;
 	}
-	const entries: LuaSymbolEntry[] = [];
+	const entries: EditorLuaSymbolEntry[] = [];
 	const decls = snapshot.listGlobalDecls();
 	for (let index = 0; index < decls.length; index += 1) {
 		const decl = decls[index];
 		const path = decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name;
 		entries.push({
 			name: decl.name,
+			resource: project.getResourceIdentity(decl.file),
 			path,
 			kind: semanticSymbolKindToLuaSymbolKind(decl.kind),
 			location: definitionLocationFromSourceRange(snapshot.getFileData(decl.file)!.chunk.locations.range(decl.span)),
 		});
 	}
 	entries.sort((a, b) => {
-		const pathA = a.location.path;
-		const pathB = b.location.path;
+		const pathA = a.resource.path;
+		const pathB = b.resource.path;
 		if (pathA !== pathB) {
 			return pathA.localeCompare(pathB);
 		}
@@ -558,10 +564,10 @@ export function findStaticDefinitionLocation(
 	const project = getOrCreateSemanticProject(editorTextModelService, activeContext.model.resource.domain);
 	project.synchronizeRuntimeSources(sources);
 	if (activeContext.model.resource.path === sourcePath) {
-		project.analyzeDocument(sourcePath, activeContext.model.buffer);
+		project.analyzeDocument(activeContext.model.identity, activeContext.model.buffer);
 	}
 	const frontend = createEditorSemanticFrontend(project.getSnapshot(), activeContext.model.resource.domain);
-	const symbols = frontend.findSymbolsByPosition(sourcePath, usageRow, usageColumn);
+	const symbols = frontend.findSymbolsByPosition(resourceIdentityKey({ domain: source.domain, path: sourcePath }), usageRow, usageColumn);
 	return symbols && symbols.targets.length === 1
 		? definitionLocationFromSourceRange(symbols.targets[0].range)
 		: null;

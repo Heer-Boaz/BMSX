@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -24,7 +25,7 @@ end
 local result = original:change()
 return original.initial, result.updated, self == 99`;
 	const data = buildLuaFileSemanticData(source, PATH);
-	const frontend = buildLuaSemanticFrontend([{ path: PATH, source, analysis: data }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: PATH, source, analysis: data }]));
 	const file = frontend.getFile(PATH);
 	assert.deepEqual(data.decls.filter(declaration => declaration.name === 'self').map(declaration => data.chunk.locations.range(declaration.span).start.line), [1]);
 	const references = data.refs.filter(reference => reference.name === 'self');
@@ -34,7 +35,7 @@ return original.initial, result.updated, self == 99`;
 			assert.equal(file.getReference(syntax)!.kind, 'implicit_self');
 		}
 	}
-	const summaries = new FunctionSummaryStore([data], new WorkspaceValueIdentityIndex({ files: [data], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([data], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([data]).map(file => file.file)), files: [data], globalValues: new Map() }));
 	const method = summaries.list()[0];
 	assert.equal(summaries.terms.kind(summaries.terms.compileSource(method.source.parameters[0])), TermKind.Local);
 	assert.equal(summaries.terms.kind(method.parameters[0]), TermKind.Parameter);
@@ -55,7 +56,7 @@ end
 local result = original:change()
 return result.updated`;
 		for (const names of [['original', 'replacement', 'result'], ['result', 'replacement', 'original']]) {
-			const workspace = new LuaSemanticWorkspace();
+			const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([PATH]));
 			workspace.updateFile(PATH, source);
 			const snapshot = workspace.getSnapshot();
 			for (const name of names) {
@@ -120,7 +121,7 @@ function original:change()
 	return self:read()
 end
 return original:change()`;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([PATH]));
 	workspace.updateFile(PATH, source);
 	const snapshot = workspace.getSnapshot();
 	const data = snapshot.getFileData(PATH)!;
@@ -145,7 +146,7 @@ function original:change()
 	return self:read()
 end
 return original:change(), original:read()`;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([PATH]));
 	workspace.updateFile(PATH, source);
 	const snapshot = workspace.getSnapshot();
 	const references = snapshot.getFileData(PATH)!.refs.filter(entry => entry.name === 'read' && entry.isCall);
@@ -182,7 +183,7 @@ function outer:shadow(self)
 end
 return outer.change(40), outer:shadow(0)`;
 	const data = buildLuaFileSemanticData(source, PATH);
-	const summaries = new FunctionSummaryStore([data], new WorkspaceValueIdentityIndex({ files: [data], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([data], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([data]).map(file => file.file)), files: [data], globalValues: new Map() }));
 	for (const reference of data.refs.filter(entry => entry.name === 'self')) {
 		const { line, column } = data.chunk.locations.range(reference.span).start;
 		const binding = findLuaLexicalBindingAt(data, 'self', line, column);
@@ -234,7 +235,7 @@ for (const depth of [1, 4, 8]) {
 		);
 		const source = lines.join('\n');
 		for (const names of [['written', 'untouched', 'uncalled'], ['uncalled', 'untouched', 'written']]) {
-			const workspace = new LuaSemanticWorkspace();
+			const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([PATH]));
 			workspace.updateFile(PATH, source);
 			const snapshot = workspace.getSnapshot();
 			for (const name of names) {

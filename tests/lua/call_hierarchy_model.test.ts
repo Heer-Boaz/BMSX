@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 
 import { CallHierarchyDirection, CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
 import { buildCallHierarchyPanelItems } from '../../ide/workbench/contrib/resources/panel/items';
@@ -7,9 +7,20 @@ import {
 	collapseSelectedCallHierarchyNode,
 	expandSelectedCallHierarchyNode,
 } from '../../ide/workbench/contrib/resources/panel/navigation';
-import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
+import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
+import { resourceIdentityKey } from '../../ide/common/resource';
+import { EditorTextModelService } from '../../ide/editor/model/model_service';
+import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 
-test('CallHierarchyModel resolves incoming callers one expanded branch at a time', () => {
+function callHierarchyFixture(t: TestContext, path: string, source: string) {
+	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
+	const resource = { domain: 0 as const, path };
+	project.updateDocument(resource, source);
+	t.after(() => project.dispose());
+	return { project, resource, address: resourceIdentityKey(resource), frontend: buildLuaSemanticFrontendFromSnapshot(project.getSnapshot()) };
+}
+
+test('CallHierarchyModel resolves incoming callers one expanded branch at a time', t => {
 	const source = [
 		'local function target() end',
 		'local function left()',
@@ -23,10 +34,10 @@ test('CallHierarchyModel resolves incoming callers one expanded branch at a time
 		'\tright()',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source }]);
-	const target = frontend.findSymbolsByPosition('calls.lua', 1, 16);
+	const { frontend, project, address } = callHierarchyFixture(t, 'calls.lua', source);
+	const target = frontend.findSymbolsByPosition(address, 1, 16);
 	assert.ok(target);
-	const model = new CallHierarchyModel(frontend, [target.targets[0].id], 'target');
+	const model = new CallHierarchyModel(frontend, [target.targets[0].id], 'target', project);
 	const root = model.roots[0];
 	const direction = CallHierarchyDirection.CallsTo;
 
@@ -48,12 +59,12 @@ test('CallHierarchyModel resolves incoming callers one expanded branch at a time
 	assert.notEqual(leftCallers[0].id, rightCallers[0].id, 'branch identity includes the parent path');
 });
 
-test('CallHierarchyModel removes the expansion marker after resolving an empty root', () => {
+test('CallHierarchyModel removes the expansion marker after resolving an empty root', t => {
 	const source = 'local function unused() end';
-	const frontend = buildLuaSemanticFrontend([{ path: 'unused.lua', source }]);
-	const target = frontend.findSymbolsByPosition('unused.lua', 1, 16);
+	const { frontend, project, address } = callHierarchyFixture(t, 'unused.lua', source);
+	const target = frontend.findSymbolsByPosition(address, 1, 16);
 	assert.ok(target);
-	const model = new CallHierarchyModel(frontend, [target.targets[0].id], 'unused');
+	const model = new CallHierarchyModel(frontend, [target.targets[0].id], 'unused', project);
 	const root = model.roots[0];
 
 	assert.equal(model.hasChildren(root, CallHierarchyDirection.CallsTo), true, 'unresolved symbols can request their incoming layer');
@@ -61,7 +72,7 @@ test('CallHierarchyModel removes the expansion marker after resolving an empty r
 	assert.equal(model.hasChildren(root, CallHierarchyDirection.CallsTo), false);
 });
 
-test('CallHierarchyModel resolves outgoing callees one expanded branch at a time', () => {
+test('CallHierarchyModel resolves outgoing callees one expanded branch at a time', t => {
 	const source = [
 		'local function target() end',
 		'local function left()',
@@ -76,10 +87,10 @@ test('CallHierarchyModel resolves outgoing callees one expanded branch at a time
 		'\tright()',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source }]);
-	const shared = frontend.findSymbolsByPosition('calls.lua', 9, 16);
+	const { frontend, project, address } = callHierarchyFixture(t, 'calls.lua', source);
+	const shared = frontend.findSymbolsByPosition(address, 9, 16);
 	assert.ok(shared);
-	const model = new CallHierarchyModel(frontend, [shared.targets[0].id], 'shared');
+	const model = new CallHierarchyModel(frontend, [shared.targets[0].id], 'shared', project);
 	const root = model.roots[0];
 
 	assert.equal(model.hasChildren(root, CallHierarchyDirection.CallsFrom), true);
@@ -101,7 +112,7 @@ test('CallHierarchyModel resolves outgoing callees one expanded branch at a time
 	assert.notEqual(leftCallees[0].id, rightCallees[0].id, 'branch identity includes the parent path');
 });
 
-test('call hierarchy panel switches the same lazy tree between callers and callees', () => {
+test('call hierarchy panel switches the same lazy tree between callers and callees', t => {
 	const source = [
 		'local function target() end',
 		'local function direct()',
@@ -111,10 +122,10 @@ test('call hierarchy panel switches the same lazy tree between callers and calle
 		'\tdirect()',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source }]);
-	const direct = frontend.findSymbolsByPosition('calls.lua', 2, 16);
+	const { frontend, project, resource, address } = callHierarchyFixture(t, 'calls.lua', source);
+	const direct = frontend.findSymbolsByPosition(address, 2, 16);
 	assert.ok(direct);
-	const model = new CallHierarchyModel(frontend, [direct.targets[0].id], 'direct');
+	const model = new CallHierarchyModel(frontend, [direct.targets[0].id], 'direct', project);
 	const root = model.roots[0];
 	const expanded = new Set([root.id]);
 
@@ -123,6 +134,8 @@ test('call hierarchy panel switches the same lazy tree between callers and calle
 	assert.equal(incoming.length, 2);
 	assert.equal(incoming[0].callHierarchyNodeId, root.id);
 	assert.strictEqual(incoming[0].location, root.location);
+	assert.deepEqual(incoming[0].resource, resource);
+	assert.equal(incoming[0].location.path, address);
 	assert.equal(incoming[0].callHierarchyExpanded, true);
 	assert.equal(incoming[1].callHierarchyNodeId, caller.id);
 	assert.strictEqual(incoming[1].location, caller.location);
@@ -152,6 +165,7 @@ test('call hierarchy panel switches the same lazy tree between callers and calle
 			endColumn: range.end.column,
 		},
 	});
+	assert.deepEqual(callSite.resource, resource);
 	assert.equal(callSite.callHierarchyExpandable, false);
 	assert.equal(callSite.callHierarchyExpanded, false);
 	assert.equal(expandSelectedCallHierarchyNode(incomingExpanded, 2, expanded), null);

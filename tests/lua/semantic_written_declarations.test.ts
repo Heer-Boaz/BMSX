@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -15,7 +16,7 @@ for (const { name, source, minimum, count } of [
 ]) {
 	test(`direct written declarations: ${name}`, () => {
 		const member = name.includes('nested') ? 't.child.run' : name === 'declared method' ? 't:run' : 't.run';
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['written.lua']));
 		const file = workspace.updateFile('written.lua', `${source}\nlocal function forward(value, unused) ${member}(value) end`);
 		const call = file.callSites[file.callSites.length - 1].call;
 		const definitions = getLuaWrittenDeclarations(file, call.callee);
@@ -27,7 +28,7 @@ for (const { name, source, minimum, count } of [
 }
 
 test('direct written declarations do not follow function returns or dynamic keys', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['unknown.lua']));
 	const file = workspace.updateFile('unknown.lua', [
 		'local function make() return { run = function(x) return x + 1 end } end',
 		'local key = "run"',
@@ -42,7 +43,7 @@ test('direct written declarations do not follow function returns or dynamic keys
 });
 
 test('function-owned constructor members use the containing file index', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['local.lua']));
 	const file = workspace.updateFile('local.lua', [
 		'local function outer()',
 		'  local t = { run = function(x) return x + 1 end }',
@@ -57,7 +58,7 @@ test('function-owned constructor members use the containing file index', () => {
 });
 
 test('written member keys cannot collide with a multi-step path encoding', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['keys.lua']));
 	const file = workspace.updateFile('keys.lua', 'local object = {}\nobject["a\\0m\\0b"] = function(value) end\nobject.a.b()');
 	assert.deepEqual(getLuaWrittenDeclarations(file, file.callSites[0].call.callee), []);
 	const written = file.memberValues[0];

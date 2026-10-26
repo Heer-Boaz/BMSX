@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../../common/resource';
 import { captureWorkbenchTreeView, restoreWorkbenchTreeView, type WorkbenchTreeViewSnapshot } from '../../ui/tree_view';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { captureTextFileModel, resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
@@ -31,7 +32,7 @@ export class LuaProgramInputSerializer implements EditorInputSerializer<LuaProgr
 			if (!resolved.sameSource) sameDependencies = false;
 		}
 		const input = new LuaProgramInput(model, state.kind, state.occurrence, this.controller.guest);
-		for (const dependency of dependencies) input.sourceModels.set(dependency.resource.path, dependency);
+		for (const dependency of dependencies) input.sourceModels.set(resourceIdentityKey(dependency.resource), dependency);
 		input.publishModels();
 		this.controller.refresh(input);
 		if (sameSource && sameDependencies) {

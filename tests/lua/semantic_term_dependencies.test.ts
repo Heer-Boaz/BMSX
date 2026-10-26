@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SemanticTermStore, type FunctionSummaryID, type TermID } from '../../toolchain/ts/lua/semantic/function_summary';
@@ -7,7 +8,7 @@ import { TermRelation } from '../../toolchain/ts/lua/semantic/term_relation';
 
 function createTerms(): SemanticTermStore {
 	return new SemanticTermStore(
-		new WorkspaceValueIdentityIndex({ files: [], globalValues: new Map() }), new Map(), new Map(),
+		new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([]).map(file => file.file)), files: [], globalValues: new Map() }), new Map(), new Map(),
 	);
 }
 

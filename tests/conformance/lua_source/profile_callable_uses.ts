@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { LuaSemanticQueryStore } from '../../../toolchain/ts/lua/semantic/query_store';
@@ -15,14 +16,14 @@ for (const owners of [1, 128, 1024]) {
 	const file = buildLuaFileSemanticData(lines.join('\n'), 'uses.lua');
 	const call = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
 	const coldQueryMilliseconds = medianMilliseconds(() => {
-		const queries = new LuaSemanticQueryStore([file], new Map());
+		const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 		const graph = queries.callSources(call);
 		assert.equal(graph.calls.filter(call => call.caller.kind === 'module').length, 1);
 		const entry = graph.applications.find(edge => edge.call.caller.kind === 'module')!.target;
 		const callback = graph.applications.find(edge => edge.call.caller === entry)!.target;
 		assert.ok(graph.heads.some(head => head.caller === callback));
 	});
-	const queries = new LuaSemanticQueryStore([file], new Map());
+	const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 	const graph = queries.callSources(call);
 	const before = queries.metrics();
 	let heads = 0;

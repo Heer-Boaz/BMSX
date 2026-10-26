@@ -3,7 +3,7 @@ import { walkLuaAst } from '../../../../toolchain/ts/lua/syntax/ast/traversal';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { findLuaModuleExport, getLuaModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import type { ResourceIdentity } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
@@ -49,7 +49,7 @@ export type AnimationDefinitionSource = {
 
 /** Invocation-only catalog; registered programs are not resolved through live objects. */
 export function collectAnimationDefinitions(resource: ResourceIdentity, snapshot: LuaSemanticWorkspaceSnapshot): AnimationDefinitionSource[] {
-	const file = snapshot.getFileData(resource.path)!;
+	const file = snapshot.getFileData(resourceIdentityKey(resource))!;
 	const reader = new LuaSourceReader(snapshot);
 	const result: AnimationDefinitionSource[] = [];
 	const definitions = new Map<LuaTableConstructorExpression, Set<FileSemanticData | undefined>>();

@@ -2,6 +2,7 @@ import type { HashLookup } from '../../collections/hash_map';
 import { isMultiReturnExpression, LuaSyntaxKind, LuaUnaryOperator, type LuaCallExpression, type LuaExpression, type LuaReturnStatement, type LuaTableConstructorExpression } from '../syntax/ast';
 import { LuaCompletion } from '../analysis/completion';
 import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
+import type { LuaProjectModuleBindings } from './module_resolution';
 import { declarationValueSource, NIL_VALUE_SOURCE, readLuaExpressionSource, unknownValueSource, type CallValueEntry, type DeclarationValueEntry, type FunctionReturnValueEntry, type FunctionValueFlowEntry, type ModuleValueEntry, type OwnedValueID, type SemanticValueSource, type ValueAssignmentEntry } from './value_graph';
 
 /** A source occurrence, not a canonical value, storage location or runtime instance. */
@@ -112,7 +113,7 @@ export class LuaWrittenSourceQuery {
 	private readonly writes = new Map<DeclarationValueEntry, LuaWrittenSource>();
 	private readonly globals = new Map<string, LuaWrittenSourceInputs>();
 	private globalDeclarations: ReadonlyMap<string, readonly Decl[]> | undefined;
-	private modules: ReadonlyMap<string, LuaSourceContributions> | undefined;
+	private readonly modules = new Map<string, LuaWrittenSourceInputs>();
 	private readonly transfers = new Map<OwnedValueID, LuaSourceContributions>();
 	private readonly receivers = new Map<OwnedValueID, LuaSourceContributions>();
 	private readonly indexedFiles = new Set<FileSemanticData>();
@@ -128,6 +129,7 @@ export class LuaWrittenSourceQuery {
 		files: readonly FileSemanticData[],
 		private readonly symbols: HashLookup<SymbolID, Decl>,
 		private readonly globalStorage: readonly (readonly Decl[])[],
+		private readonly moduleBindings: LuaProjectModuleBindings,
 	) {
 		for (const file of files) this.filesByPath.set(file.file, file);
 	}
@@ -328,7 +330,8 @@ export class LuaWrittenSourceQuery {
 				return this.declarationInputs(declaration);
 			}
 			case 'global': return this.globalInputs(root.symbolKey);
-			case 'module': return this.moduleInputs(root.module);
+			case 'module_import': return this.moduleInputs(this.moduleBindings.get(root.referrer)!.get(root.specifier));
+			case 'module_export': return this.moduleInputs(root.file);
 			case 'owned': {
 				if (root.role === 'receiver') {
 					let inputs = this.receivers.get(root.id);
@@ -355,24 +358,21 @@ export class LuaWrittenSourceQuery {
 	}
 
 	/** Only the canonical export is a value edge; earlier returns are control evidence. */
-	private moduleInputs(name: string): LuaWrittenSourceInputs {
-		if (this.modules === undefined) {
-			const modules = new Map<string, { kind: 'contributions'; sources: LuaWrittenSource[] }>();
-			for (const file of this.filesByPath.values()) for (const entry of file.moduleValues) {
-				let inputs = modules.get(entry.module);
-				if (inputs === undefined) {
-					inputs = { kind: 'contributions', sources: [] };
-					modules.set(entry.module, inputs);
-				}
-				inputs.sources.push({ kind: 'module-export', file, export: entry, value: entry.source });
-				for (const statement of entry.bypassingReturns) {
-					inputs.sources.push({ kind: 'module-bypass', file, statement, value: unknownValueSource() });
-				}
+	private moduleInputs(address: string | undefined): LuaWrittenSourceInputs {
+		if (address === undefined) return MODULE;
+		let inputs = this.modules.get(address);
+		if (inputs !== undefined) return inputs;
+		const file = this.filesByPath.get(address)!;
+		const sources: LuaWrittenSource[] = [];
+		for (const entry of file.moduleValues) {
+			sources.push({ kind: 'module-export', file, export: entry, value: entry.source });
+			for (const statement of entry.bypassingReturns) {
+				sources.push({ kind: 'module-bypass', file, statement, value: unknownValueSource() });
 			}
-			this.modules = modules;
 		}
-		const inputs = this.modules.get(name);
-		return inputs === undefined ? MODULE : inputs;
+		inputs = sources.length === 0 ? MODULE : { kind: 'contributions', sources };
+		this.modules.set(address, inputs);
+		return inputs;
 	}
 
 	private declarationInputs(declaration: Decl): LuaSourceContributions {

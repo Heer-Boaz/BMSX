@@ -10,9 +10,13 @@ import {
 import type { Decl, FileSemanticData, SymbolID } from './model';
 import type { DeclarationValueEntry, SemanticValueSource } from './value_graph';
 
-export type ModuleAliasTarget = {
+export type LuaModuleImportTarget = {
 	readonly module: string;
 	readonly memberPath: readonly string[];
+};
+
+export type ModuleAliasTarget = LuaModuleImportTarget & {
+	readonly referrer: string;
 };
 
 type ModuleAliasLookup = (name: string) => ModuleAliasTarget | null;
@@ -45,6 +49,7 @@ export function resolveBuiltinRequireArgument(
 
 export function resolveModuleAliasInitializer(
 	expression: LuaExpression,
+	referrer: string,
 	resolveIdentifier: ModuleAliasLookup,
 	requireIsBuiltin: boolean,
 ): ModuleAliasTarget | null {
@@ -63,6 +68,7 @@ export function resolveModuleAliasInitializer(
 			return null;
 		}
 		target = {
+			referrer,
 			module: moduleName.value,
 			memberPath: EMPTY_MEMBER_PATH,
 		};
@@ -95,7 +101,7 @@ export function resolveModuleAliasInitializer(
 		}
 		memberIndex -= 1;
 	}
-	return { module: target.module, memberPath };
+	return { referrer: target.referrer, module: target.module, memberPath };
 }
 
 function resolveModuleAliasValueSource(
@@ -103,10 +109,12 @@ function resolveModuleAliasValueSource(
 	aliasesByDeclaration: ReadonlyMap<SymbolID, ModuleAliasTarget>,
 ): ModuleAliasTarget | null {
 	const steps = source.steps;
+	let referrer: string;
 	let module: string;
 	let basePath: readonly string[];
-	if (source.root.kind === 'module') {
-		module = source.root.module;
+	if (source.root.kind === 'module_import') {
+		referrer = source.root.referrer;
+		module = source.root.specifier;
 		basePath = EMPTY_MEMBER_PATH;
 	} else if (source.root.kind === 'declaration') {
 		const base = aliasesByDeclaration.get(source.root.declId);
@@ -116,13 +124,14 @@ function resolveModuleAliasValueSource(
 		if (steps.length === 0) {
 			return base;
 		}
+		referrer = base.referrer;
 		module = base.module;
 		basePath = base.memberPath;
 	} else {
 		return null;
 	}
 	if (steps.length === 0) {
-		return { module, memberPath: EMPTY_MEMBER_PATH };
+		return { referrer, module, memberPath: EMPTY_MEMBER_PATH };
 	}
 	const memberPath = new Array<string>(basePath.length + steps.length);
 	for (let index = 0; index < basePath.length; index += 1) {
@@ -135,7 +144,7 @@ function resolveModuleAliasValueSource(
 		}
 		memberPath[basePath.length + index] = step.name;
 	}
-	return { module, memberPath };
+	return { referrer, module, memberPath };
 }
 
 /**

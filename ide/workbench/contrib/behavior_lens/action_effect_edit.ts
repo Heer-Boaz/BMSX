@@ -1,3 +1,4 @@
+import { resourceIdentityEquals } from '../../../common/resource';
 import type { EffectPropertyWrite } from './action_effect_index';
 import type { LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
@@ -23,7 +24,7 @@ export function applyActionEffectPropertyEdit(input: BehaviorLensInput, write: E
 	model.pushEditOperations([value.edit], behaviorSourceEditState.of(before, input.view.editSource), changes => {
 		// Explicit replacement selects the new expression; ordinary text markers
 		// deliberately collapse when their original source occurrence disappears.
-		for (const step of after.path) if (step.resource.path === model.resource.path) {
+		for (const step of after.path) if (resourceIdentityEquals(step.resource, model.resource)) {
 			step.start = mapTextOffset(step.start, changes, 1);
 			step.end = mapTextOffset(step.end, changes, -1);
 		}

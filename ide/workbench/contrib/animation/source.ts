@@ -3,7 +3,7 @@ import { findNamedLuaTableField, staticLuaTableFieldName } from '../../../../too
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { findLuaModuleExport } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import { resolveStaticLuaExpressionPath } from '../../../../toolchain/ts/lua/semantic/expression_path';
-import type { ResourceIdentity } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { readLuaNumberLiteral } from '../../../language/lua/source_edits';
 import { indexAnimationKeys } from './key_index';
@@ -19,7 +19,7 @@ export function isAnimationDefinitionSource(table: LuaTableConstructorExpression
 /** The selected written definition remains ordinary Lua; no execution or inferred sample baking. */
 export function buildAnimationSourceDocument(resource: ResourceIdentity, snapshot: LuaSemanticWorkspaceSnapshot,
 	definition?: LuaTableConstructorExpression): AnimationSourceDocument | undefined {
-	const file = snapshot.getFileData(resource.path)!;
+	const file = snapshot.getFileData(resourceIdentityKey(resource))!;
 	const expression = definition === undefined ? findLuaModuleExport(file.chunk)?.expressions[0] : definition;
 	if (expression === undefined) return undefined;
 	const reader = new LuaSourceReader(snapshot);

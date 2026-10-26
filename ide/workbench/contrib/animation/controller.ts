@@ -4,10 +4,10 @@ import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
-import { resolveRuntimeResourceForContext, runtimeLuaSourceRegistry, type RuntimeSourceState } from '../../../runtime/sources';
+import { resolveRuntimeResource, runtimeLuaSourceRegistry, type RuntimeSourceState } from '../../../runtime/sources';
 import { onDidChangeLuaSourceRegistry } from '../../../runtime/source_registry';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
-import type { ResourceDomain, RuntimeResource } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceDomain, type RuntimeResource } from '../../../common/resource';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { EditorGroupView } from '../../services/editor/editor_group';
@@ -40,7 +40,7 @@ export class AnimationEditorController {
 		};
 		const active = this.group.model.activeTab;
 		if (active?.kind === 'code_editor' && active.workingCopy.mode === 'lua') {
-			const model = active.workingCopy, snapshot = snapshotFor(model.resource.domain), file = snapshot.getFileData(model.resource.path)!;
+			const model = active.workingCopy, snapshot = snapshotFor(model.resource.domain), file = snapshot.getFileData(resourceIdentityKey(model.resource))!;
 			const table = animationDefinitionAtPosition(file, active.context.view.cursorRow + 1, active.context.view.cursorColumn + 1);
 			if (table !== undefined) {
 				const registered = collectAnimationDefinitions(model.resource, snapshot).find(item => item.table === table);
@@ -60,7 +60,8 @@ export class AnimationEditorController {
 				if (consumers.has(definition.consumer)) continue;
 				consumers.add(definition.consumer);
 				const range = definition.file.chunk.locations.range(definition.table.span);
-				choices.push({ label: definition.label, description: definition.context === undefined ? definition.file.file : `${definition.context} / ${definition.file.file}`,
+				const owner = getOrCreateSemanticProject(editorTextModelService, resource.domain).getResourceIdentity(definition.file.file);
+				choices.push({ label: definition.label, description: definition.context === undefined ? owner.path : `${definition.context} / ${owner.path}`,
 					detail: `${resource.domain === -1 ? 'SYSTEM' : `SLOT ${resource.domain}`} / ${range.start.line}:${range.start.column}`,
 					domain: resource.domain, definition });
 			}
@@ -76,14 +77,19 @@ export class AnimationEditorController {
 	}
 
 	public openDefinition(domain: ResourceDomain, definition: AnimationDefinitionSource): AnimationEditorInput {
-		const resource = resolveRuntimeResourceForContext(this.sources, domain, definition.file.file)!;
+		const project = getOrCreateSemanticProject(editorTextModelService, domain);
+		const resource = resolveRuntimeResource(this.sources, project.getResourceIdentity(definition.file.file))!;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 		const range = definition.file.chunk.locations.range(definition.table.span);
 		let input = this.group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation'
-			&& item.workingCopy === model && item.consumerPath === definition.consumer?.file && item.definitionRange !== undefined && luaSourceRangeMatchesTextRange(model.buffer, range, item.definitionRange));
+			&& item.projectDomain === domain && item.workingCopy === model && item.consumerPath === definition.consumer?.file
+			&& item.definitionRange !== undefined && luaSourceRangeMatchesTextRange(model.buffer, range, item.definitionRange));
 		if (input === undefined) {
-			input = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, range), definition.label, definition.consumer?.file);
-			if (definition.consumer !== undefined) this.modelFor(input, definition.consumer);
+			input = new AnimationEditorInput(model, domain, luaSourceRangeToTextRange(model.buffer, range), definition.label, definition.consumer?.file);
+			if (definition.consumer !== undefined) {
+				const consumer = resolveRuntimeResource(this.sources, project.getResourceIdentity(definition.consumer.file))!;
+				input.sourceModels.set(definition.consumer.file, resolveLuaTextFileModel(editorTextModelService, this.sources, consumer));
+			}
 			this.refresh(input);
 		}
 		this.group.openEditor(input);
@@ -93,7 +99,7 @@ export class AnimationEditorController {
 	public openResource(resource: RuntimeResource): AnimationEditorInput {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 		let input = this.group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
-		if (input === undefined) { input = new AnimationEditorInput(model); this.refresh(input); }
+		if (input === undefined) { input = new AnimationEditorInput(model, resource.domain); this.refresh(input); }
 		this.group.openEditor(input);
 		return input;
 	}
@@ -101,7 +107,8 @@ export class AnimationEditorController {
 	public modelFor(input: AnimationEditorInput, file: FileSemanticData): EditorTextModel {
 		let model = input.sourceModels.get(file.file);
 		if (model === undefined) {
-			const resource = resolveRuntimeResourceForContext(this.sources, input.workingCopy.resource.domain, file.file)!;
+			const project = getOrCreateSemanticProject(editorTextModelService, input.projectDomain);
+			const resource = resolveRuntimeResource(this.sources, project.getResourceIdentity(file.file))!;
 			model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
 			input.sourceModels.set(file.file, model);
 		}
@@ -110,21 +117,21 @@ export class AnimationEditorController {
 
 
 	public refresh(input: AnimationEditorInput): void {
-		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.domain);
+		const project = getOrCreateSemanticProject(editorTextModelService, input.projectDomain);
 		project.synchronizeRuntimeSources(this.sources);
 		const snapshot = project.getSnapshot();
 		if (snapshot.revision === input.sourceRevision) {
-			input.framePreview.update(input.framesSelected ? input.document : undefined, input.details.selectionIndex, input.workingCopy.resource.domain, this.sources);
+			input.framePreview.update(input.framesSelected ? input.document : undefined, input.details.selectionIndex, input.projectDomain, this.sources);
 			return;
 		}
 		input.invalidateProjection();
 		input.sourceRevision = snapshot.revision;
 		const definition = input.definitionRange === undefined ? undefined
-			: animationDefinitionAtRange(snapshot.getFileData(input.workingCopy.resource.path)!, input.workingCopy.buffer, input.definitionRange);
+			: animationDefinitionAtRange(snapshot.getFileData(resourceIdentityKey(input.workingCopy.resource))!, input.workingCopy.buffer, input.definitionRange);
 		input.document = input.definitionRange !== undefined && definition === undefined ? undefined
 			: buildAnimationSourceDocument(input.workingCopy.resource, snapshot, definition);
 		if (input.document !== undefined) {
-			const family = animationDefinitionFamily(input.document.reader, snapshot.getFileData(input.consumerPath ?? input.workingCopy.resource.path)!, input.document.root);
+			const family = animationDefinitionFamily(input.document.reader, snapshot.getFileData(input.consumerPath ?? resourceIdentityKey(input.workingCopy.resource))!, input.document.root);
 			if (family !== input.document.family) input.document = { ...input.document, family };
 		}
 		input.tracks.rows.length = 0;
@@ -171,7 +178,7 @@ export class AnimationEditorController {
 			: document?.tracks.find(track => track.unit !== undefined)?.unit ?? (document !== undefined && document.clips.length > 0 ? 'time_ms' : document?.framesSource?.array ? 'frame' : undefined);
 		input.keys.bind(track, input.keyIndex, document, unit);
 		input.status = document === undefined ? 'Definition unavailable' : !document.syntaxComplete ? 'Incomplete source' : 'Authored Lua';
-		input.framePreview.update(input.framesSelected ? document : undefined, input.details.selectionIndex, input.workingCopy.resource.domain, this.sources);
+		input.framePreview.update(input.framesSelected ? document : undefined, input.details.selectionIndex, input.projectDomain, this.sources);
 		input.version += 1;
 	}
 
@@ -248,18 +255,18 @@ export class AnimationEditorController {
 		const file = property?.source.file ?? key?.file ?? track?.file ?? clip?.file ?? input.document?.root.file;
 		const span = property?.field.span ?? key?.field.span ?? track?.field.span ?? clip?.field.span ?? input.document?.root.table.span;
 		const range = file === undefined || span === undefined ? undefined : file.chunk.locations.range(span);
-		this.navigation.focusChunkSourceForContext(input.workingCopy.resource.domain, file === undefined ? input.workingCopy.resource.path : file.file,
+		this.navigation.focusChunkSource(file === undefined ? input.workingCopy.resource : this.modelFor(input, file).resource,
 			range === undefined ? null : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
 	public openClip(input: AnimationEditorInput): void {
 		const source = input.document!.clips[input.clipIndex].sequence!;
-		this.openDefinition(input.workingCopy.resource.domain, { file: source.file, table: source.table, label: input.document!.clips[input.clipIndex].label });
+		this.openDefinition(input.projectDomain, { file: source.file, table: source.table, label: input.document!.clips[input.clipIndex].label });
 	}
 
 	public openProducerSource(input: AnimationEditorInput): void {
 		const written = input.details.rows[input.details.selectionIndex].element.producer!.source;
 		const range = written.file.chunk.locations.range(written.expression.span);
-		this.navigation.focusChunkSourceForContext(input.workingCopy.resource.domain, written.file.file,
+		this.navigation.focusChunkSource(this.modelFor(input, written.file).resource,
 			{ row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
 }

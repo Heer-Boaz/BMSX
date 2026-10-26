@@ -1,8 +1,8 @@
-import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { BehaviorTreeTransferAnalysis } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
 import type { BehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/model';
@@ -32,8 +32,8 @@ function rootList(document: BehaviorSourceDocument, index: number): BehaviorTree
 function fixture(t: TestContext, source = ordinary, index = 0, origin = 0) {
 	const model = new EditorTextModel({ sourceFilePath: 'transfer.lua', location: { kind: 'workspace' as const, path: 'transfer.lua' }, domain: 0, path: 'transfer.lua', source: { type: 'lua', resid: 'transfer' } }, 'lua', source);
 	t.after(() => model.dispose());
-	const analysis = buildLuaFileSemanticData(source, model.resource.path);
-	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
+	const analysis = buildResourceLuaSemanticFixtureFile(source, model.resource);
+	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], ['cartlib/behaviour_tree/library'])));
 	const branch = rootList(document, origin);
 	assert.ok(branch.source.kind === 'section');
 	const member = { file: branch.source.file, table: branch.source.table, branch, index };
@@ -206,11 +206,11 @@ test('syntax recovery is not admission and a new source generation gets a new op
 });
 
 test('an imported destination requires a real multi-resource operation rather than writing it through the current buffer', () => {
-	const file = buildLuaFileSemanticData(`${prelude}
+	const file = buildResourceLuaSemanticFixtureFile(`${prelude}
 trees.register('from', {root={type='sequence',children={leaf}}})
-trees.register('to', require('target'))`, 'from.lua');
-	const provider = buildLuaFileSemanticData("return {root={type='sequence',children={}}}", 'target.lua');
-	const document = buildBehaviorSourceDocument({domain:0,path:file.file}, semanticSnapshot(file, provider));
+trees.register('to', require('target'))`, { domain: 0, path: 'from.lua' });
+	const provider = buildResourceLuaSemanticFixtureFile("return {root={type='sequence',children={}}}", { domain: 0, path: 'target.lua' });
+	const document = buildBehaviorSourceDocument(file.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file, provider], ['cartlib/behaviour_tree/library'])));
 	const branch = rootList(document, 0);
 	assert.ok(branch.source.kind === 'section');
 	const analysis = new BehaviorTreeTransferAnalysis(document, { file: branch.source.file, table: branch.source.table, branch, index: 0 });

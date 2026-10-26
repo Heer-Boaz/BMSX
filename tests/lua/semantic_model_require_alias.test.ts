@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getLuaModuleAliasTarget } from '../../toolchain/ts/lua/semantic/module_bindings';
@@ -33,12 +34,12 @@ require('library')['tools'].run()
 		const lines = [4, 7, 11, 15, 17, 18];
 		assert.deepEqual(data.callSites.filter(site => lines.includes(data.chunk.locations.range(site.expression.span).start.line)
 			&& getLuaModuleAliasTarget(data, site.call.callee) !== null).map(site => getLuaModuleAliasTarget(data, site.call.callee)), [
-			{ module: 'library', memberPath: ['tools', 'run'] },
-			{ module: 'library', memberPath: ['run'] },
-			{ module: 'other', memberPath: ['run'] },
-			{ module: 'library', memberPath: ['run'] },
-			{ module: 'library', memberPath: ['run'] },
-			{ module: 'library', memberPath: ['tools', 'run'] },
+			{ referrer: data.file, module: 'library', memberPath: ['tools', 'run'] },
+			{ referrer: data.file, module: 'library', memberPath: ['run'] },
+			{ referrer: data.file, module: 'other', memberPath: ['run'] },
+			{ referrer: data.file, module: 'library', memberPath: ['run'] },
+			{ referrer: data.file, module: 'library', memberPath: ['run'] },
+			{ referrer: data.file, module: 'library', memberPath: ['tools', 'run'] },
 		]);
 	});
 }
@@ -88,7 +89,7 @@ test('module paths do not guess through globals, parameters, builders, unknown k
 test('module paths describe binding provenance, not the current contents of a mutable module table', async () => {
 	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
 	const data = buildLuaFileSemanticData("local api = require('library'); api.run = replacement; api.run()", 'member.lua');
-	assert.deepEqual(getLuaModuleAliasTarget(data, data.callSites.at(-1)!.call.callee), { module: 'library', memberPath: ['run'] });
+	assert.deepEqual(getLuaModuleAliasTarget(data, data.callSites.at(-1)!.call.callee), { referrer: data.file, module: 'library', memberPath: ['run'] });
 });
 
 test('long local alias chains share resolved paths instead of recursively expanding each call', async () => {
@@ -99,7 +100,7 @@ test('long local alias chains share resolved paths instead of recursively expand
 	assert.equal(data.syntaxError, null);
 	assert.equal(data.callSites.length, 10001);
 	const first = getLuaModuleAliasTarget(data, data.callSites[1].call.callee);
-	assert.deepEqual(first, { module: 'library', memberPath: [] });
+	assert.deepEqual(first, { referrer: data.file, module: 'library', memberPath: [] });
 	for (let index = 2; index < data.callSites.length; index += 1) assert.strictEqual(getLuaModuleAliasTarget(data, data.callSites[index].call.callee), first);
 });
 
@@ -115,11 +116,11 @@ test('file-generation queries resolve direct and chained require aliases', async
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'testpath');
 	assert.deepEqual(data.callSites.filter(site => data.chunk.locations.range(site.expression.span).start.line === 6).map(site => getLuaModuleAliasTarget(data, site.call.callee)), [
-		{ module: 'constants', memberPath: ['read'] },
-		{ module: 'constants', memberPath: ['hud', 'read'] },
-		{ module: 'constants', memberPath: ['physics', 'read'] },
-		{ module: 'constants', memberPath: ['hud', 'overlay', 'read'] },
-		{ module: 'combat_overlap', memberPath: ['read'] },
+		{ referrer: data.file, module: 'constants', memberPath: ['read'] },
+		{ referrer: data.file, module: 'constants', memberPath: ['hud', 'read'] },
+		{ referrer: data.file, module: 'constants', memberPath: ['physics', 'read'] },
+		{ referrer: data.file, module: 'constants', memberPath: ['hud', 'overlay', 'read'] },
+		{ referrer: data.file, module: 'combat_overlap', memberPath: ['read'] },
 	]);
 });
 
@@ -135,6 +136,7 @@ test('file-generation queries resolve function-local module targets', async () =
 	const data = buildLuaFileSemanticData(source, 'function_local_alias.lua');
 	const registration = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 3)!;
 	assert.deepEqual(getLuaModuleAliasTarget(data, registration.call.callee), {
+		referrer: data.file,
 		module: 'cartlib/behaviour_tree/library',
 		memberPath: ['register'],
 	});
@@ -193,7 +195,7 @@ test('semantic file data retains compiler module aliases after require is assign
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'testpath');
 	assert.deepEqual(data.callSites.filter(site => data.chunk.locations.range(site.expression.span).start.line === 6).map(site => getLuaModuleAliasTarget(data, site.call.callee)), [
-		{ module: 'constants', memberPath: ['read'] }, { module: 'combat', memberPath: ['read'] },
+		{ referrer: data.file, module: 'constants', memberPath: ['read'] }, { referrer: data.file, module: 'combat', memberPath: ['read'] },
 	]);
 	assert.deepEqual(data.moduleReferences.map(reference => reference.value), ['constants', 'combat']);
 });
@@ -201,7 +203,7 @@ test('semantic file data retains compiler module aliases after require is assign
 test('module alias answers use the explicit file generation, not retained callee or export facts', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	for (const editedFirst of [false, true]) {
-		const workspace = new LuaSemanticWorkspace();
+		const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['generation.lua']));
 		const source = [
 			"local api = require('library')",
 			'local invoke = api.run',
@@ -234,8 +236,8 @@ test('module alias answers use the explicit file generation, not retained callee
 		}
 		const oldCallTarget = getLuaModuleAliasTarget(before, callee);
 		const oldExportTarget = getLuaModuleAliasTarget(before, exported.source);
-		assert.deepEqual(oldCallTarget, { module: 'library', memberPath: ['run'] });
-		assert.deepEqual(oldExportTarget, { module: 'library', memberPath: [] });
+		assert.deepEqual(oldCallTarget, { referrer: before.file, module: 'library', memberPath: ['run'] });
+		assert.deepEqual(oldExportTarget, { referrer: before.file, module: 'library', memberPath: [] });
 		assert.equal(getLuaModuleAliasTarget(after, callee), null, 'a nested write invalidates the captured alias chain');
 		assert.equal(getLuaModuleAliasTarget(after, reboundCall.call.callee), null);
 		assert.equal(getLuaModuleAliasTarget(after, exported.source), null);
@@ -259,7 +261,7 @@ test('semantic workspace resolves transitive module aliases independently of fil
 		"api = require('facade')",
 		'api.byte()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'facade.lua', 'base.lua']));
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	workspace.updateFile('facade.lua', facadeSource);
 	workspace.updateFile('base.lua', baseSource);
@@ -295,7 +297,7 @@ test('semantic workspace incrementally retargets transitive module aliases', asy
 		'api.left_action()',
 		'api.right_action()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'facade.lua', 'left.lua', 'right.lua']));
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	workspace.updateFile('facade.lua', facadeSource('left'));
 	workspace.updateFile('left.lua', leftSource);
@@ -329,7 +331,7 @@ test('semantic workspace resolves members added to an imported module table', as
 		"local api<const> = require('facade')",
 		'api.tools.added()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'facade.lua', 'base.lua']));
 	workspace.updateFiles([
 		buildLuaFileSemanticData(mainLines.join('\n'), 'main.lua'),
 		buildLuaFileSemanticData(facadeSource, 'facade.lua'),
@@ -358,7 +360,7 @@ test('semantic workspace incrementally removes imported table augmentations', as
 		"local api<const> = require('facade')",
 		'api.added()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['base.lua', 'facade.lua', 'main.lua']));
 	workspace.updateFiles([
 		buildLuaFileSemanticData(baseSource, 'base.lua'),
 		buildLuaFileSemanticData(facadeSource, 'facade.lua'),
@@ -373,7 +375,7 @@ test('semantic workspace incrementally removes imported table augmentations', as
 
 test('semantic workspace terminates circular module aliases without a false target', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'left.lua', 'right.lua']));
 	workspace.updateFile('main.lua', "local api<const> = require('left')\napi.value()");
 	workspace.updateFile('left.lua', "local left<const> = require('right')\nreturn left");
 	workspace.updateFile('right.lua', "local right<const> = require('left')\nreturn right");
@@ -394,7 +396,7 @@ test('semantic workspace resolves require-alias member definitions through modul
 		'room_api.update()',
 		'return room_api.value',
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['room.lua', 'main.lua']));
 	workspace.updateFile('room.lua', roomSource);
 	workspace.updateFile('main.lua', mainSource);
 	const snapshot = workspace.getSnapshot();
@@ -419,7 +421,7 @@ test('semantic workspace preserves require-alias member paths', async () => {
 		"local hud<const> = require('constants').hud",
 		'hud.draw()',
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['constants.lua', 'main.lua']));
 	workspace.updateFile('constants.lua', constantsSource);
 	workspace.updateFile('main.lua', mainSource);
 	const drawColumn = 'hud.draw()'.indexOf('draw') + 1;
@@ -447,7 +449,7 @@ test('semantic workspace resolves fields exported by module table literals', asy
 		'director_module.director.update()',
 	];
 	const mainSource = mainLines.join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'director.lua']));
 	workspace.updateFile('main.lua', mainSource);
 	workspace.updateFile('director.lua', directorSource);
 	const snapshot = workspace.getSnapshot();
@@ -481,7 +483,7 @@ test('semantic workspace resolves methods on module-owned class instances', asyn
 		"local service<const> = require('service')",
 		'service:run()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'service.lua']));
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	workspace.updateFile('service.lua', serviceSource);
 	const runTarget = semanticSymbolAt(workspace.getSnapshot(),
@@ -521,7 +523,7 @@ test('semantic workspace resolves inherited module members through class metatab
 		'leaf:dispose()',
 		'leaf:activate()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'leaf.lua', 'middle.lua', 'base.lua']));
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	workspace.updateFile('leaf.lua', leafSource);
 	workspace.updateFile('middle.lua', middleSource);
@@ -590,7 +592,7 @@ test('semantic workspace batch retargets inherited members through reverse class
 		'derived:left_action()',
 		'derived:right_action()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'derived.lua', 'base_left.lua', 'base_right.lua']));
 	workspace.updateFiles([
 		buildLuaFileSemanticData(mainLines.join('\n'), 'main.lua'),
 		buildLuaFileSemanticData(derivedLeftSource, 'derived.lua'),
@@ -641,7 +643,7 @@ test('semantic workspace resolves explicit-self methods through metatable inheri
 	const derivedRightSource = derivedLeftLines
 		.join('\n')
 		.replaceAll('base_left', 'base_right');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['base_left.lua', 'base_right.lua', 'derived.lua']));
 	workspace.updateFile('base_left.lua', baseLeftSource);
 	workspace.updateFile('base_right.lua', baseRightSource);
 	workspace.updateFile('derived.lua', derivedLeftLines.join('\n'));
@@ -679,7 +681,7 @@ test('semantic workspace retains fields initialized through a base explicit-self
 		'end',
 		'return derived',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['object_base.lua', 'derived.lua']));
 	workspace.updateFile('object_base.lua', objectBaseSource);
 	workspace.updateFile('derived.lua', derivedLines.join('\n'));
 	const eventsTarget = semanticSymbolAt(workspace.getSnapshot(),
@@ -708,7 +710,7 @@ test('explicit self receivers project writes without adopting call argument memb
 		'end',
 		'return actor',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['actor.lua']));
 	workspace.updateFile('actor.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const projectedTarget = wholeProgramSymbolAt(snapshot,
@@ -748,7 +750,7 @@ test('higher-order callback parameters retain every callsite receiver alternativ
 		'dispatch(callback, setmetatable({}, left))',
 		'dispatch(callback, setmetatable({}, right))',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['callbacks.lua']));
 	workspace.updateFile('callbacks.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const targetAt = (line: number, name: string) => wholeProgramSymbolAt(snapshot,
@@ -795,7 +797,7 @@ test('callback roles follow explicit executor arguments', async () => {
 		'end',
 		'run_sequence(setmetatable({}, actor), apply_frame, on_finished)',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['sequence.lua']));
 	workspace.updateFile('sequence.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const targetAt = (line: number, name: string) => wholeProgramSymbolAt(snapshot,
@@ -857,7 +859,7 @@ test('semantic workspace retargets literal-keyed registry results after an edit'
 		'selected:left_action()',
 		'selected:right_action()',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['registry.lua', 'constants.lua', 'left.lua', 'right.lua', 'main.lua']));
 	workspace.updateFile('registry.lua', registrySource);
 	workspace.updateFile('constants.lua', constantsLeftSource);
 	workspace.updateFile('left.lua', leftSource);
@@ -891,7 +893,7 @@ test('semantic workspace retains exported table identity across local shadowing'
 		'local selected<const> = operand.entry',
 		'local passthrough<const> = function(operand) return operand end',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'signature.lua']));
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	workspace.updateFile('signature.lua', signatureSource);
 	const entryTarget = semanticSymbolAt(workspace.getSnapshot(),

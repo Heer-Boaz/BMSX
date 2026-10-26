@@ -1,3 +1,4 @@
+import type { EditorLuaSemanticProject } from '../intellisense/semantic/workspace/project';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { SearchMatch } from '../../../common/models';
 import type { LuaSemanticReferenceQuery } from '../../../../toolchain/ts/lua/semantic/frontend';
@@ -8,6 +9,7 @@ export type ReferenceMatchInfo = {
 	expression: string;
 	query: LuaSemanticReferenceQuery;
 	snapshot: LuaSemanticWorkspaceSnapshot;
+	project: EditorLuaSemanticProject;
 };
 
 const EMPTY_REFERENCE_MATCHES: SearchMatch[] = [];

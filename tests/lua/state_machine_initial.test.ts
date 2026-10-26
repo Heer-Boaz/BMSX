@@ -1,8 +1,9 @@
-import { semanticSnapshot } from './semantic_test_harness';
+import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import { createStateMachineInitialEdits } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
@@ -13,7 +14,7 @@ function fixture(t: TestContext, source = FSM_INITIAL_SOURCE) {
 	const resource = { sourceFilePath: 'initial.lua', location: { kind: 'workspace' as const, path: 'initial.lua' }, domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	t.after(() => model.dispose());
-	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
+	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/fsm/library'])));
 	const index = indexStateMachineSource(document);
 	return { model, document, index };
 }
@@ -24,7 +25,7 @@ test('imported parent initial edits insert or replace in the provider and partic
 		const targets = f.view.stateMachines.initialTargets;
 		const target = [...targets.values()].find(target => target.name === 'active')!;
 		const owner = f.view.source.models.get(target.owner.file.chunk.locations.range(target.owner.table.span).path)!;
-		assert.equal(owner, f.models.get('branch.lua'));
+		assert.equal(owner, f.models.get(resourceIdentityKey({ domain: 0, path: 'branch.lua' })));
 		assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, owner]));
 		owner.pushEditOperations(createStateMachineInitialEdits(owner.buffer, target)); f.refresh();
 		assert.equal(f.model.version, 1); assert.equal(f.input.isDirty(), true);
@@ -47,7 +48,7 @@ test('initial editing changes the real parent constructor, including all its sha
 	f.model.pushEditOperations(createStateMachineInitialEdits(f.model.buffer, active[0]));
 	assert.equal(events, 1);
 	assert.equal(f.model.buffer.getText(), FSM_INITIAL_SOURCE.replace("'idle'),", "'active'),"));
-	const changed = buildBehaviorSourceDocument(f.model.resource, semanticSnapshot(buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua')));
+	const changed = buildBehaviorSourceDocument(f.model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(f.model.buffer.getText(), f.model.resource)], ['cartlib/fsm/library'])));
 	const updated = indexStateMachineSource(changed);
 	assert.equal([...updated.initialTargets.values()].filter(target => target.name === 'idle').length, 3);
 	assert.equal([...updated.initialTargets.values()].filter(target => target.name === 'active').length, 0, 'already explicit initial is no-op');
@@ -63,7 +64,7 @@ test('missing and scalar initial values are explicitly authored without inventin
 		const f = fixture(t, source);
 		assert.equal(f.index.initialTargets.size, 2);
 		f.model.pushEditOperations(createStateMachineInitialEdits(f.model.buffer, [...f.index.initialTargets.values()].find(target => target.name === 'b')!));
-		const result = buildBehaviorSourceDocument(f.model.resource, semanticSnapshot(buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua')));
+		const result = buildBehaviorSourceDocument(f.model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(f.model.buffer.getText(), f.model.resource)], ['cartlib/fsm/library'])));
 		const definition = result.definitions[0];
 		assert.ok(definition.behaviorKind === 'state_machine');
 		assert.equal(definition.entries[0].target.kind, 'state');
@@ -81,7 +82,7 @@ test('initial uses exact arbitrary string keys rather than transition path synta
 		const target = [...f.index.initialTargets.values()].find(target => target.name === key)!;
 		assert.ok(target, JSON.stringify(key));
 		f.model.pushEditOperations(createStateMachineInitialEdits(f.model.buffer, target));
-		const result = buildBehaviorSourceDocument(f.model.resource, semanticSnapshot(buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua')));
+		const result = buildBehaviorSourceDocument(f.model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(f.model.buffer.getText(), f.model.resource)], ['cartlib/fsm/library'])));
 		const definition = result.definitions[0];
 		assert.ok(definition.behaviorKind === 'state_machine' && definition.entries[0].target.kind === 'state');
 		assert.equal(indexStateMachineSource(result).initialTargets.size, 1);

@@ -537,10 +537,10 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 	slot0Project.synchronizeRuntimeSources(sources);
 	assert.equal(readWorkspaceLuaSourceText(slot0Sources, slot0Sources.records[0]), 'return "slot 0 edit"');
 	assert.equal(readWorkspaceLuaSourceText(slot1Sources, slot1Sources.records[0]), 'return "slot 1"');
-	assert.equal(slot0Project.getFileData('entry.lua')!.source, 'return "slot 0"', 'a base-cache write is not an edit of the retained model');
+	assert.equal(slot0Project.getFileData(slot0Model.identity)!.source, 'return "slot 0"', 'a base-cache write is not an edit of the retained model');
 	slot0Model.pushEditOperations([{ offset: 14, deleteLength: 0, text: ' edit' }]);
-	assert.equal(slot0Project.getFileData('entry.lua')!.source, 'return "slot 0 edit"');
-	assert.equal(slot1Project.getFileData('entry.lua')!.source, 'return "slot 1"');
+	assert.equal(slot0Project.getFileData(slot0Model.identity)!.source, 'return "slot 0 edit"');
+	assert.equal(slot1Project.getFileData(slot1Model.identity)!.source, 'return "slot 1"');
 });
 
 test('workspace restore preserves explicit tab order and an active dirty system view', async (t) => {

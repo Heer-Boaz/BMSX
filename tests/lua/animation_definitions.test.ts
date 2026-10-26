@@ -1,10 +1,11 @@
+import { resourceIdentityKey } from '../../ide/common/resource';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../toolchain/ts/lua/syntax/table_fields';
-import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildLuaSemanticWorkspaceSnapshot, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import { luaSourceRangeToTextRange, readLuaNumberLiteral } from '../../ide/language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits } from '../../ide/language/lua/table_field_insertion';
@@ -27,18 +28,18 @@ const resource = { sourceFilePath: 'definitions.lua', location: { kind: 'workspa
 test('native procedural, duration-only and sequence definitions are source, not manufactured keys', () => {
 	for (const source of ['return { frames = function(params) error(params) end, frame_duration = 20 }',
 		'return { duration_frames = 4 }', 'return { subsequences = {} }']) {
-		const file = buildLuaFileSemanticData(source, resource.path), snapshot = semanticSnapshot(file);
+		const file = buildResourceLuaSemanticFixtureFile(source, resource), snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file], []));
 		const document = buildAnimationSourceDocument(resource, snapshot)!;
 		assert.equal(document.root.file, file);
 		assert.equal(document.tracksSource, undefined);
 		assert.deepEqual(document.tracks, []);
 		assert.equal(document.root.structural, true);
 	}
-	assert.equal(buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData('return { frames_per_step = 4 }', resource.path))), undefined);
+	assert.equal(buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile('return { frames_per_step = 4 }', resource)], []))), undefined);
 });
 
 test('only import-bound producers and FSM timeline fields enter the invocation catalog', () => {
-	const file = buildLuaFileSemanticData(`
+	const file = buildResourceLuaSemanticFixtureFile(`
 		local library = require('cartlib/fsm/library')
 		local compiler = require('cartlib/timeline/program')
 		local component = require('cartlib/timeline/timeline_component')
@@ -53,9 +54,9 @@ test('only import-bound producers and FSM timeline fields enter the invocation c
 		local impostor = { register = function() end, define = function() end }
 		impostor.register('not-fsm', { timelines = { wrong = { def = { duration_frames = 90 } } } })
 		impostor:define('not-timeline', { duration_frames = 91 })
-	`, resource.path);
-	const shared = buildLuaFileSemanticData('return { duration_frames = 7 }', 'shared.lua');
-	const snapshot = semanticSnapshot(file, shared);
+	`, resource);
+	const shared = buildResourceLuaSemanticFixtureFile('return { duration_frames = 7 }', { domain: 0, path: 'shared.lua' });
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file, shared], ['cartlib/fsm/library', 'cartlib/timeline/program', 'cartlib/timeline/timeline_component']));
 	const catalog = collectAnimationDefinitions(resource, snapshot);
 	const values = catalog.map(definition => readLuaNumberLiteral(findNamedLuaTableField(definition.table, 'duration_frames')!.value));
 	assert.deepEqual(values, [4, 5, 6, 2, 7, 3]);
@@ -67,36 +68,36 @@ test('explicit Source selection can own a dynamic receiver without misclassifyin
 		self.timelines:define('first', { frames = function() return {{ x = 0 }} end, frame_duration = 20 })
 		self.timelines:define('second', { duration_frames = 2 })
 	end`;
-	const workspace = new LuaSemanticWorkspace();
-	let file = workspace.updateFile(resource.path, source);
+	const workspace = new LuaSemanticWorkspace(new Map([[resourceIdentityKey(resource), new Map()]]));
+	let file = workspace.updateFile(resourceIdentityKey(resource), source);
 	assert.deepEqual(collectAnimationDefinitions(resource, workspace.getSnapshot()), []);
 	const model = new EditorTextModel(resource, 'lua', source);
 	const selected = animationDefinitionAtPosition(file, 2, 70)!;
 	const marker = luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(selected.span));
 	const unbind = model.onDidChangeContent(event => mapTrackedTextRange(marker, event.changes));
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- keep the selected occurrence\n' }]);
-	file = workspace.updateFile(resource.path, model.buffer.getText());
+	file = workspace.updateFile(resourceIdentityKey(resource), model.buffer.getText());
 	const moved = animationDefinitionAtRange(file, model.buffer, marker)!;
 	assert.equal(findNamedLuaTableField(moved, 'frame_duration')!.value.kind, LuaSyntaxKind.NumericLiteralExpression);
 	model.pushEditOperations([{ offset: marker.start, deleteLength: marker.end - marker.start, text: '{}' }]);
-	file = workspace.updateFile(resource.path, model.buffer.getText());
+	file = workspace.updateFile(resourceIdentityKey(resource), model.buffer.getText());
 	assert.equal(animationDefinitionAtRange(file, model.buffer, marker), undefined, 'replacing one definition never selects the next occurrence');
 	model.undo();
-	file = workspace.updateFile(resource.path, model.buffer.getText());
+	file = workspace.updateFile(resourceIdentityKey(resource), model.buffer.getText());
 	assert.equal(animationDefinitionAtRange(file, model.buffer, marker), undefined, 'Undo restores source, not a retired identity');
 	unbind(); model.dispose();
 });
 
 test('producer navigation distinguishes an initializer from a called builder and keeps unresolved results unresolved', () => {
-	const file = buildLuaFileSemanticData(`
+	const file = buildResourceLuaSemanticFixtureFile(`
 		local builders = require('builders')
 		local built = builders.make({ value = 4 })
 		return { frames = built, frame_duration = builders.duration }
-	`, resource.path);
-	const builder = buildLuaFileSemanticData(`local builders = { duration = 20 }
+	`, resource);
+	const builder = buildResourceLuaSemanticFixtureFile(`local builders = { duration = 20 }
 		function builders.make(params) error('producer navigation must not execute this') end
-		return builders`, 'builders.lua');
-	const reader = new LuaSourceReader(semanticSnapshot(file, builder));
+		return builders`, { domain: 0, path: 'builders.lua' });
+	const reader = new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file, builder], [])));
 	const root = buildAnimationSourceDocument(resource, reader.snapshot)!.root;
 	const frames = findNamedLuaTableField(root.table, 'frames')!, duration = findNamedLuaTableField(root.table, 'frame_duration')!;
 	assert.equal(reader.expression(file, frames.value), undefined);
@@ -111,9 +112,9 @@ test('producer navigation distinguishes an initializer from a called builder and
 	assert.equal(reader.expression(file, frames.value), undefined, 'navigation has not turned a call boundary into a value');
 	assert.equal(reader.expression(file, duration.value), undefined, 'a member definition is navigation, not a closed value proof');
 
-	const ambiguous = buildLuaFileSemanticData('local maker = function() end; maker = unknown; return { frames = maker() }', 'ambiguous.lua');
-	const ambiguousReader = new LuaSourceReader(semanticSnapshot(ambiguous));
-	const ambiguousRoot = buildAnimationSourceDocument({ domain: 0, path: ambiguous.file }, ambiguousReader.snapshot)!.root;
+	const ambiguous = buildResourceLuaSemanticFixtureFile('local maker = function() end; maker = unknown; return { frames = maker() }', { domain: 0, path: 'ambiguous.lua' });
+	const ambiguousReader = new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([ambiguous], [])));
+	const ambiguousRoot = buildAnimationSourceDocument(ambiguous.resource, ambiguousReader.snapshot)!.root;
 	assert.equal(ambiguousReader.producer(ambiguous, findNamedLuaTableField(ambiguousRoot.table, 'frames')!.value), undefined);
 });
 
@@ -125,9 +126,9 @@ test('a source-authored track extends a native frame builder without replacing i
 	}
 	local second = { duration_frames = 8 }
 	return { first = first, second = second }`;
-	const file = buildLuaFileSemanticData(source, resource.path), model = new EditorTextModel(resource, 'lua', source);
+	const file = buildResourceLuaSemanticFixtureFile(source, resource), model = new EditorTextModel(resource, 'lua', source);
 	const selected = animationDefinitionAtPosition(file, 2, 30)!;
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(file), selected)!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file], [])), selected)!;
 	const frames = findNamedLuaTableField(document.root.table, 'frames')!.value;
 	assert.equal(frames.kind, LuaSyntaxKind.FunctionExpression);
 	const originalBuilder = model.buffer.getTextRange(luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(frames.span)).start,
@@ -160,10 +161,10 @@ test('independent inline views share real documents/history and retire stale ses
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
 	const controller = new AnimationEditorController(sources, group, undefined!, undefined!);
 	const project = getOrCreateSemanticProject(editorTextModelService, 0); project.synchronizeRuntimeSources(sources);
-	const file = project.getSnapshot().getFileData(resource.path)!;
+	const file = project.getFileData(resource)!;
 	const first = animationDefinitionAtPosition(file, 1, 30)!, second = animationDefinitionAtPosition(file, 1, 86)!;
-	const input = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(first.span)));
-	const other = new AnimationEditorInput(model, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(second.span)));
+	const input = new AnimationEditorInput(model, model.resource.domain, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(first.span)));
+	const other = new AnimationEditorInput(model, model.resource.domain, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(second.span)));
 	group.model.add(input); group.model.add(other);
 	t.after(() => { group.model.clear(); input.dispose(); other.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.refresh(other);

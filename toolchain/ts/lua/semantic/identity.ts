@@ -4,6 +4,7 @@ import type {
 	SemanticLiteralValue,
 	WorkspaceValueFactsInput,
 } from './value_graph';
+import type { LuaProjectModuleBindings } from './module_resolution';
 import { LuaSyntaxKind } from '../syntax/ast';
 
 declare const semanticRootBrand: unique symbol;
@@ -17,6 +18,8 @@ export class WorkspaceValueIdentityIndex {
 	private readonly declarationIdentityIds: Map<string, number> = new Map();
 	private readonly globalIdentityIds: Map<string, number> = new Map();
 	private readonly moduleIdentityIds: Map<string, number> = new Map();
+	private readonly unresolvedModuleIdentityIds = new Map<string, Map<string, number>>();
+	private readonly moduleBindings: LuaProjectModuleBindings;
 	private readonly ownedIdentityIds: Map<OwnedValueID, number> = new Map();
 	private readonly literalIdentityIds: Map<SemanticLiteralValue['value'], number> = new Map();
 	private unknownIdentityId = 0;
@@ -26,6 +29,7 @@ export class WorkspaceValueIdentityIndex {
 	private readonly valueRoots: boolean[] = [false];
 
 	constructor(input: WorkspaceValueFactsInput) {
+		this.moduleBindings = input.moduleBindings;
 		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
 			const file = input.files[fileIndex];
 			for (let declarationIndex = 0; declarationIndex < file.declarationValues.length; declarationIndex += 1) {
@@ -45,7 +49,7 @@ export class WorkspaceValueIdentityIndex {
 				if (entry.source.steps.length === 0
 					&& entry.source.root.kind !== 'unknown'
 					&& entry.source.root.kind !== 'global') {
-					this.union({ kind: 'module', module: entry.module }, entry.source.root);
+					this.union({ kind: 'module_export', file: entry.file }, entry.source.root);
 				}
 			}
 		}
@@ -107,9 +111,25 @@ export class WorkspaceValueIdentityIndex {
 				identities = this.globalIdentityIds;
 				key = root.symbolKey;
 				break;
-			case 'module':
+			case 'module_import': {
+				const target = this.moduleBindings.get(root.referrer)!.get(root.specifier);
+				if (target !== undefined) {
+					identities = this.moduleIdentityIds;
+					key = target;
+				} else {
+					let unresolved = this.unresolvedModuleIdentityIds.get(root.referrer);
+					if (unresolved === undefined) {
+						unresolved = new Map();
+						this.unresolvedModuleIdentityIds.set(root.referrer, unresolved);
+					}
+					identities = unresolved;
+					key = root.specifier;
+				}
+				break;
+			}
+			case 'module_export':
 				identities = this.moduleIdentityIds;
-				key = root.module;
+				key = root.file;
 				break;
 			case 'literal':
 				identities = this.literalIdentityIds;

@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SemanticCallGraph, SemanticCallWorklist } from '../../toolchain/ts/lua/semantic/call_graph';
@@ -19,7 +20,7 @@ import { LuaWrittenSourceQuery } from '../../toolchain/ts/lua/semantic/written_s
 function callQueries(source: string, extraFiles: readonly FileSemanticData[] = []) {
 	const file = buildLuaFileSemanticData(source, 'applications.lua');
 	const files = [file, ...extraFiles];
-	const summaries = new FunctionSummaryStore(files, new WorkspaceValueIdentityIndex({ files, globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore(files, new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture((files).map(file => file.file)), files, globalValues: new Map() }));
 	const demand = new SemanticDemandIndex(files, summaries);
 	const worklist = new SemanticCallWorklist(summaries.terms.dependencies);
 	const instantiation = new SemanticInstantiationQuery(summaries, demand, (call, frame) => worklist.enqueue(call, frame));
@@ -223,7 +224,7 @@ test('a contextual return trace tracks a negative callee row and preserves earli
 local function target() return 7 end
 record(absent())`);
 	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
-	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])), [file.globalStorageDecls]);
+	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])), [file.globalStorageDecls], createPathModuleBindingsFixture(([file]).map(file => file.file)));
 	const values = new LuaSourceValueQuery(written, calls, summaries, instantiation, members, graph);
 	const record = file.callSites.find(site => site.reference?.name === 'record')!.call;
 	const root = values.argument(calls.ancestry(record).heads[0], 0);
@@ -250,7 +251,7 @@ local function relay() consume('same') end
 relay()
 absent()`);
 	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
-	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])), [file.globalStorageDecls]);
+	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])), [file.globalStorageDecls], createPathModuleBindingsFixture(([file]).map(file => file.file)));
 	const values = new LuaSourceValueQuery(written, calls, summaries, instantiation, members, graph);
 	const record = file.functionValueFlows[1].calls[0];
 	const head = calls.ancestry(record).heads.find(call => call.caller.kind === 'invocation')!;
@@ -277,7 +278,7 @@ local function install(value) object.task = value end
 record(object.task)
 absent('later')`);
 	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
-	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])), [file.globalStorageDecls]);
+	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])), [file.globalStorageDecls], createPathModuleBindingsFixture(([file]).map(file => file.file)));
 	const values = new LuaSourceValueQuery(written, calls, summaries, instantiation, members, graph);
 	const record = file.callSites.find(site => site.reference?.name === 'record')!.call;
 	const root = values.argument(calls.ancestry(record).heads[0], 0);
@@ -430,7 +431,7 @@ local left = make(7)
 local right = make(8)
 ${calls}`;
 		const file = buildLuaFileSemanticData(source, 'closures.lua');
-		const queries = new LuaSemanticQueryStore([file], new Map());
+		const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 		const call = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
 		const ancestry = queries.callSources(call);
 		const heads = ancestry.heads.filter(head => head.caller.kind === 'invocation');
@@ -452,7 +453,7 @@ test('querying a returned but uninvoked closure does not fabricate its invocatio
 local function make(value) return function() return consume(value) end end
 local left = make(7)
 local right = make(8)`, 'uninvoked.lua');
-	const queries = new LuaSemanticQueryStore([file], new Map());
+	const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 	const call = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
 	const ancestry = queries.callSources(call);
 	assert.equal(ancestry.heads.length, 1);
@@ -513,7 +514,7 @@ local function entry(value)
 end
 ${moduleCalls}`;
 		const file = buildLuaFileSemanticData(source, 'uses.lua');
-		const queries = new LuaSemanticQueryStore([file], new Map());
+		const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 		const call = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
 		const graph = queries.callSources(call);
 		const reached = new Set(graph.calls.filter(call => call.caller.kind === 'module').map(call => call.caller));
@@ -687,7 +688,7 @@ test('one closure query does not enumerate unrelated creators using the same cal
 				`local callback_${index} = make_${index}(${index + 1})`, `callback_${index}()`);
 		}
 		const file = buildLuaFileSemanticData(lines.join('\n'), 'creators.lua');
-		const queries = new LuaSemanticQueryStore([file], new Map());
+		const queries = new LuaSemanticQueryStore([file], new Map(), createPathModuleBindingsFixture(([file]).map(file => file.file)));
 		const call = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
 		const graph = queries.callSources(call);
 		assert.equal(graph.heads.filter(head => head.caller.kind === 'invocation').length, 1);
@@ -727,7 +728,7 @@ absent()`);
 test('source ancestry answers belong to one immutable workspace, including imported changes', () => {
 	const file = buildLuaFileSemanticData('local api = require("library"); api.make(7)', 'consumer.lua');
 	const library = buildLuaFileSemanticData('return {}', 'library.lua');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['consumer.lua', 'library.lua']));
 	workspace.updateFiles([file, library]);
 	const first = workspace.getSnapshot().symbolResolver.callSources(file.callSites[1]);
 	assert.equal(first.applications.length, 0);
@@ -839,8 +840,8 @@ right({ second = true })`);
 test('fresh workspace query stores do not reuse source contexts from a previous snapshot', () => {
 	const before = buildLuaFileSemanticData('local function run() end\nrun(1)', 'replace.lua');
 	const after = buildLuaFileSemanticData('local function run() end\nrun(2)', 'replace.lua');
-	const first = new LuaSemanticQueryStore([before], new Map()).callContexts(before.callValues[0]);
-	const second = new LuaSemanticQueryStore([after], new Map()).callContexts(after.callValues[0]);
+	const first = new LuaSemanticQueryStore([before], new Map(), createPathModuleBindingsFixture(([before]).map(file => file.file))).callContexts(before.callValues[0]);
+	const second = new LuaSemanticQueryStore([after], new Map(), createPathModuleBindingsFixture(([after]).map(file => file.file))).callContexts(after.callValues[0]);
 	assert.notEqual(first[0], second[0]);
 	const firstSite = first[0].call.site.result!.root.syntax;
 	const secondSite = second[0].call.site.result!.root.syntax;

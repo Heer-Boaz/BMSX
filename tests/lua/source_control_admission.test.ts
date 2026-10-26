@@ -1,3 +1,4 @@
+import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
@@ -31,7 +32,7 @@ const PROGRAM_SOURCE = `local progression = require('cartlib/progression')
 progression.compile_program({ rules = { { id = 'authored', on = 'hit' } }, filters = {}, handlers = {} })`;
 
 /** Real retained source, panes and native key admission; the paused guest is not an authoring engine. */
-function fixture(t: TestContext, source: string) {
+function fixture(t: TestContext, source: string, apiModule: string) {
 	const boot = 'return 0', path = 'source.lua';
 	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(boot, path), [],
 		{ entrySource: boot, programDomain: 'system', optLevel: 0 }));
@@ -41,6 +42,8 @@ function fixture(t: TestContext, source: string) {
 	registerLuaSourceRecord(registry, { resid: path, type: 'lua', src: boot, base_src: boot,
 		source_path: path, normalized_source_path: path, module_path: 'source', update_timestamp: 0,
 		base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
+	const apiPath = `${apiModule}.lua`;
+	registerLuaSourceRecord(registry, createScenarioTestSourceRecord(apiPath, 0, '', apiPath));
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports,
 		captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
@@ -86,7 +89,7 @@ function fixture(t: TestContext, source: string) {
 }
 
 for (const kind of ['position', 'option'] as const) test(`Scene ${kind} draft loses source authority immediately on readonly metadata publication`, t => {
-	const f = fixture(t, SCENE_SOURCE), { pane } = f.scene();
+	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { pane } = f.scene();
 	const control = kind === 'position' ? pane.controls[0] : pane.options.controls[0];
 	control.field.focusTarget.focus(); assert.ok(inputFocus.admittedTarget === control.field.focusTarget);
 	assert.equal(f.editor.textTarget!.replaceText(0, control.field.text.length, '9'), true);
@@ -100,7 +103,7 @@ for (const kind of ['position', 'option'] as const) test(`Scene ${kind} draft lo
 });
 
 test('covering the Scene detail client retires its draft without publishing through blur', t => {
-	const f = fixture(t, SCENE_SOURCE), { input, pane } = f.scene(), control = pane.controls[0];
+	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { input, pane } = f.scene(), control = pane.controls[0];
 	control.field.focusTarget.focus();
 	assert.equal(f.editor.textTarget!.replaceText(0, control.field.text.length, '9'), true);
 	assert.equal(control.pending, true);
@@ -114,7 +117,7 @@ test('covering the Scene detail client retires its draft without publishing thro
 });
 
 for (const target of ['outline', 'actions'] as const) test(`a fully covered Scene ${target} cannot retain destructive keyboard admission`, t => {
-	const f = fixture(t, SCENE_SOURCE), { input } = f.scene();
+	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { input } = f.scene();
 	f.press('Escape');
 	if (target === 'actions') f.press('Tab', KeyModifier.shift);
 	assert.ok(inputFocus.admittedTarget !== null);
@@ -128,7 +131,7 @@ for (const target of ['outline', 'actions'] as const) test(`a fully covered Scen
 });
 
 test('Scene readonly subscriptions follow input attachment, not repeated selection', async t => {
-	const f = fixture(t, SCENE_SOURCE), subscribe = f.model.onDidChangeReadOnly;
+	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), subscribe = f.model.onDidChangeReadOnly;
 	let subscriptions = 0;
 	t.mock.method(f.model, 'onDidChangeReadOnly', listener => {
 		const unbind = subscribe.call(f.model, listener); subscriptions++;
@@ -149,7 +152,7 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 });
 
 test('a fully covered Lua Program has no destructive keyboard admission and preserves its selected source', t => {
-	const f = fixture(t, PROGRAM_SOURCE);
+	const f = fixture(t, PROGRAM_SOURCE, 'cartlib/progression');
 	f.editor.luaPrograms.openResource(f.model.resource, 'progression'); f.editor.update(0);
 	const input = f.editor.editorGroup.model.activeTab!, pane = f.editor.editorGroup.panes.activePane!;
 	assert.ok(input.kind === 'lua_program' && pane instanceof LuaProgramEditorPane);

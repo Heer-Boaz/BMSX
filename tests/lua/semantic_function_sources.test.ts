@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getLuaCallHierarchyCallers } from '../../toolchain/ts/lua/semantic/scope_query';
@@ -18,7 +19,7 @@ test('function bodies retain distinct values and returns when they write the sam
 		"function api.create() return 'first' end",
 		"function api.create() return 'second' end",
 	].join('\n'), 'functions.lua');
-	const identities = new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() });
+	const identities = new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() });
 	const summaries = new FunctionSummaryStore([file], identities);
 	const [first, second] = summaries.list();
 	const firstStatement = file.chunk.body.get(1)!;
@@ -41,7 +42,7 @@ test('a later body without a return does not erase the earlier body return', () 
 		'function api.create() return { first = true } end',
 		'function api.create() end',
 	].join('\n'), 'functions.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const [first, second] = summaries.list();
 	assert.equal(first.source.returns.length, 1);
 	assert.equal(first.returns.length, 1);
@@ -55,7 +56,7 @@ test('each method body owns its implicit receiver even when both write one membe
 		'function api:step() return self.first end',
 		'function api:step() return self.second end',
 	].join('\n'), 'methods.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	const [first, second] = summaries.list();
 	assert.notEqual(first.parameters[0], second.parameters[0]);
 	assert.equal(summaries.terms.summaryOwner(first.parameters[0]), first.id);
@@ -81,7 +82,7 @@ test('return facts preserve written occurrences before value deduplication', () 
 	assert.notEqual(flow.returns[0].statement, flow.returns[1].statement);
 	assert.notEqual(flow.returns[0].statement.expressions[0], flow.returns[1].statement.expressions[0]);
 	assert.ok(semanticValueSourcesEqual(flow.returns[0].firstValue, flow.returns[1].firstValue));
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 	assert.equal(summaries.list()[0].returns.length, 1, 'the term result still deduplicates equal values');
 });
 
@@ -193,7 +194,7 @@ test('compiled BLua preserves separately captured function bodies after reassign
 });
 
 test('possible call results retain every body through the public workspace resolver', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['factory.lua', 'use.lua']));
 	workspace.updateFile('factory.lua', [
 		'local api<const> = {}',
 		'function api.create() return { first = true } end',
@@ -217,7 +218,7 @@ test('shared nested flow occurrences attach to the current outer body without re
 	const padding = '-- flow boundary\n'.repeat(80);
 	const source = 'local function outer()\n' + padding
 		+ 'local function inner() return 1 end\nreturn inner\nend\nreturn outer';
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['owners.lua']));
 	const old = workspace.updateFile('owners.lua', source);
 	const insertion = source.indexOf(padding);
 	const inserted = 'do local inserted = 1 end; ';
@@ -230,7 +231,7 @@ test('shared nested flow occurrences attach to the current outer body without re
 	assert.equal(old.scopeParents.get(oldInner.id), oldOuter.id);
 	assert.equal(current.scopeParents.get(newInner.id), newOuter.id);
 	for (const file of [old, current]) {
-		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ moduleBindings: createPathModuleBindingsFixture(([file]).map(file => file.file)), files: [file], globalValues: new Map() }));
 		const [inner, outer] = file.functionValueFlows;
 		assert.equal(summaries.get(summaries.idForFlow(inner.id)).lexicalOwner, summaries.idForFlow(outer.id));
 		assert.equal('lexicalOwner' in inner, false);

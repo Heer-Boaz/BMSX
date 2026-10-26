@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture } from '../../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { buildLuaFileSemanticData, buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 import type { LuaSourceCall } from '../../../toolchain/ts/lua/semantic/source_call_graph';
@@ -16,7 +17,7 @@ for (const callers of [1, 64, 256, 1024]) {
 	const file = buildLuaFileSemanticData(lines.join('\n'), 'source-tuples.lua');
 	const site = file.callSites.find(site => site.reference?.name === 'observe')!;
 	function create() {
-		const resolver = buildLuaSemanticWorkspaceSnapshot([{ path: file.file, source: file.source, analysis: file }]).symbolResolver;
+		const resolver = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: file.file, source: file.source, analysis: file }])).symbolResolver;
 		const heads = resolver.callSources(site).heads.filter(call => call.caller.kind === 'invocation');
 		assert.equal(heads.length, callers);
 		return { resolver, heads, query: resolver.contextualSources };

@@ -24,7 +24,7 @@ export function behaviorTreeTransferImpacts(view: BehaviorLensViewState, analysi
 			const model = view.source.models.get(range.path)!;
 			const location = { model, version: model.version, offset: luaSourceRangeToTextRange(model.buffer, range).start };
 			items.push({ label, value: `${use.owner.referenceLabel || use.owner.label} / ${use.branch.role}`, location,
-				description: `${range.path}:${range.start.line}` });
+				description: `${model.resource.path}:${range.start.line}` });
 			if (action === 'REMOVE FROM' && analysis.member.branch.entries.length === 1
 				&& (use.owner.nodeType === 'random_selector' || use.owner.nodeType === 'weighted_random_selector')) {
 				items.push({ label: 'EMPTY RANDOM SELECTOR', value: use.owner.referenceLabel || use.owner.label, location,

@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -19,7 +20,7 @@ for (const expression of ['pair()', '...']) test(`const initializer diagnostics 
 local function inspect(...)
  local left, right<const> = ${grouped ? `(${expression})` : expression}
 end`;
-		const diagnostics = buildLuaSemanticFrontend([{ path: 'grouped.lua', source }]).getFile('grouped.lua').diagnostics;
+		const diagnostics = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'grouped.lua', source }])).getFile('grouped.lua').diagnostics;
 		assert.deepEqual(diagnostics.map(diagnostic => diagnostic.message), grouped
 			? ["Constant local 'right' must have an initializer."] : []);
 	}
@@ -32,14 +33,14 @@ test('semantic revisions identify immutable binder facts independently of shared
 	const second = buildLuaFileSemanticData(source, 'revision.lua', parsed);
 	assert.equal(first.chunk, second.chunk, 'binders consume the retained syntax generation');
 	assert.notEqual(first.revision, second.revision, 'a distinct bind has its own fact revision');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['revision.lua']));
 	workspace.updateFiles([first]);
 	const initial = workspace.getSnapshot();
 	workspace.updateFiles([second]);
 	assert.notEqual(workspace.getSnapshot(), initial, 'an explicit new bind publishes its own fact generation');
 	assert.equal(workspace.getSnapshot().getFileData('revision.lua'), second);
 	assert.equal(initial.getFileData('revision.lua'), first);
-	const another = new LuaSemanticWorkspace();
+	const another = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['revision.lua']));
 	another.updateFiles([first]);
 	assert.equal(another.getSnapshot().version, initial.version);
 	assert.notEqual(another.getSnapshot().revision, initial.revision, 'workspace reset cannot collide with a dependent cache');
@@ -47,7 +48,7 @@ test('semantic revisions identify immutable binder facts independently of shared
 
 test('LuaSemanticFrontend rejects host-published machine word globals', () => {
 	const source = 'return sys_boot_cart, sys_vdp_stream_base, cart_manifest';
-	const frontend = buildLuaSemanticFrontend([{ path: 'globals.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'globals.lua', source }]));
 	const diagnostics = frontend.getFile('globals.lua').diagnostics;
 	assert.equal(diagnostics.length, 3);
 	assert.equal(diagnostics[0].message, `'sys_boot_cart' is not defined.`);
@@ -57,7 +58,7 @@ test('LuaSemanticFrontend rejects host-published machine word globals', () => {
 
 test('LuaSemanticFrontend rejects machine word value constants as implicit runtime globals', () => {
 	const source = 'return sys_bus_fault_access_word, irq_vblank, sys_irq_flags, sys_irq_ack, sys_irq_mask';
-	const frontend = buildLuaSemanticFrontend([{ path: 'abi_constant.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'abi_constant.lua', source }]));
 	const diagnostics = frontend.getFile('abi_constant.lua').diagnostics;
 	assert.equal(diagnostics.length, 5);
 	assert.equal(diagnostics[0].message, `'sys_bus_fault_access_word' is not defined.`);
@@ -77,7 +78,7 @@ test('LuaSemanticFrontend preserves shadowed locals instead of retargeting them 
 		'end',
 		'return read_shadow()',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'shadow.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'shadow.lua', source }]));
 	assert.deepEqual(frontend.getFile('shadow.lua').diagnostics, []);
 });
 
@@ -91,7 +92,7 @@ test('LuaSemanticFrontend follows compiler scoping for recursive const closures'
 		'end',
 		'return recurse(2)',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'recursive_const.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'recursive_const.lua', source }]));
 	const recursiveCall = findPosition(source, '\treturn recurse', 'recurse');
 	const target = firstNavigationTarget(frontend.getFile('recursive_const.lua'),
 		recursiveCall.line,
@@ -111,7 +112,7 @@ test('LuaSemanticFrontend allows direct indexed memory-map access', () => {
 		'local base = 0',
 		'return mem[base], mem8[base], mem32le[base], memf32le[base]',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'mem.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'mem.lua', source }]));
 	assert.deepEqual(frontend.getFile('mem.lua').diagnostics, []);
 });
 
@@ -123,7 +124,7 @@ test('LuaSemanticFrontend does not flag member access on call results as undefin
 		'end',
 		'return state:get_nested().transition_guards',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'members.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'members.lua', source }]));
 	assert.deepEqual(frontend.getFile('members.lua').diagnostics, []);
 });
 
@@ -138,7 +139,7 @@ test('LuaSemanticFrontend returns every valid definition target', () => {
 		'right:run()',
 		'selected:run()',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'alternatives.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'alternatives.lua', source }]));
 	const position = findPosition(source, 'selected:run()', 'run');
 	const navigation = frontend.getFile('alternatives.lua').findNavigationAt(
 		position.line,
@@ -182,7 +183,7 @@ test('LuaSemanticFrontend treats implicit global writes inside nested scopes as 
 		'\tbreak',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'globalscope.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'globalscope.lua', source }]));
 	assert.deepEqual(frontend.getFile('globalscope.lua').diagnostics, []);
 });
 
@@ -190,7 +191,7 @@ test('LuaSemanticFrontend binds declarations and references to retained syntax i
 	const source = 'value = 1';
 	const path = 'syntax_identity.lua';
 	const retainedChunk = parseLuaChunk(source, path).chunk;
-	const frontend = buildLuaSemanticFrontend([{ path, source, chunk: retainedChunk }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path, source, chunk: retainedChunk }]));
 	const assignment = retainedChunk.body.get(0)!;
 	assert.equal(assignment.kind, LuaSyntaxKind.AssignmentStatement);
 	const identifier = assignment.left[0];
@@ -222,7 +223,7 @@ test('LuaSemanticFrontend allows omitted trailing optional arguments for user fu
 		'end',
 		'return add(1, 2)',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'optional_args.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'optional_args.lua', source }]));
 	assert.deepEqual(frontend.getFile('optional_args.lua').diagnostics, []);
 });
 
@@ -238,7 +239,7 @@ test('LuaSemanticFrontend binds method self independently of out-of-scope siblin
 		'end',
 	].join('\n');
 	const parsed = parseLuaChunk(source, 'method_self.lua');
-	const frontend = buildLuaSemanticFrontend([{ path: 'method_self.lua', source, parsed }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'method_self.lua', source, parsed }]));
 	const file = frontend.getFile('method_self.lua');
 	const method = parsed.chunk.body.get(2)!;
 	assert.equal(method.kind, LuaSyntaxKind.FunctionDeclarationStatement);
@@ -253,7 +254,7 @@ test('LuaSemanticFrontend binds method self independently of out-of-scope siblin
 });
 
 test('LuaSemanticFrontend does not treat self as an ambient global outside methods', () => {
-	const frontend = buildLuaSemanticFrontend([{ path: 'plain_self.lua', source: 'return self' }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'plain_self.lua', source: 'return self' }]));
 	const diagnostics = frontend.getFile('plain_self.lua').diagnostics;
 	assert.equal(diagnostics.length, 1);
 	assert.equal(diagnostics[0].message, `'self' is not defined.`);
@@ -268,7 +269,7 @@ test('LuaSemanticFrontend resolves navigation targets by lexical scope instead o
 		'end',
 		'return value',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'scope.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'scope.lua', source }]));
 	const file = frontend.getFile('scope.lua');
 	const innerPosition = findPosition(source, '\treturn value', 'value');
 	const innerTarget = firstNavigationTarget(file, innerPosition.line, innerPosition.column);
@@ -298,7 +299,7 @@ test('LuaSemanticFrontend owns visible declarations and lexical shadowing', () =
 		'end',
 		'return outer',
 	];
-	const frontend = buildLuaSemanticFrontend([{ path: 'visible.lua', source: lines.join('\n') }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'visible.lua', source: lines.join('\n') }]));
 	const file = frontend.getFile('visible.lua');
 	const nested = file.getVisibleDeclarationsAt(6, lines[5].length + 1);
 	const nestedByName = new Map(nested.map(declaration => [declaration.name, declaration]));
@@ -332,7 +333,7 @@ test('LuaSemanticFrontend applies local declaration visibility after its initial
 		'\treturn value',
 		'end',
 	];
-	const frontend = buildLuaSemanticFrontend([{ path: 'local_effect.lua', source: lines.join('\n') }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'local_effect.lua', source: lines.join('\n') }]));
 	const file = frontend.getFile('local_effect.lua');
 	const initializerColumn = lines[2].lastIndexOf('value') + 1;
 	const initializerValue = file.getVisibleDeclarationsAt(3, initializerColumn)
@@ -353,7 +354,7 @@ test('LuaSemanticFrontend retains parameters and loop variables on blank body li
 		'',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'blank_body.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'blank_body.lua', source }]));
 	const file = frontend.getFile('blank_body.lua');
 
 	assert.equal(
@@ -377,7 +378,7 @@ test('LuaSemanticFrontend completes an incomplete implicit-self receiver from th
 	];
 	const source = lines.join('\n');
 	const parsed = parseLuaChunkWithRecovery(source, 'incomplete_member.lua');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['incomplete_member.lua']));
 	workspace.updateFiles([
 		buildLuaFileSemanticData(source, 'incomplete_member.lua', parsed),
 	]);
@@ -404,7 +405,7 @@ test('LuaSemanticFrontend completes members on a recovered call-result receiver'
 	];
 	const source = lines.join('\n');
 	const parsed = parseLuaChunkWithRecovery(source, 'call_result_member.lua');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['call_result_member.lua']));
 	workspace.updateFiles([
 		buildLuaFileSemanticData(source, 'call_result_member.lua', parsed),
 	]);
@@ -433,7 +434,7 @@ test('LuaSemanticFrontend retains a typed method prefix for completion', () => {
 	];
 	const source = lines.join('\n');
 	const parsed = parseLuaChunkWithRecovery(source, 'method_prefix.lua');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['method_prefix.lua']));
 	workspace.updateFiles([
 		buildLuaFileSemanticData(source, 'method_prefix.lua', parsed),
 	]);
@@ -458,7 +459,7 @@ test('LuaSemanticFrontend retains BLua pointer-member completion syntax', () => 
 	];
 	const source = lines.join('\n');
 	const parsed = parseLuaChunkWithRecovery(source, 'pointer_member.lua');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['pointer_member.lua']));
 	workspace.updateFiles([
 		buildLuaFileSemanticData(source, 'pointer_member.lua', parsed),
 	]);
@@ -486,7 +487,7 @@ test('LuaSemanticFrontend completes members from module, nested and prototype de
 		'extend(derived)',
 		'return api.direct, api.nested.build, derived.own',
 	];
-	const frontend = buildLuaSemanticFrontend([
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([
 		{
 			path: 'api.lua',
 			source: [
@@ -495,7 +496,7 @@ test('LuaSemanticFrontend completes members from module, nested and prototype de
 			].join('\n'),
 		},
 		{ path: 'usage.lua', source: usageLines.join('\n') },
-	]);
+	]));
 	const file = frontend.getFile('usage.lua');
 	const usage = usageLines[7];
 	const direct = file.findMemberCompletionContextAt(8, usage.indexOf('direct') + 1);
@@ -532,7 +533,7 @@ local function unrelated(value) value.other = true end
 local object = {}
 dispatch(initialize, object)
 return object.ready.answer`;
-	const frontend = buildLuaSemanticFrontend([{ path: 'callback.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'callback.lua', source }]));
 	const file = frontend.getFile('callback.lua');
 	const position = findPosition(source, 'return object.ready.answer', 'answer');
 	const target = wholeProgramSymbolAt(frontend.snapshot, 'callback.lua', position.line, position.column);
@@ -551,7 +552,7 @@ test('LuaSemanticFrontend retains repeat locals through the until condition', ()
 		'\tlocal ready = true',
 		'until ready',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'repeat_scope.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'repeat_scope.lua', source }]));
 	const file = frontend.getFile('repeat_scope.lua');
 	const target = firstNavigationTarget(file, 3, 7);
 
@@ -564,7 +565,7 @@ test('LuaSemanticFrontend keeps table field definitions out of unqualified stora
 		'bss counter: word',
 		'return { counter = counter }',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'storage.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'storage.lua', source }]));
 	const file = frontend.getFile('storage.lua');
 	const keyTarget = firstNavigationTarget(file, 2, 10);
 	assert.deepEqual(keyTarget.range, {
@@ -587,7 +588,7 @@ test('LuaSemanticFrontend keeps ordinary strings and comments out of identifier 
 		'local text = "target"',
 		'return target',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'literals.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'literals.lua', source }]));
 	const file = frontend.getFile('literals.lua');
 	const commentPosition = findPosition(source, '-- target', 'target');
 	const stringPosition = findPosition(source, 'local text = "target"', 'target');
@@ -611,10 +612,10 @@ test('LuaSemanticFrontend resolves require strings to their target module files'
 		'local m = {}',
 		'return m',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([
 		{ path: 'main.lua', source: entrySource },
 		{ path: 'lib/util.lua', source: utilSource },
-	]);
+	]));
 	const file = frontend.getFile('main.lua');
 	const requirePosition = findPosition(entrySource, 'require("lib/util")', 'lib/util');
 	const navigation = file.findNavigationAt(requirePosition.line, requirePosition.column);
@@ -649,10 +650,10 @@ test('LuaSemanticFrontend navigates compiler require syntax unless shadowed lexi
 		'end',
 		'local util<const> = require("lib/util")',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([
 		{ path: 'main.lua', source: entrySource },
 		{ path: 'lib/util.lua', source: 'return {}' },
-	]);
+	]));
 	const source = frontend.snapshot.getFileData('main.lua');
 	assert.ok(source);
 	assert.equal(source.moduleReferences.length, 2);
@@ -675,7 +676,7 @@ test('LuaSemanticFrontend navigates compiler require syntax unless shadowed lexi
 });
 
 test('LuaSemanticFrontend can build from immutable analysis snapshots without reparsing source state', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua', 'lib/util.lua']));
 	const mainSource = [
 		'local util<const> = require("lib/util")',
 		'return util.answer',
@@ -687,10 +688,10 @@ test('LuaSemanticFrontend can build from immutable analysis snapshots without re
 	workspace.updateFile('main.lua', mainSource);
 	workspace.updateFile('lib/util.lua', utilSource);
 
-	const frontend = buildLuaSemanticFrontend([
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([
 		{ path: 'main.lua', source: mainSource, analysis: workspace.getFileData('main.lua') },
 		{ path: 'lib/util.lua', source: utilSource, analysis: workspace.getFileData('lib/util.lua') },
-	]);
+	]));
 	const requirePosition = findPosition(mainSource, 'require("lib/util")', 'lib/util');
 	const target = firstNavigationTarget(frontend.getFile('main.lua'), requirePosition.line, requirePosition.column);
 	assert.deepEqual(target, {
@@ -705,7 +706,7 @@ test('LuaSemanticFrontend can build from immutable analysis snapshots without re
 });
 
 test('workspace semantic frontends are cached per version and remain immutable across updates', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	const initialSource = [
 		'local value = 1',
 		'return value',
@@ -749,7 +750,7 @@ test('workspace semantic frontends are cached per version and remain immutable a
 });
 
 test('workspace semantic frontend cache follows retained environment identity', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', 'return host_value');
 	const snapshot = workspace.getSnapshot();
 	const environment = { extraGlobalNames: ['host_value'] };
@@ -762,7 +763,7 @@ test('workspace semantic frontend cache follows retained environment identity', 
 });
 
 test('workspace publishes immutable semantic snapshots per version', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['main.lua']));
 	workspace.updateFile('main.lua', [
 		'local value = 1',
 		'return value',
@@ -796,7 +797,7 @@ test('workspace publishes immutable semantic snapshots per version', () => {
 });
 
 test('workspace resolves global receiver members per immutable snapshot without republishing unchanged files', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['globals.lua', 'usage.lua']));
 	workspace.updateFile('globals.lua', [
 		'hero = {}',
 		'function hero.walk()',
@@ -841,7 +842,7 @@ test('workspace resolves global receiver members per immutable snapshot without 
 });
 
 test('workspace rebinds direct global lookups immutably across updates', () => {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['globals.lua', 'usage.lua']));
 	workspace.updateFile('globals.lua', 'hero = 1');
 	workspace.updateFile('usage.lua', 'return hero');
 
@@ -879,7 +880,7 @@ test('LuaSemanticFrontend provides one incoming-call layer and groups call sites
 		'\tdirect()',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'calls.lua', source }]));
 	const targetPosition = findPosition(source, 'local function target', 'target');
 	const target = frontend.findSymbolsByPosition('calls.lua', targetPosition.line, targetPosition.column);
 	assert.ok(target);
@@ -916,7 +917,7 @@ test('LuaSemanticFrontend provides one outgoing-call layer and groups call sites
 		'\tdirect()',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'calls.lua', source }]));
 	const indirectPosition = findPosition(source, 'local function indirect', 'indirect');
 	const indirect = frontend.findSymbolsByPosition('calls.lua', indirectPosition.line, indirectPosition.column);
 	assert.ok(indirect);
@@ -943,7 +944,7 @@ test('LuaSemanticFrontend outgoing calls exclude nested callable bodies', () => 
 		'\tend',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'nested.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'nested.lua', source }]));
 	const outer = frontend.findSymbolsByPosition('nested.lua', 3, 16);
 	assert.ok(outer);
 
@@ -959,7 +960,7 @@ test('LuaSemanticFrontend retains recursive calls as incoming call sites', () =>
 		'\tend',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'recursive_calls.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'recursive_calls.lua', source }]));
 	const target = frontend.findSymbolsByPosition('recursive_calls.lua', 1, 16);
 	assert.ok(target);
 
@@ -980,7 +981,7 @@ test('LuaSemanticFrontend classifies member and method calls at the reference pr
 		'\ttarget:method()',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'member_calls.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'member_calls.lua', source }]));
 	const memberPosition = findPosition(source, 'function target.member', 'member');
 	const methodPosition = findPosition(source, 'function target:method', 'method');
 	const member = frontend.findSymbolsByPosition('member_calls.lua', memberPosition.line, memberPosition.column);
@@ -1039,11 +1040,11 @@ test('LuaSemanticFrontend incoming calls follow bound inherited methods without 
 		'\tvalue:spawn()',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([
 		{ path: 'base.lua', source: baseSource },
 		{ path: 'derived.lua', source: derivedSource },
 		{ path: 'usage.lua', source: usageSource },
-	]);
+	]));
 	const target = frontend.findSymbolsByPosition('base.lua', 3, 15);
 	assert.ok(target);
 	assert.equal(
@@ -1108,12 +1109,12 @@ test('LuaSemanticFrontend retains dynamic lifecycle CallFacts for both hierarchy
 		'local owner<const> = host.new()',
 		'owner:add(controller.new())',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([
 		{ path: 'host.lua', source: hostSource },
 		{ path: 'controller.lua', source: controllerSource },
 		{ path: 'noise.lua', source: noiseSource },
 		{ path: 'main.lua', source: mainSource },
-	]);
+	]));
 	const lifecycle = frontend.findSymbolsByPosition('controller.lua', 4, 21);
 	const hostAdd = frontend.findSymbolsByPosition('host.lua', 4, 15);
 	assert.ok(lifecycle);
@@ -1146,7 +1147,7 @@ test('LuaSemanticFrontend provides nested multiline signature help from parser-o
 		'\t4',
 		')',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'signature.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'signature.lua', source }]));
 	const outer = frontend.provideSignatureHelp('signature.lua', 4, 16);
 	assert.ok(outer);
 	assert.equal(outer.signatures[0].label, 'combine(first, second, third)');
@@ -1176,7 +1177,7 @@ test('LuaSemanticFrontend projects Lua receiver semantics into method and dot-ca
 		'target.method(target,',
 		'target:function_style(',
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['receiver.lua']));
 	workspace.updateFile('receiver.lua', source);
 	const frontend = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
 
@@ -1205,7 +1206,7 @@ test('LuaSemanticFrontend selects among exact dynamic signature targets without 
 		'local selected<const> = left or right',
 		'selected:run(1, 2)',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'overloads.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'overloads.lua', source }]));
 	const hint = frontend.provideSignatureHelp('overloads.lua', 6, 18);
 	assert.ok(hint);
 	assert.deepEqual(
@@ -1227,7 +1228,7 @@ test('LuaSemanticFrontend follows module values to table-field function signatur
 		"local module<const> = require('module')",
 		'module.run(target, ',
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['module.lua', 'usage.lua']));
 	workspace.updateFile('module.lua', moduleSource);
 	workspace.updateFile('usage.lua', usageSource);
 	const frontend = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
@@ -1242,7 +1243,7 @@ test('LuaSemanticFrontend follows callable aliases exported through a global mod
 		'local execute<const> = function(first, second) return first end',
 		'return { execute = execute }',
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['library.lua', 'boot.lua', 'usage.lua']));
 	workspace.updateFile('library.lua', librarySource);
 	workspace.updateFile('boot.lua', "library = require('library')");
 	workspace.updateFile('usage.lua', 'library.execute(1, ');
@@ -1261,7 +1262,7 @@ test('LuaSemanticFrontend resolves string-indexed table functions without path r
 		'}',
 		"api['run'](1, ",
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['indexed_call.lua']));
 	workspace.updateFile('indexed_call.lua', source);
 	const frontend = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
 	const hint = frontend.provideSignatureHelp('indexed_call.lua', 4, 15);
@@ -1275,7 +1276,7 @@ test('LuaSemanticFrontend retains signature help while the current call is incom
 		'local function apply(target, value) return value end',
 		'apply(target, ',
 	].join('\n');
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['incomplete.lua']));
 	workspace.updateFile('incomplete.lua', source);
 	const frontend = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
 	const hint = frontend.provideSignatureHelp('incomplete.lua', 2, 15);
@@ -1289,7 +1290,7 @@ test('LuaSemanticFrontend does not replace a shadowing callable with a builtin s
 		'local load<const> = function() end',
 		'load()',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'shadow_builtin.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'shadow_builtin.lua', source }]));
 	const hint = frontend.provideSignatureHelp('shadow_builtin.lua', 2, 6);
 	assert.ok(hint);
 	assert.equal(hint.signatures[0].label, 'load()');
@@ -1303,7 +1304,7 @@ test('LuaSemanticFrontend provides semantic hover from resolved declarations and
 		'target:run(1, 2)',
 		'math.max(1, 2)',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'hover.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'hover.lua', source }]));
 	const methodPosition = findPosition(source, 'target:run(1, 2)', 'run');
 	const method = frontend.provideHover('hover.lua', methodPosition.line, methodPosition.column);
 	assert.ok(method);
@@ -1333,7 +1334,7 @@ test('LuaSemanticFrontend preserves every exact hover target without same-name i
 		'local selected<const> = left or right',
 		'selected:run(1, 2)',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'hover_targets.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'hover_targets.lua', source }]));
 	const position = findPosition(source, 'selected:run(1, 2)', 'run');
 	const hover = frontend.provideHover('hover_targets.lua', position.line, position.column);
 	assert.ok(hover);
@@ -1349,7 +1350,7 @@ test('LuaSemanticFrontend follows exported function values for hover signatures'
 		'exported = { run = run }',
 		'exported.run(1, 2)',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'hover_export.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'hover_export.lua', source }]));
 	const position = findPosition(source, 'exported.run(1, 2)', 'run');
 	const hover = frontend.provideHover('hover_export.lua', position.line, position.column);
 	assert.ok(hover);
@@ -1369,7 +1370,7 @@ test('LuaSemanticFrontend hover signatures follow definitions through aliases an
 		'local indirect<const> = lib.alias',
 		'return alias, indirect',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'hover_alias.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'hover_alias.lua', source }]));
 	const aliasPosition = findPosition(source, 'return alias, indirect', 'alias');
 	assert.deepEqual(frontend.provideHover('hover_alias.lua', aliasPosition.line, aliasPosition.column)?.contents, [
 		{ label: '(function) alias(first, ...)' },
@@ -1383,7 +1384,7 @@ test('LuaSemanticFrontend hover signatures follow definitions through aliases an
 test('LuaSemanticFrontend hover signatures keep every file defining a global member', () => {
 	const first = ['shared = {}', 'function shared.run(first) end'].join('\n');
 	const second = ['function shared.run(second) end', 'local alias<const> = shared.run', 'return alias'].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'first.lua', source: first }, { path: 'second.lua', source: second }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'first.lua', source: first }, { path: 'second.lua', source: second }]));
 	const position = findPosition(second, 'return alias', 'alias');
 	const labels = frontend.provideHover('second.lua', position.line, position.column)?.contents.map(content => content.label).sort();
 	assert.deepEqual(labels, ['(function) alias(first)', '(function) alias(second)']);
@@ -1392,7 +1393,7 @@ test('LuaSemanticFrontend hover signatures keep every file defining a global mem
 test('LuaSemanticFrontend hover signatures follow required module exports', () => {
 	const library = ['local util<const> = {}', 'function util.go(value) end', 'return util'].join('\n');
 	const main = ["local util<const> = require('lib/util')", 'local go<const> = util.go', "local direct<const> = require('lib/util').go", 'return go, direct'].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'lib/util.lua', source: library }, { path: 'main.lua', source: main }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'lib/util.lua', source: library }, { path: 'main.lua', source: main }]));
 	for (const name of ['go', 'direct']) {
 		const position = findPosition(main, 'return go, direct', name);
 		assert.deepEqual(frontend.provideHover('main.lua', position.line, position.column)?.contents, [
@@ -1409,7 +1410,7 @@ test('LuaSemanticFrontend hover on a call-result binding does not start the may-
 		'local instance<const> = class.new()',
 		'instance:run()',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'hover_instance.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'hover_instance.lua', source }]));
 	const position = findPosition(source, 'instance:run()', 'instance');
 	assert.deepEqual(frontend.provideHover('hover_instance.lua', position.line, position.column)?.contents, [
 		{ label: '(constant) instance' },
@@ -1425,7 +1426,7 @@ test('LuaSemanticFrontend provides debugger expressions only for static Lua acce
 		'target.value = 2',
 		'return make_target().value',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'evaluate.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'evaluate.lua', source }]));
 	const methodPosition = findPosition(source, 'target:run()', 'run');
 	assert.deepEqual(
 		frontend.provideEvaluatableExpression('evaluate.lua', methodPosition.line, methodPosition.column),
@@ -1458,7 +1459,7 @@ test('LuaSemanticFrontend does not rewrite non-identifier table keys into debugg
 		'target["not-valid"] = 2',
 		'target["end"] = 3',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'evaluate_keys.lua', source }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'evaluate_keys.lua', source }]));
 	const validKey = findPosition(source, 'target["valid"]', 'valid');
 	const invalidKey = findPosition(source, 'target["not-valid"]', 'not-valid');
 	const keywordKey = findPosition(source, 'target["end"]', 'end');

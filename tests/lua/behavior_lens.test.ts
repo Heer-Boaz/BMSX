@@ -1,17 +1,19 @@
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { LuaSourceReader } from '../../ide/language/lua/source_reader';
-import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { collectBehaviorRegistrations } from '../../ide/workbench/contrib/behavior_lens/registrations';
 import type { BehaviorSourceNode } from '../../ide/workbench/contrib/behavior_lens/model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+
+const API_MODULES = ['cartlib/fsm/library','cartlib/behaviour_tree/library','cartlib/actioneffects'];
 
 function buildDocument(path: string, source: string) {
 	return buildBehaviorSourceDocument(
 		{ domain: 0, path },
-		semanticSnapshot(buildLuaFileSemanticData(source, path)),
+		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { domain: 0, path: path })], API_MODULES)),
 	);
 }
 
@@ -29,20 +31,20 @@ function flatten(nodes: readonly BehaviorSourceNode[]): BehaviorSourceNode[] {
 }
 
 test('reexported registration APIs preserve kinds, source occurrences and source-only dependencies', () => {
-	const main = buildLuaFileSemanticData(`local fsm = require('fsm_bridge')
+	const main = buildResourceLuaSemanticFixtureFile(`local fsm = require('fsm_bridge')
 local tree = require('tree_bridge')
 local effect = require('effect_bridge')
 fsm('one', { initial = 'idle', states = { idle = {} } })
 fsm('two', { states = { active = {} } })
 tree.register('three', { root = { type = 'wait', duration_ticks = 2 } })
 effect('four', { period_ms = 40, handler = function(owner) owner:run() end })
-tree:register('colon', {})`, 'actors.lua');
-	const snapshot = semanticSnapshot(main,
-		buildLuaFileSemanticData("return require('cartlib/fsm/library').register", 'fsm_bridge.lua'),
-		buildLuaFileSemanticData("return require('tree_middle')", 'tree_bridge.lua'),
-		buildLuaFileSemanticData("return require('cartlib/behaviour_tree/library')", 'tree_middle.lua'),
-		buildLuaFileSemanticData("local effects = require('cartlib/actioneffects'); return effects.register_effect", 'effect_bridge.lua'));
-	const resource = { domain: 0, path: main.file } as const;
+tree:register('colon', {})`, { domain: 0, path: 'actors.lua' });
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([main,
+		buildResourceLuaSemanticFixtureFile("return require('cartlib/fsm/library').register", { domain: 0, path: 'fsm_bridge.lua' }),
+		buildResourceLuaSemanticFixtureFile("return require('tree_middle')", { domain: 0, path: 'tree_bridge.lua' }),
+		buildResourceLuaSemanticFixtureFile("return require('cartlib/behaviour_tree/library')", { domain: 0, path: 'tree_middle.lua' }),
+		buildResourceLuaSemanticFixtureFile("local effects = require('cartlib/actioneffects'); return effects.register_effect", { domain: 0, path: 'effect_bridge.lua' })], API_MODULES));
+	const resource = { domain: 0, path: main.resource.path } as const;
 	const reader = new LuaSourceReader(snapshot);
 	const registrations = collectBehaviorRegistrations(resource, reader).registrations;
 	assert.deepEqual(registrations.map(entry => entry.semanticId), ['one', 'two', 'three', 'four']);
@@ -128,13 +130,13 @@ test('behavior lens recognizes a function-local cartlib module alias', () => {
 
 test('behavior lens distinguishes multiple FSMs and same-named states in one Lua source', () => {
 	const path = 'actors.lua';
-	const analysis = buildLuaFileSemanticData([
+	const analysis = buildResourceLuaSemanticFixtureFile([
 		"local fsm<const> = require('cartlib/fsm/library')",
 		"fsm.register('player', { states = { idle = {}, active = {} } })",
 		"fsm.register('enemy', { states = { idle = {}, active = {} } })",
-	].join('\n'), path);
+	].join('\n'), { domain: 0, path: path });
 	const resource = { domain: 0 as const, path };
-	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(analysis));
+	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], API_MODULES)));
 	assert.deepEqual(document.definitions.map(node => node.behaviorKind), ['state_machine', 'state_machine']);
 	const states = document.definitions.map(definition => flatten([definition]).filter(node => node.kind === 'state'));
 	assert.deepEqual(states.map(nodes => nodes.map(node => node.label)), [
@@ -145,7 +147,7 @@ test('behavior lens distinguishes multiple FSMs and same-named states in one Lua
 	assert.notEqual(states[0][0].rowKey, states[1][0].rowKey);
 	assert.notEqual(states[0][1].rowKey, states[1][1].rowKey);
 	assert.deepEqual(
-		collectBehaviorRegistrations(resource, new LuaSourceReader(semanticSnapshot(analysis))).registrations.map(registration => [
+		collectBehaviorRegistrations(resource, new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], API_MODULES)))).registrations.map(registration => [
 			registration.semanticId, registration.range.start.line,
 		]),
 		[['player', 2], ['enemy', 3]],
@@ -192,7 +194,7 @@ test('behavior registration correspondence resolves literal and immutable const 
 	const nemesisPath = 'carts/nemesis_s/player/actioneffects.lua';
 	const nemesis = collectBehaviorRegistrations(
 		{ domain: 0, path: nemesisPath },
-		new LuaSourceReader(semanticSnapshot(buildLuaFileSemanticData(readFileSync(nemesisPath, 'utf8'), nemesisPath))),
+		new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(readFileSync(nemesisPath, 'utf8'), { domain: 0, path: nemesisPath })], API_MODULES))),
 	).registrations;
 	assert.equal(nemesis.length, 1);
 	assert.deepEqual({
@@ -210,7 +212,7 @@ test('behavior registration correspondence resolves literal and immutable const 
 	const pietiousPath = 'carts/pietious/player/actioneffects.lua';
 	const pietious = collectBehaviorRegistrations(
 		{ domain: 1, path: pietiousPath },
-		new LuaSourceReader(semanticSnapshot(buildLuaFileSemanticData(readFileSync(pietiousPath, 'utf8'), pietiousPath))),
+		new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(readFileSync(pietiousPath, 'utf8'), { domain: 1, path: pietiousPath })], API_MODULES))),
 	).registrations;
 	assert.deepEqual(
 		pietious.map(source => source.semanticId),
@@ -232,7 +234,7 @@ test('behavior registration discovery retains duplicates and leaves dynamic ids 
 	].join('\n');
 	const registrations = collectBehaviorRegistrations(
 		{ domain: 0, path },
-		new LuaSourceReader(semanticSnapshot(buildLuaFileSemanticData(source, path))),
+		new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { domain: 0, path: path })], API_MODULES))),
 	).registrations;
 	assert.deepEqual(
 		registrations.map(registration => [

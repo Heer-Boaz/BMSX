@@ -1,3 +1,4 @@
+import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { wholeProgramSymbolAt } from './semantic_test_harness';
@@ -77,7 +78,7 @@ test('semantic workspace follows member effects through higher-order factory cal
 		'}',
 		'attach_units(left, left_units)',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['unit_base.lua', 'timer_unit.lua', 'effect_unit.lua', 'actor.lua']));
 	workspace.updateFile('unit_base.lua', unitBaseSource);
 	workspace.updateFile('timer_unit.lua', timerSource.join('\n'));
 	workspace.updateFile('effect_unit.lua', effectSource.join('\n'));
@@ -166,7 +167,7 @@ test('semantic workspace follows inherited method effects without matching by me
 		'\tself.effects:trigger()',
 		'end',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['unit_base.lua', 'object_base.lua', 'effect_unit.lua', 'actor.lua']));
 	workspace.updateFile('unit_base.lua', unitBaseSource);
 	workspace.updateFile('object_base.lua', objectBaseSource);
 	workspace.updateFile('effect_unit.lua', effectSource.join('\n'));
@@ -228,7 +229,7 @@ test('function-owned table fields do not escape as external member effects', asy
 		'end',
 		'return actor',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['actor.lua']));
 	workspace.updateFile('actor.lua', actorLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const referenceLine = lineNumber(actorLines, '\tself.font:draw_text()');
@@ -309,7 +310,7 @@ test('semantic workspace keeps metatable-keyed storage contextual to each callsi
 		'\tright_value:left_only()',
 		'end',
 	];
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['store.lua', 'left.lua', 'right.lua', 'actor.lua']));
 	workspace.updateFile('store.lua', storeSource);
 	workspace.updateFile('left.lua', leftSource);
 	workspace.updateFile('right.lua', rightSource);

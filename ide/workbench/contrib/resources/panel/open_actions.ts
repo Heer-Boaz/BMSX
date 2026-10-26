@@ -1,14 +1,12 @@
 import type { CallHierarchyPanelItem } from './items';
-import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import type { CartEditor } from '../../../../cart_editor';
 
 export function openResourcePanelCallHierarchyLocation(
 	editor: CartEditor,
 	item: CallHierarchyPanelItem,
 ): void {
-	editor.navigation.focusChunkSourceForContext(
-		getActiveCodeTabContext(editor.editorGroup).model.resource.domain,
-		item.location.path,
+	void editor.navigation.focusChunkSource(
+		item.resource,
 		{
 			row: item.location.range.startLine - 1,
 			startColumn: item.location.range.startColumn - 1,

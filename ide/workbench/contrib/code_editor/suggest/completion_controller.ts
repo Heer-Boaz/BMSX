@@ -1,3 +1,5 @@
+import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
+import { editorTextModelService } from '../../../../editor/model/model_service';
 import type { SuspendedGuestSession } from '../../../../runtime/suspended_guest';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import { clamp } from '../../../../../machine/ts/common/clamp';
@@ -5,6 +7,7 @@ import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
 import type { CodeEditorControl } from '../../../../editor/ui/code_editor_control';
 import {
 	listGlobalLuaSymbols,
+	type EditorLuaSymbolEntry,
 	buildMemberCompletionItems,
 } from '../../../../editor/contrib/intellisense/engine';
 import { listLuaBuiltinDescriptors } from '../../../../runtime/lua_builtins';
@@ -105,7 +108,7 @@ export class CompletionController {
 	}
 
 	protected getActivePath(): string {
-		return this.code.model.resource.path;
+		return resourceIdentityKey(this.code.model.resource);
 	}
 
 	protected getActiveDomain() {
@@ -460,7 +463,7 @@ export class CompletionController {
 		if (context.kind === 'module') {
 			const items: LuaCompletionItem[] = [];
 			for (const [name, path] of this.ensureLocalCompletionCache().moduleTargets) {
-				items.push({ label: name, insertText: name, sortKey: name, kind: 'module', detail: path });
+				items.push({ label: name, insertText: name, sortKey: name, kind: 'module', detail: getOrCreateSemanticProject(editorTextModelService, this.getActiveDomain()).getResourceIdentity(path).path });
 			}
 			return buildCanonicalCompletionItems(items);
 		}
@@ -477,7 +480,7 @@ export class CompletionController {
 				this.runtime,
 				namePath,
 				context.member.operator,
-				this.code.model.resource.domain,
+				this.code.model.resource,
 				this.ensureLocalCompletionCache().analysis,
 				context.row + 1,
 				context.replaceToColumn + 1,
@@ -556,7 +559,7 @@ export class CompletionController {
 			path,
 			file,
 			analysis: frontend.snapshot.getFileData(path)!,
-			moduleTargets: frontend.moduleTargetsByAlias,
+			moduleTargets: getOrCreateSemanticProject(editorTextModelService, this.getActiveDomain()).getModuleCatalog(this.code.model.resource),
 		};
 		this.localCompletionCache.set(key, updated);
 		return updated;
@@ -593,15 +596,12 @@ export class CompletionController {
 		return items;
 	}
 
-	private buildSymbolCompletionItems(entries: LuaSymbolEntry[], scope: 'local' | 'global'): LuaCompletionItem[] {
+	private buildSymbolCompletionItems(entries: EditorLuaSymbolEntry[], scope: 'local' | 'global'): LuaCompletionItem[] {
 		if (entries.length === 0) return [];
 		const items: LuaCompletionItem[] = [];
 		for (let i = 0; i < entries.length; i += 1) {
 			const entry = entries[i];
-			const origin = (() => {
-				if (entry.location.path) return entry.location.path;
-				return '';
-			})();
+			const origin = entry.resource.path;
 			const kindLabel = this.formatSymbolKind(entry.kind);
 			const detail = origin.length > 0 ? `${kindLabel} • ${origin}` : kindLabel;
 			const sortKey = `${scope}:${origin}:${entry.path}:${entry.name}:${entry.kind}`;
@@ -623,7 +623,7 @@ export class CompletionController {
 			const kindLabel = this.formatSymbolKind(semanticSymbolKindToLuaSymbolKind(symbol.kind));
 			const detailParts: string[] = [kindLabel];
 			if (analysis.file && analysis.file.length > 0) {
-				detailParts.push(analysis.file);
+				detailParts.push(getOrCreateSemanticProject(editorTextModelService, this.getActiveDomain()).getResourceIdentity(analysis.file).path);
 			}
 			const line = analysis.chunk.locations.range(symbol.span).start.line;
 			detailParts.push(`line ${line}`);
@@ -653,7 +653,7 @@ export class CompletionController {
 				insertText: symbol.name,
 				sortKey: `member:${symbol.name}:${symbol.file}:${range.start.line}:${range.start.column}`,
 				kind: 'member',
-				detail: `${this.formatSymbolKind(kind)} • ${symbol.file} • line ${range.start.line}`,
+				detail: `${this.formatSymbolKind(kind)} • ${getOrCreateSemanticProject(editorTextModelService, this.getActiveDomain()).getResourceIdentity(symbol.file).path} • line ${range.start.line}`,
 			};
 		}
 		return items;

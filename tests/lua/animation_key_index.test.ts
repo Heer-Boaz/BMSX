@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { semanticSnapshot } from './semantic_test_harness';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { buildAnimationSourceDocument } from '../../ide/workbench/contrib/animation/source';
 import { AnimationKeyViewport } from '../../ide/workbench/contrib/animation/key_viewport';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
@@ -11,7 +11,7 @@ const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace
 
 test('coincident key picking keeps the selected authored occurrence without overriding a nearer key', () => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=50,value=0},{time_ms=50,value=0},{time_ms=51,value=1}}}}}";
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
 	view.range.layout(0, 0, 106, 20); view.curve.layout(0, 30, 106, 142); view.curve.update(view);
 	const x = view.xAt(50), y = view.curve.yAt(0);
@@ -32,7 +32,7 @@ test('coincident key picking keeps the selected authored occurrence without over
 test('unselected key navigation searches from the current native cursor, without wrapping backwards', () => {
 	for (const unit of ['time_ms', 'frame', 'u'] as const) {
 		const source = `return {tracks={{kind='event',keys={{${unit}=100,event='a'},{${unit}=0,event='b'},{${unit}=50,event='c'},{${unit}=50,event='d'},{${unit}=200,event='e'}}}}}`;
-		const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+		const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 		const view = new AnimationKeyViewport(); view.bind(document.tracks[0], -1, document);
 		for (const [cursor, before, after] of [[75, 3, 0], [50, 1, 0], [-1, -1, 1], [201, 4, -1]] as const) {
 			view.setCursor(cursor);
@@ -47,7 +47,7 @@ test('unselected key navigation searches from the current native cursor, without
 
 test('chronological lookup and crossing previews retain authored order and equal-time priority', () => {
 	const source = "return {tracks={{kind='event',keys={{time_ms=100,event='a'},{time_ms=0,event='b'},{time_ms=50,event='c'},{time_ms=50,event='d'},{time_ms=200,event='e'}}}}}";
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const track = document.tracks[0], view = new AnimationKeyViewport();
 	Object.freeze(track.keyIndex.order); Object.freeze(track.keyIndex.positions);
 	view.bind(track, 0, document);
@@ -65,7 +65,7 @@ test('chronological lookup and crossing previews retain authored order and equal
 
 test('a shared native axis retains its cursor, while changing units admits a new cursor', () => {
 	const source = "return {tracks={{kind='event',keys={{time_ms=100,event='first'}}},{kind='event',keys={{time_ms=200,event='second'}}}},frames={'idle','move'}}";
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const view = new AnimationKeyViewport();
 	view.bind(document.tracks[0], -1, document); view.setCursor(500);
 	view.bind(document.tracks[1], -1, document);
@@ -80,14 +80,14 @@ test('a shared native axis retains its cursor, while changing units admits a new
 test('overview visits the visible key interval, keeps spanning tags and performs no idle reprojection', t => {
 	const keys = Array.from({ length: 512 }, (_, index) => `{time_ms=${1023 - index * 2},event='sample'}`).join(',');
 	const source = `return {tracks={{kind='event',keys={${keys}}},{kind='tag',name='activity',tag='activity',start={time_ms=0},['end']={time_ms=2048}}}}`;
-	const document = buildAnimationSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)))!;
+	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	let reads = 0;
 	const positions = new Proxy(document.tracks[0].keyIndex.positions, { get(target, property) {
 		if (property !== 'length') reads++;
 		return Reflect.get(target, property);
 	} });
 	const track = { ...document.tracks[0], keyIndex: { ...document.tracks[0].keyIndex, positions } };
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model);
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
 	t.after(() => { input.dispose(); model.dispose(); });
 	input.document = { ...document, tracks: [track, document.tracks[1]] };
 	for (const lane of input.document.tracks) input.tracks.rows.push({ track: lane, clip: undefined, frames: false, label: lane.label, text: '' });

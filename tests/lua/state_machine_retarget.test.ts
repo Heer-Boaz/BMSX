@@ -1,4 +1,3 @@
-import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -6,7 +5,8 @@ import { createLuaStringValueEdit } from '../../ide/language/lua/source_edits';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import type { StateMachineScope } from '../../ide/workbench/contrib/behavior_lens/state_machine_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createFsmStatePath, parseFsmStatePath } from '../../toolchain/ts/cartlib/fsm/state_path';
 import { FSM_RETARGET_PATH_CASES, FSM_RETARGET_PATH_SOURCE, FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
 
@@ -14,7 +14,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
 	const resource = { sourceFilePath: 'retarget.lua', location: { kind: 'workspace' as const, path: 'retarget.lua' }, domain: 0 as const, path: 'retarget.lua', source: { type: 'lua' as const, resid: 'retarget' } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	t.after(() => model.dispose());
-	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
+	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/fsm/library'])));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	return { model, document, definition, root: definition.scopes[0] };

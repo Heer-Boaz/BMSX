@@ -17,6 +17,7 @@ import { LuaModuleImportQuery } from './module_import_query';
 import { LuaStaticDeclarations } from './static_declarations';
 import type { LuaSourceCallGraph } from './source_call_graph';
 import type { LuaSourceValueQuery } from './source_value_query';
+import type { LuaProjectModuleBindings } from './module_resolution';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 const EMPTY_SIGNATURES: readonly FunctionSignatureInfo[] = [];
@@ -55,6 +56,7 @@ export class WorkspaceSymbolResolver {
 	private readonly declarations: HashLookup<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private readonly globalStorage: readonly (readonly Decl[])[];
+	private readonly moduleBindings: LuaProjectModuleBindings;
 	private queryStore?: LuaSemanticQueryStore;
 	private sourceQuery?: LuaWrittenSourceQuery;
 	private moduleImportQuery?: LuaModuleImportQuery;
@@ -74,16 +76,22 @@ export class WorkspaceSymbolResolver {
 		declarations: HashLookup<SymbolID, Decl>;
 		globals: ReadonlyMap<string, SymbolID>;
 		globalStorage: readonly (readonly Decl[])[];
+		moduleBindings: LuaProjectModuleBindings;
 	}) {
 		this.files = options.files;
 		for (const file of this.files) this.dataByPath.set(file.file, file);
 		this.declarations = options.declarations;
 		this.globals = options.globals;
 		this.globalStorage = options.globalStorage;
+		this.moduleBindings = options.moduleBindings;
 	}
 
 	public getFileData(path: string): FileSemanticData | undefined {
 		return this.dataByPath.get(path);
+	}
+
+	public resolveModule(referrer: string, specifier: string): string | undefined {
+		return this.moduleBindings.get(referrer)!.get(specifier);
 	}
 
 	// disable-next-line single_line_method_pattern -- declaration lookup remains owned by the immutable workspace resolver.
@@ -93,12 +101,12 @@ export class WorkspaceSymbolResolver {
 
 	/** Source tracking consumes binder facts without activating the may-call solver. */
 	public get writtenSources(): LuaWrittenSourceQuery {
-		if (this.sourceQuery === undefined) this.sourceQuery = new LuaWrittenSourceQuery(this.files, this.declarations, this.globalStorage);
+		if (this.sourceQuery === undefined) this.sourceQuery = new LuaWrittenSourceQuery(this.files, this.declarations, this.globalStorage, this.moduleBindings);
 		return this.sourceQuery;
 	}
 
 	public get moduleImports(): LuaModuleImportQuery {
-		if (this.moduleImportQuery === undefined) this.moduleImportQuery = new LuaModuleImportQuery(this.files);
+		if (this.moduleImportQuery === undefined) this.moduleImportQuery = new LuaModuleImportQuery(this.files, this.moduleBindings);
 		return this.moduleImportQuery;
 	}
 
@@ -269,7 +277,7 @@ export class WorkspaceSymbolResolver {
 					bucket.push(declaration.id);
 				}
 			}
-			this.definitionTypeQuery = new LuaDefinitionTypes(this.files, this.declarations, definitions);
+			this.definitionTypeQuery = new LuaDefinitionTypes(this.files, this.declarations, definitions, this.moduleBindings);
 		}
 		return this.definitionTypeQuery;
 	}
@@ -429,7 +437,7 @@ export class WorkspaceSymbolResolver {
 
 	private getQueryStore(): LuaSemanticQueryStore {
 		if (!this.queryStore) {
-			this.queryStore = new LuaSemanticQueryStore(this.files, this.globals);
+			this.queryStore = new LuaSemanticQueryStore(this.files, this.globals, this.moduleBindings);
 		}
 		return this.queryStore;
 	}

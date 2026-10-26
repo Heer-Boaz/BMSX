@@ -1,4 +1,5 @@
 import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -425,6 +426,8 @@ test('Animation body clients and its actual property draft publish exact client-
 	registerLuaSourceRecord(registry, { resid: timelinePath, type: 'lua', src: timelineSource, base_src: timelineSource,
 		source_path: timelinePath, normalized_source_path: timelinePath, module_path: 'animation-key-palette', update_timestamp: 0,
 		base_update_timestamp: 0, generated: false, sourceKind: 'source-only', program_module: false });
+	registerLuaSourceRecord(registry, createScenarioTestSourceRecord('cartlib/component/sprite_animation_component.lua', 1, 'return {}',
+		'machine/bios/cartlib/component/sprite_animation_component.lua'));
 	const { editor, sources } = fixture(t, { image, registry });
 	const texture = encodeDirect16GxTexture(1, 1, new Uint8ClampedArray([255, 0, 0, 255]));
 	const encoded = new Uint8Array(encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount));

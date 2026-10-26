@@ -1,9 +1,11 @@
+import { getOrCreateSemanticProject } from '../intellisense/semantic/workspace/state';
+import { editorTextModelService } from '../../model/model_service';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { buildEditorSemanticFrontend } from '../intellisense/frontend';
 import type { ReferenceMatchInfo } from './state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
-import type { ResourceIdentity } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import { searchMatchFromSourceRange } from '../../navigation/source_range';
 
 export type ReferenceLookupOptions = {
@@ -18,7 +20,7 @@ export type ReferenceLookupResult =
 	| { kind: 'error'; message: string; duration: number; };
 
 export function resolveReferenceLookup(sources: RuntimeSourceState, options: ReferenceLookupOptions): ReferenceLookupResult {
-	const path = options.identity.path;
+	const path = resourceIdentityKey(options.identity);
 	const frontend = buildEditorSemanticFrontend(sources, options.identity, options.buffer);
 	const resolution = frontend.findReferencesByPosition(path, options.cursorRow + 1, options.cursorColumn + 1);
 	if (!resolution) {
@@ -57,6 +59,7 @@ export function resolveReferenceLookup(sources: RuntimeSourceState, options: Ref
 			expression: resolution.label,
 			query: resolution,
 			snapshot: frontend.snapshot,
+			project: getOrCreateSemanticProject(editorTextModelService, options.identity.domain),
 		},
 		initialIndex,
 	};

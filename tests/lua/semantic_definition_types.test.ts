@@ -1,3 +1,4 @@
+import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
@@ -7,7 +8,7 @@ import { semanticSymbolsAt } from './semantic_test_harness';
 type Source = { readonly path: string; readonly source: string };
 
 function targetsAt(files: readonly Source[], path: string, line: number, name: string): string[] {
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(files.map(file => file.path)));
 	for (const file of files) workspace.updateFile(file.path, file.source);
 	const snapshot = workspace.getSnapshot();
 	const text = files.find(file => file.path === path)!.source.split('\n')[line - 1];
@@ -97,7 +98,7 @@ test('definition types leave parameters unknown instead of inferring them from c
 });
 
 test('interactive member queries never instantiate calls', () => {
-	const frontend = buildLuaSemanticFrontend([{ path: 'classes.lua', source: classes }]);
+	const frontend = buildLuaSemanticFrontend(...createPathModuleProjectFixture([{ path: 'classes.lua', source: classes }]));
 	const lines = classes.split('\n');
 	frontend.provideHover('classes.lua', 10, lines[9].indexOf('hello') + 1);
 	frontend.findSymbolsByPosition('classes.lua', 11, lines[10].indexOf('bye') + 1);
@@ -113,7 +114,7 @@ test('definition answers are independent of query order', () => {
 	const files = [{ path: 'classes.lua', source: classes }];
 	const queries: [number, string][] = [[12, 'count'], [10, 'hello'], [11, 'bye']];
 	const forward = queries.map(([line, name]) => targetsAt(files, 'classes.lua', line, name));
-	const workspace = new LuaSemanticWorkspace();
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['classes.lua']));
 	workspace.updateFile('classes.lua', classes);
 	const snapshot = workspace.getSnapshot();
 	const lines = classes.split('\n');

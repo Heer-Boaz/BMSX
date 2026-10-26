@@ -27,6 +27,15 @@ Language tools consume the compiler/frontend owners in `toolchain/`. Studio
 uses host and machine services for physical execution; editor views do not own
 a compiler, filesystem transport or a second machine loop.
 
+Lua semantic projects index file facts by opaque resource address. A snapshot
+binds each referrer's written import specifiers to those files; export facts
+belong to a file, not a global module name. Compiler and Studio project producers
+apply their own import policy. The Studio project retains the address-to-resource
+mapping used by navigation and visual source editors; captions remain resource
+labels rather than encoded semantic addresses. Module completion consumes the
+project's preferred import catalog, independently of aliases accepted in written
+imports.
+
 ## Composition
 
 `workbench/workbench.ts` composes the shared `StudioWorkbench`. Browser Studio
