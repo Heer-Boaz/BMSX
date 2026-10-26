@@ -138,7 +138,7 @@ export class WorkspaceSourceTools {
 				if (!receipt) throw new StudioToolInputError('Diagnostics require a receipt read in this source context');
 				this.diagnostics.computePending();
 				this.assertReading();
-				const entry = this.diagnostics.get(receipt.captured.model.identity)!;
+				const entry = this.diagnostics.get(receipt.captured.model)!;
 				if (receipt.diagnostics?.entry !== entry) {
 					const identity = { receipt: request.receipt, version: entry.version };
 					let data: ToolSourceDiagnostics;

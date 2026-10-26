@@ -12,7 +12,8 @@ import type { CodeAreaViewport } from '../../ide/editor/ui/code/area_viewport';
 import { drawHighlightSlice } from '../../ide/editor/render/code_area/highlights';
 import { CodeRowDecorations } from '../../ide/editor/render/code_area/decorations';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from '../../ide/editor/render/code_area/underlines';
-import { setActiveDiagnostics } from '../../ide/editor/contrib/diagnostics/state';
+import { EMPTY_DIAGNOSTICS_BY_ROW } from '../../ide/editor/contrib/diagnostics/model';
+import type { EditorDiagnostic } from '../../ide/common/models';
 import { drawCodeAreaRows } from '../../ide/editor/render/code_area/rows';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -105,7 +106,7 @@ test('a suggestion clipped left of the source slice does not become a phantom ca
 	const overlay = createHostOverlayFixture(128, 32);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 	const info = resolveCursorScreenInfo(rowViewport);
-	drawCodeAreaRows(rowViewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true);
+	drawCodeAreaRows(rowViewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true, EMPTY_DIAGNOSTICS_BY_ROW, editorViewState.layout, editorViewState.lineHeight);
 	overlay.renderer.endFrame();
 	assert.equal(info, null, 'a source caret clipped left of the display slice is not painted at the viewport edge');
 	assert.equal(model.buffer.getText(), 'retur + 2');
@@ -120,14 +121,14 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const view = createCodeEditorViewState(); view.cursorColumn = 5; activeCodeEditor.attach(model, view);
 		activeCodeEditor.setInlineEdit(0, 5, 10, 'n');
 		t.after(() => {
-			setActiveDiagnostics(null, []); activeCodeEditor.detach(); model.dispose();
+			activeCodeEditor.detach(); model.dispose();
 			editorViewState.font = previousFont; editorViewState.layout = previousLayout; colors.setIdeThemeVariant(previousTheme);
 		});
 		const line = editorViewState.layout.getViewLine(model.buffer, 0), left = 8, top = 4, bottom = top + editorViewState.lineHeight;
 		assert.equal(line.viewText, 'return + 2');
 		const matches = [{ row: 0, start: 0, end: source.length }];
-		setActiveDiagnostics(model, [{ row: 0, startColumn: 0, endColumn: source.length,
-			message: 'authored range', severity: 'warning', model, version: model.version }]);
+		const diagnostics: readonly EditorDiagnostic[] = [{ row: 0, startColumn: 0, endColumn: source.length,
+			message: 'authored range', severity: 'warning', model, version: model.version }];
 		const overlay = createHostOverlayFixture(128, 32);
 		const decorations = new CodeRowDecorations();
 		const painters = [
@@ -141,9 +142,9 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 				drawHighlightSlice(editorViewState.font.renderFont(), line.hi.text, line.hi.colors, line.advancePrefix,
 					0, line.hi.text.length, left, top, 0, decorations);
 			},
-			() => drawDiagnosticUnderlinesForRow(0, line, left, top, bottom, 0, line.hi.text.length, decorations),
+			() => drawDiagnosticUnderlinesForRow(diagnostics, line, left, top, bottom, 0, line.hi.text.length, decorations, editorViewState.layout, editorViewState.lineHeight),
 			() => drawGotoUnderlineForRow(0, line, left, top, bottom, 0, line.hi.text.length,
-				{ row: 0, startColumn: 0, endColumn: source.length }, decorations),
+				{ row: 0, startColumn: 0, endColumn: source.length }, decorations, editorViewState.layout, editorViewState.lineHeight),
 		];
 		for (const paint of painters) {
 			decorations.prepare(0, line, 0, line.hi.text.length, [], -1, [], -1, false, true);
@@ -176,7 +177,7 @@ test('horizontal scrolling past a short row does not pull its end caret back ont
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 	const viewport = { ...rowViewport, visualCount: 2 };
 	const info = resolveCursorScreenInfo(viewport);
-	drawCodeAreaRows(viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true);
+	drawCodeAreaRows(viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true, EMPTY_DIAGNOSTICS_BY_ROW, editorViewState.layout, editorViewState.lineHeight);
 	overlay.renderer.endFrame();
 	assert.equal(info, null, 'clipping the row text at EOF must not replace the actual horizontal viewport origin');
 	assert.equal(model.buffer.getText(), source);
@@ -232,7 +233,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const offset = view.scrollLeft, overlay = createHostOverlayFixture(128, 96);
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 		const viewport = renderCodeArea({ session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, true,
-			new Set([1]), [], -1, [], -1, false);
+			new Set([1]), [], -1, [], -1, false, EMPTY_DIAGNOSTICS_BY_ROW, editorViewState.layout, editorViewState.lineHeight);
 		overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
 		const clips: Array<{ index: number; left: number; right: number; top: number; bottom: number }> = [];

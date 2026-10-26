@@ -51,6 +51,8 @@ execution services and their explicit targets.
 `editor/model/` owns canonical text models. Workbench working-copy services own
 text-model resolution, persistence and source-edit publication. Source-backed
 visual tools consume those models rather than keeping another authored copy.
+Diagnostics are indexed once by canonical model/version; Source presentation
+projects ready row markers through its own layout rather than an active-editor bucket.
 
 Contributions own concrete retained editor inputs. `EditorGroupView` owns its
 group model, pane cache, focus/capture scopes and tab-strip control. Tab layout,

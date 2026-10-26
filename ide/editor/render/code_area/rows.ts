@@ -1,3 +1,5 @@
+import type { EditorDiagnosticsByRow } from '../../contrib/diagnostics/model';
+import type { CodeLayout } from '../../ui/code/layout';
 import type { SearchMatch } from '../../../common/models';
 import type { Font } from '../../../../machine/ts/render/shared/bmsx_font';
 import { drawEditorText } from '../text_renderer';
@@ -29,10 +31,13 @@ export function drawCodeAreaRows(
 	searchActiveIndex: number,
 	searchHighlightsVisible: boolean,
 	cursorActive: boolean,
+	diagnosticsByRow: EditorDiagnosticsByRow,
+	layout: CodeLayout,
+	lineHeight: number,
 ): void {
 	for (let i = 0; i < viewport.rows; i += 1) {
 		const visualIndex = (activeCodeEditor.view.scrollRow | 0) + i;
-		const rowY = viewport.codeTop + i * editorViewState.lineHeight;
+		const rowY = viewport.codeTop + i * lineHeight;
 		if (rowY >= viewport.contentBottom) {
 			break;
 		}
@@ -40,21 +45,22 @@ export function drawCodeAreaRows(
 			drawEditorText(editorViewState.font, '~', viewport.textLeft, rowY, 0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
-		const segment = editorViewState.layout.visualIndexToSegment(visualIndex)!;
+		const segment = layout.visualIndexToSegment(visualIndex)!;
 		const lineIndex = segment.row;
-		const entry = editorViewState.layout.getViewLine(activeCodeEditor.model.buffer, lineIndex);
+		const entry = layout.getViewLine(activeCodeEditor.model.buffer, lineIndex);
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
 		const advancePrefix = entry.advancePrefix;
-		const slice = editorViewState.layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft, viewport.contentWidth, viewport.wrapEnabled);
+		const slice = layout.resolveLineViewport(entry, segment, activeCodeEditor.view.scrollLeft, viewport.contentWidth, viewport.wrapEnabled);
 		const sliceStartDisplay = slice.startDisplay, sliceEndDisplay = slice.endDisplay;
 		const lineLeft = viewport.textLeft - slice.pixelOffset;
 		decorations.prepare(lineIndex, entry, sliceStartDisplay, sliceEndDisplay, referenceMatches, referenceActiveIndex,
 			searchMatches, searchActiveIndex, searchHighlightsVisible, cursorActive);
 		drawHighlightSlice(renderFont, renderText, highlight.colors, advancePrefix,
 			sliceStartDisplay, sliceEndDisplay, lineLeft + advancePrefix[sliceStartDisplay], rowY, 0, decorations);
-		drawDiagnosticUnderlinesForRow(
-			lineIndex,
+		const rowDiagnostics = diagnosticsByRow.get(lineIndex);
+		if (rowDiagnostics !== undefined) drawDiagnosticUnderlinesForRow(
+			rowDiagnostics,
 			entry,
 			lineLeft,
 			rowY,
@@ -62,6 +68,8 @@ export function drawCodeAreaRows(
 			sliceStartDisplay,
 			sliceEndDisplay,
 			decorations,
+			layout,
+			lineHeight,
 		);
 		drawGotoUnderlineForRow(
 			lineIndex,
@@ -73,6 +81,8 @@ export function drawCodeAreaRows(
 			sliceEndDisplay,
 			activeGotoHighlight,
 			decorations,
+			layout,
+			lineHeight,
 		);
 	}
 }

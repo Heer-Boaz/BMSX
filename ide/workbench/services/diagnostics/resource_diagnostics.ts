@@ -1,8 +1,9 @@
+import { EMPTY_DIAGNOSTICS_BY_ROW, type EditorDiagnosticsByRow } from '../../../editor/contrib/diagnostics/model';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import { enqueueBackgroundTask, type BackgroundTask } from '../../../common/background_tasks';
 import type { EditorDiagnostic } from '../../../common/models';
-import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceIdentity, type ResourceDomain } from '../../../common/resource';
+import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { runtimeLuaSourceRegistry } from '../../../runtime/sources';
@@ -11,7 +12,7 @@ import { computeResourceDiagnostics } from './lua';
 
 export type ResourceDiagnostics = { readonly model: EditorTextModel; readonly version: number } & (
 	| { readonly status: 'pending' | 'unsupported' }
-	| { readonly status: 'ready'; readonly diagnostics: readonly EditorDiagnostic[] }
+	| { readonly status: 'ready'; readonly diagnostics: readonly EditorDiagnostic[]; readonly byRow: EditorDiagnosticsByRow }
 	| { readonly status: 'failed'; readonly error: unknown }
 );
 
@@ -78,10 +79,7 @@ export class ResourceDiagnosticsService {
 	public get diagnostics(): readonly EditorDiagnostic[] { return this.diagnosticsValue; }
 	public get coverage(): DiagnosticsCoverage { return this.coverageValue; }
 
-	public get(resource: ResourceIdentity): ResourceDiagnostics | undefined {
-		const model = this.models.get(resource);
-		return model === undefined ? undefined : this.entries.get(model);
-	}
+	public get(model: EditorTextModel): ResourceDiagnostics | undefined { return this.entries.get(model); }
 
 	public onDidChange(listener: () => void): () => void {
 		this.listeners.add(listener);
@@ -140,14 +138,21 @@ export class ResourceDiagnosticsService {
 		this.dirty.clear();
 		try {
 			const diagnostics = computeResourceDiagnostics(this.models, this.sources, batch);
-			const byModel = new Map<EditorTextModel, EditorDiagnostic[]>();
+			const byModel = new Map<EditorTextModel, { diagnostics: EditorDiagnostic[]; byRow: Map<number, EditorDiagnostic[]> }>();
 			for (const diagnostic of diagnostics) {
-				let bucket = byModel.get(diagnostic.model);
-				if (bucket === undefined) byModel.set(diagnostic.model, bucket = []);
-				bucket.push(diagnostic);
+				let result = byModel.get(diagnostic.model);
+				if (result === undefined) byModel.set(diagnostic.model, result = { diagnostics: [], byRow: new Map() });
+				result.diagnostics.push(diagnostic);
+				let row = result.byRow.get(diagnostic.row);
+				if (row === undefined) result.byRow.set(diagnostic.row, row = []);
+				row.push(diagnostic);
 			}
-			for (const model of batch) this.entries.set(model, { model, version: model.version,
-				status: 'ready', diagnostics: byModel.get(model) ?? EMPTY_DIAGNOSTICS });
+			for (const model of batch) {
+				const result = byModel.get(model);
+				this.entries.set(model, { model, version: model.version, status: 'ready',
+					diagnostics: result === undefined ? EMPTY_DIAGNOSTICS : result.diagnostics,
+					byRow: result === undefined ? EMPTY_DIAGNOSTICS_BY_ROW : result.byRow });
+			}
 		} catch (error) {
 			for (const model of batch) this.entries.set(model, { model, version: model.version, status: 'failed', error });
 		}

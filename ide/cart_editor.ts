@@ -124,7 +124,6 @@ import { clearGotoHoverHighlight } from './editor/contrib/intellisense/engine';
 import { resetSemanticProjects } from './editor/contrib/intellisense/semantic/workspace/state';
 import { activeCodeEditor } from './editor/ui/code_editor_state';
 import { editorTextModelService } from './editor/model/model_service';
-import { setActiveDiagnostics } from './editor/contrib/diagnostics/state';
 import type { ResourceDiagnosticsService } from './workbench/services/diagnostics/resource_diagnostics';
 import { applyLineJumpFieldText } from './workbench/contrib/code_editor/find/line_jump';
 import { EditorSearchController, applySearchFieldText, startSearchJob } from './workbench/contrib/code_editor/find/search';
@@ -139,9 +138,6 @@ import { editorInput } from './workbench/contrib/code_editor/input/keyboard/text
 import { handleTextEditorPointerInput, handleWorkbenchChromePointer, handleWorkbenchPanePointer } from './input/pointer/dispatch';
 import { clearEditorPointerSelectionState, editorPointerState } from './input/pointer/state';
 import { handleEditorWheelInput, handleWorkbenchChromeWheel, handleWorkbenchPaneWheel } from './input/pointer/wheel';
-import {
-	getActiveCodeTabContext,
-} from './workbench/ui/code_tab/contexts';
 import {
 	cancelWorkspaceAutosave,
 	requestWorkspaceAutosave,
@@ -628,8 +624,6 @@ export class RuntimeCartEditor implements CartEditor {
 			}
 		});
 		const publishDiagnostics = () => {
-			const active = getActiveCodeTabContext(this.editorGroup);
-			setActiveDiagnostics(active === null ? null : active.model, diagnostics.diagnostics);
 			problemsPanel.setDiagnostics(diagnostics.diagnostics, diagnostics.coverage);
 		};
 		this.unsubscribeDiagnosticsChanged = diagnostics.onDidChange(publishDiagnostics);

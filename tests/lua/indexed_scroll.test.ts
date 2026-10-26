@@ -1,3 +1,4 @@
+import { EMPTY_DIAGNOSTICS_BY_ROW } from '../../ide/editor/contrib/diagnostics/model';
 import { navigationState } from '../../ide/navigation/navigation_history';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../ide/input/pointer/capture';
@@ -103,7 +104,7 @@ test('source scrolling retains fractional pixels while hit tests resolve source 
 	}
 	const overlay = createHostOverlayFixture(240, 160);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-	renderCodeArea({ session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, false, new Set(), [], -1, [], -1, false);
+	renderCodeArea({ session: null, hint: null, popupBounds: null, popupBoundsScratch: create_rect_bounds() }, false, new Set(), [], -1, [], -1, false, EMPTY_DIAGNOSTICS_BY_ROW, editorViewState.layout, editorViewState.lineHeight);
 	overlay.renderer.endFrame();
 	assert.equal(view.scrollRow, 1.5);
 	assert.equal(view.scrollLeft, 1.5);

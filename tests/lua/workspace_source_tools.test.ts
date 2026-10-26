@@ -219,7 +219,7 @@ test('diagnostic receipts preserve exact unsaved source coordinates and reuse th
 	const marker = result.data.diagnostics.find(diagnostic => diagnostic.message.includes('missing_after_unicode'))!;
 	assert.equal(marker.row, 1); assert.equal(marker.startColumn, prefix.length);
 	assert.equal(marker.endColumn, prefix.length + 'missing_after_unicode'.length);
-	const shared = f.diagnostics.get(lua.identity)!; assert.ok(shared.status === 'ready');
+	const shared = f.diagnostics.get(lua)!; assert.ok(shared.status === 'ready');
 	assert.deepEqual(result.data.diagnostics, shared.diagnostics.map(({ model: _model, version: _version, ...marker }) => marker));
 	const parser = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
 	const text = t.mock.method(lua.buffer, 'getText');
@@ -236,7 +236,7 @@ test('diagnostic receipts preserve exact unsaved source coordinates and reuse th
 test('unrequested, unsupported and ready-empty diagnostic coverage are distinct', async t => {
 	const f = fixture(t);
 	await f.list();
-	assert.equal(f.diagnostics.get(f.sources.luaResources[0]), undefined, 'listing never analyzes or claims clean unopened resources');
+	assert.equal(f.models.get(f.sources.luaResources[0]), undefined, 'listing never analyzes or claims clean unopened resources');
 	f.models.retain(f.sources.luaResources[0], 'lua', 'return 1');
 	const lua = await f.read('cart.lua'), yaml = await f.read('res/data/stage.yaml');
 	const ready = await f.tools.execute('studio_read_diagnostics', { receipt: lua.receipt });

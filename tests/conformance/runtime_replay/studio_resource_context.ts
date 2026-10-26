@@ -25,15 +25,15 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	if (scene.kind !== 'scene_editor') throw new Error('resource context: actual visual editor expected');
 	const model = scene.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: 'local studio_context_probe = missing_from_scene_context\n' }]);
-	await until(() => ide.diagnostics.get(resource)!.status === 'ready', 'resource context: background analysis of visual-only source');
+	await until(() => ide.diagnostics.get(model)!.status === 'ready', 'resource context: background analysis of visual-only source');
 	const marker = ide.diagnostics.diagnostics.find(item => item.model === model && item.message.includes('missing_from_scene_context'))!;
 	check(marker !== undefined && marker.version === model.version, 'resource context: resource marker identifies exact model revision');
 	check(ide.editor.editorGroup.model.findById(buildCodeTabId(resource)) === undefined && ide.editor.editorGroup.model.activeTab === scene,
 		'resource context: analysis neither requires nor creates a code input');
 	const yaml = ide.sources.resources.find(item => item.domain === 0 && item.path.endsWith('nemesis_s_stage.yaml'))!;
-	await resolveTextFileModel(editorTextModelService, ide.sources, yaml);
-	check(ide.diagnostics.get(yaml)!.status === 'unsupported', 'resource context: YAML is not an empty successful Lua analysis');
-	check(ide.diagnostics.get({ domain: 0, path: 'scenes/hangar.lua' }) === undefined, 'resource context: unopened source is unrequested coverage');
+	const yamlModel = await resolveTextFileModel(editorTextModelService, ide.sources, yaml);
+	check(ide.diagnostics.get(yamlModel)!.status === 'unsupported', 'resource context: YAML is not an empty successful Lua analysis');
+	check(editorTextModelService.get({ domain: 0, path: 'scenes/hangar.lua' }) === undefined, 'resource context: unopened source is unrequested coverage');
 	await test.runPaletteCommand('View: Problems Panel');
 	check(problemsPanel.isVisible && problemsPanel.getDiagnostics().includes(marker), 'resource context: Problems reads the visual resource result');
 	await frame();
@@ -49,12 +49,12 @@ export async function runStudioResourceContext(test: StudioFixture) {
 		'resource context: Problems navigation opens the shared source, not a private buffer');
 	await frame();
 	await test.capture?.('source-navigation');
-	const result = ide.diagnostics.get(resource);
+	const result = ide.diagnostics.get(model);
 	await press('ControlLeft', 'KeyW');
-	check(ide.diagnostics.get(resource) === result && editorTextModelService.get(resource) === model,
+	check(ide.diagnostics.get(model) === result && editorTextModelService.get(resource) === model,
 		'resource context: closing a code tab does not close its working copy or discard diagnostics');
 	model.undo();
-	await until(() => ide.diagnostics.get(resource)!.status === 'ready', 'resource context: shared Undo recomputes source results');
+	await until(() => ide.diagnostics.get(model)!.status === 'ready', 'resource context: shared Undo recomputes source results');
 	check(!ide.diagnostics.diagnostics.some(item => item.message.includes('missing_from_scene_context')), 'resource context: no stale marker after Undo');
 	check(cycles() === position && title() === actor && ide.sources.currentBlua32Media === media,
 		'resource context: source analysis never executes, resets or installs guest code');

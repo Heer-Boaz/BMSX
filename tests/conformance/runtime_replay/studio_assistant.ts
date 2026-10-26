@@ -68,7 +68,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(proposal.state === 'pending' && proposal.files.length === 2 && main.buffer.getText() === before, 'assistant cannot apply its own edits');
 	const diagnostic = ide.diagnostics.diagnostics.find(marker => marker.model === main && marker.message.includes('missing_from_assistant_context'))!;
 	check(diagnostic !== undefined && diagnostic.version === main.version, 'assistant diagnostics use the actual unsaved model result: ' + JSON.stringify({
-		status: ide.diagnostics.get(main.identity)!.status, version: main.version,
+		status: ide.diagnostics.get(main)!.status, version: main.version,
 		markers: ide.diagnostics.diagnostics.filter(marker => marker.model === main).map(marker => marker.message),
 	}));
 	const typeDiagnostic = ide.diagnostics.diagnostics.find(marker => marker.model === main

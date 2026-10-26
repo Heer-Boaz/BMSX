@@ -1,3 +1,5 @@
+import type { EditorDiagnosticsByRow } from '../../contrib/diagnostics/model';
+import type { CodeLayout } from '../../ui/code/layout';
 import { getBreakpointLaneWidth } from '../../ui/view/view';
 import { intellisenseUiState } from '../../contrib/intellisense/ui_state';
 import { drawCodeAreaBackground, drawCodeAreaChrome } from './gutter';
@@ -22,6 +24,9 @@ export function renderCodeArea(
 	searchMatches: readonly SearchMatch[],
 	searchActiveIndex: number,
 	searchHighlightsVisible: boolean,
+	diagnosticsByRow: EditorDiagnosticsByRow,
+	layout: CodeLayout,
+	lineHeight: number,
 ): CodeAreaViewport {
 	const viewport = resolveCodeAreaViewport();
 
@@ -43,6 +48,9 @@ export function renderCodeArea(
 		searchActiveIndex,
 		searchHighlightsVisible,
 		cursorActive,
+		diagnosticsByRow,
+		layout,
+		lineHeight,
 	);
 	if (editorCaretState.cursorVisible && cursorInfo) drawCursor(cursorInfo, viewport.textLeft, cursorActive);
 	api.popClipRect();

@@ -56,7 +56,7 @@ import { undo, redo } from '../../../editor/editing/undo_controller';
 import { clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
 import { CodeEditorNavigationSelection } from './navigation_selection';
 import { closeLineJump } from './find/line_jump';
-import { setActiveDiagnostics } from '../../../editor/contrib/diagnostics/state';
+import { EMPTY_DIAGNOSTICS_BY_ROW } from '../../../editor/contrib/diagnostics/model';
 import { ensureCursorVisible } from '../../../editor/ui/view/caret/view';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { captureCodeEditorView, type CodeEditorLocation } from './view_snapshot';
@@ -144,7 +144,6 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		activateCodeEditorTab(this.input);
 		this.layoutWidth = this.contentBounds.right - this.contentBounds.left;
 		activeCodeEditor.focusTarget.textInput = this.nativeText;
-		setActiveDiagnostics(this.input.context.model, this.editor.diagnostics.diagnostics);
 		this.unsubscribeReadOnlyChange = this.input.context.model.onDidChangeReadOnly(() => {
 			if (this.input.context.model.readOnly) this.editor.completion.clearInput();
 		});
@@ -184,7 +183,6 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		clearExecutionStopHighlight();
 		editorCaretState.cursorRevealSuspended = false;
 		activeCodeEditor.detach();
-		setActiveDiagnostics(null, []);
 		super.clearInput();
 	}
 
@@ -246,6 +244,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 		renderInlineWidgets();
 		if (!activeCodeEditor.focusTarget.canFocus!()) return;
 		const renameActive = renameController.isActive();
+		const diagnostics = this.editor.diagnostics.get(this.input.workingCopy);
 		renderCodeArea(
 			this.editor.completion,
 			activeCodeEditor.focusTarget.hasFocus,
@@ -257,6 +256,9 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> implements Point
 			editorSearchState.matches,
 			editorSearchState.currentIndex,
 			editorSearchState.scope === 'local' && editorSearchState.query.length > 0,
+			diagnostics?.status === 'ready' ? diagnostics.byRow : EMPTY_DIAGNOSTICS_BY_ROW,
+			editorViewState.layout,
+			editorViewState.lineHeight,
 		);
 	}
 

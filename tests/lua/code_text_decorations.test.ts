@@ -4,13 +4,13 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import * as constants from '../../ide/common/constants';
-import { CodeTextDecoration } from '../../ide/common/models';
+import { CodeTextDecoration, type EditorDiagnostic } from '../../ide/common/models';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { CodeRowDecorations } from '../../ide/editor/render/code_area/decorations';
 import { drawHighlightSlice } from '../../ide/editor/render/code_area/highlights';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from '../../ide/editor/render/code_area/underlines';
 import { drawCodeAreaChrome } from '../../ide/editor/render/code_area/gutter';
-import { setActiveDiagnostics } from '../../ide/editor/contrib/diagnostics/state';
+import { EMPTY_DIAGNOSTICS_BY_ROW } from '../../ide/editor/contrib/diagnostics/model';
 import { runtimeErrorState } from '../../ide/editor/contrib/runtime_error/state';
 import { drawCodeAreaRows } from '../../ide/editor/render/code_area/rows';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
@@ -34,7 +34,7 @@ function createFixture(t: TestContext, variant: 'tiny' | 'msx', theme: 'light' |
 		gutterLeft: 0, gutterRight: 8, textLeft: 8, rows: 1, contentWidth: 248, visualCount: 1,
 		contentRight: 256, contentBottom: 20, trackRight: 256, wrapEnabled: false, maxScrollLeft: 0 };
 	t.after(() => {
-		setActiveDiagnostics(null, []); activeCodeEditor.detach(); model.dispose(); editorViewState.font = previousFont; editorViewState.layout = previousLayout;
+		activeCodeEditor.detach(); model.dispose(); editorViewState.font = previousFont; editorViewState.layout = previousLayout;
 		editorViewState.wordWrapEnabled = previousWrap; constants.setIdeThemeVariant(previousTheme);
 	});
 	return { model, view, line, overlay, viewport };
@@ -46,7 +46,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		f.view.cursorColumn = f.line.src.length; setSingleCursorSelectionAnchor(f.view, 0, 0);
 		const originalColors = f.line.hi.colors.slice();
 		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
-		drawCodeAreaRows(f.viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, focused);
+		drawCodeAreaRows(f.viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, focused, EMPTY_DIAGNOSTICS_BY_ROW, editorViewState.layout, editorViewState.lineHeight);
 		f.overlay.renderer.endFrame();
 		const frame = f.overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [], rects: RectRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) {
@@ -100,13 +100,13 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		f.view.cursorColumn = 14; setSingleCursorSelectionAnchor(f.view, 0, 2);
 		const mask = new CodeRowDecorations();
 		mask.prepare(0, f.line, 0, 16, [], -1, [{ row: 0, start: 5, end: 10 }], 0, true, false);
-		setActiveDiagnostics(f.model, [
+		const diagnostics: readonly EditorDiagnostic[] = [
 			{ model: f.model, version: f.model.version, row: 0, startColumn: 0, endColumn: 16, severity: 'error', message: 'error' },
 			{ model: f.model, version: f.model.version, row: 0, startColumn: 0, endColumn: 16, severity: 'warning', message: 'warning' },
-		]);
+		];
 		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
-		drawDiagnosticUnderlinesForRow(0, f.line, 8, 4, 20, 0, 16, mask);
-		drawGotoUnderlineForRow(0, f.line, 8, 4, 20, 0, 16, { row: 0, startColumn: 0, endColumn: 16 }, mask);
+		drawDiagnosticUnderlinesForRow(diagnostics, f.line, 8, 4, 20, 0, 16, mask, editorViewState.layout, editorViewState.lineHeight);
+		drawGotoUnderlineForRow(0, f.line, 8, 4, 20, 0, 16, { row: 0, startColumn: 0, endColumn: 16 }, mask, editorViewState.layout, editorViewState.lineHeight);
 		f.overlay.renderer.endFrame();
 		const frame = f.overlay.queue.consumeOverlayFrame(), expectedRoles = [CodeTextDecoration.None, CodeTextDecoration.InactiveSelection,
 			CodeTextDecoration.ActiveSearch, CodeTextDecoration.InactiveSelection, CodeTextDecoration.None];
@@ -201,7 +201,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		f.view.cursorColumn = f.line.src.length; setSingleCursorSelectionAnchor(f.view, 0, 0);
 		f.view.scrollLeft = f.line.advancePrefix[4] + 1.5;
 		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
-		drawCodeAreaRows(f.viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true);
+		drawCodeAreaRows(f.viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true, EMPTY_DIAGNOSTICS_BY_ROW, editorViewState.layout, editorViewState.lineHeight);
 		f.overlay.renderer.endFrame();
 		let frame = f.overlay.queue.consumeOverlayFrame();
 		const background = frame.commandRefs[0] as RectRenderSubmission, glyph = frame.commandRefs[1] as GlyphRenderSubmission;
@@ -218,7 +218,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const viewport = { ...f.viewport, wrapEnabled: true, visualCount: layout.getVisualLineCount(), contentWidth: width,
 			contentRight: f.viewport.textLeft + width };
 		f.overlay.renderer.beginFrame(f.overlay.presenter); api.beginFrame(f.overlay.renderer);
-		drawCodeAreaRows(viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true);
+		drawCodeAreaRows(viewport, null, false, editorViewState.font.renderFont(), [], -1, [], -1, false, true, EMPTY_DIAGNOSTICS_BY_ROW, editorViewState.layout, editorViewState.lineHeight);
 		f.overlay.renderer.endFrame(); frame = f.overlay.queue.consumeOverlayFrame();
 		assert.equal(frame.commandCount, 2);
 		const wrappedBackground = frame.commandRefs[0] as RectRenderSubmission, wrappedGlyph = frame.commandRefs[1] as GlyphRenderSubmission;
