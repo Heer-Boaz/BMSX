@@ -38,6 +38,8 @@ export type CodeEditorViewState = {
 	selectionAnchorScratch: Position;
 	desiredColumn: number;
 	desiredDisplayOffset: number;
+	/** Retained presentation choice for this Source view, not its shared document. */
+	wordWrapEnabled: boolean;
 	/** Continuous position in wrapped visual rows, not source buffer rows. */
 	scrollRow: number;
 	/** Horizontal viewport origin in pixels, including subpixel scroll intent. */
@@ -58,6 +60,7 @@ export function createCodeEditorViewState(): CodeEditorViewState {
 		selectionAnchorScratch: { row: 0, column: 0 },
 		desiredColumn: 0,
 		desiredDisplayOffset: 0,
+		wordWrapEnabled: true,
 		scrollRow: 0,
 		scrollLeft: 0,
 	};

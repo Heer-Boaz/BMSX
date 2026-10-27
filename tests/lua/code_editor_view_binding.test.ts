@@ -119,15 +119,16 @@ test('an explicit Source history receiver restores text selection without restor
 	assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, 3);
 });
 
-test('history capture treats wrapped scroll rows as view coordinates, not text positions', t => {
+test('history captures canonical source positions independently of retained viewport coordinates', t => {
 	const model = new EditorTextModel(resource, 'lua', 'local very_long_line = 123456789');
 	const input = new CodeEditorInput(model), view = input.context.view;
 	view.cursorColumn = 6; view.scrollRow = 5; view.scrollLeft = 10.25;
 	const selection = new CodeEditorNavigationSelection(input);
 	t.after(() => { selection.dispose(); input.dispose(); model.dispose(); });
-	assert.equal(selection.snapshot.cursor, 6); assert.equal(selection.snapshot.scrollRow, 5); assert.equal(selection.snapshot.scrollLeft, 10.25);
+	assert.equal(selection.snapshot.cursor, 6); assert.equal(selection.snapshot.anchor, null);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉\n' }]);
-	assert.equal(selection.snapshot.cursor, 12); assert.equal(selection.snapshot.scrollRow, 5); assert.equal(selection.snapshot.scrollLeft, 10.25);
+	assert.equal(selection.snapshot.cursor, 12); assert.equal(selection.snapshot.anchor, null);
+	assert.equal(view.scrollRow, 5); assert.equal(view.scrollLeft, 10.25);
 });
 
 test('Source Undo and Redo deliver recorded selections only to the invoking view before notifying observers', t => {

@@ -48,6 +48,9 @@ of retained destinations.
 ## Contribution-owned locations
 
 Text locations use UTF-16 offsets mapped through canonical model changes.
+The Source control reveals that selection in its current layout. History does
+not transplant visual scroll rows or restore an earlier wrapping preference;
+full editor-view snapshots separately own reading position and presentation.
 Visual locations retain source-correspondence bookmarks, including FSM return
 evidence and BT occurrence ancestry. They do not retain an old graph object or
 source-generation AST. Deleting an occurrence makes it unselected, rather than

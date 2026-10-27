@@ -49,6 +49,7 @@ const NO_MODIFIERS: EditorModifierConstraint = {
 
 const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 	{ code: 'Tab', command: 'suggest.accept', modifiers: NO_MODIFIERS, when: target => target?.getCommand('suggest.accept')?.isEnabled() === true },
+	{ code: 'KeyZ', command: 'wrap', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift }, when: target => target?.getCommand('wrap') !== undefined },
 	{ code: 'KeyZ', command: 'undo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('undo') !== undefined, repeat: true },
 	{ code: 'KeyZ', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt }, when: target => target?.getCommand('redo') !== undefined, repeat: true },
 	{ code: 'KeyY', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('redo') !== undefined, repeat: true },

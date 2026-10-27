@@ -57,7 +57,7 @@ export function ensureCursorVisible(code: CodeEditorControl): void {
 		code.setScrollPosition(code.layout.clampVisualScroll(code.view.scrollRow, totalVisual, rows), code.view.scrollLeft);
 	}
 
-	if (code.wordWrapEnabled) {
+	if (code.view.wordWrapEnabled) {
 		code.setScrollPosition(code.view.scrollRow, 0);
 		return;
 	}
@@ -97,7 +97,7 @@ export function setCursorFromVisualIndex(code: CodeEditorControl, visualIndex: n
 	const hasDesiredHint = desiredColumnHint !== undefined;
 	const hasOffsetHint = desiredOffsetHint !== undefined;
 	let targetColumn = hasDesiredHint ? desiredColumnHint! : code.view.cursorColumn;
-	if (code.wordWrapEnabled) {
+	if (code.view.wordWrapEnabled) {
 		const segmentDisplayStart = segment.startDisplay;
 		const segmentDisplayEnd = segment.endDisplay;
 		const segmentWidth = Math.max(0, segmentDisplayEnd - segmentDisplayStart);
@@ -114,7 +114,7 @@ export function setCursorFromVisualIndex(code: CodeEditorControl, visualIndex: n
 	} else {
 		targetColumn = code.layout.clampLineLength(line.length, targetColumn);
 	}
-	if (code.wordWrapEnabled) {
+	if (code.view.wordWrapEnabled) {
 		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
 			&& visualLines[clampedIndex + 1].row === segment.row;
 		if (hasNextSegmentSameRow && targetColumn >= segmentEnd) targetColumn = Math.max(segmentStart, segmentEnd - 1);
@@ -138,7 +138,7 @@ export function updateDesiredColumn(code: CodeEditorControl): void {
 	const highlight = entry.hi;
 	const cursorDisplay = code.layout.columnToDisplay(highlight, code.view.cursorColumn);
 	let segmentDisplayStart = 0;
-	if (code.wordWrapEnabled) {
+	if (code.view.wordWrapEnabled) {
 		ensureVisualLines(code);
 		const override = code.visualCursor;
 		if (override) {

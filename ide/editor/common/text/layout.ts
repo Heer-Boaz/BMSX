@@ -51,7 +51,7 @@ export function computeSelectionSlices(code: CodeEditorControl, lineIndex: numbe
 export function ensureVisualLines(code: CodeEditorControl): void {
 	const estimatedVisibleRowCount = code.geometry.cachedVisibleRowCount;
 	code.setScrollPosition(code.layout.ensureVisualLines(
-		code.wordWrapEnabled,
+		code.view.wordWrapEnabled,
 		code.view.scrollRow,
 		estimatedVisibleRowCount,
 	), code.view.scrollLeft);

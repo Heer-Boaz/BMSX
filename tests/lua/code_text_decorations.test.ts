@@ -29,7 +29,7 @@ function createFixture(t: TestContext, variant: 'tiny' | 'msx', theme: 'light' |
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'decoration.lua', location: { kind: 'workspace' as const, path: 'decoration.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'decoration.lua', source: { type: 'lua', resid: 'decoration' } }, 'lua', source);
 	const view = createCodeEditorViewState();
 	const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(variant));
-	code.wordWrapEnabled = false; code.layout.ensureVisualLines(false, 0, 1);
+	code.view.wordWrapEnabled = false; code.layout.ensureVisualLines(false, 0, 1);
 	const line = code.layout.getViewLine(0), overlay = createHostOverlayFixture(256, 64);
 	const viewport = { codeTop: 4, codeBottom: 20, codeLeft: 0, codeRight: 256,
 		gutterLeft: 0, gutterRight: 8, textLeft: 8, rows: 1, contentWidth: 248, visualCount: 1,
@@ -211,7 +211,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const width = f.code.font.measure('abcdefgh');
 		const layout = new CodeLayout(f.code.font, { computeWrapWidth: () => width, inlineEdit: f.code.inlineEdit });
 		layout.attach(f.documents.get(f.model));
-		f.code.layout.dispose(); f.code.layout = layout; f.code.wordWrapEnabled = true;
+		f.code.layout.dispose(); f.code.layout = layout; f.code.view.wordWrapEnabled = true;
 		layout.ensureVisualLines(true, 0, 1); f.view.scrollRow = 1; f.view.scrollLeft = 0;
 		const segment = layout.visualIndexToSegment(1), line = layout.getViewLine(0);
 		assert.ok(segment.startDisplay > 0);

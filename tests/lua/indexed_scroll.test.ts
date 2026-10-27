@@ -89,7 +89,7 @@ test('source scrolling retains fractional pixels while hit tests resolve source 
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'wheel.lua', location: { kind: 'workspace' as const, path: 'wheel.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
 	const view = createCodeEditorViewState();
 	const code = createTestCodeControl(t, model, documents, clock, view);
-	code.wordWrapEnabled = false;
+	code.view.wordWrapEnabled = false;
 	code.geometry.cachedVisibleRowCount = 4;
 	code.geometry.cachedMaxScrollLeft = 8;
 	ensureVisualLines(code);

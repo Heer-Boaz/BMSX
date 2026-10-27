@@ -67,6 +67,7 @@ test('Source factories and serialization produce group-local views while sharing
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]);
 	const firstView = first.context.view, secondView = second.context.view;
 	firstView.cursorRow = 1; firstView.cursorColumn = 2; firstView.scrollRow = 1.25; firstView.scrollLeft = 19.75;
+	firstView.wordWrapEnabled = false;
 	secondView.cursorRow = 1; secondView.cursorColumn = 7; secondView.scrollRow = 3.5; secondView.scrollLeft = 41.25;
 	const serializer = new CodeEditorInputSerializer(sources.catalog);
 	const firstState = serializer.serialize(first), secondState = serializer.serialize(second);
@@ -81,6 +82,7 @@ test('Source factories and serialization produce group-local views while sharing
 	assert.notEqual(restoredFirst.context.view.editSource, restoredSecond.context.view.editSource);
 	assert.equal(restoredFirst.context.view.cursorRow, 1); assert.equal(restoredFirst.context.view.cursorColumn, 2);
 	assert.equal(restoredFirst.context.view.scrollRow, 1.25); assert.equal(restoredFirst.context.view.scrollLeft, 19.75);
+	assert.equal(restoredFirst.context.view.wordWrapEnabled, false); assert.equal(restoredSecond.context.view.wordWrapEnabled, true);
 	assert.equal(restoredSecond.context.view.cursorRow, 1); assert.equal(restoredSecond.context.view.cursorColumn, 7);
 	assert.equal(restoredSecond.context.view.scrollRow, 3.5); assert.equal(restoredSecond.context.view.scrollLeft, 41.25);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer\n' }]);
@@ -94,19 +96,21 @@ for (const matchingSource of [true, false]) test(`Source deserialization admits 
 	const resource = sources.catalog.luaResources[0], original = resolveLuaCodeEditorInput(sources.catalog, resource);
 	const model = original.workingCopy;
 	original.context.view.cursorColumn = 7; original.context.view.scrollRow = 2.5; original.context.view.scrollLeft = 19.75;
+	original.context.view.wordWrapEnabled = false;
 	const serializer = new CodeEditorInputSerializer(sources.catalog), serialized = serializer.serialize(original);
 	original.dispose();
 	if (!matchingSource) model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
 	const restored = await serializer.deserialize(serialized);
 	t.after(() => { restored.dispose(); editorTextModelService.clear(); });
-	restored.initializeViewState({ cursor: 4, anchor: 1, scrollRow: 77, scrollLeft: 89 });
+	restored.initializeViewState({ cursor: 4, anchor: 1, scrollRow: 77, scrollLeft: 89, wordWrapEnabled: true });
 	assert.equal(restored.context.view.cursorRow, 0); assert.equal(restored.context.view.cursorColumn, matchingSource ? 7 : 0);
 	assert.equal(restored.context.view.scrollRow, matchingSource ? 2.5 : 0);
 	assert.equal(restored.context.view.scrollLeft, matchingSource ? 19.75 : 0);
+	assert.equal(restored.context.view.wordWrapEnabled, false);
 	assert.equal(restored.context.view.selectionAnchor, null);
 	assert.equal(model.dirty, !matchingSource);
 	// Later activation is not another admission of the view's initial state.
 	restored.context.view.cursorColumn = 3;
-	restored.initializeViewState({ cursor: 1, anchor: null, scrollRow: 1, scrollLeft: 1 });
+	restored.initializeViewState({ cursor: 1, anchor: null, scrollRow: 1, scrollLeft: 1, wordWrapEnabled: true });
 	assert.equal(restored.context.view.cursorColumn, 3);
 });

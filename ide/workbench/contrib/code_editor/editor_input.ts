@@ -6,7 +6,7 @@ import type { ResourceEditorIdentity } from '../../common/editor_input';
 import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
 import { createCodeEditorViewState } from '../../../editor/ui/code_editor_state';
 import { CodeEditorViewBinding } from '../../../editor/ui/code_editor_view_binding';
-import { captureCodeEditorView, restoreCodeEditorView, type CodeEditorLocation } from './view_snapshot';
+import { captureCodeEditorView, restoreCodeEditorView, type CodeEditorViewSnapshot } from './view_snapshot';
 
 export const WORKBENCH_TEXT_EDITOR_ID = 'workbench.editor.text';
 
@@ -26,7 +26,7 @@ export class CodeEditorInput extends WorkingCopyEditorInput<CodeEditorTabId, 'co
 	}
 
 	/** First attachment supplies a group memento; deserialization admits its own initial state earlier. */
-	public initializeViewState(snapshot?: CodeEditorLocation): void {
+	public initializeViewState(snapshot?: CodeEditorViewSnapshot): void {
 		if (this.initialized) return;
 		this.initialized = true;
 		if (snapshot !== undefined) restoreCodeEditorView(this, snapshot);

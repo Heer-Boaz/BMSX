@@ -101,6 +101,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const code = new CodeEditorInput(f.model);
 	code.context.view.cursorRow = 2; code.context.view.cursorColumn = 8;
 	code.context.view.selectionAnchor = { row: 1, column: 3 }; code.context.view.scrollRow = 1; code.context.view.scrollLeft = 17.25;
+	code.context.view.wordWrapEnabled = false;
 	f.group.model.initialize(code);
 	const lenses = [0, 1].map(index => {
 		const input = f.behavior.createInput(f.model, 'graph');
@@ -132,6 +133,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	assert.ok(newCode.kind === 'code_editor' && first.kind === 'behavior_lens' && second.kind === 'behavior_lens' && newScene.kind === 'scene_editor' && newClean.kind === 'code_editor');
 	assert.equal(restoredGroup.model.activeTab, second); assert.equal(restoredGroup.model.previewTab, newClean);
 	assert.equal(newCode.context.view.scrollLeft, 17.25, 'workspace recovery preserves the code view pixel origin without glyph conversion');
+	assert.equal(newCode.context.view.wordWrapEnabled, false); assert.equal(newClean.context.view.wordWrapEnabled, true);
 	assert.notEqual(first.id, second.id); assert.notEqual(first.id, lenses[0].id);
 	assert.notEqual(first.workingCopy, f.model);
 	assert.equal(first.workingCopy, newCode.workingCopy); assert.equal(first.workingCopy, second.workingCopy); assert.equal(first.workingCopy, newScene.workingCopy);

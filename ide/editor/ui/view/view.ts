@@ -97,7 +97,7 @@ export function resolvePointerTextPosition(code: CodeEditorControl, viewportX: n
 	let endDisplay = entry.hi.text.length;
 	let pixelOffset = code.view.scrollLeft;
 	const lastPointerRowResolution = code.pointer.lastPointerRowResolution;
-	if (code.wordWrapEnabled && lastPointerRowResolution && lastPointerRowResolution.segment.row === row) {
+	if (code.view.wordWrapEnabled && lastPointerRowResolution && lastPointerRowResolution.segment.row === row) {
 		const resolvedSegment = lastPointerRowResolution.segment;
 		startDisplay = resolvedSegment.startDisplay;
 		endDisplay = resolvedSegment.endDisplay;
@@ -119,7 +119,7 @@ export function resolveTextPositionBounds(code: CodeEditorControl, row: number, 
 	const visual = layout.positionToVisualIndex(row, column);
 	const segment = layout.visualIndexToSegment(visual)!;
 	const entry = layout.getViewLine(row);
-	const offset = code.wordWrapEnabled ? entry.advancePrefix[segment.startDisplay] : code.view.scrollLeft;
+	const offset = code.view.wordWrapEnabled ? entry.advancePrefix[segment.startDisplay] : code.view.scrollLeft;
 	const display = layout.columnToDisplay(entry.hi, column);
 	const x = bounds.textLeft + entry.advancePrefix[display] - offset;
 	const y = bounds.codeTop + (visual - (code.view.scrollRow | 0)) * code.lineHeight;
@@ -141,7 +141,7 @@ export function handlePointerAutoScroll(code: CodeEditorControl, viewportX: numb
 	const rows = code.geometry.cachedVisibleRowCount;
 	const scrollRow = code.layout.clampVisualScroll(code.view.scrollRow + rowDelta, code.layout.getVisualLineCount(), rows);
 	let scrollLeft = code.view.scrollLeft;
-	if (viewportX >= bounds.gutterLeft && !code.wordWrapEnabled) {
+	if (viewportX >= bounds.gutterLeft && !code.view.wordWrapEnabled) {
 		if (viewportX < bounds.textLeft) {
 			scrollLeft -= code.charAdvance;
 		} else if (viewportX >= bounds.codeRight) {
@@ -149,7 +149,7 @@ export function handlePointerAutoScroll(code: CodeEditorControl, viewportX: numb
 		}
 		scrollLeft = code.layout.clampHorizontalScroll(scrollLeft, code.geometry.cachedMaxScrollLeft);
 	}
-	code.setScrollPosition(scrollRow, code.wordWrapEnabled ? 0 : scrollLeft);
+	code.setScrollPosition(scrollRow, code.view.wordWrapEnabled ? 0 : scrollLeft);
 	return code.view.scrollRow !== previousRow || code.view.scrollLeft !== previousColumn;
 }
 
@@ -162,7 +162,7 @@ export function scrollRows(code: CodeEditorControl, deltaRows: number): void {
 }
 
 export function scrollHorizontally(code: CodeEditorControl, deltaPixels: number): void {
-	if (deltaPixels === 0 || code.wordWrapEnabled) return;
+	if (deltaPixels === 0 || code.view.wordWrapEnabled) return;
 	code.setScrollPosition(code.view.scrollRow, code.layout.clampHorizontalScroll(
 		code.view.scrollLeft + deltaPixels, code.geometry.cachedMaxScrollLeft,
 	));
@@ -170,7 +170,7 @@ export function scrollHorizontally(code: CodeEditorControl, deltaPixels: number)
 
 export function toggleWordWrap(code: CodeEditorControl): void {
 	ensureVisualLines(code);
-	const previousWrap = code.wordWrapEnabled;
+	const previousWrap = code.view.wordWrapEnabled;
 	const previousVisualCount = code.layout.getVisualLineCount();
 	const previousTopIndex = code.layout.clampVisualIndex(previousVisualCount, code.view.scrollRow);
 	const previousTopSegment = code.layout.visualIndexToSegment(previousTopIndex);
@@ -183,7 +183,7 @@ export function toggleWordWrap(code: CodeEditorControl): void {
 	const previousDesiredColumn = code.view.desiredColumn;
 	code.clearVisualCursor();
 
-	code.wordWrapEnabled = !previousWrap;
+	code.view.wordWrapEnabled = !previousWrap;
 	code.caret.cursorRevealSuspended = false;
 	code.layout.markVisualLinesDirty();
 	ensureVisualLines(code);
@@ -193,7 +193,7 @@ export function toggleWordWrap(code: CodeEditorControl): void {
 	code.view.cursorColumn = code.model.clampColumn(code.view.cursorRow, previousCursorColumn);
 	code.view.desiredColumn = previousDesiredColumn;
 
-	if (code.wordWrapEnabled) {
+	if (code.view.wordWrapEnabled) {
 		code.setScrollPosition(code.view.scrollRow, 0);
 		code.setScrollPosition(code.layout.clampVisualScroll(code.layout.displayToVisualIndex(anchorRow, anchorDisplay), currentVisualCount, code.geometry.cachedVisibleRowCount), code.view.scrollLeft);
 	} else {
@@ -203,7 +203,8 @@ export function toggleWordWrap(code: CodeEditorControl): void {
 	code.pointer.lastPointerRowResolution = null;
 	ensureCursorVisible(code);
 	updateDesiredColumn(code);
-	showEditorMessage(code.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', 'info', 2.5);
+	showEditorMessage(code.view.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', 'info', 2.5);
+	code.emitViewStateChanged();
 }
 
 export function notifyReadOnlyEdit(): void {

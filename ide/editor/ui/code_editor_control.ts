@@ -71,7 +71,7 @@ export class CodeEditorControl implements PointerCaptureTarget {
 		if (kind === 'codeVertical') {
 			ensureVisualLines(this);
 			this.setScrollPosition(this.layout.clampVisualScroll(scroll, this.layout.getVisualLineCount(), this.geometry.cachedVisibleRowCount), this.view.scrollLeft);
-		} else this.setScrollPosition(this.view.scrollRow, this.wordWrapEnabled ? 0 : this.layout.clampHorizontalScroll(scroll, this.geometry.cachedMaxScrollLeft));
+		} else this.setScrollPosition(this.view.scrollRow, this.view.wordWrapEnabled ? 0 : this.layout.clampHorizontalScroll(scroll, this.geometry.cachedMaxScrollLeft));
 		this.caret.cursorRevealSuspended = true;
 	}, pointerCapture);
 	public readonly runtimeError = { activeOverlay: null as RuntimeErrorOverlay, executionStopRow: null as number };
@@ -86,7 +86,6 @@ export class CodeEditorControl implements PointerCaptureTarget {
 	public spaceAdvance: number;
 	public layout: CodeLayout;
 	public completionRender: CompletionRenderState;
-	public wordWrapEnabled = true;
 	public pendingEditContext: EditContext | null = null;
 	private readonly inlineEditValue = { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: false };
 	public get inlineEdit(): InlineEditState { return this.inlineEditValue; }
@@ -121,7 +120,7 @@ export class CodeEditorControl implements PointerCaptureTarget {
 		return value !== null && value.row === this.view.cursorRow && value.column === this.view.cursorColumn ? value : null;
 	}
 	public get minimumWidth(): number { return measureGutterWidth(this) + 2 + this.charAdvance + SCROLLBAR_WIDTH + CODE_AREA_RIGHT_MARGIN; }
-	public get minimumHeight(): number { return this.lineHeight + (this.wordWrapEnabled ? 0 : SCROLLBAR_WIDTH); }
+	public get minimumHeight(): number { return this.lineHeight + (this.view.wordWrapEnabled ? 0 : SCROLLBAR_WIDTH); }
 
 	public setFont(font: EditorFont): void {
 		if (this.font === font) return;
@@ -190,18 +189,21 @@ export class CodeEditorControl implements PointerCaptureTarget {
 	public emitCursorMoved(): void {
 		this.clearInlineEdit();
 		for (const listener of this.cursorMovedListeners) listener();
-		for (const listener of this.viewChangeListeners) listener();
+		this.emitViewStateChanged();
 	}
 
 	public onDidChangeViewState(listener: () => void): () => void {
 		this.viewChangeListeners.add(listener);
 		return () => this.viewChangeListeners.delete(listener);
 	}
+	public emitViewStateChanged(): void {
+		for (const listener of this.viewChangeListeners) listener();
+	}
 
 	public setScrollPosition(row: number, left: number): void {
 		if (this.view.scrollRow === row && this.view.scrollLeft === left) return;
 		this.view.scrollRow = row; this.view.scrollLeft = left;
-		for (const listener of this.viewChangeListeners) listener();
+		this.emitViewStateChanged();
 	}
 
 	public acceptPointerInput(snapshot: PointerInputSnapshot): void {

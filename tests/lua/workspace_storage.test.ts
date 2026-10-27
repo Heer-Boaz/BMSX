@@ -421,7 +421,7 @@ function codeInputState(input: SerializedEditorInput): SerializedCodeEditorInput
 	return JSON.parse(input.value);
 }
 
-test('code-input persistence retains fractional pixel scroll with the exact source and selection', async t => {
+test('code-input persistence retains unwrapped fractional scroll with the exact source and selection', async t => {
 	installBrowserWorkspace(t, new MockStorage());
 	const source = '-- original source\nreturn 1';
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry(source), null], TEST_DOMAIN);
@@ -429,11 +429,13 @@ test('code-input persistence retains fractional pixel scroll with the exact sour
 	assert.equal(saved.view.scrollLeft, 19.75);
 	assert.equal('scrollColumn' in saved.view, false);
 	const serializer = new CodeEditorInputSerializer(sources.catalog);
-	const input = await serializer.deserialize(JSON.stringify({ ...saved, view: { ...saved.view, scrollRow: 1.25 } }));
+	const input = await serializer.deserialize(JSON.stringify({ ...saved, view: { ...saved.view, scrollRow: 1.25, wordWrapEnabled: false } }));
+	t.after(() => input.dispose());
+	assert.equal(input.context.view.wordWrapEnabled, false);
 	assert.equal(input.workingCopy.buffer.getText(), source);
 	assert.equal(input.context.view.cursorColumn, 7); assert.deepEqual(input.context.view.selectionAnchor, { row: 0, column: 2 });
 	assert.equal(input.context.view.scrollRow, 1.25); assert.equal(input.context.view.scrollLeft, 19.75);
-	assert.deepEqual(JSON.parse(serializer.serialize(input)).view, { cursor: 7, anchor: 2, scrollRow: 1.25, scrollLeft: 19.75 });
+	assert.deepEqual(JSON.parse(serializer.serialize(input)).view, { cursor: 7, anchor: 2, scrollRow: 1.25, scrollLeft: 19.75, wordWrapEnabled: false });
 });
 
 function editorStub(

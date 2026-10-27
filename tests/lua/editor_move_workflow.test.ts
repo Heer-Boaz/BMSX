@@ -5,7 +5,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
-import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
+import { captureCodeEditorLocation, captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 import type { EditorMoveDestination } from '../../ide/workbench/services/editor/editor_parts';
@@ -93,7 +93,7 @@ test('a same-ID destination keeps its admitted input and restores the moved Sour
 	const f = createActualSourcePanes(t, true), source = f.firstInput, receiver = f.secondInput, model = source.workingCopy;
 	source.context.view.cursorRow = 1; source.context.view.cursorColumn = 7; source.context.view.selectionAnchor = { row: 0, column: 4 };
 	f.first.focus();
-	const reading = captureCodeEditorView(source), version = model.version;
+	const reading = captureCodeEditorLocation(source), receiverWrap = receiver.context.view.wordWrapEnabled, version = model.version;
 	let sourceDisposed = 0, receiverDisposed = 0;
 	source.onWillDispose(() => { sourceDisposed++; }); receiver.onWillDispose(() => { receiverDisposed++; });
 	f.editor.commands.execute('window.moveEditor', f.first.commandTarget);
@@ -102,7 +102,9 @@ test('a same-ID destination keeps its admitted input and restores the moved Sour
 	assert.ok(receiver.workingCopy === model && f.second.code.model === model);
 	assert.equal(sourceDisposed, 1); assert.equal(receiverDisposed, 0);
 	assert.ok(f.firstGroup.model.findById(source.id) === undefined); assert.equal(f.secondGroup.model.tabs.length, 1);
-	assert.deepEqual(captureCodeEditorView(receiver), reading); assert.equal(model.version, version);
+	assert.deepEqual(captureCodeEditorLocation(receiver), reading);
+	assert.equal(receiver.context.view.wordWrapEnabled, receiverWrap); assert.equal(model.version, version);
+	const caret = f.second.code.nativeText.caretRect(); assert.ok(caret.width > 0 && caret.height > 0);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shared after move\n' }]);
 	assert.equal(receiver.context.view.cursorRow, 2); assert.equal(source.context.view.cursorRow, 1);
 	assert.equal(model.buffer.getText(), `-- shared after move\n${f.source}`);

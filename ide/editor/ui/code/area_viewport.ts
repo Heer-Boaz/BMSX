@@ -27,7 +27,7 @@ export function resolveCodeAreaViewportMetrics(code: CodeEditorControl,
 	visualCount: number,
 	maximumWidth: number,
 ): CodeAreaViewportMetrics {
-	const wrapEnabled = code.wordWrapEnabled;
+	const wrapEnabled = code.view.wordWrapEnabled;
 	const scrollbarWidth = constants.SCROLLBAR_WIDTH;
 	let horizontalScrollbarWidth = !wrapEnabled && code.geometry.codeHorizontalScrollbarVisible ? scrollbarWidth : 0;
 	let verticalScrollbarWidth = code.geometry.codeVerticalScrollbarVisible ? scrollbarWidth : 0;
@@ -66,7 +66,7 @@ export function resolveCodeAreaViewport(code: CodeEditorControl): CodeAreaViewpo
 	const metrics = resolveCodeAreaViewportMetrics(code,
 		bounds,
 		code.layout.getVisualLineCount(),
-		code.wordWrapEnabled ? 0 : code.layout.maxViewWidth(),
+		code.view.wordWrapEnabled ? 0 : code.layout.maxViewWidth(),
 	);
 
 	code.scratch.viewport.codeTop = bounds.codeTop;

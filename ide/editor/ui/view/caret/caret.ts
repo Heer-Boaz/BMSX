@@ -102,7 +102,7 @@ export function moveCursorHorizontal(code: CodeEditorControl, delta: number): vo
 			code.view.cursorColumn -= 1;
 		} else {
 			let moved = false;
-				if (code.wordWrapEnabled && visualIndex > 0) {
+				if (code.view.wordWrapEnabled && visualIndex > 0) {
 					const prevSegment = code.layout.visualIndexToSegment(visualIndex - 1);
 					if (prevSegment && prevSegment.row === segment.row) {
 						code.view.cursorRow = prevSegment.row;
@@ -127,7 +127,7 @@ export function moveCursorHorizontal(code: CodeEditorControl, delta: number): vo
 			code.view.cursorColumn += 1;
 		} else {
 			let moved = false;
-			if (code.wordWrapEnabled && visualIndex < visualCount - 1) {
+			if (code.view.wordWrapEnabled && visualIndex < visualCount - 1) {
 				const nextSegment = code.layout.visualIndexToSegment(visualIndex + 1);
 				if (nextSegment && nextSegment.row === segment.row) {
 					code.view.cursorRow = nextSegment.row;

@@ -53,7 +53,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} source caret co
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} source minimum geometry admits one real text cell and scrollbars rather than a reading-column policy`, t => {
 	const { code } = fixture(t, variant);
 	for (const wrap of [true, false]) {
-		code.wordWrapEnabled = wrap; code.layout.markVisualLinesDirty();
+		code.view.wordWrapEnabled = wrap; code.layout.markVisualLinesDirty();
 		code.setBounds({ left: 0, top: 0, right: code.minimumWidth, bottom: code.minimumHeight });
 		const viewport = resolveCodeAreaViewport(code);
 		assert.ok(viewport.contentWidth >= code.charAdvance); assert.ok(viewport.rows >= 1);

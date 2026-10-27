@@ -25,7 +25,7 @@ export function bindSourceCommands(pane: CodeEditorPane): () => void {
 		['referenceSearch', { isEnabled: lua, run: () => openReferenceSearch(pane) }],
 		['goToDefinition', { isEnabled: lua, run: () => executeEditorSymbolNavigationCommand(pane, 'goToDefinition') }],
 		['callHierarchy', { isEnabled: lua, run: () => executeEditorSymbolNavigationCommand(pane, 'callHierarchy') }],
-		['wrap', { isEnabled: attached, isChecked: () => code.wordWrapEnabled, run: () => toggleWordWrap(code) }],
+		['wrap', { isEnabled: attached, isChecked: () => attached() && code.view.wordWrapEnabled, run: () => toggleWordWrap(code) }],
 	];
 	const targets = [code.focusTarget, pane.find.state.field.focusTarget, pane.lineJump.state.field.focusTarget,
 		pane.rename.getField().focusTarget];

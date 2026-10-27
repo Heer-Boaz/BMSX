@@ -25,7 +25,7 @@ import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
-import { restoreCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
+import { restoreCodeEditorLocation } from '../../ide/workbench/contrib/code_editor/view_snapshot';
 import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import type { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import type { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
@@ -129,7 +129,7 @@ class TestCodeEditorPane extends TestEditorPane<CodeEditorInput> {
 			setSingleCursorPosition(view, selection.row, selection.startColumn);
 			setSingleCursorSelectionAnchor(view, selection.row, selection.endColumn);
 		}
-		if (navigationSelection !== undefined) restoreCodeEditorView(this.input, navigationSelection.snapshot);
+		if (navigationSelection !== undefined) restoreCodeEditorLocation(this.input, navigationSelection.snapshot);
 	}
 }
 

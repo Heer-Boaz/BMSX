@@ -3,9 +3,9 @@ import type { EditorInputSerializer } from '../../services/editor/editor_seriali
 import { captureTextFileModel, resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { CodeEditorInput } from './editor_input';
-import { captureCodeEditorView, type CodeEditorLocation } from './view_snapshot';
+import { captureCodeEditorView, type CodeEditorViewSnapshot } from './view_snapshot';
 
-export type SerializedCodeEditorInput = { readonly source: TextFileModelSnapshot; readonly view: CodeEditorLocation };
+export type SerializedCodeEditorInput = { readonly source: TextFileModelSnapshot; readonly view: CodeEditorViewSnapshot };
 
 export class CodeEditorInputSerializer implements EditorInputSerializer<CodeEditorInput> {
 	public constructor(private readonly catalog: WorkspaceSourceCatalog) {}
@@ -20,7 +20,10 @@ export class CodeEditorInputSerializer implements EditorInputSerializer<CodeEdit
 		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
 		const input = new CodeEditorInput(model);
 		if (sameSource) input.initializeViewState(state.view);
-		else input.initializeViewState();
+		else {
+			input.context.view.wordWrapEnabled = state.view.wordWrapEnabled;
+			input.initializeViewState();
+		}
 		return input;
 	}
 }

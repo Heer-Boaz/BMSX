@@ -170,6 +170,10 @@ projects ready row markers through its own layout rather than an active-editor b
 `CodeDocumentProjections` owns model-bound highlighting and semantic scheduling.
 Font-generation measurements are shared by attached views; each `CodeLayout`
 owns wrapping, visual rows and its control's inline-text projection.
+`CodeEditorViewState` retains each Source input's wrapping choice; reusable
+controls consume that choice directly. Full view snapshots carry it through
+copies, group mementos and recovery. Navigation locations and text-history
+selections do not restore presentation preferences.
 
 Contributions own concrete retained editor inputs. `EditorGroupView` owns its
 group model, pane cache, tab/content surfaces, focus/capture scopes and tab-strip

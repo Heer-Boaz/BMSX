@@ -49,7 +49,7 @@ import type { EditorGroupView } from '../../services/editor/editor_group';
 import { EditorNavigationController } from '../resources/navigation';
 import { CodeEditorNavigationSelection } from './navigation_selection';
 import { activateCodeEditorTab, applyActiveCodeTabSelection, storeCodeTabContext } from '../../ui/code_tab/activation';
-import { captureCodeEditorView, type CodeEditorLocation } from './view_snapshot';
+import { captureCodeEditorView, type CodeEditorViewSnapshot } from './view_snapshot';
 import { EditorCompletionController } from './suggest/completion_controller';
 import { EditorSearchController } from './find/search';
 import { CodeEditorLineJump } from './find/line_jump';
@@ -82,7 +82,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 			if (pointer !== null) pointer.modifiers = modifiers;
 		},
 	};
-	private readonly viewMementos = new WeakMap<EditorTextModel, CodeEditorLocation>();
+	private readonly viewMementos = new WeakMap<EditorTextModel, CodeEditorViewSnapshot>();
 	private readonly subscriptions: (() => void)[];
 	private unsubscribeContentChange: () => void;
 	private unsubscribeBeforeContentChange: () => void;

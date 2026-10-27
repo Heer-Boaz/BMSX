@@ -32,7 +32,7 @@ export function drawHoverTooltip(code: CodeEditorControl, codeTop: number, codeB
 	const segment = code.layout.visualIndexToSegment(visualIndex);
 	const entry = code.layout.getViewLine(segment.row);
 	const slice = code.layout.resolveLineViewport(entry, segment, code.view.scrollLeft,
-		code.geometry.cachedContentWidth, code.wordWrapEnabled);
+		code.geometry.cachedContentWidth, code.view.wordWrapEnabled);
 	const sliceStartDisplay = slice.startDisplay, sliceEndDisplay = slice.endDisplay, lineLeft = textLeft - slice.pixelOffset;
 	let clampedStartDisplay = sliceEndDisplay, clampedEndDisplay = sliceStartDisplay;
 	const fragments = code.layout.projectSourceRange(entry, tooltip.startColumn, tooltip.endColumn);

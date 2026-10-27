@@ -185,7 +185,7 @@ export function resolveRuntimeErrorOverlayAnchor(code: CodeEditorControl,
 	const entry = code.layout.getViewLine(segment.row);
 	const highlight = entry.hi;
 	const slice = code.layout.resolveLineViewport(entry, segment, code.view.scrollLeft,
-		contentRight - textLeft, code.wordWrapEnabled);
+		contentRight - textLeft, code.view.wordWrapEnabled);
 	const anchorDisplay = code.layout.columnToDisplay(highlight, overlay.column);
 	const advancePrefix = entry.advancePrefix;
 	const anchorX = Math.max(textLeft, Math.min(contentRight, textLeft - slice.pixelOffset + advancePrefix[anchorDisplay]));

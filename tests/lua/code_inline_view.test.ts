@@ -176,7 +176,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} unwrapped reveal scrolls in measured view pixels rather than source columns`, t => {
 		const leadingTabs = '\t'.repeat(16), source = `${leadingTabs}retur_tail()`;
 		const { code, model, view } = fixture(t, source, variant, minimumWidth), column = leadingTabs.length + 5;
-		code.wordWrapEnabled = false;
+		code.view.wordWrapEnabled = false;
 		view.cursorColumn = column; code.setInlineEdit(0, column, column + 5, 'n_abc');
 		const viewport = resolveViewportCapacity(code), line = code.layout.getViewLine(0), inline = line.inline!;
 		assert.equal(view.scrollLeft, 0);

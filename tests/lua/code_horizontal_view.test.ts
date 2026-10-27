@@ -16,7 +16,7 @@ function fixture(t: TestContext, source: string, variant: FontVariant) {
 		source: { type: 'lua', resid: 'horizontal', source_path: 'horizontal.lua' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant),
 		{ left: 0, top: 10, right: variant === 'tiny' ? 78 : 118, bottom: 270 });
-	code.wordWrapEnabled = false;
+	code.view.wordWrapEnabled = false;
 	return { code, model, view: code.view, documents, layout: code.layout, font: code.font };
 }
 

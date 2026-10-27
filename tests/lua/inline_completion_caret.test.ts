@@ -43,7 +43,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 			// This projection fixture paints its row at the same presented extent.
 			const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font,
 				{ left: rowViewport.codeLeft, top: rowViewport.codeTop, right: rowViewport.codeRight, bottom: rowViewport.codeBottom });
-			code.wordWrapEnabled = false;
+			code.view.wordWrapEnabled = false;
 			t.after(() => {
 
 				editorRuntimeState.uppercaseDisplay = previousUppercase; colors.setIdeThemeVariant(previousTheme);
@@ -95,7 +95,7 @@ test('a suggestion clipped left of the source slice does not become a phantom ca
 	const view = createCodeEditorViewState(); view.cursorColumn = 5; view.scrollLeft = editorViewState.font.measure('retur +');
 	const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font);
 	code.setInlineEdit(0, 5, 5, 'n');
-	code.wordWrapEnabled = false;
+	code.view.wordWrapEnabled = false;
 	code.layout.ensureVisualLines(false, 0, 1);
 	const overlay = createHostOverlayFixture(128, 32);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
@@ -160,7 +160,7 @@ test('horizontal scrolling past a short row does not pull its end caret back ont
 	const { models, documents, clock } = createTestCodeDocuments(t);
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'short.lua', location: { kind: 'workspace' as const, path: 'short.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'short.lua', source: { type: 'lua', resid: 'short' } }, 'lua', source);
 	const view = createCodeEditorViewState(); view.cursorColumn = 3; view.scrollLeft = editorViewState.font.measure('xxxxxxx');
-	const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font); code.wordWrapEnabled = false;
+	const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font); code.view.wordWrapEnabled = false;
 	code.layout.ensureVisualLines(false, 0, 1);
 	const overlay = createHostOverlayFixture(128, 32);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
@@ -179,7 +179,7 @@ test('an empty replacement of a source tab measures the surviving visible glyph 
 	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'deleted-tab.lua', location: { kind: 'workspace' as const, path: 'deleted-tab.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'deleted-tab.lua', source: { type: 'lua', resid: 'deleted-tab' } }, 'lua', '\ta');
 	const code = createTestCodeControl(t, model, documents, clock, undefined, editorViewState.font);
 	code.setInlineEdit(0, 0, 1, '');
-	code.wordWrapEnabled = false;
+	code.view.wordWrapEnabled = false;
 	t.after(() => {
 
 		editorRuntimeState.uppercaseDisplay = previousUppercase;
@@ -206,7 +206,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const { models, documents, clock } = createTestCodeDocuments(t);
 		const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'pixels.lua', location: { kind: 'workspace' as const, path: 'pixels.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'pixels.lua', source: { type: 'lua', resid: 'pixels' } }, 'lua', source);
 		const view = createCodeEditorViewState(); view.cursorColumn = 6; const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font, { left: 0, top: 10, right: 128, bottom: 78 });
-		code.wordWrapEnabled = false;
+		code.view.wordWrapEnabled = false;
 		code.setInlineEdit(0, 6, 11, 'n');
 		t.after(() => {
 
