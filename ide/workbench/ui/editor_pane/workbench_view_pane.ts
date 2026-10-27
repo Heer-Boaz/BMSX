@@ -1,5 +1,5 @@
 import type { PointerInputSnapshot } from '../../../common/models';
-import { EditorPane } from '../../services/editor/editor_pane';
+import { EditorPane, type EditorPaneClearReason } from '../../services/editor/editor_pane';
 import type { EditorInput } from '../tab/model';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 
@@ -24,12 +24,12 @@ export abstract class WorkbenchViewEditorPane<
 	public override get inputScope(): InputFocusScope { return this.focusTarget.scope; }
 	public override get commandTarget(): InputFocusTarget { return this.focusTarget; }
 
-	public override clearInput(): void {
+	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
 		this.focusTarget.scope.interaction = undefined;
 		this.focusTarget.scope.runtime = undefined;
 		this.focusTarget.scope.retireContext();
 		this.focusTarget.release();
-		super.clearInput();
+		super.clearInput(reason);
 	}
 
 	public focus(): void {

@@ -26,6 +26,7 @@ import type { EditorPaneFactories } from './editor_panes';
 import type { CloseEditors } from './editor_close';
 
 type EditorPartOptions = {
+	readonly initialOperation: 'none' | 'move';
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly owner: WorkbenchSurface;
 	readonly scope: InputFocusScope;
@@ -62,7 +63,9 @@ export class EditorPart {
 	public readonly quickInput: QuickInputController;
 	public readonly actionPrompt: ActionPrompt;
 	public readonly timeline: RuntimeTimelineControl;
-	public closing = false;
+	private operationValue: 'none' | 'close' | 'move';
+	public get operation(): 'none' | 'close' | 'move' { return this.operationValue; }
+	public get closing(): boolean { return this.operationValue === 'close'; }
 	public retired = false;
 	private readonly bodyBounds = create_rect_bounds();
 	private readonly tabBounds = create_rect_bounds();
@@ -81,6 +84,7 @@ export class EditorPart {
 
 	public readonly kind: 'main' | 'document';
 	public constructor(private readonly options: EditorPartOptions) {
+		this.operationValue = options.initialOperation;
 		this.kind = options.kind;
 		if (options.kind === 'document') {
 			const model = new WorkbenchWindowModel(options.requestedBounds, 160, 96);
@@ -129,6 +133,7 @@ export class EditorPart {
 				surfaces: options.surfaces, owner: this.clientSurface, focusScope: this.clientScope,
 				workArea: options.workArea, renderContext: options.renderContext,
 			});
+		this.group.setOpenAdmission(this.operationValue === 'none');
 		this.subscriptions.push(this.focusTarget.onDidFocus(() => this.group.panes.activePane?.focus()));
 		const presentation = { scope: this.scope, bounds: this.clientBounds, kind: 'part' as const };
 		this.quickInput = new QuickInputController(options.contextMenu, () => options.surfaces.changed(),
@@ -212,9 +217,9 @@ export class EditorPart {
 		else this.options.surfaces.raise(this.surface);
 	}
 
-	public setClosing(closing: boolean): void {
-		this.closing = closing;
-		this.group.setOpenAdmission(!closing);
+	public setOperation(operation: 'none' | 'close' | 'move'): void {
+		this.operationValue = operation;
+		this.group.setOpenAdmission(operation === 'none' && !this.surface.retired);
 	}
 
 	public layoutMain(body: Readonly<RectBounds>, timeline: Readonly<RectBounds>): void {

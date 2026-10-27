@@ -1,7 +1,7 @@
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
-import type { EditorPane } from './editor_pane';
+import type { EditorPane, EditorPaneClearReason } from './editor_pane';
 import type { EditorGroupView } from './editor_group';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -97,7 +97,7 @@ export class EditorPanes {
 		if (!preserveFocus) pane.focus();
 	}
 
-	public clearEditor(): void {
+	public clearEditor(reason: EditorPaneClearReason = 'deactivate'): void {
 		this.openGenerationValue += 1;
 		const activePane = this.activePaneValue;
 		if (activePane === null) {
@@ -106,7 +106,7 @@ export class EditorPanes {
 		pointerCapture.cancelScope(this.focusScope.surfaceScope);
 		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
 			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
-		activePane.clearInput();
+		activePane.clearInput(reason);
 		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
 			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 		this.activePaneValue = null;

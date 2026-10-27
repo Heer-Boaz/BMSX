@@ -27,6 +27,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'window.showAll': { category: 'Window', title: 'Show Open Windows' },
 	'window.focusMain': { category: 'Window', title: 'Focus Main Workspace' },
 	'window.newEditor': { category: 'Window', title: 'New Editor Window' },
+	'window.moveEditor': { category: 'Window', title: 'Move Editor To…' },
 	'window.copyEditor': { category: 'Window', title: 'Open Editor in New Window' },
 	navigateBack: { category: 'Go', title: 'Back' },
 	navigateForward: { category: 'Go', title: 'Forward' },

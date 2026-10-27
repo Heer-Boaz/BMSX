@@ -14,6 +14,7 @@ export const WORKBENCH_TEXT_EDITOR_ID = 'workbench.editor.text';
 export class CodeEditorInput extends WorkingCopyEditorInput<CodeEditorTabId, 'code_editor'> {
 	public readonly context: CodeTabContext;
 	private initialized = false;
+	public override canMove(): boolean { return true; }
 
 	public constructor(model: EditorTextModel) {
 		const id = buildCodeTabId(model.resource), title = computeResourceTabTitle(model.resource);

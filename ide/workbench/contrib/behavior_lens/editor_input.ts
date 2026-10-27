@@ -27,6 +27,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 	public readonly createView?: () => BehaviorLensInput;
 	/** The attached pane owns/disposes this visible inspection; source identity stays separate. */
 	public runtimeInspection: BehaviorRuntimeInspection | undefined;
+	public override canMove(): boolean { return this.runtimeInspection === undefined; }
 	public readonly graphLayout: AsyncGraphLayout<StateGraphModel>;
 	private definitionTitle: string | undefined;
 	private ownedDefinition: BehaviorSourceNode | undefined;

@@ -58,6 +58,8 @@ export abstract class AbstractEditorInput<
 	}
 
 	public abstract isDirty(): boolean;
+	/** Only portable inputs may transfer their retained identity to another editor group. */
+	public canMove(_destination?: AbstractEditorInput<string, string>): boolean { return false; }
 	/** Primary file identity for workspace commands; tool panes may have no file. */
 	public abstract get resource(): ResourceIdentity | undefined;
 

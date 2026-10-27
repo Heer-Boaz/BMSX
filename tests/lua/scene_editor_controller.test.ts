@@ -96,7 +96,7 @@ test('Scene pane Source and member commands retain their group and input when an
 		layoutMain: () => parts.main.layoutMain(bounds, bounds),
 		closeEditors: async targets => { for (const target of targets) target.group.removeEditor(target.input); return true; },
 	});
-	const first = parts.main.group, second = parts.createDocument(bounds).group;
+	const first = parts.main.group, second = parts.createDocument({ requestedBounds: bounds }).group;
 	first.panes.layout(bounds);
 	controller.openResource(first, resource); controller.openResource(second, resource);
 	const left = first.model.activeTab, right = second.model.activeTab;

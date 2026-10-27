@@ -13,6 +13,7 @@ export const WORKBENCH_RESOURCE_VIEWER_ID = 'workbench.editor.resourceViewer';
 export class ResourceViewerInput extends ReadonlyEditorInput<ResourceViewerTabId, 'resource_view'> {
 	public readonly view: ResourceViewerState;
 	private content: ResourceViewerContent | undefined;
+	public override canMove(): boolean { return true; }
 
 	public constructor(private readonly catalog: WorkspaceSourceCatalog, public readonly resource: RuntimeResource) {
 		const title = computeResourceTabTitle(resource);

@@ -16,6 +16,7 @@ export type EditorCloseTarget = { readonly group: EditorGroupView; readonly inpu
 export type CloseEditors = (targets: readonly EditorCloseTarget[], origin?: InputFocusTarget | null, prompt?: ActionPrompt) => Promise<boolean>;
 
 type DiscardIntent = { readonly version: number; readonly readOnly: boolean };
+const TRANSFER = Symbol('editor input transfer');
 
 type CloseOperation = {
 	readonly targets: readonly EditorCloseTarget[];
@@ -31,7 +32,7 @@ type CloseOperation = {
 
 /** Workspace close admission owns decisions and writes; groups own the final view retirement. */
 export class EditorCloseController {
-	private readonly pending = new Map<EditorInput, CloseOperation>();
+	private readonly pending = new Map<EditorInput, CloseOperation | typeof TRANSFER>();
 	private readonly operations = new Set<CloseOperation>();
 	private disposed = false;
 	private readonly unbindWorkspace: () => void;
@@ -41,6 +42,20 @@ export class EditorCloseController {
 		this.unbindWorkspace = models.onWillClear(() => {
 			for (const operation of this.operations) this.cancel(operation);
 		});
+	}
+
+	public isPending(input: EditorInput): boolean { return this.pending.has(input); }
+
+	/** Close and membership handoff share one input-operation admission boundary. */
+	public transfer<T>(inputs: readonly EditorInput[], operation: () => T): T | false {
+		if (this.disposed) return false;
+		for (const input of inputs) if (this.pending.has(input)) return false;
+		for (const input of inputs) this.pending.set(input, TRANSFER);
+		try {
+			return operation();
+		} finally {
+			for (const input of inputs) this.pending.delete(input);
+		}
 	}
 
 	public readonly close: CloseEditors = (targets, origin = inputFocus.target, decisionUI = this.prompt) => {
@@ -54,6 +69,7 @@ export class EditorCloseController {
 			inputs.add(target.input);
 			distinct.push(target);
 			const pending = this.pending.get(target.input);
+			if (pending === TRANSFER) return Promise.resolve(false);
 			if (pending !== undefined) waiting.add(pending);
 		}
 		if (waiting.size > 0) {

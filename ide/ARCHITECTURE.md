@@ -145,6 +145,12 @@ independent retained state over shared working copies, not another document or a
 copy of runtime inspection/input authority. Complex authoring tools retain their
 concrete contribution factory; frontend commands do not reconstruct subjects
 through filenames or persistence serializers.
+An input's move capability separately admits a group-ownership handoff. Parts
+coordinate container admission, groups detach the old pane and publish final
+membership, and inputs retain their view state and working copies. A matching
+destination input survives coalescence; contribution-owned selections transfer
+reading state before the redundant input retires. Close and transfer share
+input-operation admission rather than competing lifecycle registries.
 `EditorCloseController` admits user closes across the frontend's groups, including
 composite working copies and last-view Save/Discard/Cancel decisions. It rechecks
 canonical state and surviving views after awaited decisions or writes.
@@ -179,6 +185,8 @@ group/input lifetime and name their destination group. Opening admission is
 group-local; a delayed attachment does not reactivate a group after the user
 has moved elsewhere. Actions retain the invoking control's group through popup
 focus. Constructing or disposing a group cannot reset another group's history.
+Explicit moves retarget stacked and pending navigation entries to the actual
+destination group and surviving input before retiring the old view.
 
 Shared window/control code owns presentation and input mechanics. Contributions
 own their subjects and register their commands on the appropriate focus target.

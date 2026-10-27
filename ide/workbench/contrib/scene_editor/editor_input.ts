@@ -19,6 +19,7 @@ export type SceneEditorSection = 'outline' | 'details';
 
 export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, 'scene_editor'> {
 	public readonly createView?: () => SceneEditorInput;
+	public override canMove(): boolean { return true; }
 	public version = 0;
 	public section: SceneEditorSection = 'outline';
 	public sourceRevision: symbol | undefined;

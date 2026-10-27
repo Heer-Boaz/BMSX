@@ -1,7 +1,8 @@
+import { resourceIdentityEquals } from '../common/resource';
 import { DisposableStore } from '../common/lifecycle';
 import type { ResourceEditorIdentity } from '../workbench/common/editor_input';
 import type { EditorInput } from '../workbench/ui/tab/model';
-import type { EditorGroupView } from '../workbench/services/editor/editor_group';
+import type { EditorMoveEvent, EditorGroupView } from '../workbench/services/editor/editor_group';
 import type { EditorPaneSelection } from '../workbench/services/editor/editor_selection';
 
 const NAVIGATION_HISTORY_LIMIT = 64;
@@ -12,18 +13,53 @@ export type NavigationHistoryTarget =
 
 /** Retains a selection only while its capturing pane owner and retained input survive. */
 export class NavigationHistoryEntry extends DisposableStore {
-	public constructor(public readonly target: NavigationHistoryTarget, public readonly selection: EditorPaneSelection | undefined,
-		public readonly owner: EditorGroupView) {
+	private ownerValue: EditorGroupView;
+	private targetValue: NavigationHistoryTarget;
+	private unbindOwner: () => void;
+	private unbindMove: () => void;
+	private unbindInput: (() => void) | undefined;
+	public get owner(): EditorGroupView { return this.ownerValue; }
+	public get target(): NavigationHistoryTarget { return this.targetValue; }
+
+	public constructor(target: NavigationHistoryTarget, public readonly selection: EditorPaneSelection | undefined,
+		owner: EditorGroupView) {
 		super();
+		this.targetValue = target;
+		this.ownerValue = owner;
+		this.unbindOwner = owner.onWillDispose(this.retire);
+		this.unbindMove = owner.onDidMoveEditor(this.followMove);
 		if (selection !== undefined) this.add(selection);
-		this.add({ dispose: owner.onWillDispose(this.retire) });
-		if (target.kind === 'input') this.add({ dispose: target.input.onWillDispose(this.retire) });
+		if (target.kind === 'input') this.unbindInput = target.input.onWillDispose(this.retire);
 	}
+
+	/** Pending captures and stacked entries follow the same actual group handoff. */
+	private readonly followMove = (event: EditorMoveEvent): void => {
+		const target = this.targetValue;
+		if (target.kind === 'input') {
+			if (target.input !== event.input) return;
+			this.unbindInput!();
+			this.targetValue = { kind: 'input', input: event.replacement };
+			this.unbindInput = event.replacement.onWillDispose(this.retire);
+		} else {
+			const identity = event.input.toResourceEditor?.();
+			if (identity === undefined || identity.editorId !== target.editorId || !resourceIdentityEquals(identity.resource, target.resource)) return;
+		}
+		this.unbindOwner(); this.unbindMove();
+		this.ownerValue = event.destination;
+		this.unbindOwner = event.destination.onWillDispose(this.retire);
+		this.unbindMove = event.destination.onDidMoveEditor(this.followMove);
+	};
+
 	private readonly retire = (): void => {
 		removeNavigationEntry(navigationState.back, this);
 		removeNavigationEntry(navigationState.forward, this);
 		this.dispose();
 	};
+
+	public override dispose(): void {
+		this.unbindOwner(); this.unbindMove(); this.unbindInput?.();
+		super.dispose();
+	}
 }
 
 export const navigationState = {

@@ -1,5 +1,5 @@
 import type { Document, Node } from 'yaml';
-import { WorkingCopyEditorInput } from '../../common/editor_input';
+import { WorkingCopyEditorInput, type AbstractEditorInput } from '../../common/editor_input';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { resourceIdentityKey } from '../../../common/resource';
 import { createWorkbenchPropertyTree, type WorkbenchPropertyElement } from '../../ui/property_tree';
@@ -29,6 +29,7 @@ export class AemEditorInput extends WorkingCopyEditorInput<`aem:${string}`, 'aem
 	public status = '';
 	public applyStatus = '';
 	public applying = false;
+	public override canMove(destination?: AbstractEditorInput<string, string>): boolean { return destination === undefined || !this.applying; }
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, };
 	public constructor(public readonly workingCopy: EditorTextModel) {
 		super(`aem:${resourceIdentityKey(workingCopy.resource)}`, 'aem_editor', computeResourceTabTitle(workingCopy.resource), true);

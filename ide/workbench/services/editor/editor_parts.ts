@@ -1,4 +1,4 @@
-import { navigationState } from '../../../navigation/navigation_history';
+import { navigationState, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import type { EditorCommandRunner } from '../../../common/commands';
@@ -8,8 +8,9 @@ import type { WorkbenchSurfaceService } from '../windows/service';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
 import type { EditorPaneFactories } from './editor_panes';
 import type { WindowPlacement } from '../../ui/window/model';
-import type { CloseEditors } from './editor_close';
+import type { EditorCloseController, CloseEditors } from './editor_close';
 import type { EditorGroupView } from './editor_group';
+import type { EditorInput } from '../../ui/tab/model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
 import type { EditorInputSerializers } from './editor_serialization';
 import type { SerializedDocumentEditorPart, SerializedEditorParts } from './editor_parts_serialization';
@@ -27,6 +28,12 @@ export type EditorPartsOptions = {
 	readonly closeEditors: CloseEditors;
 	readonly focusReturn: InputFocusTarget;
 	layoutMain(): void;
+};
+
+export type EditorDocumentOptions = {
+	readonly requestedBounds?: Readonly<RectBounds>;
+	readonly placement?: WindowPlacement;
+	readonly minimized?: boolean;
 };
 
 /** Frontend membership and opening destinations over one shared workspace. */
@@ -49,7 +56,7 @@ export class EditorParts {
 	public get minimizedCount(): number { return this.minimizedDocumentCount; }
 
 	public constructor(private readonly options: EditorPartsOptions) {
-		this.main = new EditorPart({ ...options, kind: 'main', onDidActivate: part => this.activate(part),
+		this.main = new EditorPart({ ...options, kind: 'main', initialOperation: 'none', onDidActivate: part => this.activate(part),
 			onDidChange: () => this.changed(), requestClose: part => { void this.close(part); } });
 		this.activePart = this.main;
 		this.register(this.main);
@@ -81,11 +88,12 @@ export class EditorParts {
 		this.changed();
 	}
 
-	public createDocument(requestedBounds?: Readonly<RectBounds>, placement: WindowPlacement = 'normal', minimized = false): EditorPart {
+	public createDocument({ requestedBounds, placement = 'normal', minimized = false }: EditorDocumentOptions = {},
+		initialOperation: 'none' | 'move' = 'none'): EditorPart {
 		const area = this.options.workArea;
 		const width = Math.round((area.right - area.left) * 0.86), height = Math.round((area.bottom - area.top) * 0.86);
 		const offset = 8 * (this.documentParts.length % 4 + 1);
-		const part = new EditorPart({ ...this.options, kind: 'document', placement, minimized,
+		const part = new EditorPart({ ...this.options, kind: 'document', placement, minimized, initialOperation,
 			focusReturn: this.main.focusTarget,
 			requestedBounds: requestedBounds === undefined ? {
 				left: area.right - width - offset, top: area.top + offset,
@@ -140,20 +148,73 @@ export class EditorParts {
 		return this.createDocument().group;
 	}
 
+	public canMoveEditor(source: EditorPart, input: EditorInput, destination: EditorPart | 'new', admission: EditorCloseController): boolean {
+		if (source.retired || source.surface.retired || source.operation !== 'none' || source.group.model.activeTab !== input || admission.isPending(input)) return false;
+		if (destination === 'new') return input.canMove();
+		if (destination === source || destination.retired || destination.surface.retired || destination.operation !== 'none') return false;
+		const existing = destination.group.model.findById(input.id);
+		return input.canMove(existing) && (existing === undefined || !admission.isPending(existing));
+	}
+
+	/** A membership handoff retains the input; coalescence retains the admitted receiver. */
+	public moveEditor(source: EditorPart, input: EditorInput, destination: EditorPart | 'new', admission: EditorCloseController): boolean {
+		if (!this.canMoveEditor(source, input, destination, admission)) return false;
+		const sourceGeneration = source.group.panes.openGeneration;
+		if (!source.group.commitPendingEdit() || source.group.panes.openGeneration !== sourceGeneration) return false;
+		if (destination !== 'new') {
+			const generation = destination.group.panes.openGeneration;
+			if (!destination.group.commitPendingEdit() || destination.group.panes.openGeneration !== generation) return false;
+		}
+		if (!this.canMoveEditor(source, input, destination, admission)) return false;
+		const existing = destination === 'new' ? undefined : destination.group.model.findById(input.id);
+		const movedTo = admission.transfer(existing === undefined ? [input] : [input, existing], () => {
+			source.setOperation('move');
+			const selection = existing === undefined ? undefined : source.group.panes.activePane!.getSelection?.();
+			const target = destination === 'new' ? this.createDocument({}, 'move') : destination;
+			if (destination !== 'new') target.setOperation('move');
+			let retiring: EditorInput | undefined;
+			try {
+				return withNavigationCaptureSuspended(() => {
+					source.group.detachEditorForMove(input);
+					target.group.panes.clearEditor();
+					if (source.retired || target.retired || source.surface.retired || target.surface.retired) return false;
+					if (existing !== undefined) retiring = input;
+					const receiver = source.group.model.transferTo(target.group.model, input, existing);
+					source.group.publishMovedEditor(input, target.group, receiver);
+					if (source.retired || target.retired || source.surface.retired || target.surface.retired) return false;
+					const successor = source.group.model.activeTab;
+					if (successor !== null) source.group.attachTransferredEditor(successor, undefined, true);
+					target.group.attachTransferredEditor(receiver, selection, true);
+					return target;
+				});
+			} finally {
+				retiring?.dispose();
+				selection?.dispose();
+				source.setOperation('none'); target.setOperation('none');
+			}
+		});
+		if (movedTo === false) return false;
+		if (!movedTo.retired && !movedTo.surface.retired) {
+			const focused = inputFocus.target;
+			if (focused === null || source.scope.contains(focused.commandContext.scope) || movedTo.scope.contains(focused.commandContext.scope)) movedTo.focus();
+		}
+		return true;
+	}
+
 	public close(part: EditorPart): Promise<boolean> {
-		if (part === this.main) return Promise.resolve(false);
+		if (part === this.main || part.operation === 'move') return Promise.resolve(false);
 		const pending = this.closing.get(part);
 		if (pending !== undefined) return pending;
-		part.setClosing(true);
+		part.setOperation('close');
 		const targets = part.group.model.tabs.map(input => ({ group: part.group, input }));
 		const origin = inputFocus.resolveTarget(part.scope.lastFocused) ?? part.group.panes.activePane?.commandTarget ?? part.focusTarget;
 		const completion = this.options.closeEditors(targets, origin, part.actionPrompt).then(closed => {
 			if (part.retired) return false;
-			if (closed) this.remove(part); else part.setClosing(false);
+			if (closed) this.remove(part); else part.setOperation('none');
 			return closed;
 		}).finally(() => {
 			this.closing.delete(part);
-			if (!part.retired) part.setClosing(false);
+			if (!part.retired) part.setOperation('none');
 		});
 		this.closing.set(part, completion);
 		return completion;
@@ -213,7 +274,7 @@ export class EditorParts {
 	public async restore(state: SerializedEditorParts, serializers: EditorInputSerializers): Promise<void> {
 		await this.main.group.model.deserialize(state.main, serializers);
 		for (const document of state.documents) {
-			const part = this.createDocument(document.requestedBounds, document.placement, document.minimized);
+			const part = this.createDocument(document);
 			await part.group.model.deserialize(document.group, serializers);
 		}
 		for (const group of this.groupList) {

@@ -56,6 +56,7 @@ export type CartMapLayout = FullWidthWorkbenchLayout & {
 
 /** A retained source projection, not a second map document or a runtime scene. */
 export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_map'> {
+	public override canMove(): boolean { return true; }
 	public readonly editSource: EditorEditSource = Symbol('cart-map-view');
 	public version = -1;
 	public viewRevision = 0;

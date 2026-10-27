@@ -165,7 +165,10 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 				this.controls[axis].layout(bounds, this.contentBounds);
 		}
 	}
-	public override get commandTarget(): InputFocusTarget { return this.input.layout.mode === 'map' ? this.gridFocus : this.focusTarget; }
+	public override get commandTarget(): InputFocusTarget {
+		const { mode } = this.input.layout;
+		return mode === 'map' || mode === 'split' && this.input.section === 'map' ? this.gridFocus : this.focusTarget;
+	}
 	public override focus(): void { this.update(); super.focus(); }
 	private showSection(section: CartMapSection): void {
 		if (inputFocus.target?.edit?.commit() === false) return;

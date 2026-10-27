@@ -1101,8 +1101,8 @@ test('workspace part recovery preserves independent views and requested placemen
 	second.context.view.cursorRow = 1;
 	second.context.view.cursorColumn = 3;
 	const requested = { left: 650, top: 400, right: 1100, bottom: 900 };
-	const firstDocument = parts.createDocument(requested, 'left');
-	const secondDocument = parts.createDocument({ left: 50, top: 70, right: 370, bottom: 310 }, 'right', true);
+	const firstDocument = parts.createDocument({ requestedBounds: requested, placement: 'left' });
+	const secondDocument = parts.createDocument({ requestedBounds: { left: 50, top: 70, right: 370, bottom: 310 }, placement: 'right', minimized: true });
 	parts.main.group.openEditor(main);
 	secondDocument.group.openEditor(second, { preserveFocus: true });
 	firstDocument.group.openEditor(first);
@@ -1153,7 +1153,7 @@ test('workspace recovery keeps every placement mode independent from minimized v
 	const { sources, editor } = await startAutosaveSession(t, storage);
 	const parts = editor.editorParts, requested = { left: 60, top: 70, right: 360, bottom: 280 };
 	const placements = ['normal', 'maximized', 'left', 'right'] as const;
-	for (const [index, placement] of placements.entries()) parts.createDocument(requested, placement, (index & 1) !== 0);
+	for (const [index, placement] of placements.entries()) parts.createDocument({ requestedBounds: requested, placement, minimized: (index & 1) !== 0 });
 	await flushRequestedAutosave();
 	const saved = workspaceState.localGeneration!.payload;
 	assert.deepEqual(saved.editorParts.documents.map(part => [part.placement, part.minimized]),
@@ -1176,7 +1176,7 @@ test('pending placement geometry never enters workspace checkpoints or schedules
 	const clock = installBrowserWorkspace(t, storage);
 	const { editor } = await startAutosaveSession(t, storage);
 	const parts = editor.editorParts, requested = { left: 60, top: 70, right: 360, bottom: 280 };
-	const part = parts.createDocument(requested, 'left'), model = part.window!.model;
+	const part = parts.createDocument({ requestedBounds: requested, placement: 'left' }), model = part.window!.model;
 	await flushRequestedAutosave();
 	const initial = workspaceState.localGeneration!, area = { left: 10, top: 20, right: 610, bottom: 400 };
 	const draft = { left: 90, top: 100, right: 390, bottom: 310 };
@@ -1201,7 +1201,7 @@ test('part membership, model and requested-placement changes schedule topology a
 	const storage = new MockStorage();
 	const clock = installBrowserWorkspace(t, storage);
 	const { sources, editor } = await startAutosaveSession(t, storage);
-	const part = editor.editorParts.createDocument({ left: 20, top: 30, right: 340, bottom: 270 });
+	const part = editor.editorParts.createDocument({ requestedBounds: { left: 20, top: 30, right: 340, bottom: 270 } });
 	assert.equal(clock.activeCount, 1);
 	await flushRequestedAutosave();
 	const initial = workspaceState.localGeneration!;

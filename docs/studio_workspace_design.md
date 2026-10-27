@@ -74,6 +74,10 @@ invitation to substitute Home or another declaration.
   Window membership alone does not make those operations discoverable. Studio's
   additional-view action uses each contribution's fresh-input capability rather
   than sharing a retained input or turning another tool into Source.
+- VS Code's [group move operation](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorGroupView.ts#L1280-L1389)
+  checks the input's move capability and transfers the existing input with view
+  state. Studio likewise separates transfer from copying, but detaches the old
+  pane first because its retained inputs own mutable view bindings.
 - Godot's [main-screen container](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/editor_main_screen.h#L49-L64)
   keeps the main area present, while its
   [dock manager](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/docks/editor_dock_manager.h)
@@ -326,6 +330,10 @@ runtime or dirty-recovery owners.
 Moving a view transfers group ownership after detaching its old pane; it is
 different from closing/disposal or opening another view. Group removal cannot
 dispose an input still owned by the destination group.
+The input's move capability admits that handoff independently of its fresh-view
+capability. It must account for live bindings and for whether the destination
+already contains the same group matching key. A shared primary resource alone
+does not establish that two authored occurrence views can coalesce.
 When the destination already has a matching view, the move coalesces into that
 view and applies the moved view's contribution-owned view state, preserving the
 shared document. The departing view is retired only after that explicit
@@ -335,6 +343,15 @@ are retargeted by the move operation, not by input-disposal fallback. The old
 control's popups, asynchronous input and command-origin capabilities retire;
 they do not gain authority over the surviving control merely because history
 can refer to it.
+
+Transfer settles the affected controls' drafts before changing membership.
+Close and transfer share input-operation admission for the departing input and
+any retained receiver. Both containers suspend new openings and window close
+while the synchronous handoff changes their memberships; a new destination is
+born under that admission. The destination's previous client undergoes ordinary
+deactivation, not a move. Contribution-owned navigation selections carry reading
+state into a coalesced receiver before the redundant input retires. Admission
+is released before destination focus, and an unrelated later focus is retained.
 
 Keyboard focus, active part, hovered surface and command subject remain separate:
 
@@ -472,6 +489,13 @@ from a filename. Live inspections, instance handles, playback and guest-input
 authority are not copied. Contributions without that capability do not advertise
 the command. This deliberately differs from VS Code's shareable input objects.
 
+Move Editor To… retains the invoking part and exact input while the workspace
+picker offers other existing parts, including Main Workspace, and New Editor
+Window. Cancel changes no membership. Acceptance re-enters admission against
+those same owners rather than moving whichever tab later has focus. A move
+keeps the input and its working copies; it neither invokes the additional-view
+factory nor round-trips storage. An emptied source window remains available.
+
 ## Execution and input
 
 Physical input is produced once at the frontend/host boundary, not once per
@@ -580,7 +604,7 @@ copies and re-admission after awaited work. Part close composes that owner over
 the affected groups; part-local prompt/session admission extends the existing
 root-prompt presentation rather than replacing the close policy.
 
-Collapse or temporary covering retains views, working copies and reading
+Minimization or temporary covering retains views, working copies and reading
 positions while revoking unavailable input. Pending field drafts follow their
 actual control's commit/cancel contract; availability or authority loss can
 cancel them, and return of space or rights does not resurrect them. Covering

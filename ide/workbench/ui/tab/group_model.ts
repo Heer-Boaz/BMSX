@@ -80,6 +80,7 @@ export class EditorTabGroupModel {
 		this.activeEditor = data.active === null ? null : this.editorTabs[data.active];
 		this.previewEditor = data.preview === null ? null : this.editorTabs[data.preview];
 		this.updateLabels();
+		this.emitChanged();
 	}
 
 	public get previewTab(): EditorInput | null { return this.previewEditor; }
@@ -130,12 +131,13 @@ export class EditorTabGroupModel {
 		if (preview) this.previewEditor = tab;
 		this.registerInputListeners(tab);
 		this.updateLabels();
+		this.emitChanged();
 		return tab;
 	}
 
 	private registerInputListeners(tab: EditorInput): void {
 		const listeners = new DisposableStore();
-		listeners.add({ dispose: tab.onDidChangeLabel(() => this.updateLabels()) });
+		listeners.add({ dispose: tab.onDidChangeLabel(() => { this.updateLabels(); this.emitChanged(); }) });
 		if (tab.onDidChangeDirty !== undefined) listeners.add({ dispose: tab.onDidChangeDirty(() => {
 			if (this.previewEditor === tab && tab.isDirty()) this.pin(tab);
 			else this.emitChanged();
@@ -147,6 +149,7 @@ export class EditorTabGroupModel {
 		if (this.previewEditor !== tab) return;
 		this.previewEditor = null;
 		this.updateLabels();
+		this.emitChanged();
 	}
 
 	/** Label work belongs to membership/metadata changes, not the render loop. */
@@ -171,7 +174,6 @@ export class EditorTabGroupModel {
 			const label = counts.get(tab.title)! > 1 && description.length > 0 ? `${tab.title} - ${description}` : tab.title;
 			this.labels.set(tab, tab === this.previewEditor ? `PREVIEW: ${label}` : label);
 		}
-		this.emitChanged();
 	}
 
 	public activate(tab: EditorInput): void {
@@ -222,6 +224,35 @@ export class EditorTabGroupModel {
 		if (this.previewEditor === removed) this.previewEditor = null;
 		removed.dispose();
 		this.updateLabels();
+		this.emitChanged();
+	}
+
+	/** An admitted handoff publishes both final memberships before either group notifies observers. */
+	public transferTo(destination: EditorTabGroupModel, input: EditorInput, coalesced?: EditorInput): EditorInput {
+		const index = this.editorTabs.indexOf(input);
+		this.listeners.get(input)!.dispose();
+		this.listeners.delete(input);
+		this.labels.delete(input);
+		this.editorTabs.splice(index, 1);
+		if (this.activeEditor === input) {
+			const successor = this.editorTabs[index - 1] ?? this.editorTabs[index];
+			this.activeEditor = successor === undefined ? null : successor;
+		}
+		if (this.previewEditor === input) this.previewEditor = null;
+		const admitted = coalesced === undefined ? input : coalesced;
+		if (coalesced === undefined) {
+			destination.editorTabs.push(input);
+			destination.registerInputListeners(input);
+		}
+		destination.activeEditor = admitted;
+		if (destination.previewEditor === admitted) destination.previewEditor = null;
+		this.updateLabels();
+		destination.updateLabels();
+		this.revision += 1;
+		destination.revision += 1;
+		for (const listener of this.changeListeners) listener();
+		for (const listener of destination.changeListeners) listener();
+		return admitted;
 	}
 
 	public move(fromIndex: number, toIndex: number): void {

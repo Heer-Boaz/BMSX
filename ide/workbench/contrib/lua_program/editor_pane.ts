@@ -9,6 +9,7 @@ import { clamp } from '../../../../machine/ts/common/clamp';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -137,9 +138,10 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	}
 	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.update(); }
 	public override get commandTarget(): InputFocusTarget { return this.focusTarget.canFocus!() ? this.focusTarget : this.actions.focusTarget; }
-	public override clearInput(): void {
-		this.input.interaction.running = false; this.input.invalidateProjection(); this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput();
-		super.clearInput();
+	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
+		if (reason !== 'move') this.input.interaction.running = false;
+		this.input.invalidateProjection(); this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput();
+		super.clearInput(reason);
 		this.unbindInteraction!(); this.unbindInteraction = undefined;
 	}
 	public override dispose(): void { this.unbindInteraction?.(); this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }

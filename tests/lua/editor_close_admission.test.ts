@@ -51,6 +51,57 @@ test('closing a clean Source view retires synchronously without a dirty decision
 	assert.equal(await closing, true);
 });
 
+test('transfer reservation owns both inputs and rejects reentrant close without affecting their shared dirty source', async t => {
+	const f = await fixture(t, true), close = f.editor.editorClose, model = f.firstInput.workingCopy;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained\n' }]);
+	let attempted: Promise<boolean> | undefined;
+	assert.equal(close.transfer([f.firstInput, f.secondInput], () => {
+		assert.equal(close.isPending(f.firstInput), true); assert.equal(close.isPending(f.secondInput), true);
+		attempted = f.firstGroup.close(f.firstInput.id);
+		assert.equal(close.transfer([f.secondInput], () => assert.fail('reserved receiver was admitted twice')), false);
+		return true;
+	}), true);
+	assert.equal(await attempted, false);
+	assert.equal(close.isPending(f.firstInput), false); assert.equal(close.isPending(f.secondInput), false);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
+	assert.equal(model.dirty, true); assert.equal(model.canUndo, true); assert.equal(f.firstPart.actionPrompt.visible, false);
+	assert.equal(await f.firstGroup.close(f.firstInput.id), true, 'later ordinary close is admitted after handoff reservation ends');
+	assert.equal(model.dirty, true);
+});
+
+test('pending close decisions reject a transfer atomically without reserving its other input', async t => {
+	const f = await fixture(t), close = f.editor.editorClose;
+	f.firstInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained\n' }]);
+	const closing = f.firstGroup.close(f.firstInput.id);
+	assert.equal(f.firstPart.actionPrompt.visible, true); assert.equal(close.isPending(f.firstInput), true);
+	assert.equal(close.transfer([f.secondInput, f.firstInput], () => assert.fail('pending close admitted a move')), false);
+	assert.equal(close.isPending(f.secondInput), false);
+	f.firstPart.actionPrompt.close('cancel');
+	assert.equal(await closing, false); assert.equal(close.isPending(f.firstInput), false);
+	assert.equal(close.transfer([f.firstInput, f.secondInput], () => true), true);
+});
+
+test('a pending close Save retains input admission until its accepted write completes', async t => {
+	const f = await fixture(t), close = f.editor.editorClose;
+	f.first.focus();
+	f.firstInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- saved\n' }]);
+	f.files.delayed = true;
+	const closing = f.firstGroup.close(f.firstInput.id);
+	f.key('Enter'); await setImmediate();
+	assert.equal(f.files.writes.length, 1); assert.equal(close.isPending(f.firstInput), true);
+	assert.equal(close.transfer([f.firstInput], () => assert.fail('pending Save admitted a move')), false);
+	f.files.writes[0].complete();
+	assert.equal(await closing, true); assert.equal(close.isPending(f.firstInput), false);
+});
+
+test('a thrown handoff releases its admission reservation without changing input membership', async t => {
+	const f = await fixture(t), close = f.editor.editorClose, failure = new Error('interrupted handoff');
+	assert.throws(() => close.transfer([f.firstInput, f.secondInput], () => { throw failure; }), failure);
+	assert.equal(close.isPending(f.firstInput), false); assert.equal(close.isPending(f.secondInput), false);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
+	assert.equal(await f.firstGroup.close(f.firstInput.id), true);
+});
+
 test('closing a document window never constructs or activates its other admitted closing panes', async t => {
 	const f = await fixture(t);
 	// Restored inactive inputs have membership without constructing their lazy panes.

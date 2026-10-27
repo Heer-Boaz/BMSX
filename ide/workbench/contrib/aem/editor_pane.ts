@@ -9,6 +9,7 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import type { IdeCommandController } from '../../../commands/controller';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
+import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -35,6 +36,7 @@ import type { AemEditorInput } from './editor_input';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { projectAemSource } from './source';
+import { AemNavigationSelection } from './navigation_selection';
 import * as colors from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 
@@ -42,6 +44,7 @@ const PROPERTY_NAME_READING_COLUMNS = 12;
 const EXPRESSION_READING_COLUMNS = 20;
 
 export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
+	public override getSelection(): AemNavigationSelection { return new AemNavigationSelection(this.input); }
 	// A root property keeps a meaningful source name and expression, including its tree/control lanes.
 	public override get companionGameMinimumWidth(): number {
 		return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(), PROPERTY_NAME_READING_COLUMNS, EXPRESSION_READING_COLUMNS) + 8;
@@ -85,6 +88,12 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		});
 	}
 	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); }
+	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: AemNavigationSelection): void {
+		if (navigationSelection === undefined) return;
+		this.edit.close(); this.pointer.clear();
+		navigationSelection.restore(this.input);
+		this.update();
+	}
 	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.update(); }
 	public override clearInput(): void { this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); super.clearInput(); }
 	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }

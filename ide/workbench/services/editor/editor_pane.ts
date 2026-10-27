@@ -7,6 +7,8 @@ import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../ui/tab/model';
 import type { InputFocusScope, InputFocusTarget } from '../../../input/focus';
 
+export type EditorPaneClearReason = 'deactivate' | 'move';
+
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
 	/** Root chrome addresses the attached client, independently of the last keyboard-focused leaf. */
@@ -37,7 +39,7 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	public setOptions(_selection?: EditorTextSelection, _navigationSelection?: EditorPaneSelection): void {
 	}
 
-	public clearInput(): void {
+	public clearInput(_reason: EditorPaneClearReason = 'deactivate'): void {
 		this.inputValue = null;
 	}
 

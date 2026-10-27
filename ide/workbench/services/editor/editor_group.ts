@@ -42,6 +42,7 @@ export function findEditorGroup(target: InputFocusTarget | null): EditorGroupVie
 
 export type EditorTabOpenOptions = EditorOpenOptions & EditorPaneOpenOptions;
 export type EditorInputOpenResult = { readonly generation: number; readonly activated: boolean };
+export type EditorMoveEvent = { readonly input: EditorInput; readonly destination: EditorGroupView; readonly replacement: EditorInput };
 
 /** Concrete input, control and tab-strip lifetimes for one independently arranged editor group. */
 export class EditorGroupView {
@@ -58,6 +59,7 @@ export class EditorGroupView {
 	private readonly unbindFocus: () => void;
 	private openingAdmitted = true;
 	private readonly disposeListeners = new Set<() => void>();
+	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
 
 	public constructor(factories: EditorPaneFactories, commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
 		presentation: EditorGroupPresentation) {
@@ -107,6 +109,17 @@ export class EditorGroupView {
 	public onWillDispose(listener: () => void): () => void {
 		this.disposeListeners.add(listener);
 		return () => this.disposeListeners.delete(listener);
+	}
+
+	public onDidMoveEditor(listener: (event: EditorMoveEvent) => void): () => void {
+		this.moveListeners.add(listener);
+		return () => this.moveListeners.delete(listener);
+	}
+
+	/** Membership is final; history can follow the retained view before any coalesced source retires. */
+	public publishMovedEditor(input: EditorInput, destination: EditorGroupView, replacement: EditorInput): void {
+		const event: EditorMoveEvent = { input, destination, replacement };
+		for (const listener of this.moveListeners) listener(event);
 	}
 
 	public setOpenAdmission(admitted: boolean): void {
@@ -162,10 +175,23 @@ export class EditorGroupView {
 	}
 
 	/** Only the actual attached view may publish its focused control's draft. */
-	private commitPendingEdit(): boolean {
+	public commitPendingEdit(): boolean {
 		const focused = inputFocus.target;
 		if (this.panes.activePane === null || focused?.edit?.pending !== true || findEditorGroup(focused) !== this) return true;
 		return focused.edit.commit();
+	}
+
+	/** Retire the departing attachment, never the input that is about to acquire another owner. */
+	public detachEditorForMove(input: EditorInput): void {
+		if (this.tabStrip.drag.state?.tabId === input.id) this.tabStrip.cancelDrag();
+		if (this.model.activeTab === input) this.panes.clearEditor('move');
+		else this.panes.beginOpen();
+	}
+
+	/** The transfer model already selected this exact member; only its new control is attached here. */
+	public attachTransferredEditor(input: EditorInput, selection?: EditorPaneSelection, preserveFocus = false): void {
+		if (!preserveFocus) navigationState.activeGroup = this;
+		this.panes.openEditor(input, { navigationSelection: selection, preserveFocus });
 	}
 
 	/** Apply a switch after its caller has settled user admission or owner retirement. */
@@ -226,6 +252,7 @@ export class EditorGroupView {
 		groupsByScope.set(this.tabFocusTarget.scope, null);
 		for (const listener of this.disposeListeners) listener();
 		this.disposeListeners.clear();
+		this.moveListeners.clear();
 		if (navigationState.activeGroup === this) navigationState.activeGroup = null;
 		this.unbindFocus();
 		this.panes.dispose();

@@ -74,6 +74,25 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 
 for (const variant of ['tiny', 'msx'] as const) {
 	const minimum = variant === 'tiny' ? 78 : 118;
+	test(`Cart Map ${variant} pane focus restores the explicitly selected visible client in split presentation`, t => {
+		const f = fixture(t, variant), { input, pane, model } = f;
+		f.layout(input.layout.splitMinimumWidth);
+		assert.equal(input.layout.mode, 'split');
+		selectCartMapRow(input, 1); pane.update(); pane.focus();
+		const outline = inputFocus.target;
+		inputFocus.executeCommand('cartMap.map'); pane.update();
+		const map = inputFocus.target, range = { ...input.selectionRange }, version = model.version;
+		assert.ok(map !== outline); assert.equal(input.section, 'map');
+		const elsewhere = inputFocus.createTarget(); elsewhere.bindKeyboard(() => {}); elsewhere.focus();
+		pane.focus();
+		assert.ok(inputFocus.target === map, 'returning to a wide map does not implicitly select its outline');
+		assert.equal(input.section, 'map');
+		inputFocus.executeCommand('cartMap.outline'); pane.update(); elsewhere.focus(); pane.focus();
+		assert.ok(inputFocus.target === outline); assert.equal(input.section, 'outline');
+		assert.deepEqual(input.selectionRange, range);
+		assert.equal(model.buffer.getText(), SOURCE); assert.equal(model.version, version);
+	});
+
 	test(`Cart Map ${variant} uses measured split minima, offset bounds and a full-width compact client`, t => {
 		const f = fixture(t, variant), { input, bounds } = f;
 		const threshold = input.layout.splitMinimumWidth;

@@ -19,6 +19,7 @@ let nextInputId = 0;
 
 export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}`, 'lua_program'> {
 	public readonly createView?: () => LuaProgramInput;
+	public override canMove(): boolean { return true; }
 	public readonly tree = createWorkbenchPropertyTree<LuaProgramProperty>();
 	public readonly live = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
 	public readonly sourceModels = new Map<string, EditorTextModel>();

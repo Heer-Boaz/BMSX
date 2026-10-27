@@ -770,8 +770,8 @@ and reading position.
 
 A new observation retires old property activations and pending Source-icon
 attempts. Provenance changes also retire Source attempts without interrupting
-Close or Collapse during Follow. Popup actions remain bound to the observation
-and source generation that opened the popup. Source navigation detaches the
+Close or window placement during Follow. Popup actions remain bound to the
+observation and source generation that opened the popup. Source navigation detaches the
 pane's surfaces, not the input's window intent, selected snapshot or observation
 lease.
 

@@ -425,6 +425,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'window.newEditor' },
 		{ type: 'command', command: 'window.copyEditor' },
+		{ type: 'command', command: 'window.moveEditor' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'window.snapLeft' },
 		{ type: 'command', command: 'window.snapRight' },

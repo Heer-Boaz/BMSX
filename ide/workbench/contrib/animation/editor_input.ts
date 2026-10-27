@@ -25,6 +25,7 @@ let nextInputId = 0;
 
 export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${string}`, 'animation'> {
 	public readonly createView?: () => AnimationEditorInput;
+	public override canMove(): boolean { return true; }
 	public readonly definitionRange: TrackedTextRange | undefined;
 	public readonly sourceModels = new Map<string, EditorTextModel>();
 	public sourceRevision: symbol | undefined;
