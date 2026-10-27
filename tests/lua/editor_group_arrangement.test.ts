@@ -230,3 +230,104 @@ test('split projection invalidates on live minima and client changes rather than
 	arrangement.layoutClient(area, 8); arrangement.reveal(incoming);
 	assert.deepEqual(preview, arrangement.leaves.find(leaf => leaf.group === incoming)!.clip);
 });
+
+test('moving a group retains its actual leaf and normalizes only the departing branch', () => {
+	const source = {}, first = {}, reference = {}, last = {}, arrangement = new EditorGroupArrangement(first);
+	arrangement.split(first, last, 'right'); arrangement.split(last, reference, 'down'); arrangement.split(first, source, 'down');
+	arrangement.setMinimum(source, 137, 83); arrangement.layoutClient({ left: 0, top: 0, right: 800, bottom: 500 }, 8);
+	const root = arrangement.root; assert.ok(root.kind === 'split');
+	const retiredBranch = root.first, retainedBranch = root.second;
+	assert.ok(retiredBranch.kind === 'split');
+	const leaf = arrangement.leaves.find(leaf => leaf.group === source)!, bounds = leaf.bounds, clip = leaf.clip;
+	const groups = arrangement.groups, leaves = arrangement.leaves, splits = arrangement.splits;
+	assert.equal(arrangement.move(source, reference, 'right'), true);
+	assert.ok(arrangement.root === root && root.second === retainedBranch);
+	assert.equal(arrangement.splits.includes(retiredBranch), false);
+	assert.ok(arrangement.groups[0] === first && arrangement.groups[1] === last && arrangement.groups[2] === reference && arrangement.groups[3] === source);
+	assert.ok(arrangement.leaves.find(candidate => candidate.group === source) === leaf);
+	assert.ok(leaf.bounds === bounds && leaf.clip === clip); assert.equal(leaf.minimumWidth, 137); assert.equal(leaf.minimumHeight, 83);
+	assert.ok(arrangement.groups === groups && arrangement.leaves === leaves && arrangement.splits === splits);
+});
+
+for (const orientation of ['horizontal', 'vertical'] as const) test(`moving sibling groups preserves their ${orientation} requested extents and existing sash`, () => {
+	const source = {}, reference = {}, arrangement = new EditorGroupArrangement(source);
+	arrangement.split(source, reference, orientation === 'horizontal' ? 'right' : 'down');
+	const root = arrangement.root; assert.ok(root.kind === 'split'); root.split.ratio = 0.3;
+	const area = { left: 10, top: 20, right: 810, bottom: 620 };
+	arrangement.layoutClient(area, 8);
+	const sourceLeaf = arrangement.leaves[0], referenceLeaf = arrangement.leaves[1];
+	const width = sourceLeaf.bounds.right - sourceLeaf.bounds.left, height = sourceLeaf.bounds.bottom - sourceLeaf.bounds.top;
+	const revision = arrangement.revision, layoutRevision = arrangement.layoutRevision;
+	assert.equal(arrangement.move(source, reference, orientation === 'horizontal' ? 'left' : 'up'), false);
+	assert.equal(arrangement.revision, revision); assert.equal(arrangement.layoutRevision, layoutRevision);
+	assert.equal(arrangement.move(source, reference, orientation === 'horizontal' ? 'right' : 'down'), true);
+	arrangement.layoutClient(area, 8);
+	assert.ok(arrangement.root === root && root.first === referenceLeaf && root.second === sourceLeaf);
+	assert.equal(root.split.ratio, 0.7);
+	assert.equal(sourceLeaf.bounds.right - sourceLeaf.bounds.left, width); assert.equal(sourceLeaf.bounds.bottom - sourceLeaf.bounds.top, height);
+});
+
+test('a group cannot move into itself or replace its sole retained leaf', () => {
+	const group = {}, arrangement = new EditorGroupArrangement(group), root = arrangement.root;
+	arrangement.layoutClient({ left: 0, top: 0, right: 400, bottom: 200 }, 8);
+	const revision = arrangement.revision, preview = { left: 1, top: 2, right: 3, bottom: 4 };
+	assert.equal(arrangement.move(group, group, 'right'), false);
+	assert.equal(arrangement.writeMovePreview(group, group, 'right', 80, 40, preview), false);
+	assert.ok(arrangement.root === root); assert.equal(arrangement.revision, revision);
+	assert.equal(arrangement.groups.length, 1); assert.deepEqual(preview, { left: 1, top: 2, right: 3, bottom: 4 });
+});
+
+test('an explicit group move exits temporary maximization using the retained normal scroll', () => {
+	const source = {}, reference = {}, arrangement = new EditorGroupArrangement(source);
+	const area = { left: 0, top: 0, right: 100, bottom: 100 };
+	arrangement.split(source, reference, 'right'); arrangement.setMinimum(source, 150, 150); arrangement.setMinimum(reference, 150, 150);
+	arrangement.layoutClient(area, 8); arrangement.setScroll(180, 40); arrangement.layoutClient(area, 8);
+	arrangement.toggleMaximize(source); arrangement.layoutClient(area, 8);
+	const leaf = arrangement.leaves.find(leaf => leaf.group === source)!;
+	assert.equal(arrangement.move(source, reference, 'down'), true);
+	assert.equal(arrangement.maximized, undefined); assert.equal(arrangement.scrollX, 180); assert.equal(arrangement.scrollY, 40);
+	arrangement.layoutClient(area, 8); arrangement.reveal(source);
+	assert.ok(arrangement.leaves.find(candidate => candidate.group === source) === leaf && leaf.visible);
+	assert.ok(arrangement.groups[0] === reference && arrangement.groups[1] === source);
+});
+
+for (const direction of ['left', 'right', 'up', 'down'] as const) for (const overflow of [false, true]) for (const maximized of ['none', 'source', 'reference'] as const)
+	test(`group move preview matches retained ${direction} topology and reveal (${overflow ? 'overflow' : 'fitted'}, ${maximized} maximized)`, () => {
+		const source = {}, reference = {}, third = {}, arrangement = new EditorGroupArrangement(source);
+		const area = { left: 30, top: 20, right: overflow ? 170 : 830, bottom: overflow ? 100 : 620 };
+		arrangement.split(source, reference, 'right'); arrangement.split(source, third, 'down');
+		arrangement.setMinimum(source, 120, 80); arrangement.setMinimum(reference, 90, 70); arrangement.setMinimum(third, 110, 60);
+		arrangement.layoutClient(area, 8); arrangement.setScroll(20, 10); arrangement.layoutClient(area, 8);
+		if (maximized !== 'none') { arrangement.toggleMaximize(maximized === 'source' ? source : reference); arrangement.layoutClient(area, 8); }
+		const root = arrangement.root, revision = arrangement.revision, layoutRevision = arrangement.layoutRevision;
+		const leaf = arrangement.leaves.find(leaf => leaf.group === source)!, previous = { ...leaf.bounds }, preview = { ...area };
+		assert.equal(arrangement.writeMovePreview(source, reference, direction, 120, 80, preview), true);
+		assert.ok(arrangement.root === root); assert.equal(arrangement.revision, revision); assert.equal(arrangement.layoutRevision, layoutRevision);
+		assert.deepEqual(leaf.bounds, previous); assert.equal(arrangement.groups.length, 3);
+		arrangement.move(source, reference, direction); arrangement.layoutClient(area, 8); arrangement.reveal(source);
+		assert.deepEqual(preview, leaf.clip);
+	});
+
+for (const direction of ['left', 'right', 'up', 'down'] as const) test(`incoming group ${direction} preview uses the same admitted split constraints without a local source`, () => {
+	const reference = {}, incoming = {}, arrangement = new EditorGroupArrangement(reference);
+	const area = { left: 20, top: 30, right: 180, bottom: 120 }, preview = { ...area };
+	arrangement.setMinimum(reference, 130, 90); arrangement.layoutClient(area, 8);
+	assert.equal(arrangement.writeMovePreview(undefined, reference, direction, 120, 80, preview), true);
+	assert.equal(arrangement.groups.length, 1);
+	arrangement.split(reference, incoming, direction); arrangement.setMinimum(incoming, 120, 80);
+	arrangement.layoutClient(area, 8); arrangement.reveal(incoming);
+	assert.deepEqual(preview, arrangement.leaves.find(leaf => leaf.group === incoming)!.clip);
+});
+
+test('warmed group-move previews reuse their projection until real topology, minima or viewport publication changes', t => {
+	const source = {}, reference = {}, third = {}, arrangement = new EditorGroupArrangement(source);
+	const area = { left: 0, top: 0, right: 500, bottom: 300 }, preview = { ...area };
+	arrangement.split(source, reference, 'right'); arrangement.setMinimum(source, 80, 40); arrangement.layoutClient(area, 8);
+	arrangement.writeMovePreview(source, reference, 'down', 80, 40, preview);
+	const move = t.mock.method(EditorGroupArrangement.prototype, 'move'), first = { ...preview };
+	for (let frame = 0; frame < 100; frame++) arrangement.writeMovePreview(source, reference, 'down', 80, 40, preview);
+	assert.equal(move.mock.callCount(), 0); assert.deepEqual(preview, first);
+	arrangement.split(reference, third, 'up'); arrangement.setMinimum(third, 100, 60); area.right = 200; arrangement.layoutClient(area, 8);
+	arrangement.writeMovePreview(source, reference, 'down', 80, 40, preview);
+	assert.equal(move.mock.callCount(), 1); assert.notDeepEqual(preview, first);
+});

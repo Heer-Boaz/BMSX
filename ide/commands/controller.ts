@@ -41,14 +41,14 @@ import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain
 import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
 import type { Blua32SourceImage } from '../runtime/sources';
 import { getTextFileRuntimeSourceInstallations } from '../workbench/services/working_copy/runtime_source_status';
-import { showMoveEditor, showOpenWindows } from '../workbench/services/editor/open_windows';
+import { showMoveDestination, showOpenWindows } from '../workbench/services/editor/open_windows';
 import { findWorkbenchWindow } from '../workbench/ui/window/control';
 import { showGroupOpenEditors } from '../workbench/services/editor/open_editors';
 
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
-	'tabs.next', 'tabs.previous', 'window.copyEditor', 'window.moveEditor', 'group.splitRight', 'group.splitDown',
+	'tabs.next', 'tabs.previous', 'window.copyEditor', 'window.moveEditor', 'group.move', 'group.splitRight', 'group.splitDown',
 	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
 	'scenarioLab.play', 'play.reset', 'play.source',
 	'scenarioLab.runWithCompanion', 'scenarioLab.debugWithCompanion', 'scenarioLab.playWithCompanion',
@@ -124,6 +124,9 @@ export class IdeCommandController {
 			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
 			case 'window.newEditor': this.editor.editorParts.createDocument().focus(); return;
 			case 'group.close': void this.editor.editorParts.closeGroup(group, target); return;
+			case 'group.move':
+				if (this.isEnabled(command, target)) showMoveDestination(this.editor.editorParts, this.editor.quickInput, { kind: 'group', model: group.model }, target);
+				return;
 			case 'group.openEditors': showGroupOpenEditors(group, part.quickInput); return;
 			case 'group.splitRight': case 'group.splitDown': {
 				const created = this.editor.editorParts.splitGroup(group, command === 'group.splitRight' ? 'right' : 'down');
@@ -138,7 +141,8 @@ export class IdeCommandController {
 			case 'group.maximize': part.arrangement.toggleMaximize(group); group.focus(); return;
 			case 'window.moveEditor': {
 				const input = group.model.activeTab;
-				if (input !== null) showMoveEditor(this.editor.editorParts, this.editor.quickInput, group, input, target);
+				if (input !== null && this.editor.editorParts.canMoveEditor(group, input, { kind: 'window' }))
+					showMoveDestination(this.editor.editorParts, this.editor.quickInput, { kind: 'editor', model: group.model, input }, target);
 				return;
 			}
 			case 'window.copyEditor': {
@@ -415,6 +419,8 @@ export class IdeCommandController {
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
 			case 'group.close': return this.editor.editorParts.canCloseGroup(group);
+			case 'group.move': return this.editor.editorParts.canMoveGroup(group, { kind: 'window' })
+				|| part.groups.some(other => this.editor.editorParts.canMoveGroup(group, { kind: 'split', group: other, direction: 'right' }));
 			case 'group.openEditors': return group.model.tabs.length > 0;
 			case 'group.splitRight': case 'group.splitDown': return part.operation === 'none';
 			case 'group.focusNext': case 'group.focusPrevious': case 'group.maximize': return part.operation === 'none' && part.groups.length > 1;

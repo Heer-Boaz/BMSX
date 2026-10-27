@@ -126,7 +126,7 @@ not an editable asset schema or an isolated preview contract.
 
 | Workflow | Existing BMSX owners | Missing capability or boundary |
 | --- | --- | --- |
-| Main workspace and document editors | `services/editor/editor_parts.ts`, `editor_part.ts` and `group_arrangement.ts` compose real split groups, group-aware opening, retained-input moves and local sessions over shared documents; `editor_drop_target.ts` shares local/foreign tab insertion, split drops and explicit canvas floating through retained-input admission. | Whole-group docking remains a separate implementation over that contract. Native host windows remain a separate host boundary. |
+| Main workspace and document editors | `services/editor/editor_parts.ts`, `editor_part.ts` and `group_arrangement.ts` compose real split groups, group-aware opening, retained-input moves and local sessions over shared documents; `editor_drop_target.ts` shares editor and whole-group insertion, split drops and explicit canvas floating through retained-input admission. Same-part group relocation retains the actual controls; cross-part transfer retains their input models. | Native host windows remain a separate host boundary. |
 | Window navigation and additional views | The Window menu exposes main-workspace activation, an MRU window picker, new editor windows and contribution-owned additional views. Shared window chrome exposes maximize/restore and owner-admitted document minimization; document close requests go through `EditorCloseController`. | Snapping uses the shared placement/drag/keyboard contract below without moving editors or their inputs. Editor docking uses the group-transfer contract below; native host-window integration is separate. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
 | Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
 | Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Studio adapters for known factories and cart-owned authoring metadata are possible producers; a mandatory new cartlib schema is not assumed. The read-only [runtime inspection contract](cartlib_inspection_contract.md) does not supply that authoring metadata. |
@@ -256,6 +256,11 @@ no membership change, not implicit floating. Explicit Alt-drag requests floating
 within Studio's canvas work area; it does not create a native host window. This
 adapts VS Code's Alt-enabled new-window operation to the existing canvas window
 owner. Preview and committed placement consume the same layout constraints.
+Primary dragging unused tabstrip space moves the whole group; dragging a tab
+moves that editor. `Move Group To…` exposes merge, directional placement and a
+new floating host through the Window menu and Command Palette, including when
+the strip has no unused space. Window-title gestures change host placement,
+not the membership of whichever group happens to be active.
 Pointer release and the equivalent keyboard command enter the same transfer
 admission. Whole-group transfer admits all affected inputs, drafts and any
 coalesced receivers before changing membership; publication exposes the completed
@@ -268,7 +273,13 @@ its group lifetime and pending openings remain valid. Cross-part group transfer
 constructs a new concrete `EditorGroupView` in the destination part and transfers
 the retained inputs and their ordered tab/active/preview/pin state through the
 owning tab models. Canonical working copies and input/view identities survive;
-the old tab model need not survive. The old pane detaches before the receiving
+the old tab model need not survive. Merging preserves an existing receiver's
+preview/pin state; its preview wins a conflict with an incoming preview. An empty
+source adds no editor-selection intent. A nonempty group with no selected input
+retains that explicit selection state rather than choosing a substitute.
+Home is portable read-only workspace content; matching Home views coalesce by
+their admitted namespace while retaining the receiver's view state.
+The old pane detaches before the receiving
 pane binds those inputs. This is not reparenting a fixed focus/surface scope or
 copying the inputs through storage.
 
@@ -277,7 +288,9 @@ native input and command-origin scopes. Those capabilities never follow the
 retained input into its receiving group. Navigation entries for actually moved
 views are retargeted to that concrete receiving group/part; destinations for
 other retired group content end with the old scope. Unrelated later focus wins
-over transfer completion. Same-part arrangement changes and cross-part lifetime
+over transfer completion. Placement reveals the receiving leaf independently
+of keyboard focus. Moving the last Main group leaves a fresh empty routing leaf;
+moving a floating host's final group retires that host after history handoff. Same-part arrangement changes and cross-part lifetime
 changes are distinct operations, even when their drop previews look similar.
 
 ## Composition and lifetime

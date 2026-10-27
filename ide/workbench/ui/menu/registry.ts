@@ -432,6 +432,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'group.focusNext' },
 		{ type: 'command', command: 'group.focusPrevious' },
 		{ type: 'command', command: 'group.maximize' },
+		{ type: 'command', command: 'group.move' },
 		{ type: 'command', command: 'group.close' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'window.snapLeft' },

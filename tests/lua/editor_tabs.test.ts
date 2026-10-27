@@ -4,9 +4,12 @@ import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
+import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { GameViewEditorPane } from '../../ide/workbench/contrib/game_view/editor_pane';
+import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { EditorTabStrip } from '../../ide/workbench/ui/tab/control';
-import { EditorTabDrag } from '../../ide/workbench/ui/tab/drag';
+import { EditorTabDrag, type EditorTabDragHandler } from '../../ide/workbench/ui/tab/drag';
 import type { EditorTabId } from '../../ide/workbench/ui/tab/id';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -21,6 +24,7 @@ import { createTestEditorParts } from '../helpers/editor_panes';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import type { EditorInput } from '../../ide/workbench/ui/tab/model';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import type { EditorPart } from '../../ide/workbench/services/editor/editor_part';
 import type { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
 
@@ -37,7 +41,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	const models: EditorTextModel[] = [];
 	const commands: EditorCommandId[] = [];
 	const scope = Symbol('test tab strip');
-	let commandsEnabled = true, activationAccepted = true;
+	let commandsEnabled = true, activationAccepted = true, groupActivationAccepted = true;
 	const focusParent = inputFocus.createTarget(null, new InputFocusScope(scope));
 	const bounds = { left, top, right: left + width, bottom: top };
 	let font = new EditorFont(variant);
@@ -63,10 +67,11 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 			api.blit_text_inline_with_font(text, x, y, z, color, font.renderFont());
 		},
 	};
+	const handler: EditorTabDragHandler = { update() {}, drop() {}, clear() {} };
 	const strip = new EditorTabStrip(group, context, {
 		isEnabled: () => commandsEnabled,
 		execute: command => { commands.push(command); },
-	}, focusParent, id => { if (!activationAccepted) return false; group.activate(group.findById(id)!); return true; }, id => { group.removeAt(group.indexOf(group.findById(id)!)); }, () => {}, { update() {}, drop() {}, clear() {} });
+	}, focusParent, id => { if (!activationAccepted) return false; group.activate(group.findById(id)!); return true; }, id => { group.removeAt(group.indexOf(group.findById(id)!)); }, () => groupActivationAccepted, handler);
 	const layout = () => { strip.layout(bounds); };
 	const paint = () => {
 		drawnLabels = 0;
@@ -76,7 +81,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	const draw = () => { layout(); paint(); return strip.layoutState.totalHeight; };
 	const frame = (now: number) => { strip.update(now); layout(); };
 	const item = (id: EditorTabId) => strip.layoutState.items.peek(group.indexOf(group.findById(id)!));
-	const begin = (id: EditorTabId, snapshot: PointerInputSnapshot, now: number) => strip.drag.begin(group.findById(id)!, snapshot, now);
+	const begin = (id: EditorTabId, snapshot: PointerInputSnapshot, now: number) => strip.drag.begin({ kind: 'editor', model: group, input: group.findById(id)! }, snapshot, now);
 	const dispatch = (snapshot: PointerInputSnapshot, blocked: boolean, now: number) => {
 		const handled = pointerCapture.dispatch(snapshot, blocked, now, scope); pointerCapture.endRoute(snapshot); return handled;
 	};
@@ -88,9 +93,10 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 		strip.dispose(); group.clear(); focusParent.release();
 		for (const model of models) model.dispose();
 	});
-	return { add, group, strip, bounds, scope, item, begin, dispatch, press, layout, paint, draw, frame, context, commands, setFont, activate: (input: EditorInput) => group.activate(input),
+	return { add, group, strip, bounds, scope, item, begin, dispatch, press, layout, paint, draw, frame, context, commands, setFont, handler, activate: (input: EditorInput) => group.activate(input),
 		setCommandsEnabled: (enabled: boolean) => { commandsEnabled = enabled; },
 		setActivationAccepted: (accepted: boolean) => { activationAccepted = accepted; },
+		setGroupActivationAccepted: (accepted: boolean) => { groupActivationAccepted = accepted; },
 		measured: () => measuredLabels, drawn: () => drawnLabels, bar: strip.scrollbar };
 }
 
@@ -114,7 +120,7 @@ function gestureFixture(t: TestContext, width = 384, left = 0, top = 0,
 		return input;
 	};
 	const item = (id: EditorTabId) => strip.layoutState.items.peek(group.indexOf(group.findById(id)!));
-	const begin = (id: EditorTabId, snapshot: PointerInputSnapshot, now: number) => strip.drag.begin(group.findById(id)!, snapshot, now);
+	const begin = (id: EditorTabId, snapshot: PointerInputSnapshot, now: number) => strip.drag.begin({ kind: 'editor', model: group, input: group.findById(id)! }, snapshot, now);
 	const dispatch = (snapshot: PointerInputSnapshot, blocked: boolean, now: number) => {
 		const handled = pointerCapture.dispatch(snapshot, blocked, now, scope); pointerCapture.endRoute(snapshot); return handled;
 	};
@@ -592,12 +598,12 @@ test('a single retained input admits a physical drag and metadata does not revok
 	const bounds = f.item(tab.id).bounds, x = bounds.left + 2, y = bounds.top + 1;
 	const down = pointer(x, y, primary, primary);
 	pointerCapture.beginRoute(f.scope, down); f.strip.handlePointer(down, 0);
-	assert.equal(pointerCapture.active, true); assert.ok(f.strip.drag.state?.input === tab);
+	assert.equal(pointerCapture.active, true); assert.ok(f.strip.drag.state?.source.kind === 'editor' && f.strip.drag.state.source.input === tab);
 	f.dispatch(pointer(x + 20, y, primary), false, 10);
 	assert.equal(f.group.previewTab, null);
 	tab.title = 'renamed'; tab.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]);
 	f.frame(20);
-	assert.equal(pointerCapture.active, true); assert.ok(f.strip.drag.state?.input === tab);
+	assert.equal(pointerCapture.active, true); assert.ok(f.strip.drag.state?.source.kind === 'editor' && f.strip.drag.state.source.input === tab);
 	f.dispatch(pointer(x + 20, y, 0, 0, primary), false, 30);
 	assert.equal(pointerCapture.active, false); assert.equal(f.strip.drag.state, null);
 	assert.ok(f.group.activeTab === tab && f.view.panes.activePane?.input === tab);
@@ -606,16 +612,16 @@ test('a single retained input admits a physical drag and metadata does not revok
 test('captured tab input retains full pointer occurrences and updates modifiers without a synthetic move', t => {
 	const f = fixture(t), tab = f.add('retained'), capture = new PointerCaptureService(), scope = Symbol('retained gesture');
 	const updates: { snapshot: PointerInputSnapshot; now: number; scroll: boolean }[] = [], events: string[] = [];
-	const gesture = new EditorTabDrag(f.group, capture, scope, () => {}, {
-		update(_model, input, snapshot, now, scroll) { assert.ok(input === tab); updates.push({ snapshot: { ...snapshot }, now, scroll }); },
-		drop(_model, input, snapshot) {
-			assert.ok(input === tab); assert.equal(capture.active, false); assert.equal(gesture.state, null);
+	const gesture = new EditorTabDrag(capture, scope, () => {}, {
+		update(source, snapshot, now, scroll) { assert.ok(source.kind === 'editor' && source.model === f.group && source.input === tab); updates.push({ snapshot: { ...snapshot }, now, scroll }); },
+		drop(source, snapshot) {
+			assert.ok(source.kind === 'editor' && source.model === f.group && source.input === tab); assert.equal(capture.active, false); assert.equal(gesture.state, null);
 			assert.equal(snapshot.modifiers, KeyModifier.meta); events.push('drop');
 		},
 		clear() { events.push('clear'); },
 	});
 	t.after(() => gesture.cancel());
-	const down = pointer(10, 10, primary, primary); gesture.begin(tab, down, 0);
+	const down = pointer(10, 10, primary, primary); gesture.begin({ kind: 'editor', model: f.group, input: tab }, down, 0);
 	const move = { ...pointer(30, 10, primary), modifiers: KeyModifier.ctrl, spaceDown: true };
 	capture.dispatch(move, false, 10, scope);
 	move.viewportX = 200; move.modifiers = KeyModifier.alt; move.spaceDown = false;
@@ -652,9 +658,9 @@ test('CartEditor modifier-only dispatch updates the captured tab owner at the re
 	pointerCapture.dispatch(pointer(x, targetY, primary), false, f.host.clock.now(), source.tabScope);
 	const update = t.mock.method(f.editor.editorParts.dropTarget, 'update');
 	f.editor.dispatchKey(new KeyInputEvent('AltLeft', KeyModifier.alt));
-	assert.equal(update.mock.callCount(), 2); assert.equal(update.mock.calls[0].arguments[4], true);
-	const [model, retained, snapshot, now, scroll] = update.mock.calls[1].arguments;
-	assert.ok(model === source.model && retained === input); assert.equal(snapshot.viewportX, x); assert.equal(snapshot.viewportY, targetY);
+	assert.equal(update.mock.callCount(), 2); assert.equal(update.mock.calls[0].arguments[3], true);
+	const [retained, snapshot, now, scroll] = update.mock.calls[1].arguments;
+	assert.ok(retained.kind === 'editor' && retained.model === source.model && retained.input === input); assert.equal(snapshot.viewportX, x); assert.equal(snapshot.viewportY, targetY);
 	assert.equal(snapshot.modifiers, KeyModifier.alt); assert.equal(now, f.host.clock.now()); assert.equal(scroll, false);
 	assert.equal(pointerCapture.active, true);
 	f.editor.dispatchKey(new KeyInputEvent('AltLeft', KeyModifier.none, false, false));
@@ -680,4 +686,136 @@ test('stationary drag modifier changes charge elapsed time to the preceding targ
 	f.frame(2510);
 	assert.deepEqual([start - at510, at510 - floated, resumed - f.bar.getScroll()], [55, 55, 55],
 		'every half-second belongs to its preceding admitted tab-edge mode');
+});
+
+
+test('unused tab-strip background captures a group source and retains live membership without pinning', t => {
+	const f = fixture(t), first = f.add('first'), preview = f.add('preview', true); f.layout();
+	const update = t.mock.method(f.handler, 'update'), drop = t.mock.method(f.handler, 'drop');
+	const last = f.item(preview.id).bounds, x = (last.right + f.strip.layoutState.viewportBounds.right) / 2, y = last.top + 1;
+	f.press(pointer(x, y, primary, primary), 0);
+	assert.equal(pointerCapture.active, true);
+	const source = f.strip.drag.state!.source;
+	assert.ok(source.kind === 'group' && source.model === f.group);
+	f.dispatch(pointer(x - 20, y, primary), false, 10);
+	assert.ok(update.mock.calls[0].arguments[0] === source); assert.ok(f.group.previewTab === preview);
+	first.title = 'renamed'; const late = f.add('late'); f.layout();
+	f.group.removeAt(f.group.indexOf(late)); f.frame(20);
+	assert.equal(pointerCapture.active, true); assert.ok(f.strip.drag.state?.source === source);
+	assert.deepEqual(source.model.tabs, [first, preview], 'the source is the actual model, not a captured input array');
+	assert.ok(f.group.previewTab === preview);
+	f.dispatch(pointer(x - 20, y, 0, 0, primary), false, 30);
+	assert.ok(drop.mock.calls[0].arguments[0] === source); assert.equal(pointerCapture.active, false);
+});
+
+test('rejected background group activation starts no gesture, while owner retirement cancels the admitted group', t => {
+	const f = fixture(t), input = f.add('editor'); f.layout();
+	const drop = t.mock.method(f.handler, 'drop'), clear = t.mock.method(f.handler, 'clear');
+	const last = f.item(input.id).bounds, x = (last.right + f.strip.layoutState.viewportBounds.right) / 2, y = last.top + 1;
+	f.setGroupActivationAccepted(false); f.press(pointer(x, y, primary, primary), 0);
+	assert.equal(pointerCapture.active, false); assert.equal(f.strip.drag.state, null);
+	f.dispatch(pointer(x, y, 0, 0, primary), false, 10);
+	f.setGroupActivationAccepted(true); f.press(pointer(x, y, primary, primary), 20);
+	f.dispatch(pointer(x - 20, y, primary), false, 30);
+	f.strip.clear();
+	assert.equal(pointerCapture.active, false); assert.equal(f.strip.drag.state, null); assert.equal(clear.mock.callCount(), 1);
+	f.dispatch(pointer(x - 20, y, 0, 0, primary), false, 40);
+	assert.equal(drop.mock.callCount(), 0);
+});
+
+test('background group drag cannot bypass the actual focused source draft decision', t => {
+	const f = createActualSourcePanes(t), group = f.firstGroup;
+	f.first.focus();
+	const input = group.model.activeTab!, target = group.panes.activePane!.commandTarget;
+	const last = group.tabStrip.layoutState.items.peek(group.model.tabs.length - 1).bounds;
+	const x = (last.right + group.tabStrip.layoutState.viewportBounds.right) / 2, y = last.top + 1;
+	target.edit = { pending: true, commit: () => false };
+	try {
+		const down = pointer(x, y, primary, primary);
+		pointerCapture.beginRoute(group.tabScope, down); group.tabStrip.handlePointer(down, f.host.clock.now());
+		assert.equal(pointerCapture.active, false); assert.equal(group.tabStrip.drag.state, null);
+		assert.ok(group.model.activeTab === input && group.panes.activePane?.input === input);
+	} finally { target.edit = undefined; pointerCapture.interrupt(false); }
+});
+
+test('a multi-group window title gesture changes window placement, not the active group owner', t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts, part = f.firstPart;
+	const sibling = parts.splitGroup(f.firstGroup, 'down'); assert.ok(sibling); f.update();
+	const window = part.window!, groupModels = part.groups.map(group => group.model), documents = [...parts.documents];
+	const original = { ...window.model.requestedBounds }, header = window.model.header;
+	const x = header.left + 20, y = (header.top + header.bottom) / 2;
+	const down = pointer(x, y, primary, primary);
+	pointerCapture.beginRoute(window.scope.surfaceScope, down); window.surface!.handlePointer!(down, f.host.clock.now());
+	pointerCapture.dispatch(pointer(x + 40, y + 20, primary), false, f.host.clock.now() + 10, window.scope.surfaceScope);
+	pointerCapture.dispatch(pointer(x + 40, y + 20, 0, 0, primary), false, f.host.clock.now() + 20, window.scope.surfaceScope);
+	assert.notDeepEqual(window.model.requestedBounds, original, 'the actual window placement owner consumes its title gesture');
+	assert.deepEqual(part.groups.map(group => group.model), groupModels); assert.deepEqual(parts.documents, documents);
+	assert.ok(part.groups.every(group => group.tabStrip.drag.state === null));
+	assert.ok(parts.findGroup(f.firstInput) === f.firstGroup);
+});
+
+
+test('a physical background drop moves the current whole source group through shared admission', t => {
+	const f = createActualSourcePanes(t, false, [['third.lua', 'return 3'], ['fourth.lua', 'return 4']]);
+	const parts = f.editor.editorParts, source = f.firstGroup, receiver = f.secondGroup;
+	const third = resolveLuaCodeEditorInput(f.sources.catalog,
+		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'third.lua' })!);
+	source.openEditor(third); f.update();
+	const last = source.tabStrip.layoutState.items.peek(source.model.tabs.length - 1).bounds;
+	const x = (last.right + source.tabStrip.layoutState.viewportBounds.right) / 2, y = last.top + 1;
+	const down = pointer(x, y, primary, primary);
+	pointerCapture.beginRoute(source.tabScope, down); source.tabStrip.handlePointer(down, f.host.clock.now());
+	assert.ok(source.tabStrip.drag.state?.source.kind === 'group');
+	const body = receiver.panes.contentBounds, targetX = (body.left + body.right) / 2, targetY = (body.top + body.bottom) / 2;
+	pointerCapture.dispatch(pointer(targetX, targetY, primary), false, f.host.clock.now() + 10, source.tabScope);
+	assert.deepEqual(source.model.tabs, [f.firstInput, third]); assert.deepEqual(receiver.model.tabs, [f.secondInput]);
+	const fourth = resolveLuaCodeEditorInput(f.sources.catalog,
+		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'fourth.lua' })!);
+	source.openEditor(fourth, { preserveFocus: true });
+	assert.equal(pointerCapture.active, true, 'whole-group source identity survives live membership changes');
+	pointerCapture.dispatch(pointer(targetX, targetY, 0, 0, primary), false, f.host.clock.now() + 20, source.tabScope);
+	assert.equal(pointerCapture.active, false); assert.equal(source.model.tabs.length, 0);
+	for (const input of [f.firstInput, third, fourth]) assert.ok(parts.findGroup(input) === receiver);
+	assert.ok(receiver.model.activeTab === fourth && receiver.panes.activePane?.input === fourth);
+});
+
+
+test('a mixed Source, Scene and active Game group docks without transferring guest authority or changing canonical sources', t => {
+	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', '']]);
+	const parts = f.editor.editorParts, source = f.firstGroup, receiver = f.secondGroup;
+	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
+	f.editor.sceneEditor.openResource(source, resource);
+	const scene = source.model.activeTab; assert.ok(scene instanceof SceneEditorInput);
+	const game = new GameViewInput(); f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
+	source.openEditor(game); f.update();
+	const oldPane = source.panes.activePane; assert.ok(oldPane instanceof GameViewEditorPane);
+	f.firstPart.focus(); f.key('Tab');
+	const guest = inputFocus.target!, guestInteraction = guest.scope.interaction!;
+	assert.ok(guest.guestInput?.recipient === f.host.input); assert.equal(f.host.execution.paused, false);
+	const models = [f.firstInput.workingCopy, scene.workingCopy];
+	for (const model of models) model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- mixed group retained edit\n' }]);
+	const records = models.map(model => ({ model, text: model.buffer.getText(), version: model.version, history: model.history }));
+	const cycles = f.host.runtime.machine.scheduler.nowCycles, executionRevision = f.host.execution.revision;
+	let disposed = 0; for (const input of [f.firstInput, scene, game]) input.onWillDispose(() => { disposed++; });
+	const last = source.tabStrip.layoutState.items.peek(source.model.tabs.length - 1).bounds;
+	const x = (last.right + source.tabStrip.layoutState.viewportBounds.right) / 2, y = last.top + 1;
+	const down = pointer(x, y, primary, primary);
+	pointerCapture.beginRoute(source.tabScope, down); source.tabStrip.handlePointer(down, f.host.clock.now());
+	assert.ok(source.tabStrip.drag.state?.source.kind === 'group');
+	const body = receiver.panes.contentBounds, targetX = (body.left + body.right) / 2, targetY = (body.top + body.bottom) / 2;
+	pointerCapture.dispatch(pointer(targetX, targetY, primary), false, f.host.clock.now() + 10, source.tabScope);
+	pointerCapture.dispatch(pointer(targetX, targetY, 0, 0, primary), false, f.host.clock.now() + 20, source.tabScope);
+	const moved = receiver.panes.activePane;
+	assert.ok(moved instanceof GameViewEditorPane && moved !== oldPane && moved.input === game);
+	assert.ok(receiver.model.activeTab === game); assert.equal(disposed, 0);
+	for (const input of [f.firstInput, scene, game]) assert.ok(parts.findGroup(input) === receiver);
+	assert.equal(guest.guestInput, undefined); assert.equal(guestInteraction.running, false);
+	assert.equal(oldPane.commandTarget.scope.runtime, undefined);
+	assert.ok(inputFocus.target === moved.commandTarget && moved.commandTarget.scope.runtime?.interaction === game.interaction);
+	assert.equal(f.editor.guestInputRecipient, null); assert.equal(pointerCapture.guestBinding, undefined); assert.equal(f.host.execution.paused, true);
+	assert.ok(f.firstInput.workingCopy === models[0] && scene.workingCopy === models[1]);
+	for (const { model, text, version, history } of records) {
+		assert.equal(model.buffer.getText(), text); assert.equal(model.version, version); assert.ok(model.history === history && model.canUndo);
+	}
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles); assert.equal(f.host.execution.revision, executionRevision);
 });

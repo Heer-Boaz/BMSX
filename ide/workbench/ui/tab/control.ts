@@ -41,11 +41,11 @@ export class EditorTabStrip implements PointerHoverTarget {
 
 	public constructor(public readonly model: EditorTabGroupModel, private readonly layoutContext: EditorTabStripLayoutContext, commands: EditorCommandRunner,
 		private readonly focusParent: InputFocusTarget, private readonly activate: (id: EditorTabId) => boolean,
-		private readonly close: (id: EditorTabId) => void, focusContent: () => void, dragHandler: EditorTabDragHandler) {
+		private readonly close: (id: EditorTabId) => void, private readonly focusContent: () => boolean, dragHandler: EditorTabDragHandler) {
 		const scope = focusParent.scope.surfaceScope;
 		this.scrollControl = new ScrollbarPointerControl(pointerCapture, scope);
 		this.layoutState = new EditorTabStripLayout(model, this.actions, this.scrollbar);
-		this.drag = new EditorTabDrag(model, pointerCapture, scope, () => { this.lastClickId = null; }, dragHandler);
+		this.drag = new EditorTabDrag(pointerCapture, scope, () => { this.lastClickId = null; }, dragHandler);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, focusParent, focusContent);
 	}
 
@@ -185,11 +185,12 @@ export class EditorTabStrip implements PointerHoverTarget {
 			const twice = this.lastClickId === tab.id && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
 			this.lastClickId = twice ? null : tab.id;
 			this.lastClickTime = now;
-			this.drag.begin(tab, snapshot, now);
+			this.drag.begin({ kind: 'editor', model: this.model, input: tab }, snapshot, now);
 			if (twice) this.model.pin(tab);
 			return true;
 		}
 		this.lastClickId = null;
+		if (primary && this.focusContent()) this.drag.begin({ kind: 'group', model: this.model }, snapshot, now);
 		return true;
 	}
 

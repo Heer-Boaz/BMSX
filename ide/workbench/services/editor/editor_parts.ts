@@ -15,6 +15,7 @@ import type { EditorTextModelService } from '../../../editor/model/model_service
 import type { ActionPrompt } from '../../contrib/modal/action_prompt';
 import { EditorDropTarget } from './editor_drop_target';
 import type { EditorGroupView } from './editor_group';
+import type { EditorTabGroupModel, EditorGroupTransferPublication } from '../../ui/tab/group_model';
 import type { EditorInput } from '../../ui/tab/model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
 import type { EditorInputSerializers } from './editor_serialization';
@@ -59,13 +60,13 @@ export class EditorParts {
 	private readonly groupList: EditorGroupView[] = [];
 	private readonly owners = new Map<EditorGroupView, EditorPart>();
 	private readonly groupsBySurface = new Map<WorkbenchSurface, EditorGroupView>();
+	private readonly groupsByModel = new Map<EditorTabGroupModel, EditorGroupView>();
 	private readonly partsByScope = new WeakMap<InputFocusScope, EditorPart | null>();
 	private readonly mru: EditorPart[] = [];
 	private readonly listeners = new Set<() => void>();
 	private readonly closing = new Map<EditorPart, Promise<boolean>>();
 	private readonly closingGroups = new Map<EditorGroupView, Promise<boolean>>();
 	private restoreGeneration = 0;
-	private readonly partSubscriptions = new Map<EditorPart, readonly (() => void)[]>();
 	private minimizedDocumentCount = 0;
 	private readonly newDocumentRequest = create_rect_bounds();
 	private readonly newDocumentPlacement = new WorkbenchWindowModel(this.newDocumentRequest, 0, 0);
@@ -81,6 +82,7 @@ export class EditorParts {
 		this.closeController = new EditorCloseController(this.groupList, options.saves, options.prompt, options.models);
 		this.dropTarget = new EditorDropTarget(this, options.surfaces, options.owner, options.workArea);
 		this.main = new EditorPart({ ...options, closeEditors: this.closeController.close, dropTarget: this.dropTarget, kind: 'main', initialOperation: 'none', presented: true, onDidActivate: part => this.activate(part),
+			onDidChangeGroupMembership: part => this.syncGroupMembership(part),
 			onDidChange: () => this.changed(), requestClose: part => { void this.close(part); } });
 		this.activePart = this.main;
 		this.register(this.main);
@@ -96,6 +98,7 @@ export class EditorParts {
 
 	public partForGroup(group: EditorGroupView): EditorPart { return this.owners.get(group)!; }
 	public groupForSurface(surface: WorkbenchSurface): EditorGroupView | undefined { return this.groupsBySurface.get(surface); }
+	public groupForModel(model: EditorTabGroupModel): EditorGroupView | undefined { return this.groupsByModel.get(model); }
 	/** Floating a view preserves its client extent; the window owner resolves chrome and work-area placement. */
 	public writeNewDocumentBounds(source: EditorGroupView, x: number, y: number, target: RectBounds): void {
 		const headerHeight = editorViewState.font.lineHeight + WINDOW_HEADER_VERTICAL_PADDING;
@@ -135,17 +138,17 @@ export class EditorParts {
 		return undefined;
 	}
 
+	/** Parent membership changes precede external topology and model notifications. */
+	private syncGroupMembership(part: EditorPart): void {
+		for (let index = this.groupList.length - 1; index >= 0; index--) {
+			const group = this.groupList[index];
+			if (this.owners.get(group) !== part) continue;
+			this.owners.delete(group); this.groupsBySurface.delete(group.surface); this.groupsByModel.delete(group.model); this.groupList.splice(index, 1);
+		}
+		for (const group of part.groups) { this.owners.set(group, part); this.groupsBySurface.set(group.surface, group); this.groupsByModel.set(group.model, group); this.groupList.push(group); }
+	}
 	private register(part: EditorPart): void {
-		for (const group of part.groups) { this.owners.set(group, part); this.groupsBySurface.set(group.surface, group); this.groupList.push(group); }
-		this.partSubscriptions.set(part, [part.onDidChangeGroups(() => {
-			for (let index = this.groupList.length - 1; index >= 0; index--) {
-				const group = this.groupList[index];
-				if (this.owners.get(group) !== part) continue;
-				this.owners.delete(group); this.groupsBySurface.delete(group.surface); this.groupList.splice(index, 1);
-			}
-			for (const group of part.groups) { this.owners.set(group, part); this.groupsBySurface.set(group.surface, group); this.groupList.push(group); }
-		})]);
-		this.partsByScope.set(part.scope, part); this.mru.push(part);
+		this.syncGroupMembership(part); this.partsByScope.set(part.scope, part); this.mru.push(part);
 	}
 
 	public createDocument(options: EditorDocumentOptions = {}, initialOperation: 'none' | 'move' = 'none'): EditorPart {
@@ -164,6 +167,7 @@ export class EditorParts {
 				right: area.right - offset, bottom: area.top + offset + height,
 			} : requestedBounds,
 			onDidActivate: next => this.activate(next), onDidChange: () => this.changed(),
+			onDidChangeGroupMembership: next => this.syncGroupMembership(next),
 			requestClose: next => { void this.close(next); },
 			requestMinimize: next => this.minimize(next),
 		});
@@ -299,6 +303,7 @@ export class EditorParts {
 					target.attachTransferredEditor(receiver, selection, true);
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
 						|| source.panes.openGeneration !== sourceAttachment || target.model.activeTab !== receiver || target.panes.activePane?.input !== receiver) return false;
+					if (!targetPart.revealGroup(target)) return false;
 					return handoff;
 				});
 			} finally {
@@ -329,6 +334,149 @@ export class EditorParts {
 		if ((focusOrigin === null || sourcePart.scope.contains(focusOrigin.scope) || targetPart.scope.contains(focusOrigin.scope))
 			&& (inputFocus.revision === focusRevision || inputFocus.target === null)) movedTo.group.focus();
 		return true;
+	}
+
+	public canMoveGroup(source: EditorGroupView, destination: EditorMoveDestination): boolean {
+		const part = this.owners.get(source);
+		if (part === undefined || part.retired || source.surface.retired || !source.openingAdmitted || part.operation !== 'none') return false;
+		if (destination.kind !== 'window') {
+			const receiver = this.owners.get(destination.group);
+			if (receiver === undefined || receiver.retired || destination.group.surface.retired || !destination.group.openingAdmitted
+				|| receiver.operation !== 'none' || destination.group === source) return false;
+			if (destination.kind === 'split' && receiver === part) return true;
+		}
+		for (const input of source.model.tabs) {
+			const receiver = destination.kind === 'group' ? destination.group.model.findById(input.id) : undefined;
+			if (!input.canMove(receiver) || this.closeController.isPending(input) || receiver !== undefined && this.closeController.isPending(receiver)) return false;
+		}
+		return true;
+	}
+
+	/** A whole group enters one admission and one paired model publication. */
+	public moveGroup(source: EditorGroupView, destination: EditorMoveDestination): boolean {
+		if (!this.canMoveGroup(source, destination)) return false;
+		const sourcePart = this.partForGroup(source);
+		if (destination.kind === 'split' && this.owners.get(destination.group) === sourcePart)
+			return sourcePart.relocateGroup(source, destination.group, destination.direction);
+		const focusRevision = inputFocus.revision, focusOrigin = inputFocus.target;
+		const sourceGeneration = source.panes.openGeneration;
+		if (!source.commitPendingEdit() || source.panes.openGeneration !== sourceGeneration) return false;
+		if (destination.kind !== 'window') {
+			const generation = destination.group.panes.openGeneration;
+			if (!destination.group.commitPendingEdit() || destination.group.panes.openGeneration !== generation) return false;
+		}
+		if (!this.canMoveGroup(source, destination)) return false;
+		const plan = source.model.planTransferTo(destination.kind === 'group' ? destination.group.model : undefined);
+		const inputs: EditorInput[] = [];
+		for (const entry of plan.entries) { inputs.push(entry.input); if (entry.receiver !== entry.input) inputs.push(entry.receiver); }
+		const sourceActive = source.model.activeTab, sourceWasActive = sourcePart.activeGroup === source;
+		const moved = this.closeController.transfer(inputs, () => {
+			sourcePart.setOperation('move');
+			const coalescedActive = plan.entries.some(entry => entry.input === sourceActive && entry.receiver !== entry.input);
+			const selection = coalescedActive ? source.panes.activePane?.getSelection?.() : undefined;
+			const targetPart = destination.kind === 'window' ? this.constructDocument({ requestedBounds: destination.requestedBounds }, 'move') : this.partForGroup(destination.group);
+			if (targetPart !== sourcePart && destination.kind !== 'window') targetPart.setOperation('move');
+			const target = destination.kind === 'group' ? destination.group : destination.kind === 'split' ? targetPart.createGroup() : targetPart.activeGroup;
+			const targetInputs = [...target.model.tabs], targetActive = target.model.activeTab;
+			const finalHost = sourcePart !== this.main && sourcePart.groups.length === 1;
+			const replacement = sourcePart === this.main && sourcePart.groups.length === 1 ? sourcePart.createGroup() : undefined;
+			let targetAdopted = destination.kind === 'group', sourceDetached = false;
+			let publication: EditorGroupTransferPublication | undefined;
+			try {
+				return withNavigationCaptureSuspended(() => {
+					if (this.owners.get(source) !== sourcePart || !sourcePart.ownsGroup(source) || source.surface.retired || !targetPart.ownsGroup(target) || target.surface.retired
+						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
+						|| source.model.activeTab !== sourceActive || source.model.tabs.length !== plan.entries.length
+						|| !plan.entries.every((entry, index) => source.model.tabs[index] === entry.input && (entry.receiver === entry.input ? !target.model.contains(entry.input) : target.model.findById(entry.input.id) === entry.receiver))) return false;
+					const targetGeneration = target.panes.openGeneration;
+					source.tabStrip.cancelDrag();
+					const sourceReceipt = source.panes.clearEditor('move');
+					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.surface.retired || target.surface.retired
+						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetGeneration
+						|| source.model.activeTab !== sourceActive || source.model.tabs.length !== plan.entries.length
+						|| !plan.entries.every((entry, index) => source.model.tabs[index] === entry.input)
+						|| target.model.tabs.length !== targetInputs.length || !targetInputs.every((input, index) => target.model.tabs[index] === input)) return false;
+					const targetReceipt = target.panes.clearEditor('move');
+					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.surface.retired || target.surface.retired
+						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| source.model.activeTab !== sourceActive || target.model.activeTab !== targetActive || source.model.tabs.length !== plan.entries.length
+						|| !plan.entries.every((entry, index) => source.model.tabs[index] === entry.input && entry.input.canMove(entry.receiver === entry.input ? undefined : entry.receiver))
+						|| target.model.tabs.length !== targetInputs.length || !targetInputs.every((input, index) => target.model.tabs[index] === input)) return false;
+					publication = source.model.transferGroupTo(target.model, plan, destination.kind === 'group' ? destination.index : undefined);
+					targetAdopted = true;
+					if (destination.kind === 'split') targetPart.adoptGroup(target, destination.group, destination.direction);
+					else if (destination.kind === 'window') { this.documentParts.push(targetPart); this.register(targetPart); }
+					if (inputFocus.revision === focusRevision || inputFocus.target === null) targetPart.selectGroup(target);
+					sourceDetached = true;
+					if (finalHost) {
+						this.unpublishDocument(sourcePart, targetPart); source.revokePresentation(); sourcePart.window!.setPresented(false);
+					} else sourcePart.detachGroup(source, replacement);
+					if (this.activePart === sourcePart && sourceWasActive && (inputFocus.revision === focusRevision || inputFocus.target === null)) {
+						this.activePart = targetPart; this.mru.splice(this.mru.indexOf(targetPart), 1); this.mru.unshift(targetPart);
+					}
+					navigationState.activeGroup = this.activePart.activeGroup;
+					if (!sourcePart.ownsGroup(source) || this.owners.get(target) !== targetPart || source.surface.retired || target.surface.retired
+						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| target.model.activeTab !== publication.active || !plan.entries.every(entry => target.model.contains(entry.receiver))) return false;
+					for (const entry of publication.entries) {
+						source.publishMovedEditor(entry.input, target, entry.receiver);
+						if (!sourcePart.ownsGroup(source) || this.owners.get(target) !== targetPart || target.surface.retired
+							|| target.model.activeTab !== publication.active || !plan.entries.every(entry => target.model.contains(entry.receiver))) return false;
+					}
+					publication.publish();
+					if (!sourcePart.ownsGroup(source) || this.owners.get(target) !== targetPart || target.surface.retired
+						|| target.panes.openGeneration !== targetReceipt || target.model.activeTab !== publication.active || !plan.entries.every(entry => target.model.contains(entry.receiver))) return false;
+					if (publication.active !== null) target.attachTransferredEditor(publication.active, selection, true);
+					if (this.owners.get(target) !== targetPart || target.surface.retired || target.model.activeTab !== publication.active
+						|| (publication.active === null ? target.panes.activePane !== null : target.panes.activePane?.input !== publication.active)) return false;
+					if (!targetPart.revealGroup(target)) return false;
+					return { group: target, part: targetPart, active: publication.active };
+				});
+			} finally {
+				try {
+					for (const group of [source, target]) {
+						if (this.owners.get(group) !== (group === source ? sourcePart : targetPart) || group.paneSurface.retired) continue;
+						const active = group.model.activeTab, pane = group.panes.activePane;
+						if (active === null) { if (pane !== null) group.panes.clearEditor(); }
+						else if (pane?.input !== active) group.attachTransferredEditor(active, group === target && publication?.active === active ? selection : undefined, true);
+					}
+				} finally {
+					if (publication !== undefined) for (const entry of publication.entries) if (entry.receiver !== entry.input) entry.input.dispose();
+					selection?.dispose();
+					if (sourceDetached) {
+						if (finalHost) sourcePart.dispose(); else sourcePart.discardGroup(source);
+					} else if (replacement !== undefined) sourcePart.discardGroup(replacement);
+					if (!targetAdopted) {
+						if (destination.kind === 'window') targetPart.dispose(); else if (destination.kind === 'split') targetPart.discardGroup(target);
+					}
+					if (!sourcePart.retired) sourcePart.setOperation('none');
+					if (targetPart !== sourcePart && !targetPart.retired) targetPart.setOperation('none');
+					if (sourceDetached && !sourcePart.retired) sourcePart.publishGroups();
+					if (targetAdopted && !targetPart.retired && targetPart !== sourcePart) {
+						if (destination.kind === 'window') targetPart.present();
+						targetPart.publishGroups();
+					}
+				}
+			}
+		});
+		if (moved === false) return false;
+		if (this.owners.get(moved.group) !== moved.part || moved.group.surface.retired || moved.group.model.activeTab !== moved.active
+			|| (moved.active === null ? moved.group.panes.activePane !== null : moved.group.panes.activePane?.input !== moved.active)) return false;
+		if ((focusOrigin === null || sourcePart.scope.contains(focusOrigin.scope) || moved.part.scope.contains(focusOrigin.scope))
+			&& (inputFocus.revision === focusRevision || inputFocus.target === null)) moved.group.focus();
+		return true;
+	}
+
+	/** Retiring a transferred final host changes workspace membership before ending its retained scopes. */
+	private unpublishDocument(part: EditorPart, replacement: EditorPart): void {
+		this.partsByScope.set(part.scope, null);
+		this.documentParts.splice(this.documentParts.indexOf(part), 1);
+		for (const group of part.groups) {
+			this.owners.delete(group); this.groupsBySurface.delete(group.surface); this.groupsByModel.delete(group.model);
+			this.groupList.splice(this.groupList.indexOf(group), 1);
+		}
+		this.mru.splice(this.mru.indexOf(part), 1);
+		if (this.activePart === part) { this.activePart = replacement; this.mru.splice(this.mru.indexOf(replacement), 1); this.mru.unshift(replacement); }
 	}
 
 	public canCloseGroup(group: EditorGroupView): boolean {
@@ -391,8 +539,7 @@ export class EditorParts {
 		this.partsByScope.set(part.scope, null);
 		part.dispose();
 		this.documentParts.splice(this.documentParts.indexOf(part), 1);
-		for (const unbind of this.partSubscriptions.get(part)!) unbind(); this.partSubscriptions.delete(part);
-		for (const group of part.groups) { this.owners.delete(group); this.groupsBySurface.delete(group.surface); this.groupList.splice(this.groupList.indexOf(group), 1); }
+		for (const group of part.groups) { this.owners.delete(group); this.groupsBySurface.delete(group.surface); this.groupsByModel.delete(group.model); this.groupList.splice(this.groupList.indexOf(group), 1); }
 		this.mru.splice(this.mru.indexOf(part), 1);
 		if (this.activePart === part) this.activePart = next;
 		navigationState.activeGroup = this.activePart.activeGroup;
@@ -466,9 +613,8 @@ export class EditorParts {
 		for (const part of this.documentParts) { this.partsByScope.set(part.scope, null); part.dispose(); }
 		this.partsByScope.set(this.main.scope, null);
 		this.main.dispose();
-		for (const subscriptions of this.partSubscriptions.values()) for (const unbind of subscriptions) unbind(); this.partSubscriptions.clear();
 		this.documentParts.length = 0; this.groupList.length = 0;
 		this.minimizedDocumentCount = 0;
-		this.owners.clear(); this.groupsBySurface.clear(); this.mru.length = 0; this.listeners.clear();
+		this.owners.clear(); this.groupsBySurface.clear(); this.groupsByModel.clear(); this.mru.length = 0; this.listeners.clear();
 	}
 }

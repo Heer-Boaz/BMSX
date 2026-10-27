@@ -5,25 +5,38 @@ import type { PointerCaptureService, PointerCaptureScope, PointerCaptureTarget }
 import { copyPointerInputSnapshot } from '../../../input/pointer/frame';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { EditorTabGroupModel } from './group_model';
-import type { EditorInput, TabDragState } from './model';
+import type { EditorInput } from './model';
+
+/** An editor retains its exact input; a group retains its actual live model. */
+export type EditorTabDragSource =
+	| { readonly kind: 'editor'; readonly model: EditorTabGroupModel; readonly input: EditorInput }
+	| { readonly kind: 'group'; readonly model: EditorTabGroupModel };
+
+export type TabDragState = PointerInputSnapshot & {
+	readonly source: EditorTabDragSource;
+	readonly startX: number;
+	readonly startY: number;
+	hasDragged: boolean;
+	pointerTime: number;
+};
 
 /** Workbench admission, targeting and feedback for every group's physical tab gesture. */
 export interface EditorTabDragHandler {
-	update(model: EditorTabGroupModel, input: EditorInput, snapshot: PointerInputSnapshot, now: number, scroll: boolean): void;
-	drop(model: EditorTabGroupModel, input: EditorInput, snapshot: PointerInputSnapshot, now: number): void;
+	update(source: EditorTabDragSource, snapshot: PointerInputSnapshot, now: number, scroll: boolean): void;
+	drop(source: EditorTabDragSource, snapshot: PointerInputSnapshot, now: number): void;
 	clear(): void;
 }
 
-/** One captured input identity; the shared workbench owner decides every drop. */
+/** One captured editor or group gesture; the shared workbench owner decides every drop. */
 export class EditorTabDrag implements PointerCaptureTarget {
 	public state: TabDragState | null = null;
 
-	public constructor(private readonly model: EditorTabGroupModel, private readonly capture: PointerCaptureService,
+	public constructor(private readonly capture: PointerCaptureService,
 		private readonly scope: PointerCaptureScope, private readonly onBeginDrag: () => void, private readonly handler: EditorTabDragHandler) {}
 
-	public begin(input: EditorInput, snapshot: PointerInputSnapshot, now: number): void {
+	public begin(source: EditorTabDragSource, snapshot: PointerInputSnapshot, now: number): void {
 		this.capture.capture(this, PointerButton.Primary, this.scope);
-		this.state = { ...snapshot, input, startX: snapshot.viewportX, startY: snapshot.viewportY,
+		this.state = { ...snapshot, source, startX: snapshot.viewportX, startY: snapshot.viewportY,
 			hasDragged: false, pointerTime: now };
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot, now);
 	}
@@ -37,7 +50,7 @@ export class EditorTabDrag implements PointerCaptureTarget {
 		const state = this.state;
 		if (state === null) return;
 		this.cancelPointer();
-		if (state.hasDragged) this.handler.drop(this.model, state.input, snapshot, now);
+		if (state.hasDragged) this.handler.drop(state.source, snapshot, now);
 	}
 
 	public readonly cancelPointer = (): void => {
@@ -56,33 +69,33 @@ export class EditorTabDrag implements PointerCaptureTarget {
 	private updatePointer(snapshot: PointerInputSnapshot, now: number, scroll: boolean): void {
 		const state = this.state;
 		if (state === null) return;
-		if (!this.model.contains(state.input)) { this.cancel(); return; }
+		if (state.source.kind === 'editor' && !state.source.model.contains(state.source.input)) { this.cancel(); return; }
 		if (!state.hasDragged) {
 			copyPointerInputSnapshot(state, snapshot);
 			state.pointerTime = now;
 			if (Math.max(Math.abs(snapshot.viewportX - state.startX), Math.abs(snapshot.viewportY - state.startY)) < constants.POINTER_DRAG_ACTIVATION_THRESHOLD) return;
 			state.hasDragged = true;
 			this.onBeginDrag();
-			this.model.pin(state.input);
+			if (state.source.kind === 'editor') state.source.model.pin(state.source.input);
 			if (this.state !== state) return;
-			if (!this.model.contains(state.input)) { this.cancel(); return; }
+			if (state.source.kind === 'editor' && !state.source.model.contains(state.source.input)) { this.cancel(); return; }
 		} else {
-			if (scroll) this.handler.update(this.model, state.input, state, now, true);
+			if (scroll) this.handler.update(state.source, state, now, true);
 			if (this.state !== state) return;
 			copyPointerInputSnapshot(state, snapshot);
 			state.pointerTime = now;
 		}
-		this.handler.update(this.model, state.input, state, now, false);
+		this.handler.update(state.source, state, now, false);
 	}
 
 	/** Host time advances target scrolling even when the physical pointer remains stationary. */
 	public advance(now: number): void {
 		const state = this.state;
 		if (state === null) return;
-		if (!this.model.contains(state.input)) { this.cancel(); return; }
+		if (state.source.kind === 'editor' && !state.source.model.contains(state.source.input)) { this.cancel(); return; }
 		if (state.hasDragged) {
 			state.pointerTime = now;
-			this.handler.update(this.model, state.input, state, now, true);
+			this.handler.update(state.source, state, now, true);
 		}
 	}
 
@@ -90,20 +103,20 @@ export class EditorTabDrag implements PointerCaptureTarget {
 	public refreshTarget(): void {
 		const state = this.state;
 		if (state === null) return;
-		if (!this.model.contains(state.input)) { this.cancel(); return; }
-		if (state.hasDragged) this.handler.update(this.model, state.input, state, state.pointerTime, false);
+		if (state.source.kind === 'editor' && !state.source.model.contains(state.source.input)) { this.cancel(); return; }
+		if (state.hasDragged) this.handler.update(state.source, state, state.pointerTime, false);
 	}
 
 	public onModifiersChange(modifiers: KeyModifier, now: number): void {
 		const state = this.state;
 		if (state === null || state.modifiers === modifiers) return;
-		if (!this.model.contains(state.input)) { this.cancel(); return; }
+		if (state.source.kind === 'editor' && !state.source.model.contains(state.source.input)) { this.cancel(); return; }
 		if (state.hasDragged) {
-			this.handler.update(this.model, state.input, state, now, true);
+			this.handler.update(state.source, state, now, true);
 			if (this.state !== state) return;
 		}
 		state.modifiers = modifiers;
 		state.pointerTime = now;
-		if (state.hasDragged) this.handler.update(this.model, state.input, state, now, false);
+		if (state.hasDragged) this.handler.update(state.source, state, now, false);
 	}
 }

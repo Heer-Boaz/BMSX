@@ -38,17 +38,17 @@ test('one shared physical resolver reorders local tabs only on release and never
 	const drop = parts.dropTarget, snapshot = pointer(group.tabStrip.layoutState.viewportBounds);
 	snapshot.viewportX = group.tabStrip.layoutState.viewportBounds.right - 2;
 	const before = [...group.model.tabs], pane = group.panes.activePane;
-	drop.update(group.model, f.firstInput, snapshot, 0, false);
+	drop.update({ kind: 'editor', model: group.model, input: f.firstInput }, snapshot, 0, false);
 	assert.deepEqual(group.model.tabs, before, 'feedback cannot publish a reorder');
 	drop.clear(); assert.deepEqual(group.model.tabs, before);
 	const utility = f.editor.surfaces.attach({ role: 'window', lifetimeOwner: group.paneSurface, presentationParent: null,
 		captureScope: Symbol('covering inspector'), isVisible: () => true, getBounds: () => group.tabStrip.layoutState.viewportBounds,
 		getClip: () => group.workArea, draw() {},
 	});
-	drop.drop(group.model, f.firstInput, snapshot, 1);
+	drop.drop({ kind: 'editor', model: group.model, input: f.firstInput }, snapshot, 1);
 	assert.deepEqual(group.model.tabs, before, 'presentation coverage wins over the source strip rectangle');
 	utility.dispose();
-	drop.drop(group.model, f.firstInput, snapshot, 2);
+	drop.drop({ kind: 'editor', model: group.model, input: f.firstInput }, snapshot, 2);
 	assert.ok(group.model.tabs[0] === other && group.model.tabs[1] === f.firstInput);
 	assert.ok(group.panes.activePane === pane && pane.input === f.firstInput, 'local reorder does not replace the control attachment');
 });
@@ -58,9 +58,9 @@ test('tab insertion moves the exact Source input to its released receiver index'
 	const item = receiver.tabStrip.layoutState.items.peek(0), snapshot = pointer(item.bounds);
 	snapshot.viewportX = item.bounds.left + 1;
 	const bytes = input.workingCopy.buffer.getText(), version = input.workingCopy.version;
-	parts.dropTarget.update(f.firstGroup.model, input, snapshot, 0, false);
+	parts.dropTarget.update({ kind: 'editor', model: f.firstGroup.model, input: input }, snapshot, 0, false);
 	assert.ok(parts.findGroup(input) === f.firstGroup && receiver.model.activeTab === f.secondInput);
-	parts.dropTarget.drop(f.firstGroup.model, input, snapshot, 1);
+	parts.dropTarget.drop({ kind: 'editor', model: f.firstGroup.model, input: input }, snapshot, 1);
 	assert.ok(parts.findGroup(input) === receiver);
 	assert.ok(receiver.model.tabs[0] === input && receiver.model.tabs[1] === f.secondInput);
 	assert.ok(receiver.panes.activePane?.input === input);
@@ -73,7 +73,7 @@ test('merge preserves an existing matching receiver view and its tab position', 
 	const home = new HomeInput(null); receiver.openEditor(home); f.update();
 	const snapshot = pointer(receiver.tabStrip.layoutState.viewportBounds);
 	snapshot.viewportX = receiver.tabStrip.layoutState.viewportBounds.right - 1;
-	parts.dropTarget.drop(f.firstGroup.model, f.firstInput, snapshot, 1);
+	parts.dropTarget.drop({ kind: 'editor', model: f.firstGroup.model, input: f.firstInput }, snapshot, 1);
 	assert.equal(f.firstGroup.model.tabs.length, 0);
 	assert.ok(receiver.model.tabs[0] === f.secondInput && receiver.model.tabs[1] === home);
 	assert.ok(receiver.model.activeTab === f.secondInput && receiver.panes.activePane?.input === f.secondInput);
@@ -85,17 +85,17 @@ test('release rechecks a stationary target when a modal now blocks its presentat
 	let hitTests = 0;
 	const hitTest = f.editor.surfaces.hitTest.bind(f.editor.surfaces);
 	t.mock.method(f.editor.surfaces, 'hitTest', (x, y) => { hitTests++; return hitTest(x, y); });
-	parts.dropTarget.update(f.firstGroup.model, f.firstInput, snapshot, 0, false);
-	for (let now = 1; now <= 20; now++) parts.dropTarget.update(f.firstGroup.model, f.firstInput, snapshot, now, false);
+	parts.dropTarget.update({ kind: 'editor', model: f.firstGroup.model, input: f.firstInput }, snapshot, 0, false);
+	for (let now = 1; now <= 20; now++) parts.dropTarget.update({ kind: 'editor', model: f.firstGroup.model, input: f.firstInput }, snapshot, now, false);
 	assert.equal(hitTests, 1, 'unchanged physical presentation retains its actual hit');
 	const modal = f.editor.surfaces.attach({ role: 'modal', blockedScope: null, lifetimeOwner: f.secondGroup.surface,
 		presentationParent: null, captureScope: Symbol('drop blocker'), isVisible: () => true,
 		getBounds: () => f.secondGroup.panes.contentBounds, getClip: () => f.secondGroup.workArea, draw() {},
 	});
-	parts.dropTarget.drop(f.firstGroup.model, f.firstInput, snapshot, 30);
+	parts.dropTarget.drop({ kind: 'editor', model: f.firstGroup.model, input: f.firstInput }, snapshot, 30);
 	assert.ok(parts.findGroup(f.firstInput) === f.firstGroup); assert.equal(parts.documents.length, 2);
 	modal.dispose();
-	parts.dropTarget.drop(f.firstGroup.model, f.firstInput, snapshot, 31);
+	parts.dropTarget.drop({ kind: 'editor', model: f.firstGroup.model, input: f.firstInput }, snapshot, 31);
 	assert.ok(parts.findGroup(f.firstInput) === f.secondGroup);
 });
 
@@ -103,13 +103,13 @@ test('body-edge drop creates a real receiver split only after source draft admis
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, source = f.firstGroup, receiver = f.secondGroup;
 	const snapshot = bodyPoint(receiver, 'right'), target = f.first.commandTarget;
 	f.first.focus(); target.edit = { pending: true, commit: () => false };
-	parts.dropTarget.update(source.model, f.firstInput, snapshot, 0, false);
+	parts.dropTarget.update({ kind: 'editor', model: source.model, input: f.firstInput }, snapshot, 0, false);
 	assert.equal(f.secondPart.groups.length, 1);
-	parts.dropTarget.drop(source.model, f.firstInput, snapshot, 1);
+	parts.dropTarget.drop({ kind: 'editor', model: source.model, input: f.firstInput }, snapshot, 1);
 	assert.equal(f.secondPart.groups.length, 1); assert.equal(parts.documents.length, 2);
 	assert.ok(parts.findGroup(f.firstInput) === source);
 	target.edit = undefined;
-	parts.dropTarget.drop(source.model, f.firstInput, snapshot, 2);
+	parts.dropTarget.drop({ kind: 'editor', model: source.model, input: f.firstInput }, snapshot, 2);
 	const destination = parts.findGroup(f.firstInput);
 	assert.ok(destination !== undefined && destination !== source && destination !== receiver);
 	assert.ok(parts.partForGroup(destination) === f.secondPart && destination.panes.activePane?.input === f.firstInput);
@@ -118,10 +118,10 @@ test('body-edge drop creates a real receiver split only after source draft admis
 
 test('a sole editor can float explicitly but cannot split its own final leaf', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, source = f.firstGroup;
-	parts.dropTarget.drop(source.model, f.firstInput, bodyPoint(source, 'left'), 0);
+	parts.dropTarget.drop({ kind: 'editor', model: source.model, input: f.firstInput }, bodyPoint(source, 'left'), 0);
 	assert.equal(f.firstPart.groups.length, 1); assert.equal(parts.documents.length, 2);
 	const snapshot = pointer(source.tabStrip.layoutState.viewportBounds, KeyModifier.alt);
-	parts.dropTarget.drop(source.model, f.firstInput, snapshot, 1);
+	parts.dropTarget.drop({ kind: 'editor', model: source.model, input: f.firstInput }, snapshot, 1);
 	const destination = parts.findGroup(f.firstInput);
 	assert.ok(destination !== undefined && destination !== source);
 	assert.equal(parts.documents.length, 3); assert.equal(source.model.tabs.length, 0);
@@ -135,11 +135,11 @@ test('Alt cannot turn an obstructed or absent physical editor target into a floa
 		captureScope: Symbol('covered Alt target'), isVisible: () => true, getBounds: () => source.tabStrip.layoutState.viewportBounds,
 		getClip: () => source.workArea, draw() {},
 	});
-	parts.dropTarget.drop(source.model, f.firstInput, snapshot, 0);
+	parts.dropTarget.drop({ kind: 'editor', model: source.model, input: f.firstInput }, snapshot, 0);
 	assert.equal(parts.documents.length, 2); assert.ok(parts.findGroup(f.firstInput) === source);
 	utility.dispose();
 	snapshot.viewportX = -1;
-	parts.dropTarget.drop(source.model, f.firstInput, snapshot, 1);
+	parts.dropTarget.drop({ kind: 'editor', model: source.model, input: f.firstInput }, snapshot, 1);
 	assert.equal(parts.documents.length, 2); assert.ok(parts.findGroup(f.firstInput) === source);
 });
 
@@ -151,7 +151,7 @@ test('strip controls and owned transient surfaces are not editor docking targets
 	f.update();
 	assert.equal(receiver.tabStrip.scrollbar.isVisible(), true);
 	for (const bounds of [receiver.tabStrip.actions.items[0].bounds, receiver.tabStrip.scrollbar.getTrack()]) {
-		parts.dropTarget.drop(f.firstGroup.model, f.firstInput, pointer(bounds, KeyModifier.alt), 0);
+		parts.dropTarget.drop({ kind: 'editor', model: f.firstGroup.model, input: f.firstInput }, pointer(bounds, KeyModifier.alt), 0);
 		assert.ok(parts.findGroup(f.firstInput) === f.firstGroup); assert.equal(parts.documents.length, 2);
 	}
 	const snapshot = bodyPoint(receiver), popup = f.editor.surfaces.attach({ role: 'transient', outsidePress: 'owner',
@@ -159,7 +159,7 @@ test('strip controls and owned transient surfaces are not editor docking targets
 		captureScope: Symbol('pane-owned drop obstruction'), isVisible: () => true,
 		getBounds: () => receiver.panes.contentBounds, getClip: () => receiver.clip, draw() {},
 	});
-	parts.dropTarget.drop(f.firstGroup.model, f.firstInput, snapshot, 1);
+	parts.dropTarget.drop({ kind: 'editor', model: f.firstGroup.model, input: f.firstInput }, snapshot, 1);
 	assert.ok(parts.findGroup(f.firstInput) === f.firstGroup); assert.equal(f.secondPart.groups.length, 1);
 	popup.dispose();
 });
@@ -172,8 +172,8 @@ test('foreign tab autoscroll uses host time without activating the hovered recei
 	receiver.activate(f.secondInput.id); f.update(); f.first.focus();
 	const pane = receiver.panes.activePane, input = receiver.model.activeTab, snapshot = pointer(receiver.tabStrip.layoutState.viewportBounds);
 	snapshot.viewportX = receiver.tabStrip.layoutState.viewportBounds.right - 1;
-	parts.dropTarget.update(f.firstGroup.model, f.firstInput, snapshot, 0, false);
-	parts.dropTarget.update(f.firstGroup.model, f.firstInput, snapshot, 1000, true);
+	parts.dropTarget.update({ kind: 'editor', model: f.firstGroup.model, input: f.firstInput }, snapshot, 0, false);
+	parts.dropTarget.update({ kind: 'editor', model: f.firstGroup.model, input: f.firstInput }, snapshot, 1000, true);
 	assert.ok(receiver.tabStrip.scrollbar.getScroll() > 0);
 	assert.ok(receiver.model.activeTab === input && receiver.panes.activePane === pane);
 	assert.ok(parts.activeGroup === f.firstGroup && parts.findGroup(f.firstInput) === f.firstGroup);
@@ -192,7 +192,7 @@ test('foreign drop feedback consumes the final receiver font layout before the s
 	const sourceTab = source.tabStrip.layoutState.items.peek(0), receiverTab = receiver.tabStrip.layoutState.items.peek(0);
 	const down = pointer(sourceTab.bounds); down.viewportX = sourceTab.bounds.left + 2;
 	down.pressedButtons = PointerButton.Primary; down.justPressedButtons = PointerButton.Primary;
-	source.tabStrip.drag.begin(f.firstInput, down, 0);
+	source.tabStrip.drag.begin({ kind: 'editor', model: source.model, input: f.firstInput }, down, 0);
 	const held = pointer(receiverTab.bounds); held.viewportX = receiverTab.bounds.right - 1; held.viewportY = receiverTab.bounds.top + 1;
 	held.pressedButtons = PointerButton.Primary;
 	pointerCapture.dispatch(held, false, 10, source.tabScope);
@@ -208,7 +208,7 @@ test('foreign drop feedback consumes the final receiver font layout before the s
 	};
 	const previous = drawMarker();
 	const producer = { ...held };
-	f.editor.editorParts.dropTarget.update(source.model, f.firstInput, producer, 10, false);
+	f.editor.editorParts.dropTarget.update({ kind: 'editor', model: source.model, input: f.firstInput }, producer, 10, false);
 	producer.viewportX = -1; producer.valid = false;
 	f.editor.editorParts.dropTarget.refresh();
 	assert.deepEqual(drawMarker(), previous, 'shared feedback owns its occurrence instead of borrowing the mutable producer record');

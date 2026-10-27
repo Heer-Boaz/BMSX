@@ -63,7 +63,7 @@ export class EditorGroupArrangement<T> {
 	private readonly clientBounds = create_rect_bounds();
 	private readonly clientViewport = create_rect_bounds();
 	private scrollbarSize = 0;
-	private splitPreview: { revision: number; layoutRevision: number; reference: T; direction: EditorGroupDirection;
+	private dropPreview: { revision: number; layoutRevision: number; source: T | undefined; reference: T; direction: EditorGroupDirection;
 		width: number; height: number; removed: T | undefined; bounds: RectBounds } | undefined;
 
 	public constructor(initial: T) {
@@ -107,13 +107,36 @@ export class EditorGroupArrangement<T> {
 
 	/** The part owner supplies a replacement leaf when it moves its final group. */
 	public remove(group: T): void {
-		const leaf = this.leavesByGroup.get(group)!, parent = this.parents.get(leaf)!;
-		this.replace(parent, parent.first === leaf ? parent.second : parent.first);
+		this.detachLeaf(this.leavesByGroup.get(group)!);
 		if (this.maximizedValue === group) {
 			this.maximizedValue = undefined;
 			this.scrollXValue = this.normalScrollXValue; this.scrollYValue = this.normalScrollYValue;
 		}
 		this.reindex();
+	}
+
+	/** Reposition one retained group; its controls and input lifetimes do not change. */
+	public move(source: T, reference: T, direction: EditorGroupDirection): boolean {
+		if (source === reference) return false;
+		const leaf = this.leavesByGroup.get(source)!, current = this.leavesByGroup.get(reference)!, parent = this.parents.get(leaf)!;
+		const first = direction === 'left' || direction === 'up', orientation = direction === 'left' || direction === 'right' ? 'horizontal' : 'vertical';
+		const unmaximize = this.maximizedValue !== undefined;
+		if (unmaximize) {
+			this.maximizedValue = undefined; this.scrollXValue = this.normalScrollXValue; this.scrollYValue = this.normalScrollYValue;
+		}
+		if ((parent.first === current || parent.second === current) && parent.split.orientation === orientation) {
+			if ((parent.first === leaf) === first) {
+				if (unmaximize) { this.dirty = true; this.revision++; }
+				return unmaximize;
+			}
+			parent.first = first ? leaf : current; parent.second = first ? current : leaf;
+			parent.split.ratio = 1 - parent.split.ratio;
+		} else {
+			this.detachLeaf(leaf);
+			this.replace(current, this.createSplit(first ? leaf : current, first ? current : leaf, orientation, 0.5));
+		}
+		this.reindex();
+		return true;
 	}
 
 	public setRoot(layout: EditorGroupLayout<T>): void {
@@ -180,24 +203,38 @@ export class EditorGroupArrangement<T> {
 	/** Project the same split/removal/minimum/reveal operations without publishing live topology. */
 	public writeSplitPreview(reference: T, direction: EditorGroupDirection, width: number, height: number,
 		removed: T | undefined, target: RectBounds): void {
-		const cached = this.splitPreview;
+		this.writePreview(undefined, reference, direction, width, height, removed, target);
+	}
+
+	/** An existing local group moves as a leaf; an incoming group occupies a new split. */
+	public writeMovePreview(source: T | undefined, reference: T, direction: EditorGroupDirection, width: number, height: number, target: RectBounds): boolean {
+		if (source === reference) return false;
+		this.writePreview(source, reference, direction, width, height, undefined, target);
+		return true;
+	}
+
+	private writePreview(source: T | undefined, reference: T, direction: EditorGroupDirection, width: number, height: number,
+		removed: T | undefined, target: RectBounds): void {
+		const cached = this.dropPreview;
 		if (cached !== undefined && cached.revision === this.revision && cached.layoutRevision === this.layoutRevision
-			&& cached.reference === reference && cached.direction === direction && cached.width === width && cached.height === height && cached.removed === removed) {
+			&& cached.source === source && cached.reference === reference && cached.direction === direction && cached.width === width && cached.height === height && cached.removed === removed) {
 			copy_rect_bounds(target, cached.bounds); return;
 		}
-		const added = Symbol('prospective editor group'), projection = new EditorGroupArrangement<T | symbol>(reference);
+		const added = source === undefined ? Symbol('prospective editor group') : source, projection = new EditorGroupArrangement<T | symbol>(reference);
 		const project = (node: EditorGroupNode<T>): EditorGroupLayout<T | symbol> => node.kind === 'group'
 			? { kind: 'group', group: node.group }
 			: { kind: 'split', orientation: node.split.orientation, ratio: node.split.ratio, first: project(node.first), second: project(node.second) };
 		projection.setRoot(project(this.rootValue));
 		for (const leaf of this.leafValues) projection.setMinimum(leaf.group, leaf.minimumWidth, leaf.minimumHeight);
-		projection.split(reference, added, direction); projection.setMinimum(added, width, height);
+		if (source === undefined) projection.split(reference, added, direction);
+		else projection.move(source, reference, direction);
+		projection.setMinimum(added, width, height);
 		if (removed !== undefined) projection.remove(removed);
 		projection.layoutClient(this.clientBounds, this.scrollbarSize);
 		projection.setScroll(this.normalScrollX, this.normalScrollY); projection.reveal(added);
 		const bounds = projection.leavesByGroup.get(added)!.clip;
 		copy_rect_bounds(target, bounds);
-		this.splitPreview = { revision: this.revision, layoutRevision: this.layoutRevision, reference, direction, width, height, removed, bounds: { ...bounds } };
+		this.dropPreview = { revision: this.revision, layoutRevision: this.layoutRevision, source, reference, direction, width, height, removed, bounds: { ...bounds } };
 	}
 
 	/** Unchanged layout only compares retained invalidation/geometry words. */
@@ -254,8 +291,17 @@ export class EditorGroupArrangement<T> {
 		else parent.second = replacement;
 	}
 
+	/** Normalize the old branch while retaining the leaf for an admitted relocation. */
+	private detachLeaf(leaf: EditorGroupLeaf<T>): void {
+		const parent = this.parents.get(leaf)!, sibling = parent.first === leaf ? parent.second : parent.first;
+		const grandparent = this.parents.get(parent);
+		this.replace(parent, sibling);
+		if (grandparent === undefined) this.parents.delete(sibling);
+		else this.parents.set(sibling, grandparent);
+	}
+
 	private reindex(): void {
-		this.splitPreview = undefined;
+		this.dropPreview = undefined;
 		this.groupValues.length = this.leafValues.length = this.splitValues.length = 0;
 		this.leavesByGroup.clear(); this.parents.clear(); this.index(this.rootValue);
 		this.minimaDirty = this.dirty = true; this.revision++;

@@ -56,6 +56,7 @@ test('a newer same-host control focus from destination attachment is not overwri
 	assert.equal(parts.moveEditor(f.firstGroup, f.firstInput, { kind: 'group', group: target }), true);
 	assert.ok(target.panes.activePane?.input === f.firstInput);
 	assert.ok(inputFocus.target === siblingPane.commandTarget, 'only the newer concrete control owns the final focus intent');
+	assert.ok(parts.activePart === f.secondPart && parts.activeGroup === sibling, 'opening admission cannot erase an accepted control interaction from editor routing');
 	assert.ok(sibling.panes.activePane === siblingPane && sibling.model.activeTab === siblingInput);
 });
 

@@ -131,7 +131,7 @@ export class EditorGroupView {
 		});
 		this.panes = new EditorPanes(factories, this);
 		this.tabStrip = new EditorTabStrip(this.model, this.tabLayoutContext, commands, this.tabFocusTarget,
-			id => this.activate(id), id => { void this.close(id); }, () => this.panes.activePane?.focus(), presentation.dropTarget);
+			id => this.activate(id), id => { void this.close(id); }, () => this.commitPendingEdit() && this.focus(), presentation.dropTarget);
 		this.tabSurface = presentation.surfaces.attach({
 			role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.tabScope,
 			isVisible: () => this.presented, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.clip,
@@ -317,7 +317,7 @@ export class EditorGroupView {
 
 	/** Retire the departing attachment, never the input that is about to acquire another owner. */
 	public detachEditorForMove(input: EditorInput): number {
-		if (this.tabStrip.drag.state?.input === input) this.tabStrip.cancelDrag();
+		if (this.tabStrip.drag.state?.source.kind === 'editor' && this.tabStrip.drag.state.source.input === input) this.tabStrip.cancelDrag();
 		return this.model.activeTab === input ? this.panes.clearEditor('move') : this.panes.beginOpen();
 	}
 
@@ -350,7 +350,7 @@ export class EditorGroupView {
 
 	/** Commit an admitted close or explicit owner retirement for this known member. */
 	public removeEditor(input: EditorInput, closing?: ReadonlySet<EditorInput>): void {
-		if (this.tabStrip.drag.state?.input === input) this.tabStrip.cancelDrag();
+		if (this.tabStrip.drag.state?.source.kind === 'editor' && this.tabStrip.drag.state.source.input === input) this.tabStrip.cancelDrag();
 		const index = this.model.indexOf(input);
 		if (this.model.activeTab === input) {
 			const tabs = this.model.tabs;
@@ -382,11 +382,14 @@ export class EditorGroupView {
 		this.model.clear();
 	}
 
+	/** Transfer retires command/input presentation before history releases the old group lifetime. */
+	public revokePresentation(): void {
+		this.setOpenAdmission(false); this.presented = false;
+		groupsByScope.set(this.containerScope, null); groupsByScope.set(this.focusScope, null); groupsByScope.set(this.tabFocusTarget.scope, null);
+		pointerCapture.cancelScope(this.captureScope); pointerCapture.cancelScope(this.tabScope); pointerCapture.cancelScope(this.timeline.focusScope.surfaceScope);
+	}
 	public dispose(): void {
-		this.setOpenAdmission(false);
-		groupsByScope.set(this.containerScope, null);
-		groupsByScope.set(this.focusScope, null);
-		groupsByScope.set(this.tabFocusTarget.scope, null);
+		this.revokePresentation();
 		for (const listener of this.disposeListeners) listener();
 		this.disposeListeners.clear();
 		this.moveListeners.clear();

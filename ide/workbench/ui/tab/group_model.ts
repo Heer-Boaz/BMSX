@@ -24,6 +24,14 @@ import type { EditorInputSerializer, EditorInputSerializers, SerializedEditorGro
 
 export type EditorOpenOptions = { readonly pinned?: boolean };
 export type EditorTransferPublication = { readonly input: EditorInput; publish(): void };
+export type EditorGroupTransferEntry = { readonly input: EditorInput; readonly receiver: EditorInput };
+export type EditorGroupTransferPlan = { readonly entries: readonly EditorGroupTransferEntry[] };
+export type EditorGroupTransferPublication = {
+	readonly entries: readonly EditorGroupTransferEntry[];
+	readonly active: EditorInput | null;
+	readonly preview: EditorInput | null;
+	publish(): void;
+};
 
 /**
  * Ordered editor inputs and their active selection. The active input is
@@ -270,6 +278,45 @@ export class EditorTabGroupModel {
 		this.revision += 1;
 		destination.revision += 1;
 		return { input: admitted, publish: () => {
+			for (const listener of this.changeListeners) listener();
+			for (const listener of destination.changeListeners) listener();
+		} };
+	}
+
+	/** One affinity plan supplies capability checks, input locks and the final batch mutation. */
+	public planTransferTo(destination: EditorTabGroupModel | undefined): EditorGroupTransferPlan {
+		const entries: EditorGroupTransferEntry[] = [];
+		const existing = new Map<EditorTabId, EditorInput>();
+		if (destination !== undefined) for (const input of destination.editorTabs) existing.set(input.id, input);
+		for (const input of this.editorTabs) entries.push({ input, receiver: existing.get(input.id) ?? input });
+		return { entries };
+	}
+
+	/** Transfer an entire admitted model with one paired notification, not a series of tab moves. */
+	public transferGroupTo(destination: EditorTabGroupModel, plan: EditorGroupTransferPlan, index = destination.editorTabs.length): EditorGroupTransferPublication {
+		let added = 0, active = this.editorTabs.length === 0 ? destination.activeEditor : this.activeEditor, preview = destination.previewEditor;
+		for (const { input, receiver } of plan.entries) {
+			if (input === this.activeEditor) active = receiver;
+			if (input === receiver) {
+				added++;
+				if (preview === null && input === this.previewEditor) preview = input;
+			}
+		}
+		const length = destination.editorTabs.length;
+		destination.editorTabs.length = length + added;
+		for (let position = length - 1; position >= index; position--) destination.editorTabs[position + added] = destination.editorTabs[position];
+		let position = index;
+		for (const { input, receiver } of plan.entries) {
+			this.listeners.get(input)!.dispose(); this.listeners.delete(input);
+			if (input === receiver) {
+				destination.editorTabs[position++] = input;
+				destination.registerInputListeners(input);
+			}
+		}
+		this.editorTabs.length = 0; this.activeEditor = null; this.previewEditor = null; this.labels.clear();
+		destination.activeEditor = active; destination.previewEditor = preview;
+		destination.updateLabels(); this.revision++; destination.revision++;
+		return { entries: plan.entries, active, preview, publish: () => {
 			for (const listener of this.changeListeners) listener();
 			for (const listener of destination.changeListeners) listener();
 		} };

@@ -58,13 +58,15 @@ execution services and their explicit targets.
 
 `services/editor/editor_parts.ts` owns the frontend's permanent main part,
 part/group membership, activation/MRU and normal opening destinations. It owns
-the shared close/transfer admission and the frontend drop-target projection. An
+the shared close/transfer admission and the frontend drop-target projection.
+Internal membership projections settle before external topology/model events;
+retiring group authority is separate from history handoff and final disposal. An
 `EditorPart` owns real groups, local active/MRU state, retained client bounds,
 Quick Input and decision dialogs. `group_arrangement.ts` owns the retained split
 tree, intrinsic minimum extents, overflow viewport, constrained drop previews and
 temporary group maximization.
 Each `EditorGroupView` owns its tabs, panes, content/timeline geometry and input
-scope. Captured tab gestures use the shared drop target for local and foreign
+scope. Editor and whole-group gestures use the shared drop target for local and foreign
 positions; actual surface presentation ancestry decides eligibility. Host
 admission and a group-local close decision are independent gates.
 The shared close owner settles drafts, working copies and Saves before the part

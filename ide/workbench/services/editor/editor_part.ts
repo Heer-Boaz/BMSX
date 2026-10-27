@@ -45,6 +45,7 @@ type EditorPartOptions = {
 	readonly focusReturn: InputFocusTarget;
 	layoutMain(): void;
 	onDidActivate(part: EditorPart): void;
+	onDidChangeGroupMembership(part: EditorPart): void;
 	onDidChange(): void;
 	requestClose(part: EditorPart): void;
 } & ({ readonly kind: 'main' } | {
@@ -161,9 +162,11 @@ export class EditorPart {
 		}
 		this.subscriptions.push(inputFocus.onDidActivateInteraction(target => {
 			if (this.scope.contains(target.scope)) {
-				const group = findEditorGroup(target);
-				if (group !== undefined && group !== null && this.groupSubscriptions.has(group) && !this.activateGroup(group)) return;
+				// This is an admitted physical interaction, not a request to open a control.
+				const group = findEditorGroup(target), previous = this.activeGroup;
+				if (group !== undefined && group !== null && this.groupSubscriptions.has(group)) this.selectGroup(group);
 				options.onDidActivate(this);
+				if (!this.retired && this.activeGroup !== previous) options.onDidChange();
 			}
 		}));
 		this.window?.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
@@ -196,6 +199,25 @@ export class EditorPart {
 	public splitGroup(reference: EditorGroupView, direction: EditorGroupDirection): EditorGroupView {
 		const group = this.createGroup(); this.admitGroup(group, reference, direction); return group;
 	}
+	/** A local arrangement move retains the group, its controls and pending input openings. */
+	public relocateGroup(source: EditorGroupView, reference: EditorGroupView, direction: EditorGroupDirection): boolean {
+		if (!this.arrangement.move(source, reference, direction)) return false;
+		this.restoreLifetime?.abort(); this.options.onDidChangeGroupMembership(this);
+		this.syncSashes();
+		if (!this.revealGroup(source)) return false;
+		for (const listener of this.groupListeners) listener();
+		if (this.retired || source.surface.retired || !this.groups.includes(source)) return false;
+		this.options.onDidChange();
+		return !this.retired && !source.surface.retired && this.groups.includes(source);
+	}
+	/** Explicit placement exposes its leaf independently of keyboard focus or window activation. */
+	public revealGroup(group: EditorGroupView): boolean {
+		if (this.retired || group.surface.retired || !this.groups.includes(group)) return false;
+		this.layout(this.clientBounds);
+		if (this.retired || group.surface.retired || !this.groups.includes(group)) return false;
+		this.arrangement.reveal(group); this.layout(this.clientBounds);
+		return !this.retired && !group.surface.retired && this.groups.includes(group);
+	}
 	/** The construction owner retains provisional controls without publishing topology. */
 	public createGroup(): EditorGroupView { const group = this.makeGroup(false); group.setOpenAdmission(false); return group; }
 	public ownsGroup(group: EditorGroupView): boolean { return !this.retired && this.groupSubscriptions.has(group); }
@@ -205,11 +227,32 @@ export class EditorPart {
 		for (const unbind of subscriptions) unbind();
 		this.groupSubscriptions.delete(group); group.dispose();
 	}
-	/** Paired model membership is already final when a drop adopts its new leaf. */
-	public admitGroup(group: EditorGroupView, reference: EditorGroupView, direction: EditorGroupDirection): void {
+	/** Topology adoption updates the parent membership projection without exposing intermediate layout. */
+	public adoptGroup(group: EditorGroupView, reference: EditorGroupView, direction: EditorGroupDirection): void {
 		this.restoreLifetime?.abort();
 		group.setOpenAdmission(this.operationValue === 'none');
 		this.arrangement.split(reference, group, direction); this.groupMru.push(group);
+		this.options.onDidChangeGroupMembership(this);
+	}
+	public admitGroup(group: EditorGroupView, reference: EditorGroupView, direction: EditorGroupDirection): void {
+		this.adoptGroup(group, reference, direction); this.publishGroups();
+	}
+	/** A departing group stays alive for history handoff after leaving its old arrangement. */
+	public detachGroup(group: EditorGroupView, replacement?: EditorGroupView): void {
+		this.restoreLifetime?.abort();
+		if (replacement === undefined) this.arrangement.remove(group);
+		else this.arrangement.setRoot({ kind: 'group', group: replacement });
+		this.groupMru.splice(this.groupMru.indexOf(group), 1);
+		if (replacement !== undefined) this.groupMru.push(replacement);
+		if (this.activeGroup === group) this.activeGroup = this.groupMru[0];
+		for (const unbind of this.groupSubscriptions.get(group)!) unbind();
+		this.groupSubscriptions.set(group, []);
+		group.revokePresentation();
+		if (this.window !== undefined) this.window.model.title = this.activeGroup.model.activeTab?.title ?? 'Editor';
+		this.options.onDidChangeGroupMembership(this);
+	}
+	/** External observers receive the completed arrangements, after both parents know their members. */
+	public publishGroups(): void {
 		for (const listener of this.groupListeners) listener();
 		if (this.retired) return;
 		this.syncSashes();
@@ -237,6 +280,7 @@ export class EditorPart {
 			if (this.window !== undefined) this.window.model.title = this.activeGroup.model.activeTab?.title ?? 'Editor';
 		}
 		// Membership must be final before disposal observers can issue another command.
+		this.options.onDidChangeGroupMembership(this);
 		for (const listener of this.groupListeners) listener();
 		group.dispose();
 		if (this.retired) return true;
@@ -246,20 +290,25 @@ export class EditorPart {
 		if (!this.retired) this.options.onDidChange();
 		return true;
 	}
+	/** An admitted transfer selects its concrete receiver before external publication. */
+	public selectGroup(group: EditorGroupView): void {
+		if (this.activeGroup === group) return;
+		this.activeGroup = group; this.groupMru.splice(this.groupMru.indexOf(group), 1); this.groupMru.unshift(group);
+		if (this.window !== undefined) this.window.model.title = group.model.activeTab?.title ?? 'Editor';
+	}
 	public activateGroup(group: EditorGroupView): boolean {
 		if (this.retired || !group.openingAdmitted || !this.groups.includes(group)) return false;
 		if (this.activeGroup === group) return true;
 		const generation = group.panes.openGeneration;
-		this.activeGroup = group; this.groupMru.splice(this.groupMru.indexOf(group), 1); this.groupMru.unshift(group);
-		if (this.window !== undefined) this.window.model.title = group.model.activeTab?.title ?? 'Editor';
-		this.options.onDidChange();
+		this.selectGroup(group); this.options.onDidChange();
 		return !this.retired && group.openingAdmitted && this.activeGroup === group && group.panes.openGeneration === generation;
 	}
+
 	private prepareGroupFocus(group: EditorGroupView): boolean {
 		if (this.retired) return false;
 		const focusRevision = inputFocus.revision;
 		if (!this.activateGroup(group) || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
-		this.arrangement.reveal(group);
+		if (!this.revealGroup(group)) return false;
 		if (!this.reveal(null)) return false;
 		this.options.onDidActivate(this);
 		return !this.retired && (inputFocus.revision === focusRevision || inputFocus.target === null);
@@ -352,6 +401,7 @@ export class EditorPart {
 			}
 		}
 		this.arrangement.setRoot({ kind: 'group', group: retained }); this.groupMru.length = 0; this.groupMru.push(retained); this.activeGroup = retained;
+		this.options.onDidChangeGroupMembership(this);
 		for (const listener of this.groupListeners) listener();
 		this.syncSashes(); this.layout(this.clientBounds); this.options.onDidChange();
 	}
@@ -385,6 +435,7 @@ export class EditorPart {
 			this.arrangement.setRoot(layout); published = true; this.groupMru.length = 0;
 			for (const index of state.mru) this.groupMru.push(this.groups[index]);
 			this.activeGroup = this.groups[state.active];
+			this.options.onDidChangeGroupMembership(this);
 			for (const listener of this.groupListeners) listener();
 			if (lifetime.signal.aborted) return false;
 			this.syncSashes();

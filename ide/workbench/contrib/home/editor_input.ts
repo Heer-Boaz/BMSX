@@ -1,6 +1,6 @@
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { StudioSourceContext } from '../../../../hosts/common/studio_projects';
-import { ReadonlyEditorInput } from '../../common/editor_input';
+import { ReadonlyEditorInput, type AbstractEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
@@ -33,6 +33,10 @@ export class HomeInput extends ReadonlyEditorInput<'home', 'home'> {
 		const actions = createWorkbenchActionBar(section.menu);
 		return { title: section.title, actions, bounds: create_rect_bounds(), labels: actions.items.map(item => item.label), visibleCount: 0 };
 	});
+
+	public override canMove(destination?: AbstractEditorInput<string, string>): boolean {
+		return destination === undefined || destination instanceof HomeInput && destination.workspaceContext?.id === this.workspaceContext?.id;
+	}
 
 	public constructor(public readonly workspaceContext: StudioSourceContext | null) {
 		super('home', 'home', 'Home', true);
