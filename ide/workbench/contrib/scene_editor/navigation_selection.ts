@@ -6,9 +6,9 @@ import { captureSceneEditorView, mapSceneEditorView, restoreSceneEditorView, typ
 export class SceneEditorNavigationSelection extends EditorPaneSelection {
 	public readonly snapshot: SceneEditorViewSnapshot;
 
-	public constructor(input: SceneEditorInput) {
+	public constructor(input: SceneEditorInput, snapshot = captureSceneEditorView(input)) {
 		super();
-		this.snapshot = captureSceneEditorView(input);
+		this.snapshot = snapshot;
 		this.add({ dispose: input.workingCopy.onDidChangeContent(event => mapSceneEditorView(this.snapshot, event.changes)) });
 	}
 
@@ -19,6 +19,8 @@ export class SceneEditorNavigationSelection extends EditorPaneSelection {
 	}
 
 	public restore(input: SceneEditorInput): void {
+		const { start, end } = input.selectionRange;
 		restoreSceneEditorView(input, this.snapshot);
+		if (start !== input.selectionRange.start || end !== input.selectionRange.end) input.version += 1;
 	}
 }

@@ -15,6 +15,8 @@ import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
@@ -26,20 +28,72 @@ import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { handleResourcePanelPointer } from '../../ide/input/pointer/resource_panel_content';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 
-function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1))) {
-	configureFontVariant('tiny');
+function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1)), variant: FontVariant = 'tiny') {
+	configureFontVariant(variant);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const sources = createScenarioTestSourceState(records);
 	const parts = createTestEditorParts(t), group = parts.createDocument().group;
 	const resourceEditors = createResourceEditorResolver(sources.catalog), editor = { editorParts: parts, resourceEditors, isActive: true } as CartEditor;
-	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
+	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
+		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog)));
 	const navigation = new EditorNavigationController(sources.catalog, panel, resourceEditors);
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();
 	group.panes.layout({ left: 140, top: 20, right: 384, bottom: 270 });
-	t.after(() => { panel.hide(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
+	t.after(() => { panel.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
 	return { panel, sources, group, navigation };
 }
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} Files pointer discloses an expandable file without activating it; its body retains default activation`, t => {
+	const path = `deep/tree/${'wide_name_'.repeat(12)}.lua`;
+	const f = fixture(t, [createScenarioTestSourceRecord(path, 1)], variant), panel = f.panel;
+	panel.queuePendingSelection({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }); panel.applyPendingSelection();
+	const node = panel.files.selectedNode!;
+	assert.ok(node.element.kind === 'file');
+	// Tree owners may advertise unresolved children before an explicit expansion.
+	node.expandable = true; node.collapsed = true;
+	const open = t.mock.method(f.navigation, 'openResource', async () => undefined);
+	const index = panel.selectionIndex, metrics = panel.getItemMetrics(index);
+	panel.prepareLayout(); panel.setHScroll(panel.files.tree.layout.indentWidth / 2);
+	assert.ok(panel.hscroll > 0);
+	const layout = panel.prepareLayout();
+	const pointer = { valid: true, insideViewport: true,
+		viewportX: layout.contentLeft - panel.hscroll + (metrics.markerStartWidth + metrics.markerEndWidth) / 2,
+		viewportY: layout.contentTop + (index - panel.scroll + 0.5) * panel.lineHeight,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	assert.equal(handleResourcePanelPointer(panel, pointer, true), true);
+	assert.equal(node.collapsed, false); assert.equal(open.mock.callCount(), 0);
+	assert.equal(panel.files.selectedNode, node); assert.equal(panel.isFocused(), true);
+	pointer.viewportX = layout.contentLeft - panel.hscroll + metrics.indentWidth + editorViewState.font.advance(' ');
+	assert.equal(handleResourcePanelPointer(panel, pointer, true), true);
+	assert.equal(open.mock.callCount(), 1); assert.equal(open.mock.calls[0].arguments[1], node.element.resource);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} Files folder disclosure and Left/Right retain navigation focus without resource activation`, t => {
+	const path = `deep/tree/${'wide_name_'.repeat(12)}.lua`;
+	const f = fixture(t, [createScenarioTestSourceRecord(path, 1)], variant), panel = f.panel;
+	panel.queuePendingSelection({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }); panel.applyPendingSelection();
+	panel.navigateFiles('left');
+	const node = panel.files.selectedNode!; assert.equal(node.element.kind, 'directory');
+	const open = t.mock.method(f.navigation, 'openResource', async () => undefined);
+	const index = panel.selectionIndex, metrics = panel.getItemMetrics(index);
+	panel.prepareLayout(); panel.setHScroll(panel.files.tree.layout.indentWidth / 2);
+	const layout = panel.prepareLayout();
+	assert.equal(handleResourcePanelPointer(panel, { valid: true, insideViewport: true,
+		viewportX: layout.contentLeft - panel.hscroll + (metrics.markerStartWidth + metrics.markerEndWidth) / 2,
+		viewportY: layout.contentTop + (index - panel.scroll + 0.5) * panel.lineHeight,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }, true), true);
+	assert.equal(node.collapsed, true); assert.equal(panel.isFocused(), true);
+	for (const key of ['ArrowRight', 'ArrowLeft']) {
+		const input = new KeyInputEvent(key, KeyModifier.none);
+		inputFocus.handleKeyboard(input); inputFocus.handleKeyboard(new KeyInputEvent(key, KeyModifier.none, false, false));
+		assert.equal(input.consumed, true); assert.equal(panel.files.selectedNode, node); assert.equal(panel.isFocused(), true);
+	}
+	assert.equal(node.collapsed, true); assert.equal(open.mock.callCount(), 0);
+});
 
 test('folder activation retains Files focus; a leaf invokes the real resource opener and reuses its working copy', async t => {
 	const f = fixture(t), original = f.navigation.openResource.bind(f.navigation);

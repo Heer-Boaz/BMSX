@@ -12,7 +12,10 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/panel/controller';
 import { createProblemsPanelLayout, writeProblemsPanelLayout } from '../../ide/workbench/contrib/problems/panel/layout';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import { createResourcePanelLayout, writeResourcePanelLayout } from '../../ide/workbench/contrib/resources/panel/layout';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { createTestEditorParts } from '../helpers/editor_panes';
@@ -62,10 +65,12 @@ test('Resource resize retains its extent while hiding retires only its own captu
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const parts = createTestEditorParts(t), editor = { editorParts: parts, isActive: true } as CartEditor;
-	const panel = new ResourcePanelController(editor, createScenarioTestSourceState([]).catalog,
-		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
+	const sources = createScenarioTestSourceState([]);
+	const panel = new ResourcePanelController(editor, sources.catalog,
+		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
+		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog)));
 	const sibling = new ProblemsPanelController();
-	t.after(() => { panel.hide(); sibling.hide(); inputFocus.setTarget(null); pointerCapture.cancel(); });
+	t.after(() => { panel.dispose(); sibling.hide(); inputFocus.setTarget(null); pointerCapture.cancel(); });
 	panel.show();
 	const strip = panel.resizeBounds, right = panel.getBounds().right;
 	panel.beginResize(pointer(right, strip.top));

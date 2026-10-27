@@ -50,6 +50,8 @@ import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalo
 import { inputFocus } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
+import type { ProjectContentIndex } from './content_index';
+import { openProjectContent } from './open_actions';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation } from '../../../ui/tree_view';
 import { getWorkbenchEditorBounds } from '../../../common/layout';
@@ -134,12 +136,14 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	public readonly resourceHorizontal: Scrollbar;
 	private resizeStartX = 0;
 	private resizeStartRatio = 0;
+	private readonly unbindKeyboard: () => void;
 
 	constructor(
 		private readonly editor: CartEditor,
 		private readonly catalog: WorkspaceSourceCatalog,
 		scrollbars: ResourcePanelScrollbars,
 		initialWidthRatio: number,
+		private readonly content: ProjectContentIndex,
 	) {
 		this.fontLineHeight = editorViewState.lineHeight;
 		this.widthRatio = initialWidthRatio;
@@ -149,7 +153,11 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 			if (kind === 'resourceVertical') this.setScroll(scroll); else this.setHScroll(scroll);
 		}, pointerCapture);
 		this.focusTarget.canFocus = () => this.isVisible();
-		this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
+	}
+
+	public dispose(): void {
+		this.hide(); this.focusTarget.release(); this.unbindKeyboard(); this.content.dispose();
 	}
 
 	public handleScrollbarPointer(snapshot: PointerSnapshot): boolean {
@@ -162,6 +170,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		pointerHover.release(this);
 		this.fontVariant = font.variant;
 		this.fontLineHeight = font.lineHeight;
+		this.files.tree.layout.indentWidth = this.files.tree.layout.twistieWidth = Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2);
 		if (this.mode === 'resources') this.updateFilesMetrics();
 		else this.callMaxWidth = computeResourcePanelMaxLineWidth(this.callHierarchyItems);
 	}
@@ -277,9 +286,9 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		this.ensureSelectionVisible();
 	}
 
-	isCallHierarchyMarkerHit(index: number, viewportX: number): boolean {
-		const item = this.callHierarchyItems[index];
-		if (!item || !item.callHierarchyExpandable) {
+	isDisclosureHit(index: number, viewportX: number): boolean {
+		const expandable = this.mode === 'resources' ? this.files.tree.rows[index].expandable : this.callHierarchyItems[index].callHierarchyExpandable;
+		if (!expandable) {
 			return false;
 		}
 		const layout = this.prepareLayout();
@@ -317,7 +326,12 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		if (selected === null) return;
 		if (selected.element.kind === 'file') void this.editor.navigation.openResource(this.editor.editorParts.documentDestination(undefined, { resource: selected.element.resource,
 			editorId: this.editor.resourceEditors.getEditorId(selected.element.resource) }), selected.element.resource);
-		else if (this.files.toggle(this.selectionIndex)) { this.updateFilesMetrics(); this.ensureSelectionVisible(); }
+		else if (selected.element.kind === 'definition') openProjectContent(this.editor, this.content, selected.element.content);
+		else this.toggleSelectedFileDisclosure();
+	}
+
+	public toggleSelectedFileDisclosure(): void {
+		if (this.files.toggle(this.selectionIndex)) { this.updateFilesMetrics(); this.ensureSelectionVisible(); }
 	}
 
 	openSelectedCallHierarchyLocation(): void {
@@ -375,7 +389,8 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		const previousInset = editorViewState.editorAreaLeft;
 		let reveal = false;
 		if (this.editor.isActive && this.mode === 'resources') {
-			const changed = this.files.sync(this.catalog, this.filterMode);
+			this.content.sync();
+			const changed = this.files.sync(this.catalog, this.filterMode, this.content.entriesByResource, this.content.revision);
 			if (this.pendingSelectionIdentity !== null && this.selectionRevealRevision !== this.files.revision) {
 				this.selectionRevealRevision = this.files.revision;
 				reveal = this.files.reveal(this.pendingSelectionIdentity);
@@ -479,7 +494,6 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 			tree.contentLeft = layout.contentLeft; tree.contentTop = layout.contentTop;
 			tree.contentRight = layout.contentRight; tree.contentBottom = layout.effectiveBottom;
 			tree.rowHeight = this.lineHeight; tree.visibleRowCount = layout.capacity;
-			tree.indentWidth = tree.twistieWidth = editorViewState.spaceAdvance * 2;
 		}
 		return this.isVisible() ? layout : null;
 	}
@@ -502,9 +516,9 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		const contentStartColumn = item.contentStartColumn;
 		const markerStartColumn = this.mode === 'command' && this.callHierarchyItems[index].callHierarchyExpandable ? contentStartColumn - 2 : contentStartColumn;
 		metrics.fontVariant = this.fontVariant;
-		metrics.indentWidth = this.mode === 'resources' ? contentStartColumn * editorViewState.spaceAdvance : measureTextRange(line, 0, contentStartColumn);
+		metrics.indentWidth = this.mode === 'resources' ? (this.files.tree.rows[index].depth + 1) * this.files.tree.layout.indentWidth : measureTextRange(line, 0, contentStartColumn);
 		metrics.contentWidth = measureTextRange(metrics.contentText, 0, metrics.contentText.length);
-		metrics.markerStartWidth = this.mode === 'resources' ? metrics.indentWidth - editorViewState.spaceAdvance * 2 : measureTextRange(line, 0, markerStartColumn);
+		metrics.markerStartWidth = this.mode === 'resources' ? metrics.indentWidth - this.files.tree.layout.twistieWidth : measureTextRange(line, 0, markerStartColumn);
 		metrics.markerEndWidth = metrics.indentWidth;
 		return metrics;
 	}

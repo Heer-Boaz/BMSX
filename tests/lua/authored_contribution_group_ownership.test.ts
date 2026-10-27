@@ -10,6 +10,11 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { AemEditorController } from '../../ide/workbench/contrib/aem/controller';
 import { LuaProgramController } from '../../ide/workbench/contrib/lua_program/controller';
 import { collectLuaPrograms } from '../../ide/workbench/contrib/lua_program/source';
+import { BehaviorLensController } from '../../ide/workbench/contrib/behavior_lens/controller';
+import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
+import { AnimationEditorController } from '../../ide/workbench/contrib/animation/controller';
+import { collectAnimationDefinitions } from '../../ide/workbench/contrib/animation/definitions';
+import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
@@ -19,12 +24,12 @@ import { createTestRuntime, createTestRuntimeRomPayload, TEST_CARTRIDGE_CONTEXT_
 
 const PROGRAM = "local progression = require('cartlib/progression')\nprogression.compile_program({ rules = {}, filters = {}, handlers = {} })";
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, source = PROGRAM, dependencies = [createScenarioTestSourceRecord('cartlib/progression.lua', 1, 'return {}')]) {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const sources = createScenarioTestSourceState([
-		createScenarioTestSourceRecord('program.lua', 1, PROGRAM),
-		createScenarioTestSourceRecord('cartlib/progression.lua', 1, 'return {}'),
+		createScenarioTestSourceRecord('program.lua', 1, source),
+		...dependencies,
 	]);
 	sources.catalog.registerTextSources(TEST_CARTRIDGE_CONTEXT_IDS[0], [{ type: 'aem', resid: 'events', source_path: 'events.aem.yaml' }]);
 	const audio = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'events.aem.yaml' })!;
@@ -41,7 +46,7 @@ function fixture(t: TestContext) {
 		picker.dispose(); menu.dispose(); first.dispose(); second.dispose();
 		editorTextModelService.clear(); inputFocus.setTarget(null);
 	});
-	return { sources, resource, audioModel, first, second, menu, picker, aem, programs };
+	return { sources, resource, audioModel, first, second, menu, picker, aem, programs, guest };
 }
 
 test('a shared audio controller opens into its requested group despite focus returning to another group', async t => {
@@ -153,4 +158,99 @@ for (const kind of ['aem', 'program'] as const) test(`one shared ${kind} control
 	assert.equal(local.visible, true, 'retiring another group does not retire the chosen dialog');
 	f.second.dispose();
 	assert.equal(local.visible, false, 'the actual destination lifetime retires its operation dialog');
+});
+
+test('Lua program matching queries retain exact group, kind, resource and mapped occurrence identity without loading source', t => {
+	const f = fixture(t, `${PROGRAM}\nprogression.compile_program({ rules = {}, filters = {}, handlers = {} })`);
+	const project = getOrCreateSemanticProject(editorTextModelService, f.resource.contextId);
+	project.synchronizeSources(f.sources.catalog);
+	const occurrences = collectLuaPrograms(f.resource, project.getSnapshot());
+	assert.equal(occurrences.length, 2);
+	const first = f.programs.openOccurrence(f.first, occurrences[0]), second = f.programs.openOccurrence(f.second, occurrences[1]);
+	f.second.panes.activePane!.focus();
+	const blocked = t.mock.method(f.sources.catalog, 'resolveLuaSource', () => assert.fail('retained-input lookup cannot load source'));
+	assert.equal(f.programs.findOccurrence(f.first, f.resource, 'progression', first.occurrenceRange), first);
+	assert.equal(f.programs.findOccurrence(f.second, f.resource, 'progression', first.occurrenceRange), undefined);
+	assert.equal(f.programs.findOccurrence(f.first, f.resource, 'input', first.occurrenceRange), undefined);
+	assert.equal(f.programs.findOccurrence(f.first, { ...f.resource, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1] }, 'progression', first.occurrenceRange), undefined);
+	assert.equal(f.programs.findOccurrence(f.first, { ...f.resource, path: 'unopened.lua' }, 'progression', first.occurrenceRange), undefined);
+	blocked.mock.restore();
+	assert.equal(f.programs.openOccurrence(f.first, occurrences[0]), first);
+	assert.equal(f.second.model.activeTab, second);
+	first.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved movement\n' }]);
+	const moved = collectLuaPrograms(f.resource, project.getSnapshot())[0];
+	const range = luaSourceRangeToTextRange(first.workingCopy.buffer, moved.file.chunk.locations.range(moved.call.expression.span));
+	assert.equal(f.programs.findOccurrence(f.first, f.resource, 'progression', range), first);
+	first.workingCopy.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start,
+		text: first.workingCopy.buffer.getTextRange(range.start, range.end) }]);
+	assert.equal(first.occurrenceRange.start, first.occurrenceRange.end);
+	assert.equal(f.programs.findOccurrence(f.first, f.resource, 'progression', range), undefined, 'a byte-identical replacement is a new occurrence, not the retired view');
+});
+
+test('Behavior matching queries distinguish duplicate registrations and preserve their actual group view without loading source', t => {
+	const source = `local trees = require('cartlib/behaviour_tree/library')
+trees.register('same', { root = { type = 'wait', duration_ticks = 1 } })
+trees.register('same', { root = { type = 'wait', duration_ticks = 2 } })`;
+	const f = fixture(t, source, [createScenarioTestSourceRecord('cartlib/behaviour_tree/library.lua', 1, '')]);
+	const documents = new BehaviorSourceDocuments(editorTextModelService, f.sources.catalog);
+	const controller = new BehaviorLensController(f.sources, null!, documents,
+		() => assert.fail('matching behavior trees does not create a graph worker'), f.guest, null!, null!);
+	const registrations = documents.registrations.getRegistrations(f.resource.contextId);
+	assert.equal(registrations.length, 2);
+	const first = controller.openDefinition(f.first, registrations[0]), second = controller.openDefinition(f.second, registrations[1]);
+	const range = luaSourceRangeToTextRange(first.workingCopy.buffer, registrations[0].occurrenceRange);
+	f.second.panes.activePane!.focus();
+	const blocked = t.mock.method(f.sources.catalog, 'resolveLuaSource', () => assert.fail('retained-input lookup cannot load source'));
+	assert.equal(controller.findDefinition(f.first, f.resource, 'behavior_tree', range), first);
+	assert.equal(controller.findDefinition(f.second, f.resource, 'behavior_tree', range), undefined);
+	assert.equal(controller.findDefinition(f.first, f.resource, 'state_machine', range), undefined);
+	assert.equal(controller.findDefinition(f.first, { ...f.resource, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1] }, 'behavior_tree', range), undefined);
+	blocked.mock.restore();
+	assert.equal(controller.openDefinition(f.first, registrations[0]), first);
+	assert.equal(f.second.model.activeTab, second);
+	first.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved movement\n' }]);
+	const moved = documents.registrations.getRegistrations(f.resource.contextId)[0];
+	const current = luaSourceRangeToTextRange(first.workingCopy.buffer, moved.occurrenceRange);
+	assert.equal(controller.findDefinition(f.first, f.resource, 'behavior_tree', current), first);
+	first.workingCopy.pushEditOperations([{ offset: current.start, deleteLength: current.end - current.start,
+		text: first.workingCopy.buffer.getTextRange(current.start, current.end) }]);
+	assert.equal(controller.findDefinition(f.first, f.resource, 'behavior_tree', current), undefined);
+});
+
+test('Animation matching queries distinguish owning table, semantic project and imported consumers without loading source', t => {
+	const caller = "local sprite = require('cartlib/component/sprite_animation_component'); return sprite.factory(require('program'))";
+	const f = fixture(t, 'return { frames = {}, frame_duration = 8 }', [
+		createScenarioTestSourceRecord('caller_a.lua', 1, caller),
+		createScenarioTestSourceRecord('caller_b.lua', 1, caller),
+		createScenarioTestSourceRecord('cartlib/component/sprite_animation_component.lua', 1, ''),
+	]);
+	const controller = new AnimationEditorController(f.sources.catalog, null!);
+	const project = getOrCreateSemanticProject(editorTextModelService, f.resource.contextId);
+	project.synchronizeSources(f.sources.catalog);
+	const snapshot = project.getSnapshot();
+	const definition = collectAnimationDefinitions(f.resource, snapshot)[0];
+	const consumerA = collectAnimationDefinitions({ contextId: f.resource.contextId, path: 'caller_a.lua' }, snapshot)[0];
+	const consumerB = collectAnimationDefinitions({ contextId: f.resource.contextId, path: 'caller_b.lua' }, snapshot)[0];
+	assert.ok(definition); assert.ok(consumerA); assert.ok(consumerB);
+	const standalone = controller.openDefinition(f.first, f.resource.contextId, definition);
+	const first = controller.openDefinition(f.first, f.resource.contextId, consumerA);
+	const second = controller.openDefinition(f.second, f.resource.contextId, consumerB);
+	const range = first.definitionRange!;
+	f.second.panes.activePane!.focus();
+	const blocked = t.mock.method(f.sources.catalog, 'resolveLuaSource', () => assert.fail('retained-input lookup cannot load source'));
+	assert.equal(controller.findDefinition(f.first, f.resource.contextId, f.resource, range), standalone);
+	assert.equal(controller.findDefinition(f.first, f.resource.contextId, f.resource, range, consumerA.consumer!.file), first);
+	assert.equal(controller.findDefinition(f.second, f.resource.contextId, f.resource, range, consumerB.consumer!.file), second);
+	assert.equal(controller.findDefinition(f.first, f.resource.contextId, f.resource, range, consumerB.consumer!.file), undefined);
+	assert.equal(controller.findDefinition(f.first, TEST_CARTRIDGE_CONTEXT_IDS[1], f.resource, range, consumerA.consumer!.file), undefined);
+	assert.equal(controller.findDefinition(f.first, f.resource.contextId, { ...f.resource, path: 'unopened.lua' }, range, consumerA.consumer!.file), undefined);
+	blocked.mock.restore();
+	assert.equal(controller.openDefinition(f.first, f.resource.contextId, consumerA), first);
+	assert.equal(f.second.model.activeTab, second);
+	first.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved movement\n' }]);
+	assert.equal(controller.findDefinition(f.first, f.resource.contextId, f.resource, range, consumerA.consumer!.file), first);
+	const replaced = { ...range };
+	first.workingCopy.pushEditOperations([{ offset: replaced.start, deleteLength: replaced.end - replaced.start,
+		text: first.workingCopy.buffer.getTextRange(replaced.start, replaced.end) }]);
+	assert.equal(controller.findDefinition(f.first, f.resource.contextId, f.resource, replaced, consumerA.consumer!.file), undefined);
 });

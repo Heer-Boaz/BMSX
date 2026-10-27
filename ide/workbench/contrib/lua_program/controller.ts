@@ -1,7 +1,8 @@
 import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type RuntimeResource } from '../../../common/resource';
+import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, resourceIdentityEquals, type ResourceDomain, type ResourceIdentity, type RuntimeResource } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
+import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { luaSourceRangeToTextRange, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
@@ -66,12 +67,17 @@ export class LuaProgramController {
 		const occurrence = collectLuaPrograms(resource, project.getSnapshot()).find(item => item.kind === kind)!;
 		this.openOccurrence(group, occurrence, options);
 	}
+	public findOccurrence(group: EditorGroupView, resource: ResourceIdentity, kind: LuaProgramKind, range: Readonly<TrackedTextRange>): LuaProgramInput | undefined {
+		return group.model.tabs.find((input): input is LuaProgramInput => input.kind === 'lua_program'
+			&& resourceIdentityEquals(input.workingCopy.resource, resource) && input.programKind === kind
+			&& input.occurrenceRange.start !== input.occurrenceRange.end
+			&& input.occurrenceRange.start === range.start && input.occurrenceRange.end === range.end);
+	}
 	public openOccurrence(group: EditorGroupView, occurrence: LuaProgramOccurrence, options: EditorTabOpenOptions = {}): LuaProgramInput {
 		const resource = this.sources.catalog.resolveResource(occurrence.resource)!;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
 		const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
-		let input = group.model.tabs.find((input): input is LuaProgramInput => input.kind === 'lua_program'
-			&& input.workingCopy === model && input.programKind === occurrence.kind && input.occurrenceRange.start === span.start && input.occurrenceRange.end === span.end);
+		let input = this.findOccurrence(group, resource, occurrence.kind, span);
 		if (input === undefined) {
 			input = new LuaProgramInput(model, occurrence.kind, span, this.guest, this.createView);
 			this.refresh(input);

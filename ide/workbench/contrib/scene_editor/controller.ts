@@ -4,6 +4,7 @@ import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
+import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { RuntimeResource } from '../../../common/resource';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
@@ -13,6 +14,7 @@ import { SceneEditorInput } from './editor_input';
 import { buildSceneSourceDocument } from './source';
 import { installSceneOutline, selectSceneOutlineRow, type SceneMemberElement } from './outline';
 import { captureSceneEditorView, restoreSceneEditorView } from './view_snapshot';
+import { SceneEditorNavigationSelection } from './navigation_selection';
 
 /** Source projection admission; no world reads or runtime scene ownership. */
 export class SceneEditorController {
@@ -34,6 +36,38 @@ export class SceneEditorController {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
 		const id = `scene:${resourceIdentityKey(resource)}` as const;
 		group.openEditor(group.model.findById(id) ?? new SceneEditorInput(model, this.createView));
+	}
+
+	/** The occurrence owner tracks this table extent through canonical source edits. */
+	public openDefinition(group: EditorGroupView, resource: RuntimeResource, range: Readonly<TrackedTextRange>): boolean {
+		const generation = group.panes.openGeneration;
+		if (!group.commitPendingEdit() || group.panes.openGeneration !== generation) return false;
+		// Read after admission: accepting the attached draft may move or retire it.
+		if (range.start === range.end) return false;
+		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
+		const retained = group.model.tabs.find((candidate): candidate is SceneEditorInput => candidate.kind === 'scene_editor' && candidate.workingCopy === model);
+		const input = retained ?? new SceneEditorInput(model, this.createView);
+		this.refresh(input);
+		const root = input.outline.roots.find(node => node.element.span.start === range.start && node.element.span.end === range.end);
+		if (root === undefined) {
+			if (retained === undefined) input.dispose();
+			return false;
+		}
+		const selected = input.outline.rows[input.outline.selectionIndex];
+		if (selected !== undefined && (selected.parent ?? selected) === root) return group.openEditor(input);
+		const view = captureSceneEditorView(input);
+		const selection = new SceneEditorNavigationSelection(input, {
+			...view,
+			section: 'outline',
+			selected: { kind: 'scene', span: { ...root.element.span }, root: { ...root.element.span } },
+			outlineScroll: input.outline.rows.indexOf(root),
+			detailsScroll: 0,
+		});
+		try {
+			return group.openEditor(input, { navigationSelection: selection });
+		} finally {
+			selection.dispose();
+		}
 	}
 
 	public openSource(group: EditorGroupView, input: SceneEditorInput): void {

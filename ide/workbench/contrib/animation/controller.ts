@@ -2,11 +2,12 @@ import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/mod
 import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
+import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
-import { resourceIdentityKey, type RuntimeResource } from '../../../common/resource';
+import { resourceIdentityEquals, resourceIdentityKey, type ResourceIdentity, type RuntimeResource } from '../../../common/resource';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
@@ -100,16 +101,21 @@ export class AnimationEditorController {
 			lifetime => lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) }));
 	}
 
+	public findDefinition(group: EditorGroupView, projectContextId: string, resource: ResourceIdentity, range: Readonly<TrackedTextRange>, consumerPath?: string): AnimationEditorInput | undefined {
+		return group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation'
+			&& item.projectContextId === projectContextId && resourceIdentityEquals(item.workingCopy.resource, resource) && item.consumerPath === consumerPath
+			&& item.definitionRange !== undefined && item.definitionRange.start !== item.definitionRange.end
+			&& item.definitionRange.start === range.start && item.definitionRange.end === range.end);
+	}
+
 	public openDefinition(group: EditorGroupView, contextId: string, definition: AnimationDefinitionSource, options: EditorTabOpenOptions = {}): AnimationEditorInput {
 		const project = getOrCreateSemanticProject(editorTextModelService, contextId);
 		const resource = this.catalog.resolveResource(project.getResourceIdentity(definition.file.file))!;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-		const range = definition.file.chunk.locations.range(definition.table.span);
-		let input = group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation'
-			&& item.projectContextId === contextId && item.workingCopy === model && item.consumerPath === definition.consumer?.file
-			&& item.definitionRange !== undefined && luaSourceRangeMatchesTextRange(model.buffer, range, item.definitionRange));
+		const range = luaSourceRangeToTextRange(model.buffer, definition.file.chunk.locations.range(definition.table.span));
+		let input = this.findDefinition(group, contextId, resource, range, definition.consumer?.file);
 		if (input === undefined) {
-			input = new AnimationEditorInput(model, contextId, luaSourceRangeToTextRange(model.buffer, range), definition.label, definition.consumer?.file, this.createView);
+			input = new AnimationEditorInput(model, contextId, range, definition.label, definition.consumer?.file, this.createView);
 			if (definition.consumer !== undefined) {
 				const consumer = this.catalog.resolveResource(project.getResourceIdentity(definition.consumer.file))!;
 				input.sourceModels.set(definition.consumer.file, resolveLuaTextFileModel(editorTextModelService, this.catalog, consumer));

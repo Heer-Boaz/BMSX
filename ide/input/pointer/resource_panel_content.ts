@@ -38,13 +38,9 @@ function openResourcePanelSelection(
 	pointerX: number,
 ): void {
 	const mode = resourcePanel.getMode();
-	if (mode === 'command') {
-		if (resourcePanel.isCallHierarchyMarkerHit(hoverIndex, pointerX)) {
-			resourcePanel.openSelected();
-		} else {
-			resourcePanel.openSelectedCallHierarchyLocation();
-		}
-		return;
-	}
-	resourcePanel.openSelected();
+	if (resourcePanel.isDisclosureHit(hoverIndex, pointerX)) {
+		if (mode === 'resources') resourcePanel.toggleSelectedFileDisclosure();
+		else resourcePanel.openSelected();
+	} else if (mode === 'command') resourcePanel.openSelectedCallHierarchyLocation();
+	else resourcePanel.openSelected();
 }

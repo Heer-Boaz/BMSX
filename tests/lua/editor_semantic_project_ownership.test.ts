@@ -64,3 +64,21 @@ test('domain reset and collection reset are owner-scoped with one model-lifetime
 	assert.equal(getOrCreateSemanticProject(second, TEST_CARTRIDGE_CONTEXT_IDS[0]), foreign);
 	assert.equal(subscribe.mock.callCount(), 1, 'repeated explicit resets do not accumulate teardown observers');
 });
+
+test('semantic project retirement publishes its lifetime without scheduling source invalidation work', t => {
+	const models = new EditorTextModelService();
+	t.after(() => models.clear());
+	const project = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	let retired = 0, sourceInvalidations = 0;
+	project.onDidInvalidate(() => { sourceInvalidations++; });
+	project.onWillDispose(() => { retired++; });
+	const unsubscribe = project.onWillDispose(() => assert.fail('released lifetime observer cannot run'));
+	unsubscribe();
+	const generation = project.generation;
+	resetSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	assert.equal(retired, 1);
+	assert.equal(sourceInvalidations, 0, 'teardown must not request semantic recomputation on the retiring project');
+	assert.equal(project.generation, generation);
+	resetSemanticProjects(models);
+	assert.equal(retired, 1, 'the released project no longer participates in collection retirement');
+});

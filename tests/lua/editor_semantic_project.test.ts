@@ -16,7 +16,7 @@ import type { LuaSourceRecord, LuaSourceRegistry } from '../../ide/runtime/sourc
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import type { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
-import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
 
 function sourceRecord(path: string, source: string): LuaSourceRecord {
 	return {
@@ -689,4 +689,43 @@ test('semantic input generations advance for model and registry changes, never f
 	assert.equal(project.generation, explicitGeneration, 'reusing identical canonical analysis does not create a new input generation');
 	assert.equal(project.getSnapshot(), snapshot);
 	assert.equal(generations.length, 4);
+});
+
+for (const admission of ['before', 'after'] as const) test(`Lua resource membership ignores editor mode for models admitted ${admission} project construction`, t => {
+	const models = new EditorTextModelService();
+	const identity = resource(TEST_CARTRIDGE_CONTEXT_IDS[0], 'model_only.lua');
+	const source = 'local function run(value) return value end\nreturn run({value=1})';
+	const seeded = admission === 'before' ? models.retain(identity, 'yaml', source) : undefined;
+	const project = new EditorLuaSemanticProject(identity.contextId, models);
+	const model = seeded ?? models.retain(identity, 'yaml', source);
+	const sources = sourceCatalog(sourceRegistry([['system.lua', 'return true']]), sourceRegistry([['registry.lua', 'return true']]));
+	t.after(() => { project.dispose(); models.clear(); });
+	project.synchronizeSources(sources);
+	const initial = project.getSnapshot(), file = project.getFileData(identity);
+	assert.ok(file, 'the admitted Lua resource remains a Lua source regardless of editor mode');
+	assert.equal(file.source, source);
+	assert.equal(model.mode, 'yaml');
+	const range = luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(file.callSites[0].expression.span));
+	const untrack = model.trackRanges(new Map([[0, range]]));
+	t.after(untrack);
+	let invalidations = 0;
+	project.onDidInvalidate(() => { invalidations++; });
+	const nonLua: RuntimeResource = { ...resource(identity.contextId, 'settings.yaml'), source: { type: 'data', resid: 'settings' } };
+	models.retain(nonLua, 'lua', 'return 99');
+	assert.equal(invalidations, 0, 'Lua editor mode does not admit a non-Lua resource to the semantic project');
+	assert.equal(project.getFileData(nonLua), undefined);
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- canonical edit\n' }]);
+	assert.equal(invalidations, 1);
+	const current = project.getFileData(identity)!;
+	assert.equal(current.source, '-- canonical edit\n' + source);
+	assert.equal(initial.getFileData(resourceIdentityKey(identity))!.source, source);
+	assert.deepEqual(range, luaSourceRangeToTextRange(model.buffer, current.chunk.locations.range(current.callSites[0].expression.span)));
+	const snapshot = project.getSnapshot();
+	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: model.buffer.getTextRange(range.start, range.end) }]);
+	assert.equal(invalidations, 2, 'source publication invalidates even when replacement bytes keep the same semantic snapshot');
+	assert.equal(range.start, range.end, 'the canonical model, not its editor mode, owns occurrence retirement');
+	assert.equal(project.getSnapshot(), snapshot);
+	project.updateDocument(identity, model.buffer.getText());
+	models.clear();
+	assert.equal(project.getFileData(identity), undefined, 'removing a model retires its explicit document membership regardless of editor mode');
 });

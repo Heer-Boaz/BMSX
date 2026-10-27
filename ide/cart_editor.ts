@@ -56,6 +56,7 @@ import { AssistantChatCommands } from './workbench/contrib/assistant/chat_comman
 import type { StudioServerConnectionState } from './workbench/common/server_connection';
 import type { AssistantConnectionFactory } from '../hosts/common/assistant_protocol';
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
+import { ProjectContentIndex } from './workbench/contrib/resources/panel/content_index';
 import { GameViewInput } from './workbench/contrib/game_view/editor_input';
 import { GameViewEditorPane } from './workbench/contrib/game_view/editor_pane';
 import { GamePanel } from './workbench/contrib/game_view/game_panel';
@@ -407,7 +408,8 @@ export class RuntimeCartEditor implements CartEditor {
 		this.keybindings = new EditorCommandKeybindingController(inputFocus, clock);
 		inputFocus.workbenchScope.commands = this.commands;
 		const workArea = getWorkbenchWorkArea();
-		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
+		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant,
+			new ProjectContentIndex(editorTextModelService, sources.catalog, behaviorSources.registrations));
 		this.surfaces = new WorkbenchSurfaceService(this.onSurfaceChange);
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture, this.attachContextMenuSession);
 		this.menubar = new MenubarController(this.contextMenu, this.commands, this.chromeRenderContext);
@@ -924,7 +926,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.sources.catalog.dispose();
 			}
 		}
-		this.resourcePanel.hide();
+		this.resourcePanel.dispose();
 	}
 
 	public setFontVariant(variant: FontVariant): void {
@@ -1019,6 +1021,7 @@ export class RuntimeCartEditor implements CartEditor {
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		fontVariant: FontVariant,
+		content: ProjectContentIndex,
 	): ResourcePanelController {
 		editorViewState.fontVariant = fontVariant;
 		constants.setIdeThemeVariant(constants.DEFAULT_THEME);
@@ -1031,7 +1034,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const resourcePanel = new ResourcePanelController(this, this.sources.catalog, {
 			resourceVertical: new Scrollbar('vertical'),
 			resourceHorizontal: new Scrollbar('horizontal'),
-		}, resourcePanelWidthRatio);
+		}, resourcePanelWidthRatio, content);
 		if (!this.isAvailable) {
 			configureFontVariant(editorViewState.fontVariant);
 			resourcePanel.setFontMetrics(editorViewState.font);

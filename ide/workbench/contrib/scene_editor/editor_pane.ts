@@ -58,6 +58,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 	private readonly identityFeedback: SceneOutlineFeedback;
 	private sourceHovered = false;
 	private unsubscribeReadOnlyChange!: () => void;
+	private unsubscribeContentChange!: () => void;
 
 	public constructor(
 		private readonly controller: SceneEditorController,
@@ -141,6 +142,9 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		this.actionBar.setInput(this.input.actionBar, this.focusTarget);
 		this.details.setInput(this.input.details);
 		this.boundVersion = -1;
+		// Edit and Undo can return to the retained projection before the next update.
+		// Field bindings must still consume the canonical value after publication.
+		this.unsubscribeContentChange = this.input.workingCopy.onDidChangeContent(() => { this.boundVersion = -1; });
 		this.unsubscribeReadOnlyChange = this.input.workingCopy.onDidChangeReadOnly(() => {
 			this.updateControlAdmission();
 			this.bindFocusOrder();
@@ -388,6 +392,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 	}
 
 	public override clearInput(): void {
+		this.unsubscribeContentChange();
 		this.unsubscribeReadOnlyChange();
 		pointerHover.release(this);
 		this.actionBar.clearInput();

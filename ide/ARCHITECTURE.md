@@ -107,6 +107,13 @@ Frontend and native source recovery consume explicit context/session namespaces;
 canonical file Save addresses remain separate from
 [recovery storage](../docs/studio_source_recovery_design.md).
 
+`contrib/resources/panel/content_index.ts` projects authored declarations from
+existing semantic/source owners into the retained file tree. Its cache follows
+source and semantic-project lifetimes; canonical working copies map occurrence
+ranges. The file tree owns disclosure and presentation, while contribution
+controllers own exact-subject editor lookup and opening. Browsing neither
+executes Lua nor creates a second source or asset database.
+
 `workspace/source_catalog.ts` owns admitted source contexts, resource identities
 and their explicit module/asset bindings independently of installed media.
 Documents and semantic projects use context/path keys; canonical filesystem

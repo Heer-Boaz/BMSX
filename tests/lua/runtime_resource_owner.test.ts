@@ -1,3 +1,4 @@
+import type { ProjectContentEntry } from '../../ide/workbench/contrib/resources/panel/content_index';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -17,6 +18,8 @@ import {
 } from '../../ide/runtime/source_registry';
 import { createTestRuntimeSourceState, TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { ResourceFilesModel } from '../../ide/workbench/contrib/resources/panel/files_model';
+
+const EMPTY_CONTENT: ReadonlyMap<string, readonly ProjectContentEntry[]> = new Map();
 import { buildResourceQuickPickItems } from '../../ide/workbench/contrib/resources/quick_access';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
@@ -222,7 +225,7 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 	const retained = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'src/main.lua' })!;
 
 	const files = new ResourceFilesModel();
-	assert.equal(files.sync(sources.catalog, 'all'), true);
+	assert.equal(files.sync(sources.catalog, 'all', EMPTY_CONTENT, 0), true);
 	assert.equal(files.reveal(retained), true);
 	const panelNode = files.selectedNode!;
 	assert.ok(panelNode.element.kind === 'file');
@@ -240,7 +243,7 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 	const replacement = luaSource(retained.path, 'cart-main', 'return 3');
 	registerLuaSourceRecord(cartridgeRegistry, replacement);
 	sources.catalog.registerLuaResource(TEST_CARTRIDGE_CONTEXT_IDS[0], replacement);
-	files.sync(sources.catalog, 'all');
+	files.sync(sources.catalog, 'all', EMPTY_CONTENT, 0);
 	assert.strictEqual(files.selectedNode, panelNode);
 	assert.strictEqual(panelNode.element.resource, retained);
 	assert.strictEqual(panelNode.element.resource.source, replacement);
@@ -332,7 +335,7 @@ test('authoring catalog keeps loaded data accessible while the BIOS or either ca
 	const catalog = [cartridgeData, otherData, cartridgeAem, systemData, systemAem];
 	assert.deepEqual(dataResources(sources), catalog);
 	const files = new ResourceFilesModel();
-	files.sync(sources.catalog, 'all');
+	files.sync(sources.catalog, 'all', EMPTY_CONTENT, 0);
 	const fileResources = buildResourceQuickPickItems(sources.catalog.resources).map(item => item.resource);
 	for (const resource of catalog) {
 		assert.equal(files.reveal(resource), true);

@@ -1,11 +1,12 @@
 import type { BehaviorLensNavigationSelection } from './navigation_selection';
 import { captureNavigation } from '../../../navigation/navigation_history';
 import type { EditorTextModel } from '../../../editor/model/text_model';
+import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { Blua32SourceImage, RuntimeSourceState } from '../../../runtime/sources';
-import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../common/resource';
+import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, resourceIdentityEquals, type ResourceDomain, type ResourceIdentity } from '../../../common/resource';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
@@ -91,22 +92,25 @@ export class BehaviorLensController {
 			});
 	}
 
+	public findDefinition(group: EditorGroupView, resource: ResourceIdentity, kind: BehaviorKind, range: Readonly<TrackedTextRange>): BehaviorLensInput | undefined {
+		for (const candidate of group.model.tabs) {
+			if (candidate.kind !== 'behavior_lens' || !resourceIdentityEquals(candidate.workingCopy.resource, resource) || candidate.view.definitionRowKey === null) continue;
+			const view = candidate.view;
+			const span = view.source.ranges.get(view.definitionRowKey)!;
+			if (span.start !== span.end && span.start === range.start && span.end === range.end
+				&& view.source.nodesByRowKey.get(view.definitionRowKey)!.behaviorKind === kind) {
+				return candidate;
+			}
+		}
+		return undefined;
+	}
+
 	public openDefinition(group: EditorGroupView, registration: BehaviorRegistrationSource, options: EditorTabOpenOptions = {}): BehaviorLensInput {
 		return captureNavigation(() => {
 			const resource = this.sources.catalog.resolveResource(registration.resource)!;
 			const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
 			const occurrence = luaSourceRangeToTextRange(model.buffer, registration.occurrenceRange);
-			let input: BehaviorLensInput | undefined;
-			for (const candidate of group.model.tabs) {
-				if (candidate.kind !== 'behavior_lens' || candidate.workingCopy !== model || candidate.view.definitionRowKey === null) continue;
-				const view = candidate.view;
-				const span = view.source.ranges.get(view.definitionRowKey)!;
-				if (span.start !== span.end && span.start === occurrence.start && span.end === occurrence.end
-					&& view.source.nodesByRowKey.get(view.definitionRowKey)!.behaviorKind === registration.behaviorKind) {
-					input = candidate;
-					break;
-				}
-			}
+			let input = this.findDefinition(group, resource, registration.behaviorKind, occurrence);
 			if (input === undefined) {
 				input = this.createInput(model,
 					registration.behaviorKind === 'behavior_tree' ? 'graph'

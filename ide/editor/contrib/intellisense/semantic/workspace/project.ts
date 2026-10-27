@@ -56,6 +56,7 @@ export class EditorLuaSemanticProject {
 	private baseSources: ReadonlyMap<string, ProjectBaseSource> = new Map();
 	private readonly modelSubscriptions: readonly (() => void)[];
 	private readonly invalidationListeners = new Set<() => void>();
+	private readonly disposeListeners = new Set<() => void>();
 	private catalogSubscription: (() => void) | undefined;
 	private generationValue = 0;
 	private catalog: WorkspaceSourceCatalog | undefined;
@@ -70,7 +71,7 @@ export class EditorLuaSemanticProject {
 		this.sourceContextIds.add(contextId);
 		this.contextBindings.set(contextId, new Map());
 		const queueModel = (model: EditorTextModel): void => {
-			if (model.mode === 'lua'
+			if (model.resource.source.type === 'lua'
 				&& this.sourceContextIds.has(model.identity.contextId)) {
 				const address = this.admitResource(model.identity);
 				this.pendingPaths.add(address);
@@ -86,7 +87,7 @@ export class EditorLuaSemanticProject {
 			}),
 			models.onDidRemoveModel(model => {
 				if (this.modelBaselines.get(resourceIdentityKey(model.identity))?.model === model) this.modelBaselines.delete(resourceIdentityKey(model.identity));
-				if (model.mode === 'lua' && this.sourceContextIds.has(model.identity.contextId)) this.documentPaths.delete(resourceIdentityKey(model.identity));
+				if (model.resource.source.type === 'lua' && this.sourceContextIds.has(model.identity.contextId)) this.documentPaths.delete(resourceIdentityKey(model.identity));
 				queueModel(model);
 			}),
 		];
@@ -94,6 +95,8 @@ export class EditorLuaSemanticProject {
 	}
 
 	public dispose(): void {
+		for (const listener of this.disposeListeners) listener();
+		this.disposeListeners.clear();
 		for (const unsubscribe of this.modelSubscriptions) unsubscribe();
 		this.catalogSubscription?.();
 		this.invalidationListeners.clear();
@@ -106,6 +109,11 @@ export class EditorLuaSemanticProject {
 	public onDidInvalidate(listener: () => void): () => void {
 		this.invalidationListeners.add(listener);
 		return () => this.invalidationListeners.delete(listener);
+	}
+
+	public onWillDispose(listener: () => void): () => void {
+		this.disposeListeners.add(listener);
+		return () => this.disposeListeners.delete(listener);
 	}
 
 	private invalidate(): void {
@@ -154,7 +162,7 @@ export class EditorLuaSemanticProject {
 				this.pendingPaths.add(address);
 			}
 		}
-		for (const model of this.models.models) if (model.mode === 'lua' && this.sourceContextIds.has(model.identity.contextId)) {
+		for (const model of this.models.models) if (model.resource.source.type === 'lua' && this.sourceContextIds.has(model.identity.contextId)) {
 			this.pendingPaths.add(this.admitResource(model.identity));
 		}
 		for (const path of this.baseSources.keys()) if (!nextBaseSources.has(path)) this.pendingPaths.add(path);

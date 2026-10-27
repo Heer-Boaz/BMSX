@@ -53,6 +53,9 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 			if (node.expandable) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',
 				indentX + metrics.markerStartWidth + ((metrics.indentWidth - metrics.markerStartWidth - WORKBENCH_ICON_SIZE) >> 1),
 				y + ((controller.lineHeight - WORKBENCH_ICON_SIZE) >> 1), color);
+			else if (node.element.kind === 'definition') drawWorkbenchIcon(node.element.icon,
+				indentX + metrics.markerStartWidth + ((metrics.indentWidth - metrics.markerStartWidth - WORKBENCH_ICON_SIZE) >> 1),
+				y + ((controller.lineHeight - WORKBENCH_ICON_SIZE) >> 1), color);
 		}
 		drawEditorText(editorViewState.font, metrics.contentText, indentX + metrics.indentWidth, textY, 0, color);
 	}

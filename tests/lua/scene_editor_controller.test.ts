@@ -1,10 +1,10 @@
 import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
-import { beforeEach } from 'node:test';
+import { beforeEach, type TestContext } from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
+import { getOrCreateSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { inputFocus } from '../../ide/input/focus';
 import { SceneEditorController } from '../../ide/workbench/contrib/scene_editor/controller';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
@@ -20,6 +20,12 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import type { IdeCommandController } from '../../ide/commands/controller';
 import type { EditorCommandRunner } from '../../ide/common/commands';
+import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
+import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
+import { SceneEditorNavigationSelection } from '../../ide/workbench/contrib/scene_editor/navigation_selection';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 
 beforeEach(() => configureFontVariant('tiny'));
 
@@ -120,4 +126,181 @@ test('Scene pane Source and member commands retain their group and input when an
 	assert.equal(left.outline.rows[left.outline.selectionIndex].element.kind, 'scene');
 	second.panes.clearEditor();
 	assert.equal(origin.getCommand('sceneEditor.removeMember')!.isEnabled(), false, 'a detached pane no longer admits its former subject');
+});
+
+function definitionOpeningFixture(t: TestContext, height = 288) {
+	const source = `local scenes = require('cartlib/world/scene_library')
+scenes.register('same', { objects = { { member_id = 'one', definition_id = 'actor', options = { visible = true, pos = { x = 11, y = 12, z = 13 } } } } })
+scenes.register('same', { objects = { { member_id = 'two', definition_id = 'actor', options = { pos = { x = 22, y = 23, z = 24 } } } } })
+scenes.register('incomplete', {})
+`;
+	const sources = createScenarioTestSourceState([
+		createScenarioTestSourceRecord('scene.lua', 1, source),
+		createScenarioTestSourceRecord('unopened.lua', 1, source),
+		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
+	]);
+	const controller = new SceneEditorController(sources.catalog, {} as EditorNavigationController);
+	const commands: EditorCommandRunner = {
+		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
+		execute: (command, target) => inputFocus.executeCommand(command, target),
+	};
+	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
+	const bounds = { left: 0, top: 0, right: 384, bottom: height }, presentation = createTestGroupPresentation(surfaces, bounds);
+	let parts: EditorParts;
+	const factories = createTestEditorPaneFactories();
+	factories.scene_editor = group => new SceneEditorPane(controller, commands as IdeCommandController, sources, menu,
+		surfaces, group.paneSurface, bounds, group, parts, group.focusScope);
+	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds,
+		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
+		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
+		layoutMain: () => parts.main.layoutMain(bounds, bounds),
+		closeEditors: async targets => { for (const target of targets) target.group.removeEditor(target.input); return true; },
+	});
+	const group = parts.main.group;
+	group.panes.layout(bounds);
+	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
+	const unopened = sources.catalog.resolveResource({ contextId: resource.contextId, path: 'unopened.lua' })!;
+	const model = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource);
+	const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId);
+	project.synchronizeSources(sources.catalog);
+	const document = buildSceneSourceDocument(resource, project.getSnapshot());
+	const ranges = document.scenes.map(scene => luaSourceRangeToTextRange(model.buffer, scene.range));
+	const untrack = model.trackRanges(new Map(ranges.map((range, index) => [index, range])));
+	t.after(() => {
+		const pane = group.panes.getPane('scene_editor');
+		if (pane instanceof SceneEditorPane) for (const control of pane.controls) control.cancel();
+		parts.dispose(); menu.dispose(); surfaces.dispose(); untrack(); inputFocus.setTarget(null);
+		editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
+	});
+	return { controller, group, parts, resource, unopened, model, ranges, source };
+}
+
+test('Scene definition opening selects the exact table among duplicate semantic IDs and reads dirty canonical source', t => {
+	const f = definitionOpeningFixture(t);
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved prefix\n' }]);
+	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[1]), true);
+	const input = f.group.model.activeTab;
+	assert.ok(input instanceof SceneEditorInput);
+	assert.equal(input.workingCopy, f.model);
+	assert.equal(input.outline.rows[input.outline.selectionIndex].element.scene, input.document.scenes[1]);
+	assert.equal(input.document.scenes.length, 2, 'a registration without an objects table is not an editable definition');
+	const pane = f.group.panes.getPane('scene_editor')!;
+	assert.ok(pane instanceof SceneEditorPane);
+	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
+	assert.equal(pane.controls[0].field.text, '22');
+	setFieldText(pane.controls[0].field, '123', false);
+	assert.equal(pane.controls[0].commit(), true);
+	assert.ok(f.model.buffer.getText().includes('x = 123, y = 23'));
+	assert.ok(f.model.buffer.getText().includes('x = 11, y = 12'));
+	f.model.undo(); pane.update();
+	assert.equal(pane.controls[0].field.text, '22');
+	assert.equal(f.group.model.tabs.length, 1);
+});
+
+test('reopening a surviving Scene occurrence keeps its subject and reading; explicit switches and history rebind controls', t => {
+	const f = definitionOpeningFixture(t, 90);
+	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
+	const input = f.group.model.activeTab;
+	assert.ok(input instanceof SceneEditorInput);
+	const pane = f.group.panes.getPane('scene_editor')!;
+	assert.ok(pane instanceof SceneEditorPane);
+	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
+	const history = new SceneEditorNavigationSelection(input);
+	t.after(() => history.dispose());
+	pane.controls[0].field.focusTarget.focus();
+	input.details.scrollbar.setScroll(17);
+	const subject = { ...input.selectionRange }, scroll = input.details.scrollTop;
+	assert.ok(scroll > 0, 'the retained Details reading position is not its initial top');
+	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
+	assert.deepEqual(input.selectionRange, subject);
+	assert.equal(input.section, 'details');
+	assert.equal(input.details.scrollTop, scroll);
+	assert.equal(pane.controls[0].field.text, '11');
+	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[1]), true);
+	assert.equal(input.outline.rows[input.outline.selectionIndex].element.scene, input.document.scenes[1]);
+	assert.equal(pane.controls[0].field.readOnly, true, 'switching to a definition retires the former member control subject');
+	assert.equal(f.group.openEditor(input, { navigationSelection: history }), true);
+	assert.equal(pane.controls[0].field.readOnly, false);
+	assert.equal(pane.controls[0].field.text, '11', 'history restoration rebinds the retained member before accepting another field draft');
+	assert.deepEqual(input.selectionRange, subject);
+	assert.equal(f.group.model.tabs.length, 1);
+});
+
+test('Scene opening settles the attached field draft before consuming its tracked target range', t => {
+	const f = definitionOpeningFixture(t);
+	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
+	const pane = f.group.panes.getPane('scene_editor')!;
+	assert.ok(pane instanceof SceneEditorPane);
+	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
+	pane.controls[0].field.focusTarget.focus();
+	setFieldText(pane.controls[0].field, '123456', false);
+	const priorStart = f.ranges[1].start;
+	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[1]), true);
+	assert.ok(f.ranges[1].start > priorStart, 'accepted source text moves the tracked target before it is consumed');
+	const input = f.group.model.activeTab;
+	assert.ok(input instanceof SceneEditorInput);
+	assert.deepEqual(input.selectionRange, f.ranges[1]);
+	assert.ok(f.model.buffer.getText().includes('x = 123456, y = 12'));
+	assert.equal(pane.controls[0].pending, false);
+});
+
+test('Scene position and option bindings reread canonical values after commit and Undo before the next update', t => {
+	const f = definitionOpeningFixture(t);
+	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
+	const pane = f.group.panes.getPane('scene_editor')!;
+	assert.ok(pane instanceof SceneEditorPane);
+	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
+	setFieldText(pane.controls[0].field, '123', false);
+	assert.equal(pane.controls[0].commit(), true);
+	f.model.undo();
+	pane.update();
+	assert.equal(pane.controls[0].field.text, '11');
+	const option = pane.options.controls[0];
+	setFieldText(option.field, 'false', false);
+	assert.equal(option.commit(), true);
+	f.model.undo();
+	pane.update();
+	assert.equal(option.field.text, 'true');
+	assert.equal(f.model.buffer.getText(), f.source);
+});
+
+test('invalid Scene draft admission leaves the attachment and subject intact without creating the requested document', t => {
+	const f = definitionOpeningFixture(t);
+	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
+	const input = f.group.model.activeTab;
+	assert.ok(input instanceof SceneEditorInput);
+	const pane = f.group.panes.getPane('scene_editor')!;
+	assert.ok(pane instanceof SceneEditorPane);
+	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
+	pane.controls[0].field.focusTarget.focus();
+	setFieldText(pane.controls[0].field, '-', false);
+	const subject = { ...input.selectionRange }, generation = f.group.panes.openGeneration;
+	assert.equal(editorTextModelService.get(f.unopened), undefined);
+	assert.equal(f.controller.openDefinition(f.group, f.unopened, f.ranges[1]), false);
+	assert.equal(editorTextModelService.get(f.unopened), undefined);
+	assert.deepEqual(f.group.model.tabs, [input]);
+	assert.equal(f.parts.documents.length, 0);
+	assert.deepEqual(input.selectionRange, subject);
+	assert.equal(f.group.panes.openGeneration, generation);
+	assert.equal(f.group.panes.activePane?.input, input);
+	assert.equal(inputFocus.target, pane.controls[0].field.focusTarget);
+	assert.equal(pane.controls[0].pending, true);
+	assert.equal(f.model.buffer.getText(), f.source);
+});
+
+for (const edit of ['delete', 'replace'] as const) test(`${edit} retires the Scene table extent instead of reopening a surviving or identically replaced namesake`, t => {
+	const f = definitionOpeningFixture(t);
+	const retired = f.ranges[0];
+	f.model.pushEditOperations([{ offset: retired.start, deleteLength: retired.end - retired.start,
+		text: edit === 'delete' ? '' : f.model.buffer.getTextRange(retired.start, retired.end) }]);
+	assert.equal(retired.start, retired.end, 'complete replacement retires the actual canonical occurrence');
+	assert.equal(f.controller.openDefinition(f.group, f.resource, retired), false);
+	assert.equal(f.group.model.tabs.length, 0);
+	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[1]), true);
+	const input = f.group.model.activeTab;
+	assert.ok(input instanceof SceneEditorInput);
+	const subject = { ...input.selectionRange };
+	assert.equal(f.controller.openDefinition(f.group, f.resource, retired), false);
+	assert.deepEqual(input.selectionRange, subject);
+	assert.equal(f.group.model.activeTab, input);
 });
