@@ -63,7 +63,7 @@ export function renderTabBar(strip: EditorTabStrip, context: EditorTabStripRende
 		if (active) {
 			api.fill_rect(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, 0, fillColor);
 		}
-		if (entry.focused) api.blit_rect(bounds.left + 1, bounds.top + 1, bounds.right - 1, bounds.bottom - 1,
+		if (entry.focused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom,
 			0, constants.COLOR_FOCUS_BORDER);
 
 	}

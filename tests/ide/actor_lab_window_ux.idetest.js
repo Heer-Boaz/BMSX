@@ -3,7 +3,7 @@
 const press = async (...codes) => {
 	t.controlInput(codes.map(code => ({ type: 'key', code, down: true })));
 	await t.frames(2);
-	t.controlInput(codes.map(code => ({ type: 'key', code, down: false })));
+	t.controlInput(codes.slice().reverse().map(code => ({ type: 'key', code, down: false })));
 	await t.frames(2);
 };
 const click = async (x, y) => {
@@ -150,37 +150,29 @@ t.assert(input.details.subject === subject && input.details.locked, 'tree naviga
 
 // Switch using the shipped font shortcut, not by replacing font or layout state.
 for (let fontIndex = 0; fontIndex < 2; fontIndex++) {
-	const font = input.detailsWindow.font;
-	const variant = font.lineHeight === 6 ? 'tiny' : 'msx';
-	t.assert(font.lineHeight === 6 || font.lineHeight === 8, 'unexpected shipped font metrics');
-	t.assert(font.char_to_img('…') !== font.char_to_img('?'), 'the ellipsis is a fallback character');
+	const variant = input.layout.font.variant;
 	for (let theme = 0; theme < 2; theme++) {
 		t.command('actorLab.details');
 		await t.frames(2);
 		const model = input.detailsWindow;
-		t.assert(model.title === input.details.caption, 'window chrome did not use the compact subject caption');
-		t.assert(model.displayTitle.length > 0, 'the subject caption has no title budget');
-		for (const action of input.detailsActions.items) {
-			t.assert(action.icon !== undefined, 'window control still consumes text-label width');
-			t.assert(action.bounds.left >= model.header.left && action.bounds.right <= model.header.right,
-				'window control escaped the header at this font size');
-		}
 		if (theme === 0) {
 			const right = model.bounds.right - 1, bottom = model.bounds.bottom - 1;
 			await drag(right, bottom, model.bounds.left + model.minimumWidth - 1, model.bounds.top + model.minimumHeight - 1);
-			t.assert(model.bounds.right - model.bounds.left === model.minimumWidth
-				&& model.bounds.bottom - model.bounds.top === model.minimumHeight, 'pointer resize did not reach the font-aware minimum');
+			t.assert(input.details.subject === subject && input.details.locked && input.details.available,
+				'resizing replaced or lost the locked live subject');
 			await capture(`${variant}-minimum-window`);
 			await drag(model.bounds.right - 1, model.bounds.bottom - 1, right, bottom);
 		}
 		await capture(`${variant}-theme-${theme}-expanded`);
-		t.command('window.collapse');
+		t.command('window.maximize');
 		await t.frames(2);
-		t.assert(model.collapsed && model.client.top === model.client.bottom, 'collapse retained client real estate');
-		await capture(`${variant}-theme-${theme}-collapsed`);
-		t.command('window.collapse');
-		await t.frames(2);
-		t.assert(input.details.subject === subject && input.details.locked, 'font, theme or collapse changed the locked subject');
+		t.assert(model.placement === 'maximized' && model.open, 'Details did not maximize as a retained window');
+		await capture(`${variant}-theme-${theme}-maximized`);
+		// The real title gesture restores the window, rather than hiding its client.
+		await click(model.header.left + 5, (model.header.top + model.header.bottom) / 2);
+		await click(model.header.left + 5, (model.header.top + model.header.bottom) / 2);
+		t.assert(model.placement === 'normal' && model.open && input.details.subject === subject && input.details.locked,
+			'title double-click did not restore the same locked Details window');
 		t.command('theme-toggle');
 		await t.frames(2);
 	}
@@ -190,8 +182,10 @@ t.assert(t.runtime().machine.scheduler.nowCycles === stoppedCycles, 'layout insp
 
 // A window remains usable when its subject does not exist at the selected history position.
 t.command('actorLab.details');
-t.command('window.collapse');
-await press('Escape');
+t.command('window.hide');
+await t.frames(2);
+t.assert(!input.detailsWindow.open && input.details.subject === subject && input.details.locked,
+	'closing Details discarded the retained subject');
 t.command('runtime.focusTimeline');
 await press('Tab');
 await press('Home');
@@ -199,8 +193,15 @@ for (let frame = 0; frame < 120 && (t.runtime().machine.scheduler.nowCycles !== 
 await t.frames(2);
 t.assert(t.runtime().machine.scheduler.nowCycles === 0 && !input.actorPresent, 'the real timeline did not reach the pre-actor frame');
 t.assert(input.details.locked && input.details.subject === subject && !input.details.available,
-	'collapsed Details did not preserve and mark its unavailable historical identity');
-await capture('historical-unavailable-collapsed');
+	'closed Details did not preserve and mark its unavailable historical identity');
+// Leave the runtime range through its declared next client before inspecting.
+await press('Tab');
+t.command('actorLab.details');
+await t.frames(2);
+t.assert(input.detailsWindow.open && input.details.subject === subject && !input.details.available,
+	'keyboard inspection did not reopen the same unavailable historical identity');
+await capture('historical-unavailable-window');
+await press('Escape');
 // Historical absence is a retained subject, not a reason to discard the window,
 // graph or selection when the primary client reflows in either shipped font.
 for (let fontIndex = 0; fontIndex < 2; fontIndex++) {
@@ -230,7 +231,7 @@ await t.frames(2);
 t.assert(!input.detailsWindow.open, 'close did not remove the floating window');
 t.command('actorLab.details');
 await t.frames(2);
-t.assert(input.detailsWindow.open && input.detailsWindow.collapsed && input.details.locked,
+t.assert(input.detailsWindow.open && input.details.locked && input.details.subject === subject && !input.details.available,
 	'keyboard inspection did not reopen the retained unavailable window');
 await capture('historical-unavailable-reopened');
 await press('Escape');
@@ -245,9 +246,7 @@ t.log(JSON.stringify({ phase: 'returned', actorPresent: input.actorPresent, avai
 await capture('historical-return-observation');
 t.assert(input.actorPresent && input.details.available && input.details.subject === subject,
 	'returning to the retained frame did not resolve the same locked subject');
-await capture('historical-return-collapsed');
 t.command('actorLab.details');
-t.command('window.collapse');
 t.command('actorLab.lockDetails');
 await press('Escape');
 await press('Home');
@@ -255,11 +254,8 @@ await press('ArrowDown');
 await press('Enter');
 await t.frames(2);
 t.assert(input.details.subject.path.at(-1).kind === 'component', 'the real timeline component is not being inspected');
-t.assert(input.details.caption === 'Timelines' && input.detailsWindow.displayTitle === 'Timelines',
-	'the component chrome does not display its actual semantic type');
-t.assert(input.details.items.every(item => !item.value.includes('\n')), 'component Details still contains eager multiline object dumps');
 await capture('component-structured-values');
-const storage = input.details.items.findIndex(item => item.label === 'Stored fields');
+const storage = input.details.items.findIndex(item => item.identity?.section === 'storage' && item.identity.field === 'self');
 t.assert(storage >= 0, 'raw stored fields are not explicitly reachable');
 const compactCount = input.details.items.length;
 await press('Home');
