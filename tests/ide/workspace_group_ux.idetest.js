@@ -10,7 +10,7 @@ const type = async text => {
 };
 let captures = 0;
 const capture = async label => {
-	t.assert(++captures <= 24, 'workspace group inspection exceeded its capture budget');
+	t.assert(++captures <= 32, 'workspace group inspection exceeded its capture budget');
 	await t.frames(3); t.log(`VISUAL ${label}`); t.capture(label);
 };
 await t.waitForCart(); await t.frames(90);
@@ -82,6 +82,16 @@ for (const font of ['tiny', 'msx']) {
 		t.command('group.focusPrevious'); await t.frames(2);
 		t.command('group.focusTabs'); await press('End'); await press('Enter'); await press('Escape');
 		t.assert(t.activeWorkbenchTab() === director.input, 'returning to the original group lost its retained source selection');
+		t.command('openEditors'); await t.frames(2); await type('director');
+		await capture(`workspace-${font}-${theme}-editor-search`); await press('Enter');
+		t.assert(t.activeWorkbenchTab() === director.input,
+			'workspace editor search did not reveal the exact retained view in its invoking group');
+		t.command('group.openEditors'); await t.frames(2); await type('intro');
+		await capture(`workspace-${font}-${theme}-group-search`); await press('Enter');
+		t.assert(t.activeWorkbenchTab() === documents[1].input,
+			'group editor search did not activate its retained inactive source');
+		t.command('group.focusTabs'); await press('End'); await press('Enter'); await press('Escape');
+		t.assert(t.activeWorkbenchTab() === director.input, 'editor-search navigation lost the original source input');
 		unchanged(); t.command('theme-toggle'); await t.frames(2);
 	}
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');

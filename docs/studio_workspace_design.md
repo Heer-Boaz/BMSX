@@ -667,6 +667,12 @@ Choosing an input reveals its exact existing group/host; it does not create a
 replacement view. Cancel preserves the invoking context. Group-local tab overflow
 remains a separate list, not the workspace-wide discovery mechanism.
 
+Dirty, label, active and Keep Open metadata update those admitted choices in
+place, without reopening the picker or losing the query, field history, exact
+selected input or manual scroll. If changed metadata no longer matches the
+query, that choice becomes unselected rather than submitting a different input.
+Actual catalog membership changes retire its choices; metadata is not retirement.
+
 The Window menu also makes frontend membership actionable. Show Open Windows lists
 the actual main and document parts in activation order, including minimized
 windows and windows awaiting a local close decision. Choosing one reveals that

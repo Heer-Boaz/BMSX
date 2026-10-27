@@ -5,7 +5,7 @@ import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import type { EditorInputSerializers, SerializedEditorGroup } from '../../ide/workbench/services/editor/editor_serialization';
 import type { SerializedEditorGroupLayout, SerializedEditorParts } from '../../ide/workbench/services/editor/editor_parts_serialization';
-import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
+import { EditorTabGroupModel, type EditorTabGroupChange } from '../../ide/workbench/ui/tab/group_model';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { findEditorGroup } from '../../ide/workbench/services/editor/editor_group';
@@ -24,6 +24,18 @@ function homeSerializers(deserialize: (value: string) => HomeInput | Promise<Hom
 function snapshot(layout: SerializedEditorGroupLayout = { kind: 'group', group }): SerializedEditorParts {
 	return { main: { layout, active: 0, mru: [0], scrollX: 0, scrollY: 0 }, documents: [], active: 0, mru: [0] };
 }
+
+test('deserialization classifies both empty retirement and final admission as structural events after input disposal', async t => {
+	const model = new EditorTabGroupModel(), original = new HomeInput(null), restored = new HomeInput(null);
+	model.initialize(original); t.after(() => model.clear());
+	const revision = model.revision, changes: (EditorTabGroupChange | 'retired')[] = [];
+	const unbind = model.onDidChange(kind => { changes.push(kind); });
+	original.onWillDispose(() => { changes.push('retired'); });
+	assert.equal(await model.deserialize(group, homeSerializers(() => restored)), true);
+	unbind();
+	assert.deepEqual(changes, ['retired', 'editors', 'editors']);
+	assert.equal(model.revision, revision + 2); assert.ok(model.activeTab === restored && model.tabs.length === 1);
+});
 
 test('a newer model intent from clear publication revokes staged restore admission', t => {
 	const model = new EditorTabGroupModel(), newer = new HomeInput(null);

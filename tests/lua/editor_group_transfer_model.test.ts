@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
-import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
+import { EditorTabGroupModel, type EditorTabGroupChange } from '../../ide/workbench/ui/tab/group_model';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 
 function sourceInput(path: string): CodeEditorInput {
@@ -19,20 +19,22 @@ test('whole-group transfer publishes complete ordered selection and preview stat
 	const plan = source.planTransferTo(target), sourceRevision = source.revision, targetRevision = target.revision;
 	assert.ok(plan.entries.every((entry, index) => entry.input === inputs[index] && entry.receiver === inputs[index]));
 	let sourceChanges = 0, targetChanges = 0, coherent = true, retired = 0;
+	const sourceKinds: EditorTabGroupChange[] = [], targetKinds: EditorTabGroupChange[] = [];
 	for (const input of inputs) input.onWillDispose(() => { retired++; });
 	const verify = () => {
 		coherent = coherent && source.tabs.length === 0 && source.activeTab === null && source.previewTab === null
 			&& target.tabs.length === inputs.length && inputs.every((input, index) => target.tabs[index] === input)
 			&& target.activeTab === active && target.previewTab === preview;
 	};
-	const unbindSource = source.onDidChange(() => { sourceChanges++; verify(); });
-	const unbindTarget = target.onDidChange(() => { targetChanges++; verify(); });
+	const unbindSource = source.onDidChange(kind => { sourceChanges++; sourceKinds.push(kind); verify(); });
+	const unbindTarget = target.onDidChange(kind => { targetChanges++; targetKinds.push(kind); verify(); });
 	const transfer = source.transferGroupTo(target, plan);
 	assert.equal(sourceChanges, 0); assert.equal(targetChanges, 0); verify();
 	assert.ok(transfer.active === active && transfer.preview === preview && transfer.entries === plan.entries);
 	assert.equal(source.revision, sourceRevision + 1); assert.equal(target.revision, targetRevision + 1);
 	transfer.publish(); unbindSource(); unbindTarget();
 	assert.equal(sourceChanges, 1); assert.equal(targetChanges, 1); assert.equal(coherent, true); assert.equal(retired, 0);
+	assert.deepEqual(sourceKinds, ['editors']); assert.deepEqual(targetKinds, ['editors']);
 });
 
 test('whole-group merge keeps matching receiver affinity and inserts only new inputs in source order at the raw gap', t => {
@@ -120,4 +122,61 @@ test('transferred input metadata and dirty subscriptions belong only to the fina
 	input.title = 'new metadata'; input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]);
 	assert.equal(sourceChanges, 1); assert.equal(targetChanges, 3); assert.equal(target.previewTab, null);
 	unbindSource(); unbindTarget();
+});
+
+test('model change tags separate membership, activation, labels, dirty auto-pin and explicit pin without extra revisions', t => {
+	const group = new EditorTabGroupModel(), input = sourceInput('first.lua'), preview = sourceInput('preview.lua');
+	t.after(() => { group.clear(); input.workingCopy.dispose(); preview.workingCopy.dispose(); });
+	const changes: EditorTabGroupChange[] = [];
+	let dirtyPublishedFinalPin = true;
+	const unbind = group.onDidChange(kind => {
+		changes.push(kind);
+		if (kind === 'dirty') dirtyPublishedFinalPin = dirtyPublishedFinalPin && group.previewTab === null;
+	});
+	group.add(input, { pinned: false }); group.activate(input); input.title = 'updated metadata';
+	const beforeDirty = group.revision;
+	input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty auto-pin\n' }]);
+	assert.equal(group.revision, beforeDirty + 1); assert.ok(group.previewTab === null); assert.equal(dirtyPublishedFinalPin, true);
+	input.workingCopy.completeSave(input.workingCopy.createSnapshot());
+	group.add(preview, { pinned: false }); group.pin(preview); group.activate(input); group.clear(); unbind();
+	// These strings are the producer's typed event protocol, not rendered UI wording.
+	assert.deepEqual(changes, ['editors', 'active', 'label', 'dirty', 'dirty', 'editors', 'pin', 'active', 'editors']);
+	assert.equal(group.revision, changes.length);
+});
+
+test('reorder and retirement publish structural changes while a same-position preview drop publishes only pin', t => {
+	const group = new EditorTabGroupModel(), first = sourceInput('first.lua'), second = sourceInput('second.lua');
+	t.after(() => { group.clear(); first.workingCopy.dispose(); second.workingCopy.dispose(); });
+	group.add(first, { pinned: false }); group.add(second); group.activate(first);
+	const changes: EditorTabGroupChange[] = [], revision = group.revision;
+	const unbind = group.onDidChange(kind => { changes.push(kind); });
+	group.moveToGap(first, 0); assert.ok(group.activeTab === first && group.previewTab === null);
+	group.moveToGap(second, 0); assert.ok(group.tabs[0] === second && group.tabs[1] === first);
+	group.move(0, 1); assert.ok(group.tabs[0] === first && group.tabs[1] === second);
+	group.removeAt(0); group.clear(); unbind();
+	assert.deepEqual(changes, ['pin', 'editors', 'editors', 'editors', 'editors']);
+	assert.equal(group.revision, revision + changes.length);
+});
+
+test('single-input handoff keeps paired structural publication ordered around a reentrant receiving label change', t => {
+	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel(), moving = sourceInput('moving.lua');
+	t.after(() => { source.clear(); target.clear(); moving.workingCopy.dispose(); });
+	source.add(moving); source.activate(moving);
+	const sourceRevision = source.revision, targetRevision = target.revision;
+	const changes: { owner: 'source' | 'target'; kind: EditorTabGroupChange }[] = [];
+	let coherent = true;
+	const unbindSource = source.onDidChange(kind => {
+		changes.push({ owner: 'source', kind });
+		coherent = coherent && !source.contains(moving) && target.contains(moving) && target.activeTab === moving;
+		moving.title = 'receiving metadata';
+	});
+	const unbindTarget = target.onDidChange(kind => {
+		changes.push({ owner: 'target', kind });
+		coherent = coherent && !source.contains(moving) && target.contains(moving) && target.activeTab === moving;
+	});
+	const handoff = source.transferTo(target, moving);
+	assert.equal(changes.length, 0); assert.equal(source.revision, sourceRevision + 1); assert.equal(target.revision, targetRevision + 1);
+	handoff.publish(); unbindSource(); unbindTarget();
+	assert.deepEqual(changes, [{ owner: 'source', kind: 'editors' }, { owner: 'target', kind: 'label' }, { owner: 'target', kind: 'editors' }]);
+	assert.equal(coherent, true); assert.equal(source.revision, sourceRevision + 1); assert.equal(target.revision, targetRevision + 2);
 });

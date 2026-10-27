@@ -1,11 +1,14 @@
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { pointerHover } from '../../ide/input/pointer/hover';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import type { QuickPickHighlight } from '../../ide/workbench/services/quick_input/provider';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../hosts/common/input/text';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
@@ -809,4 +812,156 @@ test('late input completion never closes a replacement, steals focus or navigate
 		assert.equal(input.field.readOnly, false);
 		assert.equal(inputFocus.target, input.field.focusTarget);
 	}
+});
+
+test('text-provider metadata refresh retains its admitted entries and updates matching and original-field spans', () => {
+	const catalog = [{ label: 'a b', description: 'c', detail: '' }, { label: 'other', description: '', detail: '' }];
+	const provider = new TextQuickPickProvider(catalog), admitted = [...provider.getPicks('').matches];
+	let changes = 0;
+	const unbind = provider.onDidChange(() => { changes++; });
+	provider.refresh(); assert.equal(changes, 0, 'unchanged display text is not a metadata publication');
+	// Moving a field boundary can preserve the aggregate search string, but not its displayed highlight field/range.
+	catalog[0].label = 'a'; catalog[0].description = 'b c'; provider.refresh();
+	const moved = provider.getPicks('c');
+	assert.equal(changes, 1); assert.ok(moved.matches[0] === admitted[0]); assert.ok(moved.matches[0].item === catalog[0]);
+	assert.deepEqual(Array.from(moved.highlights), [{ field: 'description', start: 2, end: 3 }]);
+	catalog[0].label = 'Renamed'; catalog[0].description = 'Fresh context'; provider.refresh();
+	assert.equal(provider.getPicks('a b').matches.length, 0);
+	assert.ok(provider.getPicks('renamed fresh').matches[0] === admitted[0]);
+	provider.getPicks(''); assert.deepEqual(provider.items, catalog);
+	assert.deepEqual(provider.getPicks('').matches, admitted);
+	unbind(); catalog[0].detail = 'after lifetime'; provider.refresh(); assert.equal(changes, 2);
+});
+
+test('metadata refresh captures selected item identity before the provider mutates its borrowed matches and never silently retargets', () => {
+	const catalog = [
+		{ label: 'zz target', description: '', detail: '' }, { label: 'target', description: '', detail: '' },
+		{ label: 'alpha target', description: '', detail: '' },
+	];
+	const provider = new TextQuickPickProvider(catalog), model = new QuickPickModel();
+	model.setInput(provider); model.filter('target');
+	const rows = model.list.rows, chosen = rows[0].item;
+	assert.ok(chosen === catalog[1]);
+	catalog[1].label = 'zzzz target'; provider.refresh(); model.refresh('target');
+	assert.ok(model.list.rows === rows && rows[0].item !== chosen);
+	assert.ok(rows[model.list.selectionIndex].item === chosen);
+	catalog[1].label = 'no longer matches'; provider.refresh(); model.refresh('target');
+	assert.equal(model.list.rows.length, 2); assert.equal(model.list.selectionIndex, -1);
+	catalog[1].label = 'target again'; provider.refresh(); model.refresh('target');
+	assert.equal(model.list.selectionIndex, -1, 'metadata cannot manufacture a new user choice');
+	model.filter('target'); assert.equal(model.list.selectionIndex, 0, 'a real query edit still requests the provider\'s initial choice');
+});
+
+test('live metadata preserves query history, caret, exact offscreen selection and manual scroll while refreshing retained visible labels', t => {
+	const picker = createPicker(t);
+	const catalog = Array.from({ length: 50 }, (_, index) => ({ label: `entry ${String(index).padStart(2, '0')}`, description: 'old context', detail: 'kind' }));
+	const provider = new TextQuickPickProvider(catalog);
+	picker.pick('Live', 'Filter', () => provider, () => {});
+	insertValue(picker.field, 'entry'); picker.field.setSelection(1, 3); picker.update();
+	const selected = picker.model.list.rows[picker.model.list.selectionIndex].item;
+	picker.handleWheel(8); picker.update();
+	const scroll = picker.model.viewport.scrollTop, fieldState = picker.field.readText(), fieldRevision = picker.field.revision;
+	const advances = picker.textViewport.advances, revision = inputFocus.revision;
+	const unchangedMatch = picker.model.list.rows[8], changedMatch = picker.model.list.rows[9];
+	const unchangedRow = picker.model.getRenderRow(unchangedMatch), changedRow = picker.model.getRenderRow(changedMatch);
+	const label = changedRow.label;
+	const unchangedLayout = t.mock.method(unchangedRow.label, 'layout');
+	const changedLayout = t.mock.method(changedRow.label, 'layout');
+	const queries = t.mock.method(provider, 'getPicks');
+	catalog[0].detail = 'new kind'; catalog[9].label = 'entry 0X'; catalog[9].description = 'new context';
+	provider.refresh();
+	assert.equal(queries.mock.callCount(), 1);
+	assert.equal(picker.model.viewport.scrollTop, scroll, 'metadata does not reveal an already selected offscreen item');
+	assert.ok(picker.model.list.rows[picker.model.list.selectionIndex].item === selected);
+	assert.deepEqual(picker.field.readText(), fieldState); assert.equal(picker.field.revision, fieldRevision);
+	assert.equal(picker.field.canUndo, true); assert.equal(inputFocus.revision, revision);
+	assert.ok(inputFocus.target === picker.field.focusTarget && picker.textViewport.advances === advances);
+	assert.ok(picker.model.getRenderRow(changedMatch) === changedRow && changedRow.label === label);
+	assert.equal(changedRow.label.text, catalog[9].label); assert.equal(changedRow.description.text, catalog[9].description);
+	assert.equal(unchangedLayout.mock.callCount(), 0); assert.equal(changedLayout.mock.callCount(), 1);
+	for (let frame = 0; frame < 100; frame++) picker.update();
+	assert.equal(queries.mock.callCount(), 1); assert.equal(changedLayout.mock.callCount(), 1);
+	Object.assign(picker.presentation.bounds, { right: 320 }); picker.update();
+	assert.equal(picker.model.viewport.scrollTop, 0, 'an external work-area change still reveals the exact selection');
+	inputFocus.executeCommand('undo'); assert.equal(picker.field.text, '');
+	inputFocus.executeCommand('redo'); assert.equal(picker.field.text, 'entry');
+});
+
+test('metadata refresh preserves an unconsumed user-query reveal and selection loss consumes that intent', t => {
+	const picker = createPicker(t), catalog = Array.from({ length: 40 }, (_, index) => ({ label: `entry ${index}`, description: '', detail: '' }));
+	const text = new TextQuickPickProvider(catalog);
+	const provider = { items: catalog, onDidChange: (listener: () => void) => text.onDidChange(listener), getPicks(query: string) {
+		const projection = text.getPicks(query);
+		return { ...projection, selectionIndex: 25 };
+	} };
+	picker.pick('Selected', '', () => provider, () => {});
+	picker.handleWheel(-40); picker.update(); assert.equal(picker.model.viewport.scrollTop, 0);
+	insertValue(picker.field, 'entry');
+	const selected = picker.model.list.rows[25].item;
+	catalog[0].detail = 'published before next layout'; text.refresh();
+	assert.ok(picker.model.list.rows[picker.model.list.selectionIndex].item === selected);
+	assert.ok(picker.model.viewport.scrollTop > 0, 'metadata must not erase the earlier query\'s pending reveal');
+	assert.equal(picker.model.selectionRevealPending, false);
+	picker.model.filter('entry');
+	catalog[picker.model.list.rows[picker.model.list.selectionIndex].itemIndex].label = 'no matching text'; text.refresh();
+	assert.equal(picker.model.list.selectionIndex, -1); assert.equal(picker.model.selectionRevealPending, false);
+});
+
+for (const gesture of ['row', 'scrollbar'] as const) test(`live metadata cancels an admitted ${gesture} press before borrowed row publication and stale release`, t => {
+	const picker = createPicker(t), catalog = Array.from({ length: 40 }, (_, index) => ({ label: `entry ${index}`, description: '', detail: '' }));
+	const provider = new TextQuickPickProvider(catalog);
+	let accepted = 0;
+	picker.pick('Live', '', () => provider, () => { accepted++; });
+	const bounds = gesture === 'row' ? picker.model.viewport.bounds : picker.model.viewport.scrollbar.getThumb()!;
+	const x = (bounds.left + bounds.right) / 2, y = gesture === 'row' ? picker.model.rowTop(1) + picker.model.rowHeight / 2 : (bounds.top + bounds.bottom) / 2;
+	const snapshot = (held: number, down = 0, up = 0): PointerInputSnapshot => ({ valid: true, insideViewport: true,
+		viewportX: x, viewportY: y, pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
+		modifiers: KeyModifier.none, spaceDown: false });
+	picker.handlePointer(snapshot(PointerButton.Primary, PointerButton.Primary), true);
+	assert.equal(pointerCapture.active, true);
+	if (gesture === 'row') assert.equal(pointerHover.has(picker), true);
+	const refresh = t.mock.method(picker.model, 'refresh', query => {
+		assert.equal(pointerCapture.active, false); assert.equal(pointerHover.has(picker), false);
+		return QuickPickModel.prototype.refresh.call(picker.model, query);
+	});
+	catalog[1].detail = 'changed metadata'; provider.refresh();
+	assert.equal(refresh.mock.callCount(), 1); assert.equal(picker.model.list.hoverIndex, -1);
+	const scroll = picker.model.viewport.scrollTop, release = snapshot(0, 0, PointerButton.Primary);
+	if (!pointerCapture.dispatch(release, false, 10, picker.pointerScope)) picker.handlePointer(release, false);
+	assert.equal(pointerCapture.active, false); assert.equal(accepted, 0); assert.equal(picker.visible, true);
+	assert.equal(picker.model.viewport.scrollTop, scroll);
+});
+
+for (const end of ['cancel', 'accept', 'replacement', 'blur', 'dispose'] as const) test(`provider metadata subscription ends with session ${end}`, t => {
+	const picker = createPicker(t), text = new TextQuickPickProvider(items), listeners = new Set<() => void>();
+	const provider = { items, getPicks: (query: string) => text.getPicks(query), onDidChange(listener: () => void) {
+		listeners.add(listener); return () => { listeners.delete(listener); };
+	} };
+	picker.pick('Lifetime', '', () => provider, () => {});
+	assert.equal(listeners.size, 1);
+	if (end === 'cancel') picker.hide();
+	else if (end === 'accept') picker.accept();
+	else if (end === 'replacement') picker.pick('Replacement', '', () => new TextQuickPickProvider(items.slice(1)), () => {});
+	else if (end === 'blur') inputFocus.createTarget().focus();
+	else picker.dispose();
+	assert.equal(listeners.size, 0);
+});
+
+test('metadata subscription registration and query callbacks cannot publish over their actual replacement session', t => {
+	const picker = createPicker(t), replacement = items.slice(1), text = new TextQuickPickProvider(items);
+	let unbound = 0;
+	picker.pick('Register', '', () => ({ items, getPicks: query => text.getPicks(query), onDidChange() {
+		picker.pick('Replacement', '', () => new TextQuickPickProvider(replacement), () => {});
+		return () => { unbound++; };
+	} }), () => assert.fail('registration-replaced catalog accepted'));
+	assert.equal(unbound, 1); assert.ok(picker.model.items === replacement);
+	let publish!: () => void, replace = false;
+	picker.pick('Query', '', () => ({ items, onDidChange(listener) { publish = listener; return () => { unbound++; }; }, getPicks(query) {
+		if (replace) picker.pick('New query owner', '', () => new TextQuickPickProvider(replacement), () => {});
+		return text.getPicks(query);
+	} }), () => assert.fail('query-replaced catalog accepted'));
+	insertValue(picker.field, 'root'); replace = true; publish();
+	assert.equal(unbound, 2); assert.ok(picker.model.items === replacement);
+	assert.equal(picker.field.text, ''); assert.equal(picker.model.list.rows.length, replacement.length);
+	assert.ok(inputFocus.target === picker.field.focusTarget);
 });

@@ -28,4 +28,6 @@ export type QuickPickProjection = {
 export interface QuickPickProvider<T extends QuickPickItem = QuickPickItem> {
 	readonly items: readonly T[];
 	getPicks(query: string): QuickPickProjection;
+	/** Metadata/matching changed within this session's fixed admitted catalog. */
+	onDidChange?(listener: () => void): () => void;
 }

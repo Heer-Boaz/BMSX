@@ -13,6 +13,8 @@ export function layoutQuickInput(input: QuickInputController): void {
 	const view = editorViewState;
 	const area = input.presentation.bounds, width = area.right - area.left, height = area.bottom - area.top;
 	const model = input.model;
+	const geometryChanged = layout.width !== width || layout.height !== height || layout.left !== area.left
+		|| layout.top !== area.top || layout.font !== view.font;
 	const labelsChanged = input.labelsDirty || layout.width !== width || layout.font !== view.font;
 	const layoutChanged = labelsChanged || layout.projectionRevision !== model.revision
 		|| layout.height !== height || layout.left !== area.left || layout.top !== area.top;
@@ -49,7 +51,7 @@ export function layoutQuickInput(input: QuickInputController): void {
 			model.rowHeight = rowHeight;
 			model.viewport.layout(left + 4, rowsTop, right - 4, rowsTop + Math.max(1, visible) * rowHeight, model.list.rows.length * rowHeight);
 			write_rect_bounds(layout.bounds, left, top, right, rowsTop + Math.max(1, visible) * rowHeight + 4);
-			model.revealSelection();
+			if (geometryChanged || model.selectionRevealPending) model.revealSelection();
 		}
 	}
 	if (input.inputBox) return;

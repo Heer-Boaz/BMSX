@@ -28,7 +28,9 @@ export class QuickPickModel {
 		rows: EMPTY_MATCHES, selectionIndex: -1, hoverIndex: -1,
 	};
 	private input: QuickPickProvider | undefined;
+	private pendingReveal = false;
 	private readonly renderRows = new Map<number, QuickPickRenderRow>();
+	public get selectionRevealPending(): boolean { return this.pendingReveal; }
 
 	public get visibleRowCount(): number { return Math.trunc(this.viewport.height / this.rowHeight); }
 	public get firstVisibleIndex(): number { return Math.trunc((this.viewport.bounds.top - this.viewport.offsetTop) / this.rowHeight); }
@@ -45,6 +47,7 @@ export class QuickPickModel {
 	}
 
 	public revealSelection(): void {
+		this.pendingReveal = false;
 		if (this.list.selectionIndex < 0) return;
 		const top = this.list.selectionIndex * this.rowHeight;
 		this.viewport.scrollbar.reveal(top, top + this.rowHeight);
@@ -65,6 +68,7 @@ export class QuickPickModel {
 		this.renderRows.clear();
 		this.list.selectionIndex = -1;
 		this.list.hoverIndex = -1;
+		this.pendingReveal = false;
 		this.viewport.scrollbar.setScroll(0);
 	}
 
@@ -78,6 +82,26 @@ export class QuickPickModel {
 		list.selectionIndex = projection.selectionIndex;
 		this.viewport.scrollbar.setScroll(0);
 		list.hoverIndex = -1;
+		this.pendingReveal = true;
+		this.revision += 1;
+	}
+
+	/** Metadata is not another user query or a new choice of item. */
+	public refresh(value: string): void {
+		const list = this.list, revision = this.revision;
+		const selected = list.selectionIndex === -1 ? undefined : list.rows[list.selectionIndex].item;
+		const projection = this.input!.getPicks(value);
+		if (this.revision !== revision) return;
+		list.rows = projection.matches;
+		this.highlights = projection.highlights;
+		list.selectionIndex = -1;
+		if (selected !== undefined) for (let index = 0; index < list.rows.length; index++) if (list.rows[index].item === selected) {
+			list.selectionIndex = index;
+			break;
+		}
+		list.hoverIndex = -1;
+		for (const row of this.renderRows.values()) if (row.label.text !== row.item.label
+			|| row.description.text !== row.item.description || row.detail.text !== row.item.detail) row.textRevision = -1;
 		this.revision += 1;
 	}
 

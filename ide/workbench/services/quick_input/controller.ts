@@ -124,6 +124,18 @@ export class QuickInputController implements PointerCaptureTarget {
 				this.title = title;
 				this.placeholder = placeholder;
 				this.model.setInput(provider);
+				if (provider.onDidChange !== undefined) {
+					const unbind = provider.onDidChange(() => {
+						if (this.session !== session) return;
+						this.cancelPointer(); this.scrollbarPointer.cancelPointer(); pointerHover.release(this);
+						if (this.session !== session) return;
+						this.model.refresh(this.field.text);
+						if (this.session !== session) return;
+						this.update();
+					});
+					if (this.session !== session) { unbind(); return; }
+					session.disposables.add({ dispose: unbind });
+				}
 				this.labelsDirty = true;
 				setFieldText(this.field, '', true);
 				if (this.session !== session) return;

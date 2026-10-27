@@ -21,6 +21,7 @@ import { DisposableStore } from '../../../common/lifecycle';
 import type { EditorInputSerializer, EditorInputSerializers, SerializedEditorGroup, SerializedEditorInput, PersistentEditorInput } from '../../services/editor/editor_serialization';
 
 export type EditorOpenOptions = { readonly pinned?: boolean };
+export type EditorTabGroupChange = 'editors' | 'active' | 'label' | 'dirty' | 'pin';
 export type EditorTransferPublication = { readonly input: EditorInput; publish(): void };
 export type EditorGroupTransferEntry = { readonly input: EditorInput; readonly receiver: EditorInput };
 export type EditorGroupTransferPlan = { readonly entries: readonly EditorGroupTransferEntry[] };
@@ -42,17 +43,17 @@ export class EditorTabGroupModel {
 	private previewEditor: EditorInput | null = null;
 	private readonly listeners = new Map<EditorInput, DisposableStore>();
 	private readonly labels = new Map<EditorInput, string>();
-	private readonly changeListeners = new Set<() => void>();
+	private readonly changeListeners = new Set<(change: EditorTabGroupChange) => void>();
 	private restoreRequest = 0;
 
-	public onDidChange(listener: () => void): () => void {
+	public onDidChange(listener: (change: EditorTabGroupChange) => void): () => void {
 		this.changeListeners.add(listener);
 		return () => this.changeListeners.delete(listener);
 	}
 
-	private emitChanged(): void {
+	private emitChanged(change: EditorTabGroupChange): void {
 		this.revision += 1;
-		for (const listener of this.changeListeners) listener();
+		for (const listener of this.changeListeners) listener(change);
 	}
 
 	public serialize(serializers: EditorInputSerializers, previous?: SerializedEditorGroup): SerializedEditorGroup {
@@ -95,7 +96,7 @@ export class EditorTabGroupModel {
 			this.activeEditor = data.active === null ? null : this.editorTabs[data.active];
 			this.previewEditor = data.preview === null ? null : this.editorTabs[data.preview];
 			this.updateLabels(); published = true;
-			this.emitChanged();
+			this.emitChanged('editors');
 			return request === this.restoreRequest && this.revision === cleared + 1 && !signal?.aborted;
 		} finally {
 			if (!published) for (const input of candidates) input.dispose();
@@ -129,7 +130,7 @@ export class EditorTabGroupModel {
 		for (const listener of this.listeners.values()) listener.dispose();
 		this.listeners.clear();
 		for (const tab of retired) tab.dispose();
-		for (const listener of this.changeListeners) listener();
+		for (const listener of this.changeListeners) listener('editors');
 		return revision;
 	}
 
@@ -153,16 +154,19 @@ export class EditorTabGroupModel {
 		if (preview) this.previewEditor = tab;
 		this.registerInputListeners(tab);
 		this.updateLabels();
-		this.emitChanged();
+		this.emitChanged('editors');
 		return tab;
 	}
 
 	private registerInputListeners(tab: EditorInput): void {
 		const listeners = new DisposableStore();
-		listeners.add({ dispose: tab.onDidChangeLabel(() => { this.updateLabels(); this.emitChanged(); }) });
+		listeners.add({ dispose: tab.onDidChangeLabel(() => { this.updateLabels(); this.emitChanged('label'); }) });
 		if (tab.onDidChangeDirty !== undefined) listeners.add({ dispose: tab.onDidChangeDirty(() => {
-			if (this.previewEditor === tab && tab.isDirty()) this.pin(tab);
-			else this.emitChanged();
+			if (this.previewEditor === tab && tab.isDirty()) {
+				this.previewEditor = null;
+				this.updateLabels();
+			}
+			this.emitChanged('dirty');
 		}) });
 		this.listeners.set(tab, listeners);
 	}
@@ -171,7 +175,7 @@ export class EditorTabGroupModel {
 		if (this.previewEditor !== tab) return;
 		this.previewEditor = null;
 		this.updateLabels();
-		this.emitChanged();
+		this.emitChanged('pin');
 	}
 
 	/** Label work belongs to membership/metadata changes, not the render loop. */
@@ -200,7 +204,7 @@ export class EditorTabGroupModel {
 
 	public activate(tab: EditorInput): void {
 		this.activeEditor = tab;
-		this.emitChanged();
+		this.emitChanged('active');
 	}
 
 	public findById(tabId: 'host-error'): HostErrorInput | undefined;
@@ -246,7 +250,7 @@ export class EditorTabGroupModel {
 		if (this.previewEditor === removed) this.previewEditor = null;
 		removed.dispose();
 		this.updateLabels();
-		this.emitChanged();
+		this.emitChanged('editors');
 	}
 
 	/** Topology owners adopt the paired memberships before publishing their notifications. */
@@ -276,8 +280,8 @@ export class EditorTabGroupModel {
 		this.revision += 1;
 		destination.revision += 1;
 		return { input: admitted, publish: () => {
-			for (const listener of this.changeListeners) listener();
-			for (const listener of destination.changeListeners) listener();
+			for (const listener of this.changeListeners) listener('editors');
+			for (const listener of destination.changeListeners) listener('editors');
 		} };
 	}
 
@@ -315,8 +319,8 @@ export class EditorTabGroupModel {
 		destination.activeEditor = active; destination.previewEditor = preview;
 		destination.updateLabels(); this.revision++; destination.revision++;
 		return { entries: plan.entries, active, preview, publish: () => {
-			for (const listener of this.changeListeners) listener();
-			for (const listener of destination.changeListeners) listener();
+			for (const listener of this.changeListeners) listener('editors');
+			for (const listener of destination.changeListeners) listener('editors');
 		} };
 	}
 
@@ -326,10 +330,10 @@ export class EditorTabGroupModel {
 		if (from === to && this.previewEditor !== input) return;
 		this.reorder(from, to);
 		if (this.previewEditor === input) { this.previewEditor = null; this.updateLabels(); }
-		this.emitChanged();
+		this.emitChanged(from === to ? 'pin' : 'editors');
 	}
 	public move(fromIndex: number, toIndex: number): void {
-		this.reorder(fromIndex, toIndex); this.emitChanged();
+		this.reorder(fromIndex, toIndex); this.emitChanged('editors');
 	}
 	private reorder(fromIndex: number, toIndex: number): void {
 		const tab = this.editorTabs[fromIndex];

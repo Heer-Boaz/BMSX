@@ -4,7 +4,10 @@ import { appendQuickPickSourceRange } from './highlights';
 import type { QuickPickHighlight, QuickPickItem, QuickPickMatch, QuickPickProjection, QuickPickProvider } from './provider';
 
 type TextQuickPickMatch = QuickPickMatch & {
-	readonly searchText: CaseFoldedText;
+	searchText: CaseFoldedText;
+	label: string;
+	description: string;
+	detail: string;
 	matchIndex: number;
 	highlightStart: number;
 	highlightEnd: number;
@@ -13,6 +16,7 @@ type TextQuickPickMatch = QuickPickMatch & {
 /** Literal text choices, explicitly selected by providers rather than imposed by the UI. */
 export class TextQuickPickProvider<T extends QuickPickItem> implements QuickPickProvider<T> {
 	private readonly entries: TextQuickPickMatch[];
+	private readonly changeListeners = new Set<() => void>();
 	private readonly tokenStarts: number[] = [];
 	private readonly tokenOrder: number[] = [];
 	private readonly compareTokenStarts = (left: number, right: number): number => this.tokenStarts[left] - this.tokenStarts[right];
@@ -21,8 +25,28 @@ export class TextQuickPickProvider<T extends QuickPickItem> implements QuickPick
 
 	public constructor(public readonly items: readonly T[], private readonly initialItemIndex = 0) {
 		this.entries = items.map((item, itemIndex) => ({ item, itemIndex,
+			label: item.label, description: item.description, detail: item.detail,
 			searchText: new CaseFoldedText(`${item.label} ${item.description} ${item.detail}`), matchIndex: 0,
 			highlightStart: 0, highlightEnd: 0 }));
+	}
+
+	public onDidChange(listener: () => void): () => void {
+		this.changeListeners.add(listener);
+		return () => this.changeListeners.delete(listener);
+	}
+
+	/** Display fields and their search representation share the admitted entry lifetime. */
+	public refresh(): void {
+		let changed = false;
+		for (const entry of this.entries) {
+			const item = entry.item;
+			if (entry.label === item.label && entry.description === item.description && entry.detail === item.detail) continue;
+			entry.label = item.label; entry.description = item.description; entry.detail = item.detail;
+			const text = `${item.label} ${item.description} ${item.detail}`;
+			if (entry.searchText.text !== text) entry.searchText = new CaseFoldedText(text);
+			changed = true;
+		}
+		if (changed) for (const listener of this.changeListeners) listener();
 	}
 
 	public getPicks(value: string): QuickPickProjection {
