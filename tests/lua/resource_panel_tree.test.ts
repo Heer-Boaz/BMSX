@@ -21,6 +21,11 @@ import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
+import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
+import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1))) {
 	configureFontVariant('tiny');
@@ -53,6 +58,44 @@ test('folder activation retains Files focus; a leaf invokes the real resource op
 	assert.equal(input.isDirty(), false);
 	f.panel.setFocused(true); f.panel.openSelected(); await opening;
 	assert.equal(f.group.panes.activePane!.input, input);
+});
+
+for (const [path, kind, source] of [
+	['res/data/castle_map.yaml', 'pietious', '1: { map: [".."], objects: [] }\n'],
+	['res/data/castle_map.yml', 'pietious', '1: { map: [".."], objects: [] }\n'],
+	['res/data/nemesis_s_stage.yaml', 'nemesis', 'map_rows: ["m "]\n'],
+	['res/data/nemesis_s_stage.yml', 'nemesis', 'map_rows: ["m "]\n'],
+] as const) test(`Files Enter opens ${path} in its Map contribution and reuses the retained dirty input`, async t => {
+	await openWorkspaceRecords(new MemoryWorkspaceFiles());
+	const f = fixture(t, []), identity = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path };
+	t.after(async () => { clearWorkspaceSourceCaches(); f.sources.catalog.dispose(); await closeWorkspaceRecords(); });
+	f.sources.catalog.registerTextSources(identity.contextId, [{ type: 'data', resid: 'map', source_path: path, sourcemeta: { text: source } }]);
+	f.panel.toggleFilterMode(); f.panel.queuePendingSelection(identity); f.panel.applyPendingSelection(); f.panel.prepareLayout();
+	const selected = f.panel.files.selectedNode!;
+	assert.ok(selected.element.kind === 'file');
+	const resource = selected.element.resource, original = f.navigation.openResource.bind(f.navigation);
+	let opening: ReturnType<EditorNavigationController['openResource']> | undefined;
+	const open = t.mock.method(f.navigation, 'openResource', (...args: Parameters<EditorNavigationController['openResource']>) => { opening = original(...args); return opening; });
+	f.panel.setFocused(true);
+	const enter = new KeyInputEvent('Enter', KeyModifier.none);
+	inputFocus.handleKeyboard(enter); inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	assert.equal(enter.consumed, true); assert.equal(open.mock.callCount(), 1); await opening;
+	const input = f.group.model.activeTab!;
+	assert.ok(input instanceof CartMapInput);
+	assert.equal(input.mapKind, kind); assert.ok(input.resource === resource);
+	assert.ok(input.workingCopy === editorTextModelService.get(identity));
+	assert.equal(input.workingCopy.buffer.getText(), source);
+	assert.equal(f.panel.isFocused(), false);
+	input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# retained draft\n' }]);
+	const edited = input.workingCopy.buffer.getText(), version = input.workingCopy.version;
+	f.panel.setFocused(true);
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	assert.equal(open.mock.callCount(), 2); await opening;
+	assert.ok(f.group.model.activeTab === input && f.group.panes.activePane!.input === input);
+	assert.equal(f.group.model.tabs.length, 1);
+	assert.equal(input.workingCopy.buffer.getText(), edited); assert.equal(input.workingCopy.version, version);
+	assert.equal(input.workingCopy.dirty, true);
 });
 
 test('Files separates canonical project, shared and generated ownership while reveal opens the retained dirty resource', async t => {

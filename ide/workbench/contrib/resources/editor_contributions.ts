@@ -32,15 +32,15 @@ export function createResourceEditorResolver(
 			selector: { kind: 'asset_type', assetType: 'aem' },
 			createEditorInput: resource => resolveTextCodeEditorInput(catalog, resource),
 		},
-		...['.yaml', '.yml'].map(suffix => ({
-			id: WORKBENCH_TEXT_EDITOR_ID,
-			selector: { kind: 'filename_suffix' as const, suffix, assetType: 'data' as const },
-			createEditorInput: resource => resolveTextCodeEditorInput(catalog, resource),
-		} satisfies ResourceEditorRegistration)),
 		...CART_MAP_SOURCES.map(({ suffix, kind }) => ({
 			id: WORKBENCH_CART_MAP_EDITOR_ID,
 			selector: { kind: 'filename_suffix' as const, suffix, assetType: 'data' as const },
 			createEditorInput: resource => resolveCartMapInput(catalog, resource, kind),
+		} satisfies ResourceEditorRegistration)),
+		...['.yaml', '.yml'].map(suffix => ({
+			id: WORKBENCH_TEXT_EDITOR_ID,
+			selector: { kind: 'filename_suffix' as const, suffix, assetType: 'data' as const },
+			createEditorInput: resource => resolveTextCodeEditorInput(catalog, resource),
 		} satisfies ResourceEditorRegistration)),
 		{
 			id: WORKBENCH_RESOURCE_VIEWER_ID,
