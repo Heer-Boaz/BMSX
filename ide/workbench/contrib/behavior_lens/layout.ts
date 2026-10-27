@@ -135,7 +135,9 @@ export function prepareBehaviorLensLayout(state: BehaviorLensViewState, bounds: 
 		layout.headerBottom = layout.top + editorViewState.lineHeight + HEADER_PADDING_Y * 2;
 		layoutWorkbenchActionBar(presentation.actionBar, layout.right - 4, layout.top, layout.headerBottom, measureText, editorViewState.font.renderFont(), layout.left + HEADER_PADDING_X);
 		const definition = state.definitionRowKey === null ? undefined : state.source.nodesByRowKey.get(state.definitionRowKey);
-		layout.headerText = truncateTextToWidth(uppercaseOutsideStrings(definition === undefined ? state.resource.path : definition.label),
+		const header = definition === undefined ? uppercaseOutsideStrings(state.resource.path)
+			: definition.preserveLabelCase ? definition.label : uppercaseOutsideStrings(definition.label);
+		layout.headerText = truncateTextToWidth(header,
 			presentation.actionBar.bounds.left - layout.left - HEADER_PADDING_X * 2);
 		if (presentation.kind === 'outline') {
 			layoutWorkbenchList(presentation.layout, layout.left + CONTENT_PADDING_X, layout.headerBottom + 1,
@@ -207,8 +209,8 @@ function writeRetainedText(state: BehaviorLensOutline): void {
 		const marker = row.expandable ? (row.expanded ? '-' : '+') : ' ';
 		const badge = behaviorKindBadge(row.node.behaviorKind, row.node.kind === 'definition');
 		const detail = row.node.detail.length > 0 ? `  ${row.node.detail}` : '';
-		const rawText = `${' '.repeat(row.depth * TREE_INDENT_COLUMNS)}${marker} ${badge}${row.node.label}${detail}`;
-		const displayText = uppercaseOutsideStrings(rawText);
+		const label = row.node.preserveLabelCase ? row.node.label : uppercaseOutsideStrings(row.node.label);
+		const displayText = `${' '.repeat(row.depth * TREE_INDENT_COLUMNS)}${marker} ${badge}${label}${uppercaseOutsideStrings(detail)}`;
 		row.text = truncateTextToWidth(displayText, availableWidth);
 		row.twistieLeft = layout.contentLeft + row.depth * indentWidth;
 		row.twistieRight = row.twistieLeft + markerHitWidth;

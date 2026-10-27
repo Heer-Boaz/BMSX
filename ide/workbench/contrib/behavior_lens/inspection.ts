@@ -24,7 +24,7 @@ export function buildBehaviorInspection(view: BehaviorLensViewState): readonly B
 	function source(label: string, description: string, range: LuaSourceRange, stateSelection?: StateMachineDetail['source']): void {
 		const model = view.source.models.get(range.path)!;
 		const location = `${model.resource.path}:${range.start.line}:${range.start.column}`;
-		result.push({ label: uppercaseOutsideStrings(label), value: uppercaseOutsideStrings(readLuaSourceRange(model.buffer, range)),
+		result.push({ label, value: uppercaseOutsideStrings(readLuaSourceRange(model.buffer, range)),
 			description: description.length === 0 ? location : `${location}\n${uppercaseOutsideStrings(description)}`,
 			warning: false, source: { resource: model.resource, range, stateSelection } });
 	}
@@ -53,12 +53,13 @@ export function buildBehaviorInspection(view: BehaviorLensViewState): readonly B
 	} else if (view.presentation.kind === 'graph') {
 		const item = view.presentation.viewport.selection;
 		if (item !== null) for (const detail of (item.kind === 'node' ? item : item.child).details) {
-			source(`${detail.detail} / ${detail.label}`, '', detail.range);
+			const label = detail.preserveLabelCase ? detail.label : uppercaseOutsideStrings(detail.label);
+			source(`${uppercaseOutsideStrings(detail.detail)} / ${label}`, '', detail.range);
 		}
 	} else if (view.presentation.kind === 'properties') {
 		const row = view.presentation.nodesBySource.get(selected.rowKey)!;
 		const label = row.element.label.length === 0 ? `${row.parent!.element.label} / ${selected.label}` : row.element.label;
-		source(label, row.element.description, selected.referenceRange !== null ? selected.referenceRange : selected.authoredRange);
+		source(uppercaseOutsideStrings(label), row.element.description, selected.referenceRange !== null ? selected.referenceRange : selected.authoredRange);
 	}
 	result.push({ label: 'SOURCE ANALYSIS', value: uppercaseOutsideStrings(selected.detail),
 		description: selected.resolution === 'complete' ? 'RECOGNIZED AUTHORED SOURCE. NO RUNTIME EXECUTION IS INFERRED.'

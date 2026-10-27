@@ -44,6 +44,8 @@ export type BehaviorSourceNode = {
 	readonly behaviorKind: BehaviorKind;
 	readonly kind: BehaviorSourceNodeKind;
 	readonly label: string;
+	/** Decoded authored names are not Lua expressions or uppercase workbench chrome. */
+	readonly preserveLabelCase?: boolean;
 	readonly detail: string;
 	readonly authoredRange: LuaSourceRange;
 	readonly referenceRange: LuaSourceRange | null;

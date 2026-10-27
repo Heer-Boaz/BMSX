@@ -1,4 +1,5 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
+import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { luaSourceRangeToTextRange, readLuaExpressionPreview, readLuaSourceRange, readLuaTableFieldInteger } from '../../../language/lua/source_edits';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
@@ -12,7 +13,9 @@ type SceneOutlineSource = {
 	readonly source: LuaSourceRange;
 	readonly span: TrackedTextRange;
 	readonly label: string;
+	readonly preserveLabelCase: boolean;
 	readonly detail: string;
+	readonly preserveDetailCase: boolean;
 	readonly identity: string;
 	displayLabel: string;
 	labelClipped: boolean;
@@ -33,11 +36,13 @@ export function installSceneOutline(input: SceneEditorInput, document: SceneSour
 		const span = luaSourceRangeToTextRange(buffer, scene.range);
 		const prior = previous.get(span.start);
 		const locations = document.analysis.chunk.locations;
-		const sceneIdentity = readLuaSourceRange(buffer, locations.range(scene.id.span));
+		const sceneId = stringLiteralValue(scene.id);
+		const sceneIdentity = sceneId === undefined ? readLuaSourceRange(buffer, locations.range(scene.id.span)) : sceneId;
 		const detail = `${scene.objects.length} MEMBERS${scene.resolution === 'partial' ? ' (PARTIAL)' : ''}`;
 		const root = appendWorkbenchTreeNode(outline, null, {
 			kind: 'scene', scene, source: scene.range, span,
-			label: readLuaExpressionPreview(buffer, locations, scene.id), detail,
+			label: sceneId === undefined ? readLuaExpressionPreview(buffer, locations, scene.id) : sceneId,
+			preserveLabelCase: sceneId !== undefined, detail, preserveDetailCase: false,
 			identity: `${sourceTabDescription(input.workingCopy.resource)}:${scene.range.start.line}:${scene.range.start.column}\nScene ${sceneIdentity}\n${detail}`,
 			displayLabel: '', labelClipped: false,
 		}, prior !== undefined && prior.element.span.end === span.end && prior.collapsed);
@@ -45,13 +50,19 @@ export function installSceneOutline(input: SceneEditorInput, document: SceneSour
 			const entry = scene.objects[index];
 			const range = locations.range(entry.field.span);
 			const expression = entry.kind === 'object' ? entry.memberId : entry.field.value;
-			const identity = readLuaSourceRange(buffer, locations.range(expression.span));
-			const definition = entry.kind === 'object' ? readLuaSourceRange(buffer, locations.range(entry.definitionId.span)) : '';
+			const memberId = entry.kind === 'object' ? stringLiteralValue(entry.memberId) : undefined;
+			const definitionId = entry.kind === 'object' ? stringLiteralValue(entry.definitionId) : undefined;
+			const identity = memberId === undefined ? readLuaSourceRange(buffer, locations.range(expression.span)) : memberId;
+			const definition = entry.kind === 'object'
+				? definitionId === undefined ? readLuaSourceRange(buffer, locations.range(entry.definitionId.span)) : definitionId : '';
 			appendWorkbenchTreeNode(outline, root, {
 				kind: 'member', scene, entry, index, source: range,
 				span: luaSourceRangeToTextRange(buffer, range),
-				label: readLuaExpressionPreview(buffer, locations, expression),
-				detail: entry.kind === 'object' ? readLuaExpressionPreview(buffer, locations, entry.definitionId) : 'Dynamic Lua composition',
+				label: memberId === undefined ? readLuaExpressionPreview(buffer, locations, expression) : memberId,
+				preserveLabelCase: memberId !== undefined,
+				detail: entry.kind === 'object'
+					? definitionId === undefined ? readLuaExpressionPreview(buffer, locations, entry.definitionId) : definitionId : 'Dynamic Lua composition',
+				preserveDetailCase: definitionId !== undefined,
 				identity: `${sourceTabDescription(input.workingCopy.resource)}:${range.start.line}:${range.start.column}\nScene ${sceneIdentity}\n${entry.kind === 'object' ? `Member ${identity}\nDefinition ${definition}` : `Composition ${identity}`}`,
 				displayLabel: '', labelClipped: false,
 			});

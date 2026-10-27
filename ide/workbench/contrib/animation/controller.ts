@@ -140,7 +140,7 @@ export class AnimationEditorController {
 		const document = input.document;
 		if (document !== undefined) {
 			this.modelFor(input, document.root.file);
-			input.tracks.rows.push({ track: undefined, clip: undefined, frames: false, label: 'Animation', text: '' });
+			input.tracks.rows.push({ track: undefined, clip: undefined, frames: false, label: 'Animation', preserveCase: false, text: '' });
 			if (document.tracksSource !== undefined) this.modelFor(input, document.tracksSource.file);
 			for (let index = 0; index < document.tracks.length; index++) {
 				const track = document.tracks[index];
@@ -154,7 +154,7 @@ export class AnimationEditorController {
 					if (index === input.trackIndex && this.matches(input.keySelection, owner, key.file, key.field)) input.keyIndex = keyIndex;
 					if (key.source !== undefined) this.modelFor(input, key.source.file);
 				}
-				input.tracks.rows.push({ track, clip: undefined, frames: false, label: track.label, text: '' });
+				input.tracks.rows.push({ track, clip: undefined, frames: false, label: track.label, preserveCase: track.preserveCase, text: '' });
 			}
 			if (document.clipsSource !== undefined) this.modelFor(input, document.clipsSource.file);
 			for (let index = 0; index < document.clips.length; index++) {
@@ -162,12 +162,12 @@ export class AnimationEditorController {
 				if (this.matches(input.trackSelection, this.modelFor(input, clip.file), clip.file, clip.field)) input.clipIndex = index;
 				if (clip.source !== undefined) this.modelFor(input, clip.source.file);
 				if (clip.sequence !== undefined) this.modelFor(input, clip.sequence.file);
-				input.tracks.rows.push({ track: undefined, clip, frames: false, label: clip.label, text: '' });
+				input.tracks.rows.push({ track: undefined, clip, frames: false, label: clip.label, preserveCase: clip.preserveCase, text: '' });
 			}
 			if (document.framesField !== undefined) {
 				input.framesSelected = this.matches(input.trackSelection, this.modelFor(input, document.root.file), document.root.file, document.framesField);
 				if (document.framesSource !== undefined) this.modelFor(input, document.framesSource.file);
-				input.tracks.rows.push({ track: undefined, clip: undefined, frames: true, label: 'Frames', text: '' });
+				input.tracks.rows.push({ track: undefined, clip: undefined, frames: true, label: 'Frames', preserveCase: false, text: '' });
 			}
 		}
 		if (input.trackIndex === -1 && input.clipIndex === -1 && !input.framesSelected) input.trackSelection = undefined;

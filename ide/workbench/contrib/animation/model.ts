@@ -34,6 +34,7 @@ export type AnimationTrackSource = {
 	readonly keyIndex: AnimationKeyIndex;
 	readonly unit: AnimationKeyUnit | undefined;
 	readonly label: string;
+	readonly preserveCase: boolean;
 	readonly kind: string | undefined;
 	readonly interpolation: string | undefined;
 };
@@ -48,6 +49,7 @@ export type AnimationClipSource = {
 	readonly clipIn: AnimationNumberSource | undefined;
 	readonly timeScale: AnimationNumberSource | undefined;
 	readonly label: string;
+	readonly preserveCase: boolean;
 };
 
 export type AnimationFrameSource = { readonly field: LuaTableField; readonly image: string | undefined };

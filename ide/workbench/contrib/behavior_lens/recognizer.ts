@@ -68,6 +68,7 @@ function buildDefinition(
 		input = {
 			kind: 'definition',
 			label: registration.label,
+			preserveLabelCase: registration.semanticId !== null,
 			detail: 'registration has no definition argument',
 			authoredRange: file.chunk.locations.range(call.span),
 			referenceRange: null,
@@ -78,6 +79,7 @@ function buildDefinition(
 		input = {
 			kind: 'definition',
 			label: registration.label,
+			preserveLabelCase: registration.semanticId !== null,
 			detail: context.sourceIncomplete ? 'unresolved registration definition | syntax recovery' : 'unresolved registration definition',
 			authoredRange: file.chunk.locations.range(definitionExpression.span),
 			referenceRange: null,
@@ -90,6 +92,7 @@ function buildDefinition(
 		input = {
 			kind: 'definition',
 			label: registration.label,
+			preserveLabelCase: registration.semanticId !== null,
 			detail,
 			authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 			referenceRange: resolved.referenceRange,

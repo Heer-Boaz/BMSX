@@ -6,6 +6,7 @@ import {
 	type LuaTableField,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
+import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
 import type { BehaviorDynamicSourceNode, BehaviorSourceNode } from './model';
 import type {
 	BehaviorTreeSourceAttachment, BehaviorTreeSourceAttachmentGroup, BehaviorTreeSourceBody,
@@ -348,7 +349,8 @@ function buildBehaviorTreeAttachment(
 		return createDynamicNode(context, file, path, `dynamic ${kind}`, expression);
 	}
 	const primary = findNamedLuaTableField(resolved.table, primaryFieldName);
-	const label = primary ? describeExpression(primary.value) : `<unresolved ${kind}>`;
+	const name = primary === null ? undefined : stringLiteralValue(primary.value);
+	const label = name !== undefined ? name : primary === null ? `<unresolved ${kind}>` : describeExpression(primary.value);
 	const detailFields = kind === 'service'
 		? ['interval', 'tick_on_search_start', 'restart_timer_on_each_activation']
 		: ['decorator', 'observer_aborts', 'operation', 'key', 'value', 'notify_observer', 'num_loops', 'infinite_loop'];
@@ -363,6 +365,7 @@ function buildBehaviorTreeAttachment(
 		file: resolved.file,
 		primary,
 		label,
+		preserveLabelCase: name !== undefined,
 		detail,
 		authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 		referenceRange: resolved.referenceRange,

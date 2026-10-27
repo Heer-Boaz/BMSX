@@ -18,7 +18,7 @@ import type { AnimationEditorLayout } from './layout';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 
 export type AnimationSourceSelection = { readonly path: string; readonly range: TrackedTextRange };
-export type AnimationTrackRow = { readonly track: AnimationTrackSource | undefined; readonly clip: AnimationClipSource | undefined; readonly frames: boolean; label: string; text: string };
+export type AnimationTrackRow = { readonly track: AnimationTrackSource | undefined; readonly clip: AnimationClipSource | undefined; readonly frames: boolean; readonly preserveCase: boolean; label: string; text: string };
 export type AnimationClient = 'tracks' | 'keys' | 'details';
 
 let nextInputId = 0;

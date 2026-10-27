@@ -91,7 +91,7 @@ test('overview visits the visible key interval, keeps spanning tags and performs
 	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
 	t.after(() => { input.dispose(); model.dispose(); });
 	input.document = { ...document, tracks: [track, document.tracks[1]] };
-	for (const lane of input.document.tracks) input.tracks.rows.push({ track: lane, clip: undefined, frames: false, label: lane.label, text: '' });
+	for (const lane of input.document.tracks) input.tracks.rows.push({ track: lane, clip: undefined, frames: false, label: lane.label, preserveCase: lane.preserveCase, text: '' });
 	input.tracks.layout.rowHeight = 18; input.tracks.layout.visibleRowCount = 2;
 	input.keys.bind(track, -1, input.document); input.keys.range.layout(0, 0, 806, 20);
 	input.overview.layout(0, 0, 806, 36); input.keys.setView(500, 520);

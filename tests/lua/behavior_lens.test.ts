@@ -77,7 +77,7 @@ test('behavior lens gives reused Moon behavior-tree initializers distinct view o
 	assert.equal(new Set(deathRayOccurrences.map(node => node.rowKey)).size, 3);
 	assert.ok(deathRayOccurrences.every(node => node.authoredRange.start.line === 105));
 	assert.ok(nodes.some(node => node.kind === 'service' && node.label === 'services.spawn_mini_moon'));
-	assert.ok(nodes.some(node => node.kind === 'decorator' && node.label === "'loop'"));
+	assert.ok(nodes.some(node => node.kind === 'decorator' && node.label === 'loop'));
 });
 
 test('behavior lens finds const state-machine topology authored inside a closure', () => {
@@ -113,7 +113,7 @@ test('behavior lens finds const state-machine topology authored inside a closure
 	assert.ok(nodes.some(node => node.kind === 'state' && node.label === 'overlay'));
 	assert.ok(nodes.some(node => node.kind === 'state' && node.label === 'walk'));
 	assert.ok(nodes.some(node => node.kind === 'event' && node.label === 'start'));
-	assert.ok(nodes.some(node => node.kind === 'event' && node.label === "'a[jp]'"));
+	assert.ok(nodes.some(node => node.kind === 'event' && node.label === 'a[jp]'));
 });
 
 test('behavior lens recognizes a function-local cartlib module alias', () => {

@@ -2,6 +2,7 @@ import type { BehaviorSourceNode } from './model';
 import type { BehaviorLensViewState } from './view_model';
 import { describeExpression } from './source';
 import { stateMachineSourceRange, type StateMachineSourceReference } from './state_machine_selection';
+import { uppercaseOutsideStrings } from '../../../common/text';
 
 export type StateMachineSourceDetail = {
 	readonly label: string;
@@ -38,19 +39,19 @@ export type StateMachineDetail = {
 	readonly source: { readonly kind: 'node'; readonly rowKey: string } | StateMachineSourceReference;
 };
 
-/** Inspector choices belong to the selected source scope, not its rendered rectangle. */
+/** Compose inspector captions before joining semantic names with expression/chrome text. */
 export function buildStateMachineDetails(view: BehaviorLensViewState): readonly StateMachineDetail[] {
 	const selected = view.source.nodesByRowKey.get(view.selection!.rowKey)!;
 	const details: StateMachineDetail[] = [];
 	const statesSource = view.stateMachines.bodies.get(selected.rowKey)?.states?.source;
 	function append(node: BehaviorSourceNode, prefix: string): void {
 		const range = node.referenceRange !== null ? node.referenceRange : node.authoredRange;
-		const label = `${prefix}${node.label}`;
+		const label = prefix + (node.preserveLabelCase ? node.label : uppercaseOutsideStrings(node.label));
 		if (node !== selected) details.push({ source: { kind: 'node', rowKey: node.rowKey }, label,
 			description: `LN ${range.start.line}:${range.start.column}`, detail: node.detail });
 		const references = view.stateMachines.references.get(node.rowKey);
 		if (references !== undefined) for (const detail of buildStateMachineSourceDetails(references)) {
-			details.push({ ...detail, label: `${node === selected ? '' : label + ' / '}${detail.label}`, source: detail.reference });
+			details.push({ ...detail, label: `${node === selected ? '' : label + ' / '}${uppercaseOutsideStrings(detail.label)}`, source: detail.reference });
 		}
 		for (const child of node.children) {
 			if (child === statesSource) continue;

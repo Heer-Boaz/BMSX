@@ -22,8 +22,9 @@ export function drawAnimationEditor(input: AnimationEditorInput, bounds: Readonl
 		for (let index = firstRow; index < Math.min(list.rows.length, firstRow + layout.visibleRowCount); index++) {
 			const top = layout.contentTop + (index - firstRow) * rowHeight;
 			const selected = index === list.selectionIndex;
+			const row = list.rows[index];
 			if (selected) api.fill_rect(layout.contentLeft, top, layout.contentRight, top + rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
-			drawEditorText(font, list.rows[index].text, layout.contentLeft + 2, top + 2, 0, selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT : text);
+			drawEditorText(font, row.text, layout.contentLeft + 2, top + 2, 0, selected ? colors.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT : text, row);
 		}
 		api.popClipRect();
 	}

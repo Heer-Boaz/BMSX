@@ -32,9 +32,9 @@ export async function layoutStateGraph(definition: StateMachineSourceDefinition,
 	function node(source: BehaviorSourceNode, body: StateMachineSourceBody | null): StateGraphSourceNode {
 		const partial = source.resolution !== 'complete' || unresolved.has(source.rowKey)
 			|| body !== null && body.states !== null && body.states.source.resolution !== 'complete';
-		const lines = [source.label + (partial ? ' ?' : '')];
+		const lines = [(source.preserveLabelCase ? source.label : uppercaseOutsideStrings(source.label)) + (partial ? ' ?' : '')];
 		if (concurrent.has(source.rowKey)) lines.push('CONCURRENT REGION');
-		const result: StateGraphSourceNode = { ...createWorkbenchGraphNode(font, uppercaseOutsideStrings(lines.join('\n')), 0, 0),
+		const result: StateGraphSourceNode = { ...createWorkbenchGraphNode(font, lines.join('\n'), 0, 0),
 			role: 'source', source, children: [] };
 		nodesBySource.set(source.rowKey, result);
 		if (body !== null && body.states !== null) {
@@ -64,9 +64,11 @@ export async function layoutStateGraph(definition: StateMachineSourceDefinition,
 	for (const transition of definition.transitions) {
 		for (const reference of references.get(transition.slot.source.rowKey)!) {
 			if (reference.kind !== 'state-outcome' || reference.outcome.target.kind !== 'path') continue;
-			const title = transition.slot.kind === 'update' || transition.slot.kind === 'enter' ? transition.slot.kind : transition.slot.source.label;
+			const source = transition.slot.source;
+			const title = transition.slot.kind === 'update' || transition.slot.kind === 'enter' ? transition.slot.kind.toUpperCase()
+				: source.preserveLabelCase ? source.label : uppercaseOutsideStrings(source.label);
 			links.push({ source: nodesBySource.get(transition.origin.rowKey)!, target: nodesBySource.get(reference.outcome.target.target)!, reference,
-				label: uppercaseOutsideStrings(title) });
+				label: title });
 		}
 	}
 	const graph = await layoutWorkbenchCompoundGraph<StateGraphNode, StateGraphLink>(font, [root], links, engine);

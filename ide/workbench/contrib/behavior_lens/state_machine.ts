@@ -174,6 +174,7 @@ function buildFsmState(
 	return createSourceNode(context, path, {
 		kind: 'state',
 		label: name,
+		preserveLabelCase: true,
 		detail: markers.join(', '),
 		authoredRange: resolved.file.chunk.locations.range(state.span),
 		referenceRange: resolved.referenceRange,

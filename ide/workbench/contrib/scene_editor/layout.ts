@@ -103,8 +103,8 @@ function measureSceneDetails(input: SceneEditorInput, width: number): number {
 	const node = input.outline.rows[input.outline.selectionIndex];
 	if (node === undefined) return 0;
 	const textWidth = width - PADDING * 2;
-	let top = appendDetailsText(input, uppercaseOutsideStrings(node.element.label), textWidth, PADDING);
-	top = appendDetailsText(input, uppercaseOutsideStrings(node.element.detail), textWidth, top);
+	let top = appendDetailsText(input, node.element.preserveLabelCase ? node.element.label : uppercaseOutsideStrings(node.element.label), textWidth, PADDING);
+	top = appendDetailsText(input, node.element.preserveDetailCase ? node.element.detail : uppercaseOutsideStrings(node.element.detail), textWidth, top);
 	if (node.element.kind === 'scene') return top;
 	top = appendDetailsText(input, 'POSITION / WORLD UNITS', textWidth, top);
 	const fieldHeight = input.layout.rowHeight + PADDING;
@@ -138,7 +138,7 @@ function appendDetailsText(input: SceneEditorInput, text: string, width: number,
 function layoutSceneOutlineNodes(nodes: readonly WorkbenchTreeNode<SceneOutlineElement>[], layout: WorkbenchTreeLayout): void {
 	for (const node of nodes) {
 		const badge = node.element.kind === 'scene' && node.element.scene.resolution === 'partial' ? '* ' : '';
-		const label = badge + uppercaseOutsideStrings(node.element.label);
+		const label = badge + (node.element.preserveLabelCase ? node.element.label : uppercaseOutsideStrings(node.element.label));
 		node.element.displayLabel = truncateTextToWidth(label,
 			layout.contentRight - layout.contentLeft - node.depth * layout.indentWidth - layout.twistieWidth);
 		node.element.labelClipped = node.element.displayLabel !== label;

@@ -36,6 +36,8 @@ test('track captions preserve authored names, callback references and real prope
 	assert.deepEqual(document.tracks.map(track => track.label), [
 		'apply_slide', 'handlers.visible', 'Curtain reveal', 'presentation.members.curtain.visible', 'picture.offset.x', '',
 	]);
+	assert.deepEqual(document.tracks.map(track => track.preserveCase), [false, false, true, true, true, true],
+		'only captions selected from semantic string values preserve identifier casing, including an empty authored name');
 	const written = findNamedLuaTableField(document.root.table, 'tracks')!.value;
 	assert.ok(written.kind === LuaSyntaxKind.TableConstructorExpression);
 	for (let index = 0; index < document.tracks.length; index++) {
@@ -63,6 +65,7 @@ test('anonymous and unresolved track captions identify their real occurrence, in
 	assert.equal(tracks[4].label, `Source @${unresolvedPosition.line}:${unresolvedPosition.column}`);
 	assert.equal(tracks[5].label, 'external_track');
 	assert.equal(document.root.file.source, source);
+	assert.ok(tracks.every(track => !track.preserveCase), 'source expressions and generated occurrence captions retain ordinary editor formatting');
 	assert.ok(tracks.every(track => !track.label.includes('target /') && !/^Track [0-9]/.test(track.label)));
 });
 

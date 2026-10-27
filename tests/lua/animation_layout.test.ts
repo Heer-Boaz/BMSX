@@ -10,13 +10,17 @@ import { AnimationKeyControl } from '../../ide/workbench/contrib/animation/key_c
 import { layoutAnimationEditor, measureAnimationEditor } from '../../ide/workbench/contrib/animation/layout';
 import { inputFocus } from '../../ide/input/focus';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { drawAnimationEditor } from '../../ide/workbench/contrib/animation/render';
+import { api } from '../../ide/runtime/overlay_api';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { uppercaseOutsideStrings } from '../../ide/common/text';
 
 const source = "return {duration_frames=100,clock_scale=1,tracks={{kind='value',interpolation='linear',keys={{frame=0,value=1},{frame=100,value=2}}},{kind='event',keys={{frame=50,event='other'}}}}}";
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, text = source) {
 	const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua' };
-	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
-	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, text)]);
+	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', text);
 	const controller = new AnimationEditorController(sources.catalog, undefined!);
 	const input = new AnimationEditorInput(model, model.resource.contextId);
 	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1); controller.selectProperty(input, 0);
@@ -25,6 +29,49 @@ function fixture(t: TestContext) {
 	t.after(() => { keys.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); });
 	return { input, model, keys, controller };
 }
+
+test('Animation renders decoded semantic track and clip captions without recasing their identifier contents or authored source', t => {
+	const text = [
+		'local apply_mix = function() end',
+		'return { duration_ms=100, tracks={',
+		' { kind="value", name="Capt\'n `One", keys={{time_ms=0,value=0},{time_ms=100,value=1}} },',
+		' { kind="value", name=[=[MiXeD "Two"]=], keys={} },',
+		' { kind="value", binding="PoseMiX", path={"OffsetX"}, keys={} },',
+		' { kind="value", path={"BodyMiX","Visible"}, keys={} },',
+		' { kind="value", name="", keys={} },',
+		' { kind="value", apply=apply_mix, keys={} },',
+		' { kind="event", keys={} },',
+		'}, subsequences={',
+		' { id="ClipMiX", sequence={duration_ms=100}, start_time_ms=0, duration_ms=100 },',
+		' { id="", sequence={duration_ms=100}, start_time_ms=0, duration_ms=100 },',
+		' { sequence={duration_ms=100}, start_time_ms=0, duration_ms=100 },',
+		'}, frames={"FrameMiX"} }',
+	].join('\n');
+	const { input, model, keys } = fixture(t, text), document = input.document!, version = model.version;
+	assert.deepEqual(document.tracks.slice(0, 6).map(track => track.label), ["Capt'n `One", 'MiXeD "Two"', 'PoseMiX.OffsetX', 'BodyMiX.Visible', '', 'apply_mix']);
+	assert.deepEqual(document.clips.map(clip => clip.preserveCase), [true, true, false], 'empty clip IDs remain semantic strings; generated clip captions remain UI text');
+	assert.deepEqual(input.tracks.rows.map(row => row.preserveCase), [false, true, true, true, true, true, false, false, true, true, false, false]);
+	const previousFont = editorViewState.font; t.after(() => { editorViewState.font = previousFont; });
+	const overlay = createHostOverlayFixture(800, 1000), rendered: string[] = [];
+	t.mock.method(api, 'blit_text_inline_with_font', value => { rendered.push(value); });
+	const bounds = { left: 0, top: 0, right: 800, bottom: 1000 };
+	for (const variant of ['tiny', 'msx'] as const) {
+		editorViewState.font = new EditorFont(variant);
+		layoutAnimationEditor(input, bounds, keys); input.overview.update(input);
+		assert.ok(input.tracks.layout.visibleRowCount >= input.tracks.rows.length, 'the render contract exercises every actual source and UI row');
+		rendered.length = 0;
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+		drawAnimationEditor(input, bounds, false); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
+		for (const row of input.tracks.rows) {
+			assert.equal(row.text, row.label, 'the test provides enough layout width to observe the exact semantic bytes');
+			if (row.text === '') continue;
+			const expected = row.preserveCase ? row.text : uppercaseOutsideStrings(row.text);
+			assert.ok(rendered.includes(expected), `${variant}: the text producer preserves semantic identifiers while retaining existing expression and UI formatting`);
+		}
+		assert.equal(model.version, version); assert.equal(model.buffer.getText(), text);
+		assert.ok(input.document === document, 'caption presentation does not rebuild or replace the authored source projection');
+	}
+});
 
 test('animation composes measured child minima on both axes instead of squeezing every client', t => {
 	const { input, keys } = fixture(t);

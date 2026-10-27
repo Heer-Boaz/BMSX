@@ -62,7 +62,8 @@ export function buildAnimationSourceDocument(resource: ResourceIdentity, snapsho
 		const name = source === undefined ? undefined : readStringField(reader, source, 'name');
 		const apply = source === undefined ? null : findNamedLuaTableField(source.table, 'apply');
 		let label: string;
-		if (name !== undefined) label = name;
+		let preserveCase = false;
+		if (name !== undefined) { label = name; preserveCase = true; }
 		else if (apply !== null) {
 			const reference = resolveStaticLuaExpressionPath(apply.value);
 			if (reference !== null) label = reference;
@@ -72,13 +73,14 @@ export function buildAnimationSourceDocument(resource: ResourceIdentity, snapsho
 			}
 		} else if (binding !== undefined || path !== undefined) {
 			label = binding === undefined ? path! : path === undefined ? binding : `${binding}.${path}`;
+			preserveCase = true;
 		} else {
 			const reference = resolveStaticLuaExpressionPath(entry.value);
 			const position = tracksSource.file.chunk.locations.range(entry.value.span).start;
 			label = reference === null ? `${kind === undefined ? 'Source' : kind} @${position.line}:${position.column}` : reference;
 		}
 		tracks.push({ file: tracksSource.file, field: entry, source, keysSource, keys, keyIndex: indexAnimationKeys(keys, unit), unit, kind, interpolation,
-			label });
+			label, preserveCase });
 	}
 	const durationMs = findNamedLuaTableField(root.table, 'duration_ms');
 	const durationFrames = findNamedLuaTableField(root.table, 'duration_frames');
@@ -89,13 +91,14 @@ export function buildAnimationSourceDocument(resource: ResourceIdentity, snapsho
 		if (entry.kind !== LuaTableFieldKind.Array) continue;
 		const source = readTable(reader, clipsSource.file, entry.value, clipsSource.structural);
 		const sequence = source === undefined ? null : findNamedLuaTableField(source.table, 'sequence');
+		const id = source === undefined ? undefined : readStringField(reader, source, 'id');
 		clips.push({ file: clipsSource.file, field: entry, source,
 			sequence: sequence === null ? undefined : readTable(reader, source!.file, sequence.value, source!.structural),
 			start: source === undefined ? undefined : readNumberField(reader, source, 'start_time_ms'),
 			duration: source === undefined ? undefined : readNumberField(reader, source, 'duration_ms'),
 			clipIn: source === undefined ? undefined : readNumberField(reader, source, 'clip_in_ms'),
 			timeScale: source === undefined ? undefined : readNumberField(reader, source, 'time_scale'),
-			label: source === undefined ? `Clip ${clips.length + 1} / source` : readStringField(reader, source, 'id') ?? `Clip ${clips.length + 1}` });
+			label: source === undefined ? `Clip ${clips.length + 1} / source` : id ?? `Clip ${clips.length + 1}`, preserveCase: id !== undefined });
 	}
 	const framesField = findNamedLuaTableField(root.table, 'frames');
 	const framesSource = framesField === null ? undefined : readTable(reader, root.file, framesField.value, root.structural);

@@ -5,6 +5,7 @@ import type { BehaviorTreeSourceMember } from './behavior_tree_model';
 
 export type BehaviorGraphDetail = {
 	readonly label: string;
+	readonly preserveLabelCase?: boolean;
 	readonly description: string;
 	readonly detail: string;
 	readonly range: LuaSourceRange;

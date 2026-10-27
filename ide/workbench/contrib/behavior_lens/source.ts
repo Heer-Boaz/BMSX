@@ -52,6 +52,7 @@ export type BehaviorSourceTableSection = BehaviorDynamicSourceNode | (BehaviorSo
 export type SourceNodeInput = {
 	readonly kind: BehaviorSourceNodeKind;
 	readonly label: string;
+	readonly preserveLabelCase?: boolean;
 	readonly detail: string;
 	readonly authoredRange: LuaSourceRange;
 	readonly referenceRange: LuaSourceRange | null;

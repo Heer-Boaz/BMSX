@@ -1,6 +1,7 @@
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaExpression, LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
+import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
 import type { BehaviorSourceNode } from './model';
 import type { StateMachineSourceSlot } from './state_machine_model';
 import { appendBehaviorSourcePath, behaviorSourceFieldSegment, buildResolvedTableSection, buildTableArraySection,
@@ -80,6 +81,7 @@ function buildFsmEvent(
 		return { spec: handler, source: createSourceNode(context, path, {
 			kind: 'event',
 			label: eventName,
+			preserveLabelCase: event.name !== null,
 			detail: detail.length > 0 ? detail : 'handler table',
 			authoredRange: handler.file.chunk.locations.range(handler.table.span),
 			referenceRange: handler.referenceRange,
@@ -90,6 +92,7 @@ function buildFsmEvent(
 	return { spec: null, source: createSourceNode(context, path, {
 		kind: 'event',
 		label: eventName,
+		preserveLabelCase: event.name !== null,
 		detail: describeExpression(event.field.value),
 		authoredRange: file.chunk.locations.range(event.field.span),
 		referenceRange: null,
@@ -149,9 +152,11 @@ function buildInputHandler(
 		const suffix = `emitter=${describeExpression(emitter.value)}`;
 		detail = detail.length > 0 ? `${detail} | ${suffix}` : suffix;
 	}
+	const patternName = pattern === null ? undefined : stringLiteralValue(pattern.value);
 	return { spec: resolved, source: createSourceNode(context, path, {
 		kind: 'event',
-		label: pattern ? describeExpression(pattern.value) : '<unresolved input>',
+		label: patternName !== undefined ? patternName : pattern === null ? '<unresolved input>' : describeExpression(pattern.value),
+		preserveLabelCase: patternName !== undefined,
 		detail,
 		authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 		referenceRange: resolved.referenceRange,

@@ -18,7 +18,7 @@ export function appendBehaviorGraphFields(result: BehaviorGraphDetail[], file: F
 
 export function appendBehaviorGraphSourceDetails(result: BehaviorGraphDetail[], source: BehaviorSourceNode, group: string): void {
 	if (source.children.length === 0) {
-		result.push({ label: source.label, description: source.detail, detail: group,
+		result.push({ label: source.label, preserveLabelCase: source.preserveLabelCase, description: source.detail, detail: group,
 			range: source.referenceRange !== null ? source.referenceRange : source.authoredRange });
 	}
 	for (const child of source.children) appendBehaviorGraphSourceDetails(result, child, group);

@@ -22,7 +22,7 @@ export function projectBehaviorTreeGraph(
 	function card(source: BehaviorSourceNode, text: string, parent: BehaviorGraphNode | null,
 		details: BehaviorGraphDetail[], range: LuaSourceRange, connectionSource = source,
 		member: BehaviorTreeSourceMember | null = null): BehaviorGraphNode {
-		const node: BehaviorGraphNode = { ...createWorkbenchGraphNode(font, uppercaseOutsideStrings(text), 0, 0),
+		const node: BehaviorGraphNode = { ...createWorkbenchGraphNode(font, source.preserveLabelCase ? text : uppercaseOutsideStrings(text), 0, 0),
 			source, parent, member, details, children: [] };
 		nodes.push(node);
 		nodesBySource.set(source.rowKey, node);
