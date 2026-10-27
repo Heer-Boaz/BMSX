@@ -7,21 +7,21 @@ import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { GameViewInput, openGameView } from '../../ide/workbench/contrib/game_view/editor_input';
 import { GameViewEditorPane } from '../../ide/workbench/contrib/game_view/editor_pane';
-import type { EditorPart } from '../../ide/workbench/services/editor/editor_part';
+import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, input = new GameViewInput();
 	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
-	parts.main.group.openEditor(input); f.update();
-	const pane = parts.main.group.panes.activePane!;
+	parts.main.activeGroup.openEditor(input); f.update();
+	const pane = parts.main.activeGroup.panes.activePane!;
 	assert.ok(pane instanceof GameViewEditorPane);
 	const native = new RemoteInput(f.host.input, f.host.clock, undefined,
 		event => f.editor.dispatchPointer(event), event => f.editor.dispatchWheel(event));
 	return { ...f, parts, input, pane, native };
 }
 
-function chooseDestination(f: ReturnType<typeof fixture>, destination: EditorPart | 'new'): void {
+function chooseDestination(f: ReturnType<typeof fixture>, destination: EditorGroupView | 'new'): void {
 	const picker = f.editor.quickInput;
 	assert.equal(picker.visible, true);
 	const index = picker.model.list.rows.findIndex(row => 'destination' in row.item && row.item.destination === destination);
@@ -43,11 +43,11 @@ test('Move Game opens the same input in a new Part with fresh chrome focus, not 
 	f.editor.commands.execute('window.moveEditor', f.pane.commandTarget);
 	assert.equal(f.parts.documents.length, count, 'opening the chooser does not create a window');
 	chooseDestination(f, 'new');
-	const destination = f.parts.activePart, moved = destination.group.panes.activePane!;
+	const destination = f.parts.activePart, moved = destination.activeGroup.panes.activePane!;
 	assert.equal(f.parts.documents.length, count + 1);
 	assert.ok(moved instanceof GameViewEditorPane && moved !== f.pane);
-	assert.ok(destination.group.model.activeTab === f.input && moved.input === f.input);
-	assert.equal(f.parts.main.group.model.findById(f.input.id), undefined);
+	assert.ok(destination.activeGroup.model.activeTab === f.input && moved.input === f.input);
+	assert.equal(f.parts.main.activeGroup.model.findById(f.input.id), undefined);
 	assert.equal(disposed, 0);
 	assert.equal(guest.guestInput, undefined); assert.equal(interaction.running, false);
 	assert.ok(inputFocus.target === moved.commandTarget);
@@ -69,7 +69,7 @@ test('Game transfer drains the old physical pointer hold and admits input only t
 	f.host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
 	assert.equal(sample.pointerButtons, 1);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles, revision = f.host.execution.revision;
-	assert.equal(f.parts.moveEditor(f.parts.main, f.input, f.firstPart, f.editor.editorClose), true);
+	assert.equal(f.parts.moveEditor(f.parts.main.activeGroup, f.input, f.firstPart.activeGroup, f.editor.editorClose), true);
 	const moved = f.firstGroup.panes.activePane!;
 	assert.equal(guest.guestInput, undefined); assert.equal(pointerCapture.guestBinding, undefined);
 	assert.equal(pointerCapture.draining, true); assert.equal(f.editor.guestInputRecipient, null);
@@ -99,25 +99,25 @@ test('Game transfer drains the old physical pointer hold and admits input only t
 test('Game move retires the old popup and Timeline authority and binds destination controls to its own Part', t => {
 	const f = fixture(t), oldContext = f.pane.commandTarget.scope.runtime!;
 	f.editor.commands.execute('runtime.focusTimeline', f.pane.commandTarget);
-	assert.equal(f.parts.main.timeline.available, true);
+	assert.equal(f.parts.main.activeGroup.timeline.available, true);
 	f.editor.commands.execute('contextMenu', f.pane.commandTarget);
 	assert.equal(f.editor.contextMenu.visible, true);
 	assert.ok(f.editor.contextMenu.invocationOrigin === f.pane.commandTarget);
 	f.editor.dispatchKey(new KeyInputEvent('Enter', KeyModifier.none));
 	const cycles = f.host.runtime.machine.scheduler.nowCycles, revision = f.host.execution.revision;
-	assert.equal(f.parts.moveEditor(f.parts.main, f.input, f.secondPart, f.editor.editorClose), true);
+	assert.equal(f.parts.moveEditor(f.parts.main.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true);
 	const moved = f.secondGroup.panes.activePane!;
-	assert.equal(f.editor.contextMenu.visible, false); assert.equal(f.parts.main.timeline.available, false);
+	assert.equal(f.editor.contextMenu.visible, false); assert.equal(f.parts.main.activeGroup.timeline.available, false);
 	assert.equal(f.pane.commandTarget.scope.runtime, undefined);
 	assert.ok(oldContext.interaction === f.input.interaction && oldContext.interaction.transport === f.editor.commands.transport);
 	f.editor.dispatchKey(new KeyInputEvent('Enter', KeyModifier.none, false, false));
-	assert.equal(f.secondPart.timeline.requested, false, 'the retired popup cannot toggle the new attachment Timeline');
+	assert.equal(f.secondPart.activeGroup.timeline.requested, false, 'the retired popup cannot toggle the new attachment Timeline');
 	f.editor.commands.execute('contextMenu', moved.commandTarget);
 	assert.ok(f.editor.contextMenu.invocationOrigin === moved.commandTarget);
 	f.key('Enter');
 	assert.equal(f.editor.contextMenu.visible, false);
-	assert.equal(f.secondPart.timeline.available, true); assert.equal(f.secondPart.timeline.requested, true);
-	assert.equal(f.parts.main.timeline.available, false);
+	assert.equal(f.secondPart.activeGroup.timeline.available, true); assert.equal(f.secondPart.activeGroup.timeline.requested, true);
+	assert.equal(f.parts.main.activeGroup.timeline.available, false);
 	assert.equal(f.host.execution.revision, revision); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
@@ -141,10 +141,10 @@ test('Game chrome owns logical playback intent independently of guest focus and 
 	assert.equal(f.host.execution.paused, false, 'the popup borrows its invoking logical chrome interaction');
 	f.key('Escape');
 	assert.ok(inputFocus.target === f.pane.commandTarget && interaction.running);
-	const other = new GameViewInput(); f.parts.main.group.openEditor(other);
+	const other = new GameViewInput(); f.parts.main.activeGroup.openEditor(other);
 	assert.equal(interaction.running, false, 'ordinary tab deactivation stops the logical client');
 	assert.ok(interaction.transport === f.editor.commands.transport);
-	f.parts.main.group.activate(f.input.id);
+	f.parts.main.activeGroup.activate(f.input.id);
 	assert.equal(interaction.running, false); assert.equal(f.host.execution.paused, true);
 	assert.equal(f.editor.guestInputRecipient, null);
 });
@@ -161,12 +161,12 @@ test('independent Game clients do not collide on their shared physical target or
 	f.input.onWillDispose(() => { sourceDisposed++; }); receiver.onWillDispose(() => { receiverDisposed++; });
 	const cycles = f.host.runtime.machine.scheduler.nowCycles, revision = f.host.execution.revision;
 	f.editor.commands.execute('window.moveEditor', f.pane.commandTarget);
-	chooseDestination(f, f.secondPart);
+	chooseDestination(f, f.secondGroup);
 	assert.notEqual(f.input.id, receiver.id);
 	assert.ok(f.secondGroup.model.activeTab === f.input && f.secondGroup.panes.activePane === receivingPane);
 	assert.ok(f.secondGroup.model.findById(receiver.id) === receiver && receivingPane.input === f.input);
 	assert.notEqual(f.secondGroup.model.getLabel(f.input), f.secondGroup.model.getLabel(receiver), 'coexisting logical clients are distinguishable in the tab model');
-	assert.equal(f.parts.main.group.model.findById(f.input.id), undefined);
+	assert.equal(f.parts.main.activeGroup.model.findById(f.input.id), undefined);
 	assert.equal(sourceDisposed, 0); assert.equal(receiverDisposed, 0);
 	assert.equal(sourceGuest.guestInput, undefined); assert.equal(f.pane.commandTarget.scope.runtime, undefined);
 	assert.ok(receivingPane.commandTarget.scope.runtime!.interaction.transport === f.editor.commands.transport);

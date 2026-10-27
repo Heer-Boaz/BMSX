@@ -46,8 +46,8 @@ export function createActualSourcePanes(t: TestContext, sameModel = false, addit
 	const editor = ide.editor;
 	const firstBounds = { left: 0, top: 32, right: 384, bottom: 290 };
 	const secondBounds = { left: 400, top: 32, right: 800, bottom: 290 };
-	const firstPart = editor.editorParts.createDocument({ requestedBounds: firstBounds }), firstGroup = firstPart.group;
-	const secondPart = editor.editorParts.createDocument({ requestedBounds: secondBounds }), secondGroup = secondPart.group;
+	const firstPart = editor.editorParts.createDocument({ requestedBounds: firstBounds }), firstGroup = firstPart.activeGroup;
+	const secondPart = editor.editorParts.createDocument({ requestedBounds: secondBounds }), secondGroup = secondPart.activeGroup;
 	const firstInput = resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: sources.systemContextId, path: 'first.lua' })!);
 	firstGroup.openEditor(firstInput);
 	const first = firstGroup.panes.getPane('code_editor') as CodeEditorPane;

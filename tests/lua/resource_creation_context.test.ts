@@ -20,7 +20,7 @@ function fixture(t: TestContext, path: string, canonicalPath: string, generated 
 	const source = { ...createScenarioTestSourceRecord(path, 1), normalized_source_path: canonicalPath, generated };
 	const sources = createScenarioTestSourceState([source]);
 	const resource = sources.catalog.resources.find(resource => resource.contextId === TEST_CARTRIDGE_CONTEXT_IDS[0] && resource.path === path)!;
-	const parts = createTestEditorParts(t), part = parts.createDocument(), group = part.group;
+	const parts = createTestEditorParts(t), part = parts.createDocument(), group = part.activeGroup;
 	group.model.initialize(resolveLuaCodeEditorInput(sources.catalog, resource));
 	const picker = part.quickInput;
 	const editor = { editorParts: parts } as CartEditor;
@@ -61,11 +61,12 @@ for (const stage of ['project chooser', 'filename'] as const) {
 
 test('New File cannot advance after focus return retires its invoking part context', t => {
 	const f = fixture(t, 'cartlib/shared.lua', 'cartlib/shared.lua');
-	const origin = f.part.focusTarget, unbindKeyboard = origin.bindKeyboard(() => {});
-	t.after(unbindKeyboard);
+	f.part.focus();
+	const origin = inputFocus.target!;
+	assert.ok(origin === f.group.focusTarget, 'the Part delegates to its concrete empty group focus owner');
 	const input = t.mock.method(f.picker, 'input');
-	origin.focus();
 	openCreateResourcePrompt(f.editor, f.group, f.sources.catalog, f.clock);
+	assert.ok(f.picker.invocationOrigin === origin);
 	const projects = f.picker.model.items as readonly (QuickPickItem & { contextId: string })[];
 	f.picker.model.list.selectionIndex = f.picker.model.list.rows.findIndex(row => projects[row.itemIndex].contextId === TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	assert.ok(f.picker.model.list.selectionIndex >= 0);

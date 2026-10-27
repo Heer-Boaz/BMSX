@@ -93,10 +93,10 @@ function workbenchFixture(t: TestContext) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	editor.editorParts.main.group.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
+	editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	editorRuntimeState.active = true; editor.update(0);
 	const cache = new ImagePreviewCache(async () => pixels);
-	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.editorParts.main.group.paneSurface, editor.commands);
+	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.editorParts.main.activeGroup.paneSurface, editor.commands);
 	preview.layout(bounds, 6);
 	t.after(async () => {
 		preview.dispose(); cache.dispose(); inputFocus.setTarget(null);
@@ -106,9 +106,9 @@ function workbenchFixture(t: TestContext) {
 }
 
 test('the isolated lightbox admits only explicit tab commands, closing and returning focus before their actual workbench runner', t => {
-	const { editor, preview } = workbenchFixture(t), sourceTab = editor.editorParts.main.group.model.activeTab!;
-	editor.editorParts.main.group.openEditor(new GameViewInput()); editor.editorParts.main.group.openEditor(new HostErrorInput('Diagnostic'));
-	editor.editorParts.main.group.activate(sourceTab.id); editor.update(0);
+	const { editor, preview } = workbenchFixture(t), sourceTab = editor.editorParts.main.activeGroup.model.activeTab!;
+	editor.editorParts.main.activeGroup.openEditor(new GameViewInput()); editor.editorParts.main.activeGroup.openEditor(new HostErrorInput('Diagnostic'));
+	editor.editorParts.main.activeGroup.activate(sourceTab.id); editor.update(0);
 	const order: string[] = [], executed: EditorCommandId[] = [];
 	let origin = inputFocus.target!;
 	const execute = editor.commands.execute;
@@ -126,7 +126,7 @@ test('the isolated lightbox admits only explicit tab commands, closing and retur
 		['Tab', KeyModifier.ctrl | KeyModifier.shift, 'tabs.previous'],
 	] as const) {
 		origin = inputFocus.target!;
-		const before = editor.editorParts.main.group.model.tabs.slice(), active = editor.editorParts.main.group.model.activeTab;
+		const before = editor.editorParts.main.activeGroup.model.tabs.slice(), active = editor.editorParts.main.activeGroup.model.activeTab;
 		const unbind = origin.onDidFocus(() => {
 			assert.equal(preview.visible, false, 'return-focus publication cannot expose an open lightbox');
 			order.push('return origin');
@@ -147,17 +147,17 @@ test('the isolated lightbox admits only explicit tab commands, closing and retur
 		editor.dispatchKey(event); unbind(); editor.update(0);
 		assert.equal(event.consumed, true);
 		assert.deepEqual(order, ['return origin', command]);
-		assert.notEqual(editor.editorParts.main.group.model.activeTab, active, 'the real workbench performs the admitted tab operation');
-		if (command === 'tabs.close') { assert.equal(editor.editorParts.main.group.model.tabs.length, before.length - 1); assert.ok(!editor.editorParts.main.group.model.tabs.includes(active!)); }
-		else assert.deepEqual(editor.editorParts.main.group.model.tabs, before);
+		assert.notEqual(editor.editorParts.main.activeGroup.model.activeTab, active, 'the real workbench performs the admitted tab operation');
+		if (command === 'tabs.close') { assert.equal(editor.editorParts.main.activeGroup.model.tabs.length, before.length - 1); assert.ok(!editor.editorParts.main.activeGroup.model.tabs.includes(active!)); }
+		else assert.deepEqual(editor.editorParts.main.activeGroup.model.tabs, before);
 		order.length = 0;
 	}
 	assert.deepEqual(executed, ['tabs.close', 'tabs.next', 'tabs.previous']);
 });
 
 test('a disabled explicit tab command is consumed without closing or escaping the isolated lightbox', t => {
-	const { editor, preview } = workbenchFixture(t), active = editor.editorParts.main.group.model.activeTab;
-	assert.equal(editor.editorParts.main.group.model.tabs.length, 1); assert.equal(editor.commands.isEnabled('tabs.next'), false);
+	const { editor, preview } = workbenchFixture(t), active = editor.editorParts.main.activeGroup.model.activeTab;
+	assert.equal(editor.editorParts.main.activeGroup.model.tabs.length, 1); assert.equal(editor.commands.isEnabled('tabs.next'), false);
 	const execute = t.mock.method(editor.commands, 'execute');
 	preview.open('image');
 	const modal = inputFocus.target;
@@ -165,7 +165,7 @@ test('a disabled explicit tab command is consumed without closing or escaping th
 	const event = new KeyInputEvent('Tab', KeyModifier.ctrl);
 	editor.dispatchKey(event);
 	assert.equal(event.consumed, true); assert.equal(execute.mock.callCount(), 0);
-	assert.equal(preview.visible, true); assert.ok(inputFocus.target === modal); assert.ok(editor.editorParts.main.group.model.activeTab === active);
+	assert.equal(preview.visible, true); assert.ok(inputFocus.target === modal); assert.ok(editor.editorParts.main.activeGroup.model.activeTab === active);
 });
 
 test('the shared lightbox owns local pointer and wheel admission rather than asking each pane to block', t => {

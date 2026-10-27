@@ -33,7 +33,7 @@ for (const coalesced of [false, true]) for (const phase of ['title focus', 'depa
 		assert.equal(pointerCapture.draining, !coalesced); assert.notStrictEqual(f.editor.editorParts.activePart, part);
 		if (phase !== 'departing Source blur') assert.ok(inputFocus.target === f.second.commandTarget,
 			'a later minimize leaves or returns focus to the visible sibling, not the hidden title fallback');
-		assert.ok(part.group.model.activeTab === f.firstInput && part.group.panes.activePane === f.first);
+		assert.ok(part.activeGroup.model.activeTab === f.firstInput && part.activeGroup.panes.activePane === f.first);
 		if (!coalesced) f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
 		assert.equal(pointerCapture.draining, false); assert.equal(window.model.minimized, true);

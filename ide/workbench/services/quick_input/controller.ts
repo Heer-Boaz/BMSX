@@ -67,6 +67,11 @@ export class QuickInputController implements PointerCaptureTarget {
 	private readonly presentForFocus = (): void => {
 		const session = this.session!;
 		if (this.presentation.kind === 'part') this.presentation.reveal();
+		if (this.session !== session) return;
+		if (session.prepare !== undefined) {
+			session.returnFocus = inputFocus.resolveTarget(session.returnFocus);
+			const prepare = session.prepare; session.prepare = undefined; prepare();
+		}
 		if (this.session === session) this.onDidChangeVisibility();
 	};
 	private readonly pointer = {
@@ -81,14 +86,6 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.field = new TextField(null, INPUT_OPTIONS, new InputFocusScope(this.pointerScope, presentation.scope));
 		this.field.focusTarget.canFocus = () => this.session !== null;
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
-		this.field.focusTarget.onDidFocus(() => {
-			const session = this.session!;
-			if (session.prepare === undefined) return;
-			session.returnFocus = inputFocus.resolveTarget(session.returnFocus);
-			const prepare = session.prepare!;
-			session.prepare = undefined;
-			prepare();
-		});
 		this.field.onDidChangeText(() => {
 			this.cancelPointer();
 			this.scrollbarPointer.cancelPointer();

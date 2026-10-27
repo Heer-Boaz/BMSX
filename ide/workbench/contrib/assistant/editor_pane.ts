@@ -24,6 +24,7 @@ import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { QuickInputController } from '../../services/quick_input/controller';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -51,7 +52,7 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
 	private unbindAttachmentClipboard: (() => void) | undefined;
-	public constructor(private readonly clipboard: Clipboard, private readonly group: EditorGroupView, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
+	public constructor(private readonly clipboard: Clipboard, private readonly group: EditorGroupView, private readonly quickInput: QuickInputController, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, commands: EditorCommandRunner,
 		contextMenu: ContextMenuController, workArea: Readonly<RectBounds>, scope: InputFocusScope) {
 		super(scope);
@@ -123,7 +124,7 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		switch (command) {
 			case 'assistant.send': case 'assistant.queue': return hasContent && !this.input.commandPending && (this.input.draft.text.startsWith('/') || ready && model.canSubmit);
 			case 'assistant.direct': return model.canDirect && ready && hasContent;
-			case 'assistant.stop': return this.chat.isEnabled(command);
+			case 'assistant.stop': return this.chat.isEnabled(command, this.group);
 			case 'assistant.review': return selection.proposal !== undefined;
 			case 'assistant.copy': return selection.imageIndex === undefined && selection.entry !== undefined;
 			default: return false;
@@ -134,8 +135,8 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		const { draft } = this.input;
 		switch (command) {
 			case 'assistant.send': case 'assistant.queue': case 'assistant.direct':
-				draft.focusTarget.focus(); void this.chat.submit(this.input, command === 'assistant.direct'); break;
-			case 'assistant.stop': this.chat.execute(command); break;
+				draft.focusTarget.focus(); void this.chat.submit(this.input, this.group, this.quickInput, command === 'assistant.direct'); break;
+			case 'assistant.stop': this.chat.execute(command, this.group, this.quickInput); break;
 			case 'assistant.copy': void writeClipboard(this.clipboard, this.input.selection.entry!.text.getText(), 'Copied message'); break;
 			case 'assistant.review': {
 				const proposal = this.input.selection.proposal!;

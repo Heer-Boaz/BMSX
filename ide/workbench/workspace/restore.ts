@@ -20,7 +20,7 @@ export async function applyWorkspaceAutosavePayload(
 	editorTextModelService.clear();
 	editor.setFontVariant(payload.fontVariant);
 	await restoreWorkspaceDirtyModels(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords);
-	await editor.editorParts.restore(payload.editorParts, editor.editorInputSerializers);
+	if (!await editor.editorParts.restore(payload.editorParts, editor.editorInputSerializers)) return;
 	debuggerState.breakpoints.restore(payload.breakpoints);
 }
 

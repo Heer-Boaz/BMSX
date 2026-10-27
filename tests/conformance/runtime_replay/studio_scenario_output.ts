@@ -20,7 +20,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	// Open the canonical cartridge resource independently of test-target lifetime.
 	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' });
 	check(resource !== undefined, 'A05: test cancellation retains the cartridge source');
-	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource!);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource!);
 	const model = sourcePane(test).code.model, original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: EFFECTS }]);
 	const version = model.version, dirty = model.dirty, position = cycles();
@@ -103,7 +103,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	check(!ide.editor.isActive && !inspector.visible, 'A05: leaving the IDE disposes message inspection');
 	await press('ControlRight', 'ShiftRight');
 	await testScenarioEffectSourceChoice(test, lab.view, result, model);
-	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), model.resource);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), model.resource);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'A05: inspection and source choice add no edit/Undo operation');
 	await test.clickTab(origin.id);

@@ -132,6 +132,7 @@ export type EditorCommandId =
 	| 'propertyInspector.source'
 	| 'propertyInspector.close'
 	| 'problems.coverage'
+	| 'group.openEditors' | 'group.splitRight' | 'group.splitDown' | 'group.focusNext' | 'group.focusPrevious' | 'group.maximize'
 	| 'window.minimize' | 'window.maximize' | 'window.hide' | 'window.snapLeft' | 'window.snapRight' | 'window.restore'
 	| 'window.showAll' | 'window.restoreMinimized' | 'window.focusMain' | 'window.newEditor' | 'window.copyEditor' | 'window.moveEditor'
 	| 'luaProgram.edit' | 'luaProgram.add' | 'luaProgram.remove' | 'luaProgram.source' | 'luaProgram.live' | 'luaProgram.authoring' | 'luaProgram.selectInstance' | 'luaProgram.more' | 'luaProgram.testInput'

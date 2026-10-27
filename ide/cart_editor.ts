@@ -2,7 +2,6 @@ import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
 import { EditorCloseController } from './workbench/services/editor/editor_close';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
-import { create_rect_bounds, write_rect_bounds } from '../machine/ts/common/rect';
 import { HomeInput } from './workbench/contrib/home/editor_input';
 import { HomeEditorPane } from './workbench/contrib/home/editor_pane';
 import { workspaceState } from './workbench/workspace/state';
@@ -92,7 +91,7 @@ import type { OverlayRenderer } from './runtime/overlay_renderer';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
 import { editorRuntimeState } from './editor/common/runtime_state';
 import { invalidateLuaCommentContextFromRow } from './common/text';
-import { measureText, measureTextRange } from './editor/common/text/layout';
+import { measureText } from './editor/common/text/layout';
 import { drawEditorText, setEditorCaseInsensitivity } from './editor/render/text_renderer';
 import {
 	applyViewportSize,
@@ -126,7 +125,7 @@ import {
 	shutdownWorkspaceStorage,
 } from './workbench/workspace/storage';
 import { WorkspaceAutosaveChange } from './workbench/workspace/models';
-import { getWorkbenchEditorBounds, getWorkbenchWorkArea, refreshWorkbenchLayout, statusAreaHeight, type WorkbenchChromeLayout } from './workbench/common/layout';
+import { getWorkbenchEditorBounds, getWorkbenchWorkArea, refreshWorkbenchLayout, type WorkbenchChromeLayout } from './workbench/common/layout';
 import { BreakpointController } from './workbench/contrib/debugger/controller';
 import { ActionPrompt } from './workbench/contrib/modal/action_prompt';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
@@ -137,7 +136,6 @@ import { EditorNavigationController } from './workbench/contrib/resources/naviga
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
 import type { StudioWorkbench } from './workbench/workbench';
 import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
-import { editorChromeState } from './workbench/ui/chrome_state';
 import { drawResourcePanel } from './workbench/render/resource_panel';
 import { WorkbenchWindowStatus } from './workbench/ui/window/status';
 import { EditorCommandKeybindingController } from './input/keyboard/global_bindings';
@@ -314,7 +312,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
 	private readonly unbindSourceStop: () => void;
-	private readonly unbindMainChromeActivation: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext & WorkbenchChromeLayout = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get lineHeight(): number { return editorViewState.lineHeight; },
@@ -373,7 +370,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const behaviorSources = workbench.behaviorSources;
 		this.terminal = new BiosTerminal(runtime, input, guest, debuggerState, runtimeTasks, execution, rewind, fault);
 		this.tools = workbench.tools;
-		this.tools.revealTestRun = run => this.scenarioLab.revealRun(run, this.editorParts.main.group);
+		this.tools.revealTestRun = run => this.scenarioLab.revealRun(run, this.editorParts.activeGroup);
 		this.assistant = new AssistantConversation(editorTextModelService, sources, this.tools, connectAssistant);
 		this.observedConversation = new ObservedConversation(observeConversation);
 		this.runtime = runtime;
@@ -420,7 +417,7 @@ export class RuntimeCartEditor implements CartEditor {
 			next => next !== null && this.surfaces.isInContext(next.scope.surfaceScope, this.actionPrompt.pointerScope),
 			{ scope: inputFocus.workbenchScope, bounds: this.rootSurfaceBounds, kind: 'workspace' });
 		const chromeSurface = this.surfaces.attach({
-			role: 'window', captureScope: this.chromeScope, isVisible: () => true,
+			role: 'content', captureScope: this.chromeScope, isVisible: () => true,
 			getBounds: () => this.rootSurfaceBounds, getClip: () => this.rootSurfaceBounds,
 			draw: () => this.drawWorkbenchChrome(),
 			handlePointer: snapshot => handleWorkbenchChromePointer(this, snapshot),
@@ -446,7 +443,7 @@ export class RuntimeCartEditor implements CartEditor {
 			gte_debugger: group => new GteDebuggerPane(this.editorParts.partForGroup(group).quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
 			terminal: group => new TerminalPane(this.terminal, input, presenter, group.focusScope, workbench.transport),
 			conversation_observer: group => new ConversationObserverPane(decodeImage, this.surfaces, group.paneSurface, this.commands, group.focusScope),
-			assistant: group => new AssistantPane(this.clipboard, group, this.assistantCommands, decodeImage,
+			assistant: group => new AssistantPane(this.clipboard, group, this.editorParts.partForGroup(group).quickInput, this.assistantCommands, decodeImage,
 				this.surfaces, group.paneSurface, this.commands, this.contextMenu, group.workArea, group.focusScope),
 			workspace_edit_review: group => new WorkspaceEditReviewPane(group, this.editorParts.partForGroup(group).quickInput, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
 			code_editor: group => new CodeEditorPane(
@@ -478,9 +475,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}, closeEditors: (targets, origin, prompt) => this.editorClose.close(targets, origin, prompt),
 		});
 		this.windowStatus = new WorkbenchWindowStatus(this.editorParts, this.commands, this.surfaces, chromeSurface, this.rootSurfaceBounds);
-		this.unbindMainChromeActivation = inputFocus.onDidActivateInteraction(target => {
-			if (target.scope.surfaceScope === this.chromeScope) this.editorParts.activate(this.editorParts.main);
-		});
+
 		this.editorClose = new EditorCloseController(this.editorParts.groups, textFileSaves, this.actionPrompt, editorTextModelService);
 		this.surfaces.attach({
 			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourceResizeScope,
@@ -538,9 +533,9 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources.catalog,
 		);
 
-		this.gamePanel = new GamePanel(this.editorParts.main.group.panes, this.commands, this.contextMenu, input, presenter,
+		this.gamePanel = new GamePanel(this.editorParts.main, this.commands, this.contextMenu, input, presenter,
 			new InputFocusScope(this.chromeScope, this.editorParts.main.scope));
-		this.assistantCommands = new AssistantChatCommands(this.assistant, this.editorParts.main.group, this.quickInput, this.clipboard);
+		this.assistantCommands = new AssistantChatCommands(this.assistant, this.clipboard);
 		this.navigation = new EditorNavigationController(
 			this.sources.catalog,
 			this.resourcePanel,
@@ -599,7 +594,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unbindSourceStop = debuggerState.source.onDidChangeStop(stop => {
 			if (stop === undefined) for (const group of this.editorParts.groups) clearExecutionStopHighlights(group);
 		});
-		this.unbindNavigation = initializeNavigationState(this.editorParts.main.group);
+		this.unbindNavigation = initializeNavigationState(this.editorParts.main.activeGroup);
 		this.initializeEditorGroup();
 		this.unsubscribeTextModelChanged = editorTextModelService.onDidChangeContent((model, event) => {
 			if (model.mode === 'lua') {
@@ -766,33 +761,9 @@ export class RuntimeCartEditor implements CartEditor {
 		inputFocus.handleGamepad(playerInput);
 	}
 
-	private readonly tabStripBounds = create_rect_bounds();
-	private readonly mainTimelineBounds = create_rect_bounds();
-	private readonly tabStripLayoutContext = {
-		get font() { return editorViewState.font.renderFont(); },
-		get tabBarHeight() { return editorViewState.tabBarHeight; },
-		get charAdvance() { return editorViewState.charAdvance; },
-		measureText,
-		measureTextRange,
-	};
-
-	private layoutEditorTabStrip(): void {
-		write_rect_bounds(this.tabStripBounds, editorChromeState.menuBarHeight === 0 ? editorChromeState.menuButtonBounds.right : 0,
-			editorChromeState.menuBarHeight, editorViewState.viewportWidth, 0);
-		const strip = this.editorParts.main.group.tabStrip;
-		if (strip.needsLayout) strip.layout(this.tabStripBounds, this.tabStripLayoutContext);
-		editorViewState.tabBarTotalHeight = strip.layoutState.totalHeight;
-	}
-
-	private layoutMainPart(): void {
-		const bottom = editorViewState.viewportHeight - statusAreaHeight();
-		write_rect_bounds(this.mainTimelineBounds, 0, bottom - this.editorParts.main.timeline.height, editorViewState.viewportWidth, bottom);
-		this.editorParts.main.layoutMain(getWorkbenchEditorBounds(), this.mainTimelineBounds);
-	}
+	private layoutMainPart(): void { this.editorParts.main.layout(getWorkbenchEditorBounds()); }
 
 	private layoutMainEditor(): void {
-		this.layoutEditorTabStrip();
-		editorChromeState.runtimeTimelineHeight = this.editorParts.main.timeline.height;
 		let layoutChanged = refreshWorkbenchLayout();
 		if (this.resourcePanel.refresh()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
 		if (this.gamePanel.update()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
@@ -806,7 +777,6 @@ export class RuntimeCartEditor implements CartEditor {
 		updateEditorMessage(deltaSeconds);
 		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
 		this.menubar.update();
-		this.editorParts.main.group.tabStrip.update(editorRuntimeState.currentTimeMs);
 		this.layoutMainEditor();
 		this.editorParts.update(deltaSeconds);
 		this.windowStatus.update(inputFocus.admittedTarget?.guestInput !== undefined, this.fault.hostFrameFailure !== undefined);
@@ -865,7 +835,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (contextTarget === this.contextMenu.focusTarget) contextTarget = this.contextMenu.invocationOrigin;
 		if (contextTarget === this.quickInput.field.focusTarget) contextTarget = this.quickInput.invocationOrigin;
 		if (contextTarget === this.actionPrompt.focusTarget) contextTarget = this.actionPrompt.invocationOrigin;
-		renderStatusBar(this.resourcePanel, this.fault, this.editorParts.main.group.panes.activePane, this.luaEvaluation, this.serverConnectionState,
+		renderStatusBar(this.resourcePanel, this.fault, this.editorParts.activeGroup.panes.activePane, this.luaEvaluation, this.serverConnectionState,
 			contextTarget === null ? null : contextTarget.commandContext, this.windowStatus.width, this.keybindings.pendingLabel);
 	}
 
@@ -883,7 +853,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.observedConversation.dispose();
 		this.unbindBreakpoints();
 		this.unbindSourceStop();
-		this.unbindMainChromeActivation();
 		this.actionPrompt.dispose();
 		this.terminal.discard();
 		await this.workbench.shutdown();
@@ -899,7 +868,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unbindProblemsPanel();
 		problemsPanel.detach();
 		if (this.isAvailable) {
-			this.editorParts.main.group.panes.clearEditor();
+			for (const group of this.editorParts.groups) group.panes.clearEditor();
 		}
 		applyEditorInputOverrides(this.input, false, captureKeys);
 		if (editorViewState.dimCrtInEditor) {
@@ -945,7 +914,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!editorRuntimeState.active) {
 			this.activate();
 		}
-		const group = this.editorParts.documentDestination(this.editorParts.activeGroup, { resource, editorId: WORKBENCH_TEXT_EDITOR_ID });
+		const group = this.editorParts.editorDestination(this.editorParts.activeGroup, { resource, editorId: WORKBENCH_TEXT_EDITOR_ID });
 		if (details !== undefined) {
 			const frame = details.luaStack.find(frame => frame.kind === 'source')!;
 			void focusCapturedRuntimeSource(this.navigation, group, this.sources.catalog, resource, details.sources.get(frame)!)
@@ -1054,7 +1023,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		refreshWorkbenchLayout();
 		this.layoutMainPart();
-		this.editorParts.main.group.clear();
+		this.editorParts.main.clear();
 		editorRuntimeState.initialized = true;
 	}
 

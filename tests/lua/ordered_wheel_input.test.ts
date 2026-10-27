@@ -72,7 +72,6 @@ test('public wheel router delivers each occurrence to its current pane using sup
 	editorViewState.viewportWidth = 400;
 	editorViewState.viewportHeight = 300;
 	editorChromeState.menuBarHeight = 20;
-	editorViewState.tabBarTotalHeight = 10;
 	refreshWorkbenchLayout();
 	const firstPane: WheelInputSnapshot[] = [], secondPane: WheelInputSnapshot[] = [];
 	const surfaces = new WorkbenchSurfaceService();

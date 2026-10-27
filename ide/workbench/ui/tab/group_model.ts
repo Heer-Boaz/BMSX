@@ -36,6 +36,7 @@ export class EditorTabGroupModel {
 	private readonly listeners = new Map<EditorInput, DisposableStore>();
 	private readonly labels = new Map<EditorInput, string>();
 	private readonly changeListeners = new Set<() => void>();
+	private restoreRequest = 0;
 
 	public onDidChange(listener: () => void): () => void {
 		this.changeListeners.add(listener);
@@ -71,17 +72,27 @@ export class EditorTabGroupModel {
 	}
 
 	/** Reconstruct inputs without activating intermediate panes or recording navigation. */
-	public async deserialize(data: SerializedEditorGroup, serializers: EditorInputSerializers): Promise<void> {
-		this.clear();
-		for (const entry of data.inputs) {
-			const input = await serializers[entry.kind].deserialize(entry.value);
-			this.editorTabs.push(input);
-			this.registerInputListeners(input);
+	public async deserialize(data: SerializedEditorGroup, serializers: EditorInputSerializers, signal?: AbortSignal): Promise<boolean> {
+		if (signal?.aborted) return false;
+		const request = ++this.restoreRequest, revision = this.revision;
+		const candidates: EditorInput[] = [];
+		let published = false;
+		try {
+			for (const entry of data.inputs) {
+				candidates.push(await serializers[entry.kind].deserialize(entry.value));
+				if (request !== this.restoreRequest || this.revision !== revision || signal?.aborted) return false;
+			}
+			const cleared = this.clear();
+			if (request !== this.restoreRequest || this.revision !== cleared || signal?.aborted) return false;
+			for (const input of candidates) { this.editorTabs.push(input); this.registerInputListeners(input); }
+			this.activeEditor = data.active === null ? null : this.editorTabs[data.active];
+			this.previewEditor = data.preview === null ? null : this.editorTabs[data.preview];
+			this.updateLabels(); published = true;
+			this.emitChanged();
+			return request === this.restoreRequest && this.revision === cleared + 1 && !signal?.aborted;
+		} finally {
+			if (!published) for (const input of candidates) input.dispose();
 		}
-		this.activeEditor = data.active === null ? null : this.editorTabs[data.active];
-		this.previewEditor = data.preview === null ? null : this.editorTabs[data.preview];
-		this.updateLabels();
-		this.emitChanged();
 	}
 
 	public get previewTab(): EditorInput | null { return this.previewEditor; }
@@ -101,15 +112,17 @@ export class EditorTabGroupModel {
 		this.activate(initialTab);
 	}
 
-	public clear(): void {
-		for (const listener of this.listeners.values()) listener.dispose();
-		this.listeners.clear();
-		for (const tab of this.editorTabs) tab.dispose();
-		this.editorTabs.length = 0;
+	public clear(): number {
+		const revision = ++this.revision;
+		const retired = this.editorTabs.splice(0);
 		this.activeEditor = null;
 		this.previewEditor = null;
 		this.labels.clear();
-		this.emitChanged();
+		for (const listener of this.listeners.values()) listener.dispose();
+		this.listeners.clear();
+		for (const tab of retired) tab.dispose();
+		for (const listener of this.changeListeners) listener();
+		return revision;
 	}
 
 	/** The workbench detaches a replaced pane before changing group membership. */

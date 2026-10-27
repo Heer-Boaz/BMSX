@@ -25,7 +25,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import * as colors from '../../ide/common/constants';
 import type { PointerInputSnapshot } from '../../ide/common/models';
-import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
+import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
@@ -86,6 +86,8 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 	const f = fixture(t), { input, conversation } = f;
 	const previousTheme = colors.getActiveIdeThemeVariant();
 	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
+	applyViewportSize({ width: 384, height: 288 });
+	const viewport = { left: 0, top: 0, right: 384, bottom: 288 };
 	const area = { left: 0, top: 24, right: 384, bottom: 274 }, surfaces = new WorkbenchSurfaceService();
 	Object.assign(input.layout, area, { rowHeight: editorViewState.lineHeight, font: editorViewState.font });
 	input.footerTop = 256;
@@ -108,7 +110,7 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 	const menu = new ContextMenuController(inputFocus, pointerCapture, lifetime => {
 		if (lifetime === undefined) return;
 		lifetime.add(surfaces.attach({ role: 'transient', outsidePress: 'consume', lifetimeOwner: owner, captureScope: menu.pointerScope,
-			getBounds: () => menu.model.bounds, getClip: () => area, isVisible: () => menu.visible, draw() {},
+			getBounds: () => menu.model.bounds, getClip: () => viewport, isVisible: () => menu.visible, draw() {},
 			onRetire: () => { if (!lifetime.isDisposed) { pointerCapture.cancelScope(menu.pointerScope); menu.hide(); } } }));
 	});
 	const toolbar = new AssistantTurnToolbar(commands, parent, () => input.draft.focusTarget.focus(), menu, surfaces, owner, area);
@@ -132,7 +134,6 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 		if (keyboard) { toolbar.control.focusTarget.focus(); press('End'); press('Enter'); }
 		else pointer(input.turnActions.overflow!.button.bounds, PointerButton.Primary, PointerButton.Primary, PointerButton.Primary);
 		assert.equal(menu.visible, true);
-		menu.model.layout(384, 288, 8, editorViewState.font.renderFont(), text => editorViewState.font.measure(text)); menu.update();
 	};
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();

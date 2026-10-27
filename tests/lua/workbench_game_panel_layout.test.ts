@@ -32,8 +32,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 7, deleteLength: 1, text: '2' }] }]]),
 	});
 	const input = new WorkspaceEditReviewInput(proposal), editor = ide.editor;
-	editor.editorParts.main.group.openEditor(input);
-	const pane = editor.editorParts.main.group.panes.activePane!;
+	editor.editorParts.main.activeGroup.openEditor(input);
+	const pane = editor.editorParts.main.activeGroup.panes.activePane!;
 	let minimum: number | undefined = 200, buttons = 0;
 	// A container-layout test programs its child's declared constraint. The real
 	// reader, focus, pointer routing and workbench composition remain attached.
@@ -103,8 +103,8 @@ for (const variant of ['tiny', 'msx'] as const) {
 		f.arrange(700, 120);
 		assert.equal(f.editor.gamePanel.visible, false);
 		assert.equal(inputFocus.target, reader);
-		assert.equal(f.editor.editorParts.main.group.panes.activePane, f.pane);
-		assert.equal(f.editor.editorParts.main.group.panes.activePane!.input, f.input);
+		assert.equal(f.editor.editorParts.main.activeGroup.panes.activePane, f.pane);
+		assert.equal(f.editor.editorParts.main.activeGroup.panes.activePane!.input, f.input);
 		assert.equal(f.proposal.state, 'pending'); assert.equal(f.model.canUndo, false);
 	});
 

@@ -142,7 +142,7 @@ for (const kind of KINDS) for (const edit of ['move', 'remove'] as const)
 			return;
 		}
 		const group = f.editor.editorParts.activeGroup, input = group.model.activeTab;
-		assert.equal(group === f.editor.editorParts.main.group, kind === 'scene');
+		assert.ok(group === f.firstGroup, 'all authored kinds retain the invoking group');
 		assert.ok(input instanceof SceneEditorInput || input instanceof BehaviorLensInput || input instanceof LuaProgramInput || input instanceof AnimationEditorInput);
 		assert.ok(input.workingCopy === f.model);
 		assert.equal(f.entry.range.start, range.start + '-- admitted field\n'.length);

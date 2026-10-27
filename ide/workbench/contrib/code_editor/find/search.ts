@@ -107,7 +107,7 @@ export class EditorSearchController {
 
 	public clearInput(): void { this.closeSearch(false); }
 
-	public layoutField(bounds: Readonly<RectBounds>): void {
+	public layoutField(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds> = bounds): void {
 		const count = this.activeSearchMatchCount(), index = this.state.currentIndex;
 		const working = this.state.scope === 'global' ? this.state.globalJob !== null : this.state.job !== null;
 		if (count !== this.layoutCount || index !== this.layoutIndex || working !== this.layoutWorking) {
@@ -115,7 +115,7 @@ export class EditorSearchController {
 			this.layoutDetail = working ? 'SEARCHING…' : `${index >= 0 ? index + 1 : 0}/${count}`;
 		}
 		this.fieldLayout.layout(bounds, this.state.scope === 'global' ? 'FIND ALL' : 'FIND',
-			count > 0 || this.state.query.length > 0 || working ? this.layoutDetail : '', constants.SEARCH_BAR_MARGIN_Y);
+			count > 0 || this.state.query.length > 0 || working ? this.layoutDetail : '', constants.SEARCH_BAR_MARGIN_Y, clip);
 	}
 
 	public openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {

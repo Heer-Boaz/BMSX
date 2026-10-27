@@ -36,7 +36,7 @@ test('portable inputs own their move capability without lending it to diagnostic
 		new AnimationEditorInput(workingCopy, workingCopy.resource.contextId), behavior,
 		new LuaProgramInput(workingCopy, 'progression', { start: 0, end: 0 }, f.editor.luaPrograms.guest),
 		new ResourceViewerInput(f.sources.catalog, workingCopy.resource)];
-	for (const input of inputs) f.editor.editorParts.main.group.model.add(input);
+	for (const input of inputs) f.editor.editorParts.main.activeGroup.model.add(input);
 	for (const input of [f.firstInput, f.input, ...inputs]) assert.equal(input.canMove(), true);
 	const game = new GameViewInput(), diagnostic = new HostErrorInput('fixture diagnostic');
 	t.after(() => { game.dispose(); diagnostic.dispose(); });

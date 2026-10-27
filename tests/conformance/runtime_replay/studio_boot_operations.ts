@@ -11,7 +11,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	check(initial.status === 'rejected' && initial.reset && !initial.installed && ide.editor.isActive,
 		'boot: source rejection has explicit evidence and an inspectable, held machine');
 	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'title_screen.lua' })!;
-	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource);
 	await frame();
 	await test.capture?.('startup-rejected');
 	await press('ControlRight', 'ShiftRight');
@@ -21,7 +21,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	check(cycles() === held && !harness.isCartActive() && execution.launchPending,
 		'boot: hiding the editor cannot execute packed code instead of rejected source');
 	await press('ControlRight', 'ShiftRight');
-	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource);
 	const model = harness.getActiveEditorDocument().model;
 	const source = model.buffer.getText().replace('\nend end -- rejected startup source\n', '');
 	check(source !== model.buffer.getText(), 'boot: startup loaded the deliberately invalid project file');

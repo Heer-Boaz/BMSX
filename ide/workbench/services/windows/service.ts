@@ -154,7 +154,15 @@ export class WorkbenchSurfaceService implements IDisposable {
 	/** Admission is independent of pointer position and applies to commands too. */
 	public isAdmitted(surface: WorkbenchSurface): boolean {
 		const node = surface as Surface;
-		return node.visible && this.blockingModal(node) === null;
+		if (!node.visible || this.blockingModal(node) !== null) return false;
+		const bounds = node.getBounds();
+		let left = bounds.left, top = bounds.top, right = bounds.right, bottom = bounds.bottom;
+		for (let current: Surface | null | undefined = node; current != null; current = current.presentationParent) {
+			const clip = current.getClip();
+			left = Math.max(left, clip.left); top = Math.max(top, clip.top);
+			right = Math.min(right, clip.right); bottom = Math.min(bottom, clip.bottom);
+		}
+		return left < right && top < bottom;
 	}
 
 	/** Detach first, then notify the owner before descendant membership is retired. */

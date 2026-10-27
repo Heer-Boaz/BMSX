@@ -54,7 +54,6 @@ import type { ProjectContentIndex } from './content_index';
 import { openProjectContent } from './open_actions';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation } from '../../../ui/tree_view';
-import { getWorkbenchEditorBounds } from '../../../common/layout';
 
 export type ResourcePanelItemMetrics = {
 	fontVariant: FontVariant | null;
@@ -182,8 +181,8 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		if (focused) {
 			this.focusTarget.focus();
 		} else if (this.focusTarget.hasFocus) {
-			const activePane = this.editor.editorParts.main.group.panes.activePane;
-			const bounds = getWorkbenchEditorBounds();
+			const group = this.editor.editorParts.activeGroup, activePane = group.panes.activePane;
+			const bounds = group.panes.contentBounds;
 			if (activePane === null || bounds.right === bounds.left || bounds.bottom === bounds.top) this.focusTarget.release();
 			else activePane.focus();
 		}
@@ -324,7 +323,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		}
 		const selected = this.files.selectedNode;
 		if (selected === null) return;
-		if (selected.element.kind === 'file') void this.editor.navigation.openResource(this.editor.editorParts.documentDestination(undefined, { resource: selected.element.resource,
+		if (selected.element.kind === 'file') void this.editor.navigation.openResource(this.editor.editorParts.editorDestination(undefined, { resource: selected.element.resource,
 			editorId: this.editor.resourceEditors.getEditorId(selected.element.resource) }), selected.element.resource);
 		else if (selected.element.kind === 'definition') openProjectContent(this.editor, this.content, selected.element.content);
 		else this.toggleSelectedFileDisclosure();

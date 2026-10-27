@@ -38,19 +38,16 @@ export function isAssistantCommand(input: AssistantInput): boolean {
 }
 
 export class AssistantChatCommands {
-	private readonly models: AssistantModelPicker;
-	public constructor(private readonly conversation: AssistantConversation, private readonly group: EditorGroupView,
-		private readonly quickInput: QuickInputController, private readonly clipboard: Clipboard) {
-		this.models = new AssistantModelPicker(quickInput, group);
-	}
+	private readonly models = new AssistantModelPicker();
+	public constructor(private readonly conversation: AssistantConversation, private readonly clipboard: Clipboard) {}
 
-	/** Workbench actions depend on the conversation, never on the currently focused pane. */
-	public isEnabled(command: EditorCommandId): boolean {
+	/** Conversation state is shared; the invoking editor group is explicit. */
+	public isEnabled(command: EditorCommandId, group: EditorGroupView): boolean {
 		const model = this.conversation;
 		if (!model.available) return false;
 		switch (command) {
 			case 'assistant.history': case 'assistant.new': case 'assistant.commands': {
-				const input = this.group.model.tabs.find(input => input.kind === 'assistant');
+				const input = group.model.tabs.find(input => input.kind === 'assistant');
 				return !input?.commandPending && (command === 'assistant.commands' || model.canBrowse);
 			}
 			case 'assistant.signIn': return model.state === 'disconnected' || model.state === 'ready' && !model.accountRefreshing && model.account!.requiresLogin;
@@ -63,25 +60,25 @@ export class AssistantChatCommands {
 		}
 	}
 
-	public execute(command: EditorCommandId): void {
-		if (!this.isEnabled(command)) return;
+	public execute(command: EditorCommandId, group: EditorGroupView, quickInput: QuickInputController): void {
+		if (!this.isEnabled(command, group)) return;
 		const model = this.conversation;
 		switch (command) {
 			case 'assistant.history': {
-				const input = openAssistant(this.group, model);
-				if (input !== undefined) void this.history(input);
+				const input = openAssistant(group, model);
+				if (input !== undefined) void this.history(input, group, quickInput);
 				break;
 			}
 			case 'assistant.new':
-				if (openAssistant(this.group, model) !== undefined) void model.newConversation();
+				if (openAssistant(group, model) !== undefined) void model.newConversation();
 				break;
 			case 'assistant.commands': {
-				const input = openAssistant(this.group, model);
-				if (input !== undefined) this.commands(input);
+				const input = openAssistant(group, model);
+				if (input !== undefined) this.commands(input, quickInput);
 				break;
 			}
 			case 'assistant.signIn':
-				if (openAssistant(this.group, model) === undefined) break;
+				if (openAssistant(group, model) === undefined) break;
 				void model.connect().then(() => model.startLogin()); break;
 			case 'assistant.cancelLogin': void model.cancelLogin(); break;
 			case 'assistant.signOut': void model.signOut(); break;
@@ -91,54 +88,60 @@ export class AssistantChatCommands {
 		}
 	}
 
-	public commands(input: AssistantInput): void {
-		this.quickInput.pick('Codex commands', 'Choose a command', () => new TextQuickPickProvider(COMMANDS), item => {
+	public commands(input: AssistantInput, quickInput: QuickInputController): void {
+		quickInput.pick('Codex commands', 'Choose a command', () => new TextQuickPickProvider(COMMANDS), item => {
 			setFieldText(input.draft, item.label, true); input.draft.focusTarget.focus();
-		});
+		}, undefined, { invocationOrigin: input.draft.focusTarget, preserveFocus: !input.draft.focusTarget.hasFocus });
 	}
 
-	public async history(input: AssistantInput, cursor?: string, search?: string): Promise<void> {
+	public async history(input: AssistantInput, group: EditorGroupView, quickInput: QuickInputController, cursor?: string, search?: string): Promise<void> {
 		if (input.commandPending || !input.conversation.canBrowse) return;
+		const origin = input.draft.focusTarget;
+		let retired = false;
+		const unbind = origin.scope.onDidRetireContext(() => { retired = true; });
 		input.commandPending = true;
 		try {
 			const page = await input.conversation.listHistory(cursor, search);
-			if (input.lifetime.signal.aborted || this.group.model.activeTab !== input) return;
+			if (retired || input.lifetime.signal.aborted || group.model.activeTab !== input) return;
 			const items = page.threads.map(thread => ({ label: thread.title, description: new Date(thread.updatedAt * 1000).toLocaleString(), detail: '',
 				id: thread.id, cursor: undefined as string | undefined }));
 			if (page.nextCursor !== null) items.push({ label: 'Older conversations…', description: 'Load the next page', detail: '', id: '', cursor: page.nextCursor });
-			this.quickInput.pick('Codex history', 'Filter this page; /history text searches saved titles', () => new TextQuickPickProvider(items), item => {
-				if (item.cursor !== undefined) void this.history(input, item.cursor, search);
+			quickInput.pick('Codex history', 'Filter this page; /history text searches saved titles', () => new TextQuickPickProvider(items), item => {
+				if (item.cursor !== undefined) void this.history(input, group, quickInput, item.cursor, search);
 				else void input.conversation.openConversation(item.id);
-			});
-		} catch (error) { if (!input.lifetime.signal.aborted) input.conversation.notice(`History unavailable: ${String(error)}`); }
-		finally { input.commandPending = false; }
+			}, undefined, { invocationOrigin: origin, preserveFocus: !origin.hasFocus });
+		} catch (error) { if (!retired && !input.lifetime.signal.aborted) input.conversation.notice(`History unavailable: ${String(error)}`); }
+		finally { input.commandPending = false; unbind(); }
 	}
 
-	public async queue(input: AssistantInput): Promise<void> {
+	public async queue(input: AssistantInput, group: EditorGroupView, quickInput: QuickInputController): Promise<void> {
 		if (input.commandPending) return;
-		const model = input.conversation;
+		const model = input.conversation, origin = input.draft.focusTarget;
+		let retired = false;
+		const unbind = origin.scope.onDidRetireContext(() => { retired = true; });
 		input.commandPending = true;
-		await model.connect();
-		input.commandPending = false;
-		if (input.lifetime.signal.aborted || this.group.model.activeTab !== input || model.state === 'disconnected') return;
-		const items = model.queued.map((message, index) => ({ label: message.text || 'Image message', description: `Queued ${index + 1}${message.images?.length ? ` | ${message.images.length} image(s)` : ''}`, detail: 'Edit or remove', message }));
-		this.quickInput.pick('Codex queue', model.queuePaused ? 'Paused; /continue resumes work' : 'Waiting for the active turn', () => new TextQuickPickProvider(items), item => {
-			this.quickInput.pick('Queued message', item.label, () => new TextQuickPickProvider([
-				{ label: 'Edit message', description: 'Change text or images in the composer', detail: '', edit: true },
-				{ label: 'Remove message', description: 'Do not send it', detail: '', edit: false },
-			]), action => {
-				if (action.edit) {
-					input.editingQueuedId = item.message.id;
-					input.attachments.set(item.message.images ?? []);
-					setFieldText(input.draft, item.message.text, true,
-						(item.message.references ?? []).map(ref => ({ from: ref.from, to: ref.to, data: ref.source })));
-					input.draft.focusTarget.focus();
-				} else void model.changeQueued({ type: 'queue-delete', id: item.message.id });
-			});
-		});
+		try {
+			await model.connect();
+			if (retired || input.lifetime.signal.aborted || group.model.activeTab !== input || model.state === 'disconnected') return;
+			const items = model.queued.map((message, index) => ({ label: message.text || 'Image message', description: `Queued ${index + 1}${message.images?.length ? ` | ${message.images.length} image(s)` : ''}`, detail: 'Edit or remove', message }));
+			quickInput.pick('Codex queue', model.queuePaused ? 'Paused; /continue resumes work' : 'Waiting for the active turn', () => new TextQuickPickProvider(items), item => {
+				quickInput.pick('Queued message', item.label, () => new TextQuickPickProvider([
+					{ label: 'Edit message', description: 'Change text or images in the composer', detail: '', edit: true },
+					{ label: 'Remove message', description: 'Do not send it', detail: '', edit: false },
+				]), action => {
+					if (action.edit) {
+						input.editingQueuedId = item.message.id;
+						input.attachments.set(item.message.images ?? []);
+						setFieldText(input.draft, item.message.text, true,
+							(item.message.references ?? []).map(ref => ({ from: ref.from, to: ref.to, data: ref.source })));
+						input.draft.focusTarget.focus();
+					} else void model.changeQueued({ type: 'queue-delete', id: item.message.id });
+				});
+			}, undefined, { invocationOrigin: origin, preserveFocus: !origin.hasFocus });
+		} finally { input.commandPending = false; unbind(); }
 	}
 
-	public async submit(input: AssistantInput, direct = false): Promise<void> {
+	public async submit(input: AssistantInput, group: EditorGroupView, quickInput: QuickInputController, direct = false): Promise<void> {
 		const text = input.draft.text, model = input.conversation;
 		const command = !direct && isAssistantCommand(input);
 		if (input.commandPending || !command && !input.attachments.ready || text.trim().length === 0 && input.attachments.images.length === 0) return;
@@ -156,14 +159,14 @@ export class AssistantChatCommands {
 		} else if (command) {
 			const end = text.search(/\s/), command = end === -1 ? text : text.slice(0, end), argument = end === -1 ? undefined : text.slice(end).trim();
 			switch (command) {
-				case '/': this.commands(input); break;
-				case '/history': await this.history(input, undefined, argument); break;
+				case '/': this.commands(input, quickInput); break;
+				case '/history': await this.history(input, group, quickInput, undefined, argument); break;
 				case '/new': await model.newConversation(); break;
-				case '/model': await this.models.open(input, 'model'); break;
-				case '/effort': await this.models.open(input, 'effort'); break;
-				case '/fast': await this.models.open(input, 'fast'); break;
+				case '/model': await this.models.open(input, 'model', group, quickInput); break;
+				case '/effort': await this.models.open(input, 'effort', group, quickInput); break;
+				case '/fast': await this.models.open(input, 'fast', group, quickInput); break;
 				case '/older': await model.loadOlder(); break;
-				case '/queue': await this.queue(input); break;
+				case '/queue': await this.queue(input, group, quickInput); break;
 				case '/continue': await model.continueQueue(); break;
 				case '/stop': await model.interrupt(); break;
 				case '/login':

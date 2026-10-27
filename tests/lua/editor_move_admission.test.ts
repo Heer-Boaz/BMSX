@@ -10,7 +10,7 @@ test('invalid actual source field vetoes transfer before creating an empty desti
 	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {}); t.after(() => field.dispose());
 	field.setValue(7); field.layout(f.firstGroup.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '-', true);
 	const count = parts.documents.length;
-	assert.equal(parts.moveEditor(f.firstPart, input, 'new', f.editor.editorClose), false);
+	assert.equal(parts.moveEditor(f.firstPart.activeGroup, input, 'new', f.editor.editorClose), false);
 	assert.equal(parts.documents.length, count); assert.equal(field.pending, true);
 	assert.ok(f.firstGroup.model.activeTab === input && f.firstGroup.panes.activePane === f.first);
 	assert.equal(f.firstPart.operation, 'none');
@@ -21,7 +21,7 @@ test('pending tab-close admission blocks move even though its containing window 
 	f.first.focus(); input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]);
 	const closing = f.firstGroup.close(input.id), count = parts.documents.length;
 	assert.equal(f.firstPart.closing, false); assert.equal(f.firstPart.actionPrompt.visible, true);
-	assert.equal(parts.moveEditor(f.firstPart, input, 'new', f.editor.editorClose), false);
+	assert.equal(parts.moveEditor(f.firstPart.activeGroup, input, 'new', f.editor.editorClose), false);
 	assert.equal(parts.documents.length, count); assert.ok(f.firstGroup.model.activeTab === input);
 	f.firstPart.actionPrompt.close('cancel'); assert.equal(await closing, false); assert.equal(input.workingCopy.dirty, true);
 });
@@ -30,9 +30,9 @@ test('reentrant close of an empty admitted destination cannot retire the incomin
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, destination = parts.createDocument();
 	let close: Promise<boolean> | undefined;
 	const unbind = f.firstGroup.panes.onDidClearEditor(() => { unbind(); close = parts.close(destination); }); t.after(unbind);
-	assert.equal(parts.moveEditor(f.firstPart, f.firstInput, destination, f.editor.editorClose), true);
+	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, destination.activeGroup, f.editor.editorClose), true);
 	assert.equal(await close, false); assert.equal(destination.retired, false);
-	assert.ok(destination.group.model.activeTab === f.firstInput && destination.group.panes.activePane!.input === f.firstInput);
+	assert.ok(destination.activeGroup.model.activeTab === f.firstInput && destination.activeGroup.panes.activePane!.input === f.firstInput);
 	assert.equal(destination.operation, 'none'); assert.equal(f.firstPart.operation, 'none');
 });
 
@@ -44,10 +44,10 @@ test('new destination is born with move admission before membership observers ca
 		unbind(); const destination = parts.documents.at(-1)!;
 		assert.equal(destination.operation, 'move'); close = parts.close(destination);
 	}); t.after(unbind);
-	assert.equal(parts.moveEditor(f.firstPart, f.firstInput, 'new', f.editor.editorClose), true);
+	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, 'new', f.editor.editorClose), true);
 	assert.equal(await close, false); assert.equal(parts.documents.length, count + 1);
 	const destination = parts.documents.at(-1)!;
-	assert.equal(destination.retired, false); assert.ok(destination.group.model.activeTab === f.firstInput);
+	assert.equal(destination.retired, false); assert.ok(destination.activeGroup.model.activeTab === f.firstInput);
 	assert.equal(destination.operation, 'none'); assert.equal(f.firstPart.operation, 'none');
 });
 
@@ -56,7 +56,7 @@ test('a later destination focus callback may close the transferred input after a
 	let close: Promise<boolean> | undefined;
 	const unbind = f.second.commandTarget.onDidFocus(() => { unbind(); close = parts.close(f.secondPart); }); t.after(unbind);
 	f.first.focus();
-	assert.equal(parts.moveEditor(f.firstPart, f.firstInput, f.secondPart, f.editor.editorClose), true);
+	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, f.secondPart.activeGroup, f.editor.editorClose), true);
 	assert.equal(await close, true); assert.equal(f.secondPart.retired, true);
 	assert.equal(f.firstGroup.model.tabs.length, 0); assert.equal(f.firstPart.operation, 'none');
 });

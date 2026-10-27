@@ -2,7 +2,7 @@ import { copy_rect_bounds, create_rect_bounds, point_in_rect, type RectBounds } 
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
-import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../../common/constants';
+import { DOUBLE_CLICK_MAX_INTERVAL_MS, SCROLLBAR_WIDTH } from '../../../common/constants';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover, type PointerHoverTarget } from '../../../input/pointer/hover';
@@ -28,7 +28,6 @@ export class EditorTabStrip implements PointerHoverTarget {
 	public lastClickId: EditorTabId | null = null;
 	public lastClickTime = 0;
 	private layoutBounds: Readonly<RectBounds> | undefined;
-	private layoutContext: EditorTabStripLayoutContext | undefined;
 	private readonly projectedBounds = create_rect_bounds();
 	private projectedRevision = -1;
 	private projectedFont: EditorTabStripLayoutContext['font'] | undefined;
@@ -39,7 +38,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 	private projectedScroll = 0;
 	private actionsAttached = false;
 
-	public constructor(public readonly model: EditorTabGroupModel, commands: EditorCommandRunner,
+	public constructor(public readonly model: EditorTabGroupModel, private readonly layoutContext: EditorTabStripLayoutContext, commands: EditorCommandRunner,
 		private readonly focusParent: InputFocusTarget, private readonly activate: (id: EditorTabId) => void,
 		private readonly close: (id: EditorTabId) => void, focusContent: () => void) {
 		const scope = focusParent.scope.surfaceScope;
@@ -56,16 +55,19 @@ export class EditorTabStrip implements PointerHoverTarget {
 	}
 	public get needsLayout(): boolean {
 		const bounds = this.layoutBounds, context = this.layoutContext;
-		return context === undefined || this.projectedRevision !== this.model.revision
-			|| this.projectedBounds.left !== bounds!.left || this.projectedBounds.top !== bounds!.top
-			|| this.projectedBounds.right !== bounds!.right || this.projectedBounds.bottom !== bounds!.bottom
+		return bounds === undefined || this.projectedRevision !== this.model.revision
+			|| this.projectedBounds.left !== bounds.left || this.projectedBounds.top !== bounds.top
+			|| this.projectedBounds.right !== bounds.right || this.projectedBounds.bottom !== bounds.bottom
 			|| this.projectedFont !== context.font || this.projectedTabHeight !== context.tabBarHeight
 			|| this.projectedCharAdvance !== context.charAdvance || this.projectedHover !== this.hoverId
 			|| this.projectedDragging !== (this.drag.state?.hasDragged === true) || this.projectedScroll !== this.scrollbar.getScroll();
 	}
+	/** Independent group minima include the real scrollbar lane at overflowing widths. */
+	public get minimumHeight(): number { return this.layoutContext.tabBarHeight + SCROLLBAR_WIDTH; }
 
-	public layout(bounds: Readonly<RectBounds>, context: EditorTabStripLayoutContext): void {
-		this.layoutBounds = bounds; this.layoutContext = context;
+	public layout(bounds: Readonly<RectBounds>): void {
+		this.layoutBounds = bounds;
+		const context = this.layoutContext;
 		if (this.needsLayout) {
 			this.layoutState.layout(bounds, context, this.hoverId, this.drag.state?.hasDragged === true);
 			this.drag.refreshTarget();

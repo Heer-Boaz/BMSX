@@ -24,12 +24,14 @@ export class InlineBarFieldLayout {
 	public constructor(public readonly code: CodeEditorControl, public readonly field: TextField) {}
 
 	public get visible(): boolean {
-		return this.bounds.left + 3 < this.bounds.right - 3 && this.bounds.top + 2 < this.bounds.bottom;
+		const clip = this.viewport.clipBounds;
+		return this.bounds.left + 3 < this.bounds.right - 3 && this.bounds.top + 2 < this.bounds.bottom
+			&& clip.left < clip.right && clip.top < clip.bottom;
 	}
 
 	public hide(): void {
 		if (this.bounds.left === this.bounds.right && this.bounds.top === this.bounds.bottom) return;
-		if (this.visible) this.font = null;
+		this.font = null;
 		write_rect_bounds(this.bounds, 0, 0, 0, 0);
 		this.field.nativeCaret.width = 0; this.field.nativeCaret.height = 0;
 		const target = this.field.focusTarget;
@@ -37,7 +39,7 @@ export class InlineBarFieldLayout {
 		else target.cancelInput();
 	}
 
-	public layout(bar: Readonly<RectBounds>, label: string, detail: string, marginY: number): void {
+	public layout(bar: Readonly<RectBounds>, label: string, detail: string, marginY: number, clip: Readonly<RectBounds> = bar): void {
 		const font = this.code.font;
 		if (this.font !== font || this.left !== bar.left || this.right !== bar.right || this.top !== bar.top
 			|| this.bottom !== bar.bottom || this.marginY !== marginY || this.requestedLabel !== label || this.requestedDetail !== detail) {
@@ -58,7 +60,7 @@ export class InlineBarFieldLayout {
 			write_rect_bounds(this.bounds, textLeft - 3, bar.top + marginY - 2, textRight + 3,
 				Math.min(bar.bottom, bar.top + marginY + this.code.lineHeight + 2));
 		}
-		if (!this.visible) { this.hide(); return; }
-		this.viewport.layout(this.field, this.bounds, this.code.inlineFieldMetrics, font, bar);
+		this.viewport.layout(this.field, this.bounds, this.code.inlineFieldMetrics, font, clip);
+		if (!this.visible) this.hide();
 	}
 }

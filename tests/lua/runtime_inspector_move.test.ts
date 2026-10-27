@@ -43,7 +43,7 @@ function inspectorWorkbench(t: TestContext, images: ReturnType<typeof compileEve
 	const key = (code: string) => {
 		editor.dispatchKey(new KeyInputEvent(code, KeyModifier.none)); editor.dispatchKey(new KeyInputEvent(code, KeyModifier.none, false, false)); update();
 	};
-	return { editor, host, sources, cpu, firstPart, secondPart, firstGroup: firstPart.group, secondGroup: secondPart.group, update, key };
+	return { editor, host, sources, cpu, firstPart, secondPart, firstGroup: firstPart.activeGroup, secondGroup: secondPart.activeGroup, update, key };
 }
 
 test('GPU move keeps expired owned words and both observation views, with destination-local controls', t => {
@@ -67,7 +67,7 @@ test('GPU move keeps expired owned words and both observation views, with destin
 	assert.equal(f.firstPart.quickInput.visible, true);
 	const generation = history.generation, revision = history.revision, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const executionRevision = f.host.execution.revision;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart, source, f.secondPart, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, source, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
 	assert.equal(f.secondGroup.model.activeTab, source); assert.equal(f.secondGroup.model.findById(receiver.id), receiver);
 	assert.notEqual(f.secondGroup.model.getLabel(source), f.secondGroup.model.getLabel(receiver));
 	assert.equal(source.selected.words, words); assert.deepEqual(Array.from(words.subarray(0, source.selected.wordCount)), evidence);
@@ -112,7 +112,7 @@ return true`;
 	f.editor.commands.execute('runtime.resume', origin); assert.equal(f.host.execution.paused, false);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles, executionRevision = f.host.execution.revision;
 	f.editor.commands.execute('gte.view', origin); assert.equal(f.firstPart.quickInput.visible, true);
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart, source, f.secondPart, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, source, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
 	assert.equal(f.secondGroup.model.activeTab, source); assert.equal(f.secondGroup.model.findById(receiver.id), receiver);
 	assert.notEqual(f.secondGroup.model.getLabel(source), f.secondGroup.model.getLabel(receiver));
 	assert.equal(source.selected.beforeData, before); assert.deepEqual(Array.from(before), evidence); assert.equal(source.selected.image, image);
@@ -144,7 +144,7 @@ test('Events move retains actual selected evidence and reading position in a fre
 	f.editor.commands.execute('runtime.resume', origin); assert.equal(f.host.execution.paused, false);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles, revision = f.host.execution.revision;
 	f.editor.commands.execute('events.filter', origin); assert.equal(f.firstPart.quickInput.visible, true);
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart, source, f.secondPart, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, source, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
 	assert.equal(f.secondGroup.model.activeTab, source); assert.equal(f.secondGroup.model.findById(receiver.id), receiver);
 	assert.notEqual(f.secondGroup.model.getLabel(source), f.secondGroup.model.getLabel(receiver));
 	assert.equal(source.history, history); assert.equal(source.filter, 'probe'); assert.equal(receiver.filter, '');
@@ -154,14 +154,14 @@ test('Events move retains actual selected evidence and reading position in a fre
 	f.editor.commands.execute('events.filter', f.secondGroup.panes.activePane!.commandTarget);
 	assert.equal(f.secondPart.quickInput.visible, true); f.key('Escape');
 	openEventViewer(f.secondGroup, history); assert.equal(f.secondGroup.model.activeTab, source);
-	assert.equal(f.editor.editorParts.moveEditor(f.secondPart, source, 'new', f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.secondPart.activeGroup, source, 'new', f.editor.editorClose), true); f.update();
 	const destination = f.editor.editorParts.activePart;
-	assert.notEqual(destination, f.secondPart); assert.equal(destination.group.model.activeTab, source);
+	assert.notEqual(destination, f.secondPart); assert.equal(destination.activeGroup.model.activeTab, source);
 	assert.equal(source.projection.rows[source.selected], selected); assert.equal(source.viewport.scrollTop / source.layout.rowHeight, 8.5);
 	assert.equal(f.host.execution.paused, false); assert.equal(f.host.execution.revision, revision);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 	history.clear(); f.update(); assert.equal(source.selected, -1); assert.equal(source.projection.rows.length, 0);
-	destination.group.openEditor(new EventViewerInput(history));
+	destination.activeGroup.openEditor(new EventViewerInput(history));
 	assert.equal(source.interaction.running, false); assert.equal(f.host.execution.paused, true);
 });
 
@@ -175,7 +175,7 @@ test('ROM move retains its exact snapshot and held reader document with destinat
 	const reader = input.reader, subject = reader.subject, snapshot = input.snapshot;
 	input.readerWindow.setPlacement('maximized'); f.update();
 	const requested = { ...input.readerWindow.requestedBounds };
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart, input, f.secondPart, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
 	assert.equal(f.secondGroup.model.activeTab, input); assert.equal(input.reader, reader); assert.equal(reader.subject, subject);
 	assert.equal(input.snapshot, snapshot); assert.equal(input.snapshot.rom, rom.bytes); assert.equal(input.readerHeld, true);
 	assert.equal(reader.view, 'bytes'); assert.equal(input.readerWindow.open, true); assert.equal(input.readerWindow.placement, 'maximized');

@@ -732,19 +732,27 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 	});
 }
 
-for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} companion minimum honors both clients at the retained inner ratio`, t => {
+for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} publishes actual child minima independently of requested split intent`, t => {
 	const { view } = createViewFixture(t, variant), font = editorViewState.font;
 	const indent = Math.max(editorViewState.charAdvance * 2, WORKBENCH_ICON_SIZE + 2);
 	const testsBudget = editorViewState.charAdvance * 24 + indent * 3 + 10;
 	const resultsBudget = editorViewState.charAdvance * 32 + indent * 3 + 10;
-	for (const ratio of [0.15, 5 / 12, 0.85]) {
-		view.split.resize(ratio);
+	for (const ratio of [0, 0.15, 5 / 12, 0.85, 1]) {
+		view.split.ratio = ratio;
 		const retained = view.split.ratio, minimum = measureScenarioLabMinimumWidth(view);
+		assert.equal(minimum, testsBudget + resultsBudget + 1);
+		assert.equal(view.split.minimumFirstSize, testsBudget);
+		assert.equal(view.split.minimumSecondSize, resultsBudget + 1);
 		prepareScenarioLabLayout(view, { left: 23, top: 31, right: 23 + minimum, bottom: 231 });
 		assert.equal(view.split.ratio, retained, 'measuring or arranging does not rewrite user placement intent');
 		assert.ok(view.testPane.layout.contentRight - view.testPane.layout.contentLeft >= testsBudget);
 		assert.ok(view.resultPane.layout.contentRight - view.resultPane.layout.contentLeft >= resultsBudget);
 	}
+	const minimum = measureScenarioLabMinimumWidth(view), width = minimum + 100;
+	prepareScenarioLabLayout(view, { left: 23, top: 31, right: 23 + width, bottom: 231 });
+	view.split.resize(0); assert.equal(view.split.ratio, testsBudget / width);
+	view.split.resize(1); assert.equal(view.split.ratio, 1 - (resultsBudget + 1) / width);
+	assert.equal(measureScenarioLabMinimumWidth(view), minimum);
 	const advance = t.mock.method(font, 'advance');
 	for (let frame = 0; frame < 1000; frame++) measureScenarioLabMinimumWidth(view);
 	assert.equal(advance.mock.callCount(), 0);
@@ -765,8 +773,8 @@ test('Scenario controller refresh, wheel and status rendering retain the actual 
 	t.after(async () => {
 		inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
-	ide.editor.scenarioLab.open(ide.editor.editorParts.main.group);
-	const pane = ide.editor.editorParts.main.group.panes.getPane('scenario_lab')!, view = pane.input.view;
+	ide.editor.scenarioLab.open(ide.editor.editorParts.main.activeGroup);
+	const pane = ide.editor.editorParts.main.activeGroup.panes.getPane('scenario_lab')!, view = pane.input.view;
 	const bounds = { left: 421, top: 31, right: 701, bottom: 151 };
 	pane.layout(bounds); pane.update(0);
 	const other = createScenarioLabViewState(view.collection, view.resultService, false);

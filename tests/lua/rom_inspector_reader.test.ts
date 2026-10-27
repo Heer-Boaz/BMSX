@@ -65,7 +65,7 @@ function imageSnapshot(): RomInspectorSnapshot {
 test('ROM catalog commands dispatch from the actual focused list and after filter Enter', t => {
 	configureFontVariant('tiny');
 	const input = new RomInspectorInput(imageSnapshot()), surfaces = new WorkbenchSurfaceService();
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('ROM catalog command owner'), getBounds: () => area,
 		getClip: () => area, isVisible: () => true, draw() {} });
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
@@ -119,7 +119,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 	origin.bindKeyboard(() => {});
 	const owner = surfaces.attach({ role: 'content', captureScope: origin.scope.surfaceScope, getBounds: () => input.layout,
 		getClip: () => input.layout, isVisible: () => true, draw() {} });
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	const popup: WorkbenchSurface = surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, lifetimeOwner: owner, captureScope: quickInput.pointerScope,
 		getBounds: () => quickInput.layout.bounds, getClip: () => area, isVisible: () => quickInput.visible, draw() {} });
 	const unbind = inputFocus.bindScopeAdmission(scope => {
@@ -164,7 +164,9 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		assert.ok(f.input.readerWindow.bounds.right > f.input.layout.right, 'reading width comes from the root workspace, not the minimum catalog');
 		assert.equal(f.draw().bitmaps, 1); assert.equal(f.reader.inspector.visible, false);
 		f.choose('Properties'); const info = f.draw();
-		assert.equal(info.bitmaps, 0); assert.ok(info.glyphs.some(glyph => glyph.items === 'Name'));
+		assert.equal(info.bitmaps, 0); assert.equal(f.reader.inspector.visible, true);
+		assert.deepEqual(f.reader.inspector.model.rows.map(row => row.element), f.input.reader.properties,
+			'the reader binds the complete captured property document, not an incidental heading');
 		assert.equal(f.reader.inspector.chrome, 'client'); assert.equal(f.reader.inspector.actionBar.items.some(item => item.visible), false);
 		f.choose('Metadata'); const bytes = f.draw(), range = f.input.reader.selectedRange!;
 		assert.equal(bytes.bitmaps, 0); assert.equal(f.reader.inspector.visible, false);
@@ -184,7 +186,7 @@ test('Hold and Follow bind exact shown identities, including an empty catalog, a
 	f.reader.execute('romInspector.source'); assert.equal(f.opened[1][0], f.group);
 	assert.equal(f.opened[1][1], f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'b.lua' }));
 	f.input.model.filter = 'no matching asset'; f.input.model.project(); f.reader.update();
-	assert.equal(f.input.reader.subject, undefined); assert.ok(f.draw().glyphs.some(glyph => glyph.items === 'No entry selected'));
+	assert.equal(f.input.reader.subject, undefined); assert.equal(f.draw().bitmaps, 0);
 	f.reader.window.hide(); f.input.model.filter = ''; f.input.model.project(); f.reader.update();
 	assert.equal(f.input.reader.subject, undefined, 'a closed reader must not follow the catalog');
 	f.reader.show(); assert.equal(f.input.reader.subject, f.input.model.selection);

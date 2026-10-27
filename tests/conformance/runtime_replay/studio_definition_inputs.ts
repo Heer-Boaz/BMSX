@@ -79,7 +79,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	const bar = ide.editor.editorParts.activeGroup.tabStrip.scrollbar;
 	const focus = inputFocus.target;
 	const version = model.version;
-	check(bar.isVisible() && editorViewState.tabBarTotalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
+	check(bar.isVisible() && ide.editor.editorParts.activeGroup.tabStrip.layoutState.totalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
 		'A04: independent definition tabs use one bounded row, not the entire editor viewport');
 	test.movePointer(ide.editor.editorParts.activeGroup.tabStrip.layoutState.bounds); await frame();
 	test.remote.apply([{ type: 'wheel', deltaY: -100 }]); await frame();

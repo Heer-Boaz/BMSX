@@ -372,3 +372,19 @@ test('retirement detaches lookup, presentation and lifetime memberships before n
 	assert.equal(surfaces.hitTest(50, 50), null);
 	assert.equal(retained.retired, true);
 });
+
+test('physical ancestor clipping withdraws contained input without retiring an independently promoted popup', () => {
+	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
+	const clip = { ...extent };
+	const owner = surfaces.attach({ ...controller('owner', painted), role: 'content', getClip: () => clip });
+	const contained = surfaces.attach({ ...controller('contained', painted, firstWindow), role: 'content',
+		presentationParent: owner, lifetimeOwner: owner });
+	const popup = surfaces.attach({ ...controller('popup', painted, secondWindow), role: 'transient',
+		outsidePress: 'consume', presentationParent: null, lifetimeOwner: owner });
+	assert.equal(surfaces.isAdmitted(contained), true);
+	clip.bottom = clip.top; surfaces.changed();
+	assert.equal(owner.visible, true); assert.equal(contained.visible, true);
+	assert.equal(surfaces.isAdmitted(owner), false); assert.equal(surfaces.isAdmitted(contained), false);
+	assert.equal(popup.retired, false); assert.equal(surfaces.isAdmitted(popup), true);
+	owner.dispose(); assert.equal(popup.retired, true); surfaces.dispose();
+});

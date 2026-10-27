@@ -58,14 +58,7 @@ function fixture(t: TestContext) {
 	const layout = () => {
 		root.right = editorViewState.viewportWidth; root.bottom = editorViewState.viewportHeight;
 		layoutTopBar(context, menubar.expanded);
-		group.tabStrip.layout({ left: editorChromeState.menuBarHeight === 0 ? editorChromeState.menuButtonBounds.right : 0,
-			top: editorChromeState.menuBarHeight, right: editorViewState.viewportWidth, bottom: 0 }, {
-			font: editorViewState.font.renderFont(), tabBarHeight: editorViewState.tabBarHeight,
-			charAdvance: editorViewState.charAdvance, measureText: context.measureText,
-			measureTextRange: (text, start, end) => editorViewState.font.measure(text.slice(start, end)),
-		});
-		editorViewState.tabBarTotalHeight = group.tabStrip.layoutState.totalHeight;
-		refreshWorkbenchLayout(); menubar.update(); popup.update();
+		refreshWorkbenchLayout(); group.layout(getWorkbenchEditorBounds(), getWorkbenchEditorBounds()); menubar.update(); popup.update();
 		if (popup.visible) popup.model.layout(editorViewState.viewportWidth, editorViewState.viewportHeight, context.lineHeight,
 			editorViewState.font.renderFont(), context.measureText);
 	};
@@ -99,18 +92,18 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Menu is one acc
 	const menu = editorChromeState.menuButtonBounds, button = { ...menu };
 	assert.equal(f.group.model.tabs.length, 0);
 	assert.equal(editorChromeState.menuBarHeight, 0, 'ordinary workbench layout has no permanent menu row');
-	assert.equal(f.group.tabStrip.layoutState.bounds.top, 0);
+	assert.equal(f.group.tabStrip.layoutState.bounds.top, getWorkbenchEditorBounds().top);
 	assert.ok(menu.right > menu.left && menu.bottom > menu.top);
-	assert.ok(menu.bottom <= f.group.tabStrip.layoutState.bounds.bottom);
-	assert.ok(f.group.tabStrip.layoutState.viewportBounds.left >= menu.right, 'even the empty tab viewport excludes the Menu control');
+	assert.ok(menu.bottom <= f.group.tabStrip.layoutState.bounds.top, 'shell navigation is outside the editor group');
+	assert.equal(f.group.tabStrip.layoutState.viewportBounds.left, getWorkbenchEditorBounds().left);
 	const body = getWorkbenchEditorBounds(), before = { ...body };
 	const tab = new GameViewInput(); f.group.model.add(tab); f.group.model.activate(tab); f.layout();
 	const groupRevision = f.group.model.revision, tabIntent = f.group.model.activeTab;
 	f.menubar.toggleFocus(); f.layout();
 	assert.equal(f.menubar.expanded, true); assert.ok(editorChromeState.menuBarHeight > 0);
-	assert.equal(f.group.tabStrip.layoutState.bounds.top, editorChromeState.menuBarHeight);
+	assert.equal(f.group.tabStrip.layoutState.bounds.top, getWorkbenchEditorBounds().top);
 	assert.deepEqual(menu, button, 'the Menu target stays at its root-chrome anchor as the real category part expands');
-	assert.equal(getWorkbenchEditorBounds(), body); assert.equal(body.top, before.top + editorChromeState.menuBarHeight);
+	assert.equal(getWorkbenchEditorBounds(), body); assert.equal(body.top, topMargin());
 	assert.equal(f.group.model.activeTab, tabIntent); assert.equal(f.group.model.revision, groupRevision);
 	f.focus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); f.layout();
 	assert.equal(editorChromeState.menuBarHeight, 0); assert.deepEqual(body, before); assert.equal(f.focus.target, f.origin);
@@ -270,28 +263,28 @@ test('feedback expiry and font wrapping publish parent bounds before full-width 
 });
 
 test('the root layout publishes viewport, font and status changes into one borrowed work-area rectangle', t => {
-	fixture(t); refreshWorkbenchLayout();
+	const f = fixture(t); f.layout();
 	const area = getWorkbenchWorkArea(), tinyTop = area.top;
 	assert.equal(area.left, 0); assert.equal(area.right, 384);
 	assert.equal(area.bottom, 288 - editorViewState.baseBottomMargin);
 	editorViewState.viewportWidth = 128; editorViewState.viewportHeight = 240;
-	refreshWorkbenchLayout();
+	f.layout();
 	assert.equal(getWorkbenchWorkArea(), area);
 	assert.equal(area.right, 128); assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin);
 	showEditorMessage('This actual status message changes the available root work area when it wraps across lines.', 'info', 1);
-	refreshWorkbenchLayout();
+	f.layout();
 	assert.equal(getWorkbenchWorkArea(), area); assert.ok(getStatusMessageLines().length > 1);
 	assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin - getStatusMessageLines().length * editorViewState.lineHeight - 4);
 	const tinyBottom = area.bottom;
-	configureFontVariant('msx'); refreshWorkbenchLayout();
+	configureFontVariant('msx'); f.layout();
 	assert.equal(getWorkbenchWorkArea(), area);
 	assert.equal(area.top, topMargin()); assert.ok(area.top > tinyTop);
 	assert.ok(area.bottom < tinyBottom, 'the same borrowed object exposes the larger actual font/status budget');
 	assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin - getStatusMessageLines().length * editorViewState.lineHeight - 4);
-	updateEditorMessage(1); refreshWorkbenchLayout();
+	updateEditorMessage(1); f.layout();
 	assert.equal(getWorkbenchWorkArea(), area); assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	configureFontVariant('tiny'); refreshWorkbenchLayout();
+	configureFontVariant('tiny'); f.layout();
 	assert.equal(getWorkbenchWorkArea(), area);
 	assert.equal(area.top, tinyTop); assert.equal(area.right, 384); assert.equal(area.bottom, 288 - editorViewState.baseBottomMargin);
 });

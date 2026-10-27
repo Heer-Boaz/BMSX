@@ -25,6 +25,7 @@ import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { WORKBENCH_MENUS } from '../../ide/workbench/ui/menu/registry';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/configuration';
 
 const PRIMARY = PointerButton.Primary;
 const ACTION_MENUS = ['aem.title', 'scenarioLab.title', 'scenarioLab.target'] as const;
@@ -83,6 +84,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const menu of ACTION_MENUS)
 }
 
 function fixture(t: TestContext, menuId: WorkbenchActionMenuId = 'aem.title') {
+	configureFontVariant('tiny'); applyViewportSize({ width: 384, height: 288 });
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const parent = focus.createTarget(); parent.bindKeyboard(() => {});
 	const content = focus.createTarget(parent); content.bindKeyboard(() => {}); content.focus();
@@ -119,7 +121,6 @@ function fixture(t: TestContext, menuId: WorkbenchActionMenuId = 'aem.title') {
 		if (keyboard) { bar.focusTarget.focus(); press('End'); press('Enter'); }
 		else pointer(state.items.length, PRIMARY, PRIMARY, PRIMARY);
 		assert.equal(menu.visible, true); assert.equal(menu.invocationOrigin, bar.focusTarget);
-		menu.model.layout(384, 288, 8, font, measure); menu.update();
 	};
 	t.after(() => { bar.dispose(); menu.dispose(); focus.setTarget(null); });
 	return { focus, capture, parent, content, unrelated, menu, state, font, bar, calls, layout, key, press, pointer, open };
@@ -201,6 +202,7 @@ test('one More merges the overflowed primary suffix and authored secondary group
 });
 
 for (const replacement of ['origin', 'other', 'none', 'menu'] as const) test(`valid departing drafts invalidate the popup before focus admission and preserve ${replacement} focus intent`, t => {
+	configureFontVariant('tiny'); applyViewportSize({ width: 384, height: 288 });
 	const capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const content = inputFocus.createTarget(); content.bindKeyboard(() => {});
 	const other = inputFocus.createTarget(); other.bindKeyboard(() => {});

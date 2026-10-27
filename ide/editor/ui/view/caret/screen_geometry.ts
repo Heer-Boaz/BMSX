@@ -19,6 +19,8 @@ export function resolveCursorScreenInfo(code: CodeEditorControl, viewport: CodeA
 	const x = viewport.textLeft - slice.pixelOffset + entry.advancePrefix[display];
 	const width = layout.cursorWidth(entry, display);
 	if (x + width <= viewport.textLeft || x >= viewport.contentRight) return null;
+	const clip = code.geometry.presentedBounds;
+	if (x + width <= clip.left || x >= clip.right || y + code.lineHeight <= clip.top || y >= clip.bottom) return null;
 	const text = editorRuntimeState.uppercaseDisplay ? entry.hi.upperText : entry.hi.text;
 	code.scratch.cursorScreenInfo.row = view.cursorRow; code.scratch.cursorScreenInfo.column = view.cursorColumn;
 	code.scratch.cursorScreenInfo.x = x; code.scratch.cursorScreenInfo.y = y;
@@ -35,10 +37,11 @@ export function resolveNativeCodeCaret(code: CodeEditorControl): typeof code.nat
 	if (info === null) {
 		caret.x = 0; caret.y = 0; caret.width = 0; caret.height = 0;
 	} else {
-		caret.x = Math.max(viewport.textLeft, info.x);
-		caret.y = Math.max(viewport.codeTop, info.y);
-		caret.width = Math.min(viewport.contentRight, info.x + info.width) - caret.x;
-		caret.height = Math.min(viewport.contentBottom, info.y + info.height) - caret.y;
+		const clip = code.geometry.presentedBounds;
+		caret.x = Math.max(viewport.textLeft, clip.left, info.x);
+		caret.y = Math.max(viewport.codeTop, clip.top, info.y);
+		caret.width = Math.min(viewport.contentRight, clip.right, info.x + info.width) - caret.x;
+		caret.height = Math.min(viewport.contentBottom, clip.bottom, info.y + info.height) - caret.y;
 	}
 	return caret;
 }

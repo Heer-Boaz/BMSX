@@ -107,8 +107,9 @@ export class ContextMenuController implements PointerCaptureTarget {
 		this.pointerX = x;
 		this.pointerY = y;
 		this.pointerKnown = !options.selectFirst;
-		// The source session owns its presentation attachment. It must already
-		// exist when the focus owner evaluates the popup's surface admission.
+		layoutContextMenu(this);
+		// The source session publishes geometry and attaches its presentation before
+		// the focus owner evaluates the popup's physical surface admission.
 		this.onDidChangeVisibility(session.presentation);
 		if (this.session !== session) return disposables;
 		options.onWillShow?.(disposables);

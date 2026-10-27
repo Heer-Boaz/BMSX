@@ -122,14 +122,14 @@ export class RenameController {
 		else this.dismiss();
 	}
 
-	public layoutField(bounds: Readonly<RectBounds>): void {
+	public layoutField(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds> = bounds): void {
 		const count = this.matches.length, expression = this.expressionLabel;
 		if (count !== this.layoutCount || expression !== this.layoutExpression) {
 			this.layoutCount = count; this.layoutExpression = expression;
 			const refs = count === 1 ? '1 REF' : `${count} REFS`;
 			this.layoutDetail = expression.length > 0 ? `${expression} · ${refs}` : refs;
 		}
-		this.fieldLayout.layout(bounds, 'RENAME', this.layoutDetail, constants.SEARCH_BAR_MARGIN_Y);
+		this.fieldLayout.layout(bounds, 'RENAME', this.layoutDetail, constants.SEARCH_BAR_MARGIN_Y, clip);
 	}
 
 	public handleInput(playerInput: KeyInputEvent): void {

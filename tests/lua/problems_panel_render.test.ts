@@ -157,7 +157,7 @@ test('Problems padding and header cannot hover clipped row geometry', t => {
 	const controller = new ProblemsPanelController();
 	controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(-1);
 	t.after(() => controller.setFocused(false));
-	const parts = createTestEditorParts(t), group = parts.main.group;
+	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	const bounds = { left: 8, top: 8, right: 112, bottom: 38 };
 	const layout = controller.prepareLayout(bounds);
 	const snapshot: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 12, viewportY: 0,

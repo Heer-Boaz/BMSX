@@ -72,8 +72,8 @@ async function fixture(t: TestContext) {
 	const key = (code: string, modifiers = KeyModifier.none) => {
 		editor.dispatchKey(new KeyInputEvent(code, modifiers)); editor.dispatchKey(new KeyInputEvent(code, modifiers, false, false)); update();
 	};
-	controller.open(firstPart.group); update();
-	const input = firstPart.group.model.activeTab;
+	controller.open(firstPart.activeGroup); update();
+	const input = firstPart.activeGroup.model.activeTab;
 	assert.ok(input instanceof ScenarioLabInput);
 	const module = runs.collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], SCENARIO_FIXTURE_TEST_SOURCE_PATH)!;
 	const select = (name: string) => {
@@ -90,7 +90,7 @@ async function fixture(t: TestContext) {
 
 test('Scenario move retains actual results, selection and reading state after the former Part closes', async t => {
 	const f = await fixture(t); f.select('passes');
-	f.editor.commands.execute('scenarioLab.run', f.firstPart.group.panes.activePane!.commandTarget);
+	f.editor.commands.execute('scenarioLab.run', f.firstPart.activeGroup.panes.activePane!.commandTarget);
 	const run = f.runs.results.liveRun!;
 	await f.until(() => !f.runs.active);
 	assert.equal(run.state, 'passed', JSON.stringify(run.items[0].failures)); assert.equal(run.items[0].logs.length, 32);
@@ -98,50 +98,50 @@ test('Scenario move retains actual results, selection and reading state after th
 	toggleScenarioLabResultRow(view, view.resultPane.rows.findIndex(row => row.kind === 'result'));
 	selectScenarioLabResultRow(view, view.resultPane.rows.findIndex(row => row.kind === 'log'));
 	view.testPane.scroll = 2.25; view.resultPane.scroll = 3.5; view.split.resize(0.6);
-	f.firstPart.group.panes.activePane!.focus(); f.update();
+	f.firstPart.activeGroup.panes.activePane!.focus(); f.update();
 	const tests = captureScenarioLabTestView(view), selected = view.resultPane.rows[view.resultPane.selectionIndex];
 	const resultScroll = view.resultPane.scroll, split = view.split.ratio, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	let disposed = 0; f.input.onWillDispose(() => { disposed++; });
-	assert.equal(f.parts.moveEditor(f.firstPart, f.input, f.secondPart, f.editor.editorClose), true); f.update();
-	assert.ok(f.secondPart.group.model.activeTab === f.input && f.secondPart.group.panes.activePane!.input === f.input);
-	assert.ok(f.parts.findGroup(f.input) === f.secondPart.group && f.controller.resolveInput() === f.input);
+	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.ok(f.secondPart.activeGroup.model.activeTab === f.input && f.secondPart.activeGroup.panes.activePane!.input === f.input);
+	assert.ok(f.parts.findGroup(f.input) === f.secondPart.activeGroup && f.controller.resolveInput() === f.input);
 	assert.deepEqual(captureScenarioLabTestView(view), tests);
 	assert.equal(view.resultPane.rows[view.resultPane.selectionIndex], selected);
 	assert.equal(view.resultPane.scroll, resultScroll); assert.equal(view.split.ratio, split);
 	assert.equal(view.resultService.runs[0], run); assert.equal(view.resultService.runs[0].items[0], run.items[0]);
 	assert.equal(await f.parts.close(f.firstPart), true);
-	assert.equal(disposed, 0); assert.ok(f.parts.findGroup(f.input) === f.secondPart.group);
+	assert.equal(disposed, 0); assert.ok(f.parts.findGroup(f.input) === f.secondPart.activeGroup);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
 test('Scenario reveal from Main restores its minimized actual owner without rebinding an admitted pane or restoring a second singleton', async t => {
 	const f = await fixture(t); f.select('passes');
-	f.editor.commands.execute('scenarioLab.run', f.firstPart.group.panes.activePane!.commandTarget);
+	f.editor.commands.execute('scenarioLab.run', f.firstPart.activeGroup.panes.activePane!.commandTarget);
 	const run = f.runs.results.liveRun!; await f.until(() => !f.runs.active);
-	assert.equal(f.parts.moveEditor(f.firstPart, f.input, f.secondPart, f.editor.editorClose), true); f.update();
-	const pane = f.secondPart.group.panes.activePane!, generation = f.secondPart.group.panes.openGeneration;
+	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	const pane = f.secondPart.activeGroup.panes.activePane!, generation = f.secondPart.activeGroup.panes.openGeneration;
 	f.parts.minimize(f.secondPart); f.parts.main.focus();
-	f.controller.revealRun(run, f.parts.main.group); f.update();
+	f.controller.revealRun(run, f.parts.main.activeGroup); f.update();
 	assert.equal(f.secondPart.window!.model.minimized, false);
-	assert.ok(f.parts.activePart === f.secondPart && f.parts.findGroup(f.input) === f.secondPart.group);
-	assert.ok(f.secondPart.group.panes.activePane === pane); assert.equal(f.secondPart.group.panes.openGeneration, generation);
-	assert.equal(f.parts.main.group.model.findById(f.input.id), undefined);
+	assert.ok(f.parts.activePart === f.secondPart && f.parts.findGroup(f.input) === f.secondPart.activeGroup);
+	assert.ok(f.secondPart.activeGroup.panes.activePane === pane); assert.equal(f.secondPart.activeGroup.panes.openGeneration, generation);
+	assert.equal(f.parts.main.activeGroup.model.findById(f.input.id), undefined);
 	f.select('passes');
 	f.editor.commands.execute('scenarioLab.runWithCompanion', pane.commandTarget);
 	assert.equal(f.secondPart.quickInput.visible, true);
-	f.parts.main.focus(); f.controller.open(f.parts.main.group);
+	f.parts.main.focus(); f.controller.open(f.parts.main.activeGroup);
 	assert.equal(f.secondPart.quickInput.visible, true, 'revealing an already attached input retains its admitted local dialog');
 	assert.ok(inputFocus.target === f.secondPart.quickInput.field.focusTarget);
-	assert.equal(f.secondPart.group.panes.openGeneration, generation);
+	assert.equal(f.secondPart.activeGroup.panes.openGeneration, generation);
 	f.key('Escape');
 	const state = f.parts.serialize(f.editor.editorInputSerializers);
 	const restored = await fixture(t); restored.parts.clear();
 	await restored.parts.restore(state, restored.editor.editorInputSerializers);
 	const singleton = restored.controller.resolveInput(), owner = restored.parts.findGroup(singleton)!;
-	assert.notEqual(owner, restored.parts.main.group);
+	assert.notEqual(owner, restored.parts.main.activeGroup);
 	assert.equal(restored.parts.groups.filter(group => group.model.tabs.includes(singleton)).length, 1);
 	assert.ok(owner.model.activeTab === singleton && owner.panes.activePane instanceof ScenarioLabEditorPane);
-	assert.equal(restored.parts.main.group.model.findById(singleton.id), undefined);
+	assert.equal(restored.parts.main.activeGroup.model.findById(singleton.id), undefined);
 });
 
 test('Scenario companion attempts retire with the old attachment and Source and new actions belong to the destination', async t => {
@@ -154,7 +154,7 @@ test('Scenario companion attempts retire with the old attachment and Source and 
 		buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 	f.editor.dispatchPointer(press);
-	assert.equal(f.parts.moveEditor(f.firstPart, f.input, f.secondPart, f.editor.editorClose), true); f.update();
+	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
 	assert.equal(f.firstPart.quickInput.visible, false);
 	f.editor.dispatchPointer({ ...press, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary, timestamp: 1 });
 	assert.equal(f.runs.results.runs.length, 0); assert.equal(f.runs.active, false);
@@ -163,31 +163,31 @@ test('Scenario companion attempts retire with the old attachment and Source and 
 	assert.equal(f.editor.commands.isEnabled('scenarioLab.details', origin), false);
 	f.editor.commands.execute('scenarioLab.runWithCompanion', origin);
 	assert.equal(f.firstPart.quickInput.visible, false); assert.equal(f.secondPart.quickInput.visible, false);
-	const pane = f.secondPart.group.panes.activePane!;
+	const pane = f.secondPart.activeGroup.panes.activePane!;
 	f.editor.commands.execute('scenarioLab.runWithCompanion', pane.commandTarget);
 	assert.equal(f.secondPart.quickInput.visible, true); assert.equal(f.firstPart.quickInput.visible, false);
 	f.key('Escape');
 	f.editor.commands.execute('scenarioLab.run', pane.commandTarget);
 	const run = f.runs.results.liveRun!; await f.until(() => !f.runs.active);
 	assert.equal(run.state, 'failed'); assert.equal(run.items[0].test, item);
-	f.controller.open(f.parts.main.group); f.select('fails');
+	f.controller.open(f.parts.main.activeGroup); f.select('fails');
 	f.key('Enter'); await setImmediate(); f.update();
-	const source = f.secondPart.group.model.activeTab;
+	const source = f.secondPart.activeGroup.model.activeTab;
 	assert.ok(source?.kind === 'code_editor'); assert.deepEqual(source.workingCopy.resource, f.sources.catalog.resolveResource(item.resource)!);
-	assert.ok(f.parts.activePart === f.secondPart && f.parts.findGroup(f.input) === f.secondPart.group);
-	assert.equal(f.parts.main.group.model.findById(f.input.id), undefined);
+	assert.ok(f.parts.activePart === f.secondPart && f.parts.findGroup(f.input) === f.secondPart.activeGroup);
+	assert.equal(f.parts.main.activeGroup.model.findById(f.input.id), undefined);
 });
 
 test('an isolated running Scenario target survives pane transfer and former-window retirement unchanged', async t => {
 	const f = await fixture(t); f.select('waits');
-	f.editor.commands.execute('scenarioLab.run', f.firstPart.group.panes.activePane!.commandTarget);
+	f.editor.commands.execute('scenarioLab.run', f.firstPart.activeGroup.panes.activePane!.commandTarget);
 	const run = f.runs.results.liveRun!;
 	await f.until(() => run.items[0].logs.length !== 0);
 	const session = f.runs.session!, execution = session.execution!, target = execution.target;
 	assert.ok(target.runtime !== f.host.runtime && execution.active);
 	assert.equal(f.targets.length, 1); assert.ok(f.targets[0] === target);
 	const targetCycles = target.runtime.machine.scheduler.nowCycles, authoringCycles = f.host.runtime.machine.scheduler.nowCycles;
-	assert.equal(f.parts.moveEditor(f.firstPart, f.input, f.secondPart, f.editor.editorClose), true); f.update();
+	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
 	assert.equal(await f.parts.close(f.firstPart), true);
 	assert.ok(f.runs.session === session && session.execution === execution && execution.target === target);
 	assert.equal(f.targets.length, 1, 'transfer does not construct a replacement test machine');
@@ -196,48 +196,48 @@ test('an isolated running Scenario target survives pane transfer and former-wind
 	f.runs.advance();
 	assert.ok(target.runtime.machine.scheduler.nowCycles > targetCycles, 'only the same isolated execution advances after transfer');
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, authoringCycles);
-	f.editor.commands.execute('scenarioLab.cancel', f.secondPart.group.panes.activePane!.commandTarget);
+	f.editor.commands.execute('scenarioLab.cancel', f.secondPart.activeGroup.panes.activePane!.commandTarget);
 	await f.until(() => !f.runs.active); assert.equal(run.state, 'cancelled');
 });
 
 test('Scenario reveal cannot override an unrelated editor activation published while its pane is opening', async t => {
 	const f = await fixture(t), replacement = new GameViewInput();
-	f.firstPart.group.openEditor(new GameViewInput());
-	const unbind = f.firstPart.group.panes.onWillShowEditor(() => {
-		unbind(); f.secondPart.group.openEditor(replacement);
+	f.firstPart.activeGroup.openEditor(new GameViewInput());
+	const unbind = f.firstPart.activeGroup.panes.onWillShowEditor(() => {
+		unbind(); f.secondPart.activeGroup.openEditor(replacement);
 	});
 	t.after(unbind);
-	f.controller.open(f.parts.main.group);
-	assert.ok(f.firstPart.group.model.activeTab === f.input, 'the requested input was attached before its owner published the newer activation');
-	assert.ok(f.secondPart.group.model.activeTab === replacement);
+	f.controller.open(f.parts.main.activeGroup);
+	assert.ok(f.firstPart.activeGroup.model.activeTab === f.input, 'the requested input was attached before its owner published the newer activation');
+	assert.ok(f.secondPart.activeGroup.model.activeTab === replacement);
 	assert.ok(f.parts.activePart === f.secondPart, 'the superseded reveal cannot reactivate its former Part');
-	assert.ok(inputFocus.target === f.secondPart.group.panes.activePane!.commandTarget);
+	assert.ok(inputFocus.target === f.secondPart.activeGroup.panes.activePane!.commandTarget);
 });
 
 test('Scenario reveal finishes only the attachment that survived its owning pane opening callbacks', async t => {
 	const f = await fixture(t);
-	f.firstPart.group.openEditor(new GameViewInput());
-	const unbind = f.firstPart.group.panes.onWillShowEditor(() => {
-		unbind(); assert.equal(f.parts.moveEditor(f.firstPart, f.input, f.secondPart, f.editor.editorClose), true);
+	f.firstPart.activeGroup.openEditor(new GameViewInput());
+	const unbind = f.firstPart.activeGroup.panes.onWillShowEditor(() => {
+		unbind(); assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true);
 	});
 	t.after(unbind);
-	assert.doesNotThrow(() => f.controller.open(f.parts.main.group));
-	assert.ok(f.parts.findGroup(f.input) === f.secondPart.group);
-	assert.ok(f.parts.activePart === f.secondPart && f.secondPart.group.panes.activePane!.input === f.input);
-	assert.ok(inputFocus.target === f.secondPart.group.panes.activePane!.commandTarget);
+	assert.doesNotThrow(() => f.controller.open(f.parts.main.activeGroup));
+	assert.ok(f.parts.findGroup(f.input) === f.secondPart.activeGroup);
+	assert.ok(f.parts.activePart === f.secondPart && f.secondPart.activeGroup.panes.activePane!.input === f.input);
+	assert.ok(inputFocus.target === f.secondPart.activeGroup.panes.activePane!.commandTarget);
 });
 
 test('Scenario reveal cannot overwrite a newer model selection before attaching its pane', async t => {
 	const f = await fixture(t), replacement = new GameViewInput();
-	f.firstPart.group.openEditor(replacement);
-	const unbind = f.firstPart.group.model.onDidChange(() => {
-		if (f.firstPart.group.model.activeTab !== f.input) return;
-		unbind(); f.firstPart.group.activate(replacement.id); f.secondPart.focus();
+	f.firstPart.activeGroup.openEditor(replacement);
+	const unbind = f.firstPart.activeGroup.model.onDidChange(() => {
+		if (f.firstPart.activeGroup.model.activeTab !== f.input) return;
+		unbind(); f.firstPart.activeGroup.activate(replacement.id); f.secondPart.focus();
 	});
 	t.after(unbind);
-	assert.doesNotThrow(() => f.controller.open(f.parts.main.group));
-	assert.ok(f.firstPart.group.model.activeTab === replacement);
-	assert.ok(f.firstPart.group.panes.activePane!.input === replacement, 'the newer model selection owns the actual pane too');
-	assert.ok(f.parts.findGroup(f.input) === f.firstPart.group, 'superseding a reveal does not retire its retained input');
-	assert.ok(f.parts.activePart === f.secondPart && inputFocus.target === f.secondPart.focusTarget);
+	assert.doesNotThrow(() => f.controller.open(f.parts.main.activeGroup));
+	assert.ok(f.firstPart.activeGroup.model.activeTab === replacement);
+	assert.ok(f.firstPart.activeGroup.panes.activePane!.input === replacement, 'the newer model selection owns the actual pane too');
+	assert.ok(f.parts.findGroup(f.input) === f.firstPart.activeGroup, 'superseding a reveal does not retire its retained input');
+	assert.ok(f.parts.activePart === f.secondPart && inputFocus.target === f.secondPart.activeGroup.focusTarget);
 });

@@ -11,12 +11,11 @@ import { WorkbenchFloatingWindow, findWorkbenchWindow } from '../../ide/workbenc
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-test('actual Problems and coverage-header activation reveal the main frontend without retiring the covering document', t => {
+test('workspace Problems and coverage-header focus retain the active editor family and covering document', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(73); f.update();
 	t.after(() => { problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); });
 	f.secondPart.window!.setPlacement('maximized'); f.update();
-	const owner = parts.main.surface.presentationParent!;
 	const placement = { ...f.secondPart.window!.model.requestedBounds };
 	const source = f.secondInput.workingCopy.buffer.getText();
 	for (const header of [false, true]) {
@@ -27,11 +26,11 @@ test('actual Problems and coverage-header activation reveal the main frontend wi
 		assert.equal(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, f.secondPart.surface.captureScope), true);
 		if (header) f.editor.commands.execute('problems.coverage', problemsPanel.focusTarget);
 		else problemsPanel.setFocused(true);
-		assert.ok(parts.activePart === parts.main);
+		assert.ok(parts.activePart === f.secondPart);
 		assert.equal(problemsPanel.isFocused, true);
-		assert.equal(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, owner.captureScope), true,
-			'giving a main frontend control keyboard focus must reveal that same foreground family');
-		assert.ok(f.secondPart.group.model.activeTab === f.secondInput);
+		assert.equal(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, f.secondPart.surface.captureScope), true,
+			'workspace chrome focus does not silently reorder the editor-host band');
+		assert.ok(f.secondPart.activeGroup.model.activeTab === f.secondInput);
 		assert.equal(f.secondPart.retired, false); assert.equal(f.secondPart.window!.model.placement, 'maximized');
 		assert.deepEqual(f.secondPart.window!.model.requestedBounds, placement);
 	}

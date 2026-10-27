@@ -29,7 +29,7 @@ function fixture(t: TestContext) {
 // inside the editor's published client, not the physical canvas or Files pane.
 for (const kind of ['game_view', 'terminal'] as const) test(`${kind} fits its image to the current client origin across Files and font changes`, t => {
 	const f = fixture(t), input = kind === 'game_view' ? new GameViewInput() : new TerminalInput();
-	f.editor.editorParts.main.group.openEditor(input);
+	f.editor.editorParts.main.activeGroup.openEditor(input);
 	for (const font of ['tiny', 'msx'] as const) {
 		f.editor.setFontVariant(font);
 		for (const filesVisible of [false, true, false]) {

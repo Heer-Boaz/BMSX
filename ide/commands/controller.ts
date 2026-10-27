@@ -43,11 +43,12 @@ import type { Blua32SourceImage } from '../runtime/sources';
 import { getTextFileRuntimeSourceInstallations } from '../workbench/services/working_copy/runtime_source_status';
 import { showMoveEditor, showOpenWindows } from '../workbench/services/editor/open_windows';
 import { findWorkbenchWindow } from '../workbench/ui/window/control';
+import { showGroupOpenEditors } from '../workbench/services/editor/open_editors';
 
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
-	'tabs.next', 'tabs.previous', 'window.copyEditor', 'window.moveEditor',
+	'tabs.next', 'tabs.previous', 'window.copyEditor', 'window.moveEditor', 'group.splitRight', 'group.splitDown',
 	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
 	'scenarioLab.play', 'play.reset', 'play.source',
 	'scenarioLab.runWithCompanion', 'scenarioLab.debugWithCompanion', 'scenarioLab.playWithCompanion',
@@ -94,7 +95,7 @@ export class IdeCommandController {
 		if (originGroup === null) return;
 		const originPart = this.editor.editorParts.partForTarget(target);
 		if (originPart === null) return;
-		const group = originGroup ?? originPart?.group ?? this.editor.editorParts.activeGroup;
+		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		const part = this.editor.editorParts.partForGroup(group);
 		const selected = this.runTargets.selected;
 		const runtimeContext = target?.scope.runtimeOwner?.runtime;
@@ -108,6 +109,7 @@ export class IdeCommandController {
 			if (edit !== undefined) {
 				const attachment = group.panes.openGeneration;
 				if (!edit.commit() || attachment !== group.panes.openGeneration) return;
+				if (inputFocus.target !== null && findEditorGroup(inputFocus.target) !== group) return;
 			}
 		}
 		target?.activate();
@@ -121,16 +123,28 @@ export class IdeCommandController {
 			case 'window.showAll': showOpenWindows(this.editor.editorParts, this.editor.quickInput); return;
 			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
 			case 'window.newEditor': this.editor.editorParts.createDocument().focus(); return;
+			case 'group.openEditors': showGroupOpenEditors(group, part.quickInput); return;
+			case 'group.splitRight': case 'group.splitDown': {
+				const created = this.editor.editorParts.splitGroup(group, command === 'group.splitRight' ? 'right' : 'down');
+				if (created !== undefined) created.focus();
+				return;
+			}
+			case 'group.focusNext': case 'group.focusPrevious': {
+				const groups = part.groups, index = groups.indexOf(group), direction = command === 'group.focusNext' ? 1 : -1;
+				groups[(index + direction + groups.length) % groups.length].focus();
+				return;
+			}
+			case 'group.maximize': part.arrangement.toggleMaximize(group); group.focus(); return;
 			case 'window.moveEditor': {
 				const input = group.model.activeTab;
-				if (input !== null) showMoveEditor(this.editor.editorParts, this.editor.editorClose, this.editor.quickInput, part, input, target);
+				if (input !== null) showMoveEditor(this.editor.editorParts, this.editor.editorClose, this.editor.quickInput, group, input, target);
 				return;
 			}
 			case 'window.copyEditor': {
 				const input = group.model.activeTab;
 				if (input?.createView === undefined || part.closing) return;
 				const view = input.createView();
-				this.editor.editorParts.createDocument().group.openEditor(view, { pinned: true });
+				this.editor.editorParts.createDocument().activeGroup.openEditor(view, { pinned: true });
 				return;
 			}
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
@@ -166,7 +180,7 @@ export class IdeCommandController {
 			case 'assistant.new':
 			case 'assistant.commands':
 			case 'assistant.stop':
-				this.editor.assistantCommands.execute(command);
+				this.editor.assistantCommands.execute(command, group, part.quickInput);
 				return;
 			case 'aem.testEvent': {
 				const input = group.model.activeTab!;
@@ -253,14 +267,14 @@ export class IdeCommandController {
 				return;
 			}
 			case 'runtime.focusTimeline':
-				if (runtimeContext !== undefined) part.timeline.setContext(runtimeContext);
-				part.timeline.focus(); return;
-			case 'runtime.hideTimeline': part.timeline.hide(); return;
+				if (runtimeContext !== undefined) group.timeline.setContext(runtimeContext);
+				group.timeline.focus(); return;
+			case 'runtime.hideTimeline': group.timeline.hide(); return;
 			case 'runtime.toggleTimeline':
-				if (part.timeline.requested) part.timeline.hide();
+				if (group.timeline.requested) group.timeline.hide();
 				else {
-					if (runtimeContext !== undefined) part.timeline.setContext(runtimeContext);
-					part.timeline.focus();
+					if (runtimeContext !== undefined) group.timeline.setContext(runtimeContext);
+					group.timeline.focus();
 				}
 				return;
 			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
@@ -384,7 +398,7 @@ export class IdeCommandController {
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(focus);
 		if (originPart === null) return false;
-		const group = originGroup ?? originPart?.group ?? this.editor.editorParts.activeGroup;
+		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		const part = this.editor.editorParts.partForGroup(group);
 		const selected = this.runTargets.selected;
 		const local = focus?.scope.runtimeOwner?.runtime?.interaction;
@@ -394,9 +408,12 @@ export class IdeCommandController {
 		switch (command) {
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
+			case 'group.openEditors': return group.model.tabs.length > 0;
+			case 'group.splitRight': case 'group.splitDown': return part.operation === 'none';
+			case 'group.focusNext': case 'group.focusPrevious': case 'group.maximize': return part.operation === 'none' && part.groups.length > 1;
 			case 'window.moveEditor': {
 				const input = group.model.activeTab;
-				return input !== null && this.editor.editorParts.canMoveEditor(part, input, 'new', this.editor.editorClose);
+				return input !== null && this.editor.editorParts.canMoveEditor(group, input, 'new', this.editor.editorClose);
 			}
 			case 'window.copyEditor': return !part.closing && group.model.activeTab?.createView !== undefined;
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
@@ -446,7 +463,7 @@ export class IdeCommandController {
 			case 'assistant.new':
 			case 'assistant.commands':
 			case 'assistant.stop':
-				return this.editor.assistantCommands.isEnabled(command);
+				return this.editor.assistantCommands.isEnabled(command, group);
 			case 'builds.start': return this.editor.builds !== undefined;
 			case 'aem.create': case 'animation.create': case 'animation.createSprite': case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
 			case 'projects.createCartridge': return this.editor.projects !== undefined;
@@ -462,15 +479,15 @@ export class IdeCommandController {
 			case 'tabs.next': case 'tabs.previous': return group.model.tabs.length > 1;
 			case 'tabs.scrollLeft': return group.tabStrip.scrollbar.getScroll() > 0;
 			case 'tabs.scrollRight': return group.tabStrip.scrollbar.getScroll() < group.tabStrip.scrollbar.getMaximumScroll();
-			case 'openEditors': return group.model.tabs.length > 0;
+			case 'openEditors': return true;
 			case 'pause':
 				return selected?.transport.playbackEnabled === true;
 			case 'stepFrame':
 			case 'stepFrameBack':
 				return transport?.available === true && transport.navigation.canStep(command === 'stepFrameBack' ? -1 : 1);
-			case 'runtime.focusTimeline': return this.editor.isActive && (local === undefined ? part.timeline.available : transport?.available === true);
-			case 'runtime.hideTimeline': return this.editor.isActive && part.timeline.canHide;
-			case 'runtime.toggleTimeline': return this.editor.isActive && ((local === undefined ? part.timeline.available : transport?.available === true) || part.timeline.requested);
+			case 'runtime.focusTimeline': return this.editor.isActive && (local === undefined ? group.timeline.available : transport?.available === true);
+			case 'runtime.hideTimeline': return this.editor.isActive && group.timeline.canHide;
+			case 'runtime.toggleTimeline': return this.editor.isActive && ((local === undefined ? group.timeline.available : transport?.available === true) || group.timeline.requested);
 			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
 			case 'runtime.pause': return transport?.playbackEnabled === true;
 			case 'runtime.present':
@@ -553,7 +570,7 @@ export class IdeCommandController {
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(target);
 		if (originPart === null) return false;
-		const group = originGroup ?? originPart?.group ?? this.editor.editorParts.activeGroup;
+		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		const implementation = target?.getCommand(command);
 		if (implementation !== undefined) return implementation.isChecked?.() === true;
 		const part = this.editor.editorParts.partForGroup(group);
@@ -562,7 +579,8 @@ export class IdeCommandController {
 				const window = originWindow === undefined ? part.window : originWindow;
 				return window?.focusTarget.getCommand(command)?.isChecked?.() === true;
 			}
-			case 'runtime.toggleTimeline': return part.timeline.requested;
+			case 'group.maximize': return part.arrangement.maximized === group;
+			case 'runtime.toggleTimeline': return group.timeline.requested;
 			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
 			case 'romInspector.hold': {
 				const input = group.model.activeTab;

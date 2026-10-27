@@ -57,15 +57,6 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 }
 
 export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId, group: EditorGroupView): void {
-	const invokingGroup = group;
-	switch (command) {
-		case 'home': case 'sceneEditor': group = editor.editorParts.main.group; break;
-		case 'animation': case 'romInspector': case 'events': case 'gpuDebugger': case 'gteDebugger':
-		case 'terminal': case 'conversations': case 'assistant': case 'behaviorLens': case 'behaviorLens.preview':
-		case 'behaviorLens.actionEffects': case 'behaviorLens.stateMachines': case 'behaviorLens.behaviorTrees':
-		case 'cartMap': case 'aem': case 'progression': case 'inputBindings':
-			group = editor.editorParts.documentDestination(group); break;
-	}
 	const picker = editor.editorParts.partForGroup(group).quickInput;
 	switch (command) {
 		case 'home': openHome(group, workspaceState.context); return;
@@ -101,7 +92,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'keepEditor':
 			group.model.pin(group.model.activeTab);
 			return;
-		case 'openEditors': showOpenEditors(group, picker); return;
+		case 'openEditors': showOpenEditors(editor.editorParts, editor.quickInput); return;
 		case 'behaviorLens.actionEffects':
 			editor.behaviorLens.open(group, picker, 'action_effect');
 			return;
@@ -119,7 +110,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			editor.scenarioLab.open(group);
 			return;
 		case 'sceneEditor':
-			openSourceView(invokingGroup, sources.catalog, picker, {
+			openSourceView(group, sources.catalog, picker, {
 				title: 'SCENE EDITOR', accepts: hasSceneSourceDefinitions,
 				openResource: resource => editor.sceneEditor.openResource(group, resource),
 			});

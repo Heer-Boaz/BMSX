@@ -30,7 +30,7 @@ function diagnostic(model: TextModel, row = 13, column = 5): EditorDiagnostic {
 }
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) {
 	configureFontVariant(variant);
-	const controller = new ProblemsPanelController(), surfaces = new WorkbenchSurfaceService(), parts = createTestEditorParts(t), group = parts.main.group;
+	const controller = new ProblemsPanelController(), surfaces = new WorkbenchSurfaceService(), parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	const attachments = t.mock.method(surfaces, 'attach');
 	const area = { left: 0, top: 24, right: 384, bottom: 274 }, bounds = { left: 0, top: 160, right: width, bottom: 274 };
 	surfaces.attach({ role: 'content', captureScope: Symbol('Workbench background'), getBounds: () => area, getClip: () => area,

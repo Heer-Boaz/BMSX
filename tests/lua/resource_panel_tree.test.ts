@@ -36,11 +36,12 @@ function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.fro
 	configureFontVariant(variant);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const sources = createScenarioTestSourceState(records);
-	const parts = createTestEditorParts(t), group = parts.createDocument().group;
+	const parts = createTestEditorParts(t), group = parts.createDocument().activeGroup;
 	const resourceEditors = createResourceEditorResolver(sources.catalog), editor = { editorParts: parts, resourceEditors, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
 		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog)));
 	const navigation = new EditorNavigationController(sources.catalog, panel, resourceEditors);
+	group.focus();
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();
 	group.panes.layout({ left: 140, top: 20, right: 384, bottom: 270 });
 	t.after(() => { panel.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
@@ -105,7 +106,7 @@ test('folder activation retains Files focus; a leaf invokes the real resource op
 	assert.equal(open.mock.callCount(), 0); assert.equal(f.panel.isFocused(), true); assert.equal(folder.collapsed, false);
 	f.panel.navigateFiles('right'); const file = f.panel.files.selectedNode!; assert.ok(file.element.kind === 'file');
 	f.panel.openSelected(); assert.equal(open.mock.callCount(), 1); await opening;
-	assert.equal(open.mock.calls[0].arguments[0], f.group);
+	assert.ok(open.mock.calls[0].arguments[0] === f.group, 'Files opens in the chosen invoking editor group');
 	assert.equal(open.mock.calls[0].arguments[1], file.element.resource);
 	const input = f.group.panes.activePane!.input;
 	assert.equal(input.resource, file.element.resource); assert.equal(f.panel.isFocused(), false);

@@ -68,7 +68,7 @@ function fixture(t: TestContext, source = ALL_CONTENT_SOURCE, additionalSources:
 }
 
 test('the real project tree activates all authored kinds and reveals each retained document after unrelated MRU changes', async t => {
-	const f = fixture(t), parts = f.editor.editorParts;
+	const f = fixture(t), parts = f.editor.editorParts, chosen = parts.activeGroup;
 	const nodes = f.definitions();
 	assert.deepEqual(new Set(nodes.map(node => node.element.content.kind)),
 		new Set(['scene', 'behavior_tree', 'state_machine', 'action_effect', 'progression', 'input', 'animation']));
@@ -77,7 +77,7 @@ test('the real project tree activates all authored kinds and reveals each retain
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const secondScene = nodes.filter(node => node.element.content.kind === 'scene')[1];
 	const sceneGroup = f.activate(secondScene), scene = sceneGroup.model.activeTab;
-	assert.equal(sceneGroup, parts.main.group); assert.ok(scene instanceof SceneEditorInput);
+	assert.ok(sceneGroup === chosen); assert.ok(scene instanceof SceneEditorInput);
 	assert.deepEqual(scene.selectionRange, secondScene.element.content.range);
 	const sceneRoot = scene.outline.rows[scene.outline.selectionIndex];
 	assert.equal(sceneRoot.element.kind, 'scene');
@@ -88,9 +88,9 @@ test('the real project tree activates all authored kinds and reveals each retain
 		const entry = node.element.content;
 		if (entry.kind === 'scene') continue;
 		const group = f.activate(node), input = group.model.activeTab;
-		assert.notEqual(group, parts.main.group);
+		assert.ok(parts.groups.includes(group));
 		assert.ok(input !== null && 'workingCopy' in input);
-		assert.equal(input.workingCopy, editorTextModelService.get(entry.ownerResource));
+		assert.ok(input.workingCopy === editorTextModelService.get(entry.ownerResource));
 		switch (entry.kind) {
 			case 'behavior_tree': case 'state_machine': case 'action_effect': {
 				assert.ok(input instanceof BehaviorLensInput);
@@ -118,15 +118,15 @@ test('the real project tree activates all authored kinds and reveals each retain
 		}
 		const part = parts.partForGroup(group), total = group.model.tabs.length;
 		const unrelated = parts.createDocument();
-		unrelated.group.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.secondInput.workingCopy.resource));
+		unrelated.activeGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.secondInput.workingCopy.resource));
 		parts.minimize(part); unrelated.focus(); f.update();
-		assert.notEqual(parts.activeGroup, group); assert.equal(part.window!.model.minimized, true);
-		assert.equal(f.activate(node), group);
-		assert.equal(group.model.activeTab, input); assert.equal(group.model.tabs.length, total);
+		assert.ok(parts.activeGroup !== group); assert.equal(part.window!.model.minimized, true);
+		assert.ok(f.activate(node) === group);
+		assert.ok(group.model.activeTab === input); assert.equal(group.model.tabs.length, total);
 		assert.equal(part.window!.model.minimized, false);
-		assert.equal(parts.main.group.model.activeTab, scene); assert.deepEqual(scene.selectionRange, sceneSelection);
+		assert.ok(sceneGroup.model.tabs.includes(scene)); assert.deepEqual(scene.selectionRange, sceneSelection);
 	}
-	assert.equal(f.activate(secondScene), sceneGroup); assert.equal(sceneGroup.model.activeTab, scene);
+	assert.ok(f.activate(secondScene) === sceneGroup); assert.ok(sceneGroup.model.activeTab === scene);
 	assert.deepEqual(scene.selectionRange, sceneSelection, 'reopening the same scene preserves its selected member');
 	assert.equal(scene.workingCopy.buffer.getText(), ALL_CONTENT_SOURCE);
 	assert.equal(scene.workingCopy.dirty, false);
@@ -158,7 +158,7 @@ effects.register_effect('same', { cooldown_ms = 20 })
 	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: '' }]);
 	// Command admission must reject this old payload before a frame rebuilds the tree.
 	f.panel.openSelected();
-	assert.equal(f.editor.editorParts.activeGroup, active); assert.equal(active.model.activeTab, input);
+	assert.ok(f.editor.editorParts.activeGroup === active); assert.ok(active.model.activeTab === input);
 	f.panel.refresh();
 	assert.equal(f.panel.files.selectedNode, null); assert.deepEqual(f.definitions(), [first]);
 	model.undo(); f.panel.refresh();

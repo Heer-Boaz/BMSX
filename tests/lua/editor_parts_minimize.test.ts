@@ -57,7 +57,7 @@ test('document minimization retains actual controls, canonical Source and local 
 	assert.equal(f.firstPart.quickInput.visible, true); assert.equal(f.firstPart.quickInput.field.text, 'retained local draft');
 	assert.equal(draft.pending, true); assert.equal(accepted, 7);
 	parts.minimize(f.secondPart); f.update();
-	assert.equal(parts.minimizedCount, 2); assert.ok(parts.activePart === parts.main && inputFocus.target === parts.main.focusTarget);
+	assert.equal(parts.minimizedCount, 2); assert.ok(parts.activePart === parts.main && inputFocus.target === parts.main.activeGroup.focusTarget);
 	assert.equal(cancelled, 1); assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	f.editor.dispatchPointer({ x: down.viewportX, y: down.viewportY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
@@ -115,8 +115,8 @@ test('a later explicit reveal during minimize blur wins over the pending next-wi
 for (const phase of ['blur', 'placement publication'] as const)
 	test(`later third-window focus from ${phase} wins over an earlier minimize request`, t => {
 		const f = createActualSourcePanes(t), parts = f.editor.editorParts;
-		const third = parts.createDocument(); third.group.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
-		const target = third.group.panes.activePane!.commandTarget;
+		const third = parts.createDocument(); third.activeGroup.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
+		const target = third.activeGroup.panes.activePane!.commandTarget;
 		f.second.focus(); f.first.focus();
 		if (phase === 'blur') {
 			const unbind = f.first.commandTarget.onDidBlur(() => { unbind(); third.focus(); });

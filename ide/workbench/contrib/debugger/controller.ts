@@ -61,7 +61,7 @@ export async function presentRuntimeDebuggerStop(
 		contextId: image.sourceContextId,
 		path: source.displayPath,
 	};
-	const group = editor.editorParts.documentDestination(editor.editorParts.activeGroup, { resource, editorId: WORKBENCH_TEXT_EDITOR_ID });
+	const group = editor.editorParts.editorDestination(editor.editorParts.activeGroup, { resource, editorId: WORKBENCH_TEXT_EDITOR_ID });
 	const receipt = await focusCapturedRuntimeSource(editor.navigation, group, catalog, resource, source);
 	if (state.source.stop !== stop || receipt === undefined || receipt.generation !== group.panes.openGeneration
 		|| receipt.model.version !== receipt.version || editorTextModelService.get(resource) !== receipt.model) return;

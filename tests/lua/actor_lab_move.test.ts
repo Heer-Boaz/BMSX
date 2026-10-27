@@ -58,8 +58,8 @@ function fixture(t: TestContext) {
 	const destination = parts.createDocument({ requestedBounds: { left: 0, top: 24, right: 800, bottom: 340 } });
 	const input = controller.resolveInput(), choice = readActorChoices(sources, ide.guest, 0)[0];
 	controller.inspectActor(input, 0, choice.hashId);
-	origin.group.openEditor(input); editor.update(0);
-	const pane = origin.group.panes.activePane!;
+	origin.activeGroup.openEditor(input); editor.update(0);
+	const pane = origin.activeGroup.panes.activePane!;
 	assert.ok(pane instanceof ActorLabEditorPane);
 	const key = (code: string) => {
 		editor.dispatchKey(new KeyInputEvent(code, KeyModifier.none)); editor.dispatchKey(new KeyInputEvent(code, KeyModifier.none, false, false));
@@ -80,8 +80,8 @@ test('Actor move retains its physical domain and open Details, revokes its old p
 	const oldTarget = f.pane.commandTarget, transport = input.interaction.transport;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles, execution = f.host.execution.revision;
 	let disposed = 0; input.onWillDispose(() => { disposed++; });
-	assert.equal(f.parts.moveEditor(f.origin, input, f.destination, f.editor.editorClose), true); f.editor.update(0);
-	const moved = f.destination.group.panes.activePane!;
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, input, f.destination.activeGroup, f.editor.editorClose), true); f.editor.update(0);
+	const moved = f.destination.activeGroup.panes.activePane!;
 	assert.ok(moved instanceof ActorLabEditorPane && moved !== f.pane);
 	assert.ok(moved.input === input && input.runtime === runtime && input.details === details);
 	assert.equal(details.subject, subject); assert.equal(details.locked, true);
@@ -93,15 +93,15 @@ test('Actor move retains its physical domain and open Details, revokes its old p
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles); assert.equal(f.host.execution.revision, execution);
 	assert.equal(await f.parts.close(f.origin), true);
 	f.parts.minimize(f.destination); assert.equal(f.destination.window!.model.minimized, true);
-	f.controller.open(f.parts.main.group);
+	f.controller.open(f.parts.main.activeGroup);
 	assert.equal(f.destination.window!.model.minimized, false);
-	assert.equal(f.parts.findGroup(input), f.destination.group); assert.equal(f.controller.resolveInput(), input);
-	assert.equal(f.parts.main.group.model.findById(input.id), undefined);
+	assert.equal(f.parts.findGroup(input), f.destination.activeGroup); assert.equal(f.controller.resolveInput(), input);
+	assert.equal(f.parts.main.activeGroup.model.findById(input.id), undefined);
 	f.editor.commands.execute('actorLab.find', moved.commandTarget);
 	assert.equal(f.destination.quickInput.visible, true); assert.equal(f.editor.quickInput.visible, false);
 	f.key('Escape');
 	f.controller.dispose();
-	assert.equal(f.destination.group.model.findById(input.id), undefined); assert.equal(disposed, 1);
+	assert.equal(f.destination.activeGroup.model.findById(input.id), undefined); assert.equal(disposed, 1);
 });
 
 test('Actor moving a pending argument submission cannot admit a late call or steal destination focus', async t => {
@@ -116,8 +116,8 @@ test('Actor moving a pending argument submission cannot admit a late call or ste
 	setFieldText(picker.field, "'late'", true);
 	f.key('Enter');
 	assert.equal(picker.field.readOnly, true);
-	assert.equal(f.parts.moveEditor(f.origin, f.input, f.destination, f.editor.editorClose), true);
-	const target = f.destination.group.panes.activePane!.commandTarget;
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true);
+	const target = f.destination.activeGroup.panes.activePane!.commandTarget;
 	await f.host.tasks.join(); await Promise.resolve();
 	assert.equal(picker.visible, false); assert.equal(f.ide.actorExecution.active, undefined);
 	assert.ok(inputFocus.target === target); assert.equal(f.input.runtime.roots[0].name, 'actor');
@@ -134,15 +134,15 @@ test('Actor queued mutation belongs to the invoking attachment, while a move pre
 	assert.equal(operation.invoked, false);
 	f.input.interaction.running = true;
 	assert.equal(f.host.execution.paused, false);
-	assert.equal(f.parts.moveEditor(f.origin, f.input, f.destination, f.editor.editorClose), true);
-	const target = f.destination.group.panes.activePane!.commandTarget;
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true);
+	const target = f.destination.activeGroup.panes.activePane!.commandTarget;
 	assert.equal(f.input.interaction.running, true); assert.equal(f.host.execution.paused, false);
 	assert.equal(f.editor.guestInputRecipient, null);
 	await f.host.tasks.join();
 	assert.equal((await operation.completion).status, 'interrupted');
 	assert.equal(operation.invoked, false); assert.ok(inputFocus.target === target);
 	f.editor.update(0); assert.equal(f.input.runtime.roots[0].active, true);
-	f.destination.group.openEditor(new GameViewInput());
+	f.destination.activeGroup.openEditor(new GameViewInput());
 	assert.equal(f.input.interaction.running, false, 'ordinary deactivation still stops the logical client');
 });
 
@@ -153,8 +153,8 @@ test('Actor transfer drains a physical guest hold and requires fresh destination
 		{ type: 'button', button: 'primary', down: true }]);
 	const guest = inputFocus.target!, binding = guest.guestInput!, interaction = guest.scope.interaction!;
 	assert.ok(binding.recipient === f.host.input && pointerCapture.guestBinding === binding);
-	assert.equal(f.parts.moveEditor(f.origin, f.input, f.destination, f.editor.editorClose), true); f.editor.update(0);
-	const moved = f.destination.group.panes.activePane!;
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true); f.editor.update(0);
+	const moved = f.destination.activeGroup.panes.activePane!;
 	assert.equal(guest.guestInput, undefined); assert.equal(interaction.running, false);
 	assert.equal(pointerCapture.guestBinding, undefined); assert.equal(pointerCapture.draining, true);
 	assert.equal(f.editor.guestInputRecipient, null); assert.ok(inputFocus.target === moved.commandTarget);
@@ -177,8 +177,8 @@ test('Actor same-input reopening preserves queued admission, and an entered call
 	f.key('Enter');
 	const operation = f.ide.actorExecution.active!;
 	assert.equal(operation.invoked, false);
-	f.origin.group.openEditor(f.input);
-	assert.ok(f.origin.group.panes.activePane === f.pane);
+	f.origin.activeGroup.openEditor(f.input);
+	assert.ok(f.origin.activeGroup.panes.activePane === f.pane);
 	await f.host.tasks.join();
 	assert.equal(operation.result, undefined, 'a normal same-input open is not an attachment retirement');
 	// Execute the real guest-owned mutation-boundary request and its reached receipt.
@@ -190,8 +190,8 @@ test('Actor same-input reopening preserves queued admission, and an entered call
 		await f.host.tasks.join();
 	}
 	assert.equal(operation.invoked, true); assert.equal(operation.result, undefined);
-	assert.equal(f.parts.moveEditor(f.origin, f.input, f.destination, f.editor.editorClose), true);
-	const target = f.destination.group.panes.activePane!.commandTarget;
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true);
+	const target = f.destination.activeGroup.panes.activePane!.commandTarget;
 	willExecuteRuntimeDebuggerPlan(f.ide.debugger);
 	f.host.runtime.machine.scheduler.runCpuSlice(0, 1_000_000);
 	didExecuteRuntimeDebuggerPlan(f.ide.debugger);
@@ -205,31 +205,31 @@ test('Actor same-input reopening preserves queued admission, and an entered call
 test('Actor reveal cannot start a picker after focus callbacks replace its requested input', t => {
 	const f = fixture(t), replacement = new GameViewInput();
 	f.destination.focus();
-	const unbind = f.pane.commandTarget.onDidFocus(() => f.origin.group.openEditor(replacement));
+	const unbind = f.pane.commandTarget.onDidFocus(() => f.origin.activeGroup.openEditor(replacement));
 	t.after(unbind);
 	f.input.actorHashId = 0; f.input.dirty = true;
-	assert.doesNotThrow(() => f.controller.open(f.parts.main.group));
-	assert.equal(f.origin.group.model.activeTab, replacement);
+	assert.doesNotThrow(() => f.controller.open(f.parts.main.activeGroup));
+	assert.equal(f.origin.activeGroup.model.activeTab, replacement);
 	assert.equal(f.origin.quickInput.visible, false);
-	assert.equal(f.parts.findGroup(f.input), f.origin.group, 'the hidden retained subject is not disposed or moved by focus');
+	assert.equal(f.parts.findGroup(f.input), f.origin.activeGroup, 'the hidden retained subject is not disposed or moved by focus');
 });
 
 test('Actor Details source navigation belongs to the moved concrete pane', async t => {
 	const f = fixture(t);
 	f.editor.commands.execute('actorLab.details', f.pane.commandTarget); f.editor.update(0);
-	assert.equal(f.parts.moveEditor(f.origin, f.input, f.destination, f.editor.editorClose), true); f.editor.update(0);
-	const moved = f.destination.group.panes.activePane!;
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true); f.editor.update(0);
+	const moved = f.destination.activeGroup.panes.activePane!;
 	assert.ok(moved instanceof ActorLabEditorPane);
 	const index = moved.inspector.model.rows.findIndex(row => row.element.source?.resource.path === 'cartlib/world/world.lua');
 	assert.ok(index >= 0, 'the runtime function property retains its installed source identity');
 	moved.inspector.model.selectionIndex = index;
 	f.editor.commands.execute('propertyInspector.source', moved.inspector.focusTarget);
 	await new Promise<void>(resolve => setImmediate(resolve)); f.editor.update(0);
-	const source = f.destination.group.model.activeTab!;
+	const source = f.destination.activeGroup.model.activeTab!;
 	assert.ok(source.kind === 'code_editor');
 	assert.equal(source.resource.contextId, f.input.controller.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId);
 	assert.equal(source.resource.path, 'cartlib/world/world.lua');
 	assert.equal(source.workingCopy.buffer.getText(), WORLD);
-	assert.equal(f.origin.group.model.tabs.length, 0); assert.equal(f.parts.main.group.model.findById(source.id), undefined);
-	assert.equal(f.parts.findGroup(f.input), f.destination.group);
+	assert.equal(f.origin.activeGroup.model.tabs.length, 0); assert.equal(f.parts.main.activeGroup.model.findById(source.id), undefined);
+	assert.equal(f.parts.findGroup(f.input), f.destination.activeGroup);
 });

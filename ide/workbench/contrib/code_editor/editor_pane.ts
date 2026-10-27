@@ -91,6 +91,8 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 
 	public override get inputScope(): InputFocusScope { return this.code.focusTarget.scope; }
 	public override get commandTarget() { return this.code.focusTarget; }
+	public override get minimumClientWidth(): number { return this.code.minimumWidth; }
+	public override get minimumClientHeight(): number { return this.bars.minimumHeight; }
 	public override get companionGameMinimumWidth(): number {
 		return measureGutterWidth(this.code) + 2 + this.code.charAdvance * (SOURCE_READING_COLUMNS + 1)
 			+ constants.SCROLLBAR_WIDTH + constants.CODE_AREA_RIGHT_MARGIN;
@@ -112,8 +114,8 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.bars = new SourceInlineBars(code, this.find, this.rename, this.lineJump);
 		this.navigation = editor.navigation;
 		code.focusTarget.canFocus = () => this.hasInput && code.geometry.cachedContentWidth > 0
-			&& code.geometry.clientBounds.left < code.geometry.clientBounds.right
-			&& code.geometry.clientBounds.top < code.geometry.clientBounds.bottom;
+			&& code.geometry.presentedBounds.left < code.geometry.presentedBounds.right
+			&& code.geometry.presentedBounds.top < code.geometry.presentedBounds.bottom;
 		this.subscriptions = [
 			code.focusTarget.bindKeyboard(input => this.handleKeyboard(input)),
 			code.focusTarget.bindClipboard({
@@ -192,7 +194,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public layoutInlineWidgets(): void {
-		this.bars.layout(this.contentBounds);
+		this.bars.layout(this.contentBounds, this.group.clip);
 		if (this.code.model !== null) resolveCodeAreaViewport(this.code);
 	}
 

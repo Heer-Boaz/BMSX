@@ -18,6 +18,9 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	protected contentBounds!: Readonly<RectBounds>;
 	/** Current-font client minimum beside the game; panes already presenting scanout opt out. */
 	public abstract get companionGameMinimumWidth(): number | undefined;
+	/** Components that require a hard client extent publish it here; other clients own compact/scroll presentation. */
+	public get minimumClientWidth(): number { return 0; }
+	public get minimumClientHeight(): number { return 0; }
 
 	/** Optional selection capability; editors without one still have an input identity. */
 	public getSelection?(): EditorPaneSelection;

@@ -1,3 +1,4 @@
+import { serializedEditorGroups } from '../../helpers/serialized_editor_parts';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { WorkspaceSourceTools } from '../../../ide/workbench/services/assistant/source_tools';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
@@ -79,7 +80,7 @@ export async function runStudioEditReview(test: StudioFixture) {
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyZ');
 	const transient = await show();
 	const serialized = ide.editor.editorParts.serialize(ide.editor.editorInputSerializers);
-	check([serialized.main, ...serialized.documents.map(part => part.group)].every(group => group.inputs.every(input => input.kind !== ('workspace_edit_review' as string))), 'edit review: session never serializes edit rights');
+	check(serializedEditorGroups(serialized).every(group => group.inputs.every(input => input.kind !== ('workspace_edit_review' as string))), 'edit review: session never serializes edit rights');
 	await press('ControlLeft', 'KeyW');
 	check(transient.proposal.state === 'discarded', 'edit review: Close discards the unaccepted proposal');
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyZ');

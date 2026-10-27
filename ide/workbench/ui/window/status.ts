@@ -15,22 +15,22 @@ import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../action_ba
 import { WorkbenchActionBarControl } from '../action_bar_control';
 import { WorkbenchTooltip } from '../tooltip';
 
-/** Minimized documents remain discoverable in existing chrome, without a taskbar row. */
+/** Open editors remain discoverable outside the overlapping editor area. */
 export class WorkbenchWindowStatus {
 	private readonly state = createWorkbenchActionBar('window.status');
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly tooltip = new WorkbenchTooltip();
 	private readonly surface: WorkbenchSurface;
 	private readonly clip = create_rect_bounds();
-	private count = 0;
-	public get width(): number { return this.parts.minimizedCount === 0 ? 0 : this.state.items[0].width; }
+	private count = -1;
+	public get width(): number { return this.state.items[0].width; }
 
 	public constructor(private readonly parts: EditorParts, commands: EditorCommandRunner,
 		private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, private readonly viewport: Readonly<RectBounds>) {
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, null, () => parts.activePart.focus());
-		this.actions.focusTarget.scope.surfaceScope = Symbol('minimized windows');
+		this.actions.focusTarget.scope.surfaceScope = Symbol('open editors');
 		this.surface = surfaces.attach({ role: 'content', lifetimeOwner: owner, presentationParent: owner,
-			captureScope: this.actions.focusTarget.scope.surfaceScope, isVisible: () => parts.minimizedCount > 0,
+			captureScope: this.actions.focusTarget.scope.surfaceScope, isVisible: () => true,
 			getBounds: () => this.state.bounds, getClip: () => this.clip,
 			draw: () => renderWorkbenchActionBar(this.state, editorViewState.font.renderFont(), colors.COLOR_STATUS_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED),
 			handlePointer: snapshot => { this.actions.handlePointer(snapshot); }, handleWheel: () => true,
@@ -41,14 +41,10 @@ export class WorkbenchWindowStatus {
 
 	public update(guestInput: boolean, hostFailed: boolean): void {
 		const count = this.parts.minimizedCount;
-		if (count === 0) {
-			if (this.count !== 0) { this.actions.clearInput(); this.tooltip.hide(); this.surfaces.changed(); }
-			this.count = 0; return;
-		}
 		const font = editorViewState.font.renderFont(), row = getWorkbenchConnectionBounds();
 		const item = this.state.items[0];
 		if (this.count !== count || this.state.measuredFont !== font || this.state.bounds.bottom - this.state.bounds.top !== row.bottom - row.top) {
-			item.label = String(count);
+			item.label = count === 0 ? '' : String(count);
 			layoutWorkbenchActionBar(this.state, this.state.bounds.right, row.top, row.bottom, measureText, font, this.state.bounds.left);
 		}
 		this.count = count;

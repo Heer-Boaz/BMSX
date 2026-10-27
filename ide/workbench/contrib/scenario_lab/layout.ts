@@ -44,9 +44,9 @@ export function measureScenarioLabMinimumWidth(state: ScenarioLabViewState): num
 		testsMinimumWidth = editorViewState.charAdvance * TEST_READING_COLUMNS + indent * 3 + PANE_PADDING_X * 2 + 2;
 		resultsMinimumWidth = editorViewState.charAdvance * RESULT_READING_COLUMNS + indent * 3 + PANE_PADDING_X * 2 + 2;
 	}
-	// The user-owned inner ratio remains intact; admission must fit both clients at that ratio.
-	return Math.max(Math.ceil(testsMinimumWidth / state.split.ratio),
-		Math.ceil((resultsMinimumWidth + 1) / (1 - state.split.ratio)));
+	state.split.minimumFirstSize = testsMinimumWidth;
+	state.split.minimumSecondSize = resultsMinimumWidth + 1;
+	return testsMinimumWidth + resultsMinimumWidth + 1;
 }
 
 export function createScenarioLabLayout(): ScenarioLabLayout {
@@ -217,6 +217,7 @@ export function prepareScenarioLabLayout(state: ScenarioLabViewState, bounds: Re
 	const layout = state.layout;
 	if (updateFullWidthWorkbenchLayout(layout, bounds) || state.splitRevision !== state.split.revision) {
 		layout.toolbarBottom = layout.top + editorViewState.lineHeight + TOOLBAR_PADDING_Y * 2;
+		measureScenarioLabMinimumWidth(state);
 		state.split.layout(layout.left, layout.toolbarBottom + 1, layout.right, layout.bottom);
 		state.splitRevision = state.split.revision;
 		const testPaneRight = state.split.position;

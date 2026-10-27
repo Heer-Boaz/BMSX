@@ -28,7 +28,6 @@ export function configureFontVariant(variant: FontVariant): void {
 	fieldMetrics.spaceAdvance = editorViewState.spaceAdvance;
 	editorViewState.inlineFieldMetricsRef = fieldMetrics;
 	editorViewState.tabBarHeight = editorViewState.lineHeight + 3;
-	editorViewState.tabBarTotalHeight = editorViewState.tabBarHeight;
 	editorViewState.baseBottomMargin = editorViewState.lineHeight + 6;
 	for (const listener of fontChangeListeners) listener(font);
 }

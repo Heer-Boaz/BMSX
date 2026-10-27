@@ -2,7 +2,7 @@ import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
-import { resourceIdentityKey } from '../../../common/resource';
+import { resourceIdentityEquals, type ResourceIdentity } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
@@ -32,10 +32,13 @@ export class SceneEditorController {
 		return input;
 	};
 
+	public findResource(group: EditorGroupView, resource: ResourceIdentity): SceneEditorInput | undefined {
+		return group.model.tabs.find((input): input is SceneEditorInput => input.kind === 'scene_editor' && resourceIdentityEquals(input.workingCopy.resource, resource));
+	}
+
 	public openResource(group: EditorGroupView, resource: RuntimeResource): void {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-		const id = `scene:${resourceIdentityKey(resource)}` as const;
-		group.openEditor(group.model.findById(id) ?? new SceneEditorInput(model, this.createView));
+		group.openEditor(this.findResource(group, resource) ?? new SceneEditorInput(model, this.createView));
 	}
 
 	/** The occurrence owner tracks this table extent through canonical source edits. */
@@ -45,7 +48,7 @@ export class SceneEditorController {
 		// Read after admission: accepting the attached draft may move or retire it.
 		if (range.start === range.end) return false;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-		const retained = group.model.tabs.find((candidate): candidate is SceneEditorInput => candidate.kind === 'scene_editor' && candidate.workingCopy === model);
+		const retained = this.findResource(group, resource);
 		const input = retained ?? new SceneEditorInput(model, this.createView);
 		this.refresh(input);
 		const root = input.outline.roots.find(node => node.element.span.start === range.start && node.element.span.end === range.end);

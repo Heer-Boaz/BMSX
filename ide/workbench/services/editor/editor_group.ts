@@ -14,11 +14,21 @@ import type { CloseEditors } from './editor_close';
 import type { WorkbenchSurface } from '../windows/model';
 import type { WorkbenchSurfaceService } from '../windows/service';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import { point_in_rect } from '../../../../machine/ts/common/rect';
+import { copy_rect_bounds, create_rect_bounds, write_rect_bounds, point_in_rect, rects_intersect } from '../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { isCtrlDown, isMetaDown } from '../../../input/keyboard/key_input';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
 import { drawEditorGroupWatermark } from '../../render/editor_group_watermark';
+import { RuntimeTimelineControl } from '../../ui/runtime_timeline_control';
+import type { ContextMenuController } from '../context_menu/controller';
+import { editorViewState } from '../../../editor/ui/view/state';
+import { editorRuntimeState } from '../../../editor/common/runtime_state';
+import { measureText, measureTextRange } from '../../../editor/common/text/layout';
+import { KeyModifier } from '../../../../hosts/common/input/text';
+import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
+import { WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ui/action_bar';
+import { ELLIPSIS } from '../../../common/text';
+import { TAB_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_SYMBOL, TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../../common/constants';
 
 /** The container supplies ancestry and allowable popup extent before controls are constructed. */
 export type EditorGroupPresentation = {
@@ -27,6 +37,8 @@ export type EditorGroupPresentation = {
 	readonly focusScope: InputFocusScope;
 	readonly workArea: Readonly<RectBounds>;
 	readonly renderContext: EditorTabStripRenderContext;
+	readonly contextMenu: ContextMenuController;
+	layout(group: EditorGroupView): void;
 };
 
 const groupsByScope = new WeakMap<InputFocusScope, EditorGroupView | null>();
@@ -48,54 +60,95 @@ export type EditorMoveEvent = { readonly input: EditorInput; readonly destinatio
 export class EditorGroupView {
 	public readonly model = new EditorTabGroupModel();
 	public readonly captureScope = Symbol('editor-group');
+	private readonly containerScope: InputFocusScope;
+	private readonly surfaceService: WorkbenchSurfaceService;
 	public readonly focusScope: InputFocusScope;
 	public readonly tabScope = Symbol('editor-tabs');
 	public readonly tabFocusTarget: InputFocusTarget;
 	public readonly panes: EditorPanes;
 	public readonly tabStrip: EditorTabStrip;
+	public readonly surface: WorkbenchSurface;
 	public readonly paneSurface: WorkbenchSurface;
 	public readonly tabSurface: WorkbenchSurface;
 	public readonly workArea: Readonly<RectBounds>;
+	public readonly focusTarget: InputFocusTarget;
+	public readonly timeline: RuntimeTimelineControl;
+	public readonly timelineBounds = create_rect_bounds();
+	public readonly bounds = create_rect_bounds();
+	public readonly clip = create_rect_bounds();
+	public presented = true;
+	private readonly tabBounds = create_rect_bounds();
+	private readonly bodyBounds = create_rect_bounds();
+	private readonly focusListeners = new Set<() => boolean>();
+	private minimumFont = editorViewState.font;
+	private minimumWidthValue = 0;
+	private readonly subscriptions: (() => void)[] = [];
+	private readonly tabLayoutContext = {
+		get font() { return editorViewState.font.renderFont(); },
+		get tabBarHeight() { return editorViewState.tabBarHeight; },
+		get charAdvance() { return editorViewState.charAdvance; }, measureText, measureTextRange,
+	};
 	private readonly unbindFocus: () => void;
-	private openingAdmitted = true;
+	private openingAdmittedValue = true;
+	public get openingAdmitted(): boolean { return this.openingAdmittedValue; }
 	private readonly disposeListeners = new Set<() => void>();
 	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
 
 	public constructor(factories: EditorPaneFactories, commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
 		presentation: EditorGroupPresentation) {
-		this.focusScope = new InputFocusScope(this.captureScope, presentation.focusScope);
-		this.tabFocusTarget = inputFocus.createTarget(null, new InputFocusScope(this.tabScope, this.focusScope));
+		this.surfaceService = presentation.surfaces;
+		this.containerScope = new InputFocusScope(Symbol('editor group'), presentation.focusScope);
+		this.focusScope = new InputFocusScope(this.captureScope, this.containerScope);
+		this.tabFocusTarget = inputFocus.createTarget(null, new InputFocusScope(this.tabScope, this.containerScope));
 		this.workArea = presentation.workArea;
+		copy_rect_bounds(this.clip, presentation.workArea);
+		this.focusTarget = inputFocus.createTarget(null, this.focusScope);
+		this.focusTarget.canFocus = () => this.presented;
+		this.subscriptions.push(this.focusTarget.bindKeyboard(input => {
+			if (input.modifiers !== KeyModifier.none) return;
+			if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); commands.execute('home', this.focusTarget); }
+			else if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); commands.execute('resources.focus', this.focusTarget); }
+		}));
 		this.focusScope.interaction = new InputInteraction();
+		groupsByScope.set(this.containerScope, this);
 		groupsByScope.set(this.focusScope, this);
 		groupsByScope.set(this.tabFocusTarget.scope, this);
+		this.containerScope.commands = commands;
 		this.focusScope.commands = commands;
 		this.tabFocusTarget.scope.commands = commands;
 		this.unbindFocus = inputFocus.onDidChangeTarget(() => {
 			if (findEditorGroup(inputFocus.target) === this && navigationState.activeGroup !== this) navigationState.activeGroup = this;
 		});
 		this.tabFocusTarget.canFocus = () => false;
+		this.surface = presentation.surfaces.attach({ role: 'content', lifetimeOwner: presentation.owner, presentationParent: presentation.owner,
+			captureScope: this.containerScope.surfaceScope, isVisible: () => this.presented,
+			getBounds: () => this.bounds, getClip: () => this.clip, draw() {},
+			handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
+		});
 		this.panes = new EditorPanes(factories, this);
-		this.tabStrip = new EditorTabStrip(this.model, commands, this.tabFocusTarget,
+		this.tabStrip = new EditorTabStrip(this.model, this.tabLayoutContext, commands, this.tabFocusTarget,
 			id => this.activate(id), id => { void this.close(id); }, () => this.panes.activePane?.focus());
 		this.tabSurface = presentation.surfaces.attach({
-			role: 'content', lifetimeOwner: presentation.owner, presentationParent: presentation.owner, captureScope: this.tabScope,
-			isVisible: () => true, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.tabStrip.layoutState.bounds,
+			role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.tabScope,
+			isVisible: () => this.presented, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.clip,
 			draw: () => this.tabStrip.draw(presentation.renderContext),
 			handlePointer: (snapshot, now) => this.tabStrip.handlePointer(snapshot, now),
 			handleWheel: event => this.tabStrip.handleWheel(event),
 			onRetire: () => pointerCapture.cancelScope(this.tabScope),
 		});
 		this.paneSurface = presentation.surfaces.attach({
-			role: 'content', lifetimeOwner: presentation.owner, presentationParent: presentation.owner, captureScope: this.captureScope,
-			isVisible: () => true, getBounds: () => this.panes.contentBounds, getClip: () => this.panes.contentBounds,
+			role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.captureScope,
+			isVisible: () => this.presented, getBounds: () => this.panes.contentBounds, getClip: () => this.clip,
 			draw: () => {
 				const pane = this.panes.activePane;
 				if (pane === null) drawEditorGroupWatermark(this.panes.contentBounds); else pane.draw();
 			},
-			handlePointer: (snapshot, now) => this.panes.activePane?.handlePointer(snapshot,
-				(snapshot.justPressedButtons & PointerButton.Primary) !== 0,
-				(snapshot.justPressedButtons & PointerButton.Secondary) !== 0, now, isCtrlDown(snapshot) || isMetaDown(snapshot)),
+			handlePointer: (snapshot, now) => {
+				const pane = this.panes.activePane;
+				if (pane === null) { if (snapshot.justPressedButtons !== 0) this.focus(); return; }
+				pane.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0,
+					(snapshot.justPressedButtons & PointerButton.Secondary) !== 0, now, isCtrlDown(snapshot) || isMetaDown(snapshot));
+			},
 			handleWheel: event => {
 				const focused = inputFocus.admittedTarget, guest = focused?.guestInput;
 				if (guest !== undefined && focused!.scope.surfaceScope === this.captureScope
@@ -104,6 +157,63 @@ export class EditorGroupView {
 			},
 			onRetire: () => pointerCapture.cancelScope(this.captureScope),
 		});
+		this.timeline = new RuntimeTimelineControl(commands, () => this.focus(), this.focusTarget, this.timelineBounds,
+			() => presentation.layout(this));
+		this.timeline.attach(presentation.surfaces, this.surface, this.workArea, presentation.contextMenu);
+		presentation.surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
+			captureScope: this.timeline.focusScope.surfaceScope, isVisible: () => this.presented && this.timeline.visible,
+			getBounds: () => this.timelineBounds, getClip: () => this.clip, draw: () => this.timeline.draw(),
+			handlePointer: snapshot => { this.timeline.handlePointer(snapshot); }, handleWheel: () => true,
+			onRetire: () => pointerCapture.cancelScope(this.timeline.focusScope.surfaceScope),
+		});
+		this.subscriptions.push(inputFocus.onDidActivateInteraction(target => {
+			if (findEditorGroup(target) === this) {
+				const runtime = target.scope.runtimeOwner?.runtime;
+				if (runtime !== undefined) this.timeline.setContext(runtime);
+			}
+		}));
+	}
+
+	public onWillFocus(listener: () => boolean): () => void { this.focusListeners.add(listener); return () => this.focusListeners.delete(listener); }
+	public focus(): boolean {
+		if (!this.openingAdmitted) return false;
+		const generation = this.panes.openGeneration, focusRevision = inputFocus.revision;
+		for (const listener of this.focusListeners) {
+			if (!listener() || generation !== this.panes.openGeneration || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
+		}
+		const pane = this.panes.activePane;
+		if (pane === null) this.focusTarget.focus(); else pane.focus();
+		return inputFocus.target !== null && this.focusScope.contains(inputFocus.target.scope);
+	}
+	public get minimumWidth(): number {
+		if (this.minimumFont !== editorViewState.font || this.minimumWidthValue === 0) {
+			this.minimumFont = editorViewState.font;
+			const buttonWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, editorViewState.tabBarHeight);
+			this.minimumWidthValue = buttonWidth * this.tabStrip.actions.items.length + editorViewState.font.advance(ELLIPSIS)
+				+ measureText(TAB_CLOSE_BUTTON_SYMBOL) + TAB_CLOSE_BUTTON_PADDING_X * 2 + TAB_BUTTON_PADDING_X * 2
+				+ TAB_DIRTY_LEFT_MARGIN + TAB_DIRTY_RIGHT_MARGIN;
+		}
+		return Math.max(this.minimumWidthValue, this.panes.activePane?.minimumClientWidth ?? 0);
+	}
+	public get minimumHeight(): number { return this.tabStrip.minimumHeight + Math.max(editorViewState.lineHeight, this.panes.activePane?.minimumClientHeight ?? 0) + this.timeline.height + 2; }
+	public layout(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds>, presented = true): void {
+		this.presented = presented; copy_rect_bounds(this.bounds, bounds); copy_rect_bounds(this.clip, clip);
+		const timelineTop = Math.max(bounds.top, bounds.bottom - this.timeline.height);
+		write_rect_bounds(this.tabBounds, bounds.left, bounds.top, bounds.right, bounds.top);
+		this.tabStrip.layout(this.tabBounds);
+		write_rect_bounds(this.timelineBounds, bounds.left, timelineTop, bounds.right, bounds.bottom);
+		write_rect_bounds(this.bodyBounds, bounds.left, Math.min(timelineTop, bounds.top + this.tabStrip.layoutState.totalHeight + 2), bounds.right, timelineTop);
+		this.panes.layout(this.bodyBounds, this.clip);
+		if (!this.presented || !rects_intersect(this.bodyBounds, this.clip)) pointerCapture.cancelScope(this.captureScope);
+		if (!this.presented || !rects_intersect(this.tabStrip.layoutState.bounds, this.clip)) pointerCapture.cancelScope(this.tabScope);
+		if (!this.presented || !rects_intersect(this.timelineBounds, this.clip)) pointerCapture.cancelScope(this.timeline.focusScope.surfaceScope);
+		const focused = inputFocus.target;
+		// Logical overflow is retained; actual unavailable controls must publish blur.
+		if (focused !== null && this.surfaceService.isInContext(focused.scope.surfaceScope, this.surface.captureScope) && inputFocus.admittedTarget === null) inputFocus.setTarget(null);
+
+	}
+	public update(deltaSeconds: number): void {
+		this.tabStrip.update(editorRuntimeState.currentTimeMs); this.timeline.update(); this.panes.activePane?.update(deltaSeconds);
 	}
 
 	public onWillDispose(listener: () => void): () => void {
@@ -124,7 +234,7 @@ export class EditorGroupView {
 
 	public setOpenAdmission(admitted: boolean): void {
 		if (this.openingAdmitted === admitted) return;
-		this.openingAdmitted = admitted;
+		this.openingAdmittedValue = admitted;
 		this.panes.beginOpen();
 	}
 
@@ -259,6 +369,7 @@ export class EditorGroupView {
 
 	public dispose(): void {
 		this.setOpenAdmission(false);
+		groupsByScope.set(this.containerScope, null);
 		groupsByScope.set(this.focusScope, null);
 		groupsByScope.set(this.tabFocusTarget.scope, null);
 		for (const listener of this.disposeListeners) listener();
@@ -266,11 +377,12 @@ export class EditorGroupView {
 		this.moveListeners.clear();
 		if (navigationState.activeGroup === this) navigationState.activeGroup = null;
 		this.unbindFocus();
+		for (const unbind of this.subscriptions) unbind();
+		this.focusListeners.clear(); this.focusTarget.release(); this.timeline.dispose();
 		this.panes.dispose();
-		this.focusScope.retireContext();
-		this.tabFocusTarget.scope.retireContext();
+		this.containerScope.retireContext();
 		this.tabStrip.dispose();
-		this.paneSurface.dispose(); this.tabSurface.dispose();
+		this.surface.dispose();
 		this.model.clear();
 	}
 }

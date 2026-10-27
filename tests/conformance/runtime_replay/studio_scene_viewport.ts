@@ -25,10 +25,10 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	// Their contents and names are irrelevant to this form fixture.
 	for (const resource of ide.sources.catalog.luaResources) {
 		if (resource.contextId !== test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId) continue;
-		await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource); await frame(); await frame();
+		await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource); await frame(); await frame();
 		if (ide.editor.editorParts.activeGroup.tabStrip.scrollbar.isVisible()) break;
 	}
-	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!);
 	const sourceGroup = ide.editor.editorParts.activeGroup;
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
@@ -43,13 +43,13 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	// Reuse a real workspace input as transport, not its game implementation.
 	const record = ide.sources.catalog.getContext(model.resource.contextId).luaSources.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== model.resource.path && !record.module_path.startsWith('cartlib/'))!;
-	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), ide.sources.catalog.resolveResource({ contextId: model.resource.contextId, path: record.source_path })!);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), ide.sources.catalog.resolveResource({ contextId: model.resource.contextId, path: record.source_path })!);
 	const provider = harness.getActiveEditorDocument().model;
 	const originalProvider = provider.buffer.getText();
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: "return require('cartlib/world/scene_library')" }]);
 	const apiOffset = authored.indexOf('cartlib/world/scene_library');
 	model.pushEditOperations([{ offset: apiOffset, deleteLength: 'cartlib/world/scene_library'.length, text: record.module_path }]);
-	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), model.resource);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), model.resource);
 	check(await openSceneEditor(test) === scene, 'scene imports: the actual menu reopens the same scene through a reexport');
 	await selectMember(test, scene, 0);
 	await test.click(scene.properties[0].bounds);
@@ -97,9 +97,9 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		ide.editor.setFontVariant(variant); await frame();
 		check(sourceGroup.tabStrip.scrollbar.isVisible() && sourceGroup.tabStrip.layoutState.totalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
 			'A02/A04: the document part retains its independently overflowing strip at either font');
-		const mainBounds = ide.editor.editorParts.main.group.panes.contentBounds;
-		check(scene.layout.top === mainBounds.top && scene.layout.bottom === mainBounds.bottom,
-			'A02/A04: font and the main part strip reach the Scene child layout independently of document overflow');
+		const groupBounds = sourceGroup.panes.contentBounds;
+		check(scene.layout.top === groupBounds.top && scene.layout.bottom === groupBounds.bottom,
+			'A02/A04: the actual invoking group passes its font-sized tab strip and body to the Scene child layout');
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
 		await testStudioPointerHover(test, scene);
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');

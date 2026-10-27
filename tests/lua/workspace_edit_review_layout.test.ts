@@ -37,8 +37,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 0, deleteLength: SOURCE.length, text: SOURCE.replaceAll('before', 'after') }] }]]),
 	});
 	const input = new WorkspaceEditReviewInput(proposal);
-	ide.editor.editorParts.main.group.openEditor(input);
-	const pane = ide.editor.editorParts.main.group.panes.activePane!;
+	ide.editor.editorParts.main.activeGroup.openEditor(input);
+	const pane = ide.editor.editorParts.main.activeGroup.panes.activePane!;
 	const arrange = (left: number, right: number, nextVariant = editorViewState.font.variant, bottom = 276) => {
 		if (nextVariant !== editorViewState.font.variant) ide.editor.setFontVariant(nextVariant);
 		pane.layout({ left, top: 31, right, bottom }); pane.update(0);

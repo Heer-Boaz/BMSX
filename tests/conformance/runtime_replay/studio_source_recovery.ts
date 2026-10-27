@@ -1,3 +1,4 @@
+import { serializedEditorGroups } from '../../helpers/serialized_editor_parts';
 import type { SerializedCodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_serializer';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 
@@ -27,7 +28,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	await until(() => workspaceState.localRevision === workspaceState.requestedRevision, 'crossfoe: real autosave timer backs up the visual edit');
 	const backup = workspaceState.localGeneration!;
 	check(backup.payload.dirtyFiles.some(entry => entry.contextId === model.resource.contextId && entry.path === model.resource.path)
-		&& [backup.payload.editorParts.main, ...backup.payload.editorParts.documents.map(part => part.group)].every(group =>
+		&& serializedEditorGroups(backup.payload.editorParts).every(group =>
 			!group.inputs.some(entry => {
 				if (entry.kind !== 'code_editor') return false;
 				const resource = (JSON.parse(entry.value) as SerializedCodeEditorInput).source.resource;
@@ -41,7 +42,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	const sourceGeneration = workspaceState.localGeneration!;
 	check(sourceGeneration.dirtyRecords === backup.dirtyRecords && sourceGeneration.payload.dirtyFiles === backup.payload.dirtyFiles,
 		'crossfoe: navigation does not rewrite the dirty source backup');
-	check([sourceGeneration.payload.editorParts.main, ...sourceGeneration.payload.editorParts.documents.map(part => part.group)].some(group => group.inputs.some(entry => {
+	check(serializedEditorGroups(sourceGeneration.payload.editorParts).some(group => group.inputs.some(entry => {
 		if (entry.kind !== 'code_editor') return false;
 		const state: SerializedCodeEditorInput = JSON.parse(entry.value);
 		return state.source.resource.contextId === model.resource.contextId && state.source.resource.path === model.resource.path

@@ -5,10 +5,10 @@ import type { PointerCaptureService } from '../../input/pointer/capture';
 import type { Scrollbar } from './scrollbar';
 import { ScrollbarPointerControl } from './scrollbar_pointer';
 
-export type ScrollbarMap<Kind extends ScrollbarKind = ScrollbarKind> = Record<Kind, Scrollbar>;
+export type ScrollbarMap<Kind extends string = ScrollbarKind> = Record<Kind, Scrollbar>;
 
 /** Chooses the active editor/resource axis and publishes its content-unit position. */
-export class ScrollbarController<Kind extends ScrollbarKind = ScrollbarKind> {
+export class ScrollbarController<Kind extends string = ScrollbarKind> {
 	private readonly pointer: ScrollbarPointerControl;
 
 	constructor(private readonly scrollbars: ScrollbarMap<Kind>, private readonly apply: (kind: Kind, scroll: number) => void, capture: PointerCaptureService) {

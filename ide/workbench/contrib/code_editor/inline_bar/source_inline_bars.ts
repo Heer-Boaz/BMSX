@@ -20,8 +20,13 @@ export class SourceInlineBars {
 
 	public constructor(private readonly code: CodeEditorControl, private readonly find: EditorSearchController,
 		private readonly rename: RenameController, private readonly lineJump: CodeEditorLineJump) {}
+	public get minimumHeight(): number {
+		const fieldHeight = this.code.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+		return this.code.minimumHeight + (this.find.state.visible ? fieldHeight : 0)
+			+ (this.rename.isVisible() ? fieldHeight : 0) + (this.lineJump.state.visible ? fieldHeight : 0);
+	}
 
-	public layout(client: Readonly<RectBounds>): void {
+	public layout(client: Readonly<RectBounds>, clip: Readonly<RectBounds> = client): void {
 		const lineHeight = this.code.lineHeight;
 		this.searchResultEntryHeight = lineHeight * 2;
 		const searchFieldHeight = this.find.state.visible ? lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2 : 0;
@@ -50,12 +55,12 @@ export class SourceInlineBars {
 		write_rect_bounds(this.lineJumpRect, client.left, top, client.right, lineJumpBottom);
 		this.lineJumpBounds = lineJumpBottom > top && client.left < client.right ? this.lineJumpRect : null;
 		write_rect_bounds(this.textBounds, client.left, lineJumpBottom, client.right, client.bottom);
-		this.code.setBounds(this.textBounds);
-		if (this.searchBounds !== null) this.find.layoutField(this.searchBounds);
+		this.code.setBounds(this.textBounds, clip);
+		if (this.searchBounds !== null) this.find.layoutField(this.searchBounds, clip);
 		else this.find.fieldLayout.hide();
-		if (this.renameBounds !== null) this.rename.layoutField(this.renameBounds);
+		if (this.renameBounds !== null) this.rename.layoutField(this.renameBounds, clip);
 		else this.rename.fieldLayout.hide();
-		if (this.lineJumpBounds !== null) this.lineJump.layoutField(this.lineJumpBounds);
+		if (this.lineJumpBounds !== null) this.lineJump.layoutField(this.lineJumpBounds, clip);
 		else this.lineJump.fieldLayout.hide();
 	}
 }

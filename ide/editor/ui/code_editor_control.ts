@@ -3,9 +3,10 @@ import { copyPointerSnapshot } from '../../input/pointer/frame';
 import { CodeEditorTextInput } from '../input/native_text';
 import { RuntimeErrorOverlayPointer } from '../contrib/runtime_error/pointer';
 import { advanceToggleBlink, resetBlinkState } from './view/caret/blink';
-import { CURSOR_BLINK_INTERVAL } from '../../common/constants';
+import { CODE_AREA_RIGHT_MARGIN, CURSOR_BLINK_INTERVAL, SCROLLBAR_WIDTH } from '../../common/constants';
 import type { HostClock } from '../../../hosts/common/clock';
-import { create_rect_bounds, copy_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
+import { create_rect_bounds, copy_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
+import { clamp } from '../../../machine/ts/common/clamp';
 import { inputFocus, InputFocusScope } from '../../input/focus';
 import { pointerCapture, type PointerCaptureTarget } from '../../input/pointer/capture';
 import type { EditContext, PointerSnapshot, PointerInputSnapshot, VisualLineSegment } from '../../common/models';
@@ -23,7 +24,7 @@ import { CodeLayout } from './code/layout';
 import type { CodeDocumentProjection } from './code/document_projection';
 import type { EditorFont } from './view/font';
 import type { CodeEditorViewState, InlineEditState, VisualCursor } from './code_editor_state';
-import { computeWrapWidth, getCodeAreaBounds } from './view/view';
+import { computeWrapWidth, getCodeAreaBounds, measureGutterWidth } from './view/view';
 import { handleCodeAreaSelectionPointer } from '../../input/pointer/code/selection';
 import { CodeRowDecorations } from '../render/code_area/decorations';
 import { CompletionRenderState } from '../render/completion';
@@ -47,6 +48,7 @@ export class CodeEditorControl implements PointerCaptureTarget {
 	};
 	public readonly geometry = {
 		clientBounds: create_rect_bounds(),
+		presentedBounds: create_rect_bounds(),
 		codeVerticalScrollbarVisible: false, codeHorizontalScrollbarVisible: false,
 		cachedVisibleRowCount: 1, cachedContentWidth: 1, cachedMaxScrollLeft: 0,
 	};
@@ -105,8 +107,8 @@ export class CodeEditorControl implements PointerCaptureTarget {
 		this.focusTarget = inputFocus.createTarget(null, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.textInput = this.nativeText;
 		this.focusTarget.canFocus = () => this.model !== null
-			&& this.geometry.clientBounds.left < this.geometry.clientBounds.right
-			&& this.geometry.clientBounds.top < this.geometry.clientBounds.bottom;
+			&& this.geometry.presentedBounds.left < this.geometry.presentedBounds.right
+			&& this.geometry.presentedBounds.top < this.geometry.presentedBounds.bottom;
 		this.unbindFocus = this.focusTarget.onDidFocus(() => resetBlinkState(this.caret));
 		this.completionRender = new CompletionRenderState(font);
 		this.font = font; this.lineHeight = font.lineHeight; this.charAdvance = font.advance('M'); this.spaceAdvance = font.advance(' ');
@@ -118,6 +120,8 @@ export class CodeEditorControl implements PointerCaptureTarget {
 		const value = this.visualCursorOverride;
 		return value !== null && value.row === this.view.cursorRow && value.column === this.view.cursorColumn ? value : null;
 	}
+	public get minimumWidth(): number { return measureGutterWidth(this) + 2 + this.charAdvance + SCROLLBAR_WIDTH + CODE_AREA_RIGHT_MARGIN; }
+	public get minimumHeight(): number { return this.lineHeight + (this.wordWrapEnabled ? 0 : SCROLLBAR_WIDTH); }
 
 	public setFont(font: EditorFont): void {
 		if (this.font === font) return;
@@ -131,10 +135,12 @@ export class CodeEditorControl implements PointerCaptureTarget {
 		this.clearVisualCursor();
 	}
 
-	public setBounds(bounds: Readonly<RectBounds>): void {
+	public setBounds(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds> = bounds): void {
 		const client = this.geometry.clientBounds;
 		const widthChanged = client.right - client.left !== bounds.right - bounds.left;
 		copy_rect_bounds(client, bounds);
+		write_rect_bounds(this.geometry.presentedBounds, clamp(bounds.left, clip.left, clip.right), clamp(bounds.top, clip.top, clip.bottom),
+			clamp(bounds.right, clip.left, clip.right), clamp(bounds.bottom, clip.top, clip.bottom));
 		if (widthChanged) { this.clearVisualCursor(); this.layout.markVisualLinesDirty(); this.pointer.lastPointerRowResolution = null; }
 	}
 

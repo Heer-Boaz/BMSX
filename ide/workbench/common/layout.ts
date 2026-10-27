@@ -3,6 +3,7 @@ import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/l
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
+import { PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN, RESOURCE_PANEL_DIVIDER_DRAG_MARGIN } from '../../common/constants';
 import { editorChromeState } from '../ui/chrome_state';
 import type { EditorFont } from '../../editor/ui/view/font';
 
@@ -49,7 +50,7 @@ export type WorkbenchChromeLayout = {
 /** Content geometry belongs to the workbench; a text gutter is a code-pane detail. */
 export function getWorkbenchEditorBounds(): Readonly<RectBounds> { return editorBounds; }
 
-/** Stable layout-owned work area: root windows may cover panels, never header/status chrome. */
+/** Outer window/popup placement excludes reserved navigation and menu/status, not Main's temporary clients. */
 export function getWorkbenchWorkArea(): Readonly<RectBounds> { return workArea; }
 
 /** Permanent connection chrome has its own slot, independent of the active editor or feedback. */
@@ -134,7 +135,7 @@ let statusMessageCachedMaxWidth = -1;
 let statusMessageCachedFont: EditorFont | undefined;
 
 export function topMargin(): number {
-	return editorChromeState.menuBarHeight + editorViewState.tabBarTotalHeight + 2;
+	return Math.max(editorChromeState.menuBarHeight, editorChromeState.menuButtonBounds.bottom) + 2;
 }
 
 export function getStatusMessageLines(): string[] {
@@ -201,7 +202,7 @@ export function getVisibleProblemsPanelHeight(): number {
 	if (planned <= 0) {
 		return 0;
 	}
-	const maxAvailable = editorViewState.viewportHeight - statusAreaHeight() - (editorChromeState.menuBarHeight + editorViewState.tabBarTotalHeight);
+	const maxAvailable = editorViewState.viewportHeight - statusAreaHeight() - topMargin() - PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
 	if (maxAvailable <= 0) {
 		return 0;
 	}
@@ -209,18 +210,20 @@ export function getVisibleProblemsPanelHeight(): number {
 }
 
 export function bottomMargin(): number {
-	return statusAreaHeight() + getVisibleProblemsPanelHeight() + editorChromeState.runtimeTimelineHeight;
+	const problems = getVisibleProblemsPanelHeight();
+	return statusAreaHeight() + problems + (problems > 0 ? PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN : 0);
 }
 
 export function refreshWorkbenchLayout(): boolean {
-	const left = editorViewState.editorAreaLeft, top = topMargin();
+	const inset = editorViewState.editorAreaLeft;
+	const left = inset > 0 ? inset + RESOURCE_PANEL_DIVIDER_DRAG_MARGIN : 0, top = topMargin();
 	const right = Math.max(left, editorViewState.viewportWidth - editorChromeState.editorRightInset);
 	const bottom = Math.max(top, editorViewState.viewportHeight - bottomMargin());
 	editorViewState.editorAreaTop = top;
 	editorViewState.editorAreaBottom = bottom;
-	const workBottom = Math.max(top, editorViewState.viewportHeight - statusAreaHeight());
-	const workChanged = workArea.top !== top || workArea.right !== editorViewState.viewportWidth || workArea.bottom !== workBottom;
-	write_rect_bounds(workArea, 0, top, editorViewState.viewportWidth, workBottom);
+	const workRight = editorViewState.viewportWidth, workBottom = Math.max(top, editorViewState.viewportHeight - statusAreaHeight());
+	const workChanged = workArea.left !== left || workArea.top !== top || workArea.right !== workRight || workArea.bottom !== workBottom;
+	write_rect_bounds(workArea, left, top, workRight, workBottom);
 	const changed = workChanged || editorBounds.left !== left || editorBounds.top !== top || editorBounds.right !== right || editorBounds.bottom !== bottom;
 	write_rect_bounds(editorBounds, left, top, right, bottom);
 	return changed;

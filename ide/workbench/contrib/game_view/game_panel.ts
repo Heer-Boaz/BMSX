@@ -18,7 +18,7 @@ import { GAME_FRAME_MINIMUM_WIDTH, GAME_FRAME_MINIMUM_HEIGHT, layoutGameFrame } 
 import { topMargin } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { drawWorkbenchSplit } from '../../render/split_view';
-import type { EditorPanes } from '../../services/editor/editor_panes';
+import type { EditorPart } from '../../services/editor/editor_part';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { editorChromeState } from '../../ui/chrome_state';
@@ -51,7 +51,7 @@ export class GamePanel {
 	private minimumHeight = 0;
 	private headerBottom = 0;
 
-	public constructor(private readonly panes: EditorPanes, private readonly commands: IdeCommandController,
+	public constructor(private readonly part: EditorPart, private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController, recipient: InputRecipient, presenter: VideoPresenter,
 		public readonly focusScope: InputFocusScope) {
 		this.focusTarget = inputFocus.createTarget(null, focusScope);
@@ -92,7 +92,7 @@ export class GamePanel {
 		this.visible = false;
 		this.gameInput.clearInput();
 		this.sash.clearInput(); this.actions.clearInput(); this.focusTarget.release();
-		if (ownsFocus) this.panes.activePane?.focus();
+		if (ownsFocus) this.part.activeGroup.panes.activePane?.focus();
 	}
 	public dispose(): void {
 		this.detach(); this.gameInput.dispose(); this.sash.dispose(); this.actions.dispose(); this.unbindKeyboard();
@@ -101,7 +101,7 @@ export class GamePanel {
 
 	/** Publish only a content inset; the physical canvas and tab strip keep their geometry. */
 	public update(): boolean {
-		const pane = this.panes.activePane;
+		const pane = this.part.activeGroup.panes.activePane;
 		const minimumClientWidth = this.enabled ? pane?.companionGameMinimumWidth : undefined;
 		const attached = minimumClientWidth !== undefined;
 		if (attached !== this.attached) {

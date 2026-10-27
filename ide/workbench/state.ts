@@ -86,7 +86,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 		});
 		this.onDidFailHostFrame(stack => {
 			this.overlayRenderer.abandonFrame();
-			openHostError(this.editor.editorParts.main.group, stack);
+			openHostError(this.editor.editorParts.activeGroup, stack);
 			this.editor.activate();
 		});
 	}

@@ -70,7 +70,7 @@ function fixture(t: TestContext) {
 	}
 	const sources = createTestRuntimeSourceState(system, [registry('game', SOURCE), registry('extension', '-- second slot')], 0);
 	const editorParts = createTestEditorParts(t);
-	const group = editorParts.main.group;
+	const group = editorParts.main.activeGroup;
 	const behavior = new BehaviorLensController(sources, null, new BehaviorSourceDocuments(editorTextModelService, sources.catalog), () => assert.fail('metadata must not start an FSM layout worker'), null, null, null);
 	const scene = new SceneEditorController(sources.catalog, null);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
@@ -121,15 +121,16 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const dirtySource = f.model.buffer.getText();
 	workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath('game', TEST_CARTRIDGE_CONTEXT_IDS[0], 'definitions.lua'), { contents: dirtySource, updatedAt: 50 });
 	const generation = JSON.parse(JSON.stringify({ dirtyFiles: [{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', updatedAt: 50 }],
-		editorParts: { main: before, documents: [], active: 0, mru: [0] }, fontVariant: 'tiny', breakpoints: [] }));
+		editorParts: f.editorParts.serialize(f.serializers), fontVariant: 'tiny', breakpoints: [] }));
 	await applyWorkspaceAutosavePayload({ editorParts: f.editorParts, editorInputSerializers: f.serializers, setFontVariant() {} },
 		f.sources.catalog, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation);
-	const after = f.group.model.serialize(f.serializers);
+	const restoredGroup = f.editorParts.main.activeGroup;
+	const after = restoredGroup.model.serialize(f.serializers);
 	assert.deepEqual(after, before);
-	assert.deepEqual(f.group.model.tabs.map(input => input.kind), ['code_editor', 'behavior_lens', 'behavior_lens', 'scene_editor', 'code_editor']);
-	const [newCode, first, second, newScene, newClean] = f.group.model.tabs;
+	assert.deepEqual(restoredGroup.model.tabs.map(input => input.kind), ['code_editor', 'behavior_lens', 'behavior_lens', 'scene_editor', 'code_editor']);
+	const [newCode, first, second, newScene, newClean] = restoredGroup.model.tabs;
 	assert.ok(newCode.kind === 'code_editor' && first.kind === 'behavior_lens' && second.kind === 'behavior_lens' && newScene.kind === 'scene_editor' && newClean.kind === 'code_editor');
-	assert.equal(f.group.model.activeTab, second); assert.equal(f.group.model.previewTab, newClean);
+	assert.equal(restoredGroup.model.activeTab, second); assert.equal(restoredGroup.model.previewTab, newClean);
 	assert.equal(newCode.context.view.scrollLeft, 17.25, 'workspace recovery preserves the code view pixel origin without glyph conversion');
 	assert.notEqual(first.id, second.id); assert.notEqual(first.id, lenses[0].id);
 	assert.notEqual(first.workingCopy, f.model);

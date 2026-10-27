@@ -17,23 +17,26 @@ export function openProjectContent(editor: CartEditor, index: ProjectContentInde
 		if (inputFocus.target !== null && findEditorGroup(inputFocus.target) !== origin) return;
 	}
 	if (!index.isCurrent(entry)) return;
-	if (entry.kind === 'scene') {
-		editor.sceneEditor.openDefinition(editor.editorParts.main.group, entry.ownerResource, entry.range);
-		return;
-	}
 	let destination: EditorGroupView | undefined;
-	for (const part of editor.editorParts.mostRecentlyActive) {
-		if (part.kind !== 'document' || part.operation !== 'none') continue;
-		const group = part.group;
-		const existing = entry.kind === 'animation'
-			? editor.animations.findDefinition(group, entry.projectContextId, entry.ownerResource, entry.range, entry.definition.consumer?.file)
-			: entry.kind === 'progression' || entry.kind === 'input'
-				? editor.luaPrograms.findOccurrence(group, entry.ownerResource, entry.kind, entry.range)
-				: editor.behaviorLens.findDefinition(group, entry.ownerResource, entry.kind, entry.range);
-		if (existing !== undefined) { destination = group; break; }
+	const invoking = origin ?? editor.editorParts.activeGroup;
+	search: for (const part of editor.editorParts.mostRecentlyActive) {
+		if (part.operation !== 'none') continue;
+		for (const group of part.mostRecentlyActiveGroups) {
+			const existing = entry.kind === 'scene'
+				? editor.sceneEditor.findResource(group, entry.ownerResource)
+				: entry.kind === 'animation'
+					? editor.animations.findDefinition(group, entry.projectContextId, entry.ownerResource, entry.range, entry.definition.consumer?.file)
+					: entry.kind === 'progression' || entry.kind === 'input'
+						? editor.luaPrograms.findOccurrence(group, entry.ownerResource, entry.kind, entry.range)
+						: editor.behaviorLens.findDefinition(group, entry.ownerResource, entry.kind, entry.range);
+			if (existing === undefined) continue;
+			if (group === invoking) { destination = group; break search; }
+			destination ??= group;
+		}
 	}
-	destination ??= editor.editorParts.documentDestination();
+	destination ??= editor.editorParts.editorDestination(invoking);
 	switch (entry.kind) {
+		case 'scene': editor.sceneEditor.openDefinition(destination, entry.ownerResource, entry.range); break;
 		case 'behavior_tree': case 'state_machine': case 'action_effect':
 			editor.behaviorLens.openDefinition(destination, entry.registration); break;
 		case 'progression': case 'input': editor.luaPrograms.openOccurrence(destination, entry.occurrence); break;
@@ -46,7 +49,7 @@ export function openResourcePanelCallHierarchyLocation(
 	item: CallHierarchyPanelItem,
 ): void {
 	void editor.navigation.focusChunkSource(
-		editor.editorParts.documentDestination(undefined, { resource: item.resource, editorId: WORKBENCH_TEXT_EDITOR_ID }), item.resource,
+		editor.editorParts.editorDestination(undefined, { resource: item.resource, editorId: WORKBENCH_TEXT_EDITOR_ID }), item.resource,
 		{
 			row: item.location.range.startLine - 1,
 			startColumn: item.location.range.startColumn - 1,

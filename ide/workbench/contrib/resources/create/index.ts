@@ -59,7 +59,7 @@ function showNewSourceInput(
 		},
 		(created, preserveFocus) => {
 			editor.resourcePanel.queuePendingSelection(created);
-			const destination = editor.editorParts.documentDestination(group);
+			const destination = editor.editorParts.editorDestination(group);
 			if (kind === 'action_effect') editor.behaviorLens.openDefinition(destination, editor.behaviorLens.documents.registrations
 				.getRegistrations(created.contextId).find(registration => registration.resource.path === created.path && registration.behaviorKind === 'action_effect')!, { preserveFocus });
 			else if (kind === 'animation') editor.animations.openResource(destination, created, { preserveFocus });

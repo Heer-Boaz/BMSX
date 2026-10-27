@@ -74,8 +74,8 @@ export class CodeEditorLineJump {
 		this.fieldPointer.dispose(); this.layoutListeners.clear();
 	}
 
-	public layoutField(bounds: Readonly<RectBounds>): void {
-		this.fieldLayout.layout(bounds, 'LINE', '', constants.LINE_JUMP_BAR_MARGIN_Y);
+	public layoutField(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds> = bounds): void {
+		this.fieldLayout.layout(bounds, 'LINE', '', constants.LINE_JUMP_BAR_MARGIN_Y, clip);
 	}
 
 	public apply(): void {

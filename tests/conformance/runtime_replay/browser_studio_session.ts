@@ -1,3 +1,4 @@
+import { serializedEditorGroups } from '../../helpers/serialized_editor_parts';
 import { setFieldText } from '../../../ide/editor/ui/inline/text_field';
 import { createWebGLBackend, createWebGPUBackend } from '../../../hosts/browser/backend';
 import { HostPauseReason } from '../../../hosts/common/execution_control';
@@ -65,7 +66,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	const sourceGroup = ide.editor.editorParts.activeGroup;
 	const scene = new SceneEditorInput(model);
 	ide.editor.sceneEditor.refresh(scene); selectSceneOutlineRow(scene, 1);
-	ide.editor.editorParts.main.group.openEditor(scene); await test.frame();
+	ide.editor.editorParts.main.activeGroup.openEditor(scene); await test.frame();
 	for (const [index, presentation] of [[0, 'graph'], [1, 'graph'], [2, 'state-graph']] as const) {
 		const input = ide.editor.behaviorLens.createInput(model, presentation);
 		selectBehaviorLensDefinition(input.view, input.view.document.definitions[index].rowKey); input.updateDefinition();
@@ -78,7 +79,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	}
 	const fsm = ide.editor.editorParts.activeGroup.model.activeTab!;
 	if (fsm.kind !== 'behavior_lens') throw new Error('session: active FSM required');
-	ide.editor.scenarioLab.open(ide.editor.editorParts.main.group); await test.frame();
+	ide.editor.scenarioLab.open(ide.editor.editorParts.main.activeGroup); await test.frame();
 	const scenario = ide.editor.editorParts.activeGroup.model.activeTab!;
 	if (scenario.kind !== 'scenario_lab') throw new Error('session: Scenario Lab input required');
 	selectScenarioLabTestRow(scenario.view, 0);
@@ -134,8 +135,9 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 	ide.editor.activate();
 	await test.until(() => active.view.presentation.kind === 'state-graph' && active.view.presentation.layoutState.kind === 'ready', 'session: cold restored FSM layout');
 	check(JSON.stringify(captureBehaviorLensView(active)) === JSON.stringify(expected.fsm), 'session: asynchronous layout consumes the saved FSM pan/zoom once');
-	const groups = [{ group: ide.editor.editorParts.main.group, saved: expected.parts.main },
-		...ide.editor.editorParts.documents.map((part, index) => ({ group: part.group, saved: expected.parts.documents[index].group }))];
+	const savedGroups = serializedEditorGroups(expected.parts);
+	const groups = [ide.editor.editorParts.main, ...ide.editor.editorParts.documents].flatMap(part => [...part.groups])
+		.map((group, index) => ({ group, saved: savedGroups[index] }));
 	for (const { group, saved } of groups) for (let index = 0; index < group.model.tabs.length; index++) {
 		const input = group.model.tabs[index];
 		if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'graph') continue;
@@ -143,7 +145,7 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 		check(ide.editor.editorInputSerializers.behavior_lens.serialize(input) === saved.inputs[index].value,
 			'session: first BT activation restores the selected occurrence and pan/zoom in its owning part');
 	}
-	const scene = ide.editor.editorParts.main.group.model.tabs.find(input => input.kind === 'scene_editor')!;
+	const scene = ide.editor.editorParts.main.activeGroup.model.tabs.find(input => input.kind === 'scene_editor')!;
 	if (scene.kind !== 'scene_editor') throw new Error('session: scene input required');
 	await test.clickTab(scene.id);
 	check(JSON.stringify(captureSceneEditorView(scene)) === JSON.stringify(expected.scene), 'session: cold scene layout preserves selected source member');

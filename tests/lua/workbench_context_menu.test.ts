@@ -7,6 +7,7 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
+import { applyViewportSize } from '../../ide/editor/ui/view/configuration';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
@@ -261,6 +262,7 @@ test('a replacement opened after retirement chooses the newer concrete invoker, 
 });
 
 test('real popup surfaces distinguish owned disposal from external owner retirement through Escape, replacement and teardown', t => {
+	applyViewportSize({ width: 384, height: 288 });
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), surfaces = new WorkbenchSurfaceService();
 	const bounds = { left: 0, top: 0, right: 384, bottom: 288 };
 	const root = surfaces.attach({ role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true, getBounds: () => bounds, getClip: () => bounds, draw() {} });

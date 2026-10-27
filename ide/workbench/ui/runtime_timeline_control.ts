@@ -41,10 +41,11 @@ export class RuntimeTimelineControl {
 	private contextMenu!: ContextMenuController;
 	private requestedValue = false;
 	private presented = false;
+	private arrangedHeight = 0;
 	private requestedCycles: number | undefined;
 	private seekOperation: FrameNavigationOperation | undefined;
 	public constructor(private readonly commands: EditorCommandRunner, private readonly focusContent: () => void,
-		parent: InputFocusTarget, private readonly bounds: Readonly<RectBounds>) {
+		parent: InputFocusTarget, private readonly bounds: Readonly<RectBounds>, private readonly onDidChangeHeight: () => void) {
 		const target = inputFocus.createTarget(parent, new InputFocusScope(Symbol('runtime timeline'), parent.scope));
 		target.canFocus = () => false;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, target, focusContent);
@@ -109,15 +110,21 @@ export class RuntimeTimelineControl {
 	}
 	private updatePresentation(): void {
 		const visible = this.available && this.requestedValue;
-		if (visible === this.presented) return;
-		if (visible) {
+		let restoreFocus = false;
+		if (visible && !this.presented) {
 			this.presented = true;
 			this.actions.setInput(this.actionState, this.binding!.target);
 			this.actions.focusTarget.previous = this.focusContent;
 			this.slider.focusTarget.commandContext = this.binding!.target;
 			this.slider.focusTarget.next = this.focusContent;
 			this.slider.setInput(this.range);
-		} else if (this.clearPresentation()) this.focusContent();
+		} else if (!visible) restoreFocus = this.clearPresentation();
+		const height = this.height;
+		if (height !== this.arrangedHeight) {
+			this.arrangedHeight = height;
+			this.onDidChangeHeight();
+		}
+		if (restoreFocus) this.focusContent();
 	}
 	private clearPresentation(): boolean {
 		if (!this.presented) return false;

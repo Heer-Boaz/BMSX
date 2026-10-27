@@ -213,7 +213,7 @@ test('Behavior copied views retain dirty imported edit targets after their sourc
 	const selected = captureBehaviorLensView(source), text = model.buffer.getText(), importedText = imported.buffer.getText();
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	f.editor.commands.execute('window.copyEditor', f.firstGroup.panes.activePane!.commandTarget); f.update();
-	const document = f.editor.editorParts.activePart, input = document.group.model.activeTab;
+	const document = f.editor.editorParts.activePart, input = document.activeGroup.model.activeTab;
 	assert.ok(input?.kind === 'behavior_lens' && input !== source);
 	assert.deepEqual(captureBehaviorLensView(input), selected);
 	const closing = f.editor.editorParts.close(f.firstPart);

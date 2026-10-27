@@ -40,7 +40,9 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 			const { models, documents, clock } = createTestCodeDocuments(t);
 			const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'caret.lua', location: { kind: 'workspace' as const, path: 'caret.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', source);
 			const view = createCodeEditorViewState(); view.cursorColumn = source.length;
-			const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font);
+			// This projection fixture paints its row at the same presented extent.
+			const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font,
+				{ left: rowViewport.codeLeft, top: rowViewport.codeTop, right: rowViewport.codeRight, bottom: rowViewport.codeBottom });
 			code.wordWrapEnabled = false;
 			t.after(() => {
 

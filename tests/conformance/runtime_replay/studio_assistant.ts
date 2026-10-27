@@ -1,3 +1,4 @@
+import { serializedEditorGroups } from '../../helpers/serialized_editor_parts';
 export { startAssistantImageTest } from './studio_assistant_images';
 export { startClipboardTest } from './studio_clipboard';
 export { runAssistantTestDebugger } from './studio_assistant_test_debugger';
@@ -149,7 +150,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	const pending = conversation.entries.filter(entry => entry.kind === 'proposal')[3].proposal!;
 	check(pending.state === 'pending', 'new review stays pending until user action');
 	const serialized = ide.editor.editorParts.serialize(ide.editor.editorInputSerializers);
-	check([serialized.main, ...serialized.documents.map(part => part.group)].every(group => group.inputs.every(input => input.kind !== ('assistant' as string) && input.kind !== ('workspace_edit_review' as string))), 'session does not persist conversations or edit rights');
+	check(serializedEditorGroups(serialized).every(group => group.inputs.every(input => input.kind !== ('assistant' as string) && input.kind !== ('workspace_edit_review' as string))), 'session does not persist conversations or edit rights');
 	await press('ControlLeft', 'KeyW'); check(conversation.state === 'disconnected' && pending.state === 'stale', 'closing the tab retires process and pending review');
 	await test.runPaletteCommand('View: Codex Assistant');
 	check(conversation.state === 'disconnected', 'reopening does not replay a prompt');

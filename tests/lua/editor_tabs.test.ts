@@ -8,6 +8,7 @@ import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { EditorTabStrip } from '../../ide/workbench/ui/tab/control';
 import type { EditorTabId } from '../../ide/workbench/ui/tab/id';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../hosts/common/input/text';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import type { PointerSnapshot } from '../../ide/common/models';
@@ -31,10 +32,6 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	const scope = Symbol('test tab strip');
 	let commandsEnabled = true;
 	const focusParent = inputFocus.createTarget(null, new InputFocusScope(scope));
-	const strip = new EditorTabStrip(group, {
-		isEnabled: () => commandsEnabled,
-		execute: command => { commands.push(command); },
-	}, focusParent, id => { group.activate(group.findById(id)!); }, id => { group.removeAt(group.indexOf(group.findById(id)!)); }, () => {});
 	const bounds = { left, top, right: left + width, bottom: top };
 	let font = new EditorFont(variant);
 	let charAdvance = font.advance('M');
@@ -59,7 +56,11 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 			api.blit_text_inline_with_font(text, x, y, z, color, font.renderFont());
 		},
 	};
-	const layout = () => { strip.layout(bounds, context); };
+	const strip = new EditorTabStrip(group, context, {
+		isEnabled: () => commandsEnabled,
+		execute: command => { commands.push(command); },
+	}, focusParent, id => { group.activate(group.findById(id)!); }, id => { group.removeAt(group.indexOf(group.findById(id)!)); }, () => {});
+	const layout = () => { strip.layout(bounds); };
 	const paint = () => {
 		drawnLabels = 0;
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
@@ -445,7 +446,7 @@ for (const control of ['action', 'scrollbar'] as const) test(`a ${control} press
 	assert.equal(f.group.previewTab, preview, 'an intervening strip control is not a double-click on the tab');
 });
 
-test('a resized title action publishes the new tab viewport to a stationary drag', t => {
+test('a resized group header publishes the new tab viewport to a stationary drag', t => {
 	const f = fixture(t, 'tiny', 512);
 	const first = f.add('A');
 	for (let index = 0; index < 40; index++) f.add(`T${index}`);
@@ -456,7 +457,7 @@ test('a resized title action publishes the new tab viewport to a stationary drag
 	f.dispatch(pointer(x, y, primary), false, 20);
 	assert.ok(f.strip.drag.state!.targetIndex >= 0);
 	const revision = f.strip.layoutState.revision;
-	f.strip.actions.items[2].label += ' expanded';
+	f.bounds.right -= 20;
 	f.layout();
 	assert.ok(f.strip.layoutState.viewportBounds.right < x);
 	assert.ok(f.strip.layoutState.revision > revision);
@@ -502,4 +503,35 @@ test('retained strip layout keys observe hover, manual scroll, drag lifetime and
 	f.bounds.top += 10; assert.equal(f.strip.needsLayout, true); f.layout();
 	f.setFont('msx'); assert.equal(f.strip.needsLayout, true); f.layout();
 	assert.equal(f.strip.needsLayout, false);
+});
+
+
+test('tab overflow exposes one group chooser while wheel scrolling retains membership and active selection', t => {
+	const f = fixture(t, 'tiny', 256), first = f.add('First');
+	f.layout();
+	assert.equal(f.strip.actions.items.length, 1);
+	const chooser = f.strip.actions.items[0];
+	assert.equal(chooser.command, 'group.openEditors');
+	assert.equal(chooser.visible, false); assert.equal(f.bar.isVisible(), false);
+	for (let index = 0; index < 20; index++) f.add(`Editor ${index}`);
+	f.group.activate(first); f.layout();
+	assert.equal(chooser.visible, true); assert.equal(chooser.enabled, true); assert.equal(f.bar.isVisible(), true);
+	const active = f.group.activeTab, membership = [...f.group.tabs], viewport = f.strip.layoutState.viewportBounds;
+	assert.equal(f.bar.getScroll(), 0);
+	f.strip.handleWheel({ valid: true, insideViewport: true, viewportX: (viewport.left + viewport.right) / 2,
+		viewportY: (viewport.top + viewport.bottom) / 2, modifiers: KeyModifier.none, deltaX: 0, deltaY: 1 });
+	f.layout();
+	const scroll = f.bar.getScroll(); assert.ok(scroll > 0);
+	for (let frame = 0; frame < 20; frame++) f.layout();
+	assert.equal(f.bar.getScroll(), scroll); assert.ok(f.group.activeTab === active);
+	assert.deepEqual(f.group.tabs, membership);
+	const hit = chooser.bounds, x = (hit.left + hit.right) / 2, y = (hit.top + hit.bottom) / 2;
+	f.press(pointer(x, y, primary, primary), 0);
+	assert.equal(f.commands.length, 0);
+	f.dispatch(pointer(x, y, 0, 0, primary), false, 1);
+	assert.deepEqual(f.commands, ['group.openEditors']);
+	while (f.group.tabs.length > 1) f.group.removeAt(f.group.tabs.length - 1);
+	f.layout();
+	assert.equal(chooser.visible, false); assert.equal(chooser.enabled, false); assert.equal(f.bar.isVisible(), false);
+	assert.ok(f.group.activeTab === first);
 });

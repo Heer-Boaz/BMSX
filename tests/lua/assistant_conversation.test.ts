@@ -23,6 +23,7 @@ import { QuickInputController } from '../../ide/workbench/services/quick_input/c
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createActualSourcePanes } from '../helpers/source_panes';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
@@ -401,14 +402,14 @@ for (const command of ['assistant.commands', 'assistant.history', 'assistant.new
 		const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, () => assert.fail('invalid draft cannot publish'));
 		control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
 		const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
-		const commands = new AssistantChatCommands(c, group, quickInput, new HeadlessClipboard());
+		const commands = new AssistantChatCommands(c, new HeadlessClipboard());
 		t.after(() => {
 			control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose(); group.dispose();
 		});
 		const state = c.state, source = f.model.buffer.getText();
 		const requests = f.connections[0]?.commands.length;
-		assert.equal(commands.isEnabled(command), true);
-		commands.execute(command);
+		assert.equal(commands.isEnabled(command, group), true);
+		commands.execute(command, group, quickInput);
 		await setImmediate();
 		assert.ok(group.model.activeTab === current); assert.ok(group.panes.activePane?.input === current);
 		assert.equal(group.model.tabs.length, 1);
@@ -691,4 +692,45 @@ test('footer layout is bounded, retained and command-free; activity follows the 
 	c.disconnect();
 	connection.emit({ type: 'configuration', configuration }); connection.emit({ type: 'usage', usage: { weeklyRemaining: 0 } });
 	assert.equal(c.configuration, undefined); assert.equal(c.usage, undefined);
+});
+
+
+test('shared Assistant commands open the explicitly supplied group and picker rather than a stored primary group', t => {
+	const f = fixture(t), view = createActualSourcePanes(t), commands = new AssistantChatCommands(f.conversation, new HeadlessClipboard());
+	const first = view.firstGroup.model.activeTab, second = view.secondGroup;
+	view.first.focus();
+	commands.execute('assistant.commands', second, view.secondPart.quickInput);
+	assert.ok(view.firstGroup.model.activeTab === first);
+	assert.equal(second.model.activeTab?.kind, 'assistant');
+	assert.equal(view.secondPart.quickInput.visible, true); assert.equal(view.firstPart.quickInput.visible, false);
+	assert.ok(view.editor.editorParts.activeGroup === second);
+});
+
+test('late Assistant history stays in its captured group without taking newer sibling focus', async t => {
+	const f = fixture(t), view = createActualSourcePanes(t), commands = new AssistantChatCommands(f.conversation, new HeadlessClipboard());
+	const input = new AssistantInput(f.conversation), group = view.secondGroup, picker = view.secondPart.quickInput;
+	group.openEditor(input); view.update();
+	const page = Promise.withResolvers<Awaited<ReturnType<AssistantConversation['listHistory']>>>();
+	t.mock.method(f.conversation, 'listHistory', () => page.promise);
+	const history = commands.history(input, group, picker);
+	view.firstPart.focus(); const focused = inputFocus.target;
+	page.resolve({ threads: [], nextCursor: null }); await history;
+	assert.equal(input.commandPending, false); assert.equal(picker.visible, true);
+	assert.equal(picker.invocationOrigin, input.draft.focusTarget);
+	assert.equal(view.firstPart.quickInput.visible, false);
+	assert.ok(inputFocus.target === focused); assert.ok(view.editor.editorParts.activeGroup === view.firstGroup);
+});
+
+test('Assistant attachment retirement revokes pending history even when the same input is reactivated', async t => {
+	const f = fixture(t), view = createActualSourcePanes(t), commands = new AssistantChatCommands(f.conversation, new HeadlessClipboard());
+	const input = new AssistantInput(f.conversation), group = view.secondGroup, picker = view.secondPart.quickInput;
+	group.openEditor(input); view.update();
+	const page = Promise.withResolvers<Awaited<ReturnType<AssistantConversation['listHistory']>>>();
+	t.mock.method(f.conversation, 'listHistory', () => page.promise);
+	const history = commands.history(input, group, picker);
+	group.openEditor(view.secondInput); group.openEditor(input); view.update();
+	const focused = inputFocus.target;
+	page.resolve({ threads: [], nextCursor: null }); await history;
+	assert.equal(input.commandPending, false); assert.equal(picker.visible, false);
+	assert.ok(group.model.activeTab === input); assert.ok(inputFocus.target === focused);
 });

@@ -41,12 +41,13 @@ async function fixture(t: TestContext) {
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
-	const bounds = { left: 0, top: 0, right: 384, bottom: 288 };
+	const workArea = { left: 0, top: 0, right: 384, bottom: 288 }, bounds = { ...workArea };
 	const owner = surfaces.attach({ role: 'content', captureScope: content.scope.surfaceScope,
-		isVisible: () => true, getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	let focusReturns = 0;
-	const timeline = new RuntimeTimelineControl(commands, () => { focusReturns++; content.focus(); }, content, bounds);
-	timeline.attach(surfaces, owner, bounds, menu);
+		isVisible: () => true, getBounds: () => workArea, getClip: () => workArea, draw() {} });
+	let focusReturns = 0, layouts = 0;
+	const timeline = new RuntimeTimelineControl(commands, () => { focusReturns++; content.focus(); }, content, bounds,
+		() => { layouts++; bounds.top = workArea.bottom - timeline.height; });
+	timeline.attach(surfaces, owner, workArea, menu);
 	timeline.setContext(context);
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, 0, rewind, execution);
 	runtime.onStateRestored = origin => {
@@ -74,7 +75,8 @@ async function fixture(t: TestContext) {
 		editorViewState.viewportWidth = previousWidth; editorViewState.viewportHeight = previousHeight;
 	});
 	await frame();
-	return { ...f, navigation, transport, interaction, context, content, commands, timeline, menu, frame, settle, focusReturns: () => focusReturns };
+	return { ...f, navigation, transport, interaction, context, content, commands, timeline, menu, frame, settle,
+		focusReturns: () => focusReturns, layouts: () => layouts };
 }
 
 test('available paused transport does not request Timeline; explicit reveal, hide and unavailable attachment retain their own intent', async t => {
@@ -87,9 +89,11 @@ test('available paused transport does not request Timeline; explicit reveal, hid
 		timeline.setContext(context); timeline.update();
 	}
 	assert.equal(measure.mock.callCount(), 0, 'hidden capability does not measure or arrange a transport row');
+	assert.equal(f.layouts(), 0);
 	timeline.focus();
 	assert.equal(timeline.requested, true); assert.equal(timeline.visible, true);
 	assert.equal(timeline.canHide, true); assert.ok(timeline.height > 0);
+	assert.equal(f.layouts(), 1, 'reveal publishes its size to the owning layout before focus admission');
 	assert.equal(inputFocus.target!.scope, timeline.focusScope);
 	inputFocus.moveFocus(false);
 	assert.ok(inputFocus.target === content, 'reveal immediately publishes the noninteractive range focus route');

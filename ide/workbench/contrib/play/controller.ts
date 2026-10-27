@@ -98,7 +98,7 @@ export class PlayController {
 			}
 			case 'play.source': {
 				const resource = { contextId: handle.module.contextId, path: handle.module.path };
-				const destination = this.editor.editorParts.documentDestination(this.editor.editorParts.findGroup(input)!,
+				const destination = this.editor.editorParts.editorDestination(this.editor.editorParts.findGroup(input)!,
 					{ resource, editorId: WORKBENCH_TEXT_EDITOR_ID });
 				void this.editor.navigation.focusChunkSource(destination, resource); return;
 			}

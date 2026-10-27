@@ -46,7 +46,7 @@ function pointer(f: Fixture, point: { x: number; y: number }, down: boolean, tim
 	f.update();
 }
 
-test('status restore opens only on release, lists only minimized owners and Cancel returns to its actual invoker', t => {
+test('permanent editor navigator opens only on release, includes visible and minimized inputs and Cancel returns to its actual invoker', t => {
 	const f = createStatusFixture(t), parts = f.editor.editorParts, picker = f.editor.quickInput;
 	f.first.focus(); parts.minimize(f.secondPart); f.update();
 	const active = parts.activePart, text = f.firstInput.workingCopy.buffer.getText(), version = f.firstInput.workingCopy.version;
@@ -56,9 +56,9 @@ test('status restore opens only on release, lists only minimized owners and Canc
 	assert.equal(picker.visible, false); assert.equal(f.secondPart.window!.model.minimized, true);
 	assert.ok(parts.activePart === active && active === f.firstPart);
 	pointer(f, button, false, 1);
-	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, 1);
-	const option = picker.model.list.rows[0].item;
-	assert.ok('part' in option && option.part === f.secondPart);
+	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, 2);
+	assert.ok(picker.model.list.rows.some(row => 'input' in row.item && row.item.input === f.firstInput));
+	assert.ok(picker.model.list.rows.some(row => 'input' in row.item && row.item.input === f.secondInput));
 	assert.ok(parts.activePart === active);
 	f.key('Escape');
 	assert.equal(picker.visible, false); assert.equal(f.secondPart.window!.model.minimized, true);
@@ -79,9 +79,9 @@ test('choosing a minimized closing document restores its actual retained input a
 	const button = statusButton(t, f);
 	pointer(f, button, true, 0); pointer(f, button, false, 1);
 	const picker = f.editor.quickInput;
-	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, 1);
-	const option = picker.model.list.rows[0].item;
-	assert.ok('part' in option && option.part === f.firstPart);
+	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, 2);
+	const index = picker.model.list.rows.findIndex(row => 'input' in row.item && row.item.input === f.firstInput);
+	assert.ok(index >= 0); picker.model.list.selectionIndex = index;
 	f.key('Enter');
 	assert.equal(picker.visible, false); assert.equal(f.firstPart.window!.model.minimized, false);
 	assert.ok(parts.activePart === f.firstPart); assert.ok(inputFocus.target === f.firstPart.actionPrompt.focusTarget);
@@ -93,7 +93,7 @@ test('choosing a minimized closing document restores its actual retained input a
 	assert.equal(await closing, false); assert.equal(f.firstPart.retired, false); assert.equal(model.dirty, true);
 });
 
-test('status count tracks actual membership and the last minimized close removes its pointer admission', async t => {
+test('closing the last minimized host keeps workspace navigation admitted with no open inputs', async t => {
 	const f = createStatusFixture(t), parts = f.editor.editorParts;
 	parts.minimize(f.firstPart); parts.minimize(f.secondPart); f.update();
 	assert.equal(parts.minimizedCount, 2);
@@ -102,23 +102,26 @@ test('status count tracks actual membership and the last minimized close removes
 	assert.equal(parts.minimizedCount, 1);
 	assert.ok(statusButton(t, f).surface === button.surface, 'count changes retain the existing global control');
 	assert.equal(await parts.close(f.secondPart), true); f.update();
-	assert.equal(parts.minimizedCount, 0); assert.equal(button.surface.visible, false);
-	assert.equal(f.editor.surfaces.isAdmitted(button.surface), false);
+	assert.equal(parts.minimizedCount, 0); assert.equal(button.surface.visible, true);
+	assert.equal(f.editor.surfaces.isAdmitted(button.surface), true);
 	assert.equal(f.editor.commands.isEnabled('window.restoreMinimized'), false);
-	pointer(f, button, true, 10); pointer(f, button, false, 11);
-	assert.equal(f.editor.quickInput.visible, false);
+	assert.equal(f.editor.commands.isEnabled('openEditors'), true);
+	const bounds = button.surface.getClip(), point = { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
+	pointer(f, point, true, 10); pointer(f, point, false, 11);
+	assert.equal(f.editor.quickInput.visible, true); assert.equal(f.editor.quickInput.model.list.rows.length, 0);
 });
 
 test('foreground status discovery does not replace the live guest attachment or execute a frame', t => {
 	const f = createStatusFixture(t), parts = f.editor.editorParts, game = new GameViewInput();
-	parts.main.group.openEditor(game); parts.minimize(f.firstPart); parts.minimize(f.secondPart); f.update();
+	parts.main.activeGroup.openEditor(game); parts.minimize(f.firstPart); parts.minimize(f.secondPart); f.update();
 	const frame = game.frameBounds, preview = { x: (frame.left + frame.right) / 2, y: (frame.top + frame.bottom) / 2 };
 	pointer(f, preview, true, 0); pointer(f, preview, false, 1);
 	const guest = inputFocus.target!, binding = guest.guestInput!, scope = guest.scope;
 	assert.ok(binding !== undefined && binding.recipient === f.host.input);
 	const active = parts.activePart, cycles = f.host.runtime.machine.scheduler.nowCycles, button = statusButton(t, f);
 	pointer(f, button, true, 20); pointer(f, button, false, 21);
-	assert.equal(f.editor.quickInput.visible, true); assert.equal(f.editor.quickInput.model.list.rows.length, 2);
+	assert.equal(f.editor.quickInput.visible, true); assert.equal(f.editor.quickInput.model.list.rows.length, 3);
+	assert.ok(f.editor.quickInput.model.list.rows.some(row => 'input' in row.item && row.item.input === game));
 	assert.ok(guest.scope === scope && guest.guestInput === binding);
 	assert.ok(parts.activePart === active); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 	f.key('Escape');

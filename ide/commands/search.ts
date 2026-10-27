@@ -24,7 +24,7 @@ export function executeEditorSearchCommand(editor: CartEditor, sources: RuntimeS
 			return;
 		case 'resourceSearch': {
 			editor.quickInput.pick('GO TO FILE', 'Type a file name or path', () => new FileQuickPickProvider(buildResourceQuickPickItems(sources.catalog.resources)),
-				item => { void editor.navigation.openResource(editor.editorParts.documentDestination(group, { resource: item.resource,
+				item => { void editor.navigation.openResource(editor.editorParts.editorDestination(group, { resource: item.resource,
 				editorId: editor.resourceEditors.getEditorId(item.resource) }), item.resource); },
 			lifetime => lifetime.add({ dispose: group.onWillDispose(() => editor.quickInput.hide()) }));
 			return;

@@ -11,7 +11,6 @@ export type EditorViewState = {
 	charAdvance: number;
 	spaceAdvance: number;
 	tabBarHeight: number;
-	tabBarTotalHeight: number;
 	baseBottomMargin: number;
 	editorAreaLeft: number;
 	editorAreaTop: number;
@@ -29,7 +28,6 @@ export const editorViewState: EditorViewState = {
 	charAdvance: 0,
 	spaceAdvance: 0,
 	tabBarHeight: 0,
-	tabBarTotalHeight: 0,
 	baseBottomMargin: 0,
 	editorAreaLeft: 0,
 	editorAreaTop: 0,

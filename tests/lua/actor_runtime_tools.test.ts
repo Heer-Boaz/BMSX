@@ -99,8 +99,8 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 		commands: { isEnabled: () => false, execute() {} }, contextMenu, renderContext: presentation.renderContext,
 		factories: createTestEditorPaneFactories(), focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		closeEditors: targets => { for (const { group, input } of targets) group.removeEditor(input); return Promise.resolve(true); },
-		layoutMain: () => parts.main.layoutMain(presentation.workArea, presentation.workArea) });
-	const group = parts.main.group;
+		layoutMain: () => parts.main.layout(presentation.workArea) });
+	const group = parts.main.activeGroup;
 	const controller = new ActorLabController(sources, f.guest, runtime.machine.cpu,
 		parts, undefined!, f.actorExecution, f.rewind, sources,
 		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport });
@@ -190,7 +190,8 @@ test('Actor Lab history restores the typed member and Details after choosing ano
 	controller.refreshDetails(input);
 	const selectedProperty = captureActorDetailsSelection(input.details!.items.find(item => item.identity !== undefined)!);
 	input.detailsSelection = selectedProperty; input.detailsScroll = 37;
-	input.split.resize(0.55);
+	// This unattached history input has requested intent, not an interactive sash.
+	input.split.ratio = 0.55;
 	const saved = controller.captureSelection(input), heap = f.runtime.machine.cpu.luaHeap.usedBytes();
 	input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true; controller.refresh(input);
 	const second = controller.captureSelection(input);
@@ -402,7 +403,9 @@ return world`), true, WORLD_SOURCE, []);
 	assert.strictEqual(input.interaction.transport, controller.viewport.transport);
 	assert.equal(input.interaction.running, false);
 	const contentFocus = inputFocus.target;
-	const transport = new RuntimeTimelineControl(commands, () => pane.focus(), pane.commandTarget, bounds);
+	const timelineBounds = { ...bounds };
+	const transport = new RuntimeTimelineControl(commands, () => pane.focus(), pane.commandTarget, timelineBounds,
+		() => { timelineBounds.top = bounds.bottom - transport.height; });
 	t.after(() => transport.dispose());
 	transport.attach(surfaces, owner, bounds, contextMenu);
 	transport.setContext(pane.commandTarget.scope.runtimeOwner!.runtime); transport.update();

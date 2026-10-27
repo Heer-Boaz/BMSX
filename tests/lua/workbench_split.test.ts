@@ -48,7 +48,7 @@ test('shared pane sash captures drag, releases on blur/replacement and consumes 
 	view.layout(0, 20, 500, 600);
 	assert.equal(view.revision, revision, 'viewport layout does not change the retained split preference');
 	view.resize(2);
-	assert.equal(view.ratio, 0.85);
+	assert.equal(view.ratio, 1, 'the geometry owner uses actual child minima, not an arbitrary percentage');
 	view.resize(view.defaultRatio);
 	assert.equal(view.position, 200);
 });
@@ -95,4 +95,24 @@ test('requested split intent survives constrained placement while user resizing 
 	view.layout(23, 31, 623, 431);
 	view.resize(0.2); assert.equal(view.ratio, 0.5); assert.equal(view.position, 323);
 	view.resize(0.99); assert.equal(view.ratio, 1 - 100 / 600); assert.equal(view.position, 523);
+});
+
+test('unarranged or minimum-filled sashes cannot receive resize focus or capture', t => {
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const parent = focus.createTarget(), control = new WorkbenchSplitControl(focus, capture, hover, parent);
+	const view = new WorkbenchSplitView(0.6);
+	t.after(() => control.dispose());
+	control.setInput(view); parent.focus();
+	control.focusTarget.focus(); assert.equal(control.focusTarget.hasFocus, false);
+	view.resize(0.2); assert.equal(view.ratio, 0.6, 'no arranged resize interval preserves requested intent');
+	view.minimumFirstSize = 90; view.minimumSecondSize = 10; view.layout(0, 0, 100, 50);
+	const pointer: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
+		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, viewportX: view.position, viewportY: 10 };
+	assert.equal(view.resizable, false); assert.equal(control.handlePointer(pointer), false); assert.equal(capture.active, false);
+	control.focusTarget.focus(); assert.equal(control.focusTarget.hasFocus, false);
+	view.resize(0.9); assert.equal(view.ratio, 0.6);
+	view.layout(0, 0, 110, 50); assert.equal(view.resizable, true);
+	control.focusTarget.focus(); assert.equal(control.focusTarget.hasFocus, true);
+	view.resize(0.99); assert.equal(view.ratio, 1 - 10 / 110);
+	view.resize(0); assert.equal(view.ratio, 90 / 110);
 });

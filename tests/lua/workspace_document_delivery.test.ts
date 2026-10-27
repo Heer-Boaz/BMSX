@@ -11,7 +11,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 test('Build Jobs delivers its captured output to a document without replacing the main work subject', async t => {
 	const f = createActualSourcePanes(t);
 	f.editor.commands.execute('home');
-	const main = f.editor.editorParts.main, subject = main.group.model.activeTab, pane = main.group.panes.activePane;
+	const main = f.editor.editorParts.main, subject = main.activeGroup.model.activeTab, pane = main.activeGroup.panes.activePane;
 	const job: StudioBuildJob = { request: { requestId: 'captured-build', target: 'fixture', debug: true, optLevel: 0 },
 		state: 'failed', phase: 'compile', acceptedAt: 1, updatedAt: 2, version: { generation: 1, sequence: 1 }, error: 'Captured diagnostic' };
 	const builds: WorkspaceBuilds = {
@@ -27,9 +27,9 @@ test('Build Jobs delivers its captured output to a document without replacing th
 	f.editor.quickInput.model.list.selectionIndex = 2;
 	await f.editor.quickInput.accept(); await setImmediate();
 	const group = f.editor.editorParts.activeGroup, input = group.model.activeTab;
-	assert.ok(group !== main.group && input?.kind === 'build_log');
+	assert.ok(group !== main.activeGroup && input?.kind === 'build_log');
 	assert.ok(input.job === job);
-	assert.ok(main.group.model.activeTab === subject && main.group.panes.activePane === pane);
+	assert.ok(main.activeGroup.model.activeTab === subject && main.activeGroup.panes.activePane === pane);
 });
 
 test('Play Source reuses the authored document view without replacing its main Play client', async t => {
@@ -39,10 +39,10 @@ test('Play Source reuses the authored document view without replacing its main P
 	handle.preparation = Promise.resolve();
 	f.ide.play.current = handle;
 	const input = new PlayEditorInput(handle, f.ide.play), main = f.editor.editorParts.main;
-	main.group.openEditor(input); f.update();
-	const pane = main.group.panes.activePane;
+	main.activeGroup.openEditor(input); f.update();
+	const pane = main.activeGroup.panes.activePane;
 	f.editor.commands.execute('play.source', pane!.commandTarget); await setImmediate(); f.update();
-	assert.ok(main.group.model.activeTab === input && main.group.panes.activePane === pane);
+	assert.ok(main.activeGroup.model.activeTab === input && main.activeGroup.panes.activePane === pane);
 	assert.ok(f.editor.editorParts.activeGroup === f.firstGroup);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
 	assert.ok(f.ide.play.current === handle);

@@ -59,7 +59,8 @@ export function createTestGroupPresentation(surfaces = new WorkbenchSurfaceServi
 	const focusScope = new InputFocusScope(Symbol('test editor container'), inputFocus.workbenchScope);
 	const owner = surfaces.attach({ role: 'content', captureScope: focusScope.surfaceScope,
 		isVisible: () => true, getBounds: () => workArea, getClip: () => workArea, draw() {} });
-	return { surfaces, owner, focusScope, workArea, renderContext: TEST_EDITOR_TAB_RENDER_CONTEXT };
+	return { surfaces, owner, focusScope, workArea, renderContext: TEST_EDITOR_TAB_RENDER_CONTEXT,
+		contextMenu: new ContextMenuController(inputFocus, pointerCapture), layout: group => group.layout(group.bounds, group.clip, group.presented) };
 }
 
 class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
@@ -144,12 +145,12 @@ export function createTestEditorParts(
 	factories: EditorPaneFactories = createTestEditorPaneFactories(),
 ): EditorParts {
 	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces);
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+	const contextMenu = presentation.contextMenu;
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
 		commands, contextMenu, renderContext: presentation.renderContext, factories, closeEditors: retireTestEditors,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
-		layoutMain: () => parts.main.layoutMain(presentation.workArea, presentation.workArea),
+		layoutMain: () => parts.main.layout(presentation.workArea),
 	});
 	t.after(() => { parts.dispose(); contextMenu.dispose(); surfaces.dispose(); });
 	return parts;

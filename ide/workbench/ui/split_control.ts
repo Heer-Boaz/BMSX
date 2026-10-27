@@ -16,9 +16,9 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 	private readonly unbindKeyboard: () => void;
 	private unbindPressBlur: (() => void) | undefined;
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
-		private readonly hover: PointerHoverService, parent: InputFocusTarget) {
-		this.focusTarget = focus.createTarget(parent);
-		this.focusTarget.canFocus = () => this.input !== undefined;
+		private readonly hover: PointerHoverService, parent: InputFocusTarget, scope = parent.scope) {
+		this.focusTarget = focus.createTarget(parent, scope);
+		this.focusTarget.canFocus = () => this.input?.resizable === true;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => this.handleKeyboard(player));
 	}
 	public setInput(input: WorkbenchSplitView): void { this.clearInput(); this.input = input; }
@@ -31,7 +31,7 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 	};
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		const input = this.input;
-		if (input === undefined || !snapshot.valid || !snapshot.insideViewport) return false;
+		if (input === undefined || !input.resizable || !snapshot.valid || !snapshot.insideViewport) return false;
 		const horizontal = input.orientation === 'horizontal';
 		const position = horizontal ? snapshot.viewportX : snapshot.viewportY;
 		const cross = horizontal ? snapshot.viewportY : snapshot.viewportX;

@@ -27,11 +27,14 @@ export class EditorPanes {
 	private openGenerationValue = 0;
 	private layoutRevision = 0;
 	public readonly contentBounds = create_rect_bounds();
+	private readonly contentClip = create_rect_bounds();
 
-	public layout(bounds: Readonly<RectBounds>): void {
-		const current = this.contentBounds;
-		if (current.left === bounds.left && current.top === bounds.top && current.right === bounds.right && current.bottom === bounds.bottom) return;
+	public layout(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds> = bounds): void {
+		const current = this.contentBounds, previousClip = this.contentClip;
+		if (current.left === bounds.left && current.top === bounds.top && current.right === bounds.right && current.bottom === bounds.bottom
+			&& previousClip.left === clip.left && previousClip.top === clip.top && previousClip.right === clip.right && previousClip.bottom === clip.bottom) return;
 		write_rect_bounds(current, bounds.left, bounds.top, bounds.right, bounds.bottom);
+		write_rect_bounds(previousClip, clip.left, clip.top, clip.right, clip.bottom);
 		this.layoutRevision++;
 		this.activePaneValue?.layout(current);
 	}

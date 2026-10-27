@@ -1,6 +1,9 @@
 import { create_rect_bounds, write_rect_bounds } from '../../../machine/ts/common/rect';
 import { clamp } from '../../../machine/ts/common/clamp';
 
+/** Reserved geometry for the shared sash's complete pointer target. */
+export const WORKBENCH_SPLIT_SIZE = 8;
+
 /** Retained two-pane geometry; resizing never rebuilds a domain's data projection. */
 export class WorkbenchSplitView {
 	public readonly bounds = create_rect_bounds();
@@ -17,15 +20,17 @@ export class WorkbenchSplitView {
 	}
 	public get start(): number { return this.orientation === 'horizontal' ? this.bounds.left : this.bounds.top; }
 	public get end(): number { return this.orientation === 'horizontal' ? this.bounds.right : this.bounds.bottom; }
+	public get resizable(): boolean { return this.end - this.start > this.minimumFirstSize + this.minimumSecondSize; }
 	public get position(): number {
 		return clamp(Math.trunc(this.start + (this.end - this.start) * this.ratio),
 			this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
 	}
 	public layout(left: number, top: number, right: number, bottom: number): void { write_rect_bounds(this.bounds, left, top, right, bottom); }
 	public resize(ratio: number): void {
+		if (!this.resizable) return;
 		const size = this.end - this.start;
-		const min = this.minimumFirstSize > 0 ? Math.max(0.15, this.minimumFirstSize / size) : 0.15;
-		const max = this.minimumSecondSize > 0 ? Math.min(0.85, 1 - this.minimumSecondSize / size) : 0.85;
+		const min = this.minimumFirstSize / size;
+		const max = 1 - this.minimumSecondSize / size;
 		this.ratio = clamp(ratio, min, max);
 	}
 	public moveTo(position: number): void { this.resize((position - this.start) / (this.end - this.start)); }

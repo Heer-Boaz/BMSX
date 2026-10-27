@@ -182,7 +182,7 @@ export function getProblemsPanelBounds(): RectBounds | null {
 export function clampProblemsPanelHeight(requestedHeight: number): number {
 	const statusHeight = statusAreaHeight();
 	const bottom = editorViewState.viewportHeight - statusHeight;
-	const minTop = editorChromeState.menuBarHeight + editorViewState.tabBarTotalHeight + 1;
+	const minTop = Math.max(editorChromeState.menuBarHeight, editorChromeState.menuButtonBounds.bottom) + 1;
 	const minHeight = problemsPanelHeaderHeight()
 		+ constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2
 		+ constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS * editorViewState.lineHeight;

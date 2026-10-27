@@ -18,7 +18,7 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	const actor = title(), position = cycles(), media = ide.sources.currentBlua32Media;
 	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!;
 	check(ide.editor.editorParts.groups.every(group => group.model.findById(buildCodeTabId(resource)) === undefined), 'resource context: scene has never had a code input');
-	ide.editor.sceneEditor.openResource(ide.editor.editorParts.main.group, resource);
+	ide.editor.sceneEditor.openResource(ide.editor.editorParts.activeGroup, resource);
 	await frame();
 	const scene = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (scene.kind !== 'scene_editor') throw new Error('resource context: actual visual editor expected');

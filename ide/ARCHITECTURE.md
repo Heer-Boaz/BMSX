@@ -57,18 +57,29 @@ inside Home or a tool pane. Physical execution remains with the workbench's
 execution services and their explicit targets.
 
 `services/editor/editor_parts.ts` owns the frontend's permanent main part,
-document-part membership, activation/MRU and normal opening destinations. An
-`EditorPart` is an actual container with its own group, retained client bounds,
-timeline, Quick Input and decision dialogs. Document parts use the shared window
-container; they are not another Studio session or workspace. Opening a document
-does not replace the main part's authored subject. Workspace storage records
+part/group membership, activation/MRU and normal opening destinations. An
+`EditorPart` owns real groups, local active/MRU state, retained client bounds,
+Quick Input and decision dialogs. `group_arrangement.ts` owns the retained split
+tree, intrinsic minimum extents, overflow viewport and temporary group maximization.
+Each `EditorGroupView` owns its tabs, panes, content/timeline geometry and input
+scope. Ordinary opening uses actual matching views and the invoking group,
+independently of editor kind; creating a floating part is explicit. Floating
+parts use the shared window container, not another Studio session or workspace.
+Workspace storage records
 part topology and requested placement independently of shared source recovery.
 Workspace persistence is unversioned. Frontend layout, editor-view mementos
 and source-recovery manifests use the current shape without schema version
 fields, version gates, migrations or compatibility layers.
-The main presentation family and document windows share the surface owner's
-ordered window band. Window navigation raises actual parts; owned inspectors
-stay in their window/modal presentation family. Shared window models retain
+The permanent shell owns navigation, menu and one status presentation outside
+the editor-host area. Main's editor-client family and floating parts share the
+surface owner's ordered host band; activating an editor raises only that family,
+not the shell. Main's available client excludes temporary panels and shared
+sash lanes. Outer window/popup placement retains the reserved shell extent;
+Main clipping does not retire independently promoted surfaces. Logical surface
+lifetime and physical input admission are distinct. Workspace Open Editors
+projects every actual input/group/part from membership, while tab overflow remains group-local. Owned inspectors stay
+in their window/modal presentation family. Status consumes the actual active
+group rather than a background Main pane. Shared window models retain
 normal requested intent separately from normal/snapped/maximized arrangement
 and independently minimized visibility. Window gesture drafts are presentation,
 not persisted placement; only a completed drop publishes new intent.

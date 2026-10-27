@@ -36,7 +36,7 @@ test('host exclusive pages suspend every Studio editing channel and retire nativ
 		host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard, new IdeMicrotaskQueue(),
 		{ log() {} }, 0.3, { width: 256, height: 212 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	const field = new TextField(null, { allowSpace: true }, editor.editorParts.main.group.focusScope);
+	const field = new TextField(null, { allowSpace: true }, editor.editorParts.main.activeGroup.focusScope);
 	let keyboardCancellations = 0, gamepadActions = 0, pointerCancellations = 0;
 	field.focusTarget.bindKeyboard(event => applyInlineFieldEditing(event, field), () => keyboardCancellations++);
 	field.focusTarget.bindGamepad(() => gamepadActions++);

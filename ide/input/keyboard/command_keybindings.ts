@@ -61,6 +61,8 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'Backslash', command: 'group.splitRight', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
+	{ code: 'KeyK', command: 'group.splitDown', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'Backslash', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } } },
 	{ code: 'KeyK', command: 'window.snapLeft', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'ArrowLeft', modifiers: NO_MODIFIERS } },
 	{ code: 'KeyK', command: 'window.snapRight', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'ArrowRight', modifiers: NO_MODIFIERS } },
 	{ code: 'KeyK', command: 'window.maximize', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'ArrowUp', modifiers: NO_MODIFIERS } },

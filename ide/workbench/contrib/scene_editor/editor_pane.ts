@@ -102,7 +102,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		this.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
 		this.focusTarget.registerCommand('sceneEditor.source', {
 			isEnabled: () => this.hasInput,
-			run: () => this.controller.openSource(parts.documentDestination(this.group, { resource: this.input.workingCopy.resource, editorId: WORKBENCH_TEXT_EDITOR_ID }), this.input),
+			run: () => this.controller.openSource(parts.editorDestination(this.group, { resource: this.input.workingCopy.resource, editorId: WORKBENCH_TEXT_EDITOR_ID }), this.input),
 		});
 		this.focusTarget.registerCommand('sceneEditor.removeMember', {
 			isEnabled: () => this.hasInput && this.controller.canRemoveSelectedMember(this.input),

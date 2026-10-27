@@ -99,10 +99,10 @@ test('Scene pane Source and member commands retain their group and input when an
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds,
 		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
-		layoutMain: () => parts.main.layoutMain(bounds, bounds),
+		layoutMain: () => parts.main.layout(bounds),
 		closeEditors: async targets => { for (const target of targets) target.group.removeEditor(target.input); return true; },
 	});
-	const first = parts.main.group, second = parts.createDocument({ requestedBounds: bounds }).group;
+	const first = parts.main.activeGroup, second = parts.createDocument({ requestedBounds: bounds }).activeGroup;
 	first.panes.layout(bounds);
 	controller.openResource(first, resource); controller.openResource(second, resource);
 	const left = first.model.activeTab, right = second.model.activeTab;
@@ -153,10 +153,10 @@ scenes.register('incomplete', {})
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds,
 		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
-		layoutMain: () => parts.main.layoutMain(bounds, bounds),
+		layoutMain: () => parts.main.layout(bounds),
 		closeEditors: async targets => { for (const target of targets) target.group.removeEditor(target.input); return true; },
 	});
-	const group = parts.main.group;
+	const group = parts.main.activeGroup;
 	group.panes.layout(bounds);
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	const unopened = sources.catalog.resolveResource({ contextId: resource.contextId, path: 'unopened.lua' })!;
