@@ -1,134 +1,104 @@
-# Definition inputs and preview lifetime (STUDIO-UX-A04)
+# Definition inputs, preview and tab presentation
 
-## Owners and production references
+## Scope and references
 
-Lua remains the authored document. An `EditorTextModel` owns its text, dirty
-state and undo history; an editor input owns one view of that document. A
-Behavior Lens input addresses one **registration occurrence**, not its file,
-runtime id, label, or ordinal. The existing tracked registration-call range
-provides source correspondence through edits. Closing a view disposes its
-layout work and navigation subscriptions, not the shared working copy.
+This document owns definition-occurrence matching, preview admission and bounded
+tab presentation. Part composition, destination routing and shared close
+admission belong to the [Studio workspace contract](studio_workspace_design.md).
+Contribution-owned selection bookmarks belong to
+[navigation history](workbench_navigation_history_design.md).
 
-Reference: VS Code at `7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca`:
+Production references at VS Code commit
+`7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca`:
+
 - [EditorGroupModel](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/common/editor/editorGroupModel.ts):
-  input matching, a single preview slot, promotion rather than repurposing an input.
-- [EditorGroupView](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/browser/parts/editor/editorGroupView.ts):
-  detach/focus ownership and promotion on working-copy dirty changes.
+  input matching, one preview slot and promotion of an existing input.
 - [MultiEditorTabsControl](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/browser/parts/editor/multiEditorTabsControl.ts):
-  double-click keeps a preview open; duplicate names get source descriptions;
-  non-wrapping horizontal scrolling, vertical-wheel translation, explicit active
-  reveal and drop feedback are separate from group membership.
-- [SearchEditorInput](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/contrib/searchEditor/browser/searchEditorInput.ts):
-  a view's input identity need not be its backing resource identity.
-- [HistoryService](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/services/history/browser/historyService.ts):
-  disposed editor lifetimes cannot remain navigation destinations. Preview
-  replacement also retires a departure entry captured before that replacement.
+  tab gestures, source descriptions, overflow scrolling and active-tab reveal
+  belong to presentation, separately from group membership.
 - [OutlineModelService](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/editor/contrib/documentSymbols/browser/outlineModel.ts):
-  shared source-derived structure is cached by text model and generation, not
-  independently parsed for every view. BMSX keeps its own generic Lua producer.
+  source-derived structure is shared by model and generation rather than
+  independently parsed for each view.
 
-## Contract
+Studio inputs deliberately own view state and disposable view bindings. Distinct
+views share their working copies, not the input object. This is not VS Code's
+shared-input disposal model; the workspace contract describes that distinction.
 
-- Open keeps a definition. Opening another registration retains the first input,
-  selection and viewport. Opening the same surviving occurrence activates it.
-  The input id is a workbench lifetime id, never a guest or persistent asset id.
-- Preview is an explicit opener option. The group replaces only its previous
-  clean preview, after its pane has detached. Kept inputs never become previews
-  merely because an opener requests preview. Dirty inputs are always kept.
-- `Editor: Keep Open`, double-clicking its tab, dragging its tab, or editing its
-  shared working copy promotes the preview. This is not sticky-tab pinning.
-  Bitmap tabs show `PREVIEW` explicitly; no alternate font or shortcut is needed.
-- Titles name the selected definition. The group adds descriptions only for
-  duplicate titles; descriptions identify source domain/path/registration line.
-  Scene views retain their file-level scope and use source disambiguation too.
-- Source topology and FSM indices are shared immutable document generations.
-  `BehaviorSourceDocuments` caches by model/version; the shared source index
-  retains node/parent/occurrence maps per document generation and consumes each
-  model content event once. Each view retains its own mapped selection and
-  presentation. Source edits and Undo never retarget sibling inputs to the
-  edited definition. Weak-key generations do not subscribe to model lifetimes.
-- Renaming an id or inserting source before a registration preserves its view.
-  Deleting/replacing the complete registration clears that view's target; a
-  same-named insertion is not the deleted occurrence. No compatibility reader,
-  positional fallback, executable graph or second model is introduced.
-- Source/Back/Forward preserves the concrete input and contribution selection.
-  Cross-registration source-review links must not mutate an input's identity.
+## Definition identity and admission
 
-## Bounded tab strip
+An `EditorTextModel` owns authored text, dirty state and Undo/Redo for one admitted
+`(contextId, path)`. A Behavior Lens input addresses one registration occurrence
+within that source, not a guest id, label or list ordinal. Its tracked
+registration-call range supplies source correspondence through edits.
 
-The full Studio regression exposed a prerequisite: retaining individual
-definitions multiplied tabs, and the old unlimited wrapped tab rows consumed
-the entire viewport, including the Problems resize target. Closing tabs in the
-test would hide the missing chrome contract rather than fix it.
+- Opening another registration retains the first input, selection and viewport.
+  Opening the same surviving occurrence in the destination group activates its
+  existing input without resetting that presentation.
+- A Behavior Lens input's lifetime id is neither a persistent asset id nor the
+  resource/occurrence matching key. Closing and reopening creates another input.
+- Renaming a definition or inserting source before its registration preserves
+  its view. Deleting or replacing the complete registration clears its target;
+  a later same-named insertion is not that occurrence.
+- Titles name definitions. The group adds descriptions for duplicate titles;
+  source context, logical path and registration line disambiguate them. Scene
+  views retain their file-level scope rather than pretending each file is one
+  declaration.
+- Cross-registration Source or review links open the identified destination;
+  they do not repurpose the departing input's identity.
 
-The workbench now gives the tab strip one clipped row and a horizontal track
-only when content overflows. The existing `Scrollbar` owns range, position,
-thumb geometry and minimal interval reveal. Physical track/availability changes
-publish cancellation to the captured gesture; content refinement does not.
-Wheel over tabs moves that axis, never the active document. Active-tab reveal follows group or geometry
-changes; it does not undo manual scrolling every frame. Font, viewport width
-and label changes invalidate the measured label cache. Hidden tabs retain hit
-geometry but emit no glyphs; input disposal releases their geometry entries.
+## Shared generations and retained views
 
-The shared `ScrollbarPointerControl` owns the physical thumb gesture without changing
-editor focus. The tab-drag owner uses the same pointer-capture service as pane
-controls: insertion feedback is not a group mutation, an accepted physical
-release moves the tab, and Escape, lost input, a blocking surface or a changed
-group ends the gesture without rollback. Graph and tab drags share the existing
-host-time edge-scroll primitive. Tabs do not add an independent input loop,
-keyboard shortcut or selection history.
+`BehaviorSourceDocuments` shares immutable source topology by canonical model and
+the admitted semantic snapshot revision. Imported-source changes can invalidate
+that generation without changing the anchor model's own text version.
 
-No runtime, cartlib or TS/C++ hardware changes. Session serialization is A07;
-this slice does not promise to restore visual inputs across a browser restart.
+`BehaviorSourceIndex` shares node, parent and occurrence maps for a document
+generation. Its reference-counted acquisitions own the model subscriptions and
+tracked ranges; each retained view acquires once and releases at disposal.
+The weak-key document cache itself does not subscribe to model lifetimes.
+An edit maps shared source ranges once, not once per displayed view.
 
-## Evidence required
+Each input retains its own selection, viewport and asynchronous layout lifetime.
+Edits and Undo publish through canonical working copies; they do not retarget
+sibling definition inputs. Composite inputs retain all participating working
+copies, including imported documents. Losing an import or a recognized syntax
+node does not erase that input's existing Undo/Save participation.
 
-Independent same-file FSM/BT/ActionEffect fixtures; duplicate ids and names;
-mapped edits and deletion; shared undo isolation; open/preview/keep/dirty/close
-lifetimes; source/back/forward. Exercise the actual tiny-font Studio on software,
-WebGL2 and WebGPU, not just model tests. Measure shared generation reuse and
-retain labels outside the frame hot path.
+Closing a view releases its projections and subscriptions after the shared close
+owner admits retirement. It does not discard a working copy still presented by
+another input. Contribution serializers own their plain view snapshots; live
+input ids and worker/layout handles are not persistent source identities.
 
-Also prove bounded height at both bitmap fonts and 256/384px widths, reveal
-versus manual wheel scrolling, thumb capture, tab-drop cancellation, disposal,
-stable measurement and visible-only painting. The actual Studio regression
-must retain enough tabs to overflow and still resize Problems and Scene
-details. Its fixture reaches offscreen tabs through real pointer wheel input,
-not a direct activation shortcut or an out-of-bounds click.
+## Preview admission
 
-### Reproduce and results
+Preview is an explicit opener option. A group replaces only its previous clean
+preview after detaching that preview's pane. A kept input never becomes a
+preview merely because a later opener requests preview; dirty inputs are kept.
 
-```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/editor_group_preview.test.ts tests/lua/editor_tabs.test.ts \
-  tests/lua/workbench_scrollbar.test.ts tests/lua/behavior_registration_index.test.ts \
-  tests/lua/behavior_source_bookmark.test.ts tests/lua/state_machine_edit.test.ts
-npm run test:lua
-npx tsc -p ide/tsconfig.json --noEmit
-npm run build:product:browser-studio -- --debug --force
-BMSX_PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs \
-  node tests/conformance/runtime_replay/browser.mjs --studio \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/studio-a04.png
-npm run audit:architecture-boundaries:strict
-npm run audit:core-parity
-git diff --check
-```
+Keep Open, a tab double-click, beginning an accepted tab drag, or making the
+shared working copy dirty promotes its preview. This is not sticky-tab pinning.
+Bitmap tabs identify previews explicitly rather than relying on another font.
 
-The actual three-renderer Studio suite passes, including its existing
-Save/Hot Resume/Reboot/scenario flows. `studio_definition_inputs.ts` uses the
-independent `tests/fixtures/studio/navigation.ts` source through ordinary
-workspace Save, not a game-definition assertion or replacement VM. A04 source
-edits, tab gestures and navigation leave paused machine cycles and installed
-media unchanged. The suite's existing tests still include deliberate compiler
-and guest faults and sourcefetch 404s; this is not a zero-console-messages claim.
+## Bounded tab presentation
 
-Full Lua suite: 1285 passed, 1 existing skip. IDE typecheck/build, strict
-boundaries (0 issues), core parity and diff checking pass. The broad tests
-typecheck retains the same 51 pre-existing diagnostics as A03, compared without
-line-number shifts. Local evidence is under `/tmp/bmsx-a04/`.
+The tab strip occupies one clipped row, with a horizontal track when content
+overflows. `Scrollbar` owns range, position, thumb geometry and minimal interval
+reveal. Wheel input over tabs scrolls that axis, not the active document.
+Active-tab reveal follows membership, activation or geometry changes; it does
+not undo manual scrolling on stationary frames.
 
-Shared-cache tests issue 1000 same-generation requests and map one content event
-through ten consumers without multiplying its offset change. Tab tests at both
-fonts and 256/384px widths retain geometry and label measurements across 100
-stationary frames and paint only visible tabs. These bound specific work and
-lifetime costs; they do not establish end-to-end Studio or SNES Mini latency.
+Font, available width and label changes invalidate the measured label cache.
+Hidden tabs retain hit geometry but emit no glyphs; input disposal releases
+their geometry entries. Unchanged frames neither remeasure labels nor rebuild
+source generations for tab presentation.
+
+`ScrollbarPointerControl` owns the thumb gesture without changing editor focus.
+The tab-drag owner uses shared pointer capture: insertion feedback does not
+mutate membership, and an admitted physical release commits the reorder.
+Escape, lost admission, a blocking surface or an incompatible group change
+cancels the gesture rather than completing a drop. Physical track/availability
+changes revoke captured gestures; content refinement alone does not.
+
+Tab and graph edge scrolling use the shared host-time primitive. Tabs introduce
+neither an independent input loop nor another selection history. These are
+specific work and lifetime bounds, not an end-to-end latency guarantee.

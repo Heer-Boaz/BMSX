@@ -50,18 +50,31 @@ invitation to substitute Home or another declaration.
   specialized editors in its [editor interface](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-editor-interface).
   The transferable decision is the main/project versus document-tool boundary,
   not the assumption that BMSX already has Unreal's level model or viewport.
-- VS Code's [editor parts](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorParts.ts)
-  distinguish the main part from auxiliary parts. An
+- VS Code's [editor parts](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorParts.ts#L57-L108)
+  compose a permanent main part and independently living auxiliary parts.
+  Each [part](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorPart.ts)
+  owns its groups, arrangement and local activation. An
   [auxiliary part](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/auxiliaryEditorPart.ts#L178-L190)
-  has a concrete editor container and scoped editor operations, not another
-  working-copy store. BMSX adopts that ownership separation without copying
-  dependency-injection containers or creating an operating-system window.
-- Godot's [EditorNode](https://github.com/godotengine/godot/blob/master/editor/editor_node.h)
-  composes the main screen separately from its
-  [dock manager](https://github.com/godotengine/godot/blob/master/editor/docks/editor_dock_manager.h).
-  Shared presentation owns floating/docked placement; the tool keeps its own
-  subject and editing state. BMSX uses that separation, not Godot's entire
-  docking implementation.
+  receives [scoped editor operations](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/services/editor/browser/editorService.ts#L87-L98),
+  while document services remain shared. Studio adopts these ownership scopes,
+  not a dependency-injection container or an operating-system window.
+- VS Code's [command-context resolution](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorCommandsContext.ts#L19-L72)
+  resolves concrete groups/editors, using the active group when no explicit
+  context is supplied. Studio likewise selects a destination or subject at
+  invocation; a delayed operation retains it rather than consulting later focus.
+- VS Code separates [input matching](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/common/editor/editorGroupModel.ts#L984-L1052)
+  from strict object identity and permits
+  [inputs shared across groups](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorGroupView.ts#L644-L669).
+  Studio deliberately differs: its retained inputs already own view state and
+  disposable view bindings. Independent Studio views share the working copy,
+  not that input object. This preserves the existing ownership instead of
+  copying VS Code class names with different lifetime semantics.
+- Godot's [main-screen container](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/editor_main_screen.h#L49-L64)
+  keeps the main area present, while its
+  [dock manager](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/docks/editor_dock_manager.h)
+  owns floating placement. Studio likewise keeps main-area lifetime separate
+  from the selected tool and shared window presentation; it does not copy
+  Godot's docking implementation.
 
 Window presentation and physical input follow the existing
 [surface/window contract](workbench_windowing_design.md). Document/input
@@ -73,6 +86,7 @@ selection bookmarks follow [navigation history](workbench_navigation_history_des
 | Owner | Retained state and responsibility |
 | --- | --- |
 | Attached workspace | Source/file authority, admitted resource catalog, working copies, semantic caches, Save, recovery and navigation. Execution attachments consume these owners; they do not supply authoring identity. |
+| Frontend editor-parts owner | Permanent main part, document-part membership, frontend activation/MRU and destination routing. Enumerates the actual parts' groups for shared operations. |
 | Main editor part | Project navigation, main groups and their authored subjects/views. Its lifetime is the workspace attachment, not the active document tab. |
 | Editor part | Window/container, group layout, active group, client bounds and local focus/capture scope. A part is a concrete composition, not a facade over global active state. |
 | Editor group | Ordered inputs, active/preview input, pane instances, tab chrome, group focus/capture scope and outstanding editor-opening lifetime. Each concurrently visible group has its own panes and controls. |
@@ -92,6 +106,47 @@ Studio session or source authority. Closing it retires its controls and views,
 not those shared owners.
 Source-access and review capabilities belong to the attachment/session. Creating
 or focusing another editor window cannot grant permission to edit or Save.
+
+## Composition and lifetime
+
+The frontend composes real parts over the shared workspace, rather than placing
+a window around the primary group's existing controls. The editor-parts owner
+owns part membership and activation; each part owns its group arrangement,
+retained client bounds, surfaces and focus/capture ancestry. Its local active
+group is distinct from the frontend's most recently activated part/group.
+The flattened group enumeration used by close and document operations is
+derived from that membership, not a separately mutable second registry.
+
+A group supplies its actual group, focus scope and content surface to its pane
+factories. The pane cache remains group-local and lazy by editor kind. Source,
+Scene, Behavior Lens and the other contributions receive that group's real
+controls and opening destination; no factory closes over a primary-group alias.
+Workspace caches and document projections stay at their existing shared owners.
+The main part retains project navigation and its authored subject independently
+of the document parts' tab selections.
+
+Composition follows a concrete ownership order:
+
+1. Attach the workspace's admitted sources, canonical models and shared services.
+2. Construct the main part, then any restored document parts, with their own
+   surface roots and group factories. Recover dirty models once before resolving
+   inputs; contribution serializers construct independent views over them.
+3. Attach each group's inputs and controls without acquiring guest input or
+   issuing execution commands. Publish the part arrangement and presentation
+   activation only after its destinations exist.
+4. On a document-part close request, pass that part's actual group/input set to
+   the shared close owner. Keep the part until close admission completes; Cancel
+   leaves it available. Successful close retires its openings, controls,
+   popups, navigation destinations, surfaces and part membership in owner order.
+5. Workspace replacement settles workspace-wide operations and retires all parts
+   before clearing canonical models, source authority or recovery bindings.
+
+Each part arranges its groups within layout-owned bounds. Paint/input traversal
+uses the shared surface owner; controls consume their group's retained client
+rectangle. Drawing another part never swaps global editor bounds, focus or
+source state. Layout and activation invalidate their owning projections; a
+stationary frame does not rebuild pane factories, enumerate source registries
+or reconstruct window state.
 
 Source layout is separated by responsibility, rather than copying the entire
 current `CodeLayout` into every window. Canonical source/semantic/highlight data
@@ -172,11 +227,12 @@ catalog is a concrete initial producer, not the architecture's project limit.
 ## Opening, activation and commands
 
 Opening resolves the canonical working copy and exact contribution/subject.
-Matching views deduplicate **within a group**, not across all parts. Each view
-has a distinct workspace-owned presentation identity, independent of the
-resource/subject key used to find matching views.
-An ordinary move preserves that live view identity. Close/reopen creates a new
-view; coalescing preserves the destination identity and retires the source one.
+Matching views deduplicate **within a group**, not across all parts. The retained
+input object is the live view identity; its group membership identifies where
+it is presented. A resource/subject matching key is not a workspace-global view
+identifier. This needs no second UUID registry. An ordinary move transfers that
+same input; close/reopen creates a new input. Coalescing preserves the destination
+input and retires the departing one.
 
 Ordinary open routing is deterministic:
 
@@ -203,17 +259,12 @@ resolves, it can still attach to the valid destination without raising that part
 or stealing focus. Completion never infers its subject from the later-focused
 control or treats a live destination as permission to activate it.
 
-Inputs are not shared as disposable objects between groups. Reopening an
-existing view activates it; an explicitly additional view owns separate view
-state over the same working copy. Source edits publish through the canonical
-model to every retained projection, including the main tool behind the window.
-Parsing/indexing remains cached by the owning model and generation, not repeated
-per visible window or frame.
-Parts consume shared semantic/index generations and perform view layout on
-their own invalidations. They do not create another compiler, semantic project,
-filesystem transport, runtime loop or per-frame source reconstruction. Closing
-views releases their projections/subscriptions; workspace dirty recovery has
-its own lifetime rather than an accidental hidden pane keeping it alive.
+Because Studio inputs own view state and bindings, an additional view gets a
+separate input over the same working copy. Source edits publish to every retained
+projection, including the main tool behind the window. Parsing/indexing stays
+cached by model/generation; view layout follows its own invalidations. Closing
+a view releases its projections/subscriptions, not shared semantic, filesystem,
+runtime or dirty-recovery owners.
 
 Moving a view transfers group ownership after detaching its old pane; it is
 different from closing/disposal or opening another view. Group removal cannot
@@ -235,9 +286,10 @@ Keyboard focus, active part, hovered surface and command subject remain separate
   Menus and popups retain that origin while focus temporarily moves into them.
 - An asset's Source action opens the matching location in the document part;
   an unrelated main selection or later-focused tab cannot substitute its model.
-- A root command with no document subject is explicitly workspace-scoped.
-  Save/Undo and subject commands never guess a document from a global tab.
-- Source-consuming commands accept the focused control's draft through its
+- A workspace command has no document subject. A document command invoked from
+  root chrome or the Command Palette captures the activated editor context when
+  the interaction starts. It does not infer a different subject on submission.
+- Source-consuming commands accept the originating control's draft through its
   existing edit boundary before reading canonical source. Its subject owner
   resolves the surviving occurrence after that publication, rather than acting
   on a removed subject or substituting another selection.
@@ -251,6 +303,27 @@ The global active pane/group and `getActiveTab()` cannot remain implicit subject
 providers for independently living parts. Likewise, pane teardown cancels only
 its own capture/focus scope. These are ownership changes, not renamed globals,
 state-swapping around drawing, or wrappers that forward to the old singleton.
+
+Contribution composition separates three actual responsibilities:
+
+| Responsibility | Owner and admitted context |
+| --- | --- |
+| Discover/resolve a resource or declaration | Workspace contribution using the shared source catalog, working copies and cached semantic projections. Produces the exact resource/occurrence, not an active-tab lookup. |
+| Choose/open a view | Frontend destination routing and the selected group's opening lifetime. A picker retains its invoking context and chosen destination through acceptance and asynchronous resolution. |
+| Edit, reveal Source or inspect a selection | The attached pane/control's command binding, carrying its concrete input and contribution-owned selection. The domain operation consumes those arguments directly. |
+
+Shared domain operations receive explicit inputs. Group-bound opening logic owns
+destination admission and lifetime; it does not forward to a controller's hidden
+primary group. A new part needs its own actual controls, not another copy of
+the workspace's domain services.
+
+Command availability and execution use the same captured subject. After draft
+publication, the subject owner resolves the retained occurrence against the
+resulting source generation. A popup retains the originating attachment,
+not just a reusable pane object: detaching/rebinding that pane or retiring its
+input revokes the old action. An unrelated focus change does not redirect it.
+A picker whose destination retires is dismissed; an already submitted open is
+rejected by that destination's opening lifetime. Neither is redirected to main.
 
 Modal admission follows ownership rather than paint promotion. A popup that
 escapes its group's clip still belongs to the invoking group's admission family.
@@ -312,8 +385,7 @@ publishes target-bound workbench holds to the existing execution owners:
 With no execution attachment, authoring publishes no physical execution request.
 An explicit Pause/Stop is target-owned and survives focus changes; an automatic
 UI hold is not a substitute for it. Focus return recomputes that ordinary policy
-without an extra Continue command. This transient rule deliberately replaces
-the present primary-only pause side effect of showing menus/Quick Input.
+without an extra Continue command.
 Chrome/transients retain an admitted activated client context rather than
 searching visible panes when there is no focused leaf. Retiring that client
 uses normal focus-return/activation to select a surviving context. The host
@@ -326,6 +398,30 @@ Source does not silently select another audio/debug target. Retirement of a
 target retires those bindings, rather than redirecting its commands to the main
 machine. This replaces single-active-pane inference at composition, host-frame,
 audio, transport and timeline boundaries together, not at one fallback callsite.
+
+The selected run target belongs to shared workbench execution composition.
+Browser and server-owned frame/audio consumers read that same explicit binding;
+the absence of frontend focus does not select any ready Play session. Frontend
+interaction admission separately retains the activated client, focused guest
+binding and concrete local command binding. A menu may therefore retain live
+execution policy while admitting no guest keyboard/controller input.
+Automatic hold contributions change on interaction or target-lifetime
+transitions. Frame advancement consumes that admitted policy once per target;
+advancing a Play session does not independently decide its workbench hold.
+
+Run-target selection has explicit admission rules:
+
+- Workspace execution startup selects its designated primary target, or none
+  for a source-only workspace. Adding an attachment does not select it.
+- Interactive Play Start requests selection of its admitted target. Failure
+  preserves the previous selection; delayed completion cannot override a newer
+  explicit selection. Background test runs preserve the selection.
+- Focus, inspection, Source navigation, stacking and transients do not change
+  global run selection. Local controls retain their invocation target.
+- Rebuild, reboot or image replacement preserves selection within the same
+  target lifetime. Retiring the selected target clears selection, disables
+  global runtime controls and selects no audio output. A later explicit Run or
+  target-selection action can select primary; retirement itself never does.
 
 ## Close, layout and restoration
 
@@ -354,9 +450,10 @@ Save/close completion does not take focus from an unrelated active part. Focus
 return belongs to the still-admitted invoking context, not to a stale global
 active-pane pointer.
 
-This last-view admission is a required new close policy. The present tab-close
-path disposes inputs while dirty models/recovery can outlive their views; it
-does not already provide a Save/Discard/Cancel protocol to reuse unchanged.
+`EditorCloseController` already owns last-view decisions, composite working
+copies and re-admission after awaited work. Part close composes that owner over
+the affected groups; part-local prompt/session admission extends the existing
+root-prompt presentation rather than replacing the close policy.
 
 Collapse or temporary covering retains views, working copies and reading
 positions while revoking unavailable input. Pending field drafts follow their
@@ -393,11 +490,12 @@ interaction admits that mode against the current target lifetime. Initial
 workspace interaction is Authoring, even if a runtime view's chrome was active
 in the saved layout. Separate explicit host startup/Boot policy remains with
 the execution owner, not the layout restorer.
-Group/input serializers identify each distinct view and its model/subject
-reference; they do not resolve several restored views through one global
-input-manager entry keyed only by resource. The owning persistence format must
-represent source contexts and all part/group relationships before this layout
-is published as restorable.
+The session format records part/group topology, local active/preview inputs,
+frontend activation and each contribution's view memento. Group records identify
+views by their place in that serialized structure and their model/subject
+reference, not a live control ID. Each record reconstructs its own input over
+the shared canonical model. The owning format must represent source contexts
+and all part/group relationships before this layout is published as restorable.
 Persistent layout/view mementos contain plain contribution-owned restore data
 and references between records. Restoration constructs distinct live inputs and
 control identities; it does not revive an old live id as command authority.
@@ -418,9 +516,9 @@ not an optional future architecture exception. More document windows are not
 simulated by swapping global source state. Native auxiliary windows remain the
 separate host boundary already defined by the windowing design.
 
-The existing single-client assumptions must change at their owners together:
+Construction depends on these owner boundaries remaining coherent together:
 
-| Boundary | Required ownership change |
+| Boundary | Required contract |
 | --- | --- |
 | `workbench/workbench.ts`, source/catalog, model and Save composition | Separate authoring authority from execution attachments; admit logical source contexts centrally. |
 | `services/editor/editor_group.ts`, `ui/tab/`, `services/editor/editor_panes.ts` | Part/group-owned inputs and controls; scope-specific retirement instead of singleton selection/reset. |
@@ -441,8 +539,11 @@ or fixed pixel positions:
 | --- | --- |
 | Open/edit/close an FSM or BT above a main Scene view | Main subject, selection and viewport survive; both views observe canonical source changes. |
 | Invoke Source/Save/Undo through a popup, then change focus | The invocation targets its original admitted input; retired origins cannot act on a replacement. |
+| Rebind a reusable pane while its old popup/action is pending | The old attachment loses command authority, even if the old input survives in another tab. |
 | Resize/cover/collapse one surface during a hold | That surface loses input and drains its gesture; a sibling's unrelated capture survives. |
 | Complete an open after its part/workspace has closed | No late attachment or focus transfer into another part. |
+| Open a menu from a live Play client while the main authoring view remains visible | The menu inherits that client's policy; neither visibility nor popup focus changes another target's holds. |
+| Retire the target of an open runtime menu or timeline | Its commands become unavailable; none act on the primary target instead. |
 | Close another view of a dirty model, then the last view/window | Shared history survives the first close; the final close resolves the ordinary dirty decision once. |
 | Navigate across parts, dispose one, and restore a workspace | Destinations remain explicit; models recover once; no accidental execution or runtime-handle resurrection. |
 | Restore an active runtime-view memento over an attached target | The view can regain presentation focus without granting live input/capture or releasing execution holds. |
