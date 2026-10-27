@@ -21,9 +21,10 @@ and presentation choice, not an inspector capability.
 
 Native/browser auxiliary windows are a different host boundary: they have their
 own display, document, input and close lifetime. They are not represented by a
-flag on a canvas subwindow. Docking and tab-group rearrangement are separate
-layout features; neither is required for floating Details, and Details cannot
-be dragged back into a split. Supported font choices and their capitalisation
+flag on a canvas subwindow. Editor-group docking and tab rearrangement belong
+to the [workspace arrangement](studio_workspace_design.md#editor-arrangement-and-docking),
+not the floating-window container. Owned utility Details is not an editor group;
+its lifetime, subject and close contract remain with its contribution. Supported font choices and their capitalisation
 policy remain intact; shared icon geometry and single-glyph truncation are UI
 presentation primitives rather than text-font substitutes.
 
@@ -99,7 +100,7 @@ scope. A planned slice is a dependency, not an implementation-status claim.
 | Role | Placement and input behaviour | Product consumer | Planned scope |
 | --- | --- | --- | --- |
 | Layout content | Bounds supplied by the existing workbench or pane layout. | Editor group, resource panel, game panel, timeline. | A: publish the existing layout roots. |
-| Modeless window | The main family has layout-owned placement; floating windows own requested placement. Their opaque rectangles exclude surfaces behind them in the same ordered context. | Main/document editors; Actor Lab Details; GPU operation and GTE command Details. | C: shared floating chrome; main/document composition uses the same ordered family boundary. |
+| Modeless window | Main's editorclient family has layout-owned placement; floating windows own requested placement. Shell navigation/status are outside the editor-host bounds and are not raised with a host. Opaque host rectangles exclude surfaces behind them in the same ordered context. | Main/document editors; Actor Lab Details; GPU operation and GTE command Details. | C: shared floating chrome; main/document composition uses the same ordered family boundary. |
 | Contained subwindow | Independently ordered inside a window's client area, bounded by that client's effective clip. | No concrete product consumer yet. | Designed, provisional and not validated by a product consumer; no nested arrangement implementation in A–C. |
 | Anchored transient | Owner-relative anchor, explicit dismissal and input policy; may escape the owner's content clip. | Context menu, submenu, completion popup, interactive hover. | A: migrate existing transients. |
 | Modal surface | Blocks a named scope and confines focus/commands within it until resolved. | Root action prompt/Quick Input; pane-local image lightbox. | A: root and existing owner-local blocking. |
@@ -174,11 +175,17 @@ its admission boundary. A backdrop covers exactly the blocked scope, so blocked
 input cannot reach a visibly uncovered lower branch accidentally.
 
 The blocked scope and presentation parent are explicit, independent references.
-The permanent main presentation family and document windows share the window
-band. A main-part chooser escapes its content clip within that main family,
+The main **editorclient family** and floating editor families share an ordered
+host band inside the editor area. Main includes its own groups, tabstrips and
+owned overlays, not the permanent shell's full background, navigation, menu or
+status. Host activation orders this actual client family rather than raising the
+entire shell. A main-part chooser escapes its content clip within that family
 without becoming a workspace modal. Foreground invocation raises its family;
-another window can subsequently rise above it. Raising the opaque main family
-covers document windows without changing their visibility or lifetime state.
+another editor host can subsequently rise above it. Raising Main's client can
+cover an explicitly floating document without changing its membership, placement
+or lifetime. The shell's permanent Open Editors/host navigator remains reachable
+outside the overlap and reveals those exact retained owners. Main is not forced
+behind all floats, nor are floats kept permanently above the selected editor.
 Owned modeless inspectors likewise present in their nearest real window or
 modal family, so raising an editor does not strand its inspectors behind it.
 Promotion never transfers command authority or a popup's lifetime.
@@ -301,11 +308,14 @@ sibling's capture survives. Visibility changes do not retire attachment context
 or suspend the retained client. Explicit later reveal wins over an earlier
 minimize, including a reveal issued by a focus-change callback.
 
-The existing global status row exposes an icon and count for minimized document
-parts; it opens a chooser of those actual owners. The Window menu and complete
-window picker also restore them. No permanent taskbar row reduces client space.
-Explicit restore arranges and raises the family, then focuses its retained
-local dialog or client. Passive restacking never restores a minimized part.
+The permanent workspace Open Editors/host navigator includes all retained
+owners, not only minimized parts. A minimized badge/count can be projected into
+that affordance, but must not control whether it exists. The Window menu and
+complete window picker also restore actual minimized owners. This navigation
+uses permanent shell space outside overlapping editor bounds, rather than an
+extra taskbar row or a geometric test for occluded windows. Explicit restore
+arranges and raises the family, then focuses its retained local dialog or
+client. Passive restacking never restores a minimized part.
 A close decision for a minimized dirty document reveals its local prompt only
 when the close owner actually requires a decision; clean close need not reveal.
 
@@ -898,9 +908,11 @@ Acceptance:
 
 Contained-subwindow arrangement remains designed and provisional until a
 concrete contribution needs it. Its eventual implementation validates nested
-clipping and client-relative placement at that boundary. Other inspectors,
-docking and native windows are separate product changes, each with its own
-consumer and acceptance rather than extra work hidden in C.
+clipping and client-relative placement at that boundary. Other inspectors
+and native windows are separate product changes, each with its own consumer
+and acceptance rather than extra work hidden in C. Editor-group docking belongs
+to the workspace arrangement contract; it is neither a Details-specific feature
+nor an effect of snapping a floating rectangle.
 
 ### D — Presented-image pointer projection and producer parity
 

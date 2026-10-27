@@ -2,6 +2,9 @@
 
 ## Product boundary
 
+The ownership and interaction contract below is the target architecture. The
+capability table distinguishes existing owners from missing implementation.
+
 Studio has a persistent project work area, with document editors that can be
 used without replacing that work area. Home is welcome/navigation content,
 not the main window's identity or its lifetime owner. This document defines the
@@ -9,25 +12,26 @@ workspace interaction and ownership contract, not an Unreal feature checklist.
 
 The target supports multiple independently living editor parts and Source
 controls. It is not restricted to the number of windows in the first delivery.
-Project selection, target-free startup, docking and native host windows have
-their own admission/presentation requirements; they are not implemented merely
-by arranging canvas windows.
+Editor-group docking belongs to this workspace design; snapping a floating
+window does not implement it. Project selection, target-free startup and native
+host windows have their own admission/presentation requirements.
 
 ```text
 Studio frontend — one attached workspace
-├─ Main editor part — permanent project work area
-│  ├─ Project content browser
-│  ├─ Main editor group(s), authored subjects and selections
-│  └─ Contextual hierarchy/details and explicit run controls
-├─ Document-editor parts — modeless editor windows
-│  └─ Group(s) of Source / FSM / BT / effects / animation / audio / other tabs
+├─ Permanent shell — project navigation, Open Editors, menu and workspace status
+├─ Main editor part — permanent editor host, without a floating titlebar
+│  └─ Arrangement of groups: Source / Scene / FSM / BT / other editor tabs
+├─ Explicit floating editor parts — the same group arrangement and input owners
+│  └─ Normal/snapped/maximized placement, independently minimized visibility
 └─ Owned inspectors, popups and dialogs
 ```
 
-The main area remains a working editor while document windows are open. Opening
-or closing a BT must leave the main tool, its subject and its selection intact.
-At small sizes the foreground editor may cover the main area; covering a view
-does not destroy it. Home can be closed without closing the project work area.
+The main part's lifetime belongs to the workspace, not to Scene, Source or Home.
+All editor kinds use the same groups, tab lifetime and placement operations.
+Ordinary opening uses an existing group; floating is an explicit user choice.
+A split keeps two editors simultaneously visible without overlapping windows.
+Switching tabs retains their subjects and selections; opening a BT does not
+retire a Scene input. Home can be closed without closing the project work area.
 
 The existing Scene tool is a source-backed outline/property editor. Its Lua
 resource may contain several scene declarations. Neither the running game frame
@@ -35,12 +39,13 @@ nor a runtime World is an authored level viewport. A visual level editor needs
 its own source-backed scene, asset-resolution and rendering contract before
 it can be advertised as such.
 
-At attachment, restore the saved main subject and view through their source
-owners. Without a selected main subject, show Home and working project-content
-navigation. Choosing a Scene opens its document in the main part; ordinary
-asset navigation opens a document part. No first-file/first-declaration guess or
-running-frame substitution supplies a main scene. Opening Home later is an
-ordinary navigation action; the main part itself remains the permanent owner.
+At attachment, restore the main arrangement, its groups and their recorded
+subjects/views through their source owners. Without a recorded editor subject,
+show Home in the initial group and working project-content navigation. Choosing a Scene, Source file or another authored declaration uses
+the common group-routing contract, not a tool-specific Main/floating rule.
+No first-file/first-declaration guess or running-frame substitution supplies a
+scene. Opening Home later is ordinary editor navigation; the main part itself
+remains the permanent owner.
 An authored subject that becomes unavailable is still that subject, not an
 invitation to substitute Home or another declaration.
 
@@ -69,6 +74,15 @@ invitation to substitute Home or another declaration.
   disposable view bindings. Independent Studio views share the working copy,
   not that input object. This preserves the existing ownership instead of
   copying VS Code class names with different lifetime semantics.
+- VS Code's [group arrangement](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorPart.ts)
+  represents groups separately from the [split/grid geometry](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/grid/gridview.ts).
+  Lumino's [dock panel](https://github.com/jupyterlab/lumino/blob/main/packages/widgets/src/dockpanel.ts)
+  likewise distinguishes inserting a tab from splitting beside a group. These
+  are references for one editor arrangement, not an additional document store.
+- Qt's [MDI area](https://github.com/qt/qtbase/blob/dev/src/widgets/widgets/qmdiarea.cpp)
+  separates retained windows, activation and stacking. This is a closer reference
+  for overlapping canvas editor hosts than VS Code's native auxiliary windows.
+  Studio keeps the host-selection route outside that overlapping area.
 - VS Code's [window actions](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorActions.ts#L2390-L2569)
   expose new windows and explicit move/copy separately from ordinary opening.
   Window membership alone does not make those operations discoverable. Studio's
@@ -112,8 +126,8 @@ not an editable asset schema or an isolated preview contract.
 
 | Workflow | Existing BMSX owners | Missing capability or boundary |
 | --- | --- | --- |
-| Main workspace and document editors | `services/editor/editor_parts.ts` and `editor_part.ts` compose main/document lifetime, controls and local sessions over shared documents. | Canvas placement does not supply docking or native host windows. Those require separate presentation and lifecycle contracts, rather than another editor instance. |
-| Window navigation and additional views | The Window menu exposes main-workspace activation, an MRU window picker, new editor windows and contribution-owned additional views. Shared window chrome exposes maximize/restore and owner-admitted document minimization; document close requests go through `EditorCloseController`. | Snapping uses the shared placement/drag/keyboard contract below without moving editors or their inputs. Docking and native host-window integration remain separate capabilities. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
+| Main workspace and document editors | `services/editor/editor_parts.ts` and `editor_part.ts` compose main/document lifetime, controls and local sessions over shared documents. | Each part needs a real group arrangement, explicit split/dock transfer and group-aware opening; wrapping a single group in a window does not supply them. Native host windows remain a separate host boundary. |
+| Window navigation and additional views | The Window menu exposes main-workspace activation, an MRU window picker, new editor windows and contribution-owned additional views. Shared window chrome exposes maximize/restore and owner-admitted document minimization; document close requests go through `EditorCloseController`. | Snapping uses the shared placement/drag/keyboard contract below without moving editors or their inputs. Editor docking uses the group-transfer contract below; native host-window integration is separate. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
 | Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
 | Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Studio adapters for known factories and cart-owned authoring metadata are possible producers; a mandatory new cartlib schema is not assumed. The read-only [runtime inspection contract](cartlib_inspection_contract.md) does not supply that authoring metadata. |
 | Hierarchy and Details | Scene's outline/options project authored membership; Actor Lab independently inspects runtime actors/components. | Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations before Studio can offer that kind of hierarchy. |
@@ -152,9 +166,11 @@ frame, a generic table dump or an empty editor window.
 | Owner | Retained state and responsibility |
 | --- | --- |
 | Attached workspace | Source/file authority, admitted resource catalog, working copies, semantic caches, Save, recovery and navigation. Execution attachments consume these owners; they do not supply authoring identity. |
-| Frontend editor-parts owner | Permanent main part, document-part membership, frontend activation/MRU and destination routing. Enumerates the actual parts' groups for shared operations. |
-| Main editor part | Project navigation, main groups and their authored subjects/views. Its lifetime is the workspace attachment, not the active document tab. |
-| Editor part | Window/container, group layout, active group, client bounds and local focus/capture scope. A part is a concrete composition, not a facade over global active state. |
+| Frontend editor-parts owner | Permanent main part, floating-part membership, frontend activation/MRU and destination routing. Derives workspace-wide group/input enumeration from actual membership. |
+| Permanent shell | Project navigation, workspace-wide Open Editors, menu and status outside the overlapping editor-host area. It is not the surface raised when an editor gains focus. |
+| Main editor part | A layout-owned editor host with an arrangement of ordinary groups. Its lifetime is the workspace attachment, not the active document tab or editor kind. |
+| Editor part | Group membership/arrangement, local active group, client bounds and local focus/capture scope. Main and floating parts use the same group composition; only host presentation differs. |
+| Editor-group arrangement | Retained group leaves and horizontal/vertical split branches, requested proportions, minimum extents and published leaf bounds. It owns topology, not editor subjects or source data. |
 | Editor group | Ordered inputs, active/preview input, pane instances, tab chrome, group focus/capture scope and outstanding editor-opening lifetime. Each concurrently visible group has its own panes and controls. |
 | Editor input/view | One presentation identity, selection, scroll and source-correspondence bookmarks. Another part gets another view/input when an additional view is explicitly requested. |
 | Working copy | Authored text, dirty state, versions and Undo/Redo for one admitted resource identity. Views of that same identity share this owner. |
@@ -173,6 +189,88 @@ not those shared owners.
 Source-access and review capabilities belong to the attachment/session. Creating
 or focusing another editor window cannot grant permission to edit or Save.
 
+## Editor arrangement and docking
+
+A part owns a retained tree whose leaves are real `EditorGroupView` instances
+and whose branches split available client space horizontally or vertically.
+Each group owns its tab model, pane cache, controls and opening lifetime. The
+arrangement owns no substitute tab model or document registry. Its topology
+changes on explicit split, merge, dock and group-removal operations, not during
+painting. Group enumeration and the group-to-part mapping follow this membership.
+
+Every retained part has at least one actual group and an actual active group.
+Removing or floating its last group publishes a new empty leaf at the source;
+it never leaves a retained Main or floating part without a routing destination.
+Close Group on the final leaf closes its inputs through ordinary close admission
+and retains that empty group. Closing a floating host is a separate Close Window
+operation; Main closes only with the frontend/workspace. Removing a nonfinal
+leaf selects a surviving group in local activation order. The arrangement owner
+promotes a split's sole remaining child rather than retaining empty branches.
+
+The arrangement belongs under `services/editor/`; the existing
+`ui/split_view.ts`, `split_control.ts` and split renderer own reusable sash
+geometry, capture and keyboard resizing. Extend that geometry owner where
+nested minimum extents require it; a feature must not invent another sash,
+fixed editor width or special Scene/Source arrangement. Requested proportions
+survive work-area and font changes. Leaf minima come from actual chrome and
+content constraints, rather than an arbitrary number of character columns.
+Aggregate minima are computed bottom-up: child extents plus reserved sash space
+are summed along the split axis, and their maximum is used orthogonally. The
+root logical extent in each axis is the larger of its viewport and aggregate
+minimum. Each sash therefore receives a feasible interval; an interval with
+no remaining movement disables resizing that sash without changing topology.
+When the host is smaller than the arrangement's aggregate minimum extents,
+the arrangement retains those minima and exposes a scrollable layout viewport.
+It never feeds contradictory min/max bounds into the two-pane sash primitive.
+This overflow belongs to the arrangement, not an individual Source/Scene pane;
+it reuses the shared scrollbar/input machinery. Presented leaf bounds and clips
+include that viewport translation. Explicit group activation reveals its leaf
+before native input or focus enters it. Requested proportions remain separate
+from this constrained geometry and survive enlargement and font changes.
+
+This follows the distinction between content extent and viewport extent in
+[VS Code's SplitView](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/splitview/splitview.ts),
+whose child minima and scrolling are layout-owned. Group maximize/restore and
+group navigation remain explicit alternatives to scrolling; a narrow work area
+does not silently close, float or merge editors.
+
+| Operation | Membership and presentation contract |
+| --- | --- |
+| Open | Resolve an exact subject and activate its chosen group; no new floating host by default. |
+| Split / Open to Side | Add a real neighboring group in the same part and admit the intended input there. An independent view requires the contribution's existing fresh-view capability. |
+| Move Editor | Transfer the retained input to an explicit group; canonical source and view state are not reconstructed. |
+| Merge / Dock | Insert tabs into an existing group, or attach a group beside it in the destination arrangement. The destination's published drop zone chooses merge versus split. |
+| Float | Explicitly transfer an editor or group into a floating part using the same input/group admission. |
+| Snap / Window Maximize | Change floating-host placement only; no change to group topology or membership. |
+| Maximize Group | Temporarily present one leaf within its existing part; restoring exposes the retained arrangement. Explicit reveal of a hidden sibling restores that arrangement before focus. This is not floating or window minimization. |
+
+Tab dragging uses one shared transfer gesture. A single-tab group is draggable.
+The target describes insertion into a tabstrip, splitting at a group edge or
+explicit floating; the preview represents that actual membership result.
+Pointer release and the equivalent keyboard command enter the same transfer
+admission. Whole-group transfer admits all affected inputs, drafts and any
+coalesced receivers before changing membership; publication exposes the completed
+source/destination topology and active groups, not a sequence of half-moves.
+Cancel leaves topology and source unchanged. A move does not invoke
+an additional-view factory or serialize/reopen its input.
+
+Moving a leaf within the same part rearranges its existing group instance;
+its group lifetime and pending openings remain valid. Cross-part group transfer
+constructs a new concrete `EditorGroupView` in the destination part and transfers
+the retained inputs and their ordered tab/active/preview/pin state through the
+owning tab models. Canonical working copies and input/view identities survive;
+the old tab model need not survive. The old pane detaches before the receiving
+pane binds those inputs. This is not reparenting a fixed focus/surface scope or
+copying the inputs through storage.
+
+Retiring the old cross-part group revokes its pending openings, pickers, popups,
+native input and command-origin scopes. Those capabilities never follow the
+retained input into its receiving group. Navigation entries for actually moved
+views are retargeted to that concrete receiving group/part; destinations for
+other retired group content end with the old scope. Unrelated later focus wins
+over transfer completion. Same-part arrangement changes and cross-part lifetime
+changes are distinct operations, even when their drop previews look similar.
+
 ## Composition and lifetime
 
 The frontend composes real parts over the shared workspace, rather than placing
@@ -188,8 +286,9 @@ factories. The pane cache remains group-local and lazy by editor kind. Source,
 Scene, Behavior Lens and the other contributions receive that group's real
 controls and opening destination; no factory closes over a primary-group alias.
 Workspace caches and document projections stay at their existing shared owners.
-The main part retains project navigation and its authored subject independently
-of the document parts' tab selections.
+The shell retains project navigation independently of every editor selection.
+Each part retains its group's inputs independently of another part's active tab.
+Part activation selects its actual active group, not a primary-group alias.
 
 Composition follows a concrete ownership order:
 
@@ -263,9 +362,9 @@ Project navigation retains real files and folders rather than replacing them
 with a separate asset database. A file's disclosure opens its recognized authored
 children; activating the file body or pressing Enter on the file still uses its
 registered default editor. A declaration has a kind icon and its own source
-occurrence, independent of the active editor. Scene declarations open in Main;
-other authored tools reuse the most recently active document part that already
-contains that exact occurrence, or use normal document placement for a new view.
+occurrence, independent of the active editor. Declaration activation uses the
+same exact-view lookup and group-routing contract as file activation. The domain
+controller resolves the subject, not a hardcoded Main/floating destination.
 Reopening preserves the retained view's subject, selection and reading position.
 
 The content index consumes existing semantic/source projections without running
@@ -329,19 +428,24 @@ input and retires the departing one.
 
 Ordinary open routing is deterministic:
 
-1. An explicit destination group wins and reuses its matching view.
-2. Otherwise the contribution's opener chooses its normal area: Scene/Home use
-   the main part; other authored assets use document parts.
-3. Prefer a matching view in the invoking group when it belongs to that area;
-   otherwise raise the most recently activated matching view in that area.
-4. With no match, open in the invoking eligible group, otherwise the most
-   recently activated eligible group. With no document group, that concrete
-   open creates a document part and its first group.
-5. An explicit additional-view action supplies another group/window. It does
-   not create duplicate matching tabs in one group. A move transfers ownership
-   rather than creating another input over a copied document.
+1. An explicit destination group wins and reuses its matching view there.
+2. Otherwise prefer an exact matching view in the invoking group, then the most
+   recently activated matching view across actual groups/parts. Contribution
+   owners determine exact subject equality; captions, filenames and kind alone
+   do not establish a match.
+3. With no match, use the invoking group, or the captured active part's active
+   group when the invocation has no group. Project-browser and menu focus do not
+   silently choose another group. Main's initial group is the startup destination;
+   an ordinary open never needs to create a floating part.
+4. Open to Side, New Window and an explicit additional view name another
+   destination. Additional views use the contribution's fresh-view capability;
+   moving transfers the existing input instead of copying it.
 
-The main subject is not replaced when routing to document parts. An asynchronous
+The same routing applies to Source, Scene, BT, FSM and every other editor kind.
+Domain openers produce the exact subject/input; the parts/group owner chooses
+and admits its destination. A retired explicit destination revokes the request
+rather than rerouting it. Switching a group's tab changes its active editor,
+not the retained subject or selection of another tab. An asynchronous
 open belongs to its destination group: replacement, close or workspace retirement
 revokes attachment admission before a late result can attach. Another group's
 independent open does not invalidate it.
@@ -412,8 +516,9 @@ Keyboard focus, active part, hovered surface and command subject remain separate
 - A focused control supplies the keyboard/clipboard/native-text target.
 - A command invocation carries its part, group and concrete control/input subject.
   Menus and popups retain that origin while focus temporarily moves into them.
-- An asset's Source action opens the matching location in the document part;
-  an unrelated main selection or later-focused tab cannot substitute its model.
+- An asset's Source action carries its exact resource/location through ordinary
+  group routing, or an explicitly requested Open to Side operation. An unrelated
+  main selection or later-focused tab cannot substitute its model or destination.
 - A workspace command has no document subject. A document command invoked from
   root chrome or the Command Palette captures the activated editor context when
   the interaction starts. It does not infer a different subject on submission.
@@ -488,7 +593,17 @@ does not reveal it.
 
 ## Window navigation and presentation
 
-The Window menu makes frontend membership actionable. Show Open Windows lists
+A permanent shell affordance opens workspace-wide Open Editors. It enumerates
+all retained inputs from actual part/group membership, including inactive tabs,
+background hosts and minimized windows, with their real group/host provenance
+and dirty state. It remains reachable even when a floating part is maximized;
+its availability is not conditional on `minimizedCount`. This projection has
+no second mutable editor registry and requires no pixel-occlusion detector.
+Choosing an input reveals its exact existing group/host; it does not create a
+replacement view. Cancel preserves the invoking context. Group-local tab overflow
+remains a separate list, not the workspace-wide discovery mechanism.
+
+The Window menu also makes frontend membership actionable. Show Open Windows lists
 the actual main and document parts in activation order, including minimized
 windows and windows awaiting a local close decision. Choosing one reveals that
 part and focuses its retained local dialog or client. Cancel returns to the
@@ -505,13 +620,34 @@ make the retained owners discoverable. Owned utility inspectors have no roll-up
 or minimize action. See [window presentation](workbench_windowing_design.md#minimized-document-windows)
 for input, local-decision and restore lifetimes.
 
-The permanent main presentation family and document windows are peers in the
-same ordered window band. The main family includes project navigation, its
-client and its opaque background. Focus Main Workspace raises that family;
-focusing a document raises its own family again. Neither action minimizes
-or disposes another part. An empty main container still owns keyboard focus:
-Enter opens Home and Escape returns to project navigation. It cannot leave
-typing routed to a document covered by the main work area.
+The shell and editor-host presentation have separate bounds and lifetimes.
+Menu, project navigation, Open Editors and workspace status remain outside the
+overlapping editor area. Main's **editorclient family**, including its group
+tabs and owned overlays, and floating editor families use ordinary host stacking
+inside that area. Floating geometry and maximization are constrained to it.
+There is no global Main tabstrip painted above a different foreground host.
+
+Reveal first admits the exact input/group. If that group is hidden by another
+leaf's temporary Group Maximize state, explicit activation restores this part's
+retained arrangement before publishing bounds and focus. Passive/background
+opening does not change Group Maximize or raise its host. Reveal then raises
+only the destination editor-host family and focuses the admitted control. Main is not an always-background
+surface: revealing its Scene can cover an explicitly floating Source, while
+Source keeps the same inputs, placement, dirty state and reading position.
+The permanent navigator remains reachable and selecting Source raises its
+existing host again. Neither activation automatically minimizes, resizes,
+closes or docks another host. Raising Main never raises the full opaque shell.
+
+Comparing Scene and Source uses two groups in one arrangement, not overlapping
+hosts or tool-specific keep-on-top behavior. Switching their focus leaves both
+visible. An empty main group still owns keyboard focus: Enter opens Home and
+Escape returns to project navigation. It cannot route typing to a covered host.
+
+There is one workspace status presentation. Editor context comes once from the
+actually active group, including a floating part's active group; a background
+Main pane is not a second status source. Floating canvas parts do not duplicate
+that status row. A group's optional runtime timeline follows its actual runtime
+client and content bounds, not the part's former single-group assumption.
 
 Snapping an existing window is separate from opening/copying a view, moving a
 tab, splitting a group or docking a tool. The [snapped placement contract](workbench_windowing_design.md#snapped-placement-contract)
@@ -544,8 +680,8 @@ authority are not copied. Contributions without that capability do not advertise
 the command. This deliberately differs from VS Code's shareable input objects.
 
 Move Editor To… retains the invoking part and exact input while the workspace
-picker offers other existing parts, including Main Workspace, and New Editor
-Window. Cancel changes no membership. Acceptance re-enters admission against
+picker offers actual destination groups with their host provenance, plus
+Open to Side and New Editor Window. Cancel changes no membership. Acceptance re-enters admission against
 those same owners rather than moving whichever tab later has focus. A move
 keeps the input and its working copies; it neither invokes the additional-view
 factory nor round-trips storage. An emptied source window remains available.
@@ -716,6 +852,13 @@ session-local rather than being serialized as layout mementos.
 
 ## Construction gates
 
+The group arrangement, normal routing, shell/host separation and permanent
+editor discovery form one composition boundary. A layout that keeps Scene fixed
+in Main while forcing Source into a separate window does not satisfy it.
+Replace that single-group topology and its persistence shape directly; do not
+keep it as a legacy layout mode. Workspace storage remains unversioned, with
+no schema version fields, migration gates or compatibility paths.
+
 The target composition has a retained main authoring client and independent
 document parts/groups. Before its UI is built, the group/pane, command-subject,
 navigation, capture-scope and recovery owners above must have explicit
@@ -733,7 +876,7 @@ Construction depends on these owner boundaries remaining coherent together:
 | Boundary | Required contract |
 | --- | --- |
 | `workbench/workbench.ts`, source/catalog, model and Save composition | Separate authoring authority from execution attachments; admit logical source contexts centrally. |
-| `services/editor/editor_group.ts`, `ui/tab/`, `services/editor/editor_panes.ts` | Part/group-owned inputs and controls; scope-specific retirement instead of singleton selection/reset. |
+| `services/editor/editor_part.ts`, arrangement, `editor_group.ts`, `ui/tab/`, `editor_panes.ts` | Multiple real groups per part, shared split/drop/transfer operations and group-scoped controls; no retained single-group alias or tool-specific container routing. |
 | `editor/ui/code_editor_state.ts`, view/layout and editor contributions | Control-owned source interaction/viewport state, with shared model/semantic/font-generation producers. |
 | `commands/controller.ts` and contribution controllers | Explicit invocation input/group/transport instead of global active-tab subject discovery. |
 | `navigation/navigation_history.ts` | One workspace history of scoped destinations; no constructor/dispose reset from each group. |
@@ -749,7 +892,13 @@ or fixed pixel positions:
 
 | Scenario | Required result |
 | --- | --- |
-| Open/edit/close an FSM or BT above a main Scene view | Main subject, selection and viewport survive; both views observe canonical source changes. |
+| Open Source, Scene, FSM or BT normally | Same group-routing contract; no new floating host or tool-specific destination. Existing tabs keep their subjects and selections. |
+| Compare Scene/Source, Source/BT or FSM/Animation in a split | Both real groups stay visible through focus changes; canonical edits propagate without sharing control state. |
+| Drag a single tab into another group or a new split, float it and dock it back | Actual membership follows the advertised drop; source, Undo and view state survive with correct control retirement. |
+| Reveal Main beneath a maximized Source float, then select Source from Open Editors | Each exact host becomes visible/focusable; Source retains inputs and maximized placement and is never lost from the permanent navigator. |
+| Change the foreground editor/group | One matching status context; no duplicated floating/main status or shell restacking. |
+| Reveal an input in a sibling hidden by Group Maximize | The destination part restores its arrangement before layout/focus; a passive background open leaves presentation alone. |
+| Transfer a group within a part, then between parts | Same-part group lifetime survives; cross-part inputs/history move while old openings, controls and command authority retire. |
 | Invoke Source/Save/Undo through a popup, then change focus | The invocation targets its original admitted input; retired origins cannot act on a replacement. |
 | Rebind a reusable pane while its old popup/action is pending | The old attachment loses command authority, even if the old input survives in another tab. |
 | Resize/cover/minimize one surface during a hold | That surface loses input and drains its gesture; a sibling's unrelated capture survives. |
@@ -761,7 +910,7 @@ or fixed pixel positions:
 | Restore an active runtime-view memento over an attached target | The view can regain presentation focus without granting live input/capture or releasing execution holds. |
 | Open two Source views over one model in different groups/windows | Text/Undo/Save are shared; caret, wrapping, scroll, completion, Find and native input remain independent. |
 | Use identical paths in distinct source contexts and repeated runtime ids in different targets | No model merging, project reclassification, wrong-target inspection or recovery collision. |
-| Use both fonts in narrow and larger work areas | Reachable commands and retained state survive drawer/maximize changes without forced permanently visible panels. |
+| Use both fonts in narrow and larger work areas | Actual leaf minima and scrollbar overflow retain topology/proportions; activation reveals the clipped leaf before native focus. Commands remain reachable without silently floating or merging groups. |
 
 Home/menus expose actual entrypoints for FSMs, BTs, Action Effects, Scene,
 Animation, Audio Events, Progression and Input Bindings. The project content
