@@ -2,12 +2,13 @@ import type { EditorPaneSelection } from './editor_selection';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
 import type { EditorPane } from './editor_pane';
+import type { EditorGroupView } from './editor_group';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 
 export type EditorPaneFactories = {
-	[TKind in EditorInputKind]: (scope: InputFocusScope) => EditorPane<Extract<EditorInput, { kind: TKind }>>;
+	[TKind in EditorInputKind]: (group: EditorGroupView) => EditorPane<Extract<EditorInput, { kind: TKind }>>;
 };
 
 export type EditorPaneOpenOptions = {
@@ -41,7 +42,10 @@ export class EditorPanes {
 		return () => this.clearListeners.delete(listener);
 	}
 
-	public constructor(private readonly factories: EditorPaneFactories, public readonly focusScope: InputFocusScope) {}
+	public readonly focusScope: InputFocusScope;
+	public constructor(private readonly factories: EditorPaneFactories, private readonly group: EditorGroupView) {
+		this.focusScope = group.focusScope;
+	}
 
 	/** Retire captured selections before the attached control and input are detached. */
 	public onWillDispose(listener: () => void): () => void {
@@ -94,6 +98,7 @@ export class EditorPanes {
 		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
 			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 		this.activePaneValue = null;
+		this.focusScope.retireContext();
 		for (const listener of this.clearListeners) listener();
 	}
 
@@ -109,7 +114,7 @@ export class EditorPanes {
 	private getOrCreatePane(input: EditorInput): EditorPane<EditorInput> {
 		let pane = this.panes.get(input.kind);
 		if (pane === undefined) {
-			pane = this.factories[input.kind](this.focusScope);
+			pane = this.factories[input.kind](this.group);
 			this.panes.set(input.kind, pane);
 		}
 		return pane;

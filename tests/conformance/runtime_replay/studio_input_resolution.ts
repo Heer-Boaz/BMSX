@@ -33,8 +33,8 @@ export async function testStudioInputResolution(test: StudioFixture): Promise<vo
 		'A07 admission: opening source did not edit a document or advance the paused machine');
 	editor.editorGroup.close(first.id);
 	const aem = test.ide.sources.catalog.resources.find(item => item.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.source.type === 'aem')!;
-	const pendingAem = editor.navigation.openResource(aem);
-	const opened = await editor.navigation.openResource(resource);
+	const pendingAem = editor.navigation.openResource(editor.editorGroup, aem);
+	const opened = await editor.navigation.openResource(editor.editorGroup, resource);
 	check(opened === editor.editorGroup.panes.openGeneration && await pendingAem === undefined,
 		'opening lifetime: real AEM source admission cannot replace the newer Lua navigation');
 	check(editor.editorGroup.model.activeTab.kind === 'code_editor' && editor.editorGroup.model.activeTab.workingCopy.resource === resource
@@ -42,7 +42,7 @@ export async function testStudioInputResolution(test: StudioFixture): Promise<vo
 		'opening lifetime: cancelled I/O has no tab or focus side effect');
 	editor.editorGroup.close(editor.editorGroup.model.activeTab.id);
 	editor.editorGroup.openEditor(original); await test.frame();
-	const pendingSource = editor.navigation.openResource(resource);
+	const pendingSource = editor.navigation.openResource(editor.editorGroup, resource);
 	editor.deactivate();
 	check(await pendingSource === undefined && editor.editorGroup.panes.activePane === null,
 		'opening lifetime: leaving the IDE retires pending source activation');

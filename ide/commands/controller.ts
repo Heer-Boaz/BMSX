@@ -107,8 +107,14 @@ export class IdeCommandController {
 		const transport = group.panes.activePane?.runtimeTransport ?? this.transport;
 		// Committing the focused draft and choosing an action's target are distinct.
 		// Pointer actions retain field focus but invoke their own explicit context.
-		const edit = inputFocus.target?.edit;
-		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
+		if (SOURCE_COMMANDS.has(command)) {
+			const focused = inputFocus.target;
+			const edit = findEditorGroup(focused) === group ? focused?.edit : undefined;
+			if (edit !== undefined) {
+				const attachment = group.panes.openGeneration;
+				if (!edit.commit() || attachment !== group.panes.openGeneration) return;
+			}
+		}
 		const implementation = target?.getCommand(command);
 		if (implementation !== undefined) {
 			if (implementation.isEnabled()) implementation.run();
@@ -127,21 +133,6 @@ export class IdeCommandController {
 				return;
 			case 'navigateForward':
 				void this.editor.navigation.goForward();
-				return;
-			case 'behaviorLens.moveChildEarlier':
-				this.editor.behaviorLens.moveSelectedChild(-1);
-				return;
-			case 'behaviorLens.moveChildLater':
-				this.editor.behaviorLens.moveSelectedChild(1);
-				return;
-			case 'sceneEditor.moveMemberUp':
-				this.editor.sceneEditor.moveSelectedMember(-1);
-				return;
-			case 'sceneEditor.moveMemberDown':
-				this.editor.sceneEditor.moveSelectedMember(1);
-				return;
-			case 'sceneEditor.removeMember':
-				this.editor.sceneEditor.removeSelectedMember();
 				return;
 			case 'assistant.signIn':
 			case 'assistant.cancelLogin':
@@ -198,12 +189,12 @@ export class IdeCommandController {
 				});
 				return;
 			}
-			case 'progression.createProgram': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'progression'); return;
-			case 'aem.create': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'aem'); return;
-			case 'animation.createSprite': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'sprite_animation'); return;
-			case 'animation.create': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'animation'); return;
-			case 'input.createBindings': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'input'); return;
-			case 'behaviorLens.createEffect': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'action_effect'); return;
+			case 'progression.createProgram': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'progression'); return;
+			case 'aem.create': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'aem'); return;
+			case 'animation.createSprite': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'sprite_animation'); return;
+			case 'animation.create': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'animation'); return;
+			case 'input.createBindings': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'input'); return;
+			case 'behaviorLens.createEffect': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'action_effect'); return;
 			case 'builds.start': void chooseBuild(this.editor); return;
 			case 'projects.createCartridge': createCartridge(this.editor); return;
 			case 'resources.import': importCartridgeFiles(this.editor, this.sources.catalog); return;
@@ -296,7 +287,7 @@ export class IdeCommandController {
 				return;
 		}
 		if (isEditorSearchCommand(command)) {
-			executeEditorSearchCommand(this.editor, this.sources, command, group);
+			executeEditorSearchCommand(this.editor, this.sources, command, group, target);
 			return;
 		}
 		if (isEditorViewCommand(command)) {
@@ -388,16 +379,6 @@ export class IdeCommandController {
 				return navigationState.captureSuspendDepth === 0 && navigationState.back.length > 0;
 			case 'navigateForward':
 				return navigationState.captureSuspendDepth === 0 && navigationState.forward.length > 0;
-			case 'behaviorLens.moveChildEarlier':
-				return this.editor.behaviorLens.canMoveSelectedChild(-1);
-			case 'behaviorLens.moveChildLater':
-				return this.editor.behaviorLens.canMoveSelectedChild(1);
-			case 'sceneEditor.moveMemberUp':
-				return this.editor.sceneEditor.canMoveSelectedMember(-1);
-			case 'sceneEditor.moveMemberDown':
-				return this.editor.sceneEditor.canMoveSelectedMember(1);
-			case 'sceneEditor.removeMember':
-				return this.editor.sceneEditor.canRemoveSelectedMember();
 			case 'assistant.signIn':
 			case 'assistant.cancelLogin':
 			case 'assistant.signOut':
@@ -496,10 +477,6 @@ export class IdeCommandController {
 			case 'sceneEditor':
 			case 'gameView':
 				return true;
-			case 'sceneEditor.source':
-				return group.model.activeTab?.kind === 'scene_editor';
-			case 'behaviorLens.source':
-				return group.model.activeTab?.kind === 'behavior_lens';
 			case 'filter':
 				return this.editor.resourcePanel.isVisible()
 					&& this.editor.resourcePanel.getMode() === 'resources';

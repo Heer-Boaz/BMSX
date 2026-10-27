@@ -44,7 +44,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const pane = new CartMapPane(null!, commands,
-		createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope);
+		createScenarioTestSourceState([]), surfaces, surface, bounds, undefined!, inputFocus.workbenchScope);
 	pane.setInput(input, bounds); pane.update();
 	const layout = (nextWidth = bounds.right - bounds.left, nextVariant: 'tiny' | 'msx' = editorViewState.font.variant) => {
 		if (nextVariant !== editorViewState.font.variant) configureFontVariant(nextVariant);

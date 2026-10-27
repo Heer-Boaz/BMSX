@@ -34,7 +34,7 @@ export class ConversationObserverPane extends WorkbenchViewEditorPane<Conversati
 		this.transcriptView.scroll.focusTarget.registerCommand('conversations.older', this.focusTarget.getCommand('conversations.older')!);
 	}
 	protected override activate(): void { this.transcriptView.setInput(this.input); this.update(); }
-	public override focus(): void { this.transcriptView.scroll.focusTarget.focus(); }
+	public override get commandTarget() { return this.transcriptView.scroll.focusTarget; }
 	public override clearInput(): void { this.preview.close(); this.previews.dispose(); this.transcriptView.clearInput(); super.clearInput(); }
 	public override dispose(): void { this.clearInput(); this.preview.dispose(); this.transcriptView.dispose(); super.dispose(); }
 	public override update(): void {

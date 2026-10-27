@@ -70,7 +70,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 	const resource = model.resource;
 	model.refreshResource({ ...resource, source: { ...resource.source, generated: true } });
 	check(!ide.editor.commands.isEnabled('behaviorLens.setInitialState'), 'initial: read-only source cannot be edited through the graph');
-	ide.editor.behaviorLens.setSelectedInitialState();
+	ide.editor.behaviorLens.setSelectedInitialState(lens);
 	check(model.buffer.getText() === source, 'initial: the command consumer also obeys source read-only ownership');
 	model.refreshResource(resource);
 	const ready = graph.viewport.model;

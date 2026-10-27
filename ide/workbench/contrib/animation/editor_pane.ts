@@ -37,6 +37,7 @@ import { layoutAnimationEditor, measureAnimationEditor } from './layout';
 import { drawAnimationEditor } from './render';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 
 const TRACK_NAVIGATION = [['ArrowUp', -1], ['ArrowDown', 1]] as const;
 const DETAILS_NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['Home', 'home'], ['End', 'end']] as const;
@@ -70,7 +71,8 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 	private keysAvailable = false;
 	public constructor(private readonly controller: AnimationEditorController,
 		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>,
+		private readonly group: EditorGroupView, scope: InputFocusScope) {
 		super(scope);
 		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, workArea);
 		this.propertyPointer.attachFeedback(surfaces, paneSurface, workArea, this.detailsFocus);
@@ -113,14 +115,14 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		this.focusTarget.registerCommand('animation.duplicate', { isEnabled: () => this.hasInput && this.controller.authoring.canDuplicate(this.input), run: () => this.controller.authoring.duplicate(this.input) });
 		this.focusTarget.registerCommand('animation.earlier', { isEnabled: () => this.hasInput && this.controller.authoring.canReorder(this.input, -1), run: () => this.controller.authoring.reorder(this.input, -1) });
 		this.focusTarget.registerCommand('animation.later', { isEnabled: () => this.hasInput && this.controller.authoring.canReorder(this.input, 1), run: () => this.controller.authoring.reorder(this.input, 1) });
-		this.focusTarget.registerCommand('animation.openClip', { isEnabled: () => this.hasInput && this.input.document?.clips[this.input.clipIndex]?.sequence !== undefined, run: () => this.controller.openClip(this.input) });
+		this.focusTarget.registerCommand('animation.openClip', { isEnabled: () => this.hasInput && this.input.document?.clips[this.input.clipIndex]?.sequence !== undefined, run: () => this.controller.openClip(this.group, this.input) });
 		this.focusTarget.registerCommand('animation.fit', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.fit(); this.input.keys.curve.bind(this.input.keys); } });
 		this.focusTarget.registerCommand('animation.snap', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.snap = !this.input.keys.snap; this.input.status = this.input.keys.snap ? 'Snap on' : 'Snap off'; } });
 		this.focusTarget.registerCommand('animation.remove', { isEnabled: () => this.hasInput && this.controller.authoring.canRemove(this.input), run: () => this.controller.authoring.remove(this.input) });
-		this.focusTarget.registerCommand('animation.source', { isEnabled: () => this.hasInput, run: () => this.controller.openSource(this.input) });
+		this.focusTarget.registerCommand('animation.source', { isEnabled: () => this.hasInput, run: () => this.controller.openSource(this.group, this.input) });
 		this.focusTarget.registerCommand('animation.producerSource', {
 			isEnabled: () => this.hasInput && this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined,
-			run: () => this.controller.openProducerSource(this.input),
+			run: () => this.controller.openProducerSource(this.group, this.input),
 		});
 		this.focusTarget.registerCommand('animation.edit', { isEnabled: () => {
 			if (!this.hasInput) return false;
@@ -177,11 +179,11 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		this.clients.setInput(this.input.clientBar, this.focusTarget); this.columnSash.setInput(this.input.columnSplit); this.rowSash.setInput(this.input.rowSplit);
 		this.unbindProjection = this.input.onDidInvalidateProjection(() => this.edit.close()); this.version = -1; this.update();
 	}
-	public override focus(): void {
+	public override get commandTarget(): InputFocusTarget {
 		switch (this.input.activeClient) {
-			case 'tracks': this.focusTarget.focus(); break;
-			case 'keys': (this.imageBitmap === undefined ? this.keys.focusTarget : this.image.focusTarget).focus(); break;
-			case 'details': this.detailsFocus.focus(); break;
+			case 'tracks': return this.focusTarget;
+			case 'keys': return this.imageBitmap === undefined ? this.keys.focusTarget : this.image.focusTarget;
+			case 'details': return this.detailsFocus;
 		}
 	}
 	private selectClient(client: AnimationClient): void {

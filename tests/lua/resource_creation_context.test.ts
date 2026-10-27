@@ -36,17 +36,57 @@ function fixture(t: TestContext, path: string, canonicalPath: string, generated 
 
 test('New File uses a project resource authoring directory, including a project-local library-named folder', t => {
 	const f = fixture(t, 'cartlib/local.lua', 'carts/nemesis_s/cartlib/local.lua');
-	openCreateResourcePrompt(f.editor, f.sources.catalog, f.clock);
+	openCreateResourcePrompt(f.editor, f.editor.editorGroup, f.sources.catalog, f.clock);
 	assert.equal(f.picker.inputBox, true);
 	// This is the actual proposed filesystem directory, not the prompt wording.
 	assert.equal(f.picker.field.text, 'cartlib/');
 	assert.equal(f.editor.editorGroup.model.activeTab!.resource, f.resource);
 });
 
+for (const stage of ['project chooser', 'filename'] as const) {
+	test(`New File ${stage} retires with its explicit destination independently of chrome focus`, t => {
+		const f = stage === 'project chooser'
+			? fixture(t, 'cartlib/shared.lua', 'cartlib/shared.lua')
+			: fixture(t, 'local.lua', 'carts/nemesis_s/local.lua');
+		const chrome = inputFocus.createTarget(), unbindKeyboard = chrome.bindKeyboard(() => {});
+		t.after(unbindKeyboard);
+		chrome.focus();
+		openCreateResourcePrompt(f.editor, f.editor.editorGroup, f.sources.catalog, f.clock);
+		assert.equal(f.picker.invocationOrigin, chrome);
+		assert.equal(f.picker.visible, true);
+		assert.equal(f.picker.inputBox, stage === 'filename');
+		f.editor.editorGroup.dispose();
+		assert.equal(f.picker.visible, false);
+		assert.equal(f.editor.editorGroup.panes.activePane, null);
+		assert.equal(f.editor.editorGroup.model.tabs.length, 0);
+	});
+}
+
+test('New File cannot advance from project choice after chrome return focus retires its destination', t => {
+	const f = fixture(t, 'cartlib/shared.lua', 'cartlib/shared.lua');
+	const chrome = inputFocus.createTarget(), unbindKeyboard = chrome.bindKeyboard(() => {});
+	t.after(unbindKeyboard);
+	const input = t.mock.method(f.picker, 'input');
+	chrome.focus();
+	openCreateResourcePrompt(f.editor, f.editor.editorGroup, f.sources.catalog, f.clock);
+	const projects = f.picker.model.items as readonly (QuickPickItem & { contextId: string })[];
+	f.picker.model.list.selectionIndex = f.picker.model.list.rows.findIndex(row => projects[row.itemIndex].contextId === TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	assert.ok(f.picker.model.list.selectionIndex >= 0);
+	let returned = 0;
+	const unbindFocus = chrome.onDidFocus(() => { unbindFocus(); returned++; f.editor.editorGroup.dispose(); });
+	t.after(unbindFocus);
+	f.picker.accept();
+	assert.equal(returned, 1);
+	assert.equal(input.mock.callCount(), 0, 'the retired project choice cannot create a filename session');
+	assert.equal(f.picker.visible, false);
+	assert.equal(f.editor.editorGroup.panes.activePane, null);
+	assert.equal(f.editor.editorGroup.model.tabs.length, 0);
+});
+
 for (const [path, generated] of [['cartlib/shared.lua', false], ['testlib/context.lua', false], ['bmsx/assets.lua', true]] as const) {
 	test(`New File from ${path} asks for an authoring project instead of borrowing its execution context`, t => {
 		const f = fixture(t, path, path, generated);
-		openCreateResourcePrompt(f.editor, f.sources.catalog, f.clock);
+		openCreateResourcePrompt(f.editor, f.editor.editorGroup, f.sources.catalog, f.clock);
 		assert.equal(f.picker.visible, true); assert.equal(f.picker.inputBox, false);
 		const projects = f.picker.model.items as readonly (QuickPickItem & { contextId: string })[];
 		assert.deepEqual(new Set(projects.map(project => project.contextId)), new Set([TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0]]));

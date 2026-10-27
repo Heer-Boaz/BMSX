@@ -44,7 +44,7 @@ test('overview key picking does not clear the active occurrence before resolving
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=50,value=0},{time_ms=50,value=0}}},{kind='event',keys={{time_ms=25,event='other'}}}}}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
-	const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!, undefined!);
+	const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!);
 	const input = new AnimationEditorInput(model, model.resource.contextId);
 	input.tracks.layout.contentTop = 0; input.tracks.layout.rowHeight = 20; input.tracks.layout.visibleRowCount = 3;
 	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1);
@@ -195,7 +195,7 @@ test('imported sprite configuration retains its actual consumer and selected sou
 		createScenarioTestSourceRecord('cartlib/component/sprite_animation_component.lua', 1, 'return {factory=function(definition) return definition end}')]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', config);
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
-	const controller = new AnimationEditorController(sources.catalog, group, undefined!, undefined!);
+	const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!);
 	const project = getOrCreateSemanticProject(editorTextModelService, TEST_CARTRIDGE_CONTEXT_IDS[0]); project.synchronizeSources(sources.catalog);
 	const snapshot = project.getSnapshot(), factory = collectAnimationDefinitions({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'caller.lua' }, snapshot)[0];
 	assert.equal(factory.file.file, resourceIdentityKey(resource));
@@ -243,21 +243,30 @@ test('an imported BIOS animation definition retains cart semantic scope through 
 	const group = createTestEditorGroup();
 	const navigated: Parameters<EditorNavigationController['focusChunkSource']>[] = [];
 	const navigation = { focusChunkSource: (...args: Parameters<EditorNavigationController['focusChunkSource']>) => { navigated.push(args); return Promise.resolve(undefined); } } as EditorNavigationController;
-	const controller = new AnimationEditorController(sources.catalog, group, navigation, undefined!);
+	const controller = new AnimationEditorController(sources.catalog, navigation, undefined!);
 	const project = getOrCreateSemanticProject(editorTextModelService, callerResource.contextId);
 	project.synchronizeSources(sources.catalog);
 	const definition = collectAnimationDefinitions(callerResource, project.getSnapshot())[0];
 	assert.equal(definition.file.file, resourceIdentityKey(biosResource));
 	assert.equal(definition.consumer!.file, resourceIdentityKey(callerResource));
-	const input = controller.openDefinition(callerResource.contextId, definition);
+	const input = controller.openDefinition(group, callerResource.contextId, definition);
 	t.after(() => { group.model.clear(); group.dispose(); input.dispose(); editorTextModelService.clear(); });
 	assert.equal(input.projectContextId, callerResource.contextId);
 	assert.deepEqual(input.workingCopy.identity, biosResource);
 	assert.equal(input.document!.family, 'sprite');
-	assert.equal(controller.openDefinition(callerResource.contextId, definition), input, 'open reuses the same definition inside its owning semantic project');
+	assert.equal(controller.openDefinition(group, callerResource.contextId, definition), input, 'open reuses the same definition inside its owning semantic project');
+	const siblingGroup = createTestEditorGroup(); t.after(() => siblingGroup.dispose());
+	const sibling = controller.openDefinition(siblingGroup, callerResource.contextId, definition);
+	assert.notEqual(sibling, input, 'the same shared controller opens an independent input in another group');
+	assert.equal(sibling.workingCopy, input.workingCopy);
+	assert.equal(group.model.activeTab, input); assert.equal(siblingGroup.model.activeTab, sibling);
+	controller.selectTrack(sibling, 0);
+	assert.equal(input.tracks.selectionIndex, 0, 'opening the sibling did not select a track in the first view');
 	controller.selectTrack(input, input.tracks.rows.length - 1); controller.selectProperty(input, 1);
-	controller.openSource(input);
-	assert.deepEqual(navigated[0][0], input.workingCopy.resource, 'source navigation uses the imported definition owner, not the cart scope');
+	assert.equal(sibling.tracks.selectionIndex, 0, 'selection belongs to the explicit animation input');
+	controller.openSource(group, input);
+	assert.equal(navigated[0][0], group);
+	assert.deepEqual(navigated[0][1], input.workingCopy.resource, 'source navigation uses the imported definition owner, not the cart scope');
 	const consumer = controller.modelFor(input, definition.consumer!);
 	consumer.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- cart revision\n' }]);
 	controller.refresh(input);
@@ -273,8 +282,9 @@ test('an imported BIOS animation definition retains cart semantic scope through 
 	assert.equal(restored.workingCopy, input.workingCopy);
 	assert.equal(restored.consumerPath, resourceIdentityKey(callerResource));
 	assert.equal(restored.document!.family, 'sprite');
-	controller.openSource(restored);
-	assert.deepEqual(navigated[1][0], input.workingCopy.resource);
+	controller.openSource(group, restored);
+	assert.equal(navigated[1][0], group);
+	assert.deepEqual(navigated[1][1], input.workingCopy.resource);
 });
 
 test('a selected mixed-coordinate lane remains Source after a shared working-copy revision', t => {
@@ -282,7 +292,7 @@ test('a selected mixed-coordinate lane remains Source after a shared working-cop
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
-	const controller = new AnimationEditorController(sources.catalog, group, undefined!, undefined!);
+	const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!);
 	const input = new AnimationEditorInput(model, model.resource.contextId); group.model.add(input);
 	t.after(() => { group.model.clear(); input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.selectTrack(input, 2);
@@ -299,7 +309,7 @@ test('animation recovery restores the native cursor after the document admits it
 		const source = `return {tracks={{kind='event',keys={{${unit}=0,event='start'},{${unit}=1,event='end'}}}}}`;
 		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 		const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
-		const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!, undefined!);
+		const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!);
 		const input = new AnimationEditorInput(model, model.resource.contextId);
 		controller.refresh(input); controller.selectTrack(input, 1);
 		input.keys.setView(0.2, 0.8); input.keys.setCursor(0.625); input.keys.snap = false;
@@ -322,7 +332,7 @@ test('versioned animation recovery persists project ownership and opaque source 
 	const source = "return {duration_ms=100,tracks={{kind='value',keys={{time_ms=0,value=1},{time_ms=100,value=2}}}}}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
-	const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!, undefined!);
+	const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!);
 	const input = new AnimationEditorInput(model, model.resource.contextId);
 	t.after(() => { input.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1); controller.selectProperty(input, 0);
@@ -357,7 +367,8 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
 	const navigated: unknown[][] = [];
 	const navigation = { focusChunkSource: (...args: unknown[]) => navigated.push(args) } as unknown as EditorNavigationController;
-	const controller = new AnimationEditorController(sources.catalog, undefined!, navigation, undefined!);
+	const controller = new AnimationEditorController(sources.catalog, navigation, undefined!);
+	const group = createTestEditorGroup();
 	const input = new AnimationEditorInput(model, model.resource.contextId), menu = new ContextMenuController(inputFocus, pointerCapture);
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
@@ -368,16 +379,16 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	const root = { ...bounds, right: 384 };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('animation pane'), isVisible: () => true,
 		getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	const pane = new AnimationEditorPane(controller, commands as IdeCommandController, menu, surfaces, owner, root, inputFocus.workbenchScope);
+	const pane = new AnimationEditorPane(controller, commands as IdeCommandController, menu, surfaces, owner, root, group, group.focusScope);
 	t.after(() => {
-		menu.dispose(); pane.dispose(); input.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear();
+		menu.dispose(); pane.dispose(); input.dispose(); group.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); pointerHover.clear();
 		editorTextModelService.clear();
 	});
 	pane.setInput(input, bounds); pane.focus();
 	const pointer = (x: number, y: number, secondary = true) => pane.handlePointer({ viewportX: x, viewportY: y, valid: true, insideViewport: true,
 		pressedButtons: secondary ? PointerButton.Secondary : PointerButton.Primary,
 		justPressedButtons: secondary ? PointerButton.Secondary : PointerButton.Primary, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false }, !secondary, secondary, 0, false);
-	return { pane, input, menu, model, controller, pointer, source, navigated, bounds, commands };
+	return { pane, input, menu, model, controller, pointer, source, navigated, bounds, commands, group };
 }
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Animation context follows the secondary-hit property, track and key without primary gestures`, t => {
@@ -396,7 +407,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Animation conte
 	assert.equal(menu.model.rows.find(row => row.command === 'animation.earlier')!.enabled, false);
 	const range = property.source.file.chunk.locations.range(property.field.span);
 	menu.model.selectedIndex = menu.model.rows.findIndex(row => row.command === 'animation.source'); menu.accept();
-	assert.deepEqual(f.navigated, [[f.model.resource, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
+	assert.deepEqual(f.navigated, [[f.group, f.model.resource, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
 	assert.equal(inputFocus.target, details);
 	pane.focus(); details.getCommand('contextMenu')!.run();
 	assert.equal(menu.visible, true); assert.equal(menu.invocationOrigin, details); menu.hide();
@@ -450,7 +461,7 @@ test('secondary context on the current clip lane replaces its former Details-pro
 	assert.equal(f.menu.model.rows.find(row => row.command === 'animation.edit')!.enabled, false);
 	const range = clip.file.chunk.locations.range(clip.field.span);
 	f.menu.model.selectedIndex = f.menu.model.rows.findIndex(row => row.command === 'animation.source'); f.menu.accept();
-	assert.deepEqual(f.navigated, [[f.model.resource, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
+	assert.deepEqual(f.navigated, [[f.group, f.model.resource, { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 }]]);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
 });
 

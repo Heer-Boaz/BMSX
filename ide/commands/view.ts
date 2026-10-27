@@ -49,8 +49,6 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'sceneEditor':
 		case 'actorLab':
 		case 'gameView':
-		case 'sceneEditor.source':
-		case 'behaviorLens.source':
 		case 'filter':
 			return true;
 		default:
@@ -61,7 +59,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId, group: EditorGroupView): void {
 	switch (command) {
 		case 'home': openHome(group, workspaceState.context); return;
-		case 'animation': editor.animations.open(); return;
+		case 'animation': editor.animations.open(group); return;
 		case 'hostError': openHostError(group, fault.hostFrameFailure!); return;
 		case 'romInspector': openRomInspector(group, editor.quickInput, sources); return;
 		case 'events': openEventViewer(group, editor.events); return;
@@ -85,42 +83,36 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			toggleProblemsPanel(group);
 			return;
 		case 'behaviorLens':
-			editor.behaviorLens.open();
+			editor.behaviorLens.open(group);
 			return;
 		case 'behaviorLens.preview':
-			editor.behaviorLens.open(null, { pinned: false });
+			editor.behaviorLens.open(group, null, { pinned: false });
 			return;
 		case 'keepEditor':
 			group.model.pin(group.model.activeTab);
 			return;
 		case 'openEditors': showOpenEditors(group, editor.quickInput); return;
 		case 'behaviorLens.actionEffects':
-			editor.behaviorLens.open('action_effect');
+			editor.behaviorLens.open(group, 'action_effect');
 			return;
 		case 'behaviorLens.stateMachines':
-			editor.behaviorLens.open('state_machine');
+			editor.behaviorLens.open(group, 'state_machine');
 			return;
 		case 'behaviorLens.behaviorTrees':
-			editor.behaviorLens.open('behavior_tree');
+			editor.behaviorLens.open(group, 'behavior_tree');
 			return;
-		case 'cartMap': editor.cartMaps.open(); return;
-		case 'aem': editor.aemEditor.open(); return;
-		case 'progression': editor.luaPrograms.open('progression'); return;
-		case 'inputBindings': editor.luaPrograms.open('input'); return;
+		case 'cartMap': editor.cartMaps.open(group); return;
+		case 'aem': editor.aemEditor.open(group); return;
+		case 'progression': editor.luaPrograms.open(group, 'progression'); return;
+		case 'inputBindings': editor.luaPrograms.open(group, 'input'); return;
 		case 'scenarioLab':
 			editor.scenarioLab.open();
 			return;
 		case 'sceneEditor':
 			openSourceView(group, sources.catalog, editor.quickInput, {
 				title: 'SCENE EDITOR', accepts: hasSceneSourceDefinitions,
-				openResource: resource => editor.sceneEditor.openResource(resource),
+				openResource: resource => editor.sceneEditor.openResource(group, resource),
 			});
-			return;
-		case 'sceneEditor.source':
-			editor.sceneEditor.openSource();
-			return;
-		case 'behaviorLens.source':
-			editor.behaviorLens.openSource();
 			return;
 		case 'filter':
 			editor.resourcePanel.toggleFilterMode();

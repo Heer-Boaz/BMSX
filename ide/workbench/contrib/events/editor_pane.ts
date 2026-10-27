@@ -110,7 +110,7 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override setRuntimeCaptureRunning(running: boolean): void { this.running = running; }
-	public override focus(): void { (this.inspector.visible ? this.inspector : this.scroll).focusTarget.focus(); }
+	public override get commandTarget() { return (this.inspector.visible ? this.inspector : this.scroll).focusTarget; }
 	protected override activate(): void {
 		this.presentation.reset(); this.historyRevision = -1;
 		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.viewport);

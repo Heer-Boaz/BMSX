@@ -1,3 +1,4 @@
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
@@ -39,7 +40,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly details = new WorkbenchPropertyInspector<PlayDetailsProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	public constructor(private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		navigation: EditorNavigationController, scope: InputFocusScope) {
+		navigation: EditorNavigationController, group: EditorGroupView, scope: InputFocusScope) {
 		super(scope);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
@@ -51,7 +52,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 		this.focusTarget.registerCommand('play.details', { isEnabled: () => true, run: () => {
 			this.details.show({ title: 'Play session', items: describePlaySession(this.input.handle),
 				canOpenSource: item => item.location !== undefined,
-				openSource: item => navigation.focusChunkSourceForContext(item.location!.resource.contextId, item.location!.resource.path,
+				openSource: item => navigation.focusChunkSourceForContext(group, item.location!.resource.contextId, item.location!.resource.path,
 					{ row: item.location!.line - 1, startColumn: item.location!.column - 1, endColumn: item.location!.column - 1 }),
 			});
 		} });

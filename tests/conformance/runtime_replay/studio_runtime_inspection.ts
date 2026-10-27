@@ -259,7 +259,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	const lines = model.buffer.getText().split('\n');
 	const row = lines.findIndex(line => line.includes(expression));
 	const column = lines[row].indexOf(expression) + expression.length - 1;
-	await ide.editor.navigation.focusChunkSource(model.resource, { row, startColumn: column, endColumn: column });
+	await ide.editor.navigation.focusChunkSource(ide.editor.editorGroup, model.resource, { row, startColumn: column, endColumn: column });
 	await frame();
 	const position = cycles(), version = model.version;
 	for (const theme of ['dark', 'light']) {

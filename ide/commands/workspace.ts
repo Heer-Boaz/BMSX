@@ -62,7 +62,7 @@ export function executeEditorWorkspaceCommand(
 ): void {
 	switch (command) {
 		case 'createResource':
-			openCreateResourcePrompt(editor, sources.catalog, clock);
+			openCreateResourcePrompt(editor, group, sources.catalog, clock);
 			return;
 		case 'save': {
 			const activeInput = group.model.activeTab;

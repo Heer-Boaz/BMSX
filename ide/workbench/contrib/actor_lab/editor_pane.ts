@@ -241,10 +241,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.controller.viewport.transport; }
 	public override get runtimeControlContext() { return this.input.presentation === 'outline' ? this.focusTarget : this.graph.focusTarget; }
 	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }
-	public override focus(): void {
-		if (this.boundGraph === undefined) super.focus();
-		else this.graph.focusTarget.focus();
-	}
+	public override get commandTarget(): InputFocusTarget { return this.boundGraph === undefined ? this.focusTarget : this.graph.focusTarget; }
 	public override getSelection(): ActorLabNavigationSelection {
 		if (this.inspector.visible) {
 			const selected = this.inspector.model.rows[this.inspector.model.selectionIndex]?.element;

@@ -79,7 +79,7 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 		assert.equal(host.runtime.machine.scheduler.nowCycles, cycles);
 	};
 	const scene = () => {
-		editor.sceneEditor.openResource(model.resource); editor.update(0);
+		editor.sceneEditor.openResource(editor.editorGroup, model.resource); editor.update(0);
 		const input = editor.editorGroup.model.activeTab!, pane = editor.editorGroup.panes.activePane!;
 		assert.ok(input.kind === 'scene_editor' && pane instanceof SceneEditorPane);
 		press('Home'); press('ArrowDown'); press('Enter');
@@ -141,12 +141,12 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 	const { pane } = f.scene();
 	// One listener belongs to the Scene input; another active source kind must replace it.
 	assert.equal(subscriptions, 1);
-	f.editor.sceneEditor.openResource(f.model.resource); f.editor.update(0);
+	f.editor.sceneEditor.openResource(f.editor.editorGroup, f.model.resource); f.editor.update(0);
 	assert.equal(subscriptions, 1);
-	f.editor.commands.execute('sceneEditor.source'); await setImmediate(); f.editor.update(0);
+	f.editor.commands.execute('sceneEditor.source', inputFocus.target!.commandContext); await setImmediate(); f.editor.update(0);
 	assert.ok(f.editor.editorGroup.panes.activePane !== pane);
 	assert.equal(subscriptions, 1, 'Source replaces, rather than retains, the Scene observer');
-	f.editor.sceneEditor.openResource(f.model.resource); f.editor.update(0);
+	f.editor.sceneEditor.openResource(f.editor.editorGroup, f.model.resource); f.editor.update(0);
 	assert.ok(f.editor.editorGroup.panes.activePane === pane);
 	assert.equal(subscriptions, 1);
 	f.unchanged();
@@ -154,7 +154,7 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 
 test('a fully covered Lua Program has no destructive keyboard admission and preserves its selected source', t => {
 	const f = fixture(t, PROGRAM_SOURCE, 'cartlib/progression');
-	f.editor.luaPrograms.openResource(f.model.resource, 'progression'); f.editor.update(0);
+	f.editor.luaPrograms.openResource(f.editor.editorGroup, f.model.resource, 'progression'); f.editor.update(0);
 	const input = f.editor.editorGroup.model.activeTab!, pane = f.editor.editorGroup.panes.activePane!;
 	assert.ok(input.kind === 'lua_program' && pane instanceof LuaProgramEditorPane);
 	const target = input.tree.rows.findIndex(row => row.element.field !== undefined && row.element.container?.structural);

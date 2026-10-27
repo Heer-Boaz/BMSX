@@ -64,7 +64,7 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		for (const command of ['assistant.review', 'assistant.copy'] as const)
 			this.transcriptView.scroll.focusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 	}
-	public override focus(): void { this.input.draft.focusTarget.focus(); }
+	public override get commandTarget() { return this.input.draft.focusTarget; }
 	protected override activate(): void {
 		this.turnToolbar.setInput(this.input, this.focusTarget);
 		this.transcriptView.setInput(this.input);
@@ -72,6 +72,8 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		const draftInput = this.input;
 		draftInput.draft.focusTarget.scope.surfaceScope = this.focusTarget.scope.surfaceScope;
 		draftInput.draft.focusTarget.scope.commands = this.focusTarget.scope.commands;
+		draftInput.draft.focusTarget.commandContext = this.focusTarget;
+		draftInput.draft.focusTarget.canFocus = () => this.hasInput && this.input === draftInput;
 		this.composer.setInput(draftInput.draft, draftInput.composer, draftInput.composerBounds, images => draftInput.attachments.add(images));
 		this.unbindAttachmentClipboard = this.attachments.focusTarget.bindClipboard({ paste: contents => draftInput.draft.paste(contents) });
 		this.unbindDraft = this.input.draft.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
@@ -85,7 +87,7 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 			ring[index].previous = ring[(index + ring.length - 1) % ring.length];
 		}
 		this.imagesVisible = false;
-		this.attachments.focusTarget.commandContext = this.input.draft.focusTarget;
+		this.attachments.focusTarget.commandContext = this.focusTarget;
 		this.attachments.focusTarget.next = this.input.draft.focusTarget;
 		this.attachments.focusTarget.previous = this.transcriptView.scroll.focusTarget;
 		// Keep Undo/Redo in the draft's own history, not the pane's command context.
@@ -93,6 +95,16 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		this.update();
 	}
 	public override clearInput(): void {
+		if (this.hasInput) {
+			const draft = this.input.draft.focusTarget;
+			draft.release();
+			draft.commandContext = draft;
+			draft.canFocus = () => false;
+			draft.scope.commands = undefined;
+			draft.next = draft.previous = null;
+			for (const command of COMMANDS) draft.unregisterCommand(command);
+			draft.unregisterCommand('suggest.accept');
+		}
 		this.unbindDraft?.(); this.unbindDraft = undefined;
 		this.unbindAttachmentClipboard?.(); this.unbindAttachmentClipboard = undefined;
 		this.preview.close(); this.attachments.clearInput(); this.previews.dispose();

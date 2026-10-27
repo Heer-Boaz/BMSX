@@ -15,7 +15,9 @@ export class DisposableStore implements IDisposable {
 
 	public dispose(): void {
 		this.disposed = true;
-		for (const item of this.items) item.dispose();
-		this.items.clear();
+		for (const item of this.items) {
+			this.items.delete(item);
+			item.dispose();
+		}
 	}
 }

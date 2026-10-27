@@ -6,7 +6,7 @@ export function openResourcePanelCallHierarchyLocation(
 	item: CallHierarchyPanelItem,
 ): void {
 	void editor.navigation.focusChunkSource(
-		item.resource,
+		editor.editorGroup, item.resource,
 		{
 			row: item.location.range.startLine - 1,
 			startColumn: item.location.range.startColumn - 1,

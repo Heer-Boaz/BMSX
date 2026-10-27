@@ -37,6 +37,9 @@ type ContextMenuSession = {
 	returnFocus: InputFocusTarget | null;
 	readonly commandOrigin: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
+	readonly presentation: DisposableStore;
+	contextAdmitted: boolean;
+	unbindOrigin: (() => void) | undefined;
 };
 
 /** One workbench popup lifetime. Contributions own targets and command admission. */
@@ -82,12 +85,22 @@ export class ContextMenuController implements PointerCaptureTarget {
 		const invocationOrigin = options.invocationOrigin === undefined ? origin : options.invocationOrigin;
 		const returnOrigin = options.returnFocus === undefined ? origin : options.returnFocus;
 		const commandOrigin = options.commandTarget === undefined ? invocationOrigin : options.commandTarget;
+		const retiring = this.retiringSession;
+		if (retiring !== undefined) {
+			retiring.contextAdmitted = false; retiring.unbindOrigin?.(); retiring.disposables.dispose();
+			if (this.retiringSession === retiring) this.retiringSession = undefined;
+		}
 		this.retireSession(false);
 		if (request !== this.requestRevision) { disposables.dispose(); return disposables; }
 		this.capture.cancel();
 		if (request !== this.requestRevision) { disposables.dispose(); return disposables; }
-		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: returnOrigin, commandOrigin, disposables, options };
+		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: returnOrigin, commandOrigin, disposables, options,
+			presentation: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined };
 		this.session = session;
+		session.unbindOrigin = commandOrigin?.commandContext.scope.onDidRetireContext(() => {
+			session.contextAdmitted = false;
+			if (this.session === session) this.hide(false);
+		});
 		this.focusTarget.commandContext = commandOrigin === null ? this.focusTarget : commandOrigin;
 		this.model.setItems(items, x, y, options.shortTitles, options.placement);
 		this.pointerX = x;
@@ -95,7 +108,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		this.pointerKnown = !options.selectFirst;
 		// The source session owns its presentation attachment. It must already
 		// exist when the focus owner evaluates the popup's surface admission.
-		this.onDidChangeVisibility(disposables);
+		this.onDidChangeVisibility(session.presentation);
 		if (this.session !== session) return disposables;
 		options.onWillShow?.(disposables);
 		if (this.session !== session) return disposables;
@@ -111,20 +124,25 @@ export class ContextMenuController implements PointerCaptureTarget {
 	}
 
 	public hide(restoreFocus = true): void {
+		if (this.retiringSession !== undefined) this.retiringSession.contextAdmitted = false;
 		this.requestRevision++;
 		this.retireSession(restoreFocus);
 	}
 
-	private retireSession(restoreFocus: boolean): void {
+	private retireSession(restoreFocus: boolean, handoff = false): void {
 		const session = this.session;
 		if (session === undefined) return;
 		const request = this.requestRevision;
 		this.session = undefined;
+		if (!handoff) { session.contextAdmitted = false; session.unbindOrigin?.(); }
 		this.retiringSession = session;
 		this.cancelPointer();
 		this.scroll.cancelPointer();
-		session.disposables.dispose();
-		if (this.retiringSession === session) this.retiringSession = undefined;
+		session.presentation.dispose();
+		if (!handoff) {
+			session.disposables.dispose();
+			if (this.retiringSession === session) this.retiringSession = undefined;
+		}
 		if (request !== this.requestRevision) return;
 		if (restoreFocus && (this.focusTarget.hasFocus || this.focus.pendingTarget === this.focusTarget)) this.focus.setTarget(session.returnFocus);
 		if (request !== this.requestRevision) return;
@@ -162,8 +180,15 @@ export class ContextMenuController implements PointerCaptureTarget {
 		const session = this.session!, { commands, commandOrigin } = session;
 		const enabled = commands.isEnabled(command, commandOrigin);
 		if (this.session !== session || !enabled) return;
-		this.hide();
-		commands.execute(command, commandOrigin);
+		this.requestRevision++;
+		try {
+			this.retireSession(true, true);
+			session.disposables.dispose();
+			if (session.contextAdmitted) commands.execute(command, commandOrigin);
+		} finally {
+			session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
+			if (this.retiringSession === session) this.retiringSession = undefined;
+		}
 	}
 
 	public cancelPointer(): void { this.capture.release(this); this.pressedIndex = -1; this.triggerKey = undefined; }

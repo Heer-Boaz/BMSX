@@ -127,7 +127,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 			await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 		});
 		editorRuntimeState.active = true; editorFeedbackState.message.visible = false;
-		await editor.navigation.openResource(sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'status.lua' }))!);
+		await editor.navigation.openResource(editor.editorGroup, sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'status.lua' }))!);
 		editor.setFontVariant(variant);
 		const pane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane, status = t.mock.method(pane, 'drawStatusBar');
 		const model = pane.code.model, view = pane.code.view;

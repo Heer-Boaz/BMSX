@@ -185,7 +185,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	const generatedSource = generated.buffer.getText();
 	// A retained projection can be empty (e.g. after deleting its final registration).
 	// Attach explicitly here to test readonly pane lifecycle, not source discovery.
-	ide.editor.sceneEditor.openResource(generated.resource);
+	ide.editor.sceneEditor.openResource(ide.editor.editorGroup, generated.resource);
 	await frame();
 	const readonlyScene = ide.editor.editorGroup.model.activeTab;
 	if (readonlyScene.kind !== 'scene_editor') throw new Error('scene: readonly projection was not attached');

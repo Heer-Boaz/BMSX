@@ -89,6 +89,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	private lastReportedSemanticError: string | null = null;
 
 	public override get inputScope(): InputFocusScope { return this.code.focusTarget.scope; }
+	public override get commandTarget() { return this.code.focusTarget; }
 	public override get companionGameMinimumWidth(): number {
 		return measureGutterWidth(this.code) + 2 + this.code.charAdvance * (SOURCE_READING_COLUMNS + 1)
 			+ constants.SCROLLBAR_WIDTH + constants.CODE_AREA_RIGHT_MARGIN;
@@ -106,7 +107,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.rename = new RenameController(code, sources.catalog, editor.crossFileRename);
 		this.hover = new CodeEditorHoverController(code, sources, guest, fault, runtime);
 		this.bars = new SourceInlineBars(code, this.find, this.rename, this.lineJump);
-		this.navigation = new EditorNavigationController(sources.catalog, editor.resourcePanel, editor.resourceEditors, group);
+		this.navigation = editor.navigation;
 		code.focusTarget.canFocus = () => this.hasInput && code.geometry.cachedContentWidth > 0
 			&& code.geometry.clientBounds.left < code.geometry.clientBounds.right
 			&& code.geometry.clientBounds.top < code.geometry.clientBounds.bottom;

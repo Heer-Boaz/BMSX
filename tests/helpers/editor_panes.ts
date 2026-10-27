@@ -32,6 +32,7 @@ import type { CloseEditors } from '../../ide/workbench/services/editor/editor_cl
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
 
 class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
+	public override get commandTarget() { return this.focusTarget; }
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 
 	private readonly focusTarget: InputFocusTarget;
@@ -112,29 +113,29 @@ export function createTestEditorGroup(
 	closeEditors: CloseEditors = retireTestEditors,
 ): EditorGroupView {
 	const group = new EditorGroupView({
-		home: scope => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(scope, activateViewInput),
-		play_session: scope => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(scope, activateViewInput),
-		animation: scope => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(scope, activateViewInput),
-		host_error: scope => new TestEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(scope, activateViewInput),
-		build_log: scope => new TestEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(scope, activateViewInput),
-		rom_inspector: scope => new TestEditorPane<RomInspectorInput>(scope, activateViewInput),
-		event_viewer: scope => new TestEditorPane<EventViewerInput>(scope, activateViewInput),
-		gte_debugger: scope => new TestEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(scope, activateViewInput),
-		gpu_debugger: scope => new TestEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(scope, activateViewInput),
-		terminal: scope => new TestEditorPane<TerminalInput>(scope, activateViewInput),
-		actor_lab: scope => new TestEditorPane<ActorLabInput>(scope, activateViewInput),
-		game_view: scope => new TestEditorPane<GameViewInput>(scope, activateViewInput),
-		conversation_observer: scope => new TestEditorPane<ConversationObserverInput>(scope, activateViewInput),
-		assistant: scope => new TestEditorPane<AssistantInput>(scope, activateViewInput),
-		workspace_edit_review: scope => new TestEditorPane<WorkspaceEditReviewInput>(scope, activateViewInput),
-		code_editor: scope => codePane === undefined ? new TestCodeEditorPane(scope) : codePane(scope),
-		resource_view: scope => new ResourceViewerEditorPane(scope),
-		aem_editor: scope => new TestEditorPane<AemEditorInput>(scope, activateViewInput),
-		lua_program: scope => new TestEditorPane<LuaProgramInput>(scope, activateViewInput),
-		behavior_lens: scope => new TestEditorPane<BehaviorLensInput>(scope, activateViewInput),
-		scenario_lab: scope => new TestEditorPane<ScenarioLabInput>(scope, activateViewInput),
-		scene_editor: scope => new TestEditorPane<SceneEditorInput>(scope, activateViewInput),
-		cart_map: scope => new TestEditorPane<CartMapInput>(scope, activateViewInput),
+		home: group => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(group.focusScope, activateViewInput),
+		play_session: group => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(group.focusScope, activateViewInput),
+		animation: group => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope, activateViewInput),
+		host_error: group => new TestEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(group.focusScope, activateViewInput),
+		build_log: group => new TestEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(group.focusScope, activateViewInput),
+		rom_inspector: group => new TestEditorPane<RomInspectorInput>(group.focusScope, activateViewInput),
+		event_viewer: group => new TestEditorPane<EventViewerInput>(group.focusScope, activateViewInput),
+		gte_debugger: group => new TestEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(group.focusScope, activateViewInput),
+		gpu_debugger: group => new TestEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(group.focusScope, activateViewInput),
+		terminal: group => new TestEditorPane<TerminalInput>(group.focusScope, activateViewInput),
+		actor_lab: group => new TestEditorPane<ActorLabInput>(group.focusScope, activateViewInput),
+		game_view: group => new TestEditorPane<GameViewInput>(group.focusScope, activateViewInput),
+		conversation_observer: group => new TestEditorPane<ConversationObserverInput>(group.focusScope, activateViewInput),
+		assistant: group => new TestEditorPane<AssistantInput>(group.focusScope, activateViewInput),
+		workspace_edit_review: group => new TestEditorPane<WorkspaceEditReviewInput>(group.focusScope, activateViewInput),
+		code_editor: group => codePane === undefined ? new TestCodeEditorPane(group.focusScope) : codePane(group.focusScope),
+		resource_view: group => new ResourceViewerEditorPane(group.focusScope),
+		aem_editor: group => new TestEditorPane<AemEditorInput>(group.focusScope, activateViewInput),
+		lua_program: group => new TestEditorPane<LuaProgramInput>(group.focusScope, activateViewInput),
+		behavior_lens: group => new TestEditorPane<BehaviorLensInput>(group.focusScope, activateViewInput),
+		scenario_lab: group => new TestEditorPane<ScenarioLabInput>(group.focusScope, activateViewInput),
+		scene_editor: group => new TestEditorPane<SceneEditorInput>(group.focusScope, activateViewInput),
+		cart_map: group => new TestEditorPane<CartMapInput>(group.focusScope, activateViewInput),
 	}, commands, closeEditors);
 	return group;
 }

@@ -20,13 +20,12 @@ export class EditorNavigationController {
 		private readonly catalog: WorkspaceSourceCatalog,
 		private readonly resourcePanel: ResourcePanelController,
 		private readonly editorResolver: ResourceEditorResolver,
-		private readonly group: EditorGroupView,
 	) {
 	}
 
 	/** The attached generation, or undefined when another opening superseded this request. */
-	public async openResource(resource: RuntimeResource, selection?: EditorTextSelection): Promise<number | undefined> {
-		const result = await this.group.openResolvedEditor(this.editorResolver.resolveEditorInput(resource), { selection });
+	public async openResource(group: EditorGroupView, resource: RuntimeResource, selection?: EditorTextSelection): Promise<number | undefined> {
+		const result = await group.openResolvedEditor(this.editorResolver.resolveEditorInput(resource), { selection });
 		if (result === undefined) return undefined;
 		if (!result.activated) return result.generation;
 		this.resourcePanel.queuePendingSelection(resource);
@@ -37,17 +36,18 @@ export class EditorNavigationController {
 		return result.generation;
 	}
 
-	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): Promise<number | undefined> {
-		return this.openResource(this.catalog.resolveResource(identity)!, selection);
+	public focusChunkSource(group: EditorGroupView, identity: ResourceIdentity, selection?: EditorTextSelection): Promise<number | undefined> {
+		return this.openResource(group, this.catalog.resolveResource(identity)!, selection);
 	}
 
 	public focusChunkSourceForContext(
+		group: EditorGroupView,
 		contextId: string,
 		path: string,
 		selection?: EditorTextSelection,
 	): void {
 		const resource = this.catalog.resolveResource({ contextId, path })!;
-		void this.openResource(resource, selection);
+		void this.openResource(group, resource, selection);
 	}
 
 	public async goBackward(): Promise<void> {

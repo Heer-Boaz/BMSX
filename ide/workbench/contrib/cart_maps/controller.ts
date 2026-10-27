@@ -28,27 +28,28 @@ export async function resolveCartMapInput(catalog: WorkspaceSourceCatalog, resou
 }
 
 export class CartMapController {
-	public constructor(private readonly catalog: WorkspaceSourceCatalog, private readonly group: EditorGroupView,
+	public constructor(private readonly catalog: WorkspaceSourceCatalog,
 		private readonly quickInput: QuickInputController) {}
-	public open(): void {
-		const active = this.group.model.activeTab;
+	public open(group: EditorGroupView): void {
+		const active = group.model.activeTab;
 		if (active instanceof TextEditorInput) {
 			const kind = cartMapKind(active.workingCopy.resource);
-			if (kind !== undefined) { this.openResource(active.workingCopy.resource, kind); return; }
+			if (kind !== undefined) { this.openResource(group, active.workingCopy.resource, kind); return; }
 		}
 		this.quickInput.pick('MAP EDITOR', 'Authored room objects / stage markers', () => new FileQuickPickProvider(
 			buildResourceQuickPickItems(this.catalog.resources.filter(resource => cartMapKind(resource) !== undefined))),
-			item => this.openResource(item.resource, cartMapKind(item.resource)!));
+			item => this.openResource(group, item.resource, cartMapKind(item.resource)!),
+			lifetime => lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) }));
 	}
-	public openResource(resource: RuntimeResource, kind: CartMapKind): void {
-		void this.group.openResolvedEditor(resolveCartMapInput(this.catalog, resource, kind))
+	public openResource(group: EditorGroupView, resource: RuntimeResource, kind: CartMapKind): void {
+		void group.openResolvedEditor(resolveCartMapInput(this.catalog, resource, kind))
 			.catch(error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
 	}
-	public openSource(input: CartMapInput): void {
+	public openSource(group: EditorGroupView, input: CartMapInput): void {
 		projectCartMap(input);
 		const position = { row: 0, column: 0 };
 		input.workingCopy.buffer.positionAt(input.selectionRange.start, position);
-		void this.group.openResolvedEditor(resolveTextCodeEditorInput(this.catalog, input.workingCopy.resource),
+		void group.openResolvedEditor(resolveTextCodeEditorInput(this.catalog, input.workingCopy.resource),
 			{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } })
 			.catch(error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
 	}

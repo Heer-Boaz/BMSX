@@ -20,6 +20,7 @@ import { GraphLayoutTestInput } from '../../helpers/graph_layout_input';
 type GraphFixtureView = { view: WorkbenchGraphViewport; dragSource?: WorkbenchGraphDragSource };
 
 class GraphFixturePane extends EditorPane<CodeEditorInput> {
+	public override get commandTarget() { return this.graph.focusTarget; }
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 
 	public readonly graph: WorkbenchGraphControl;
@@ -66,7 +67,7 @@ export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 	const unused = (): never => { throw new Error('Only the domain-free fixture is registered in this editor group'); };
 	const group = new EditorGroupView({ play_session: () => { throw new Error('Play is not part of the graph viewport fixture'); },
 		home: unused,
-		code_editor: scope => pane = new GraphFixturePane(inputViews, scope), behavior_lens: unused, resource_view: unused, scenario_lab: unused, scene_editor: unused, cart_map: unused,
+		code_editor: group => pane = new GraphFixturePane(inputViews, group.focusScope), behavior_lens: unused, resource_view: unused, scenario_lab: unused, scene_editor: unused, cart_map: unused,
 		animation: unused, host_error: unused, build_log: unused,
 		rom_inspector: unused, event_viewer: unused, gte_debugger: unused, gpu_debugger: unused, terminal: unused, actor_lab: unused, game_view: unused, workspace_edit_review: unused, assistant: unused, aem_editor: unused, lua_program: unused, conversation_observer: unused }, { isEnabled: () => false, execute() {} }, async targets => {
 		for (const { group, input } of targets) group.removeEditor(input);

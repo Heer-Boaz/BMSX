@@ -22,6 +22,7 @@ export abstract class WorkbenchViewEditorPane<
 	}
 
 	public override get inputScope(): InputFocusScope { return this.focusTarget.scope; }
+	public override get commandTarget(): InputFocusTarget { return this.focusTarget; }
 
 	public override clearInput(): void {
 		this.focusTarget.release();
@@ -29,7 +30,7 @@ export abstract class WorkbenchViewEditorPane<
 	}
 
 	public focus(): void {
-		this.focusTarget.focus();
+		this.commandTarget.focus();
 	}
 
 	public dispose(): void {

@@ -38,6 +38,7 @@ import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import type { StudioBuildJob } from '../../hosts/common/studio_builds';
 
 class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
+	public override get commandTarget() { return this.focusTarget; }
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 
 	public readonly focusTarget: InputFocusTarget;
@@ -132,37 +133,37 @@ function createEditorPanes() {
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const group = new EditorGroupView({
-		home: scope => new RecordingEditorPane<HomeInput>(scope),
-		play_session: scope => new RecordingEditorPane(scope),
-		animation: scope => new RecordingEditorPane<Extract<EditorInput, { kind: 'animation' }>>(scope),
-		host_error: scope => new RecordingEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(scope),
-		build_log: scope => new RecordingEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(scope),
-		rom_inspector: scope => new RecordingEditorPane<RomInspectorInput>(scope),
-		event_viewer: scope => new RecordingEditorPane<EventViewerInput>(scope),
-		gte_debugger: scope => new RecordingEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(scope),
-		gpu_debugger: scope => new RecordingEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(scope),
-		terminal: scope => new RecordingEditorPane<TerminalInput>(scope),
-		actor_lab: scope => new RecordingEditorPane<ActorLabInput>(scope),
-		game_view: scope => new RecordingEditorPane<GameViewInput>(scope),
-		conversation_observer: scope => new RecordingEditorPane<ConversationObserverInput>(scope),
-		aem_editor: scope => new RecordingEditorPane<AemEditorInput>(scope),
-		lua_program: scope => new RecordingEditorPane<LuaProgramInput>(scope),
-		assistant: scope => new RecordingEditorPane<AssistantInput>(scope),
-		workspace_edit_review: scope => new RecordingEditorPane<WorkspaceEditReviewInput>(scope),
-		code_editor: scope => {
+		home: group => new RecordingEditorPane<HomeInput>(group.focusScope),
+		play_session: group => new RecordingEditorPane(group.focusScope),
+		animation: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope),
+		host_error: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(group.focusScope),
+		build_log: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(group.focusScope),
+		rom_inspector: group => new RecordingEditorPane<RomInspectorInput>(group.focusScope),
+		event_viewer: group => new RecordingEditorPane<EventViewerInput>(group.focusScope),
+		gte_debugger: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(group.focusScope),
+		gpu_debugger: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(group.focusScope),
+		terminal: group => new RecordingEditorPane<TerminalInput>(group.focusScope),
+		actor_lab: group => new RecordingEditorPane<ActorLabInput>(group.focusScope),
+		game_view: group => new RecordingEditorPane<GameViewInput>(group.focusScope),
+		conversation_observer: group => new RecordingEditorPane<ConversationObserverInput>(group.focusScope),
+		aem_editor: group => new RecordingEditorPane<AemEditorInput>(group.focusScope),
+		lua_program: group => new RecordingEditorPane<LuaProgramInput>(group.focusScope),
+		assistant: group => new RecordingEditorPane<AssistantInput>(group.focusScope),
+		workspace_edit_review: group => new RecordingEditorPane<WorkspaceEditReviewInput>(group.focusScope),
+		code_editor: group => {
 			codeFactoryCount += 1;
-			codePane = new RecordingEditorPane<CodeEditorInput>(scope);
+			codePane = new RecordingEditorPane<CodeEditorInput>(group.focusScope);
 			return codePane;
 		},
-		resource_view: scope => {
+		resource_view: group => {
 			resourceFactoryCount += 1;
-			resourcePane = new RecordingEditorPane<ResourceViewerInput>(scope);
+			resourcePane = new RecordingEditorPane<ResourceViewerInput>(group.focusScope);
 			return resourcePane;
 		},
-		behavior_lens: scope => new RecordingEditorPane<BehaviorLensInput>(scope),
-		scenario_lab: scope => new RecordingEditorPane<ScenarioLabInput>(scope),
-		scene_editor: scope => new RecordingEditorPane<SceneEditorInput>(scope),
-		cart_map: scope => new RecordingEditorPane<CartMapInput>(scope),
+		behavior_lens: group => new RecordingEditorPane<BehaviorLensInput>(group.focusScope),
+		scenario_lab: group => new RecordingEditorPane<ScenarioLabInput>(group.focusScope),
+		scene_editor: group => new RecordingEditorPane<SceneEditorInput>(group.focusScope),
+		cart_map: group => new RecordingEditorPane<CartMapInput>(group.focusScope),
 	}, { isEnabled: () => false, execute() {} }, async targets => {
 		for (const { group, input } of targets) group.removeEditor(input);
 		return true;

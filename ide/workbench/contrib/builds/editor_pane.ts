@@ -57,7 +57,7 @@ export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 		this.actions.focusTarget.next = this.reading.focusTarget;
 	}
 
-	public override focus(): void { this.reading.focusTarget.focus(); }
+	public override get commandTarget() { return this.reading.focusTarget; }
 	protected override activate(): void {
 		this.actions.setInput(this.input.actions, this.focusTarget);
 		this.update();

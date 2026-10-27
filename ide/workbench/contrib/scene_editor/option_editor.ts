@@ -62,6 +62,7 @@ export class SceneOptionEditor {
 			format: value => value.edit.text,
 			parse: text => parseLuaFieldValueEdit(this.input!.workingCopy.buffer, this.input!.document.analysis.chunk.locations, this.input!.optionProperties[index].field, text),
 		}, value => { this.input!.workingCopy.pushEditOperations([value.edit]); }, this.beforeCommit);
+		control.field.focusTarget.commandContext = this.parent.commandContext;
 		control.field.focusTarget.canFocus = () => this.input !== undefined && this.input.layout.mode !== 'outline' && this.input.outline.selectionIndex >= 0
 			&& this.input.details.bounds.left < this.input.details.bounds.right && this.input.details.bounds.top < this.input.details.bounds.bottom && !control.field.readOnly;
 		control.field.focusTarget.registerCommand('sceneEditor.details', this.sectionCommands.details);

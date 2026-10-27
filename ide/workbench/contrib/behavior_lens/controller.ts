@@ -14,7 +14,6 @@ import { BehaviorLensInput } from './editor_input';
 import {
 	selectBehaviorLensDefinition,
 	installBehaviorLensDocument,
-	prepareBehaviorLensLayout,
 } from './layout';
 import {
 	BehaviorLensNavigationResult,
@@ -30,7 +29,6 @@ import { buildBehaviorQuickPickItems } from './quick_access';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from './view_model';
 import { selectStateMachineSource, type StateMachineSourceSelection } from './state_machine_selection';
-import { editorViewState } from '../../../editor/ui/view/state';
 import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engine';
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
 import type { BehaviorInspectionProperty } from './inspection';
@@ -68,7 +66,6 @@ export class BehaviorLensController {
 	public constructor(
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
-		private readonly editorGroup: EditorGroupView,
 		public readonly quickInput: QuickInputController,
 		public readonly documents: BehaviorSourceDocuments,
 		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
@@ -76,19 +73,21 @@ export class BehaviorLensController {
 		private readonly rewind: HostRewind,
 	) {}
 
-	public open(kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
+	public open(group: EditorGroupView, kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
 		this.quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
 			() => new TextQuickPickProvider(buildBehaviorQuickPickItems(this.sources.catalog, this.documents.registrations, kind)),
-			item => this.openDefinition(item.registration, options));
+			item => this.openDefinition(group, item.registration, options), lifetime => {
+				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+			});
 	}
 
-	public openDefinition(registration: BehaviorRegistrationSource, options: EditorOpenOptions = {}): BehaviorLensInput {
+	public openDefinition(group: EditorGroupView, registration: BehaviorRegistrationSource, options: EditorOpenOptions = {}): BehaviorLensInput {
 		return captureNavigation(() => {
 			const resource = this.sources.catalog.resolveResource(registration.resource)!;
 			const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
 			const occurrence = luaSourceRangeToTextRange(model.buffer, registration.occurrenceRange);
 			let input: BehaviorLensInput | undefined;
-			for (const candidate of this.editorGroup.model.tabs) {
+			for (const candidate of group.model.tabs) {
 				if (candidate.kind !== 'behavior_lens' || candidate.workingCopy !== model || candidate.view.definitionRowKey === null) continue;
 				const view = candidate.view;
 				const span = view.source.ranges.get(view.definitionRowKey)!;
@@ -108,7 +107,7 @@ export class BehaviorLensController {
 				input.updateDefinition();
 			}
 			// Reopening a surviving occurrence preserves its selection and viewport.
-			this.editorGroup.openEditor(input, options);
+			group.openEditor(input, options);
 			return input;
 		});
 	}
@@ -132,13 +131,10 @@ export class BehaviorLensController {
 		}
 		navigationSelection?.restore(input);
 		if (sourceChanged || navigationSelection !== undefined) input.updateDefinition();
-		prepareBehaviorLensLayout(view);
-		input.updatePresentation(editorViewState.font.renderFont());
-		if (sourceChanged && navigationSelection === undefined) finishBehaviorLensNavigation(view);
 	}
 
 	/** A shared literal is one versioned source edit, not one edit per recognized consumer. */
-	public retargetStateMachineTransition(input: BehaviorLensInput,
+	public retargetStateMachineTransition(group: EditorGroupView, input: BehaviorLensInput,
 		selection: Extract<StateMachineSourceSelection, { kind: 'state-outcome' }>,
 		target: Extract<StateMachineRetargetCheck, { kind: 'available' }>,
 	): void {
@@ -153,11 +149,11 @@ export class BehaviorLensController {
 		const evidence = { summary: `${target.uses.length} recognized uses: ${target.literal.value} -> ${target.text}\nRecognized in ${view.resource.path}; other registration files and dynamic calls are not enumerated.`,
 			items: stateMachineRetargetImpacts(view, target) };
 		const proposal = new WorkspaceEditProposal('Retarget FSM', context, { kind: 'edit', edits: new Map([[model, edit]]) });
-		this.editorGroup.openEditor(new WorkspaceEditReviewInput(proposal, evidence));
+		group.openEditor(new WorkspaceEditReviewInput(proposal, evidence));
 	}
 
 	/** Capture the exact transfer and its source caveats before leaving the graph. */
-	public reviewTreeTransfer(input: BehaviorLensInput, analysis: BehaviorTreeTransferAnalysis,
+	public reviewTreeTransfer(group: EditorGroupView, input: BehaviorLensInput, analysis: BehaviorTreeTransferAnalysis,
 		insertion: number, check: Extract<BehaviorTreeTransferCheck, { kind: 'available' }>,
 	): void {
 		const view = input.view, model = view.source.models.get(analysis.member.file.file)!;
@@ -167,18 +163,16 @@ export class BehaviorLensController {
 		const evidence = { summary: `${analysis.member.branch.role} -> ${check.target.role} position ${insertion + 1}\nRecognized source uses only; dynamic consumers are not enumerated.`,
 			items: behaviorTreeTransferImpacts(view, analysis, insertion, check) };
 		const proposal = new WorkspaceEditProposal('Move BT source', context, { kind: 'edit', edits: new Map([[model, edit]]) });
-		this.editorGroup.openEditor(new WorkspaceEditReviewInput(proposal, evidence));
+		group.openEditor(new WorkspaceEditReviewInput(proposal, evidence));
 	}
 
-	public openSource(): void {
-		const input = this.editorGroup.model.activeTab;
-		if (input?.kind !== 'behavior_lens') return;
+	public openSource(group: EditorGroupView, input: BehaviorLensInput): void {
 		this.updateView(input);
-		if (selectedBehaviorLensSourceRange(input.view) === null) this.openDefinitionSource(input.view);
-		else this.openSelectedSource(input.view);
+		if (selectedBehaviorLensSourceRange(input.view) === null) this.openDefinitionSource(group, input.view);
+		else this.openSelectedSource(group, input.view);
 	}
 
-	public inspectRuntimeEffect(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+	public inspectRuntimeEffect(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const choices: Array<ActionEffectInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
@@ -192,13 +186,15 @@ export class BehaviorLensController {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(choices);
 			}, choice => {
-				this.showRuntimeInspection(input, inspector, choice.domain, choice.image, `LIVE EFFECT / ${choice.label}`, {
+				this.showRuntimeInspection(group, input, inspector, choice.domain, choice.image, `LIVE EFFECT / ${choice.label}`, {
 					kind: 'action_effect', componentHashId: choice.component.hashId, effectHashId: choice.effect.hashId,
 				});
+			}, lifetime => {
+				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
 			});
 	}
 
-	public inspectRuntimeStateMachine(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+	public inspectRuntimeStateMachine(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const choices: Array<StateMachineInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
@@ -216,14 +212,18 @@ export class BehaviorLensController {
 					lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 					return new TextQuickPickProvider(readStateMachineStates(this.guest, machine.machine));
 				}, state => {
-					this.showRuntimeInspection(input, inspector, machine.domain, machine.image, `LIVE FSM / ${state.label}`, {
+					this.showRuntimeInspection(group, input, inspector, machine.domain, machine.image, `LIVE FSM / ${state.label}`, {
 						kind: 'state_machine', componentHashId: machine.component.hashId,
 						machineHashId: machine.machine.hashId, stateHashId: state.state.hashId,
 					});
-				}));
+				}, lifetime => {
+					lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+				}), lifetime => {
+				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+			});
 	}
 
-	public inspectRuntimeTree(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+	public inspectRuntimeTree(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const choices: Array<BehaviorTreeInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
@@ -237,24 +237,26 @@ export class BehaviorLensController {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(choices);
 			}, choice => {
-				this.showRuntimeInspection(input, inspector, choice.domain, choice.image, `LIVE BT / ${choice.label}`, {
+				this.showRuntimeInspection(group, input, inspector, choice.domain, choice.image, `LIVE BT / ${choice.label}`, {
 					kind: 'behavior_tree', componentHashId: choice.component.hashId,
 				});
+			}, lifetime => {
+				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
 			});
 	}
 
-	private showRuntimeInspection(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>, domain: ResourceDomain, image: Blua32SourceImage, title: string, selection: BehaviorRuntimeSelection): void {
+	private showRuntimeInspection(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>, domain: ResourceDomain, image: Blua32SourceImage, title: string, selection: BehaviorRuntimeSelection): void {
 		const inspection = new BehaviorRuntimeInspection(this.sources, this.guest, this.rewind, domain, image, selection);
 		const lifetime = inspector.show({ title, items: inspection.refresh()!,
 			canOpenSource: item => canOpenBehaviorInspectionSource(this.sources.catalog, item),
-			openSource: item => this.openInspectionSource(input, item),
+			openSource: item => this.openInspectionSource(group, input, item),
 		});
 		input.runtimeInspection = inspection;
 		lifetime.add(inspection);
 		lifetime.add({ dispose: () => { input.runtimeInspection = undefined; } });
 	}
 
-	public inspectRegisteredDefinitions(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+	public inspectRegisteredDefinitions(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const isStateMachine = input.view.presentation.kind === 'state-graph';
 		const choices: Array<BehaviorDefinitionChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
@@ -270,7 +272,7 @@ export class BehaviorLensController {
 				items: isStateMachine ? inspectStateMachineDefinition(this.sources, this.guest, choice.definition)
 					: inspectActionEffectDefinition(this.sources, this.guest, choice.definition, choice.label),
 				canOpenSource: item => canOpenBehaviorInspectionSource(this.sources.catalog, item),
-				openSource: item => this.openInspectionSource(input, item),
+				openSource: item => this.openInspectionSource(group, input, item),
 			});
 			lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
 		};
@@ -285,12 +287,16 @@ export class BehaviorLensController {
 					(_origin, lifetime) => {
 						lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 						return new TextQuickPickProvider(readStateMachineDefinitionStates(this.guest, choice.definition));
-					}, inspect);
+					}, inspect, lifetime => {
+						lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+					});
+			}, lifetime => {
+				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
 			});
 	}
 
 
-	public openInspectionSource(input: BehaviorLensInput, detail: BehaviorInspectionProperty): void {
+	public openInspectionSource(group: EditorGroupView, input: BehaviorLensInput, detail: BehaviorInspectionProperty): void {
 		const view = input.view;
 		const source = detail.source!;
 		if (source.stateSelection !== undefined) {
@@ -302,14 +308,14 @@ export class BehaviorLensController {
 			}
 			finishBehaviorLensNavigation(view);
 		}
-		this.navigation.focusChunkSource(source.resource, {
+		this.navigation.focusChunkSource(group, source.resource, {
 			row: source.range.start.line - 1, startColumn: source.range.start.column - 1, endColumn: source.range.start.column - 1,
 		});
 	}
 
-	public openWrittenSource(input: BehaviorLensInput, range: LuaSourceRange): void {
+	public openWrittenSource(group: EditorGroupView, input: BehaviorLensInput, range: LuaSourceRange): void {
 		const view = input.view;
-		this.navigation.focusChunkSource(view.source.models.get(range.path)!.resource, {
+		this.navigation.focusChunkSource(group, view.source.models.get(range.path)!.resource, {
 			row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1,
 		});
 	}
@@ -322,99 +328,84 @@ export class BehaviorLensController {
 		return beginBehaviorTreeDrag(model, input.view, transfer);
 	}
 
-	public canMoveSelectedChild(direction: -1 | 1): boolean {
-		const input = this.editorGroup.model.activeTab;
-		if (input?.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
+	public canMoveSelectedChild(input: BehaviorLensInput, direction: -1 | 1): boolean {
+		if (!input.view.source.isCurrent) return false;
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		return member !== undefined && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
-	public canEditSelectedChild(): boolean {
-		const input = this.editorGroup.model.activeTab;
-		if (input?.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
+	public canEditSelectedChild(input: BehaviorLensInput): boolean {
+		if (!input.view.source.isCurrent) return false;
 		const member = behaviorTreeEditTarget(input.view);
 		return member !== null && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
-	public canSetSelectedInitialState(): boolean {
-		const input = this.editorGroup.model.activeTab;
-		if (input?.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
+	public canSetSelectedInitialState(input: BehaviorLensInput): boolean {
+		if (!input.view.source.isCurrent) return false;
 		const target = stateMachineInitialTarget(input.view);
 		return target !== undefined && !input.view.source.models.get(target.owner.file.file)!.readOnly;
 	}
 
-	public setSelectedInitialState(): void {
-		const input = this.editorGroup.model.activeTab;
-		if (input?.kind !== 'behavior_lens') return;
+	public setSelectedInitialState(input: BehaviorLensInput): void {
 		this.updateView(input);
 		const target = stateMachineInitialTarget(input.view);
 		if (target === undefined) return;
 		const model = input.view.source.models.get(target.owner.file.file)!;
 		if (model.readOnly) return;
-		this.editorGroup.panes.activePane.focus();
 		model.pushEditOperations(createStateMachineInitialEdits(model.buffer, target));
 		this.updateView(input);
 	}
 
-	public duplicateSelectedChild(): void {
-		const input = this.editorGroup.model.activeTab;
-		if (input?.kind !== 'behavior_lens') return;
+	public duplicateSelectedChild(input: BehaviorLensInput): void {
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
 		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
-		this.editorGroup.panes.activePane.focus();
 		model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(model.buffer, member));
 		this.updateView(input);
 	}
 
-	public removeSelectedChild(): void {
-		const input = this.editorGroup.model.activeTab;
-		if (input?.kind !== 'behavior_lens') return;
+	public removeSelectedChild(input: BehaviorLensInput): void {
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
 		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
-		this.editorGroup.panes.activePane.focus();
 		model.pushEditOperations(createBehaviorTreeChildRemovalEdits(model.buffer, member));
 		// Ordinary source correspondence clears the deleted occurrence, including
 		// shared/identical uses. It must not select its former index or a namesake.
 		this.updateView(input);
 	}
 
-	public moveSelectedChild(direction: -1 | 1): void {
-		const input = this.editorGroup.model.activeTab;
-		if (input?.kind !== 'behavior_lens') return;
+	public moveSelectedChild(input: BehaviorLensInput, direction: -1 | 1): void {
 		this.updateView(input);
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		if (member === undefined) return;
 		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
-		this.editorGroup.panes.activePane.focus();
 		model.pushEditOperations(createBehaviorTreeChildMoveEdits(model.buffer, member, member.index + direction));
 		this.updateView(input);
 	}
 
 	public executeNavigation(
-		view: BehaviorLensViewState,
+		group: EditorGroupView,
+		input: BehaviorLensInput,
 		command: BehaviorLensNavigationCommand,
 	): boolean {
-		prepareBehaviorLensLayout(view);
+		const view = input.view;
 		const result = executeBehaviorLensNavigation(view, command);
 		if (result === BehaviorLensNavigationResult.Activate) {
-			this.openSelectedSource(view);
+			this.openSelectedSource(group, view);
 			return true;
 		}
 		if (result === BehaviorLensNavigationResult.Back) {
-			this.openDefinitionSource(view);
+			this.openDefinitionSource(group, view);
 			return true;
 		}
 		if (result === BehaviorLensNavigationResult.Changed) {
 			if (view.presentation.kind === 'state-graph') {
-				const input = this.editorGroup.model.activeTab;
-				if (input?.kind === 'behavior_lens') acceptStateGraphSelection(view, view.presentation);
+				acceptStateGraphSelection(view, view.presentation);
 			}
 			finishBehaviorLensNavigation(view);
 			return true;
@@ -423,12 +414,13 @@ export class BehaviorLensController {
 	}
 
 
-	private openSelectedSource(view: BehaviorLensViewState): void {
+	private openSelectedSource(group: EditorGroupView, view: BehaviorLensViewState): void {
 		const range = selectedBehaviorLensSourceRange(view);
 		if (range === null) {
 			return;
 		}
 		this.navigation.focusChunkSource(
+			group,
 			view.source.models.get(range.path)!.resource,
 			{
 				row: range.start.line - 1,
@@ -438,13 +430,13 @@ export class BehaviorLensController {
 		);
 	}
 
-	private openDefinitionSource(view: BehaviorLensViewState): void {
+	private openDefinitionSource(group: EditorGroupView, view: BehaviorLensViewState): void {
 		if (view.definitionRowKey === null) {
-			this.navigation.focusChunkSource(view.resource);
+			this.navigation.focusChunkSource(group, view.resource);
 			return;
 		}
 		const range = view.source.nodesByRowKey.get(view.definitionRowKey)!.occurrenceRange;
-		this.navigation.focusChunkSource(view.source.models.get(range.path)!.resource, {
+		this.navigation.focusChunkSource(group, view.source.models.get(range.path)!.resource, {
 			row: range.start.line - 1,
 			startColumn: range.start.column - 1,
 			endColumn: range.start.column - 1,

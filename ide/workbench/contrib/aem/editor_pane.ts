@@ -6,6 +6,7 @@ import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -50,7 +51,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 	private readonly edit: WorkbenchPropertyEdit<EditorTextEdit>;
 	private readonly actionTooltip = new WorkbenchTooltip();
 	public constructor(private readonly controller: AemEditorController, private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.tree.layout.visibleRowCount > 0;
 		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
@@ -63,6 +64,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 			lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
 		};
 		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.text, surfaces, paneSurface, workArea);
+		this.edit.control.field.focusTarget.commandContext = this.focusTarget;
 		this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('aem.edit', { isEnabled: () => !this.input.workingCopy.readOnly && this.input.tree.rows[this.input.tree.selectionIndex]?.element.inlineEditable === true,
@@ -71,7 +73,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		this.focusTarget.registerCommand('aem.remove', { isEnabled: () => !this.input.workingCopy.readOnly && this.input.tree.rows[this.input.tree.selectionIndex]?.element.parent !== undefined,
 			run: () => this.controller.remove(this.input) });
 		this.focusTarget.registerCommand('aem.apply', { isEnabled: () => !this.input.applying, run: () => this.controller.apply(this.input) });
-		this.focusTarget.registerCommand('aem.source', { isEnabled: () => true, run: () => this.controller.openSource(this.input) });
+		this.focusTarget.registerCommand('aem.source', { isEnabled: () => true, run: () => this.controller.openSource(group, this.input) });
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => true, run: () => {
 			const tree = this.input.tree;
 			this.openContextMenu(tree.layout.contentLeft + 8, tree.layout.contentTop + (tree.selectionIndex - (tree.scroll | 0)) * tree.layout.rowHeight, true);

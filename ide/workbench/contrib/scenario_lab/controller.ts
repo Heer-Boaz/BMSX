@@ -193,7 +193,7 @@ export class ScenarioLabController {
 
 	public openSource(location: ScenarioSourceLocation): void {
 		this.navigation.focusChunkSourceForContext(
-			location.resource.contextId,
+			this.editorGroup, location.resource.contextId,
 			location.resource.path,
 			{
 				row: location.line - 1,

@@ -21,10 +21,7 @@ export class TerminalPane extends WorkbenchViewEditorPane<TerminalInput> {
 		super(scope); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
 	}
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
-	public override focus(): void {
-		if (this.terminal.active) this.gameInput.focusTarget.focus();
-		else super.focus();
-	}
+	public override get commandTarget() { return this.terminal.active ? this.gameInput.focusTarget : this.focusTarget; }
 	protected override activate(): void { this.terminal.resume(); this.update(); }
 	public override clearInput(): void {
 		this.gameInput.clearInput(); this.terminal.suspend(); super.clearInput();

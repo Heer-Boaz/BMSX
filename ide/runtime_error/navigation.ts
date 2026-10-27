@@ -82,7 +82,7 @@ export function clearExecutionStopHighlights(group: EditorGroupView): void {
 export type CapturedSourceNavigation = { readonly generation: number; readonly model: EditorTextModel; readonly version: number };
 
 /** Admit captured locations against authored text; callers recheck this receipt before painting. */
-export async function focusCapturedRuntimeSource(navigation: EditorNavigationController, catalog: WorkspaceSourceCatalog,
+export async function focusCapturedRuntimeSource(navigation: EditorNavigationController, group: EditorGroupView, catalog: WorkspaceSourceCatalog,
 	identity: ResourceIdentity, source: Blua32CompiledSource): Promise<CapturedSourceNavigation | undefined> {
 	const resource = catalog.resolveResource(identity);
 	if (resource === undefined) {
@@ -95,7 +95,7 @@ export async function focusCapturedRuntimeSource(navigation: EditorNavigationCon
 		return undefined;
 	}
 	const version = model.version;
-	const generation = await navigation.focusChunkSource(identity);
+	const generation = await navigation.focusChunkSource(group, identity);
 	return generation === undefined ? undefined : { generation, model, version };
 }
 
@@ -109,7 +109,7 @@ export function showLuaErrorOverlay(editor: CartEditor, resource: ResourceIdenti
 export async function navigateToRuntimeErrorFrameTarget(pane: CodeEditorPane, frame: SourceStackTraceFrame,
 	source: Blua32CompiledSource): Promise<void> {
 	try {
-		const receipt = await focusCapturedRuntimeSource(pane.navigation, pane.sources.catalog, frame.resource, source);
+		const receipt = await focusCapturedRuntimeSource(pane.navigation, pane.group, pane.sources.catalog, frame.resource, source);
 		if (receipt === undefined || receipt.generation !== pane.group.panes.openGeneration
 			|| receipt.model.version !== receipt.version || editorTextModelService.get(frame.resource) !== receipt.model) return;
 	} catch (error) {

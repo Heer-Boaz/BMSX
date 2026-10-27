@@ -48,6 +48,8 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import { addActionEffectProperty, editableActionEffect, removeActionEffectProperty } from './action_effect_authoring';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
+import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { BehaviorSourceIndex } from './source_index';
 
 export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLensInput> {
 	public override get companionGameMinimumWidth(): number { return measureBehaviorLensMinimumWidth(this.input.view); }
@@ -61,10 +63,12 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 	}
 	public override getSelection(): BehaviorLensNavigationSelection {
 		this.controller.updateView(this.input);
+		this.layout(this.contentBounds);
 		return new BehaviorLensNavigationSelection(this.input);
 	}
 
 	private readonly pointer = new BehaviorLensPointer(pointerHover);
+	private presentedSource: BehaviorSourceIndex | undefined;
 	private readonly properties = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, input => this.handleKeyboard(input), this.focusTarget);
 	private readonly unbindGraphGamepad = this.graph.focusTarget.bindGamepad(input => this.handleGamepad(input));
@@ -72,13 +76,13 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 	private readonly actionBar: WorkbenchActionBarControl;
 	public readonly propertyEdit: WorkbenchPropertyEdit<LuaFieldValueEdit>;
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) =>
-		this.controller.retargetStateMachineTransition(this.input, selection, target);
+		this.controller.retargetStateMachineTransition(this.group, this.input, selection, target);
 	private readonly stateMachineDragSource: WorkbenchGraphDragSource = {
 		connectionEnds: edge => stateMachineConnectionEnds(this.input.view, edge),
 		begin: start => beginStateMachineDrag(this.input.view, start, this.stateMachineDrop),
 	};
 	private readonly treeDrop: BehaviorTreeTransferDrop = (analysis, insertion, check) =>
-		this.controller.reviewTreeTransfer(this.input, analysis, insertion, check);
+		this.controller.reviewTreeTransfer(this.group, this.input, analysis, insertion, check);
 	private readonly graphDragSource = { begin: () => this.controller.beginTreeDrag(this.input, this.treeDrop) };
 	private readonly unbindPointerBlur = this.focusTarget.onDidBlur(() => {
 		this.pointer.cancel();
@@ -91,6 +95,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		private readonly contextMenu: ContextMenuController,
 		private readonly frameNavigation: RuntimeFrameNavigation,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, workArea: Readonly<RectBounds>,
+		private readonly group: EditorGroupView,
 		scope: InputFocusScope,
 	) {
 		super(scope);
@@ -99,6 +104,9 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 			lifetime.add({ dispose: this.input.view.source.onDidInvalidate(() => this.contextMenu.hide()) });
 		};
 		this.propertyEdit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, workArea);
+		this.graph.focusTarget.commandContext = this.focusTarget;
+		this.inspector.focusTarget.commandContext = this.focusTarget;
+		this.propertyEdit.control.field.focusTarget.commandContext = this.focusTarget;
 		for (const target of [this.focusTarget, this.inspector.focusTarget]) {
 			target.registerCommand('pause', { isEnabled: () => this.input.runtimeInspection !== undefined && this.commands.transport.playbackEnabled,
 				run: () => { this.input.runtimeInspection!.running = this.commands.transport.togglePlayback(); } });
@@ -130,19 +138,31 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		});
 		this.focusTarget.registerCommand('behaviorLens.inspectRuntimeEffect', {
 			isEnabled: () => this.input.view.presentation.kind === 'properties',
-			run: () => { this.focus(); this.controller.inspectRuntimeEffect(this.input, this.inspector); },
+			run: () => {
+				const input = this.input;
+				if (this.focusInput(input)) this.controller.inspectRuntimeEffect(this.group, input, this.inspector);
+			},
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.inspectRuntimeStateMachine', {
 			isEnabled: () => this.input.view.presentation.kind === 'state-graph',
-			run: () => { this.focus(); this.controller.inspectRuntimeStateMachine(this.input, this.inspector); },
+			run: () => {
+				const input = this.input;
+				if (this.focusInput(input)) this.controller.inspectRuntimeStateMachine(this.group, input, this.inspector);
+			},
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.inspectRuntimeTree', {
 			isEnabled: () => this.input.view.presentation.kind === 'graph',
-			run: () => { this.focus(); this.controller.inspectRuntimeTree(this.input, this.inspector); },
+			run: () => {
+				const input = this.input;
+				if (this.focusInput(input)) this.controller.inspectRuntimeTree(this.group, input, this.inspector);
+			},
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.inspectRegisteredDefinitions', {
 			isEnabled: () => this.input.view.presentation.kind === 'state-graph' || this.input.view.presentation.kind === 'properties',
-			run: () => { this.focus(); this.controller.inspectRegisteredDefinitions(this.input, this.inspector); },
+			run: () => {
+				const input = this.input;
+				if (this.focusInput(input)) this.controller.inspectRegisteredDefinitions(this.group, input, this.inspector);
+			},
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('contextMenu', {
 			isEnabled: () => !this.inspector.visible,
@@ -160,21 +180,42 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 				},
 			});
 		}
+		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.source', {
+			isEnabled: () => true,
+			run: () => this.controller.openSource(this.group, this.input),
+		});
+		for (const [command, direction] of [['behaviorLens.moveChildEarlier', -1], ['behaviorLens.moveChildLater', 1]] as const) this.graph.focusTarget.registerCommand(command, {
+			isEnabled: () => this.controller.canMoveSelectedChild(this.input, direction),
+			run: () => {
+				const input = this.input;
+				if (this.focusInput(input)) this.controller.moveSelectedChild(input, direction);
+			},
+		});
 		this.graph.focusTarget.registerCommand('behaviorLens.duplicateChild', {
-			isEnabled: () => this.controller.canEditSelectedChild(),
-			run: () => this.controller.duplicateSelectedChild(),
+			isEnabled: () => this.controller.canEditSelectedChild(this.input),
+			run: () => {
+				const input = this.input;
+				if (this.focusInput(input)) this.controller.duplicateSelectedChild(input);
+			},
 		});
 		this.graph.focusTarget.registerCommand('behaviorLens.setInitialState', {
-			isEnabled: () => this.controller.canSetSelectedInitialState(),
-			run: () => this.controller.setSelectedInitialState(),
+			isEnabled: () => this.controller.canSetSelectedInitialState(this.input),
+			run: () => {
+				const input = this.input;
+				if (this.focusInput(input)) this.controller.setSelectedInitialState(input);
+			},
 		});
 		this.graph.focusTarget.registerCommand('behaviorLens.removeChild', {
-			isEnabled: () => this.controller.canEditSelectedChild(),
-			run: () => this.controller.removeSelectedChild(),
+			isEnabled: () => this.controller.canEditSelectedChild(this.input),
+			run: () => {
+				const input = this.input;
+				if (this.focusInput(input)) this.controller.removeSelectedChild(input);
+			},
 		});
 	}
 
 	protected override activate(): void {
+		this.presentedSource = this.input.view.source;
 		const presentation = this.input.view.presentation;
 		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.graphDragSource);
 		else if (presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport, this.stateMachineDragSource);
@@ -192,13 +233,25 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		this.properties.clear();
 		this.inspector.hide();
 		this.controller.updateView(this.input, navigationSelection);
+		this.presentedSource = this.input.view.source;
+		this.layout(this.contentBounds);
 	}
 
-	public override focus(): void {
-		if (this.inspector.visible) { this.inspector.focusTarget.focus(); return; }
+	public override layout(bounds: Readonly<RectBounds>): void {
+		super.layout(bounds);
+		if (!this.hasInput) return;
+		prepareBehaviorLensLayout(this.input.view, bounds);
+		this.input.updatePresentation(editorViewState.font.renderFont());
+		if (this.presentedSource !== this.input.view.source) {
+			this.presentedSource = this.input.view.source;
+			finishBehaviorLensNavigation(this.input.view);
+		}
+	}
+
+	public override get commandTarget() {
+		if (this.inspector.visible) return this.inspector.focusTarget;
 		const kind = this.input.view.presentation.kind;
-		if (kind === 'graph' || kind === 'state-graph') this.graph.focusTarget.focus();
-		else super.focus();
+		return kind === 'graph' || kind === 'state-graph' ? this.graph.focusTarget : this.focusTarget;
 	}
 
 	public override dispose(): void {
@@ -214,6 +267,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 
 	public override update(): void {
 		this.controller.updateView(this.input);
+		this.layout(this.contentBounds);
 		const items = this.input.runtimeInspection?.refresh();
 		if (items !== undefined) this.inspector.updateItems(items, runtimeInspectionPropertiesEqual);
 		this.propertyEdit.update();
@@ -225,6 +279,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 	}
 
 	public override clearInput(): void {
+		this.presentedSource = undefined;
 		this.propertyEdit.close();
 		this.inspector.hide();
 		this.actionBar.clearInput();
@@ -245,7 +300,8 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 	}
 
 	public handleKeyboard(event: KeyInputEvent): void {
-		if (handleBehaviorLensKeyboardInput(this.input.view, event, this.controller)) {
+		this.layout(this.contentBounds);
+		if (handleBehaviorLensKeyboardInput(this.group, this.input, event, this.controller)) {
 			this.pointer.cancel();
 			this.properties.cancel();
 			this.graph.cancelPointer();
@@ -253,7 +309,8 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 	}
 
 	public override handleGamepad(input: PlayerInput): void {
-		if (handleBehaviorLensGamepadInput(this.input.view, input, this.controller)) {
+		this.layout(this.contentBounds);
+		if (handleBehaviorLensGamepadInput(this.group, this.input, input, this.controller)) {
 			this.pointer.cancel();
 			this.properties.cancel();
 			this.graph.cancelPointer();
@@ -268,7 +325,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.actionBar.handlePointer(snapshot)) return true;
 		const view = this.input.view;
-		prepareBehaviorLensLayout(view, this.contentBounds);
+		this.layout(this.contentBounds);
 		if (view.presentation.kind === 'properties') {
 			if (justPressed) this.focus();
 			const result = this.properties.handle(view.presentation.tree, snapshot, justPressed, now);
@@ -283,7 +340,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 				acceptEffectPropertySelection(view, view.presentation, result === WorkbenchPropertyPointerResult.Collapse);
 				finishBehaviorLensNavigation(view);
 			}
-			if (result === WorkbenchPropertyPointerResult.Activate) this.controller.openSource();
+			if (result === WorkbenchPropertyPointerResult.Activate) this.controller.openSource(this.group, this.input);
 			return result !== WorkbenchPropertyPointerResult.Outside;
 		}
 		if (view.presentation.kind !== 'outline') {
@@ -293,19 +350,20 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 				else acceptStateGraphSelection(view, view.presentation);
 			}
 			if (result === WorkbenchGraphPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
-			if (result === WorkbenchGraphPointerResult.Activate) this.controller.openSource();
+			if (result === WorkbenchGraphPointerResult.Activate) this.controller.openSource(this.group, this.input);
 			return result !== WorkbenchGraphPointerResult.Outside;
 		}
 		if (justPressed) this.focus();
 		const result = this.pointer.handle(view, view.presentation, snapshot, justPressed, now);
 		if (result === BehaviorLensPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
-		if (result === BehaviorLensPointerResult.Activate) this.controller.openSource();
+		if (result === BehaviorLensPointerResult.Activate) this.controller.openSource(this.group, this.input);
 		return result !== BehaviorLensPointerResult.Outside;
 	}
 
 	private openContextMenu(x: number, y: number, keyboard = false): void {
-		this.focus();
-		const view = this.input.view;
+		const input = this.input;
+		if (!this.focusInput(input)) return;
+		const view = input.view;
 		const presentation = view.presentation;
 		let menu: WorkbenchContextMenuId;
 		if (view.selection === null) menu = 'behaviorLens.canvas.context';
@@ -321,26 +379,27 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 	}
 
 	private openDetails(): void {
-		this.controller.updateView(this.input);
-		this.focus();
 		const input = this.input;
+		this.controller.updateView(input);
+		if (!this.focusInput(input)) return;
 		const selected = input.view.source.nodesByRowKey.get(input.view.selection!.rowKey)!;
 		const lifetime = this.inspector.show({ title: selected.label,
 			items: buildBehaviorInspection(input.view),
 			canOpenSource: item => item.source !== undefined,
-			openSource: item => this.controller.openInspectionSource(input, item),
+			openSource: item => this.controller.openInspectionSource(this.group, input, item),
 		});
 		lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.inspector.hide()) });
 	}
 
 	private editProperty(): void {
 		this.controller.updateView(this.input);
+		this.layout(this.contentBounds);
 		const properties = this.input.view.presentation;
 		if (properties.kind === 'properties') {
 			const input = this.input, property = selectedActionEffectProperty(input.view)!;
 			const range = property.file.chunk.locations.range(property.field.value.span);
 			if (range.start.line !== range.end.line) {
-				this.controller.openWrittenSource(this.input, range);
+				this.controller.openWrittenSource(this.group, this.input, range);
 			} else {
 				const model = input.view.source.models.get(property.file.file)!;
 				const locations = property.file.chunk.locations;

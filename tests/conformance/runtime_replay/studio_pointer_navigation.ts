@@ -49,7 +49,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: spec.path })!;
-	await ide.editor.navigation.openResource(resource);
+	await ide.editor.navigation.openResource(ide.editor.editorGroup, resource);
 	await frame();
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
@@ -68,7 +68,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 		`${cart}: semantic source owner already returns the exact local declaration`);
 	console.info(`STUDIO: ${cart} source ranges and held keyboard/Ctrl-click/context-menu/lens navigation`);
 	for (const route of ['keyboard', 'ctrl-click', 'context-menu'] as const) {
-		await ide.editor.navigation.openResource(resource, { row: useRow, startColumn: useColumn, endColumn: useColumn });
+		await ide.editor.navigation.openResource(ide.editor.editorGroup, resource, { row: useRow, startColumn: useColumn, endColumn: useColumn });
 		await frame();
 		if (route === 'keyboard') {
 			await runPaletteCommand('Go: Go to Definition');

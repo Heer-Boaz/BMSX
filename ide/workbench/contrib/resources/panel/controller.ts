@@ -314,7 +314,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		}
 		const selected = this.files.selectedNode;
 		if (selected === null) return;
-		if (selected.element.kind === 'file') void this.editor.navigation.openResource(selected.element.resource);
+		if (selected.element.kind === 'file') void this.editor.navigation.openResource(this.editor.editorGroup, selected.element.resource);
 		else if (this.files.toggle(this.selectionIndex)) { this.updateFilesMetrics(); this.ensureSelectionVisible(); }
 	}
 

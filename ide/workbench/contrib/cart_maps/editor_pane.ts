@@ -9,7 +9,7 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import { INTEGER_INPUT_FORMAT, parseIntegerInput } from '../../../editor/ui/inline/integer_input';
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus, type InputFocusScope } from '../../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -33,6 +33,7 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import type { EditorFont } from '../../../editor/ui/view/font';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 
 /** Display seeds carry coordinates; an accepted draft carries a versioned source proposal. */
 export type CartMapCoordinateEdit = { readonly coordinate: number; readonly edit?: EditorModelEdit };
@@ -69,14 +70,15 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 	};
 	private readonly beforeFieldHide = (axis: number): void => { this.controls[axis].field.focusTarget.cancelInput(); };
 	public constructor(controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>,
+		group: EditorGroupView, scope: InputFocusScope) {
 		super(scope);
 		this.tooltip.attach(surfaces, paneSurface, workArea);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'map';
 		this.gridFocus.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline';
 		this.gridFocus.commandContext = this.focusTarget;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
-		const source = { isEnabled: () => this.hasInput, run: () => controller.openSource(this.input) };
+		const source = { isEnabled: () => this.hasInput, run: () => controller.openSource(group, this.input) };
 		const map = { isEnabled: () => this.hasInput && this.input.grid.content !== undefined, run: () => this.showSection('map') };
 		const outline = { isEnabled: () => this.hasInput, run: () => this.showSection('outline') };
 		for (const target of [this.focusTarget, this.gridFocus]) {
@@ -163,11 +165,8 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 				this.controls[axis].layout(bounds, this.contentBounds);
 		}
 	}
-	public override focus(): void {
-		this.update();
-		if (this.input.layout.mode === 'map') this.gridFocus.focus();
-		else this.focusTarget.focus();
-	}
+	public override get commandTarget(): InputFocusTarget { return this.input.layout.mode === 'map' ? this.gridFocus : this.focusTarget; }
+	public override focus(): void { this.update(); super.focus(); }
 	private showSection(section: CartMapSection): void {
 		if (inputFocus.target?.edit?.commit() === false) return;
 		this.input.section = section;

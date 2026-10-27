@@ -92,7 +92,7 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override get runtimeTransport() { return this.commands.transport; }
 	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }
-	public override focus(): void { this.list.focusTarget.focus(); }
+	public override get commandTarget() { return this.list.focusTarget; }
 	protected override activate(): void {
 		this.freshLayout = true; this.historyRevision = -1; this.selectedRevision = -1;
 		this.actions.setInput(this.input.actions, this.focusTarget); this.list.setInput(this.input.list);

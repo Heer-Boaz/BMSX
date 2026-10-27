@@ -159,7 +159,7 @@ test('independent inline views share real documents/history and retire stale ses
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
-	const controller = new AnimationEditorController(sources.catalog, group, undefined!, undefined!);
+	const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!);
 	const project = getOrCreateSemanticProject(editorTextModelService, TEST_CARTRIDGE_CONTEXT_IDS[0]); project.synchronizeSources(sources.catalog);
 	const file = project.getFileData(resource)!;
 	const first = animationDefinitionAtPosition(file, 1, 30)!, second = animationDefinitionAtPosition(file, 1, 86)!;

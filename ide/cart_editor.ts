@@ -99,7 +99,7 @@ import {
 } from './editor/ui/view/configuration';
 import { editorViewState } from './editor/ui/view/state';
 import { updateBlink } from './editor/ui/inline/text_field';
-import { inputFocus, type InputFocusTarget } from './input/focus';
+import { inputFocus } from './input/focus';
 import type { KeyInputEvent, TextInputHost, TextInputTarget } from '../hosts/common/input/text';
 import { pointerHover } from './input/pointer/hover';
 import { pointerCapture } from './input/pointer/capture';
@@ -314,7 +314,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unsubscribeTextModelChanged: () => void;
 	private readonly unsubscribeDiagnosticsChanged: () => void;
 	private readonly unbindHostInput: () => void;
-	private readonly unbindEditorInputRetirement: () => void;
 	private readonly unbindNavigation: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
@@ -417,24 +416,24 @@ export class RuntimeCartEditor implements CartEditor {
 		inputFocus.workbenchScope.commands = this.commands;
 		const workArea = getWorkbenchWorkArea();
 		this.editorGroup = new EditorGroupView({
-			home: scope => new HomeEditorPane(this.commands, scope),
-			play_session: scope => new PlayEditorPane(this.commands, this.contextMenu, this.navigation, scope),
-			animation: scope => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-			host_error: scope => new HostErrorPane(scope),
-			build_log: scope => new BuildLogPane(this.clipboard, this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-			rom_inspector: scope => new RomInspectorPane(this.commands, this.sources, this.navigation, this.quickInput, this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-			event_viewer: scope => new EventViewerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu,
-				this.surfaces, this.paneSurface, workArea, scope),
-			gpu_debugger: scope => new GpuDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-			gte_debugger: scope => new GteDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, this.paneSurface, workArea, scope),
-			terminal: scope => new TerminalPane(this.terminal, input, presenter, scope),
-			conversation_observer: scope => new ConversationObserverPane(decodeImage, this.surfaces, this.paneSurface, this.commands, scope),
-			assistant: scope => new AssistantPane(this.clipboard, this.editorGroup, this.assistantCommands, decodeImage,
-				this.surfaces, this.paneSurface, this.commands, this.contextMenu, workArea, scope),
-			workspace_edit_review: scope => new WorkspaceEditReviewPane(this.editorGroup, this.quickInput, this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-			code_editor: scope => new CodeEditorPane(
-				scope,
-				this.editorGroup,
+			home: group => new HomeEditorPane(this.commands, group.focusScope),
+			play_session: group => new PlayEditorPane(this.commands, this.contextMenu, this.navigation, group, group.focusScope),
+			animation: group => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			host_error: group => new HostErrorPane(group.focusScope),
+			build_log: group => new BuildLogPane(this.clipboard, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
+			rom_inspector: group => new RomInspectorPane(this.commands, this.sources, this.navigation, this.quickInput, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			event_viewer: group => new EventViewerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu,
+				this.surfaces, this.paneSurface, workArea, group.focusScope),
+			gpu_debugger: group => new GpuDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
+			gte_debugger: group => new GteDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			terminal: group => new TerminalPane(this.terminal, input, presenter, group.focusScope),
+			conversation_observer: group => new ConversationObserverPane(decodeImage, this.surfaces, this.paneSurface, this.commands, group.focusScope),
+			assistant: group => new AssistantPane(this.clipboard, group, this.assistantCommands, decodeImage,
+				this.surfaces, this.paneSurface, this.commands, this.contextMenu, workArea, group.focusScope),
+			workspace_edit_review: group => new WorkspaceEditReviewPane(group, this.quickInput, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
+			code_editor: group => new CodeEditorPane(
+				group.focusScope,
+				group,
 				this,
 				this.clipboard,
 				this.sources,
@@ -444,18 +443,18 @@ export class RuntimeCartEditor implements CartEditor {
 				this.debuggerState,
 				this.clock,
 			),
-			resource_view: scope => new ResourceViewerEditorPane(scope),
-			aem_editor: scope => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-			lua_program: scope => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-			behavior_lens: scope => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, frameNavigation, this.surfaces, this.paneSurface, workArea, scope),
-			actor_lab: scope => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-			game_view: scope => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, scope),
-			cart_map: scope => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, this.paneSurface, workArea, scope),
-			scene_editor: scope => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
-			scenario_lab: scope => new ScenarioLabEditorPane(
+			resource_view: group => new ResourceViewerEditorPane(group.focusScope),
+			aem_editor: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			lua_program: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			behavior_lens: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, frameNavigation, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			actor_lab: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
+			game_view: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope),
+			cart_map: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			scene_editor: group => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			scenario_lab: group => new ScenarioLabEditorPane(
 				this.scenarioLab,
 				this.commands,
-				this.contextMenu, this.surfaces, this.paneSurface, workArea, scope),
+				this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
 		}, this.commands, this.editorClose.close);
 		this.editorGroups.push(this.editorGroup);
 		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, () => this.editorGroup.panes.activePane?.focus());
@@ -518,11 +517,6 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources.catalog,
 		);
 
-		this.unbindEditorInputRetirement = this.editorGroup.panes.onDidClearEditor(() => {
-			if (this.actionPrompt.visible && this.editorOriginRetired(this.actionPrompt.invocationOrigin)) this.actionPrompt.close('cancel', false);
-			if (this.quickInput.visible && this.editorOriginRetired(this.quickInput.invocationOrigin)) this.quickInput.hide(false);
-			if (this.contextMenu.visible && this.editorOriginRetired(this.contextMenu.invocationOrigin)) this.contextMenu.hide(false);
-		});
 		this.gamePanel = new GamePanel(this.editorGroup.panes, this.commands, this.contextMenu, input, presenter);
 		this.gamePanel.focusScope.surfaceScope = this.chromeScope;
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.editorGroup, this.quickInput, this.clipboard);
@@ -530,11 +524,10 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources.catalog,
 			this.resourcePanel,
 			this.resourceEditors,
-			this.editorGroup,
 		);
-		this.cartMaps = new CartMapController(this.sources.catalog, this.editorGroup, this.quickInput);
-		this.sceneEditor = new SceneEditorController(this.sources.catalog, this.editorGroup, this.navigation);
-		this.animations = new AnimationEditorController(this.sources.catalog, this.editorGroup, this.navigation, this.quickInput);
+		this.cartMaps = new CartMapController(this.sources.catalog, this.quickInput);
+		this.sceneEditor = new SceneEditorController(this.sources.catalog, this.navigation);
+		this.animations = new AnimationEditorController(this.sources.catalog, this.navigation, this.quickInput);
 		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
 			this.quickInput, this.editorGroup, this.navigation, actorExecution, rewind, sources,
 			{ kind: 'direct', presenter, recipient: input, transport: this.commands.transport });
@@ -544,7 +537,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,
 			this.navigation,
-			this.editorGroup,
 			this.quickInput,
 			behaviorSources,
 			createGraphLayoutEngine,
@@ -559,8 +551,8 @@ export class RuntimeCartEditor implements CartEditor {
 			scenarioRuns,
 			this.play,
 		);
-		this.aemEditor = new AemEditorController(sources, this.editorGroup, this.quickInput, guest, runtime, runtimeTasks);
-		this.luaPrograms = new LuaProgramController(sources, guest, this.editorGroup, this.navigation, this.quickInput, rewind);
+		this.aemEditor = new AemEditorController(sources, this.quickInput, guest, runtime, runtimeTasks);
+		this.luaPrograms = new LuaProgramController(sources, guest, this.navigation, this.quickInput, rewind);
 		this.actionStrings = new ActionStringTester(sources.catalog, clock, this.quickInput, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {
 			home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.context) },
@@ -807,12 +799,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.surfaces.draw(api);
 	}
 
-	/** Main-pane replacement retires that input, not root chrome or sibling scopes. */
-	private editorOriginRetired(origin: InputFocusTarget | null): boolean {
-		return origin !== null && (origin.scope.surfaceScope === this.paneSurface.captureScope
-			|| this.surfaces.findByScope(origin.scope.surfaceScope) === undefined);
-	}
-
 	/** Popup attachment lifetime is the source session, not the workbench root. */
 	private readonly attachContextMenuSession = (lifetime: DisposableStore | undefined): void => {
 		if (lifetime === undefined) { this.surfaces.changed(); return; }
@@ -857,7 +843,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorClose.dispose();
 		inputFocus.workbenchScope.commands = undefined;
 		this.unbindHostInput();
-		this.unbindEditorInputRetirement();
 		this.unbindSurfaceAdmission();
 		this.surfaces.dispose();
 		this.input.setEditingInput(undefined);
@@ -929,7 +914,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		if (details !== undefined) {
 			const frame = details.luaStack.find(frame => frame.kind === 'source')!;
-			void focusCapturedRuntimeSource(this.navigation, this.sources.catalog, resource, details.sources.get(frame)!)
+			void focusCapturedRuntimeSource(this.navigation, this.editorGroup, this.sources.catalog, resource, details.sources.get(frame)!)
 				.then(receipt => {
 					if (receipt === undefined || receipt.generation !== this.editorGroup.panes.openGeneration
 						|| receipt.model.version !== receipt.version || editorTextModelService.get(resource) !== receipt.model) return;
@@ -939,7 +924,7 @@ export class RuntimeCartEditor implements CartEditor {
 				.catch(error => showEditorMessage(`Failed to open runtime source: ${String(error)}`, 'error', 4.0));
 			return;
 		}
-		void this.navigation.focusChunkSource(resource)
+		void this.navigation.focusChunkSource(this.editorGroup, resource)
 			.then(generation => {
 				if (generation !== this.editorGroup.panes.openGeneration) return;
 				const pane = this.editorGroup.panes.getPane('code_editor') as CodeEditorPane;

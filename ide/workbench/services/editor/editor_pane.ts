@@ -10,6 +10,8 @@ import type { RuntimeTransport } from '../../../runtime/transport';
 
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
+	/** Root chrome addresses the attached client, independently of the last keyboard-focused leaf. */
+	public abstract get commandTarget(): InputFocusTarget;
 	/** Scope of a concrete control borrowed by this pane, when separate from its group scope. */
 	public get inputScope(): InputFocusScope | undefined { return undefined; }
 	protected contentBounds!: Readonly<RectBounds>;
@@ -51,6 +53,12 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	protected abstract activate(): void;
 
 	public abstract focus(): void;
+
+	/** Focus callbacks can replace this reusable pane's attachment before an action continues. */
+	protected focusInput(input: TInput): boolean {
+		this.focus();
+		return this.inputValue === input;
+	}
 
 	public abstract dispose(): void;
 

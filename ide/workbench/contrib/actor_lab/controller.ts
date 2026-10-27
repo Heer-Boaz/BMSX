@@ -309,7 +309,7 @@ export class ActorLabController {
 				&& canOpenBehaviorInspectionSource(this.authoringSources.catalog, item),
 			openSource: item => {
 				const source = item.source!;
-				this.navigation.focusChunkSourceForContext(source.resource.contextId, source.resource.path, {
+				this.navigation.focusChunkSourceForContext(this.group, source.resource.contextId, source.resource.path, {
 					row: source.range.start.line - 1, startColumn: source.range.start.column - 1, endColumn: source.range.start.column - 1,
 				});
 			},

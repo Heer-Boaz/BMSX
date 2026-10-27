@@ -60,7 +60,7 @@ export async function presentRuntimeDebuggerStop(
 		contextId: image.sourceContextId,
 		path: source.displayPath,
 	};
-	const receipt = await focusCapturedRuntimeSource(editor.navigation, catalog, resource, source);
+	const receipt = await focusCapturedRuntimeSource(editor.navigation, editor.editorGroup, catalog, resource, source);
 	if (state.source.stop !== stop || receipt === undefined || receipt.generation !== editor.editorGroup.panes.openGeneration
 		|| receipt.model.version !== receipt.version || editorTextModelService.get(resource) !== receipt.model) return;
 	const code = (editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code;

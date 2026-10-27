@@ -156,7 +156,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await frame();
 	check(!ide.editor.commands.isEnabled(remove), 'BT removal: readonly source has no destructive command');
 	await press('Delete');
-	ide.editor.behaviorLens.removeSelectedChild();
+	ide.editor.behaviorLens.removeSelectedChild(lens);
 	check(model.version === version, 'BT removal: readonly admission also holds at the edit consumer');
 	model.refreshResource(resource);
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n@' }]);
@@ -164,7 +164,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await frame();
 	check(!ide.editor.commands.isEnabled(remove), 'BT removal: syntax recovery is not an editable table');
 	await press('Delete');
-	ide.editor.behaviorLens.removeSelectedChild();
+	ide.editor.behaviorLens.removeSelectedChild(lens);
 	check(model.buffer.getText() === BT_ORDER_SOURCE + '\n@', 'BT removal: recovered syntax remains untouched');
 	await press('ControlLeft', 'KeyZ');
 	version = model.version;

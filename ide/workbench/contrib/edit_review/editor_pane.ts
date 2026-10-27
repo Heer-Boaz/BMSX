@@ -7,7 +7,7 @@ import { truncateMeasuredText } from '../../../common/text';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { inputFocus, type InputFocusScope } from '../../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
@@ -71,10 +71,7 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 			this.scroll.focusTarget.registerCommand(command, implementation);
 		}
 	}
-	public override focus(): void {
-		if (this.scroll.focusTarget.canFocus!()) this.scroll.focusTarget.focus();
-		else this.actions.focusTarget.focus();
-	}
+	public override get commandTarget(): InputFocusTarget { return this.scroll.focusTarget.canFocus!() ? this.scroll.focusTarget : this.actions.focusTarget; }
 	protected override activate(): void {
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.scroll.setInput(this.input.viewport);

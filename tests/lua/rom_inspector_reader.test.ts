@@ -11,7 +11,6 @@ import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { api } from '../../ide/runtime/overlay_api';
-import type { ResourceIdentity } from '../../ide/common/resource';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import { RomInspectorPane } from '../../ide/workbench/contrib/rom_inspector/editor_pane';
 import type { RomInspectorSnapshot } from '../../ide/workbench/contrib/rom_inspector/model';
@@ -34,6 +33,7 @@ import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_c
 import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../../toolchain/ts/rompack/system_texture';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 const area = { left: 0, top: 24, right: 384, bottom: 274 };
@@ -71,11 +71,12 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('a.lua', 1), createScenarioTestSourceRecord('b.lua', 2)]);
-	const opened: ResourceIdentity[] = [];
-	const navigation = { openResource: async (resource: ResourceIdentity) => { opened.push(resource); return 1; } } as EditorNavigationController;
-	const pane = new RomInspectorPane(commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area, inputFocus.workbenchScope);
+	const group = createTestEditorGroup(commands);
+	const opened: Parameters<EditorNavigationController['openResource']>[] = [];
+	const navigation = { openResource: async (...args: Parameters<EditorNavigationController['openResource']>) => { opened.push(args); return 1; } } as EditorNavigationController;
+	const pane = new RomInspectorPane(commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area, group, group.focusScope);
 	t.after(() => { pane.clearInput(); pane.dispose(); quickInput.dispose(); contextMenu.dispose(); inputFocus.setTarget(null);
-		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose();  });
+		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose(); group.dispose(); });
 	pane.setInput(input, area); pane.focus();
 	const catalog = inputFocus.target;
 	commands.execute('romInspector.structure');
@@ -93,7 +94,7 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 	commands.execute('romInspector.inspect');
 	assert.equal(input.readerWindow.open, true); assert.equal(input.reader.subject, subject);
 	pane.focus(); commands.execute('romInspector.source');
-	assert.equal(opened.length, 1); assert.equal(opened[0].path, 'a.lua');
+	assert.equal(opened.length, 1); assert.equal(opened[0][0], group); assert.equal(opened[0][1].path, 'a.lua');
 	const catalogCommands = ['romInspector.key', 'romInspector.inspect', 'romInspector.assets', 'romInspector.structure',
 		'romInspector.code', 'romInspector.sort', 'romInspector.source'] as const;
 	pane.clearInput();
@@ -110,7 +111,10 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'light', snapshot = imageSnapshot()) {
 	const previousTheme = colors.getActiveIdeThemeVariant(), previousCommands = inputFocus.workbenchScope.commands;
 	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
-	const input = new RomInspectorInput(snapshot), surfaces = new WorkbenchSurfaceService(), origin = inputFocus.createTarget();
+	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
+		execute: (command, target) => inputFocus.executeCommand(command, target) };
+	const group = createTestEditorGroup(commands);
+	const input = new RomInspectorInput(snapshot), surfaces = new WorkbenchSurfaceService(), origin = inputFocus.createTarget(group.tabFocusTarget);
 	Object.assign(input.layout, { ...area, right: variant === 'tiny' ? 78 : 118, bottom: 256, font: editorViewState.font, rowHeight: editorViewState.lineHeight });
 	origin.bindKeyboard(() => {});
 	const owner = surfaces.attach({ role: 'content', captureScope: origin.scope.surfaceScope, getBounds: () => input.layout,
@@ -121,13 +125,11 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 	const unbind = inputFocus.bindScopeAdmission(scope => {
 		const surface = surfaces.findByScope(scope.surfaceScope); return surface !== undefined && surfaces.isAdmitted(surface);
 	});
-	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
-		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	inputFocus.workbenchScope.commands = commands; origin.focus();
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('a.lua', 1), createScenarioTestSourceRecord('b.lua', 2)]);
-	const opened: ResourceIdentity[] = [];
-	const navigation = { openResource: async (resource: ResourceIdentity) => { opened.push(resource); return 1; } } as EditorNavigationController;
-	const createReader = () => new RomEntryInspectorWindow(input, commands, sources, navigation, quickInput, contextMenu, surfaces, owner, origin, area);
+	const opened: Parameters<EditorNavigationController['openResource']>[] = [];
+	const navigation = { openResource: async (...args: Parameters<EditorNavigationController['openResource']>) => { opened.push(args); return 1; } } as EditorNavigationController;
+	const createReader = () => new RomEntryInspectorWindow(input, commands, sources, navigation, quickInput, contextMenu, surfaces, owner, origin, group, area);
 	let reader = createReader();
 	const overlay = createHostOverlayFixture(384, 288);
 	const key = (code: string, down: boolean, modifiers = KeyModifier.none) => inputFocus.handleKeyboard(new KeyInputEvent(code, modifiers, false, down));
@@ -148,9 +150,9 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 		return { glyphs, bitmaps };
 	};
 	t.after(() => { reader.dispose(); quickInput.dispose(); contextMenu.dispose(); popup?.dispose(); inputFocus.setTarget(null);
-		pointerCapture.cancel(); pointerHover.clear(); unbind(); surfaces.dispose(); input.dispose();
+		pointerCapture.cancel(); pointerHover.clear(); unbind(); surfaces.dispose(); input.dispose(); group.dispose();
 		inputFocus.workbenchScope.commands = previousCommands; colors.setIdeThemeVariant(previousTheme); });
-	return { input, surfaces, owner, origin, commands, sources, opened, quickInput, press, key, select, choose, draw,
+	return { group, input, surfaces, owner, origin, commands, sources, opened, quickInput, press, key, select, choose, draw,
 		get reader() { return reader; }, recreate() { reader.dispose(); reader = createReader(); } };
 }
 
@@ -176,9 +178,11 @@ test('Hold and Follow bind exact shown identities, including an empty catalog, a
 	f.reader.execute('romInspector.hold'); f.select('b-data');
 	assert.equal(f.input.readerHeld, true); assert.equal(f.input.reader.subject, held);
 	f.reader.execute('romInspector.source');
-	assert.equal(f.opened[0], f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'a.lua' }));
+	assert.equal(f.opened[0][0], f.group);
+	assert.equal(f.opened[0][1], f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'a.lua' }));
 	f.reader.execute('romInspector.hold'); assert.equal(f.input.reader.subject, f.input.model.selection);
-	f.reader.execute('romInspector.source'); assert.equal(f.opened[1], f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'b.lua' }));
+	f.reader.execute('romInspector.source'); assert.equal(f.opened[1][0], f.group);
+	assert.equal(f.opened[1][1], f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'b.lua' }));
 	f.input.model.filter = 'no matching asset'; f.input.model.project(); f.reader.update();
 	assert.equal(f.input.reader.subject, undefined); assert.ok(f.draw().glyphs.some(glyph => glyph.items === 'No entry selected'));
 	f.reader.window.hide(); f.input.model.filter = ''; f.input.model.project(); f.reader.update();

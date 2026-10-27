@@ -20,7 +20,7 @@ import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContain
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
-import { inputFocus, type InputFocusScope } from '../../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import type { SceneEditorController } from './controller';
 import { POSITION_AXES, type SceneEditorInput, type SceneEditorSection } from './editor_input';
@@ -35,6 +35,7 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { SceneOutlineFeedback } from './feedback';
+import type { EditorGroupView } from '../../services/editor/editor_group';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
@@ -62,6 +63,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		private readonly sources: RuntimeSourceState,
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>,
+		private readonly group: EditorGroupView,
 		scope: InputFocusScope,
 	) {
 		super(scope);
@@ -94,14 +96,27 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		} };
 		this.focusTarget.registerCommand('sceneEditor.details', sectionCommands.details);
 		this.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
+		this.focusTarget.registerCommand('sceneEditor.source', {
+			isEnabled: () => this.hasInput,
+			run: () => this.controller.openSource(this.group, this.input),
+		});
+		this.focusTarget.registerCommand('sceneEditor.removeMember', {
+			isEnabled: () => this.hasInput && this.controller.canRemoveSelectedMember(this.input),
+			run: () => { const input = this.input; if (this.focusInput(input)) this.controller.removeSelectedMember(input); },
+		});
+		for (const [command, direction] of [['sceneEditor.moveMemberUp', -1], ['sceneEditor.moveMemberDown', 1]] as const) {
+			this.focusTarget.registerCommand(command, {
+				isEnabled: () => this.hasInput && this.controller.canMoveSelectedMember(this.input, direction),
+				run: () => { const input = this.input; if (this.focusInput(input)) this.controller.moveSelectedMember(input, direction); },
+			});
+		}
 		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.details.focusTarget, INTEGER_INPUT_FORMAT, value => {
 			const property = this.input.properties[index];
 			this.input.workingCopy.pushEditOperations(createLuaTableFieldNumberEdits(this.input.workingCopy.buffer, this.input.document.analysis.chunk.locations, property.field!, value)!);
 		}, () => this.update()));
 		for (const control of this.controls) {
+			control.field.focusTarget.commandContext = this.focusTarget;
 			control.field.focusTarget.canFocus = () => this.details.focusTarget.canFocus!() && !control.field.readOnly;
-			control.field.focusTarget.registerCommand('sceneEditor.details', sectionCommands.details);
-			control.field.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
 		}
 		this.unbindFieldFocus = [
 			this.focusTarget.onDidFocus(() => { this.input.section = 'outline'; }),
@@ -180,11 +195,11 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 
 	public draw(): void { drawSceneEditor(this.input, this.controls, this.options.controls, this.focusTarget.hasFocus, this.details.focusTarget.hasFocus); }
 
-	public override focus(): void {
-		if (this.input.section === 'details' && this.details.focusTarget.canFocus!()) this.details.focusTarget.focus();
-		else if (this.focusTarget.canFocus!()) this.focusTarget.focus();
-		else if (this.details.focusTarget.canFocus!()) this.details.focusTarget.focus();
-		else if (this.actionBar.focusTarget.canFocus!()) this.actionBar.focusTarget.focus();
+	public override get commandTarget(): InputFocusTarget {
+		if (this.input.section === 'details' && this.details.focusTarget.canFocus!()) return this.details.focusTarget;
+		if (this.focusTarget.canFocus!()) return this.focusTarget;
+		if (this.details.focusTarget.canFocus!()) return this.details.focusTarget;
+		return this.actionBar.focusTarget;
 	}
 
 	private showSection(section: SceneEditorSection): void {

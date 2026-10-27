@@ -7,7 +7,8 @@ import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
-import { inputFocus, type InputFocusScope } from '../../../input/focus';
+import type { EditorGroupView } from '../../services/editor/editor_group';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
@@ -62,7 +63,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	public constructor(private readonly controller: LuaProgramController,
 		private readonly commands: IdeCommandController, private readonly tester: ActionStringTester,
 		private readonly frameNavigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && (this.input.liveVisible ? this.input.live : this.input.tree).layout.visibleRowCount > 0;
 		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
@@ -76,6 +77,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => contextMenu.hide()) });
 		};
 		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, workArea);
+		this.edit.control.field.focusTarget.commandContext = this.focusTarget;
 		this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('luaProgram.edit', { isEnabled: () => {
@@ -90,7 +92,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 			const property = this.selected();
 			return property?.field !== undefined && property.container!.structural && !this.input.sourceModels.get(property.file.file)!.readOnly;
 		}, run: () => this.controller.remove(this.input) });
-		this.focusTarget.registerCommand('luaProgram.source', { isEnabled: () => true, run: () => this.controller.openSource(this.input) });
+		this.focusTarget.registerCommand('luaProgram.source', { isEnabled: () => true, run: () => this.controller.openSource(group, this.input) });
 		this.focusTarget.registerCommand('luaProgram.live', { isEnabled: () => !this.input.liveVisible, run: () => {
 			this.input.running = false;
 			if (this.input.instance === undefined) this.controller.chooseInstance(this.input);
@@ -129,10 +131,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	public override setRuntimeCaptureRunning(running: boolean): void { if (this.input.liveVisible) this.input.running = running; }
 	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
 	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.update(); }
-	public override focus(): void {
-		if (this.focusTarget.canFocus!()) this.focusTarget.focus();
-		else this.actions.focusTarget.focus();
-	}
+	public override get commandTarget(): InputFocusTarget { return this.focusTarget.canFocus!() ? this.focusTarget : this.actions.focusTarget; }
 	public override clearInput(): void { this.input.running = false; this.input.invalidateProjection(); this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); super.clearInput(); }
 	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
 	private selected() { return this.input.liveVisible ? undefined : this.input.tree.rows[this.input.tree.selectionIndex]?.element; }

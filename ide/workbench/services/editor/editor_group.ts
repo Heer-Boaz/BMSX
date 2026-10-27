@@ -31,7 +31,7 @@ export class EditorGroupView {
 	public readonly captureScope = Symbol('editor-group');
 	public readonly focusScope = new InputFocusScope(this.captureScope, inputFocus.workbenchScope);
 	public readonly tabScope = Symbol('editor-tabs');
-	public readonly tabFocusTarget = inputFocus.createTarget(null, new InputFocusScope(this.tabScope, inputFocus.workbenchScope));
+	public readonly tabFocusTarget = inputFocus.createTarget(null, new InputFocusScope(this.tabScope, this.focusScope));
 	public readonly panes: EditorPanes;
 	public readonly tabStrip: EditorTabStrip;
 	private readonly unbindFocus: () => void;
@@ -46,7 +46,7 @@ export class EditorGroupView {
 			if (findEditorGroup(inputFocus.target) === this && navigationState.activeGroup !== this) navigationState.activeGroup = this;
 		});
 		this.tabFocusTarget.canFocus = () => false;
-		this.panes = new EditorPanes(factories, this.focusScope);
+		this.panes = new EditorPanes(factories, this);
 		this.tabStrip = new EditorTabStrip(this.model, commands, this.tabFocusTarget,
 			id => this.activate(id), id => { void this.close(id); }, () => this.panes.activePane?.focus());
 	}
@@ -158,6 +158,8 @@ export class EditorGroupView {
 		if (navigationState.activeGroup === this) navigationState.activeGroup = null;
 		this.unbindFocus();
 		this.panes.dispose();
+		this.focusScope.retireContext();
+		this.tabFocusTarget.scope.retireContext();
 		this.tabStrip.dispose();
 		pointerCapture.cancelScope(this.captureScope);
 		pointerCapture.cancelScope(this.tabScope);

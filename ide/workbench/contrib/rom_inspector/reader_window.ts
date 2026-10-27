@@ -1,3 +1,4 @@
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { formatByteSize, formatNumberAsHex } from '../../../../machine/ts/common/byte_hex_string';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -78,7 +79,7 @@ export class RomEntryInspectorWindow {
 		private readonly sources: RuntimeSourceState, private readonly navigation: EditorNavigationController,
 		private readonly quickInput: QuickInputController, private readonly contextMenu: ContextMenuController,
 		private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
-		private readonly focusReturn: InputFocusTarget, private readonly workArea: Readonly<RectBounds>) {
+		private readonly focusReturn: InputFocusTarget, private readonly group: EditorGroupView, private readonly workArea: Readonly<RectBounds>) {
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
 			model: input.readerWindow, actionBar: input.readerActions, lifetimeOwner: owner, focusReturn, workArea,
 			getTitleTooltip: () => this.titleTooltip,
@@ -171,7 +172,7 @@ export class RomEntryInspectorWindow {
 					return new TextQuickPickProvider(ZOOM_OPTIONS, ZOOM_OPTIONS.findIndex(option => option.scale === document.imageView.mode));
 				}, item => document.imageView.setScale(item.scale)); break;
 			case 'romInspector.collision': document.showCollision = !document.showCollision; this.clientRevision = -1; break;
-			case 'romInspector.source': void this.navigation.openResource(this.source()!); break;
+			case 'romInspector.source': void this.navigation.openResource(this.group, this.source()!); break;
 		}
 	}
 
@@ -251,7 +252,7 @@ export class RomEntryInspectorWindow {
 			if (!this.inspector.visible) {
 				this.inspector.show({ title: '', items: document.properties, dismissible: false, focusReturn: this.focusReturn,
 					canOpenSource: () => this.source() !== undefined,
-					openSource: () => { void this.navigation.openResource(this.source()!); } }, false);
+					openSource: () => { void this.navigation.openResource(this.group, this.source()!); } }, false);
 				this.inspector.model.restoreViewState(input.readerInfoView);
 				this.infoRevision = document.rangeRevision;
 			} else if (this.infoRevision !== document.rangeRevision) {

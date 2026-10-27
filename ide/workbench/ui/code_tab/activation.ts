@@ -39,7 +39,7 @@ export function activateCodeEditorTab(code: CodeEditorControl, tab: CodeEditorIn
 
 export function navigateToLuaDefinition(pane: CodeEditorPane, resource: ResourceIdentity, definition: LuaDefinitionLocation): void {
 	pane.code.references.clear();
-	void pane.navigation.focusChunkSource(resource, {
+	void pane.navigation.focusChunkSource(pane.group, resource, {
 		row: definition.range.startLine - 1,
 		startColumn: definition.range.startColumn - 1,
 		endColumn: definition.range.startColumn - 1,

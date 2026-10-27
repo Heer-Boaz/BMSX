@@ -28,7 +28,7 @@ function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.fro
 	const sources = createScenarioTestSourceState(records);
 	const group = createTestEditorGroup(), editor = { editorGroup: group, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
-	const navigation = new EditorNavigationController(sources.catalog, panel, createResourceEditorResolver(sources.catalog), group);
+	const navigation = new EditorNavigationController(sources.catalog, panel, createResourceEditorResolver(sources.catalog));
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();
 	group.panes.layout({ left: 140, top: 20, right: 384, bottom: 270 });
 	t.after(() => { panel.hide(); group.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
@@ -45,6 +45,8 @@ test('folder activation retains Files focus; a leaf invokes the real resource op
 	assert.equal(open.mock.callCount(), 0); assert.equal(f.panel.isFocused(), true); assert.equal(folder.collapsed, false);
 	f.panel.navigateFiles('right'); const file = f.panel.files.selectedNode!; assert.ok(file.element.kind === 'file');
 	f.panel.openSelected(); assert.equal(open.mock.callCount(), 1); await opening;
+	assert.equal(open.mock.calls[0].arguments[0], f.group);
+	assert.equal(open.mock.calls[0].arguments[1], file.element.resource);
 	const input = f.group.panes.activePane!.input;
 	assert.equal(input.resource, file.element.resource); assert.equal(f.panel.isFocused(), false);
 	assert.equal(input.isDirty(), false);
@@ -80,7 +82,7 @@ test('Files separates canonical project, shared and generated ownership while re
 	assert.ok(generatedRoot !== projectRoot && generatedRoot !== workspaceRoot);
 	reveal(shared.source_path);
 	const resource = f.sources.catalog.resources.find(resource => resource.contextId === TEST_CARTRIDGE_CONTEXT_IDS[0] && resource.path === shared.source_path)!;
-	await f.navigation.openResource(resource);
+	await f.navigation.openResource(f.group, resource);
 	const input = f.group.panes.activePane!.input;
 	const model = editorTextModelService.get(resource)!;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved shared source\n' }]);
@@ -90,7 +92,7 @@ test('Files separates canonical project, shared and generated ownership while re
 	assert.ok(f.sources.catalog.registerLuaResource(TEST_CARTRIDGE_CONTEXT_IDS[0], replacement) === resource);
 	f.panel.refresh();
 	assert.ok(f.panel.files.selectedNode === sharedLeaf); assert.ok(rootOf(sharedLeaf) === workspaceRoot);
-	await f.navigation.openResource(resource);
+	await f.navigation.openResource(f.group, resource);
 	assert.ok(f.group.panes.activePane!.input === input); assert.ok(editorTextModelService.get(resource) === model);
 	assert.equal(model.buffer.getText(), bytes); assert.equal(input.isDirty(), true);
 	model.undo(); assert.equal(model.buffer.getText(), shared.src); assert.equal(input.isDirty(), false);

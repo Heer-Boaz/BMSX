@@ -1,3 +1,4 @@
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
@@ -80,7 +81,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		private readonly sources: RuntimeSourceState, private readonly navigation: EditorNavigationController,
 		private readonly quickInput: QuickInputController, private readonly contextMenu: ContextMenuController,
 		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface,
-		private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		private readonly workArea: Readonly<RectBounds>, private readonly group: EditorGroupView, scope: InputFocusScope) {
 		super(scope);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionTooltip.attach(surfaces, owner, workArea);
@@ -101,7 +102,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		this.list.focusTarget.next = this.actions.focusTarget;
 		this.actions.focusTarget.previous = this.list.focusTarget;
 	}
-	public override focus(): void { this.list.focusTarget.focus(); }
+	public override get commandTarget() { return this.list.focusTarget; }
 	protected override activate(): void {
 		this.boundRevision = -1; this.freshLayout = true; this.presentation.reset();
 		this.lastClickRow = undefined; this.lastClickTime = 0;
@@ -110,7 +111,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 			target.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.actions.setInput(this.input.actions, this.focusTarget);
 		this.reader = new RomEntryInspectorWindow(this.input, this.commands, this.sources, this.navigation,
-			this.quickInput, this.contextMenu, this.surfaces, this.owner, this.list.focusTarget, this.workArea);
+			this.quickInput, this.contextMenu, this.surfaces, this.owner, this.list.focusTarget, this.group, this.workArea);
 		for (const target of [this.reader.window.focusTarget, this.reader.inspector.focusTarget, this.reader.image.focusTarget,
 			this.reader.bytes.focusTarget, this.reader.viewActions.focusTarget]) for (const command of COMMANDS)
 			if (command !== 'romInspector.source') target.registerCommand(command, this.focusTarget.getCommand(command)!);
@@ -151,7 +152,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 			case 'romInspector.sort': this.quickInput.pick('SORT ROM ENTRIES', 'Choose order', () => new TextQuickPickProvider(SORTS), item => {
 				input.model.sort = item.sort; input.model.descending = item.descending; input.model.project(); input.list.scrollbar.setScroll(0);
 			}); break;
-			case 'romInspector.source': void this.navigation.openResource(this.source()!); break;
+			case 'romInspector.source': void this.navigation.openResource(this.group, this.source()!); break;
 		}
 	}
 	public override update(): void {

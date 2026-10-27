@@ -34,9 +34,25 @@ export interface InputEdit {
 export class InputFocusScope {
 	public lastFocused: InputFocusTarget | null = null;
 	public commands: EditorCommandRunner | undefined;
+	private contextRetirementListeners: Set<() => void> | undefined;
 	/** Command ancestry is independent of presentation and the control's focus-return parent. */
 	public constructor(public surfaceScope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE,
 		public readonly commandParent: InputFocusScope | null = null) {}
+
+	/** A transient's command authority ends with its invoking attachment or an ancestor. */
+	public onDidRetireContext(listener: () => void): () => void {
+		const listeners = this.contextRetirementListeners ??= new Set();
+		listeners.add(listener);
+		const unbindParent = this.commandParent?.onDidRetireContext(listener);
+		return () => { listeners.delete(listener); unbindParent?.(); };
+	}
+
+	/** Reusable controls may bind another input only after retiring the old context. */
+	public retireContext(): void {
+		const listeners = this.contextRetirementListeners;
+		this.contextRetirementListeners = undefined;
+		if (listeners !== undefined) for (const listener of listeners) listener();
+	}
 }
 
 /** A retained canvas control, not a document or an editor-input classification. */

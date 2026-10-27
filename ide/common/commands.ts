@@ -43,10 +43,6 @@ export type EditorViewCommandId =
 	| 'sceneEditor'
 	| 'cartMap'
 	| 'actorLab'
-	| 'sceneEditor.source'
-	| 'sceneEditor.details'
-	| 'sceneEditor.outline'
-	| 'behaviorLens.source'
 	| 'filter'
 	| 'wrap';
 
@@ -126,6 +122,7 @@ export type EditorCommandId =
 	| 'graph.zoomOut'
 	| 'graph.resetZoom'
 	| 'behaviorLens.details'
+	| 'behaviorLens.source'
 	| 'behaviorLens.inspectRuntimeEffect'
 	| 'behaviorLens.inspectRuntimeStateMachine'
 	| 'behaviorLens.inspectRuntimeTree'
@@ -167,6 +164,7 @@ export type EditorCommandId =
 	| 'behaviorLens.duplicateChild'
 	| 'behaviorLens.setInitialState'
 	| 'sceneEditor.removeMember'
+	| 'sceneEditor.source' | 'sceneEditor.details' | 'sceneEditor.outline'
 	| 'sceneEditor.moveMemberUp'
 	| 'sceneEditor.moveMemberDown'
 	| EditorSearchCommandId

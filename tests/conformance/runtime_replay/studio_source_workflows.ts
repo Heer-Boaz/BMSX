@@ -116,7 +116,7 @@ export async function testCapturedSourceApply(test: StudioFixture): Promise<void
 export async function testAemSourceApplication(test: StudioFixture): Promise<void> {
 	const { ide, harness, tasks, until, press, title, runPaletteCommand } = test;
 	const resource = ide.sources.catalog.resources.find(item => item.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.source.type === 'aem')!;
-	await ide.editor.navigation.openResource(resource);
+	await ide.editor.navigation.openResource(ide.editor.editorGroup, resource);
 	const aem = ide.editor.editorGroup.model.activeTab;
 	if (aem.kind !== 'aem_editor') throw new Error('W04: an AEM resource opens its visual editor');
 	const model = aem.workingCopy;
@@ -163,7 +163,7 @@ export async function testCapturedSourceReboot(test: StudioFixture): Promise<voi
 		'W04: reboot applies its captured document after older saved workspace sources');
 	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'W04: reboot cannot acknowledge later typing');
 	ide.editor.activate();
-	await ide.editor.navigation.openResource(model.resource);
+	await ide.editor.navigation.openResource(ide.editor.editorGroup, model.resource);
 	await frame();
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === captured && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied',

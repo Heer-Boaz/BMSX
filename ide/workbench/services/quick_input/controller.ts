@@ -22,8 +22,11 @@ import { drawQuickInput, layoutQuickInput } from './render';
 
 type QuickInputSession = {
 	readonly kind: 'pick' | 'input';
+	origin: InputFocusTarget | null;
 	returnFocus: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
+	contextAdmitted: boolean;
+	unbindOrigin: (() => void) | undefined;
 	readonly accept: () => void | Promise<void>;
 	prepare: (() => void) | undefined;
 };
@@ -79,11 +82,11 @@ export class QuickInputController implements PointerCaptureTarget {
 			else { this.message = ''; this.labelsDirty = true; }
 			resetInlineBlink();
 		});
-		this.field.focusTarget.onDidBlur(next => { if (!this.acceptsFocusTransfer(next)) this.hide(false); });
+		this.field.focusTarget.onDidBlur(next => { if (this.session !== null && !this.acceptsFocusTransfer(next)) this.hide(false); });
 	}
 
 	public get visible(): boolean { return this.session !== null; }
-	public get invocationOrigin(): InputFocusTarget | null { return this.session!.returnFocus; }
+	public get invocationOrigin(): InputFocusTarget | null { return this.session!.origin; }
 	public get inputBox(): boolean { return this.session?.kind === 'input'; }
 
 	public pick<T extends QuickPickItem>(
@@ -92,14 +95,16 @@ export class QuickInputController implements PointerCaptureTarget {
 		provide: (origin: InputFocusTarget | null, disposables: DisposableStore) => QuickPickProvider<T>,
 		accept: (item: T) => void,
 		onWillShow?: (lifetime: DisposableStore) => void,
+		invocationOrigin?: InputFocusTarget | null,
 	): void {
 		let provider: QuickPickProvider<T>;
 		const session: QuickInputSession = {
-			kind: 'pick', returnFocus: null, disposables: new DisposableStore(),
+			kind: 'pick', origin: null, returnFocus: null, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
 			prepare: () => {
 				// Catalogs observe the invoking control after ordinary blur has published
 				// its draft, before native focus sees the new field presentation.
-				provider = provide(session.returnFocus, session.disposables);
+				session.origin = invocationOrigin === undefined ? session.returnFocus : invocationOrigin;
+				provider = provide(session.origin, session.disposables);
 				if (this.session !== session) return;
 				this.title = title;
 				this.placeholder = placeholder;
@@ -115,11 +120,17 @@ export class QuickInputController implements PointerCaptureTarget {
 				const list = this.model.list;
 				if (list.selectionIndex === -1) return; // A real user choice is required.
 				const item = provider.items[list.rows[list.selectionIndex].itemIndex];
-				this.hide();
-				accept(item);
+				try {
+					this.retireSession(true, true);
+					session.disposables.dispose();
+					if (session.contextAdmitted) accept(item);
+				} finally {
+					session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
+					if (this.retiringSession === session) this.retiringSession = null;
+				}
 			},
 		};
-		this.show(session, onWillShow);
+		this.show(session, onWillShow, invocationOrigin);
 	}
 
 	/** Attach scoped resources before focus can publish source changes. Submission owns its operation. */
@@ -132,8 +143,9 @@ export class QuickInputController implements PointerCaptureTarget {
 		onWillShow?: (lifetime: DisposableStore) => void,
 	): void {
 		const session: QuickInputSession = {
-			kind: 'input', returnFocus: null, disposables: new DisposableStore(),
+			kind: 'input', origin: null, returnFocus: null, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
 			prepare: () => {
+				session.origin = session.returnFocus;
 				this.title = title;
 				this.placeholder = placeholder;
 				this.labelsDirty = true;
@@ -161,26 +173,45 @@ export class QuickInputController implements PointerCaptureTarget {
 				// Cancelling/replacing the UI does not undo a completed operation or
 				// allow its late completion to navigate away from the new focus owner.
 				if (this.session !== session) return;
-				this.hide();
-				accept(result);
+				try {
+					this.retireSession(true, true);
+					session.disposables.dispose();
+					if (session.contextAdmitted) accept(result);
+				} finally {
+					session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
+					if (this.retiringSession === session) this.retiringSession = null;
+				}
 			},
 		};
 		this.show(session, onWillShow);
 	}
 
 	/** Publish the new owner before retiring callbacks; replacements keep the invoking context. */
-	private show(session: QuickInputSession, onWillShow?: (lifetime: DisposableStore) => void): boolean {
+	private show(session: QuickInputSession, onWillShow?: (lifetime: DisposableStore) => void, invocationOrigin?: InputFocusTarget | null): boolean {
 		if (this.disposed) { session.disposables.dispose(); return false; }
 		const previous = this.session;
 		const target = inputFocus.target === null ? inputFocus.pendingTarget : inputFocus.target;
-		const origin = previous !== null ? previous.returnFocus
+		const returnFocus = previous !== null ? previous.returnFocus
 			: target === this.contextMenu.focusTarget ? this.contextMenu.returnFocus
 			: this.retiringSession !== null && target === this.field.focusTarget ? this.retiringSession.returnFocus : target;
-		session.returnFocus = origin;
+		const origin = invocationOrigin !== undefined ? invocationOrigin : previous !== null ? previous.origin
+			: target === this.contextMenu.focusTarget ? this.contextMenu.returnFocus
+			: this.retiringSession !== null && target === this.field.focusTarget ? this.retiringSession.origin : target;
+		session.origin = origin;
+		session.returnFocus = returnFocus;
 		this.session = session;
+		session.unbindOrigin = origin?.commandContext.scope.onDidRetireContext(() => {
+			session.contextAdmitted = false;
+			if (this.session === session) this.hide(false);
+		});
 		this.clearPresentation();
 		onWillShow?.(session.disposables);
-		previous?.disposables.dispose();
+		if (previous !== null) { previous.contextAdmitted = false; previous.unbindOrigin?.(); previous.disposables.dispose(); }
+		const retiring = this.retiringSession;
+		if (retiring !== null) {
+			retiring.contextAdmitted = false; retiring.unbindOrigin?.(); retiring.disposables.dispose();
+			if (this.retiringSession === retiring) this.retiringSession = null;
+		}
 		if (this.session !== session) return false;
 		this.contextMenu.hide();
 		if (this.session !== session) return false;
@@ -194,7 +225,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		}
 		this.field.focusTarget.focus();
 		if (this.session !== session) return false;
-		session.returnFocus = inputFocus.resolveTarget(origin);
+		session.returnFocus = inputFocus.resolveTarget(returnFocus);
 		return true;
 	}
 
@@ -210,13 +241,22 @@ export class QuickInputController implements PointerCaptureTarget {
 	}
 
 	public hide(restoreFocus = true): void {
+		if (this.retiringSession !== null) this.retiringSession.contextAdmitted = false;
+		this.retireSession(restoreFocus);
+	}
+
+	/** Presentation ends before focus return; an accepted action retains origin admission through handoff. */
+	private retireSession(restoreFocus: boolean, handoff = false): void {
 		const session = this.session;
 		if (session === null) return;
 		this.session = null;
+		if (!handoff) { session.contextAdmitted = false; session.unbindOrigin?.(); }
 		this.retiringSession = session;
 		this.clearPresentation();
-		session.disposables.dispose();
-		if (this.retiringSession === session) this.retiringSession = null;
+		if (!handoff) {
+			session.disposables.dispose();
+			if (this.retiringSession === session) this.retiringSession = null;
+		}
 		if (this.session !== null) return;
 		if (this.field.focusTarget.hasFocus || inputFocus.pendingTarget === this.field.focusTarget || this.acceptsFocusTransfer(inputFocus.target)) {
 			inputFocus.setTarget(restoreFocus ? session.returnFocus : null);

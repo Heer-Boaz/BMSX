@@ -1,3 +1,4 @@
+import type { EditorGroupView } from '../../../services/editor/editor_group';
 import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
 import { editorTextModelService } from '../../../../editor/model/model_service';
 import { collectAnimationDefinitions } from '../../animation/definitions';
@@ -13,16 +14,17 @@ import type { QuickPickItem } from '../../../services/quick_input/provider';
 
 export function openCreateResourcePrompt(
 	editor: CartEditor,
+	group: EditorGroupView,
 	catalog: WorkspaceSourceCatalog,
 	clock: HostClock,
 	kind: NewSourceKind = 'empty',
 ): void {
-	const identity = editor.editorGroup.model.activeTab?.resource;
+	const identity = group.model.activeTab?.resource;
 	if (identity !== undefined) {
 		const resource = catalog.resolveResource(identity)!;
 		if (resource.location.kind === 'project') {
 			const path = resource.location.path;
-			showNewSourceInput(editor, catalog, clock, resource.contextId, path.slice(0, path.lastIndexOf('/') + 1), kind);
+			showNewSourceInput(editor, group, catalog, clock, resource.contextId, path.slice(0, path.lastIndexOf('/') + 1), kind);
 			return;
 		}
 	}
@@ -33,11 +35,12 @@ export function openCreateResourcePrompt(
 		projects.push({ contextId: context.id, label: context.projectRootPath, description: context.programDomain, detail: '' });
 	}
 	editor.quickInput.pick(kind === 'aem' ? 'NEW AUDIO EVENT MAP' : 'NEW LUA FILE', 'Choose project folder', () => new TextQuickPickProvider(projects),
-		project => showNewSourceInput(editor, catalog, clock, project.contextId, '', kind));
+		project => showNewSourceInput(editor, group, catalog, clock, project.contextId, '', kind),
+		lifetime => lifetime.add({ dispose: group.onWillDispose(() => editor.quickInput.hide()) }));
 }
 
 function showNewSourceInput(
-	editor: CartEditor, catalog: WorkspaceSourceCatalog, clock: HostClock,
+	editor: CartEditor, group: EditorGroupView, catalog: WorkspaceSourceCatalog, clock: HostClock,
 	contextId: string, directory: string, kind: NewSourceKind,
 ): void {
 	const root = catalog.getContext(contextId).projectRootPath;
@@ -55,16 +58,16 @@ function showNewSourceInput(
 		created => {
 			editor.resourcePanel.queuePendingSelection(created);
 			if (editor.resourcePanel.isVisible()) editor.resourcePanel.refresh();
-			if (kind === 'action_effect') editor.behaviorLens.openDefinition(editor.behaviorLens.documents.registrations
+			if (kind === 'action_effect') editor.behaviorLens.openDefinition(group, editor.behaviorLens.documents.registrations
 				.getRegistrations(created.contextId).find(registration => registration.resource.path === created.path && registration.behaviorKind === 'action_effect')!);
-			else if (kind === 'animation') editor.animations.openResource(created);
+			else if (kind === 'animation') editor.animations.openResource(group, created);
 			else if (kind === 'sprite_animation') {
 				const project = getOrCreateSemanticProject(editorTextModelService, created.contextId);
 				project.synchronizeSources(catalog);
-				editor.animations.openDefinition(created.contextId, collectAnimationDefinitions(created, project.getSnapshot())[0]);
+				editor.animations.openDefinition(group, created.contextId, collectAnimationDefinitions(created, project.getSnapshot())[0]);
 			}
-			else if (kind === 'progression' || kind === 'input') editor.luaPrograms.openResource(created, kind);
-			else if (kind === 'aem') void editor.navigation.openResource(created);
-			else openLuaCodeTab(editor.editorGroup, catalog, created);
-		});
+			else if (kind === 'progression' || kind === 'input') editor.luaPrograms.openResource(group, created, kind);
+			else if (kind === 'aem') void editor.navigation.openResource(group, created);
+			else openLuaCodeTab(group, catalog, created);
+		}, lifetime => lifetime.add({ dispose: group.onWillDispose(() => editor.quickInput.hide()) }));
 }

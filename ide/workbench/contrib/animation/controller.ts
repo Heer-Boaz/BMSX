@@ -23,10 +23,10 @@ import { revealWorkbenchListSelection } from '../../ui/list_view';
 /** Admits source generations, selects syntax and issues edits through their real working copies. */
 export class AnimationEditorController {
 	public readonly authoring: AnimationAuthoring;
-	public constructor(private readonly catalog: WorkspaceSourceCatalog, private readonly group: EditorGroupView,
+	public constructor(private readonly catalog: WorkspaceSourceCatalog,
 		private readonly navigation: EditorNavigationController, private readonly quickInput: QuickInputController) { this.authoring = new AnimationAuthoring(this, quickInput, catalog); }
 
-	public open(): void {
+	public open(group: EditorGroupView): void {
 		const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
 		const snapshotFor = (contextId: string): LuaSemanticWorkspaceSnapshot => {
 			let snapshot = snapshots.get(contextId);
@@ -37,50 +37,52 @@ export class AnimationEditorController {
 			}
 			return snapshot;
 		};
-		const active = this.group.model.activeTab;
+		const active = group.model.activeTab;
 		if (active?.kind === 'code_editor' && active.workingCopy.mode === 'lua') {
 			const model = active.workingCopy, snapshot = snapshotFor(model.resource.contextId), file = snapshot.getFileData(resourceIdentityKey(model.resource))!;
 			const table = animationDefinitionAtPosition(file, active.context.view.cursorRow + 1, active.context.view.cursorColumn + 1);
 			if (table !== undefined) {
 				const registered = collectAnimationDefinitions(model.resource, snapshot).find(item => item.table === table);
-				this.openDefinition(model.resource.contextId, registered === undefined ? { file, table, label: `${model.resource.path}:${file.chunk.locations.range(table.span).start.line}` } : registered);
+				this.openDefinition(group, model.resource.contextId, registered === undefined ? { file, table, label: `${model.resource.path}:${file.chunk.locations.range(table.span).start.line}` } : registered);
 				return;
 			}
-			if (buildAnimationSourceDocument(model.resource, snapshot) !== undefined) { this.openResource(model.resource); return; }
-		}
-		const choices: { label: string; description: string; detail: string; contextId: string; definition: AnimationDefinitionSource }[] = [];
-		const admitted = new Map<string, Map<LuaTableConstructorExpression, Set<FileSemanticData | undefined>>>();
-		for (const resource of this.catalog.luaResources) {
-			let seen = admitted.get(resource.contextId);
-			if (seen === undefined) { seen = new Map(); admitted.set(resource.contextId, seen); }
-			for (const definition of collectAnimationDefinitions(resource, snapshotFor(resource.contextId))) {
-				let consumers = seen.get(definition.table);
-				if (consumers === undefined) { consumers = new Set(); seen.set(definition.table, consumers); }
-				if (consumers.has(definition.consumer)) continue;
-				consumers.add(definition.consumer);
-				const range = definition.file.chunk.locations.range(definition.table.span);
-				const owner = getOrCreateSemanticProject(editorTextModelService, resource.contextId).getResourceIdentity(definition.file.file);
-				choices.push({ label: definition.label, description: definition.context === undefined ? owner.path : `${definition.context} / ${owner.path}`,
-					detail: `${this.catalog.getContext(resource.contextId).projectRootPath} / ${range.start.line}:${range.start.column}`,
-					contextId: resource.contextId, definition });
-			}
+			if (buildAnimationSourceDocument(model.resource, snapshot) !== undefined) { this.openResource(group, model.resource); return; }
 		}
 		this.quickInput.pick('ANIMATIONS', 'Choose a written definition', (_origin, lifetime) => {
+			snapshots.clear();
+			const choices: { label: string; description: string; detail: string; contextId: string; definition: AnimationDefinitionSource }[] = [];
+			const admitted = new Map<string, Map<LuaTableConstructorExpression, Set<FileSemanticData | undefined>>>();
+			for (const resource of this.catalog.luaResources) {
+				let seen = admitted.get(resource.contextId);
+				if (seen === undefined) { seen = new Map(); admitted.set(resource.contextId, seen); }
+				for (const definition of collectAnimationDefinitions(resource, snapshotFor(resource.contextId))) {
+					let consumers = seen.get(definition.table);
+					if (consumers === undefined) { consumers = new Set(); seen.set(definition.table, consumers); }
+					if (consumers.has(definition.consumer)) continue;
+					consumers.add(definition.consumer);
+					const range = definition.file.chunk.locations.range(definition.table.span);
+					const owner = getOrCreateSemanticProject(editorTextModelService, resource.contextId).getResourceIdentity(definition.file.file);
+					choices.push({ label: definition.label, description: definition.context === undefined ? owner.path : `${definition.context} / ${owner.path}`,
+						detail: `${this.catalog.getContext(resource.contextId).projectRootPath} / ${range.start.line}:${range.start.column}`,
+						contextId: resource.contextId, definition });
+				}
+			}
 			const retire = () => this.quickInput.hide();
 			lifetime.add({ dispose: editorTextModelService.onDidChangeContent(retire) });
 			lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
 			lifetime.add({ dispose: this.catalog.onDidChange(retire) });
 			return new TextQuickPickProvider(choices);
 		},
-			item => this.openDefinition(item.contextId, item.definition));
+			item => this.openDefinition(group, item.contextId, item.definition),
+			lifetime => lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) }));
 	}
 
-	public openDefinition(contextId: string, definition: AnimationDefinitionSource): AnimationEditorInput {
+	public openDefinition(group: EditorGroupView, contextId: string, definition: AnimationDefinitionSource): AnimationEditorInput {
 		const project = getOrCreateSemanticProject(editorTextModelService, contextId);
 		const resource = this.catalog.resolveResource(project.getResourceIdentity(definition.file.file))!;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
 		const range = definition.file.chunk.locations.range(definition.table.span);
-		let input = this.group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation'
+		let input = group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation'
 			&& item.projectContextId === contextId && item.workingCopy === model && item.consumerPath === definition.consumer?.file
 			&& item.definitionRange !== undefined && luaSourceRangeMatchesTextRange(model.buffer, range, item.definitionRange));
 		if (input === undefined) {
@@ -91,15 +93,15 @@ export class AnimationEditorController {
 			}
 			this.refresh(input);
 		}
-		this.group.openEditor(input);
+		group.openEditor(input);
 		return input;
 	}
 
-	public openResource(resource: RuntimeResource): AnimationEditorInput {
+	public openResource(group: EditorGroupView, resource: RuntimeResource): AnimationEditorInput {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-		let input = this.group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
+		let input = group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
 		if (input === undefined) { input = new AnimationEditorInput(model, resource.contextId); this.refresh(input); }
-		this.group.openEditor(input);
+		group.openEditor(input);
 		return input;
 	}
 
@@ -248,24 +250,24 @@ export class AnimationEditorController {
 		input.publishModels();
 	}
 
-	public openSource(input: AnimationEditorInput): void {
+	public openSource(group: EditorGroupView, input: AnimationEditorInput): void {
 		const track = input.document?.tracks[input.trackIndex], key = track?.keys[input.keyIndex], clip = input.document?.clips[input.clipIndex];
 		const property = input.details.rows[input.details.selectionIndex]?.element;
 		const file = property?.source.file ?? key?.file ?? track?.file ?? clip?.file ?? input.document?.root.file;
 		const span = property?.field.span ?? key?.field.span ?? track?.field.span ?? clip?.field.span ?? input.document?.root.table.span;
 		const range = file === undefined || span === undefined ? undefined : file.chunk.locations.range(span);
-		this.navigation.focusChunkSource(file === undefined ? input.workingCopy.resource : this.modelFor(input, file).resource,
-			range === undefined ? null : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
+		this.navigation.focusChunkSource(group, file === undefined ? input.workingCopy.resource : this.modelFor(input, file).resource,
+			range === undefined ? undefined : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
-	public openClip(input: AnimationEditorInput): void {
+	public openClip(group: EditorGroupView, input: AnimationEditorInput): void {
 		const source = input.document!.clips[input.clipIndex].sequence!;
-		this.openDefinition(input.projectContextId, { file: source.file, table: source.table, label: input.document!.clips[input.clipIndex].label });
+		this.openDefinition(group, input.projectContextId, { file: source.file, table: source.table, label: input.document!.clips[input.clipIndex].label });
 	}
 
-	public openProducerSource(input: AnimationEditorInput): void {
+	public openProducerSource(group: EditorGroupView, input: AnimationEditorInput): void {
 		const written = input.details.rows[input.details.selectionIndex].element.producer!.source;
 		const range = written.file.chunk.locations.range(written.expression.span);
-		this.navigation.focusChunkSource(this.modelFor(input, written.file).resource,
+		this.navigation.focusChunkSource(group, this.modelFor(input, written.file).resource,
 			{ row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
 }

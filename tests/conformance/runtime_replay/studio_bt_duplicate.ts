@@ -97,14 +97,14 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	await frame();
 	check(!ide.editor.commands.isEnabled(duplicate), 'BT duplicate: readonly source has no mutation command');
 	await press('ControlLeft', 'KeyD');
-	ide.editor.behaviorLens.duplicateSelectedChild();
+	ide.editor.behaviorLens.duplicateSelectedChild(lens);
 	check(model.version === version, 'BT duplicate: readonly admission also holds at the edit consumer');
 	model.refreshResource(resource);
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n@' }]);
 	check(!ide.editor.commands.isEnabled(duplicate), 'BT duplicate: old geometry cannot authorize a new source generation');
 	await frame();
 	check(!ide.editor.commands.isEnabled(duplicate), 'BT duplicate: recovered syntax has no complete source field');
-	ide.editor.behaviorLens.duplicateSelectedChild();
+	ide.editor.behaviorLens.duplicateSelectedChild(lens);
 	check(model.buffer.getText() === BT_ORDER_SOURCE + '\n@', 'BT duplicate: recovery is not edited');
 	await press('ControlLeft', 'KeyZ');
 	await press('MetaLeft', 'KeyD');

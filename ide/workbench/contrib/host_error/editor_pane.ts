@@ -28,7 +28,7 @@ export class HostErrorPane extends WorkbenchViewEditorPane<HostErrorInput> {
 		super(scope);
 		this.scroll.focusTarget.clipboard = { readOnly: true, copy: () => this.input.stack };
 	}
-	public override focus(): void { this.scroll.focusTarget.focus(); }
+	public override get commandTarget() { return this.scroll.focusTarget; }
 	protected override activate(): void {
 		this.scroll.setInput(this.input.viewport);
 		this.update();

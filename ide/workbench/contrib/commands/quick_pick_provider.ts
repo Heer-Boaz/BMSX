@@ -12,13 +12,13 @@ type CommandMatch = { readonly itemIndex: number; readonly item: CommandQuickPic
 	highlightStart: number; highlightEnd: number };
 
 /** Command labels/ids, not paths or keyboard-binding text. Catalog order stays provider-owned. */
-export class CommandQuickPickProvider implements QuickPickProvider<CommandQuickPickItem> {
+export class CommandQuickPickProvider<TItem extends CommandQuickPickItem = CommandQuickPickItem> implements QuickPickProvider<TItem> {
 	private readonly entries: CommandMatch[];
 	private readonly matcher = new WordMatcher();
 	private readonly projection = { matches: [] as CommandMatch[], selectionIndex: -1,
 		highlights: new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 })) };
 
-	public constructor(public readonly items: readonly CommandQuickPickItem[]) {
+	public constructor(public readonly items: readonly TItem[]) {
 		this.entries = items.map((item, itemIndex) => ({ itemIndex, item,
 			label: new CaseFoldedText(item.label), commandId: item.command.toLowerCase(), kind: CommandMatchKind.Exact,
 			highlightStart: 0, highlightEnd: 0 }));

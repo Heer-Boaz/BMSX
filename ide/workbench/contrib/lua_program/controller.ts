@@ -23,44 +23,48 @@ import type { HostRewind } from '../../../../hosts/common/rewind';
 export class LuaProgramController {
 	private readonly projections = new WeakMap<LuaProgramInput, LuaProgramRuntimeProjection>();
 	public constructor(private readonly sources: RuntimeSourceState, public readonly guest: SuspendedGuestSession,
-		private readonly group: EditorGroupView, private readonly navigation: EditorNavigationController, public readonly quickInput: QuickInputController,
+		private readonly navigation: EditorNavigationController, public readonly quickInput: QuickInputController,
 		private readonly rewind: HostRewind) {}
-	public open(kind: LuaProgramKind): void {
-		const choices: { label: string; description: string; detail: string; occurrence: LuaProgramOccurrence }[] = [];
-		const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
-		for (const resource of this.sources.catalog.luaResources) {
-			let snapshot = snapshots.get(resource.contextId);
-			if (snapshot === undefined) {
-				const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId);
-				project.synchronizeSources(this.sources.catalog);
-				snapshot = project.getSnapshot(); snapshots.set(resource.contextId, snapshot);
-			}
-			for (const occurrence of collectLuaPrograms(resource, snapshot)) {
-				if (occurrence.kind !== kind) continue;
-				choices.push({ label: `${resource.path}:${occurrence.file.chunk.locations.range(occurrence.call.expression.span).start.line}`,
-					description: kind, detail: 'Canonical Lua / unsaved working copies included', occurrence });
-			}
-		}
+	public open(group: EditorGroupView, kind: LuaProgramKind): void {
 		this.quickInput.pick(kind === 'progression' ? 'PROGRESSION PROGRAMS' : 'INPUT BINDINGS', 'Choose a producer call',
-			() => new TextQuickPickProvider(choices), item => this.openOccurrence(item.occurrence));
+			() => {
+				const choices: { label: string; description: string; detail: string; occurrence: LuaProgramOccurrence }[] = [];
+				const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
+				for (const resource of this.sources.catalog.luaResources) {
+					let snapshot = snapshots.get(resource.contextId);
+					if (snapshot === undefined) {
+						const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId);
+						project.synchronizeSources(this.sources.catalog);
+						snapshot = project.getSnapshot(); snapshots.set(resource.contextId, snapshot);
+					}
+					for (const occurrence of collectLuaPrograms(resource, snapshot)) {
+						if (occurrence.kind !== kind) continue;
+						choices.push({ label: `${resource.path}:${occurrence.file.chunk.locations.range(occurrence.call.expression.span).start.line}`,
+							description: kind, detail: 'Canonical Lua / unsaved working copies included', occurrence });
+					}
+				}
+				return new TextQuickPickProvider(choices);
+			}, item => this.openOccurrence(group, item.occurrence), lifetime => {
+				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+			});
 	}
-	public openResource(resource: RuntimeResource, kind: LuaProgramKind): void {
+	public openResource(group: EditorGroupView, resource: RuntimeResource, kind: LuaProgramKind): void {
 		const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId);
 		project.synchronizeSources(this.sources.catalog);
 		const occurrence = collectLuaPrograms(resource, project.getSnapshot()).find(item => item.kind === kind)!;
-		this.openOccurrence(occurrence);
+		this.openOccurrence(group, occurrence);
 	}
-	public openOccurrence(occurrence: LuaProgramOccurrence): LuaProgramInput {
+	public openOccurrence(group: EditorGroupView, occurrence: LuaProgramOccurrence): LuaProgramInput {
 		const resource = this.sources.catalog.resolveResource(occurrence.resource)!;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
 		const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
-		let input = this.group.model.tabs.find((input): input is LuaProgramInput => input.kind === 'lua_program'
+		let input = group.model.tabs.find((input): input is LuaProgramInput => input.kind === 'lua_program'
 			&& input.workingCopy === model && input.programKind === occurrence.kind && input.occurrenceRange.start === span.start && input.occurrenceRange.end === span.end);
 		if (input === undefined) {
 			input = new LuaProgramInput(model, occurrence.kind, span, this.guest);
 			this.refresh(input);
 		}
-		this.group.openEditor(input);
+		group.openEditor(input);
 		return input;
 	}
 	public refreshRuntime(input: LuaProgramInput): void {
@@ -108,11 +112,11 @@ export class LuaProgramController {
 		input.publishModels();
 		input.status = reader.syntaxComplete ? 'Authored Lua / Save and Hot Resume apply changes' : 'Incomplete syntax / source editing required';
 	}
-	public openSource(input: LuaProgramInput): void {
+	public openSource(group: EditorGroupView, input: LuaProgramInput): void {
 		const row = input.liveVisible ? undefined : input.tree.rows[input.tree.selectionIndex]?.element;
 		const file = row?.file ?? input.occurrence?.file;
 		const range = file === undefined ? undefined : file.chunk.locations.range((row?.expression ?? input.occurrence!.call.expression).span);
-		this.navigation.focusChunkSource(file === undefined ? input.workingCopy.resource : input.sourceModels.get(file.file)!.resource,
+		this.navigation.focusChunkSource(group, file === undefined ? input.workingCopy.resource : input.sourceModels.get(file.file)!.resource,
 			range === undefined ? null : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
 	public chooseInstance(input: LuaProgramInput): void {

@@ -58,7 +58,11 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 		}
 	}
 
-	public override focus(): void { this.focusSection(-1, 1); }
+	public override get commandTarget() {
+		for (let index = 0; index < this.actions.length; index++)
+			if (this.input.sections[index].visibleCount > 0) return this.actions[index].focusTarget;
+		return this.scroll.focusTarget;
+	}
 	private focusSection(from: number, direction: number): void {
 		for (let index = from + direction; index >= 0 && index < this.actions.length; index += direction) {
 			if (this.input.sections[index].visibleCount === 0) continue;

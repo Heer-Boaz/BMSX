@@ -56,7 +56,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 		const resource = ide.sources.catalog.resources.find(resource => resource.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && (kind === 'aem'
 			? resource.source.type === 'aem'
 			: resource.source.type === 'data' && resource.path.endsWith('nemesis_s_stage.yaml')))!;
-		await ide.editor.navigation.openResource(resource);
+		await ide.editor.navigation.openResource(ide.editor.editorGroup, resource);
 		if (kind === 'aem') {
 			await frame();
 			const input = ide.editor.editorGroup.model.activeTab;
@@ -95,7 +95,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			const saved = ide.textFileSaves.latestOperation(document)!.result!;
 			check(saved.status === 'saved' && saved.application.status === 'not-requested', 'source saves: persistence never requests runtime application');
 			check(ide.sources.currentBlua32Media === media, 'source saves: saving AEM preserves the installed generation');
-			await ide.editor.navigation.openResource(resource); await frame();
+			await ide.editor.navigation.openResource(ide.editor.editorGroup, resource); await frame();
 			const aem = ide.editor.editorGroup.model.activeTab;
 			if (aem.kind !== 'aem_editor') throw new Error('source saves: explicit Apply belongs to the actual AEM input');
 			await test.runPaletteCommand('Audio Events: Apply to Installed Attachment'); await press('Enter');

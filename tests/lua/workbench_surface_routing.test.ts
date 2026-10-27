@@ -1,5 +1,6 @@
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { createTestEditorGroup } from '../helpers/editor_panes';
+import { findEditorGroup } from '../../ide/workbench/services/editor/editor_group';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -300,6 +301,44 @@ test('the real Assistant transcript owns only its selected-message actions for t
 	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
 });
 
+test('Assistant borrows its draft command context only for the concrete input attachment', t => {
+	const { editor } = fixture(t), group = editor.editorGroup;
+	const input = new AssistantInput(editor.assistant), companion = new GameViewInput();
+	t.after(() => input.dispose());
+	group.openEditor(input);
+	const pane = group.panes.activePane!, draft = input.draft.focusTarget;
+	const undo = draft.getCommand('undo');
+	assert.ok(pane.commandTarget === draft);
+	assert.ok(findEditorGroup(draft) === group);
+	insertValue(input.draft, 'Retained draft');
+	assert.equal(editor.commands.isEnabled('undo', draft), true);
+	showCommandPalette(editor.quickInput, editor.commands);
+	assert.ok(editor.quickInput.invocationOrigin === draft);
+	assert.equal(editor.quickInput.visible, true);
+	group.openEditor(companion);
+	assert.ok(group.panes.activePane !== pane);
+	assert.ok(group.model.tabs.includes(input), 'switching views retains the input, not its control attachment');
+	assert.equal(input.lifetime.signal.aborted, false);
+	assert.equal(editor.quickInput.visible, false, 'the old draft cannot keep a Palette alive across attachment retirement');
+	assert.equal(findEditorGroup(draft), undefined);
+	assert.ok(draft.commandContext === draft);
+	for (const command of ['assistant.send', 'assistant.copy', 'suggest.accept'] as const) assert.equal(draft.getCommand(command), undefined);
+	assert.equal(draft.getCommand('undo'), undo, 'retiring view commands does not replace the field-owned Undo history');
+	assert.equal(draft.next, null); assert.equal(draft.previous, null);
+	draft.focus();
+	assert.ok(inputFocus.admittedTarget !== draft, 'a retained but detached draft cannot reclaim keyboard focus');
+	assert.ok(group.panes.activePane!.input === companion);
+	inputFocus.executeCommand('undo', draft);
+	assert.equal(input.draft.text, '');
+	assert.equal(input.draftHasText, false, 'the retained input still observes its field-owned history');
+	group.activate(input.id);
+	assert.ok(group.panes.activePane === pane);
+	assert.ok(pane.commandTarget === draft);
+	assert.ok(findEditorGroup(draft) === group);
+	assert.ok(inputFocus.target === draft);
+	assert.ok(draft.getCommand('assistant.send'));
+});
+
 test('generic command admission and execution use the exact target and disabled locals shadow other owners', t => {
 	const { editor } = fixture(t), parent = inputFocus.createTarget(null, editor.editorGroup.focusScope), leaf = inputFocus.createTarget(parent);
 	leaf.commandContext = parent;
@@ -320,6 +359,96 @@ test('generic command admission and execution use the exact target and disabled 
 	assert.equal(editor.commands.isEnabled('undo', absent), false);
 	editor.commands.execute('undo', absent);
 	assert.equal(ancestor, 0, 'an absent local capability does not inherit a document action');
+});
+
+test('root Palette in an empty group cannot revive commands from its detached last-focused pane', t => {
+	const { editor } = fixture(t), group = editor.editorGroup;
+	group.openEditor(new HostErrorInput('previous document'));
+	const detached = group.panes.activePane!.commandTarget;
+	let staleExecutions = 0;
+	detached.registerCommand('sceneEditor.source', { isEnabled: () => true, run: () => { staleExecutions++; } });
+	detached.focus();
+	assert.equal(group.focusScope.lastFocused, detached);
+	group.clear();
+	assert.equal(group.panes.activePane, null);
+	assert.equal(group.focusScope.lastFocused, detached, 'focus memory is retained independently of attachment');
+	assert.equal(detached.getCommand('sceneEditor.source')!.isEnabled(), true);
+	inputFocus.setTarget(null);
+	editor.commands.execute('commandPalette', null);
+	const items = editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
+	assert.equal(editor.quickInput.invocationOrigin, group.tabFocusTarget);
+	assert.equal(items.some(item => item.command === 'sceneEditor.source'), false);
+	assert.ok(items.every(item => item.target === group.tabFocusTarget));
+	const row = editor.quickInput.model.list.rows.findIndex(row => items[row.itemIndex].command === 'home');
+	assert.ok(row >= 0);
+	editor.quickInput.model.list.selectionIndex = row;
+	editor.quickInput.accept();
+	assert.equal(group.panes.activePane?.input.kind, 'home');
+	assert.equal(staleExecutions, 0);
+});
+
+test('chrome Palette after a preserve-focus switch addresses the new attached client rather than old focus memory', t => {
+	const { editor } = fixture(t), group = editor.editorGroup;
+	group.openEditor(new HostErrorInput('previous document'));
+	const detached = group.panes.activePane!.commandTarget;
+	let staleExecutions = 0, currentExecutions = 0;
+	detached.registerCommand('sceneEditor.source', { isEnabled: () => true, run: () => { staleExecutions++; } });
+	detached.focus();
+	editor.resourcePanel.show();
+	const chrome = inputFocus.target;
+	assert.equal(chrome, editor.resourcePanel.focusTarget);
+	const next = new GameViewInput();
+	group.openEditor(next, { preserveFocus: true });
+	const attached = group.panes.activePane!.commandTarget;
+	assert.notEqual(attached, detached);
+	assert.equal(inputFocus.target, chrome);
+	assert.equal(group.focusScope.lastFocused, detached);
+	attached.registerCommand('sceneEditor.source', {
+		isEnabled: () => true,
+		run: () => { assert.equal(group.panes.activePane!.input, next); currentExecutions++; },
+	});
+	editor.commands.execute('commandPalette', chrome);
+	const items = editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
+	const item = items.find(item => item.command === 'sceneEditor.source');
+	assert.ok(item);
+	assert.equal(item.target, attached);
+	assert.equal(editor.quickInput.invocationOrigin, attached);
+	const row = editor.quickInput.model.list.rows.findIndex(row => items[row.itemIndex] === item);
+	assert.ok(row >= 0);
+	editor.quickInput.model.list.selectionIndex = row;
+	editor.quickInput.accept();
+	assert.equal(currentExecutions, 1);
+	assert.equal(staleExecutions, 0);
+	assert.equal(group.panes.activePane!.input, next);
+	assert.equal(inputFocus.target, chrome);
+});
+
+test('chrome Palette retains Host Error body Copy and writes the exact attached document bytes', async t => {
+	const { editor } = fixture(t), group = editor.editorGroup;
+	const stack = 'RangeError: invalid tuple\n\tat sample.lua:8:3\n';
+	group.openEditor(new HostErrorInput(stack));
+	const pane = group.panes.activePane!;
+	pane.focus();
+	const body = inputFocus.target!;
+	assert.equal(pane.commandTarget, body);
+	assert.equal(body.parent!.clipboard, undefined, 'Copy belongs to the attached document body, not its containing pane root');
+	assert.equal(editor.commands.isEnabled('copy', body), true);
+	editor.resourcePanel.show();
+	const chrome = inputFocus.target;
+	assert.equal(chrome, editor.resourcePanel.focusTarget);
+	editor.commands.execute('commandPalette', chrome);
+	const items = editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
+	const copy = items.find(item => item.command === 'copy');
+	assert.ok(copy);
+	assert.equal(copy.target, body);
+	assert.equal(editor.commands.isEnabled('copy', copy.target), true);
+	const row = editor.quickInput.model.list.rows.findIndex(row => items[row.itemIndex] === copy);
+	assert.ok(row >= 0);
+	editor.quickInput.model.list.selectionIndex = row;
+	editor.quickInput.accept();
+	assert.equal((await editor.clipboard.read()).text, stack);
+	assert.equal(inputFocus.target, chrome);
+	assert.equal(group.panes.activePane, pane);
 });
 
 test('Conversations publishes older-page admission on its real transcript client for the attached input lifetime', t => {
@@ -439,7 +568,7 @@ test('Animation body clients and its actual property draft publish exact client-
 			word_width: texture.wordWidth, height: texture.height, texture_word_count: texture.textureWordCount, clut_word_count: texture.clutWordCount } }];
 	finalizePackedRomAssets(assets); rom.index.entries.push(...assets);
 	context.previewPackage.img.picture = assets[0]; sources.catalog.rebuildResources();
-	const input = editor.animations.openResource(sources.catalog.luaResources.find(resource => resource.path === path)!); editor.update(0);
+	const input = editor.animations.openResource(editor.editorGroup, sources.catalog.luaResources.find(resource => resource.path === path)!); editor.update(0);
 	const tracks = inputFocus.target!, commands = ['animation.tracks', 'animation.keys', 'animation.details'] as const;
 	const handlers = commands.map(command => tracks.getCommand(command));
 	editor.animations.selectTrack(input, 1); editor.animations.selectKey(input, 0); editor.update(0);
@@ -496,7 +625,7 @@ test('Animation body clients and its actual property draft publish exact client-
 	editor.editorGroup.openEditor(input); editor.update(0);
 	for (const client of [...clients, field]) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), true);
 	assert.equal(input.workingCopy.buffer.getText(), edited);
-	const timeline = editor.animations.openResource(sources.catalog.luaResources.find(resource => resource.path === timelinePath)!);
+	const timeline = editor.animations.openResource(editor.editorGroup, sources.catalog.luaResources.find(resource => resource.path === timelinePath)!);
 	editor.animations.selectTrack(timeline, 1); editor.animations.selectKey(timeline, 0); editor.update(0);
 	editor.commands.execute('animation.keys');
 	const keysClient = inputFocus.target!;

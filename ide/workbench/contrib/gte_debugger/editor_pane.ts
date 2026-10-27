@@ -1,3 +1,4 @@
+import type { EditorGroupView } from '../../services/editor/editor_group';
 import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -74,7 +75,7 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
 		private readonly contextMenu: ContextMenuController, sources: RuntimeSourceState,
 		private readonly sourceNavigation: EditorNavigationController, private readonly surfaces: WorkbenchSurfaceService,
-		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, private readonly group: EditorGroupView, scope: InputFocusScope) {
 		super(scope);
 		this.source = new CapturedLuaSourceBinding(editorTextModelService, sources.catalog);
 		this.unbindSource = this.source.onDidChange(() => this.retireContextMenu());
@@ -106,7 +107,7 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override get runtimeTransport() { return this.commands.transport; }
 	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }
-	public override focus(): void { this.scroll.focusTarget.focus(); }
+	public override get commandTarget() { return this.scroll.focusTarget; }
 	protected override activate(): void {
 		this.freshLayout = true; this.historyRevision = -1; this.labels.clear();
 		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.list);
@@ -154,7 +155,7 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		this.synchronizeSelection(); this.source.update();
 		if (this.source.status !== 'available') return;
 		const { resource, range } = this.source.location!;
-		void this.sourceNavigation.focusChunkSource(resource,
+		void this.sourceNavigation.focusChunkSource(this.group, resource,
 			{ row: range.start.line - 1, startColumn: range.start.column - 1,
 				endColumn: range.end.line === range.start.line ? range.end.column - 1 : range.start.column });
 	}

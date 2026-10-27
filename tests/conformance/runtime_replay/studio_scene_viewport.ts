@@ -25,10 +25,10 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	// Their contents and names are irrelevant to this form fixture.
 	for (const resource of ide.sources.catalog.luaResources) {
 		if (resource.contextId !== test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId) continue;
-		await ide.editor.navigation.openResource(resource); await frame(); await frame();
+		await ide.editor.navigation.openResource(ide.editor.editorGroup, resource); await frame(); await frame();
 		if (ide.editor.editorGroup.tabStrip.scrollbar.isVisible()) break;
 	}
-	await ide.editor.navigation.openResource(ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!);
+	await ide.editor.navigation.openResource(ide.editor.editorGroup, ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!);
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: SCENE_VIEWPORT_SOURCE }]);
@@ -42,13 +42,13 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	// Reuse a real workspace input as transport, not its game implementation.
 	const record = ide.sources.catalog.getContext(model.resource.contextId).luaSources.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== model.resource.path && !record.module_path.startsWith('cartlib/'))!;
-	await ide.editor.navigation.openResource(ide.sources.catalog.resolveResource({ contextId: model.resource.contextId, path: record.source_path })!);
+	await ide.editor.navigation.openResource(ide.editor.editorGroup, ide.sources.catalog.resolveResource({ contextId: model.resource.contextId, path: record.source_path })!);
 	const provider = harness.getActiveEditorDocument().model;
 	const originalProvider = provider.buffer.getText();
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: "return require('cartlib/world/scene_library')" }]);
 	const apiOffset = authored.indexOf('cartlib/world/scene_library');
 	model.pushEditOperations([{ offset: apiOffset, deleteLength: 'cartlib/world/scene_library'.length, text: record.module_path }]);
-	await ide.editor.navigation.openResource(model.resource);
+	await ide.editor.navigation.openResource(ide.editor.editorGroup, model.resource);
 	check(await openSceneEditor(test) === scene, 'scene imports: the actual menu reopens the same scene through a reexport');
 	await selectMember(test, scene, 0);
 	await test.click(scene.properties[0].bounds);

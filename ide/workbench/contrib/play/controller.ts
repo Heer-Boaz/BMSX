@@ -78,7 +78,7 @@ export class PlayController {
 				const next = this.service.reset(handle, this.currentModule()!), input = this.editor.editorGroup.model.findById('play-session')!;
 				input.handle = next; this.editor.editorGroup.openEditor(input); return;
 			}
-			case 'play.source': this.editor.navigation.focusChunkSourceForContext(handle.module.contextId, handle.module.path); return;
+			case 'play.source': this.editor.navigation.focusChunkSourceForContext(this.editor.editorGroup, handle.module.contextId, handle.module.path); return;
 			case 'play.breakpoints':
 				openCompiledDebugSources(this.editor.quickInput, handle.session!.debugSources,
 					listener => this.service.onDidChange(event => { if (event.handle === handle && handle.session?.ready !== true) listener(); }),

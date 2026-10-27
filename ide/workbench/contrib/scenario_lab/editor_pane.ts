@@ -26,7 +26,7 @@ import {
 	handleScenarioLabKeyboardInput,
 } from './keyboard';
 import { drawScenarioLab } from './render';
-import { inputFocus, type InputFocusScope } from '../../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from './pointer';
@@ -138,10 +138,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		this.controller.updateView(this.input.view);
 	}
 
-	public override focus(): void {
-		if (this.input.view.focus === 'results') this.resultsFocus.focus();
-		else super.focus();
-	}
+	public override get commandTarget(): InputFocusTarget { return this.input.view.focus === 'results' ? this.resultsFocus : this.focusTarget; }
 
 	public override clearInput(): void {
 		this.split.clearInput();

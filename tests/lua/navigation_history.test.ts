@@ -204,7 +204,7 @@ test('history awaits the registered resource opener and restores a closed text i
 			id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async actual => {
 				assert.equal(actual, resource); await openGate; return reopened;
 			},
-		}]), group,
+		}]),
 	);
 	t.after(() => { group.dispose(); });
 	const version = reopened.workingCopy.version;
@@ -231,7 +231,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 	navigationState.back.push(target);
 	const navigation = new EditorNavigationController(
 		new WorkspaceSourceCatalog(), { focusTarget: inputFocus.createTarget(), isFocused: () => false } as ResourcePanelController,
-		new ResourceEditorResolver([]), group,
+		new ResourceEditorResolver([]),
 	);
 	t.after(() => { group.dispose(); });
 	await navigation.goBackward();
@@ -262,14 +262,14 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 					if (resource === older.workingCopy.resource) { await openGate; return older; }
 					return newer;
 				},
-			}]), group,
+			}]),
 		);
 		t.after(() => { group.dispose(); });
 		const target = new NavigationHistoryEntry({ kind: 'resource', ...older.toResourceEditor() }, new CodeEditorNavigationSelection(older), group);
 		if (route === 'history') navigationState.back.push(target);
-		const pending = route === 'history' ? navigation.goBackward() : navigation.openResource(older.workingCopy.resource);
+		const pending = route === 'history' ? navigation.goBackward() : navigation.openResource(group, older.workingCopy.resource);
 		assert.equal(navigationState.captureSuspendDepth, 0);
-		if (interruption === 'new navigation') await navigation.openResource(newer.workingCopy.resource);
+		if (interruption === 'new navigation') await navigation.openResource(group, newer.workingCopy.resource);
 		else if (interruption === 'direct tab') group.openEditor(newer);
 		else if (interruption === 'same tab') group.activate(origin.id);
 		else if (interruption === 'owner disposal') {
@@ -306,10 +306,10 @@ test('cancelled resolution disposes its fresh candidate without disturbing the r
 	const navigation = new EditorNavigationController(
 		new WorkspaceSourceCatalog(),
 		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
-		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => candidate }]), group,
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => candidate }]),
 	);
 	t.after(() => { group.dispose(); });
-	const pending = navigation.openResource(input.workingCopy.resource);
+	const pending = navigation.openResource(group, input.workingCopy.resource);
 	group.activate(input.id);
 	assert.equal(await pending, undefined);
 	assert.equal(candidateDisposals, 1);
@@ -331,9 +331,8 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 		{} as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async () => { await gate; return candidate; } }]),
-		group,
 	);
-	const pending = navigation.openResource(candidate.workingCopy.resource);
+	const pending = navigation.openResource(group, candidate.workingCopy.resource);
 	// A group-owned popup may take focus while its content resource is resolving.
 	const popup = inputFocus.createTarget(group.tabFocusTarget);
 	const unbind = popup.bindKeyboard(() => {}); t.after(unbind);
@@ -363,10 +362,9 @@ test('async resource admission captures the departure before an in-control caret
 		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async () => { await gate; return destination; } }]),
-		group,
 	);
 	const focused = inputFocus.target;
-	const pending = navigation.openResource(destination.workingCopy.resource);
+	const pending = navigation.openResource(group, destination.workingCopy.resource);
 	origin.context.view.cursorRow = 2; origin.context.view.cursorColumn = 3;
 	const later = createNavigationEntry()!;
 	t.after(() => { invocation.dispose(); later.dispose(); });
@@ -393,7 +391,7 @@ for (const direction of ['back', 'forward'] as const) test(`invalid focused draf
 		catalog,
 		{ focusTarget: inputFocus.createTarget() } as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
-			createEditorInput: resource => new CodeEditorInput(editorTextModelService.get(resource)!) }]), group);
+			createEditorInput: resource => new CodeEditorInput(editorTextModelService.get(resource)!) }]));
 	if (direction === 'forward') await navigation.goBackward();
 	const current = group.model.activeTab, focus = inputFocus.target!;
 	const back = [...navigationState.back], forward = [...navigationState.forward];
@@ -433,7 +431,7 @@ for (const direction of ['back', 'forward'] as const) test(`an invalid draft beg
 					candidate.onWillDispose(() => { retired += 1; });
 				}
 				return candidate;
-			} }]), group);
+			} }]));
 	if (direction === 'forward') await navigation.goBackward();
 	const current = direction === 'back' ? second : first, destination = direction === 'back' ? first : second;
 	const back = [...navigationState.back], forward = [...navigationState.forward], target = navigationState[direction].at(-1)!;

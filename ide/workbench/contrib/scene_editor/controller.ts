@@ -17,68 +17,56 @@ import { installSceneOutline, selectSceneOutlineRow, type SceneMemberElement } f
 export class SceneEditorController {
 	public constructor(
 		private readonly catalog: WorkspaceSourceCatalog,
-		private readonly group: EditorGroupView,
 		private readonly navigation: EditorNavigationController,
 	) {}
 
-	public openResource(resource: RuntimeResource): void {
+	public openResource(group: EditorGroupView, resource: RuntimeResource): void {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
 		const id = `scene:${resourceIdentityKey(resource)}` as const;
-		this.group.openEditor(this.group.model.findById(id) ?? new SceneEditorInput(model));
+		group.openEditor(group.model.findById(id) ?? new SceneEditorInput(model));
 	}
 
-	public openSource(): void {
-		const input = this.group.model.activeTab;
-		if (input?.kind !== 'scene_editor') return;
+	public openSource(group: EditorGroupView, input: SceneEditorInput): void {
 		this.refresh(input);
 		const row = input.outline.rows[input.outline.selectionIndex]?.element;
-		const position = row === undefined ? null : {
+		const position = row === undefined ? undefined : {
 			row: row.source.start.line - 1,
 			startColumn: row.source.start.column - 1,
 			endColumn: row.source.start.column - 1,
 		};
-		this.navigation.focusChunkSource(input.workingCopy.resource, position);
+		this.navigation.focusChunkSource(group, input.workingCopy.resource, position);
 	}
 
 	/** Current source-command target; definition roots and source-only rows are not members. */
-	private editableMember(): SceneMemberElement | undefined {
-		const input = this.group.model.activeTab;
-		if (input?.kind !== 'scene_editor') return undefined;
+	private editableMember(input: SceneEditorInput): SceneMemberElement | undefined {
 		this.refresh(input);
 		if (input.workingCopy.readOnly || input.parsed.syntaxError !== null) return undefined;
 		const row = input.outline.rows[input.outline.selectionIndex]?.element;
 		return row?.kind === 'member' && row.entry.kind === 'object' ? row : undefined;
 	}
 
-	public canRemoveSelectedMember(): boolean { return this.editableMember() !== undefined; }
+	public canRemoveSelectedMember(input: SceneEditorInput): boolean { return this.editableMember(input) !== undefined; }
 
-	public removeSelectedMember(): void {
-		const input = this.group.model.activeTab;
-		if (input?.kind !== 'scene_editor') return;
+	public removeSelectedMember(input: SceneEditorInput): void {
 		// Command admission may have accepted a property draft. Use its new source generation.
-		this.refresh(input);
-		const row = this.editableMember();
+		const row = this.editableMember(input);
 		if (row === undefined) return;
-		this.group.panes.activePane.focus();
 		input.workingCopy.pushEditOperations(createLuaTableFieldRemovalEdits(input.workingCopy.buffer, input.parsed.locations, input.parsed.tokens, row.entry.field));
 		// Do not let a surviving namesake inherit the removed member's selection.
 		selectSceneOutlineRow(input, -1);
 	}
 
 
-	public canMoveSelectedMember(direction: -1 | 1): boolean {
-		const row = this.editableMember();
+	public canMoveSelectedMember(input: SceneEditorInput, direction: -1 | 1): boolean {
+		const row = this.editableMember(input);
 		return row !== undefined && row.scene.resolution === 'complete'
 			&& row.index + direction >= 0 && row.index + direction < row.scene.objects.length;
 	}
 
-	public moveSelectedMember(direction: -1 | 1): void {
-		const input = this.group.model.activeTab;
-		if (input?.kind !== 'scene_editor') return;
-		this.refresh(input); // Source-command admission may have accepted a property.
-		if (!this.canMoveSelectedMember(direction)) return;
-		const row = this.editableMember()!;
-		this.group.panes.activePane.focus();
+	public moveSelectedMember(input: SceneEditorInput, direction: -1 | 1): void {
+		const row = this.editableMember(input); // Source-command admission may have accepted a property.
+		if (row === undefined || row.scene.resolution !== 'complete'
+			|| row.index + direction < 0 || row.index + direction >= row.scene.objects.length) return;
 		input.workingCopy.pushEditOperations(createLuaTableFieldMoveEdits(
 			input.workingCopy.buffer, input.document.analysis.chunk, row.scene.objectsTable, row.index, row.index + direction,
 		));
