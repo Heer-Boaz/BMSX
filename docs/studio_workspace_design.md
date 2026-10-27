@@ -238,7 +238,8 @@ does not silently close, float or merge editors.
 | Operation | Membership and presentation contract |
 | --- | --- |
 | Open | Resolve an exact subject and activate its chosen group; no new floating host by default. |
-| Split / Open to Side | Add a real neighboring group in the same part and admit the intended input there. An independent view requires the contribution's existing fresh-view capability. |
+| Split | Add a real neighboring group in the same part. An independent view requires the contribution's existing fresh-view capability. |
+| Open to Side | Admit the intended subject in a neighboring group of the invoking part, reusing that neighbor or creating it when absent. |
 | Move Editor | Transfer the retained input to an explicit group; canonical source and view state are not reconstructed. |
 | Merge / Dock | Insert tabs into an existing group, or attach a group beside it in the destination arrangement. The destination's published drop zone chooses merge versus split. |
 | Float | Explicitly transfer an editor or group into a floating part using the same input/group admission. |
@@ -462,6 +463,26 @@ Ordinary open routing is deterministic:
 4. Open to Side, New Window and an explicit additional view name another
    destination. Additional views use the contribution's fresh-view capability;
    moving transfers the existing input instead of copying it.
+
+Open to Side bypasses ordinary existing-view affinity: a matching editor in
+another host does not change the captured invoking group. The arrangement owns
+directional adjacency; when several groups share the requested edge, their
+part's activation order chooses the receiver. There is no wrap at the outer
+edge and no neighbor in an overlapping floating host. The operation restores
+a maximized group arrangement before resolving the neighbor, so retained hidden
+groups are reused rather than duplicated. Side-group creation is an accepted
+layout operation, not a transaction around subsequent asynchronous loading.
+Opening or cancelling its menu changes no topology. This follows the separation
+between explicit side placement and ordinary affinity in
+[VS Code's editor-group finder](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/editor/common/editorGroupFinder.ts)
+and its
+[part-owned directional neighbor selection](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorPart.ts).
+
+Files offers the default resource/declaration editor and, when different, its
+canonical Source as separate opening operations, each with an explicit side
+alternative. The menu retains the actual tree subject, invoking group and focus origin; later
+selection or activation cannot substitute them. A declaration's Source uses
+its tracked authored-owner occurrence, not the importing browser location.
 
 The same routing applies to Source, Scene, BT, FSM and every other editor kind.
 Domain openers produce the exact subject/input; the parts/group owner chooses

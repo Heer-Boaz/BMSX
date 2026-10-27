@@ -26,10 +26,13 @@ export class ResourcePanelContextMenu {
 		const resource = element.kind === 'file' ? element.resource : element.kind === 'definition' ? element.content.ownerResource : undefined;
 		const editorId = element.kind === 'file' ? editor.resourceEditors.getEditorId(resource!) : undefined;
 		const invoking = editor.editorParts.activeGroup;
+		const invokingPart = editor.editorParts.partForGroup(invoking);
 		const destination = element.kind === 'file' ? editor.editorParts.editorDestination(invoking, { resource: resource!, editorId: editorId! })
 			: element.kind === 'definition' ? resolveProjectContentDestination(editor, element.content, invoking) : undefined;
-		const hasSource = resource !== undefined && editor.resourceEditors.hasEditor(resource, WORKBENCH_TEXT_EDITOR_ID);
+		const hasSource = resource !== undefined && editorId !== WORKBENCH_TEXT_EDITOR_ID
+			&& editor.resourceEditors.hasEditor(resource, WORKBENCH_TEXT_EDITOR_ID);
 		const sourceDestination = hasSource ? editor.editorParts.editorDestination(invoking, { resource: resource!, editorId: WORKBENCH_TEXT_EDITOR_ID }) : undefined;
+		const sideCurrent = (): boolean => invoking.openingAdmitted && editor.editorParts.partForGroup(invoking) === invokingPart;
 		const current = (): boolean => panel.isVisible() && panel.getMode() === 'resources'
 			&& panel.files.revision === revision && origin.scope.contextGeneration === context
 			&& (element.kind === 'definition' ? content.isCurrent(element.content)
@@ -38,20 +41,28 @@ export class ResourcePanelContextMenu {
 		const items = resource !== undefined && node.expandable ? [...base, ...WORKBENCH_MENUS['resources.disclosure.context']] : base;
 		editor.contextMenu.show(x, y, items, {
 			isEnabled: command => current() && (command === 'resources.open' ? resource !== undefined
-				: command === 'resources.source' ? hasSource : command === 'resources.disclosure' && node.expandable),
+				: command === 'resources.openToSide' ? resource !== undefined && sideCurrent()
+				: command === 'resources.source' ? hasSource : command === 'resources.sourceToSide' ? hasSource && sideCurrent()
+				: command === 'resources.disclosure' && node.expandable),
 			isActive: command => command === 'resources.disclosure' && !node.collapsed,
 			execute: command => {
 				// A newer foreground interaction wins; it never supplies this action's destination.
 				if (!origin.hasFocus || !current()) return;
 				switch (command) {
-					case 'resources.open':
-						if (element.kind === 'definition') openProjectContent(editor, content, element.content, destination!, origin);
-						else void editor.navigation.openResource(destination!, resource!, { editorId });
+					case 'resources.open': case 'resources.openToSide': {
+						const target = command === 'resources.open' ? destination : sideCurrent() ? editor.editorParts.sideGroup(invoking) : undefined;
+						if (target === undefined || !origin.hasFocus || !current()) return;
+						if (element.kind === 'definition') openProjectContent(editor, content, element.content, target, origin);
+						else void editor.navigation.openResource(target, resource!, { editorId });
 						break;
-					case 'resources.source':
-						if (element.kind === 'definition') openProjectContentSource(editor, content, element.content, sourceDestination!, origin);
-						else void editor.navigation.focusChunkSource(sourceDestination!, resource!);
+					}
+					case 'resources.source': case 'resources.sourceToSide': {
+						const target = command === 'resources.source' ? sourceDestination : sideCurrent() ? editor.editorParts.sideGroup(invoking) : undefined;
+						if (target === undefined || !origin.hasFocus || !current()) return;
+						if (element.kind === 'definition') openProjectContentSource(editor, content, element.content, target, origin);
+						else void editor.navigation.focusChunkSource(target, resource!);
 						break;
+					}
 					case 'resources.disclosure': panel.toggleFileDisclosure(node); break;
 				}
 			},
@@ -64,6 +75,8 @@ export class ResourcePanelContextMenu {
 				if (destination !== undefined) lifetime.add({ dispose: destination.onWillDispose(() => this.close()) });
 				if (sourceDestination !== undefined && sourceDestination !== destination)
 					lifetime.add({ dispose: sourceDestination.onWillDispose(() => this.close()) });
+				if (resource !== undefined && invoking !== destination && invoking !== sourceDestination)
+					lifetime.add({ dispose: invoking.onWillDispose(() => this.close()) });
 				lifetime.add({ dispose: catalog.onDidChange(changedContext => {
 					if (element.kind === 'definition' ? !content.isCurrent(element.content)
 						: resource !== undefined ? catalog.resolveResource(resource) !== resource

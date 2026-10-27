@@ -46,6 +46,8 @@ export class EditorGroupArrangement<T> {
 	private readonly leafValues: EditorGroupLeaf<T>[] = [];
 	private readonly splitValues: EditorGroupSplit<T>[] = [];
 	public revision = 0;
+	/** Structural ownership generation; layout, minima, sash and scroll changes are not topology. */
+	public topologyRevision = 0;
 	/** Resolved geometry generation, independent of which caller requested layout. */
 	public layoutRevision = 0;
 	public contentWidth = 0;
@@ -80,6 +82,17 @@ export class EditorGroupArrangement<T> {
 	public get scrollY(): number { return this.scrollYValue; }
 	public get normalScrollX(): number { return this.maximizedValue === undefined ? this.scrollXValue : this.normalScrollXValue; }
 	public get normalScrollY(): number { return this.maximizedValue === undefined ? this.scrollYValue : this.normalScrollYValue; }
+	/** Resolved normal-layout leaves meet across one sash and overlap along the other axis. */
+	public isNeighbor(reference: T, candidate: T, direction: EditorGroupDirection): boolean {
+		if (reference === candidate) return false;
+		const source = this.leavesByGroup.get(reference)!.bounds, target = this.leavesByGroup.get(candidate)!.bounds;
+		if (direction === 'left' || direction === 'right') {
+			return Math.min(source.bottom, target.bottom) > Math.max(source.top, target.top)
+				&& (direction === 'left' ? target.right + WORKBENCH_SPLIT_SIZE === source.left : source.right + WORKBENCH_SPLIT_SIZE === target.left);
+		}
+		return Math.min(source.right, target.right) > Math.max(source.left, target.left)
+			&& (direction === 'up' ? target.bottom + WORKBENCH_SPLIT_SIZE === source.top : source.bottom + WORKBENCH_SPLIT_SIZE === target.top);
+	}
 	private get layoutRoot(): EditorGroupNode<T> {
 		if (this.minimaDirty) { this.measure(this.rootValue); this.minimaDirty = false; }
 		return this.maximizedValue === undefined ? this.rootValue : this.leavesByGroup.get(this.maximizedValue)!;
@@ -304,7 +317,7 @@ export class EditorGroupArrangement<T> {
 		this.dropPreview = undefined;
 		this.groupValues.length = this.leafValues.length = this.splitValues.length = 0;
 		this.leavesByGroup.clear(); this.parents.clear(); this.index(this.rootValue);
-		this.minimaDirty = this.dirty = true; this.revision++;
+		this.minimaDirty = this.dirty = true; this.revision++; this.topologyRevision++;
 	}
 
 	private index(node: EditorGroupNode<T>): void {

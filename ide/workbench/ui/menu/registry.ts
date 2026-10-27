@@ -101,8 +101,9 @@ const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
-	'resources.open.context': [{ type: 'command', command: 'resources.open' }, { type: 'command', command: 'resources.source' }],
-	'resources.resource.context': [{ type: 'command', command: 'resources.open' }],
+	'resources.open.context': [{ type: 'command', command: 'resources.open' }, { type: 'command', command: 'resources.openToSide' },
+		{ type: 'command', command: 'resources.source' }, { type: 'command', command: 'resources.sourceToSide' }],
+	'resources.resource.context': [{ type: 'command', command: 'resources.open' }, { type: 'command', command: 'resources.openToSide' }],
 	'resources.disclosure.context': [{ type: 'command', command: 'resources.disclosure' }],
 	'editorTabs.context': [
 		{ type: 'command', command: 'save' },

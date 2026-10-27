@@ -57,7 +57,7 @@ for (const font of ['tiny', 'msx']) {
 		const scene = t.activeWorkbenchTab();
 		t.assert(scene.kind === 'scene_editor' && scene.workingCopy === model,
 			'the declaration menu did not open its real Scene contribution over the canonical source');
-		t.command('resources.focus'); await t.frames(2); await press('ShiftLeft', 'F10'); await press('ArrowDown');
+		t.command('resources.focus'); await t.frames(2); await press('ShiftLeft', 'F10'); await press('ArrowDown'); await press('ArrowDown');
 		await capture(`files-${font}-${theme}-declaration-source`); await press('Enter'); await t.frames(3);
 		t.assert(t.activeWorkbenchTab() === source && t.activeEditorDocument().model === model && t.activeEditorDocument().focusTarget.hasFocus,
 			'declaration Source did not return to the exact retained source input/model');

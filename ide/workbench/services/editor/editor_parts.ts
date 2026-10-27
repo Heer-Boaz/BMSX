@@ -215,6 +215,52 @@ export class EditorParts {
 		return origin ?? this.activeGroup;
 	}
 
+	/** Explicit side placement stays in the captured host and never borrows ordinary editor affinity. */
+	public sideGroup(reference: EditorGroupView, direction: EditorGroupDirection = 'right'): EditorGroupView | undefined {
+		const part = this.owners.get(reference);
+		if (part === undefined || part.retired || part.surface.retired || !reference.openingAdmitted || part.operation !== 'none') return;
+		const generation = reference.panes.openGeneration, scope = inputFocus.target?.scope, context = scope?.contextGeneration;
+		const topology = part.arrangement.topologyRevision;
+		if (!reference.commitPendingEdit()) return;
+		const focused = inputFocus.target;
+		if (this.owners.get(reference) !== part || part.retired || !reference.openingAdmitted || part.operation !== 'none'
+			|| reference.panes.openGeneration !== generation || part.arrangement.topologyRevision !== topology || scope?.contextGeneration !== context
+			|| focused !== null && (scope === undefined || !scope.contains(focused.scope))) return;
+		const focusRevision = inputFocus.revision;
+		const maximized = part.arrangement.maximized;
+		if (maximized !== undefined) part.arrangement.toggleMaximize(maximized);
+		part.layout(part.clientBounds);
+		if (this.owners.get(reference) !== part || part.retired || !reference.openingAdmitted || part.operation !== 'none'
+			|| reference.panes.openGeneration !== generation || part.arrangement.topologyRevision !== topology || scope?.contextGeneration !== context
+			|| part.arrangement.maximized !== undefined
+			|| inputFocus.revision !== focusRevision && inputFocus.target !== null) return;
+		let destination: EditorGroupView | undefined;
+		for (const group of part.mostRecentlyActiveGroups) if (part.arrangement.isNeighbor(reference, group, direction)) {
+			destination = group; break;
+		}
+		let expectedTopology = topology;
+		let receiverGeneration: number;
+		if (destination === undefined) {
+			expectedTopology++;
+			destination = part.createGroup();
+			part.adoptGroup(destination, reference, direction);
+			receiverGeneration = destination.panes.openGeneration;
+			part.publishGroups();
+			if (this.owners.get(reference) !== part || part.retired || !reference.openingAdmitted || part.operation !== 'none'
+				|| reference.panes.openGeneration !== generation || part.arrangement.topologyRevision !== expectedTopology || scope?.contextGeneration !== context
+				|| part.arrangement.maximized !== undefined || inputFocus.revision !== focusRevision && inputFocus.target !== null
+				|| this.owners.get(destination) !== part || destination.panes.openGeneration !== receiverGeneration) return;
+		} else receiverGeneration = destination.panes.openGeneration;
+		if (!destination.openingAdmitted) return;
+		if (!part.revealGroup(destination)) return;
+		if (this.owners.get(reference) !== part || this.owners.get(destination) !== part || part.retired || !reference.openingAdmitted
+			|| !destination.openingAdmitted || part.operation !== 'none' || reference.panes.openGeneration !== generation
+			|| destination.panes.openGeneration !== receiverGeneration || part.arrangement.maximized !== undefined
+			|| part.arrangement.topologyRevision !== expectedTopology || scope?.contextGeneration !== context
+			|| inputFocus.revision !== focusRevision && inputFocus.target !== null) return;
+		return destination;
+	}
+
 	public splitGroup(source: EditorGroupView, direction: EditorGroupDirection): EditorGroupView | undefined {
 		const part = this.owners.get(source), generation = source.panes.openGeneration;
 		if (part === undefined || part.retired || part.surface.retired || !source.openingAdmitted || part.operation !== 'none' || !source.commitPendingEdit() || source.panes.openGeneration !== generation) return undefined;

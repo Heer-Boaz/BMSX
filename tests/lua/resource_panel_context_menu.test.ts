@@ -118,7 +118,7 @@ test('changing Files selection while its popup is open never substitutes the cap
 	const f = fixture(t), original = reveal(f, 'folder/third.lua');
 	const open = t.mock.method(f.editor.navigation, 'openResource'); secondary(f, original.node);
 	reveal(f, 'folder/other.lua'); assert.equal(f.editor.contextMenu.visible, true);
-	accept(f, 'resources.source'); assert.equal(open.mock.callCount(), 1); await open.mock.calls[0].result;
+	accept(f, 'resources.open'); assert.equal(open.mock.callCount(), 1); await open.mock.calls[0].result;
 	const code = f.firstGroup.model.activeTab; assert.ok(code instanceof CodeEditorInput && code.resource === original.resource);
 });
 
