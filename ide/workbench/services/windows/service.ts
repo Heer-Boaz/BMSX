@@ -51,6 +51,8 @@ class Surface implements WorkbenchSurface {
 export class WorkbenchSurfaceService implements IDisposable {
 	private readonly roots: Surface[] = [];
 	private readonly scopes = new Map<WorkbenchSurface['captureScope'], Surface>();
+	private changing = false;
+	private changePending = false;
 
 	public constructor(private readonly onDidChange: () => void = () => {}) {}
 
@@ -59,7 +61,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 		this.insert(surface);
 		this.scopes.set(surface.captureScope, surface);
 		surface.lifetimeOwner?.owned.push(surface);
-		this.onDidChange();
+		this.changed();
 		return surface;
 	}
 
@@ -85,14 +87,22 @@ export class WorkbenchSurfaceService implements IDisposable {
 
 	/** Layout/visibility producers notify after publishing their own state. */
 	public changed(): void {
-		// Popup sessions end when their actual owner hides or becomes blocked.
-		// Content/windows are retained; retiring their transient attachments is
-		// a lifetime transition, not a substitute visibility cache.
-		for (const node of this.scopes.values()) {
-			if (node.role === 'transient' && node.lifetimeOwner !== undefined
-				&& (!node.lifetimeOwner.visible || !this.isAdmitted(node))) this.retire(node);
+		this.changePending = true;
+		if (this.changing) return;
+		this.changing = true;
+		try {
+			do {
+				this.changePending = false;
+				// Popup teardown can change another session's visibility or membership.
+				// Settle those owner changes before publishing input admission.
+				for (const node of this.scopes.values()) {
+					if (node.role === 'transient' && node.lifetimeOwner !== undefined && !this.isAdmitted(node)) this.retireNode(node);
+				}
+				if (!this.changePending) this.onDidChange();
+			} while (this.changePending);
+		} finally {
+			this.changing = false;
 		}
-		this.onDidChange();
 	}
 
 	/** Raise within the role band; children remain a single ordered group. */
@@ -101,7 +111,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 		const siblings = node.presentationParent == null ? this.roots : node.presentationParent.children;
 		siblings.splice(siblings.indexOf(node), 1);
 		this.insert(node);
-		this.onDidChange();
+		this.changed();
 	}
 
 	public draw(painter: WorkbenchSurfacePainter): void {
@@ -129,6 +139,11 @@ export class WorkbenchSurfaceService implements IDisposable {
 		if (!node.visible) return false;
 		let context: Surface | null | undefined = node;
 		while (context != null) {
+			// Promotion changes clipping, never the invoking owner's authority.
+			// Modal lifetime owners need not be their blocked scope, so only
+			// transient contexts inherit this additional admission restriction.
+			if (context.role === 'transient' && context.lifetimeOwner !== undefined
+				&& !this.isAdmitted(context.lifetimeOwner)) return false;
 			const modal = this.topModal(context.children);
 			if (modal !== null && !this.belongsTo(node, modal)) return false;
 			context = context.presentationParent;
@@ -141,15 +156,19 @@ export class WorkbenchSurfaceService implements IDisposable {
 	public retire(surface: WorkbenchSurface): void {
 		const node = surface as Surface;
 		if (node.retired) return;
+		this.retireNode(node);
+		this.changed();
+	}
+
+	private retireNode(node: Surface): void {
 		node.retired = true;
 		this.scopes.delete(node.captureScope);
 		const siblings = node.presentationParent == null ? this.roots : node.presentationParent.children;
 		siblings.splice(siblings.indexOf(node), 1);
 		if (node.lifetimeOwner !== undefined) node.lifetimeOwner.owned.splice(node.lifetimeOwner.owned.indexOf(node), 1);
 		node.onRetire?.();
-		while (node.owned.length !== 0) this.retire(node.owned[node.owned.length - 1]);
-		while (node.children.length !== 0) this.retire(node.children[node.children.length - 1]);
-		this.onDidChange();
+		while (node.owned.length !== 0) this.retireNode(node.owned[node.owned.length - 1]);
+		while (node.children.length !== 0) this.retireNode(node.children[node.children.length - 1]);
 	}
 
 	public dispose(): void {

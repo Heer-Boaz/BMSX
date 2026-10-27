@@ -4,6 +4,9 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import type { WorkbenchSurfaceOptions, WorkbenchSurfacePainter } from '../../ide/workbench/services/windows/model';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { KeyModifier } from '../../hosts/common/input/text';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { PointerCaptureService } from '../../ide/input/pointer/capture';
+import type { PointerSnapshot } from '../../ide/common/models';
 
 const extent: RectBounds = { left: 0, top: 0, right: 300, bottom: 200 };
 const firstWindow: RectBounds = { left: 20, top: 20, right: 150, bottom: 150 };
@@ -126,6 +129,125 @@ test('root and local modality are admission boundaries, not arbitrary globally r
 	root.dispose();
 	assert.equal(surfaces.isAdmitted(local), true);
 	assert.equal(nested.retired, true);
+});
+
+test('a later owner-local modal retires promoted popup families and drains their captured gesture', () => {
+	const capture = new PointerCaptureService();
+	const surfaces = new WorkbenchSurfaceService(() => {
+		const scope = capture.routeScope;
+		if (scope === undefined) return;
+		const surface = surfaces.findByScope(scope);
+		if (surface === undefined || !surfaces.isAdmitted(surface)) capture.cancelScope(scope);
+	});
+	const painted: string[] = [], retired: string[] = [];
+	const owner = surfaces.attach({ ...controller('owner', painted, firstWindow), role: 'window' });
+	const sibling = surfaces.attach({ ...controller('sibling', painted, secondWindow), role: 'window' });
+	const popup = surfaces.attach({ ...controller('popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: owner,
+		onRetire: () => { retired.push('popup'); },
+	});
+	const submenu = surfaces.attach({ ...controller('submenu', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: popup,
+		onRetire: () => { retired.push('submenu'); },
+	});
+	const siblingPopup = surfaces.attach({ ...controller('sibling popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: sibling });
+	let cancelled = 0, released = 0;
+	const drag = { handleCapturedPointer() {}, releaseCapturedPointer() { released++; }, cancelPointer() { cancelled++; } };
+	const held: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 50, viewportY: 50,
+		pressedButtons: PointerButton.Primary,
+		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	capture.beginRoute(submenu.captureScope, held);
+	capture.capture(drag);
+
+	const modal = surfaces.attach({ ...controller('modal', painted, firstWindow), role: 'modal', blockedScope: owner,
+		lifetimeOwner: sibling, getClip: () => firstWindow,
+	});
+	assert.deepEqual(retired, ['popup', 'submenu']);
+	assert.equal(popup.retired, true);
+	assert.equal(submenu.retired, true);
+	assert.equal(surfaces.isAdmitted(modal), true, 'modal admission follows its blocked scope, not its unrelated lifetime owner');
+	assert.equal(surfaces.isAdmitted(siblingPopup), true);
+	assert.equal(siblingPopup.retired, false);
+	assert.equal(cancelled, 1);
+	assert.equal(capture.active, false);
+	assert.equal(capture.draining, true);
+	assert.equal(capture.dispatch({ ...held, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary },
+		false, 10, sibling.captureScope), true);
+	assert.equal(released, 0, 'a revoked popup cannot commit its gesture on another surface');
+	assert.equal(capture.draining, false);
+	modal.dispose();
+	assert.equal(popup.retired, true, 'removing the modal does not revive the retired popup');
+	const replacementPopup = surfaces.attach({ ...controller('replacement popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: owner });
+	capture.beginRoute(siblingPopup.captureScope, held);
+	capture.capture(drag);
+	surfaces.attach({ ...controller('another local modal', painted, firstWindow), role: 'modal', blockedScope: owner, lifetimeOwner: owner });
+	assert.equal(replacementPopup.retired, true);
+	assert.equal(capture.active, true, 'retiring another admission family preserves the sibling capture');
+	assert.equal(capture.routeScope, siblingPopup.captureScope);
+	assert.equal(cancelled, 1);
+	capture.dispatch({ ...held, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary },
+		false, 20, siblingPopup.captureScope);
+	assert.equal(released, 1);
+});
+
+test('modal visibility and raising revoke promoted sessions only in the affected admission family', () => {
+	const surfaces = new WorkbenchSurfaceService();
+	const painted: string[] = [];
+	const owner = surfaces.attach({ ...controller('owner', painted, firstWindow), role: 'window' });
+	const sibling = surfaces.attach({ ...controller('sibling', painted, secondWindow), role: 'window' });
+	const siblingPopup = surfaces.attach({ ...controller('sibling popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: sibling });
+	let visible = false;
+	const firstModal = surfaces.attach({ ...controller('first modal', painted, firstWindow), role: 'modal', blockedScope: owner,
+		lifetimeOwner: owner, isVisible: () => visible,
+	});
+	const popup = surfaces.attach({ ...controller('popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: owner });
+	assert.equal(popup.retired, false);
+	visible = true;
+	assert.equal(surfaces.isAdmitted(popup), false, 'admission reads the owner restriction before visibility notification');
+	surfaces.changed();
+	assert.equal(popup.retired, true);
+	const secondModal = surfaces.attach({ ...controller('second modal', painted, firstWindow), role: 'modal', blockedScope: owner, lifetimeOwner: owner });
+	const modalPopup = surfaces.attach({ ...controller('modal popup', painted), role: 'transient', outsidePress: 'consume',
+		lifetimeOwner: secondModal, presentationParent: secondModal,
+	});
+	assert.equal(surfaces.isAdmitted(modalPopup), true);
+	surfaces.raise(firstModal);
+	assert.equal(surfaces.isAdmitted(firstModal), true);
+	assert.equal(surfaces.isAdmitted(secondModal), false);
+	assert.equal(modalPopup.retired, true);
+	assert.equal(siblingPopup.retired, false);
+	assert.equal(surfaces.isAdmitted(siblingPopup), true);
+});
+
+test('nested local modality settles reentrant popup retirement before publishing admission', () => {
+	const painted: string[] = [], retired: string[] = [];
+	let published = 0;
+	let checking = false;
+	const surfaces = new WorkbenchSurfaceService(() => {
+		published++;
+		if (!checking) return;
+		assert.equal(surfaces.findByScope(popupScope)?.retired, undefined);
+		assert.equal(surfaces.findByScope(submenuScope)?.retired, undefined);
+	});
+	const popupScope = Symbol('popup'), submenuScope = Symbol('submenu');
+	const owner = surfaces.attach({ ...controller('owner', painted), role: 'content' });
+	const modal = surfaces.attach({ ...controller('modal', painted, firstWindow), role: 'modal', blockedScope: owner, lifetimeOwner: owner });
+	const client = surfaces.attach({ ...controller('client', painted, firstWindow), role: 'content', presentationParent: modal, lifetimeOwner: modal });
+	const popup = surfaces.attach({ ...controller('popup', painted), captureScope: popupScope, role: 'transient', outsidePress: 'consume',
+		lifetimeOwner: client, presentationParent: modal,
+		onRetire: () => { retired.push('popup'); surfaces.changed(); },
+	});
+	const submenu = surfaces.attach({ ...controller('submenu', painted), captureScope: submenuScope, role: 'transient', outsidePress: 'consume',
+		lifetimeOwner: popup, presentationParent: modal,
+		onRetire: () => { retired.push('submenu'); surfaces.changed(); },
+	});
+	assert.equal(surfaces.isAdmitted(popup), true);
+	assert.equal(surfaces.isAdmitted(submenu), true);
+	const before = published;
+	checking = true;
+	const nested = surfaces.attach({ ...controller('nested modal', painted, firstWindow), role: 'modal', blockedScope: modal, lifetimeOwner: modal });
+	assert.deepEqual(retired, ['popup', 'submenu']);
+	assert.equal(published, before + 1, 'structural reconciliation publishes only the settled admission state');
+	assert.equal(surfaces.isAdmitted(nested), true);
+	assert.equal(surfaces.isAdmitted(modal), false);
 });
 
 test('opaque unhandled surfaces retain the occurrence; wheel and pointer callbacks are actual controller callbacks', () => {

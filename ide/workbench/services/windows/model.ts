@@ -13,6 +13,7 @@ export interface WorkbenchSurfaceCallbacks {
 }
 
 interface SurfaceAttachment extends WorkbenchSurfaceCallbacks {
+	/** Transients retain this owner's input admission even when painted in an outer context. */
 	readonly lifetimeOwner?: WorkbenchSurface;
 	readonly captureScope: PointerCaptureScope;
 	/** References layout-owned geometry; neither getter constructs a rectangle. */
