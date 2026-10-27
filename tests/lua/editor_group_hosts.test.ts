@@ -54,9 +54,9 @@ test('moving a retained Source into a sibling group changes control ownership wi
 	assert.equal(first.model.tabs.includes(input), false); assert.ok(sibling.model.activeTab === input);
 	assert.ok(parts.activeGroup === sibling); assert.ok(parts.findGroup(input) === sibling);
 	assert.equal(parts.documents.length, windows); assert.equal(f.firstInput.workingCopy.version, version);
-	first.focus(); assert.ok(parts.activeGroup === first); assert.ok(first.model.activeTab === null);
+	assert.equal(first.surface.retired, true); assert.equal(first.focus(), false);
 	sibling.focus(); assert.ok(sibling.panes.activePane!.input === input);
-	assert.equal(parts.main.groups.length, 2);
+	assert.equal(parts.main.groups.length, 1); assert.ok(parts.main.groups[0] === sibling);
 });
 
 

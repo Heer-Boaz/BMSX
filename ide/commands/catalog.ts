@@ -28,6 +28,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'window.focusMain': { category: 'Window', title: 'Focus Main Workspace' },
 	'window.newEditor': { category: 'Window', title: 'New Editor Window' },
 	'window.moveEditor': { category: 'Window', title: 'Move Editor To…' },
+	'group.close': { category: 'Editor Groups', title: 'Close Group' },
 	'group.openEditors': { category: 'Editor Groups', title: 'Open Editors in Group', shortTitle: '…' },
 	'group.splitRight': { category: 'Editor Groups', title: 'Split Group Right' },
 	'group.splitDown': { category: 'Editor Groups', title: 'Split Group Down' },

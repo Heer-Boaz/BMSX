@@ -48,6 +48,7 @@ export class EditorParts {
 	private readonly mru: EditorPart[] = [];
 	private readonly listeners = new Set<() => void>();
 	private readonly closing = new Map<EditorPart, Promise<boolean>>();
+	private readonly closingGroups = new Map<EditorGroupView, Promise<boolean>>();
 	private restoreGeneration = 0;
 	private readonly partSubscriptions = new Map<EditorPart, readonly (() => void)[]>();
 	private minimizedDocumentCount = 0;
@@ -196,6 +197,7 @@ export class EditorParts {
 	/** Transfer preserves the input, working copy and view state while replacing control authority. */
 	public moveEditor(source: EditorGroupView, input: EditorInput, destination: EditorGroupView | 'new', admission: EditorCloseController): boolean {
 		if (!this.canMoveEditor(source, input, destination, admission)) return false;
+		const focusRevision = inputFocus.revision, focusOrigin = inputFocus.target;
 		const sourceGeneration = source.panes.openGeneration;
 		if (!source.commitPendingEdit() || source.panes.openGeneration !== sourceGeneration) return false;
 		if (destination !== 'new') {
@@ -210,31 +212,97 @@ export class EditorParts {
 			const targetPart = destination === 'new' ? this.createDocument({}, 'move') : this.partForGroup(destination);
 			const target = destination === 'new' ? targetPart.activeGroup : destination;
 			if (destination !== 'new') targetPart.setOperation('move');
-			let retiring: EditorInput | undefined;
+			let retiring: EditorInput | undefined, handoff: { group: EditorGroupView; input: EditorInput } | undefined;
 			try {
+				if (this.owners.get(source) !== sourcePart || source.paneSurface.retired || source.model.activeTab !== input
+					|| this.owners.get(target) !== targetPart || target.paneSurface.retired || target.model.findById(input.id) !== existing) return false;
+				const targetGeneration = target.panes.openGeneration;
 				return withNavigationCaptureSuspended(() => {
-					source.detachEditorForMove(input); target.panes.clearEditor();
-					if (sourcePart.retired || targetPart.retired || sourcePart.surface.retired || targetPart.surface.retired) return false;
+					const sourceReceipt = source.detachEditorForMove(input);
+					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
+						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetGeneration
+						|| source.model.activeTab !== input || target.model.findById(input.id) !== existing) return false;
+					const targetReceipt = target.panes.clearEditor();
+					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
+						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| source.model.activeTab !== input || target.model.findById(input.id) !== existing || !input.canMove(existing)) return false;
 					if (existing !== undefined) retiring = input;
 					const receiver = source.model.transferTo(target.model, input, existing);
+					handoff = { group: target, input: receiver };
+					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
+						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| source.model.indexOf(input) >= 0 || target.model.activeTab !== receiver) return false;
 					source.publishMovedEditor(input, target, receiver);
-					if (sourcePart.retired || targetPart.retired || sourcePart.surface.retired || targetPart.surface.retired) return false;
+					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
+						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| source.model.indexOf(input) >= 0 || target.model.activeTab !== receiver) return false;
 					const successor = source.model.activeTab;
 					if (successor !== null) source.attachTransferredEditor(successor, undefined, true);
+					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
+						|| target.panes.openGeneration !== targetReceipt || target.model.activeTab !== receiver
+						|| successor !== null && (source.model.activeTab !== successor || source.panes.activePane?.input !== successor)) return false;
+					const sourceAttachment = source.panes.openGeneration;
 					target.attachTransferredEditor(receiver, selection, true);
-					return target;
+					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
+						|| source.panes.openGeneration !== sourceAttachment || target.model.activeTab !== receiver || target.panes.activePane?.input !== receiver) return false;
+					return handoff;
 				});
 			} finally {
-				retiring?.dispose(); selection?.dispose(); sourcePart.setOperation('none'); targetPart.setOperation('none');
+				try {
+					// Settle the current model, not a captured pre-transfer input. A newer
+					// clear remains empty; a retired attachment cannot receive a control.
+					for (const group of [source, target]) {
+						if (this.owners.get(group) !== (group === source ? sourcePart : targetPart) || group.paneSurface.retired) continue;
+						const active = group.model.activeTab, pane = group.panes.activePane;
+						if (active === null) { if (pane !== null) group.panes.clearEditor(); }
+						else if (pane?.input !== active) group.attachTransferredEditor(active, group === target && handoff?.input === active ? selection : undefined, true);
+					}
+				} finally {
+					retiring?.dispose(); selection?.dispose();
+					if (!sourcePart.retired) sourcePart.setOperation('none');
+					if (targetPart !== sourcePart && !targetPart.retired) targetPart.setOperation('none');
+				}
 			}
 		});
 		if (movedTo === false) return false;
-		const targetPart = this.partForGroup(movedTo);
-		if (!targetPart.retired && !targetPart.surface.retired) {
-			const focused = inputFocus.target;
-			if (focused === null || sourcePart.scope.contains(focused.commandContext.scope) || targetPart.scope.contains(focused.commandContext.scope)) movedTo.focus();
-		}
+		if (this.owners.get(source) === sourcePart) sourcePart.removeGroup(source);
+		const targetPart = this.owners.get(movedTo.group);
+		if (targetPart === undefined || movedTo.group.paneSurface.retired || movedTo.group.model.activeTab !== movedTo.input
+			|| movedTo.group.panes.activePane?.input !== movedTo.input) return false;
+		if ((focusOrigin === null || sourcePart.scope.contains(focusOrigin.scope) || targetPart.scope.contains(focusOrigin.scope))
+			&& (inputFocus.revision === focusRevision || inputFocus.target === null)) movedTo.group.focus();
 		return true;
+	}
+
+	public canCloseGroup(group: EditorGroupView): boolean {
+		const part = this.owners.get(group);
+		return part !== undefined && !part.retired && !part.surface.retired && part.operation === 'none' && group.openingAdmitted
+			&& group.model.tabs.every(input => input.closable);
+	}
+
+	/** Group close shares document decisions, then retires only its admitted empty leaf. */
+	public closeGroup(group: EditorGroupView, origin: InputFocusTarget | null = inputFocus.target): Promise<boolean> {
+		const pending = this.closingGroups.get(group);
+		if (pending !== undefined) return pending;
+		if (!this.canCloseGroup(group)) return Promise.resolve(false);
+		const part = this.owners.get(group)!;
+		group.setClosing(true);
+		const targets = group.model.tabs.map(input => ({ group, input }));
+		const completion = this.options.closeEditors(targets, origin, part.actionPrompt).then(closed => {
+			if (!closed || this.owners.get(group) !== part || part.retired || group.model.tabs.length !== 0) return false;
+			const focused = inputFocus.target;
+			const ownsFocus = focused === null ? this.activePart === part && part.activeGroup === group
+				: this.options.surfaces.isInContext(focused.scope.surfaceScope, group.surface.captureScope);
+			const focusRevision = inputFocus.revision;
+			if (!part.removeGroup(group)) group.setClosing(false);
+			if (ownsFocus && !part.retired && (focusRevision === inputFocus.revision || inputFocus.target === null)) part.activeGroup.focus();
+			return true;
+		}).finally(() => {
+			this.closingGroups.delete(group);
+			group.setClosing(false);
+		});
+		this.closingGroups.set(group, completion);
+		return completion;
 	}
 
 	public close(part: EditorPart): Promise<boolean> {

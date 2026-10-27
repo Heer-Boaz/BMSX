@@ -193,6 +193,27 @@ export class EditorPart {
 		this.syncSashes(); for (const listener of this.groupListeners) listener();
 		this.layout(this.clientBounds); this.options.onDidChange(); return group;
 	}
+	/** Close/move admission has already settled every input before its empty group retires. */
+	public removeGroup(group: EditorGroupView): boolean {
+		if (this.retired || this.surface.retired || this.groups.length === 1 || !this.groups.includes(group) || group.model.tabs.length !== 0) return false;
+		this.restoreLifetime?.abort(); group.setOpenAdmission(false);
+		for (const unbind of this.groupSubscriptions.get(group)!) unbind();
+		this.groupSubscriptions.delete(group);
+		this.arrangement.remove(group); this.groupMru.splice(this.groupMru.indexOf(group), 1);
+		if (this.activeGroup === group) {
+			this.activeGroup = this.groupMru[0];
+			if (this.window !== undefined) this.window.model.title = this.activeGroup.model.activeTab?.title ?? 'Editor';
+		}
+		// Membership must be final before disposal observers can issue another command.
+		for (const listener of this.groupListeners) listener();
+		group.dispose();
+		if (this.retired) return true;
+		this.syncSashes();
+		if (this.retired) return true;
+		this.layout(this.clientBounds);
+		if (!this.retired) this.options.onDidChange();
+		return true;
+	}
 	public activateGroup(group: EditorGroupView): boolean {
 		if (this.retired || !group.openingAdmitted || !this.groups.includes(group)) return false;
 		if (this.activeGroup === group) return true;
@@ -253,7 +274,8 @@ export class EditorPart {
 				captureScope: control.focusTarget.scope.surfaceScope, isVisible: () => branch.visible && branch.resizable,
 				getBounds: () => branch.sashBounds, getClip: () => branch.clip,
 				draw: () => drawWorkbenchSplit(branch.split, control.hovered || control.focusTarget.hasFocus),
-				handlePointer: snapshot => { control.handlePointer(snapshot); }, handleWheel: () => true, onRetire: () => control.clearInput(),
+				handlePointer: snapshot => { control.handlePointer(snapshot); }, handleWheel: () => true,
+				onRetire: () => { pointerCapture.cancelScope(control.focusTarget.scope.surfaceScope); control.clearInput(); },
 			});
 			this.sashes.set(branch, { control, surface });
 		}

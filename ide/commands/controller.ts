@@ -123,6 +123,7 @@ export class IdeCommandController {
 			case 'window.showAll': showOpenWindows(this.editor.editorParts, this.editor.quickInput); return;
 			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
 			case 'window.newEditor': this.editor.editorParts.createDocument().focus(); return;
+			case 'group.close': void this.editor.editorParts.closeGroup(group, target); return;
 			case 'group.openEditors': showGroupOpenEditors(group, part.quickInput); return;
 			case 'group.splitRight': case 'group.splitDown': {
 				const created = this.editor.editorParts.splitGroup(group, command === 'group.splitRight' ? 'right' : 'down');
@@ -248,7 +249,12 @@ export class IdeCommandController {
 				} else this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
 				if (!this.debuggerState.plans.controlSuspended) this.execution.requestExecution(false);
 				return;
-			case 'tabs.close': void group.close(group.model.activeTab!.id, target); return;
+			case 'tabs.close': {
+				const input = group.model.activeTab;
+				if (input === null) void this.editor.editorParts.closeGroup(group, target);
+				else void group.close(input.id, target);
+				return;
+			}
 			case 'tabs.next': group.cycle(1); return;
 			case 'tabs.previous': group.cycle(-1); return;
 			case 'tabs.scrollLeft': case 'tabs.scrollRight':
@@ -408,6 +414,7 @@ export class IdeCommandController {
 		switch (command) {
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
+			case 'group.close': return this.editor.editorParts.canCloseGroup(group);
 			case 'group.openEditors': return group.model.tabs.length > 0;
 			case 'group.splitRight': case 'group.splitDown': return part.operation === 'none';
 			case 'group.focusNext': case 'group.focusPrevious': case 'group.maximize': return part.operation === 'none' && part.groups.length > 1;
@@ -475,7 +482,8 @@ export class IdeCommandController {
 				return this.editor.observedConversation.available && !this.editor.observedConversation.pending;
 			case 'debugEvaluation':
 				return this.runtimeTasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
-			case 'tabs.close': return group.model.activeTab?.closable === true;
+			case 'tabs.close': return group.model.activeTab === null
+				? part.groups.length > 1 && this.editor.editorParts.canCloseGroup(group) : group.openingAdmitted && group.model.activeTab.closable;
 			case 'tabs.next': case 'tabs.previous': return group.model.tabs.length > 1;
 			case 'tabs.scrollLeft': return group.tabStrip.scrollbar.getScroll() > 0;
 			case 'tabs.scrollRight': return group.tabStrip.scrollbar.getScroll() < group.tabStrip.scrollbar.getMaximumScroll();

@@ -62,7 +62,10 @@ part/group membership, activation/MRU and normal opening destinations. An
 Quick Input and decision dialogs. `group_arrangement.ts` owns the retained split
 tree, intrinsic minimum extents, overflow viewport and temporary group maximization.
 Each `EditorGroupView` owns its tabs, panes, content/timeline geometry and input
-scope. Ordinary opening uses actual matching views and the invoking group,
+scope. Host admission and a group-local close decision are independent gates.
+The shared close owner settles drafts, working copies and Saves before the part
+normalizes and retires an empty group; the final routing leaf remains present.
+Ordinary opening uses actual matching views and the invoking group,
 independently of editor kind; creating a floating part is explicit. Floating
 parts use the shared window container, not another Studio session or workspace.
 Workspace storage records

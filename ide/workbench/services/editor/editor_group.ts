@@ -90,7 +90,8 @@ export class EditorGroupView {
 	};
 	private readonly unbindFocus: () => void;
 	private openingAdmittedValue = true;
-	public get openingAdmitted(): boolean { return this.openingAdmittedValue; }
+	private closing = false;
+	public get openingAdmitted(): boolean { return this.openingAdmittedValue && !this.closing; }
 	private readonly disposeListeners = new Set<() => void>();
 	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
 
@@ -233,9 +234,16 @@ export class EditorGroupView {
 	}
 
 	public setOpenAdmission(admitted: boolean): void {
-		if (this.openingAdmitted === admitted) return;
+		const previous = this.openingAdmitted;
 		this.openingAdmittedValue = admitted;
-		this.panes.beginOpen();
+		if (previous !== this.openingAdmitted) this.panes.beginOpen();
+	}
+
+	/** A group's close decision is independent of a temporary operation on its host. */
+	public setClosing(closing: boolean): void {
+		const previous = this.openingAdmitted;
+		this.closing = closing;
+		if (previous !== this.openingAdmitted) this.panes.beginOpen();
 	}
 
 	public openEditor(input: EditorInput, options: EditorTabOpenOptions = {}): boolean {
@@ -266,6 +274,11 @@ export class EditorGroupView {
 
 	/** Own asynchronous candidate admission and departure capture before storage can yield. */
 	public async openResolvedEditor(candidate: EditorInput | Promise<EditorInput>, options: EditorTabOpenOptions = {}): Promise<EditorInputOpenResult | undefined> {
+		if (!this.openingAdmitted) {
+			const input = await candidate;
+			input.dispose();
+			return undefined;
+		}
 		const generation = this.panes.beginOpen(), focusRevision = inputFocus.revision;
 		let departure = options.preserveFocus ? null : beginNavigationCapture();
 		try {
@@ -300,10 +313,9 @@ export class EditorGroupView {
 	}
 
 	/** Retire the departing attachment, never the input that is about to acquire another owner. */
-	public detachEditorForMove(input: EditorInput): void {
+	public detachEditorForMove(input: EditorInput): number {
 		if (this.tabStrip.drag.state?.tabId === input.id) this.tabStrip.cancelDrag();
-		if (this.model.activeTab === input) this.panes.clearEditor('move');
-		else this.panes.beginOpen();
+		return this.model.activeTab === input ? this.panes.clearEditor('move') : this.panes.beginOpen();
 	}
 
 	/** The transfer model already selected this exact member; only its new control is attached here. */

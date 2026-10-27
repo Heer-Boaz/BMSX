@@ -248,6 +248,14 @@ does not silently close, float or merge editors.
 Tab dragging uses one shared transfer gesture. A single-tab group is draggable.
 The target describes insertion into a tabstrip, splitting at a group edge or
 explicit floating; the preview represents that actual membership result.
+Every location, including the source strip, is resolved from the surface owner's
+actual top hit and presentation ancestry. A covering inspector, popup or modal
+is not a path through to a group below it; lifetime ancestry is not drop ancestry.
+The last physical release resolves that location again. No eligible target means
+no membership change, not implicit floating. Explicit Alt-drag requests floating
+within Studio's canvas work area; it does not create a native host window. This
+adapts VS Code's Alt-enabled new-window operation to the existing canvas window
+owner. Preview and committed placement consume the same layout constraints.
 Pointer release and the equivalent keyboard command enter the same transfer
 admission. Whole-group transfer admits all affected inputs, drafts and any
 coalesced receivers before changing membership; publication exposes the completed
