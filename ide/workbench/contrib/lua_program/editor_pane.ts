@@ -116,7 +116,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		this.focusTarget.registerCommand('luaProgram.testInput', { isEnabled: () => this.input.programKind === 'input' && this.tester.canStart(this.input.workingCopy.resource.contextId), run: () => {
 			const selected = this.selected();
 			const pattern = selected?.valueExpression?.kind === LuaSyntaxKind.StringLiteralExpression ? selected.valueExpression.value : '';
-			this.tester.open(this.input.workingCopy.resource.contextId, pattern);
+			this.tester.open(this.input.workingCopy.resource.contextId, group, this.quickInput, pattern);
 		} });
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => true, run: () => {
 			const tree = this.input.liveVisible ? this.input.live : this.input.tree;

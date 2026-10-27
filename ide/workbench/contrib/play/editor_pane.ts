@@ -1,4 +1,3 @@
-import { InputInteraction } from '../../../input/interaction';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -28,30 +27,40 @@ import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { describePlaySession, type PlayDetailsProperty } from './details';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
+import type { PlayController } from './controller';
+import type { QuickInputController } from '../../services/quick_input/controller';
+import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
+
+const COMMANDS = ['play.reveal', 'play.actors', 'play.stop', 'play.reset', 'play.source', 'play.breakpoints',
+	'play.continue', 'play.stepInto', 'play.stepOver', 'play.stepOut'] as const;
 
 /** A completed bitmap and physical input recipient from the same independent Play target. */
 export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	private session: PlaySession | undefined;
 	private gameInput: GameInputControl | undefined;
-	private readonly runtimeContext = new InputInteraction();
 	private status = '';
 	private state = '';
 	private tick = -1;
 	private title = '';
 	private titleSource = '';
 	private readonly actions: WorkbenchActionBarControl;
+	private unbindHandle: (() => void) | undefined;
 	private readonly details = new WorkbenchPropertyInspector<PlayDetailsProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
-	public constructor(private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		navigation: EditorNavigationController, group: EditorGroupView, scope: InputFocusScope) {
+	public constructor(private readonly commands: IdeCommandController, controller: PlayController, private readonly contextMenu: ContextMenuController,
+		navigation: EditorNavigationController, group: EditorGroupView, picker: QuickInputController, scope: InputFocusScope) {
 		super(scope);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
 		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
-		this.focusTarget.registerCommand('play.more', { isEnabled: () => true, run: () => {
+		for (const command of COMMANDS) this.focusTarget.registerCommand(command, {
+			isEnabled: () => this.hasInput && controller.isCommandEnabled(command, this.input),
+			run: () => controller.execute(command, this.input, group, picker),
+		});
+		this.focusTarget.registerCommand('play.more', { isEnabled: () => this.hasInput, run: () => {
 			const bounds = this.input.actionBar.items.find(item => item.command === 'play.more')!.bounds;
 			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['play.context'], commands, { selectFirst: true, commandTarget: this.focusTarget });
 		} });
-		this.focusTarget.registerCommand('play.details', { isEnabled: () => true, run: () => {
+		this.focusTarget.registerCommand('play.details', { isEnabled: () => this.hasInput, run: () => {
 			this.details.show({ title: 'Play session', items: describePlaySession(this.input.handle),
 				canOpenSource: item => item.location !== undefined,
 				openSource: item => navigation.focusChunkSourceForContext(group, item.location!.resource.contextId, item.location!.resource.path,
@@ -66,29 +75,30 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	}
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	protected override activate(): void {
-		this.runtimeContext.setRuntime(null);
-		this.focusTarget.scope.interaction = null;
-		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.runtimeContext };
+		const interaction = this.input.interaction;
+		this.focusTarget.scope.interaction = interaction;
+		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction };
+		this.unbindHandle = this.input.onWillChangeHandle(() => {
+			this.actions.cancelPointer(); this.details.hide(); this.gameInput?.clearInput();
+			this.focusTarget.scope.retireContext();
+		});
 		this.actions.setInput(this.input.actionBar, this.focusTarget); this.titleSource = ''; this.update();
 	}
-	public override clearInput(): void {
-		this.focusTarget.scope.interaction = undefined;
-		this.focusTarget.scope.runtime = undefined;
-		this.runtimeContext.setRuntime(null);
+	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
+		this.unbindHandle!(); this.unbindHandle = undefined;
+		if (reason !== 'move') this.input.interaction.running = false;
 		this.details.hide(); this.actions.clearInput();
 		this.gameInput?.dispose(); this.gameInput = undefined; this.session = undefined;
-		super.clearInput();
+		super.clearInput(reason);
 	}
-	public override dispose(): void { this.clearInput(); this.details.dispose(); this.actions.dispose(); super.dispose(); }
+	public override dispose(): void { if (this.hasInput) this.clearInput(); this.details.dispose(); this.actions.dispose(); super.dispose(); }
 	public override update(): void {
 		const session = this.input.handle.session;
 		if (session !== this.session) {
-			this.runtimeContext.setRuntime(null);
 			this.details.hide();
 			this.gameInput?.dispose(); this.gameInput = undefined; this.session = session;
 			this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 			if (session !== undefined) {
-				this.runtimeContext.setRuntime(session.transport);
 				this.gameInput = new GameInputControl(this.focusTarget, session.input.physical, { kind: 'offscreen', frames: session.frames }, session.transport);
 				this.focusTarget.next = this.gameInput.focusTarget;
 				this.gameInput.focusTarget.previous = this.focusTarget; this.gameInput.focusTarget.next = this.actions.focusTarget;

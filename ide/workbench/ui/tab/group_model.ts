@@ -10,6 +10,7 @@ import type {
 	ResourceViewerTabId,
 	ScenarioLabTabId,
 	BuildLogTabId,
+	PlayTabId,
 } from './id';
 import type {
 	BehaviorLensInput,
@@ -183,7 +184,7 @@ export class EditorTabGroupModel {
 
 	public findById(tabId: 'host-error'): HostErrorInput | undefined;
 	public findById(tabId: BuildLogTabId): BuildLogInput | undefined;
-	public findById(tabId: 'play-session'): PlayEditorInput | undefined;
+	public findById(tabId: PlayTabId): PlayEditorInput | undefined;
 	public findById(tabId: CodeEditorTabId): CodeEditorInput | undefined;
 	public findById(tabId: ResourceViewerTabId): ResourceViewerInput | undefined;
 	public findById(tabId: BehaviorLensTabId): BehaviorLensInput | undefined;

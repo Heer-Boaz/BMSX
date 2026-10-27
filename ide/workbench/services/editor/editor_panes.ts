@@ -73,9 +73,12 @@ export class EditorPanes {
 
 	public openEditor(input: EditorInput, options: EditorPaneOpenOptions = {}): void {
 		const { selection, navigationSelection, preserveFocus } = options;
+		const focusRevision = inputFocus.revision;
 		this.openGenerationValue += 1;
 		const activePane = this.activePaneValue;
-		if (activePane !== null && activePane.input === input) {
+		const reusing = activePane !== null && activePane.input === input;
+		let pane: EditorPane<EditorInput>;
+		if (reusing) {
 			// Finish the focused control's draft against its current selection.
 			// Reselecting a tab is focus, not another activation of its input.
 			if (selection !== undefined || navigationSelection !== undefined) {
@@ -83,25 +86,30 @@ export class EditorPanes {
 					|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 			}
 			activePane.setOptions(selection, navigationSelection);
-			for (const listener of this.showListeners) listener(options);
-			if (!preserveFocus) activePane.focus();
-			return;
+			pane = activePane;
+		} else {
+			const generation = this.clearEditor();
+			if (this.openGenerationValue !== generation) return;
+			pane = this.getOrCreatePane(input);
+			this.activePaneValue = pane;
+			pane.setInput(input, this.contentBounds, selection, navigationSelection);
 		}
-		this.clearEditor();
-		const pane = this.getOrCreatePane(input);
-		this.activePaneValue = pane;
-		pane.setInput(input, this.contentBounds, selection, navigationSelection);
+		if (this.activePaneValue !== pane || pane.input !== input) return;
 		const layoutRevision = this.layoutRevision;
-		for (const listener of this.showListeners) listener(options);
-		if (this.layoutRevision === layoutRevision) pane.layout(this.contentBounds);
-		if (!preserveFocus) pane.focus();
+		for (const listener of this.showListeners) {
+			listener(options);
+			if (this.activePaneValue !== pane || pane.input !== input) return;
+		}
+		if (!reusing && this.layoutRevision === layoutRevision) pane.layout(this.contentBounds);
+		if (!preserveFocus && (inputFocus.revision === focusRevision || inputFocus.target === null)) pane.focus();
 	}
 
-	public clearEditor(reason: EditorPaneClearReason = 'deactivate'): void {
-		this.openGenerationValue += 1;
+	/** The receipt names this clear, independently of openings performed by its observers. */
+	public clearEditor(reason: EditorPaneClearReason = 'deactivate'): number {
+		const generation = ++this.openGenerationValue;
 		const activePane = this.activePaneValue;
 		if (activePane === null) {
-			return;
+			return generation;
 		}
 		pointerCapture.cancelScope(this.focusScope.surfaceScope);
 		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
@@ -112,6 +120,7 @@ export class EditorPanes {
 		this.activePaneValue = null;
 		this.focusScope.retireContext();
 		for (const listener of this.clearListeners) listener();
+		return generation;
 	}
 
 	public dispose(): void {

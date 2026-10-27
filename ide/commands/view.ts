@@ -79,7 +79,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			editor.terminal.open();
 			openTerminal(group);
 			return;
-		case 'actorLab': editor.actorLab.open(); return;
+		case 'actorLab': editor.actorLab.open(group); return;
 		case 'gameView': openGameView(group); return;
 		case 'conversations': openObservedConversation(group, editor.observedConversation, picker); return;
 		case 'assistant': openAssistant(group, editor.assistant); return;
@@ -116,7 +116,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'progression': editor.luaPrograms.open(group, picker, 'progression'); return;
 		case 'inputBindings': editor.luaPrograms.open(group, picker, 'input'); return;
 		case 'scenarioLab':
-			editor.scenarioLab.open();
+			editor.scenarioLab.open(group);
 			return;
 		case 'sceneEditor':
 			openSourceView(invokingGroup, sources.catalog, picker, {

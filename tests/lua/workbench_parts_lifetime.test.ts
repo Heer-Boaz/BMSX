@@ -1179,7 +1179,7 @@ for (const mode of ['run', 'debug', 'play'] as const) {
 		const primary = sourceState.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]);
 		f.sources.catalog.admitContext(primary);
 		sourceState.catalog.dispose();
-		f.editor.scenarioLab.open();
+		f.editor.scenarioLab.open(f.editor.editorParts.main.group);
 		f.editor.update(0);
 		const view = f.editor.scenarioLab.resolveInput().view;
 		const selected = f.editor.scenarioLab.runs.collection.findModuleBySourcePath(primary.id, 'fixture_assert.lua');
@@ -1204,12 +1204,13 @@ for (const mode of ['run', 'debug', 'play'] as const) {
 		start.mock.resetCalls();
 		assert.equal(f.editor.commands.isEnabled(explicit), true);
 		f.editor.commands.execute(explicit);
-		assert.equal(f.editor.quickInput.visible, true);
+		const picker = f.editor.editorParts.main.quickInput;
+		assert.equal(picker.visible, true);
+		assert.equal(f.editor.quickInput.visible, false);
 		assert.equal(start.mock.callCount(), 0);
 		// A later UI selection cannot retarget the original logical scope/module.
 		view.testPane.selectionIndex = 0;
 		updateSelectedScenarioNode(view);
-		const picker = f.editor.quickInput;
 		picker.model.list.selectionIndex = picker.model.list.rows.findIndex(row => 'contextId' in row.item && row.item.contextId === primary.id);
 		assert.ok(picker.model.list.selectionIndex >= 0);
 		assert.throws(() => picker.accept(), error => error === admitted);

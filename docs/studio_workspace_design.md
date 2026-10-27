@@ -332,6 +332,12 @@ destination and activation intent. If the user activates another group while it
 resolves, it can still attach to the valid destination without raising that part
 or stealing focus. Completion never infers its subject from the later-focused
 control or treats a live destination as permission to activate it.
+The same rule applies to synchronous callbacks during opening. The existing
+opening generation arbitrates draft, clear and model publication; pane-show
+callbacks can supersede attachment before layout or focus. Model selection,
+the attached input and final activation remain owned by the surviving request.
+Scope retirement, rather than that opening generation, defines the lifetime of
+queued pane actions and prompts.
 
 Because Studio inputs own view state and bindings, an additional view gets a
 separate input over the same working copy. Source edits publish to every retained
@@ -365,6 +371,22 @@ born under that admission. The destination's previous client undergoes ordinary
 deactivation, not a move. Contribution-owned navigation selections carry reading
 state into a coalesced receiver before the redundant input retires. Admission
 is released before destination focus, and an unrelated later focus is retained.
+
+Revealing a retained runtime tool resolves its actual current group. The invoking
+destination is used only for an unowned/new input, not as a remembered Main
+location. Reveal restores that part and its admitted local dialog without
+rebinding an already active pane. Focus callbacks can supersede the request;
+only the still-attached requested input may start a following action. Moves keep
+the exact singleton Actor/Scenario input. Restoration reconstructs its recorded
+view once in the recorded part, rather than another instance in Main.
+
+Runtime prompts and queued presentation actions belong to the concrete pane's
+group, picker and invocation scope. Attachment retirement revokes pending UI
+work and queued guest admission; an already-entered physical mutation retains
+its execution owner's completion contract. Play Reset replaces its exact
+physical handle on the retained input. The input publishes subject retirement
+before replacement so held actions, old prompts and guest bindings cannot act
+on the new target. Closing the input closes its target; moving it does not.
 
 Keyboard focus, active part, hovered surface and command subject remain separate:
 

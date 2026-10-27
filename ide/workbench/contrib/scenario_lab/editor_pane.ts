@@ -40,6 +40,15 @@ import { WorkbenchTooltip } from '../../ui/tooltip';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense/model_lifetime';
 import { ScenarioLabRowFeedback } from './feedback';
+import type { EditorScenarioLabCommandId } from '../../../common/commands';
+import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { QuickInputController } from '../../services/quick_input/controller';
+
+const RUN_COMMANDS = [
+	'scenarioLab.play', 'scenarioLab.playWithCompanion', 'scenarioLab.debug', 'scenarioLab.debugWithCompanion',
+	'scenarioLab.run', 'scenarioLab.runWithCompanion', 'scenarioLab.rerun', 'scenarioLab.revealRun', 'scenarioLab.cancel',
+	'scenarioLab.continue', 'scenarioLab.stepInto', 'scenarioLab.stepOver', 'scenarioLab.stepOut', 'scenarioLab.pause', 'scenarioLab.breakpoints',
+] as const satisfies readonly EditorScenarioLabCommandId[];
 
 export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabInput> {
 	public override get companionGameMinimumWidth(): number { return measureScenarioLabMinimumWidth(this.input.view); }
@@ -74,8 +83,8 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		switch (result.kind) {
 			case 'none': case 'changed': this.rowFeedback.keyboardSelection(view); return;
 			case 'inspect-message': this.openDetails(result.row); return;
-			case 'open-source': this.controller.openSource(result.location); return;
-			case 'actioneffect-source': this.controller.openActionEffectSource(view, result.contextId, result.effectId); return;
+			case 'open-source': this.controller.openSource(this.group, result.location); return;
+			case 'actioneffect-source': this.controller.openActionEffectSource(view, this.group, this.quickInput, result.contextId, result.effectId); return;
 		}
 	};
 	private readonly actionBar: WorkbenchActionBarControl;
@@ -91,25 +100,35 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		surfaces: WorkbenchSurfaceService,
 		paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>,
+		private readonly group: EditorGroupView,
+		private readonly quickInput: QuickInputController,
 		scope: InputFocusScope,
 	) {
 		super(scope);
+		for (const command of RUN_COMMANDS) {
+			const implementation = {
+				isEnabled: () => this.hasInput && this.controller.isCommandEnabled(command, this.input),
+				run: () => this.controller.executeCommand(command, this.input, this.group, this.quickInput),
+			};
+			this.focusTarget.registerCommand(command, implementation);
+			this.resultsFocus.registerCommand(command, implementation);
+		}
 		this.targetInspection = new ScenarioTargetInspection(this.resultsFocus, commands, contextMenu, surfaces, paneSurface, workArea);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.rowFeedback = new ScenarioLabRowFeedback(surfaces, paneSurface, workArea, this.focusTarget, this.resultsFocus);
 		const inspectStop = {
-			isEnabled: () => this.controller.runs.debugger?.stopped === true && this.targetInspection.model === undefined,
+			isEnabled: () => this.hasInput && this.controller.runs.debugger?.stopped === true && this.targetInspection.model === undefined,
 			run: () => { this.inspector.hide(); this.targetInspection.show(this.controller.runs.debugger!.inspect()); },
 		};
 		this.focusTarget.registerCommand('scenarioLab.inspectStop', inspectStop);
 		this.resultsFocus.registerCommand('scenarioLab.inspectStop', inspectStop);
 		this.resultsFocus.registerCommand('scenarioLab.inspectTarget', {
-			isEnabled: () => !this.inspector.visible && this.targetInspection.model === undefined
+			isEnabled: () => this.hasInput && !this.inspector.visible && this.targetInspection.model === undefined
 				&& this.selectedDetailsRow() !== undefined && this.controller.runs.canInspect(this.selectedDetailsRow()!.result),
 			run: () => this.targetInspection.show(this.controller.runs.inspect(this.selectedDetailsRow()!.result)),
 		});
 		this.resultsFocus.registerCommand('scenarioLab.details', {
-			isEnabled: () => !this.inspector.visible && this.targetInspection.model === undefined && this.input.view.focus === 'results'
+			isEnabled: () => this.hasInput && !this.inspector.visible && this.targetInspection.model === undefined && this.input.view.focus === 'results'
 				&& this.selectedDetailsRow() !== undefined,
 			run: () => this.openDetails(this.selectedDetailsRow()!),
 		});
@@ -203,7 +222,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		const lifetime = this.inspector.show({ title: row.result.test.label,
 			items: row.kind === 'result' ? describeScenarioTestResult(row.result) : describeScenarioMessageDetails(row),
 			canOpenSource: item => item.location !== undefined,
-			openSource: item => this.controller.openSource(item.location!),
+			openSource: item => this.controller.openSource(this.group, item.location!),
 		});
 		this.inspectedMessage = row;
 		lifetime.add(this.inspectionLifetime);

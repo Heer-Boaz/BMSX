@@ -133,18 +133,25 @@ export class EditorGroupView {
 			if (this.model.indexOf(input) < 0) input.dispose();
 			return false;
 		}
-		if (!this.commitPendingEdit()) {
+		let generation = this.panes.openGeneration;
+		if (!this.commitPendingEdit() || this.panes.openGeneration !== generation) {
 			if (this.model.indexOf(input) < 0) input.dispose();
 			return false;
 		}
+		generation = this.panes.beginOpen();
 		const admit = () => {
-			if (this.model.findById(input.id) === undefined) this.panes.clearEditor();
+			if (this.model.findById(input.id) === undefined) {
+				generation = this.panes.clearEditor();
+				if (this.panes.openGeneration !== generation) {
+					if (this.model.indexOf(input) < 0) input.dispose();
+					return false;
+				}
+			}
 			const admitted = this.model.add(input, options);
-			this.doActivate(admitted, options.selection, options.navigationSelection, options.preserveFocus);
+			if (this.panes.openGeneration !== generation) return false;
+			return this.doActivate(admitted, options.selection, options.navigationSelection, options.preserveFocus);
 		};
-		if (options.preserveFocus) admit();
-		else captureNavigation(admit);
-		return true;
+		return options.preserveFocus ? admit() : captureNavigation(admit);
 	}
 
 	/** Own asynchronous candidate admission and departure capture before storage can yield. */
@@ -168,10 +175,11 @@ export class EditorGroupView {
 	}
 
 	public activate(id: EditorTabId, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection, preserveFocus = false): boolean {
-		if (!this.commitPendingEdit()) return false;
+		if (!this.openingAdmitted) return false;
+		const generation = this.panes.openGeneration;
+		if (!this.commitPendingEdit() || this.panes.openGeneration !== generation) return false;
 		const input = this.model.findById(id)!;
-		this.doActivate(input, selection, navigationSelection, preserveFocus);
-		return true;
+		return this.doActivate(input, selection, navigationSelection, preserveFocus);
 	}
 
 	/** Only the actual attached view may publish its focused control's draft. */
@@ -195,15 +203,18 @@ export class EditorGroupView {
 	}
 
 	/** Apply a switch after its caller has settled user admission or owner retirement. */
-	private doActivate(input: EditorInput, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection, preserveFocus = false): void {
+	private doActivate(input: EditorInput, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection, preserveFocus = false): boolean {
 		const changing = input !== this.model.activeTab;
 		const capture = !preserveFocus && (changing || selection !== undefined || navigationSelection !== undefined);
 		const previous = capture ? beginNavigationCapture() : null;
-		if (changing) this.panes.clearEditor();
+		const generation = changing ? this.panes.clearEditor() : this.panes.beginOpen();
+		if (this.panes.openGeneration !== generation) { previous?.dispose(); return false; }
 		this.model.activate(input);
+		if (this.panes.openGeneration !== generation) { previous?.dispose(); return false; }
 		if (!preserveFocus) navigationState.activeGroup = this;
 		this.panes.openEditor(input, { selection, navigationSelection, preserveFocus });
 		if (capture) completeNavigation(previous);
+		return this.model.activeTab === input && this.panes.activePane?.input === input;
 	}
 
 	public close(id: EditorTabId, origin: InputFocusTarget | null = inputFocus.target): Promise<boolean> {

@@ -75,7 +75,7 @@ function fixture(t: TestContext) {
 	const scene = new SceneEditorController(sources.catalog, null);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const runs = new ScenarioRunService(editorTextModelService, sources, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
-	const scenario = new ScenarioLabController(null, null, group, null, runs, null);
+	const scenario = new ScenarioLabController(null, null, null, runs, null);
 	const unused = { serialize: () => assert.fail('unexpected serialization'), deserialize: () => assert.fail('unexpected reconstruction') };
 	const serializers: EditorInputSerializers = {
 		home: unused,
@@ -249,7 +249,7 @@ test('Scenario Lab persists only test identity and scope expansion, not run/resu
 	assert.deepEqual(JSON.parse(value), captureScenarioLabTestView(input.view));
 	assert.doesNotMatch(value, /results|runActive|focus|previous/);
 	const runs = new ScenarioRunService(editorTextModelService, f.sources, new Map(), f.runtime.model, () => assert.fail('session recovery must not create test machines'));
-	const next = new ScenarioLabController(null, null, f.group, null, runs, null);
+	const next = new ScenarioLabController(null, null, null, runs, null);
 	const fresh = new ScenarioLabInputSerializer(next).deserialize(value);
 	assert.deepEqual(captureScenarioLabTestView(fresh.view), captureScenarioLabTestView(input.view));
 	assert.equal(fresh.view.runActive, false); assert.equal(fresh.view.focus, 'tests'); assert.equal(fresh.view.resultPane.rows.length, 0);

@@ -45,8 +45,8 @@ import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submi
 import { RuntimeTimelineControl } from '../../ide/workbench/ui/runtime_timeline_control';
 import { updateFullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
-import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
-import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createTestGroupPresentation, createTestEditorPaneFactories } from '../helpers/editor_panes';
+import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
@@ -71,13 +71,13 @@ function rename() probe.id = 'renamed' end
 function remove() probe._components[2] = nil end
 return world`;
 
-const controllerFixtures: { readonly controller: ActorLabController; readonly group: EditorGroupView }[] = [];
+const controllerFixtures: { readonly controller: ActorLabController; readonly parts: EditorParts; readonly surfaces: WorkbenchSurfaceService; readonly contextMenu: ContextMenuController }[] = [];
 afterEach(() => {
-	for (const { controller, group } of controllerFixtures) { controller.dispose(); group.dispose(); }
+	for (const { controller, parts, surfaces, contextMenu } of controllerFixtures) { controller.dispose(); parts.dispose(); contextMenu.dispose(); surfaces.dispose(); }
 	controllerFixtures.length = 0;
 });
 
-function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraModules: readonly { path: string; source: string }[] = [], quickInput?: QuickInputController) {
+function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraModules: readonly { path: string; source: string }[] = []) {
 	const modules = [{ path: 'cartlib/world/world', source: worldSource }, { path: 'cartlib/fsm/fsm_component', source: 'return {}' },
 		{ path: 'cartlib/timeline/timeline_component', source: 'return {}' }, { path: 'cartlib/actioneffects/actioneffect_component', source: 'return {}' }, ...extraModules]
 		.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`) }));
@@ -93,18 +93,25 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 	f.inspection.pause();
 	const inspection = f.inspection.open(), actors = inspection.lifetime.add(new ActorRuntimeInspection(inspection));
 	const transport = new RuntimeTransport(runtime, f.execution, f.rewind, f.frameNavigation, () => f.actorExecution.canExecute);
-	const group = createTestEditorGroup();
+	const presentation = createTestGroupPresentation(), surfaces = presentation.surfaces;
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+	const parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
+		commands: { isEnabled: () => false, execute() {} }, contextMenu, renderContext: presentation.renderContext,
+		factories: createTestEditorPaneFactories(), focusReturn: inputFocus.createTarget(null, presentation.focusScope),
+		closeEditors: targets => { for (const { group, input } of targets) group.removeEditor(input); return Promise.resolve(true); },
+		layoutMain: () => parts.main.layoutMain(presentation.workArea, presentation.workArea) });
+	const group = parts.main.group;
 	const controller = new ActorLabController(sources, f.guest, runtime.machine.cpu,
-		quickInput!, group, undefined!, f.actorExecution, f.rewind, sources,
+		parts, undefined!, f.actorExecution, f.rewind, sources,
 		{ kind: 'direct', presenter: f.presenter, recipient: f.input, transport });
-	controllerFixtures.push({ controller, group });
+	controllerFixtures.push({ controller, parts, surfaces, contextMenu });
 	return { ...f, stop: inspection, actors, controller, group };
 }
 
 for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} stops at rejected focused draft admission`, t => {
 	configureFontVariant('tiny');
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
-	const f = fixture(ENTRY, true, WORLD_SOURCE, [], quickInput);
+	const f = fixture(ENTRY, true, WORLD_SOURCE, []);
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'draft.lua', contextId: TEST_SYSTEM_CONTEXT_ID, path: 'draft.lua', location: { kind: 'workspace', path: 'draft.lua' },
 		source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
 	const current = new CodeEditorInput(model);
@@ -117,7 +124,7 @@ for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} st
 	});
 	const offered = f.controller.resolveInput();
 	let retired = 0; offered.onWillDispose(() => { retired++; });
-	if (action === 'open') f.controller.open(); else f.controller.auditionEvent(-1, 'event');
+	if (action === 'open') f.controller.open(f.group); else f.controller.auditionEvent(f.group, -1, 'event');
 	assert.equal(retired, 1, 'the unadmitted Actor Lab candidate releases its resources');
 	assert.ok(f.group.model.activeTab === current); assert.ok(f.group.panes.activePane?.input === current);
 	assert.ok(inputFocus.target === control.field.focusTarget);
@@ -365,7 +372,7 @@ test('the actual floating pane retains locked pins while closed or detached with
 	t.after(() => { quickInput.dispose(); contextMenu.hide(); });
 	const f = fixture(ENTRY.replace('return world', `function remove_subject() world._objects = { world._objects[2] } end
 function replace_subject() world._objects[2] = { id = 1, definition_id = 'same', active = false, _components = {}, _components_by_class = {} } end
-return world`), true, WORLD_SOURCE, [], quickInput);
+return world`), true, WORLD_SOURCE, []);
 	t.after(() => f.stop.dispose());
 	const controller = f.controller, input = controller.resolveInput();
 	const bounds = { left: 0, top: 20, right: 384, bottom: 270 };
@@ -380,7 +387,7 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 		previousAdvance = editorViewState.charAdvance;
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const pane = new ActorLabEditorPane(commands, contextMenu, surfaces, owner, bounds, inputFocus.workbenchScope);
+	const pane = new ActorLabEditorPane(commands, contextMenu, surfaces, owner, bounds, f.group, quickInput, inputFocus.workbenchScope);
 	t.after(() => {
 		inputFocus.setTarget(null); pane.dispose(); surfaces.dispose(); input.dispose();
 		editorViewState.font = previousFont; editorViewState.lineHeight = previousLineHeight;

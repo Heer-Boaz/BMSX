@@ -765,7 +765,7 @@ test('Scenario controller refresh, wheel and status rendering retain the actual 
 	t.after(async () => {
 		inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
-	ide.editor.scenarioLab.open();
+	ide.editor.scenarioLab.open(ide.editor.editorParts.main.group);
 	const pane = ide.editor.editorParts.main.group.panes.getPane('scenario_lab')!, view = pane.input.view;
 	const bounds = { left: 421, top: 31, right: 701, bottom: 151 };
 	pane.layout(bounds); pane.update(0);

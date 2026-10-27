@@ -154,6 +154,14 @@ membership, and inputs retain their view state and working copies. A matching
 destination input survives coalescence; contribution-owned selections transfer
 reading state before the redundant input retires. Close and transfer share
 input-operation admission rather than competing lifecycle registries.
+Retained-input reveal resolves actual group membership and restores that part;
+it does not reattach an already active pane or recreate a singleton in Main.
+Actor runtime projection and execution stay with their domain controller;
+pane-owned actions retain their actual group, picker and invocation scope.
+Play inputs own exact physical handles and admitted transport bindings. A
+handle replacement retires old control authority before publishing its new
+subject; moving the view does not close that target. Scenario result/run owners
+likewise remain independent of their pane and opening destination.
 `EditorCloseController` admits user closes across the frontend's groups, including
 composite working copies and last-view Save/Discard/Cancel decisions. It rechecks
 canonical state and surviving views after awaited decisions or writes.
@@ -184,9 +192,11 @@ outstanding asynchronous openings. Forced teardown retires the part's controls
 and command authority without closing shared documents or sibling views.
 
 The frontend owns shared navigation history. Captured selections belong to their
-group/input lifetime and name their destination group. Opening admission is
-group-local; a delayed attachment does not reactivate a group after the user
-has moved elsewhere. Actions retain the invoking control's group through popup
+group/input lifetime and name their destination group. Opening generations
+arbitrate group-local admission across draft publication, clear, model and
+pane-show callbacks; they are not control-attachment lifetimes. A superseded
+opening cannot reattach its input or reactivate its group. Actions retain the
+invoking control's group through popup
 focus. Constructing or disposing a group cannot reset another group's history.
 Explicit moves retarget stacked and pending navigation entries to the actual
 destination group and surviving input before retiring the old view.

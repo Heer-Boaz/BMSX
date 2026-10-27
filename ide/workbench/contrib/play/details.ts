@@ -1,6 +1,7 @@
 import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 import type { PlayHandle } from '../../services/play/service';
+import { extractErrorMessage } from '../../../common/errors';
 
 export type PlayDetailsProperty = InspectedProperty & { readonly location?: ScenarioSourceLocation };
 
@@ -11,6 +12,14 @@ export function describePlaySession(handle: PlayHandle): readonly PlayDetailsPro
 		{ label: 'Fixture', value: handle.module.path, description: `Captured source revision ${handle.sourceRevision}`, warning: false },
 		{ label: 'State', value: handle.state, description: 'Independent physical machine', warning: false },
 	];
+	const failure = handle.failure ?? (session?.failure?.kind === 'host' ? session.failure : undefined);
+	if (failure !== undefined) {
+		const error = failure.error;
+		properties.push({ label: handle.failure === undefined ? 'Host failure' : 'Preparation failure',
+			value: extractErrorMessage(error), description: '', warning: true });
+		if (error instanceof Error && error.stack !== undefined)
+			properties.push({ label: 'Stack trace', value: error.stack, description: '', warning: true });
+	}
 	if (session === undefined) return properties;
 	if (session.failure?.kind === 'machine') properties.push({ label: 'Machine fault', value: session.failure.message,
 		description: `Frame ${session.failure.videoTick} / cycles ${session.failure.cycles}`, warning: true });

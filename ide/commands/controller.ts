@@ -141,8 +141,12 @@ export class IdeCommandController {
 				return;
 			}
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
-			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
-				this.editor.play.execute(command); return;
+			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut': {
+				const active = group.model.activeTab;
+				const input = active?.kind === 'play_session' ? active : this.editor.play.input;
+				if (input !== undefined) this.editor.play.execute(command, input, group, part.quickInput);
+				return;
+			}
 			case 'copy': case 'cut': case 'paste':
 				void executeClipboardAction(this.editor.clipboard, command, target);
 				return;
@@ -177,17 +181,17 @@ export class IdeCommandController {
 					return new TextQuickPickProvider(choices);
 				}, choice => {
 					const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
-					if (image === choice.image) this.editor.actorLab.auditionEvent(choice.domain, event);
+					if (image === choice.image) this.editor.actorLab.auditionEvent(group, choice.domain, event);
 				});
 				return;
 			}
 			case 'input.testActionString': {
 				const resource = group.model.activeTab?.resource;
-				if (resource !== undefined && this.editor.actionStrings.canStart(resource.contextId)) { this.editor.actionStrings.open(resource.contextId); return; }
+				if (resource !== undefined && this.editor.actionStrings.canStart(resource.contextId)) { this.editor.actionStrings.open(resource.contextId, group, part.quickInput); return; }
 				const contexts = [...this.sources.catalog.contexts.values()].filter(context => this.editor.actionStrings.canStart(context.id));
 				part.quickInput.pick('INPUT EXPERIMENT PROJECT', 'Choose the authored project', () => new TextQuickPickProvider(contexts.map(context => ({
 					label: context.projectRootPath, description: context.programDomain, detail: '', contextId: context.id,
-				}))), item => this.editor.actionStrings.open(item.contextId));
+				}))), item => this.editor.actionStrings.open(item.contextId, group, part.quickInput));
 				return;
 			}
 			case 'behaviorLens.testEffect': {
@@ -204,7 +208,7 @@ export class IdeCommandController {
 					return new TextQuickPickProvider(choices);
 				}, choice => {
 					const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
-					if (image === choice.image) this.editor.actorLab.testEffect(choice.domain);
+					if (image === choice.image) this.editor.actorLab.testEffect(group, choice.domain);
 				});
 				return;
 			}
@@ -301,9 +305,11 @@ export class IdeCommandController {
 			case 'scenarioLab.run':
 			case 'scenarioLab.revealRun':
 			case 'scenarioLab.rerun':
-			case 'scenarioLab.cancel':
-				this.editor.scenarioLab.executeCommand(command);
+			case 'scenarioLab.cancel': {
+				const input = group.model.activeTab;
+				this.editor.scenarioLab.executeCommand(command, input?.kind === 'scenario_lab' ? input : undefined, group, part.quickInput);
 				return;
+			}
 			case 'debugContinue':
 			case 'debugStepInto':
 			case 'debugStepOut':
@@ -399,8 +405,10 @@ export class IdeCommandController {
 				return window?.focusTarget.getCommand(command)?.isEnabled() === true;
 			}
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
-			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
-				return this.editor.play.isCommandEnabled(command);
+			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut': {
+				const input = group.model.activeTab;
+				return this.editor.play.isCommandEnabled(command, input?.kind === 'play_session' ? input : this.editor.play.input);
+			}
 			case 'menubar.focus': return this.editor.isActive && !this.editor.actionPrompt.visible && !part.quickInput.visible;
 			case 'hostError': return this.fault.hostFrameFailure !== undefined;
 			case 'assistant': return this.editor.assistant.available;
@@ -484,8 +492,10 @@ export class IdeCommandController {
 			case 'scenarioLab.run':
 			case 'scenarioLab.revealRun':
 			case 'scenarioLab.rerun':
-			case 'scenarioLab.cancel':
-				return this.editor.scenarioLab.isCommandEnabled(command);
+			case 'scenarioLab.cancel': {
+				const input = group.model.activeTab;
+				return this.editor.scenarioLab.isCommandEnabled(command, input?.kind === 'scenario_lab' ? input : undefined);
+			}
 			case 'debugContinue':
 				return selected !== undefined && selected.debuggerExecution.state.source.stop !== undefined
 					&& selected.debuggerExecution.canResume('continue');

@@ -78,7 +78,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	}
 	const fsm = ide.editor.editorParts.activeGroup.model.activeTab!;
 	if (fsm.kind !== 'behavior_lens') throw new Error('session: active FSM required');
-	ide.editor.scenarioLab.open(); await test.frame();
+	ide.editor.scenarioLab.open(ide.editor.editorParts.main.group); await test.frame();
 	const scenario = ide.editor.editorParts.activeGroup.model.activeTab!;
 	if (scenario.kind !== 'scenario_lab') throw new Error('session: Scenario Lab input required');
 	selectScenarioLabTestRow(scenario.view, 0);

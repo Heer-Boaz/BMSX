@@ -71,6 +71,26 @@ export class EditorParts {
 	}
 
 	public partForGroup(group: EditorGroupView): EditorPart { return this.owners.get(group)!; }
+	/** Retained inputs have one actual membership; command-time lookup does not invent another registry. */
+	public findGroup(input: EditorInput): EditorGroupView | undefined {
+		for (const group of this.groupList) if (group.model.indexOf(input) >= 0) return group;
+		return undefined;
+	}
+
+	/** Reveal the existing owner, or admit a new input at the explicitly requested destination. */
+	public revealEditor(input: EditorInput, destination: EditorGroupView): boolean {
+		const group = this.findGroup(input) ?? destination;
+		const part = this.partForGroup(group);
+		if (part.operation !== 'none') {
+			if (part.closing) part.focus();
+			return false;
+		}
+		const focusRevision = inputFocus.revision;
+		if (group.panes.activePane?.input !== input && !group.openEditor(input, { preserveFocus: true })) return false;
+		if (group.panes.activePane?.input !== input || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
+		part.focus();
+		return group.panes.activePane?.input === input && this.options.surfaces.isAdmitted(group.paneSurface);
+	}
 	/** Retained command origins distinguish frontend chrome from retired part controls. */
 	public partForTarget(target: InputFocusTarget | null): EditorPart | null | undefined {
 		for (let scope = target?.commandContext.scope; scope != null; scope = scope.commandParent) {

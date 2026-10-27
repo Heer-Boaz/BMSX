@@ -1,6 +1,6 @@
 import { InputInteraction } from '../../../input/interaction';
 import { WorkbenchSplitView } from '../../ui/split_view';
-import { ReadonlyEditorInput } from '../../common/editor_input';
+import { ReadonlyEditorInput, type AbstractEditorInput } from '../../common/editor_input';
 import type { ActorLabLayout } from './layout';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
@@ -21,6 +21,7 @@ import { WorkbenchWindowModel } from '../../ui/window/model';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab'> {
+	public override canMove(destination?: AbstractEditorInput<string, string>): boolean { return destination === undefined; }
 	public get resource(): undefined { return undefined; }
 	public domain: ResourceDomain = 0;
 	public actorHashId = 0;
@@ -55,7 +56,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public constructor(public readonly controller: ActorLabController, id: ActorLabTabId, title: string,
 		public override readonly serializable: boolean) {
 		super(id, 'actor_lab', title, true);
-		this.onWillDispose(() => { this.runtime.dispose(); this.details?.dispose(); });
+		this.onWillDispose(() => { this.interaction.setRuntime(null); this.runtime.dispose(); this.details?.dispose(); });
 	}
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
 		this.runtime.release();
