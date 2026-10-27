@@ -1,6 +1,5 @@
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
-import { EditorCloseController } from './workbench/services/editor/editor_close';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { HomeInput } from './workbench/contrib/home/editor_input';
 import { HomeEditorPane } from './workbench/contrib/home/editor_pane';
@@ -192,7 +191,6 @@ export type CartEditor = TextInputHost & {
 	readonly gamePanel: GamePanel;
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorParts: EditorParts;
-	readonly editorClose: EditorCloseController;
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly editorInputSerializers: EditorInputSerializers;
 	readonly navigation: EditorNavigationController;
@@ -254,7 +252,6 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorParts: EditorParts;
 	private readonly windowStatus: WorkbenchWindowStatus;
-	public readonly editorClose: EditorCloseController;
 	public readonly surfaces: WorkbenchSurfaceService;
 	private readonly chromeScope = Symbol('workbench chrome');
 	private readonly resourceResizeScope = Symbol('resource panel resize');
@@ -472,11 +469,10 @@ export class RuntimeCartEditor implements CartEditor {
 				this.commands,
 				this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group,
 				this.editorParts.partForGroup(group).quickInput, group.focusScope),
-		}, closeEditors: (targets, origin, prompt) => this.editorClose.close(targets, origin, prompt),
+		}, saves: textFileSaves, models: editorTextModelService, prompt: this.actionPrompt,
 		});
 		this.windowStatus = new WorkbenchWindowStatus(this.editorParts, this.commands, this.surfaces, chromeSurface, this.rootSurfaceBounds);
 
-		this.editorClose = new EditorCloseController(this.editorParts.groups, textFileSaves, this.actionPrompt, editorTextModelService);
 		this.surfaces.attach({
 			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourceResizeScope,
 			isVisible: () => this.resourcePanel.isVisible(), getBounds: () => this.resourcePanel.resizeBounds,
@@ -638,6 +634,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.acceptsInput) { event.consumed = true; return true; }
 		this.pointerSnapshot.modifiers = event.modifiers;
 		pointerHover.dispatchModifiers(event.modifiers);
+		pointerCapture.dispatchModifiers(event.modifiers, this.clock.now());
 		editorRuntimeState.currentTimeMs = this.clock.now();
 		handleEditorInput(event, this);
 		return event.consumed;
@@ -842,7 +839,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public async shutdown(): Promise<void> {
 		this.keybindings.dispose();
 		this.interaction.dispose();
-		this.editorClose.dispose();
+		this.editorParts.closeController.dispose();
 		inputFocus.workbenchScope.commands = undefined;
 		this.unbindHostInput();
 		this.unbindSurfaceAdmission();

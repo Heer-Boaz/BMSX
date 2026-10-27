@@ -1,10 +1,11 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
@@ -36,7 +37,7 @@ test('slider preserves captured input through readback and cancels on geometry, 
 	const control = new WorkbenchSliderControl(focus, capture, parent, value => values.push(value), () => cancelled++);
 	control.setInput(slider); t.after(() => control.dispose());
 	const button = PointerButton.Primary;
-	const pointer = (x: number, held = 0, down = 0, up = 0): PointerSnapshot => ({
+	const pointer = (x: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 		viewportX: x, viewportY: 25, valid: true, insideViewport: true,
 		pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
 	});

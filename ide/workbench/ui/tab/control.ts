@@ -1,6 +1,6 @@
 import { copy_rect_bounds, create_rect_bounds, point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
-import type { PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, SCROLLBAR_WIDTH } from '../../../common/constants';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
@@ -14,7 +14,7 @@ import { renderTabBar, type EditorTabStripRenderContext } from '../../render/tab
 import type { EditorTabGroupModel } from './group_model';
 import type { EditorTabId } from './id';
 import { EditorTabStripLayout, type EditorTabStripLayoutContext } from './layout';
-import { EditorTabDrag } from './drag';
+import { EditorTabDrag, type EditorTabDragHandler } from './drag';
 
 /** A concrete group's tab control, with no frontend-wide selection or geometry state. */
 export class EditorTabStrip implements PointerHoverTarget {
@@ -24,6 +24,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 	public readonly actionBar: WorkbenchActionBarControl;
 	public readonly layoutState: EditorTabStripLayout;
 	public readonly drag: EditorTabDrag;
+	public dropTargeted = false;
 	public hoverId: EditorTabId | null = null;
 	public lastClickId: EditorTabId | null = null;
 	public lastClickTime = 0;
@@ -39,12 +40,12 @@ export class EditorTabStrip implements PointerHoverTarget {
 	private actionsAttached = false;
 
 	public constructor(public readonly model: EditorTabGroupModel, private readonly layoutContext: EditorTabStripLayoutContext, commands: EditorCommandRunner,
-		private readonly focusParent: InputFocusTarget, private readonly activate: (id: EditorTabId) => void,
-		private readonly close: (id: EditorTabId) => void, focusContent: () => void) {
+		private readonly focusParent: InputFocusTarget, private readonly activate: (id: EditorTabId) => boolean,
+		private readonly close: (id: EditorTabId) => void, focusContent: () => void, dragHandler: EditorTabDragHandler) {
 		const scope = focusParent.scope.surfaceScope;
 		this.scrollControl = new ScrollbarPointerControl(pointerCapture, scope);
 		this.layoutState = new EditorTabStripLayout(model, this.actions, this.scrollbar);
-		this.drag = new EditorTabDrag(model, this.layoutState, this.scrollbar, pointerCapture, scope, () => { this.lastClickId = null; });
+		this.drag = new EditorTabDrag(model, pointerCapture, scope, () => { this.lastClickId = null; }, dragHandler);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, focusParent, focusContent);
 	}
 
@@ -60,7 +61,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 			|| this.projectedBounds.right !== bounds.right || this.projectedBounds.bottom !== bounds.bottom
 			|| this.projectedFont !== context.font || this.projectedTabHeight !== context.tabBarHeight
 			|| this.projectedCharAdvance !== context.charAdvance || this.projectedHover !== this.hoverId
-			|| this.projectedDragging !== (this.drag.state?.hasDragged === true) || this.projectedScroll !== this.scrollbar.getScroll();
+			|| this.projectedDragging !== (this.drag.state?.hasDragged === true || this.dropTargeted) || this.projectedScroll !== this.scrollbar.getScroll();
 	}
 	/** Independent group minima include the real scrollbar lane at overflowing widths. */
 	public get minimumHeight(): number { return this.layoutContext.tabBarHeight + SCROLLBAR_WIDTH; }
@@ -69,12 +70,12 @@ export class EditorTabStrip implements PointerHoverTarget {
 		this.layoutBounds = bounds;
 		const context = this.layoutContext;
 		if (this.needsLayout) {
-			this.layoutState.layout(bounds, context, this.hoverId, this.drag.state?.hasDragged === true);
+			this.layoutState.layout(bounds, context, this.hoverId, this.drag.state?.hasDragged === true || this.dropTargeted);
 			this.drag.refreshTarget();
 			copy_rect_bounds(this.projectedBounds, bounds);
 			this.projectedRevision = this.model.revision; this.projectedFont = context.font;
 			this.projectedTabHeight = context.tabBarHeight; this.projectedCharAdvance = context.charAdvance;
-			this.projectedHover = this.hoverId; this.projectedDragging = this.drag.state?.hasDragged === true;
+			this.projectedHover = this.hoverId; this.projectedDragging = this.drag.state?.hasDragged === true || this.dropTargeted;
 			this.projectedScroll = this.scrollbar.getScroll();
 		}
 		if (!this.actionsAttached) {
@@ -139,7 +140,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 		return true;
 	}
 
-	public handlePointer(snapshot: PointerSnapshot, now: number): boolean {
+	public handlePointer(snapshot: PointerInputSnapshot, now: number): boolean {
 		const over = this.updateHover(snapshot);
 		if (!over) {
 			if (snapshot.justPressedButtons !== 0) this.lastClickId = null;
@@ -177,12 +178,15 @@ export class EditorTabStrip implements PointerHoverTarget {
 				this.close(tab.id);
 				return true;
 			}
+			if (!this.activate(tab.id)) {
+				this.lastClickId = null;
+				return true;
+			}
 			const twice = this.lastClickId === tab.id && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
-			if (twice) this.model.pin(tab);
 			this.lastClickId = twice ? null : tab.id;
 			this.lastClickTime = now;
-			this.activate(tab.id);
-			this.drag.begin(tab.id, snapshot, now);
+			this.drag.begin(tab, snapshot, now);
+			if (twice) this.model.pin(tab);
 			return true;
 		}
 		this.lastClickId = null;

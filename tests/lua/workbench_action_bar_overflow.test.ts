@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -7,7 +8,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusService, inputFocus } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
@@ -113,7 +114,7 @@ function fixture(t: TestContext, menuId: WorkbenchActionMenuId = 'aem.title') {
 	const press = (code: string) => { key(code, true); key(code, false); };
 	const pointer = (index: number, held = 0, down = 0, up = 0) => {
 		const bounds = index === state.items.length ? state.overflow!.button.bounds : state.items[index].bounds;
-		const event: PointerSnapshot = { valid: true, insideViewport: true, viewportX: bounds.left + 1, viewportY: bounds.top + 1,
+		const event: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, viewportX: bounds.left + 1, viewportY: bounds.top + 1,
 			pressedButtons: held, justPressedButtons: down, justReleasedButtons: up };
 		if (!capture.dispatch(event, false, clock.now())) bar.handlePointer(event);
 	};

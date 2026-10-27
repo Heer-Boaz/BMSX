@@ -16,7 +16,7 @@ import { drawWorkbenchWindowPlacement, drawWorkbenchWindow } from '../../render/
 import { layoutWorkbenchActionBar, type WorkbenchActionBarState } from '../action_bar';
 import { WorkbenchActionBarControl } from '../action_bar_control';
 import { WorkbenchTooltip } from '../tooltip';
-import { WindowResizeEdge, type WindowPlacement, type WorkbenchWindowModel } from './model';
+import { WindowResizeEdge, WINDOW_HEADER_VERTICAL_PADDING, type WindowPlacement, type WorkbenchWindowModel } from './model';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
 
 const WINDOW_SNAP_MARGIN = 8;
@@ -94,6 +94,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	private measureText: ((text: string) => number) | undefined;
 	private readonly tooltip = new WorkbenchTooltip();
 	private headerHovered = false;
+	private presented = true;
 	private clientInputAttached = false;
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
@@ -143,6 +144,13 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public get hasFocus(): boolean { return this.containsScope(this.surface, this.focus.target?.scope.surfaceScope); }
 	public get model(): WorkbenchWindowModel { return this.options.model; }
 
+	/** Construction can retain a window tree before its owner admits presentation. */
+	public setPresented(presented: boolean): void {
+		if (this.presented === presented) return;
+		this.presented = presented;
+		if (this.surface !== undefined) this.surfaces.changed();
+	}
+
 	/** Reattaching a pane preserves its input-owned open/minimized/placement model. */
 	public attach(): void {
 		if (this.surface !== undefined || !this.model.open) return;
@@ -151,7 +159,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			role: 'window', lifetimeOwner: options.lifetimeOwner, presentationParent: options.presentationParent,
 			captureScope: this.scope.surfaceScope,
 			getBounds: () => options.model.bounds, getClip: () => options.workArea,
-			isVisible: () => options.model.open && !options.model.minimized,
+			isVisible: () => this.presented && options.model.open && !options.model.minimized,
 			draw: () => drawWorkbenchWindow(this.model, options.actionBar, this.hasFocus),
 			handlePointer: (snapshot, now) => this.handlePointer(snapshot, now), handleWheel: () => true,
 			onRetire: () => {
@@ -240,7 +248,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public layout(font: BFont, measure: TextRangeMeasure, measureText: (text: string) => number): boolean {
 		if (!this.visible) return false;
 		const model = this.model;
-		const arranged = model.arrange(this.options.workArea, font.lineHeight + 8, this.geometryPending ? this.nextRequested : undefined);
+		const arranged = model.arrange(this.options.workArea, font.lineHeight + WINDOW_HEADER_VERTICAL_PADDING, this.geometryPending ? this.nextRequested : undefined);
 		const previewChanged = this.updatePlacementPreview();
 		const fontChanged = this.measuredFont !== font;
 		const dirty = arranged || this.measuredRevision !== model.revision || fontChanged

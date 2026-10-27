@@ -95,7 +95,7 @@ test('preparing Play moves its exact retained handle and survives closing its fo
 	play.start(f.module, f.firstPart.activeGroup);
 	const input = play.input!; assert.ok(input instanceof PlayEditorInput);
 	const handle = input.handle; assert.equal(handle.state, 'preparing'); assert.equal(input.interaction.transport, null);
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondPart.activeGroup.model.activeTab === input); assert.ok(input.handle === handle);
 	assert.equal(await f.editor.editorParts.close(f.firstPart), true); assert.equal(close.mock.callCount(), 0);
 	await f.ready(handle);
@@ -125,7 +125,7 @@ test('Play chrome intent moves independently of guest input and Reset replaces o
 	assert.equal(guest.guestInput!.recipient, first.session!.input.physical);
 	original.commandTarget.focus(); f.editor.commands.execute('runtime.resume', original.commandTarget);
 	const cycles = first.session!.target.runtime.machine.scheduler.nowCycles, revision = first.session!.execution.revision;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	const destination = f.secondPart.activeGroup.panes.activePane!;
 	assert.equal(guest.guestInput, undefined); assert.equal(f.editor.guestInputRecipient, null);
 	assert.equal(original.commandTarget.scope.runtime, undefined); assert.equal(input.interaction.running, true);
@@ -170,7 +170,7 @@ test('late Play preparation failure stays on its captured view and never activat
 	f.model.pushEditOperations([{ offset: at, deleteLength: "require('game')".length, text: "require('missing_play_dependency')" }]);
 	f.ide.scenarioRuns.refreshSources(); play.start(f.module, f.firstPart.activeGroup);
 	const input = play.input!, handle = input.handle;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, 'new', f.editor.editorClose), true);
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'window' }), true);
 	const destination = f.editor.editorParts.activePart;
 	f.secondPart.activeGroup.openEditor(new GameViewInput()); const focus = inputFocus.target;
 	await handle.preparation; f.update();
@@ -199,7 +199,7 @@ test('Play physical Reset and Stop retire their exact moved Actor view without o
 	const actors = f.firstPart.activeGroup.model.activeTab; assert.ok(actors?.kind === 'actor_lab');
 	assert.equal(actors.controller.viewport.transport, first.session!.transport); assert.equal(f.firstPart.quickInput.visible, true);
 	let retired = 0; actors.onWillDispose(() => { retired++; });
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, actors, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, actors, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.equal(f.firstPart.quickInput.visible, false); assert.equal(f.secondPart.activeGroup.model.activeTab, actors);
 	play.execute('play.reset', input, f.firstPart.activeGroup, f.firstPart.quickInput);
 	assert.equal(retired, 1); assert.equal(f.secondPart.activeGroup.model.findById(actors.id), undefined);
@@ -207,7 +207,7 @@ test('Play physical Reset and Stop retire their exact moved Actor view without o
 	f.editor.commands.execute('play.actors', f.firstPart.activeGroup.panes.activePane!.commandTarget); f.update();
 	const nextActors = f.firstPart.activeGroup.model.activeTab; assert.ok(nextActors?.kind === 'actor_lab');
 	assert.notEqual(nextActors, actors); assert.equal(nextActors.controller.viewport.transport, next.session!.transport);
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, nextActors, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, nextActors, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	play.execute('play.stop', input, f.firstPart.activeGroup, f.firstPart.quickInput);
 	for (let grant = 0; next.state !== 'stopped' && grant < 2000; grant++) await f.advance();
 	assert.equal(next.state, 'stopped'); assert.equal(f.secondPart.activeGroup.model.findById(nextActors.id), undefined);
@@ -219,7 +219,7 @@ test('focused Play failures open their diagnostic only in the moved input owner'
 	f.model.pushEditOperations([{ offset: at, deleteLength: "require('game')".length, text: "require('missing_play_dependency')" }]);
 	f.ide.scenarioRuns.refreshSources(); play.start(f.module, f.firstPart.activeGroup);
 	const input = play.input!, handle = input.handle;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), true);
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	await handle.preparation; f.update();
 	assert.equal(handle.state, 'failed'); assert.equal(f.secondPart.activeGroup.model.activeTab?.kind, 'host_error');
 	assert.equal(f.secondPart.activeGroup.model.findById(input.id), input);
@@ -229,7 +229,7 @@ test('focused Play failures open their diagnostic only in the moved input owner'
 test('moved Play Details discloses the original quarantined host error and stack only after explicit inspection', async t => {
 	const f = await fixture(t), play = f.editor.play;
 	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, handle = input.handle; await f.ready(handle);
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, 'new', f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'window' }), true); f.update();
 	const destination = f.editor.editorParts.activePart, session = handle.session!, error = new Error('Play backend failure');
 	f.secondPart.activeGroup.openEditor(new GameViewInput()); const focus = inputFocus.target;
 	await session.tasks.schedule(() => { throw error; }, () => {}); await f.advance();

@@ -1,10 +1,11 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 
-const held: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 10, viewportY: 20 };
+const held: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 10, viewportY: 20 };
 
 test('pointer capture delivers movement and a physical release, detached before the drop callback', () => {
 	const capture = new PointerCaptureService();
@@ -12,8 +13,8 @@ test('pointer capture delivers movement and a physical release, detached before 
 	let releases = 0;
 	const next = { handleCapturedPointer() { moves += 1; }, releaseCapturedPointer() {}, cancelPointer() {} };
 	const target = {
-		handleCapturedPointer(snapshot: PointerSnapshot, now: number) { assert.equal(snapshot, held); assert.equal(now, 20); moves += 1; },
-		releaseCapturedPointer(snapshot: PointerSnapshot, now: number) {
+		handleCapturedPointer(snapshot: PointerInputSnapshot, now: number) { assert.equal(snapshot, held); assert.equal(now, 20); moves += 1; },
+		releaseCapturedPointer(snapshot: PointerInputSnapshot, now: number) {
 			assert.equal(snapshot.pressedButtons, 0);
 			assert.equal(now, 40);
 			releases += 1;

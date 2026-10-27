@@ -333,7 +333,7 @@ test('proposal retirement precedes publication and toolbar detachment retires on
 	f.pointer(review.bounds, PointerButton.Primary, PointerButton.Primary);
 	f.toolbar.clearInput(); assert.equal(f.input.turnActions.pressedCommand, null);
 	f.input.selection.select(f.conversation.entries[0]);
-	pointerCapture.dispatch({ valid: true, insideViewport: true, viewportX: review.bounds.left + 1, viewportY: review.bounds.top + 1,
+	pointerCapture.dispatch({ modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, viewportX: review.bounds.left + 1, viewportY: review.bounds.top + 1,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 100);
 	assert.deepEqual(f.opened, []);
 });

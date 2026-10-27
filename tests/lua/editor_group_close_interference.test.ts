@@ -33,8 +33,8 @@ for (const phase of ['decision', 'Save'] as const)
 		if (phase === 'Save') { part.actionPrompt.close('primary'); await writing.promise; }
 		let closed: boolean;
 		try {
-			assert.equal(parts.moveEditor(f.secondGroup, f.secondInput, receiver, f.editor.editorClose), true);
-			assert.equal(f.editor.editorClose.isPending(input), true);
+			assert.equal(parts.moveEditor(f.secondGroup, f.secondInput, { kind: 'group', group: receiver }), true);
+			assert.equal(f.editor.editorParts.closeController.isPending(input), true);
 			const offered = new HomeInput(null); let retired = 0;
 			offered.onWillDispose(() => { retired++; });
 			assert.equal(closing.openEditor(offered), false, 'host admission cannot override the group-owned close');
@@ -46,7 +46,7 @@ for (const phase of ['decision', 'Save'] as const)
 			release.resolve(); closed = await pending;
 		}
 		assert.equal(closed, phase === 'Save');
-		assert.equal(f.editor.editorClose.isPending(input), false);
+		assert.equal(f.editor.editorParts.closeController.isPending(input), false);
 		assert.equal(closing.surface.retired, phase === 'Save');
 		if (phase === 'decision') assert.equal(closing.openingAdmitted, true);
 	});
@@ -82,7 +82,7 @@ for (const choice of ['Cancel', 'Save'] as const)
 			await Promise.resolve();
 			assert.equal(groupSettled, false); assert.equal(hostSettled, false);
 			assert.equal(show.mock.callCount(), 1, 'the host joins the original close owner instead of replacing its decision');
-			assert.equal(f.editor.editorClose.isPending(f.firstInput), true);
+			assert.equal(f.editor.editorParts.closeController.isPending(f.firstInput), true);
 			assert.equal(part.retired, false); assert.equal(group.surface.retired, false);
 			f.secondGroup.focus();
 			assert.ok(inputFocus.target === f.second.commandTarget);
@@ -95,7 +95,7 @@ for (const choice of ['Cancel', 'Save'] as const)
 		assert.equal(part.retired, choice === 'Save'); assert.equal(group.surface.retired, choice === 'Save');
 		assert.ok(parts.activePart === f.secondPart && inputFocus.target === f.second.commandTarget);
 		assert.equal(model.buffer.getText(), source); assert.equal(model.version, version);
-		assert.equal(model.dirty, choice === 'Cancel'); assert.equal(f.editor.editorClose.isPending(f.firstInput), false);
+		assert.equal(model.dirty, choice === 'Cancel'); assert.equal(f.editor.editorParts.closeController.isPending(f.firstInput), false);
 		if (choice === 'Cancel') {
 			assert.ok(group.model.activeTab === f.firstInput && sibling.model.activeTab === retained);
 			assert.equal(group.openingAdmitted, true); assert.equal(sibling.openingAdmitted, true);

@@ -195,3 +195,38 @@ test('warmed unchanged arrangement layout does not recompute geometry or replace
 	assert.equal(arrangement.layout(viewport), true); assert.equal(position.mock.callCount(), 1);
 	assert.equal(arrangement.layout(viewport), false); assert.equal(position.mock.callCount(), 1);
 });
+
+for (const direction of ['left', 'right', 'up', 'down'] as const) for (const removeSource of [false, true]) for (const overflow of [false, true])
+	test(`split preview consumes the committed ${direction} topology, minima and overflow viewport (${removeSource ? 'retired' : 'retained'} source, ${overflow ? 'overflow' : 'fitted'})`, () => {
+		const source = {}, reference = {}, incoming = {}, arrangement = new EditorGroupArrangement(source);
+		const area = { left: 30, top: 20, right: overflow ? 170 : 830, bottom: overflow ? 100 : 620 };
+		arrangement.split(source, reference, 'right');
+		arrangement.setMinimum(source, 100, 50); arrangement.setMinimum(reference, 90, 70);
+		arrangement.layoutClient(area, 8); arrangement.setScroll(20, 10); arrangement.layoutClient(area, 8);
+		const root = arrangement.root, revision = arrangement.revision, layoutRevision = arrangement.layoutRevision;
+		const preview = { left: 0, top: 0, right: 0, bottom: 0 };
+		arrangement.writeSplitPreview(reference, direction, 120, 80, removeSource ? source : undefined, preview);
+		assert.ok(arrangement.root === root); assert.equal(arrangement.revision, revision); assert.equal(arrangement.layoutRevision, layoutRevision);
+		assert.equal(arrangement.groups.length, 2, 'projection never publishes or constructs a live group');
+		const repeated = { left: 0, top: 0, right: 0, bottom: 0 };
+		arrangement.writeSplitPreview(reference, direction, 120, 80, removeSource ? source : undefined, repeated);
+		assert.deepEqual(repeated, preview);
+		arrangement.split(reference, incoming, direction); arrangement.setMinimum(incoming, 120, 80);
+		if (removeSource) arrangement.remove(source);
+		arrangement.layoutClient(area, 8); arrangement.reveal(incoming);
+		assert.deepEqual(preview, arrangement.leaves.find(leaf => leaf.group === incoming)!.clip);
+	});
+
+test('split projection invalidates on live minima and client changes rather than retaining a stale half-rectangle', () => {
+	const reference = {}, incoming = {}, arrangement = new EditorGroupArrangement(reference);
+	const area = { left: 0, top: 0, right: 500, bottom: 300 }, preview = { ...area };
+	arrangement.setMinimum(reference, 20, 20); arrangement.layoutClient(area, 8);
+	arrangement.writeSplitPreview(reference, 'right', 80, 20, undefined, preview);
+	const first = { ...preview };
+	arrangement.setMinimum(reference, 400, 20); area.bottom = 150; arrangement.layoutClient(area, 8);
+	arrangement.writeSplitPreview(reference, 'right', 80, 20, undefined, preview);
+	assert.notDeepEqual(preview, first);
+	arrangement.split(reference, incoming, 'right'); arrangement.setMinimum(incoming, 80, 20);
+	arrangement.layoutClient(area, 8); arrangement.reveal(incoming);
+	assert.deepEqual(preview, arrangement.leaves.find(leaf => leaf.group === incoming)!.clip);
+});

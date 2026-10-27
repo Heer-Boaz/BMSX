@@ -21,26 +21,29 @@ for (const phase of ['source detach', 'membership publication', 'history handoff
 		: phase === 'membership publication' ? source.model.onDidChange(redirect) : source.onDidMoveEditor(redirect);
 	t.after(unbind);
 	const attach = t.mock.method(target.panes, 'openEditor');
-	assert.equal(parts.moveEditor(source, input, target, f.editor.editorClose), false);
+	assert.equal(parts.moveEditor(source, input, { kind: 'group', group: target }), false);
 	assert.equal(redirected, true); assert.equal(attach.mock.callCount(), 0);
 	assert.ok(parts.activePart === parts.main); assert.equal(parts.groups.length, 1); assert.equal(parts.documents.length, 0);
 	assert.equal(parts.main.activeGroup.model.tabs.length, 0); assert.equal(parts.main.activeGroup.panes.activePane, null);
-	assert.equal(target.panes.activePane, null); assert.equal(f.editor.editorClose.isPending(input), false);
+	assert.equal(target.panes.activePane, null); assert.equal(f.editor.editorParts.closeController.isPending(input), false);
 });
 
-test('new document publication cannot resume an already retired transfer source after workspace clear', t => {
+test('new document publication exposes coherent membership and cannot bind after a newer workspace clear', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, count = parts.documents.length, source = f.firstGroup;
-	let redirected = false;
+	let redirected = false, coherent = false;
+	let destination: typeof source | undefined;
 	const unbind = parts.onDidChange(() => {
 		if (redirected || parts.documents.length <= count) return;
-		redirected = true; parts.clear();
+		redirected = true; destination = parts.documents.at(-1)!.activeGroup;
+		coherent = destination.model.activeTab === f.firstInput && parts.findGroup(f.firstInput) === destination && !source.model.contains(f.firstInput);
+		parts.clear();
 	}); t.after(unbind);
-	const detach = t.mock.method(source, 'detachEditorForMove');
-	assert.equal(parts.moveEditor(source, f.firstInput, 'new', f.editor.editorClose), false);
-	assert.equal(redirected, true); assert.equal(detach.mock.callCount(), 0);
+	assert.equal(parts.moveEditor(source, f.firstInput, { kind: 'window' }), false);
+	assert.equal(redirected, true); assert.equal(coherent, true); assert.ok(destination !== undefined);
+	assert.equal(destination.paneSurface.retired, true); assert.equal(destination.panes.activePane, null);
 	assert.equal(parts.documents.length, 0); assert.equal(parts.groups.length, 1);
 	assert.ok(parts.activePart === parts.main); assert.equal(f.firstPart.retired, true);
-	assert.equal(f.editor.editorClose.isPending(f.firstInput), false);
+	assert.equal(f.editor.editorParts.closeController.isPending(f.firstInput), false);
 });
 
 test('a newer same-host control focus from destination attachment is not overwritten by move completion', t => {
@@ -50,7 +53,7 @@ test('a newer same-host control focus from destination attachment is not overwri
 	const siblingPane = sibling.panes.activePane!;
 	f.first.focus();
 	const unbind = target.panes.onWillShowEditor(() => { siblingPane.focus(); }); t.after(unbind);
-	assert.equal(parts.moveEditor(f.firstGroup, f.firstInput, target, f.editor.editorClose), true);
+	assert.equal(parts.moveEditor(f.firstGroup, f.firstInput, { kind: 'group', group: target }), true);
 	assert.ok(target.panes.activePane?.input === f.firstInput);
 	assert.ok(inputFocus.target === siblingPane.commandTarget, 'only the newer concrete control owns the final focus intent');
 	assert.ok(sibling.panes.activePane === siblingPane && sibling.model.activeTab === siblingInput);
@@ -65,7 +68,7 @@ test('a successful sibling transfer retires its empty nonfinal source group afte
 	navigationState.back.push(entry);
 	let retired = false; source.onWillDispose(() => { retired = true; });
 	const text = input.workingCopy.buffer.getText(), version = input.workingCopy.version, documents = parts.documents.length;
-	assert.equal(parts.moveEditor(source, input, target, f.editor.editorClose), true);
+	assert.equal(parts.moveEditor(source, input, { kind: 'group', group: target }), true);
 	assert.equal(retired, true); assert.equal(source.openingAdmitted, false); assert.equal(parts.groups.includes(source), false);
 	assert.equal(parts.main.groups.length, 1); assert.ok(parts.main.activeGroup === target);
 	assert.ok(target.model.activeTab === input && target.panes.activePane?.input === input);
@@ -79,10 +82,10 @@ test('empty source-group retirement cannot revive a destination cleared by a new
 	const input = new CodeEditorInput(f.firstInput.workingCopy); source.openEditor(input);
 	const target = parts.splitGroup(source, 'right')!;
 	let retired = false; source.onWillDispose(() => { retired = true; parts.clear(); });
-	assert.equal(parts.moveEditor(source, input, target, f.editor.editorClose), false);
+	assert.equal(parts.moveEditor(source, input, { kind: 'group', group: target }), false);
 	assert.equal(retired, true); assert.equal(parts.groups.length, 1); assert.equal(parts.documents.length, 0);
 	assert.ok(parts.activePart === parts.main); assert.equal(parts.main.activeGroup.model.tabs.length, 0);
-	assert.equal(parts.main.activeGroup.panes.activePane, null); assert.equal(f.editor.editorClose.isPending(input), false);
+	assert.equal(parts.main.activeGroup.panes.activePane, null); assert.equal(f.editor.editorParts.closeController.isPending(input), false);
 });
 
 for (const publication of ['label', 'dirty', 'pin'] as const) test(`${publication} publication during transfer does not revoke unchanged editor membership`, t => {
@@ -98,9 +101,9 @@ for (const publication of ['label', 'dirty', 'pin'] as const) test(`${publicatio
 	};
 	unbind = publication === 'dirty' ? source.onDidMoveEditor(publish) : source.panes.onDidClearEditor(publish);
 	t.after(unbind);
-	assert.equal(parts.moveEditor(source, input, target, f.editor.editorClose), true);
+	assert.equal(parts.moveEditor(source, input, { kind: 'group', group: target }), true);
 	assert.equal(published, true); assert.ok(target.model.activeTab === input && target.panes.activePane?.input === input);
-	assert.equal(target.model.previewTab, null); assert.equal(f.editor.editorClose.isPending(input), false);
+	assert.equal(target.model.previewTab, null); assert.equal(f.editor.editorParts.closeController.isPending(input), false);
 	assert.equal(input.workingCopy.buffer.getText(), publication === 'dirty' ? `-- edited during transfer\n${before}` : before);
 });
 
@@ -108,10 +111,10 @@ test('destination attachment retirement rejects transfer while the live source c
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, source = f.firstGroup, target = f.secondGroup;
 	const unbind = source.panes.onDidClearEditor(() => { unbind(); f.secondPart.window!.detach(); }); t.after(unbind);
 	const bind = t.mock.method(target.panes, 'openEditor');
-	assert.equal(parts.moveEditor(source, f.firstInput, target, f.editor.editorClose), false);
+	assert.equal(parts.moveEditor(source, f.firstInput, { kind: 'group', group: target }), false);
 	assert.equal(target.paneSurface.retired, true); assert.equal(bind.mock.callCount(), 0);
 	assert.ok(source.model.activeTab === f.firstInput && source.panes.activePane?.input === f.firstInput);
-	assert.ok(target.model.activeTab === f.secondInput); assert.equal(f.editor.editorClose.isPending(f.firstInput), false);
+	assert.ok(target.model.activeTab === f.secondInput); assert.equal(f.editor.editorParts.closeController.isPending(f.firstInput), false);
 });
 
 for (const origin of ['source', 'destination'] as const) for (const coalesced of [false, true]) for (const deferred of [false, true])
@@ -130,7 +133,7 @@ for (const origin of ['source', 'destination'] as const) for (const coalesced of
 			pending = group.openResolvedEditor(deferred ? resolution.promise : candidate);
 			receiptUnchanged = group.panes.openGeneration === receipt;
 		}); t.after(unbind);
-		const moved = parts.moveEditor(source, input, target, f.editor.editorClose);
+		const moved = parts.moveEditor(source, input, { kind: 'group', group: target });
 		assert.equal(group.openingAdmitted, true, 'the host operation has reopened admission before the candidate settles');
 		if (deferred) resolution.resolve(candidate);
 		assert.equal(await pending, undefined);

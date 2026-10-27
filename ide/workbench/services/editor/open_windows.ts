@@ -1,8 +1,7 @@
 import type { EditorInput } from '../../ui/tab/model';
 import type { InputFocusTarget } from '../../../input/focus';
 import type { EditorGroupView } from './editor_group';
-import type { EditorCloseController } from './editor_close';
-import type { EditorParts } from './editor_parts';
+import type { EditorParts, EditorMoveDestination } from './editor_parts';
 import type { QuickInputController } from '../quick_input/controller';
 import { TextQuickPickProvider } from '../quick_input/text_provider';
 
@@ -22,22 +21,22 @@ export function showOpenWindows(parts: EditorParts, picker: QuickInputController
 }
 
 /** The picker retains exact source/destination groups; accepting never resolves later focus. */
-export function showMoveEditor(parts: EditorParts, admission: EditorCloseController, picker: QuickInputController,
+export function showMoveEditor(parts: EditorParts, picker: QuickInputController,
 	source: EditorGroupView, input: EditorInput, origin: InputFocusTarget | null): void {
-	if (!parts.canMoveEditor(source, input, 'new', admission)) return;
+	if (!parts.canMoveEditor(source, input, { kind: 'window' })) return;
 	picker.pick('MOVE EDITOR', 'Choose a destination group or editor window', (_origin, lifetime) => {
 		lifetime.add({ dispose: source.onWillDispose(() => picker.hide()) });
 		lifetime.add({ dispose: input.onWillDispose(() => picker.hide()) });
-		const items: { destination: EditorGroupView | 'new'; label: string; description: string; detail: string }[] = [];
+		const items: { destination: EditorMoveDestination; label: string; description: string; detail: string }[] = [];
 		for (const part of parts.mostRecentlyActive) for (const destination of part.mostRecentlyActiveGroups) {
-			if (!parts.canMoveEditor(source, input, destination, admission)) continue;
+			if (!parts.canMoveEditor(source, input, { kind: 'group', group: destination })) continue;
 			lifetime.add({ dispose: destination.onWillDispose(() => picker.hide()) });
 			const active = destination.model.activeTab;
 			const host = part.kind === 'main' ? 'Main Workspace' : part.window!.model.title;
-			items.push({ destination, label: part.groups.length === 1 ? host : `${host} / Group ${part.groups.indexOf(destination) + 1}`,
+			items.push({ destination: { kind: 'group', group: destination }, label: part.groups.length === 1 ? host : `${host} / Group ${part.groups.indexOf(destination) + 1}`,
 				description: active?.description ?? '', detail: part.window?.model.minimized ? 'Minimized editor window' : '' });
 		}
-		items.push({ destination: 'new', label: 'New Editor Window', description: '', detail: '' });
+		items.push({ destination: { kind: 'window' }, label: 'New Editor Window', description: '', detail: '' });
 		return new TextQuickPickProvider(items);
-	}, item => { parts.moveEditor(source, input, item.destination, admission); }, undefined, { invocationOrigin: origin });
+	}, item => { parts.moveEditor(source, input, item.destination); }, undefined, { invocationOrigin: origin });
 }

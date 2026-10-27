@@ -1,5 +1,6 @@
 import { navigationState, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
-import type { RectBounds } from '../../../../machine/ts/common/rect';
+import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { ContextMenuController } from '../context_menu/controller';
@@ -7,8 +8,12 @@ import type { WorkbenchSurface } from '../windows/model';
 import type { WorkbenchSurfaceService } from '../windows/service';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
 import type { EditorPaneFactories } from './editor_panes';
-import type { WindowPlacement } from '../../ui/window/model';
-import type { EditorCloseController, CloseEditors } from './editor_close';
+import { WorkbenchWindowModel, WINDOW_HEADER_VERTICAL_PADDING, WINDOW_RESIZE_MARGIN, type WindowPlacement } from '../../ui/window/model';
+import { EditorCloseController } from './editor_close';
+import type { TextFileSaveService } from '../working_copy/text_file_save';
+import type { EditorTextModelService } from '../../../editor/model/model_service';
+import type { ActionPrompt } from '../../contrib/modal/action_prompt';
+import { EditorDropTarget } from './editor_drop_target';
 import type { EditorGroupView } from './editor_group';
 import type { EditorInput } from '../../ui/tab/model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
@@ -17,6 +22,11 @@ import type { SerializedDocumentEditorPart, SerializedEditorParts } from './edit
 import { EditorPart } from './editor_part';
 import { serializeEditorPart } from './editor_part_serialization';
 import type { EditorGroupDirection } from './group_arrangement';
+
+export type EditorMoveDestination =
+	| { readonly kind: 'group'; readonly group: EditorGroupView; readonly index?: number }
+	| { readonly kind: 'split'; readonly group: EditorGroupView; readonly direction: EditorGroupDirection }
+	| { readonly kind: 'window'; readonly requestedBounds?: Readonly<RectBounds> };
 
 export type EditorPartsOptions = {
 	readonly surfaces: WorkbenchSurfaceService;
@@ -27,7 +37,9 @@ export type EditorPartsOptions = {
 	readonly contextMenu: ContextMenuController;
 	readonly renderContext: EditorTabStripRenderContext;
 	readonly factories: EditorPaneFactories;
-	readonly closeEditors: CloseEditors;
+	readonly saves: TextFileSaveService;
+	readonly models: EditorTextModelService;
+	readonly prompt: ActionPrompt;
 	readonly focusReturn: InputFocusTarget;
 	layoutMain(): void;
 };
@@ -41,9 +53,12 @@ export type EditorDocumentOptions = {
 /** Frontend membership and opening destinations over one shared workspace. */
 export class EditorParts {
 	public readonly main: EditorPart;
+	public readonly closeController: EditorCloseController;
+	public readonly dropTarget: EditorDropTarget;
 	private readonly documentParts: EditorPart[] = [];
 	private readonly groupList: EditorGroupView[] = [];
 	private readonly owners = new Map<EditorGroupView, EditorPart>();
+	private readonly groupsBySurface = new Map<WorkbenchSurface, EditorGroupView>();
 	private readonly partsByScope = new WeakMap<InputFocusScope, EditorPart | null>();
 	private readonly mru: EditorPart[] = [];
 	private readonly listeners = new Set<() => void>();
@@ -52,6 +67,8 @@ export class EditorParts {
 	private restoreGeneration = 0;
 	private readonly partSubscriptions = new Map<EditorPart, readonly (() => void)[]>();
 	private minimizedDocumentCount = 0;
+	private readonly newDocumentRequest = create_rect_bounds();
+	private readonly newDocumentPlacement = new WorkbenchWindowModel(this.newDocumentRequest, 0, 0);
 	public activePart: EditorPart;
 	public get documents(): readonly EditorPart[] { return this.documentParts; }
 	/** Membership projection is updated only by actual part construction/retirement. */
@@ -61,7 +78,9 @@ export class EditorParts {
 	public get minimizedCount(): number { return this.minimizedDocumentCount; }
 
 	public constructor(private readonly options: EditorPartsOptions) {
-		this.main = new EditorPart({ ...options, kind: 'main', initialOperation: 'none', onDidActivate: part => this.activate(part),
+		this.closeController = new EditorCloseController(this.groupList, options.saves, options.prompt, options.models);
+		this.dropTarget = new EditorDropTarget(this, options.surfaces, options.owner, options.workArea);
+		this.main = new EditorPart({ ...options, closeEditors: this.closeController.close, dropTarget: this.dropTarget, kind: 'main', initialOperation: 'none', presented: true, onDidActivate: part => this.activate(part),
 			onDidChange: () => this.changed(), requestClose: part => { void this.close(part); } });
 		this.activePart = this.main;
 		this.register(this.main);
@@ -76,9 +95,19 @@ export class EditorParts {
 	}
 
 	public partForGroup(group: EditorGroupView): EditorPart { return this.owners.get(group)!; }
+	public groupForSurface(surface: WorkbenchSurface): EditorGroupView | undefined { return this.groupsBySurface.get(surface); }
+	/** Floating a view preserves its client extent; the window owner resolves chrome and work-area placement. */
+	public writeNewDocumentBounds(source: EditorGroupView, x: number, y: number, target: RectBounds): void {
+		const headerHeight = editorViewState.font.lineHeight + WINDOW_HEADER_VERTICAL_PADDING;
+		const width = source.bounds.right - source.bounds.left + WINDOW_RESIZE_MARGIN * 2;
+		const height = source.bounds.bottom - source.bounds.top + headerHeight + WINDOW_RESIZE_MARGIN;
+		const left = x - Math.round(width / 2), top = y - Math.round(headerHeight / 2);
+		write_rect_bounds(this.newDocumentRequest, left, top, left + width, top + height);
+		this.newDocumentPlacement.writePlacementBounds('normal', this.options.workArea, target, this.newDocumentRequest);
+	}
 	/** Retained inputs have one actual membership; command-time lookup does not invent another registry. */
 	public findGroup(input: EditorInput): EditorGroupView | undefined {
-		for (const group of this.groupList) if (group.model.indexOf(input) >= 0) return group;
+		for (const group of this.groupList) if (group.model.contains(input)) return group;
 		return undefined;
 	}
 
@@ -107,24 +136,28 @@ export class EditorParts {
 	}
 
 	private register(part: EditorPart): void {
-		for (const group of part.groups) { this.owners.set(group, part); this.groupList.push(group); }
+		for (const group of part.groups) { this.owners.set(group, part); this.groupsBySurface.set(group.surface, group); this.groupList.push(group); }
 		this.partSubscriptions.set(part, [part.onDidChangeGroups(() => {
 			for (let index = this.groupList.length - 1; index >= 0; index--) {
 				const group = this.groupList[index];
 				if (this.owners.get(group) !== part) continue;
-				this.owners.delete(group); this.groupList.splice(index, 1);
+				this.owners.delete(group); this.groupsBySurface.delete(group.surface); this.groupList.splice(index, 1);
 			}
-			for (const group of part.groups) { this.owners.set(group, part); this.groupList.push(group); }
+			for (const group of part.groups) { this.owners.set(group, part); this.groupsBySurface.set(group.surface, group); this.groupList.push(group); }
 		})]);
-		this.partsByScope.set(part.scope, part); this.mru.push(part); this.changed();
+		this.partsByScope.set(part.scope, part); this.mru.push(part);
 	}
 
-	public createDocument({ requestedBounds, placement = 'normal', minimized = false }: EditorDocumentOptions = {},
-		initialOperation: 'none' | 'move' = 'none'): EditorPart {
+	public createDocument(options: EditorDocumentOptions = {}, initialOperation: 'none' | 'move' = 'none'): EditorPart {
+		const part = this.constructDocument(options, initialOperation); this.publishDocument(part); return part;
+	}
+	/** A drop owns construction until paired membership is ready for workspace publication. */
+	private constructDocument({ requestedBounds, placement = 'normal', minimized = false }: EditorDocumentOptions,
+		initialOperation: 'none' | 'move'): EditorPart {
 		const area = this.options.workArea;
 		const width = Math.round((area.right - area.left) * 0.86), height = Math.round((area.bottom - area.top) * 0.86);
 		const offset = 8 * (this.documentParts.length % 4 + 1);
-		const part = new EditorPart({ ...this.options, kind: 'document', placement, minimized, initialOperation,
+		return new EditorPart({ ...this.options, closeEditors: this.closeController.close, dropTarget: this.dropTarget, kind: 'document', placement, minimized, initialOperation, presented: false,
 			focusReturn: this.main.focusTarget,
 			requestedBounds: requestedBounds === undefined ? {
 				left: area.right - width - offset, top: area.top + offset,
@@ -134,9 +167,9 @@ export class EditorParts {
 			requestClose: next => { void this.close(next); },
 			requestMinimize: next => this.minimize(next),
 		});
-		this.documentParts.push(part);
-		this.register(part);
-		return part;
+	}
+	private publishDocument(part: EditorPart): void {
+		this.documentParts.push(part); this.register(part); part.present(); this.changed();
 	}
 
 	public minimize(part: EditorPart): void {
@@ -184,58 +217,79 @@ export class EditorParts {
 		return part.splitGroup(source, direction);
 	}
 
-	public canMoveEditor(source: EditorGroupView, input: EditorInput, destination: EditorGroupView | 'new', admission: EditorCloseController): boolean {
+	public canMoveEditor(source: EditorGroupView, input: EditorInput, destination: EditorMoveDestination): boolean {
 		const part = this.owners.get(source);
-		if (part === undefined || part.retired || part.surface.retired || !source.openingAdmitted || part.operation !== 'none' || source.model.activeTab !== input || admission.isPending(input)) return false;
-		if (destination === 'new') return input.canMove();
-		const receiver = this.owners.get(destination);
-		if (destination === source || receiver === undefined || receiver.retired || receiver.surface.retired || !destination.openingAdmitted || receiver.operation !== 'none') return false;
-		const existing = destination.model.findById(input.id);
-		return input.canMove(existing) && (existing === undefined || !admission.isPending(existing));
+		if (part === undefined || part.retired || source.paneSurface.retired || !source.openingAdmitted || part.operation !== 'none'
+			|| source.model.activeTab !== input || this.closeController.isPending(input)) return false;
+		if (destination.kind === 'window') return input.canMove();
+		const receiver = this.owners.get(destination.group);
+		if (receiver === undefined || receiver.retired || destination.group.paneSurface.retired || !destination.group.openingAdmitted || receiver.operation !== 'none') return false;
+		if (destination.kind === 'split') return (destination.group !== source || source.model.tabs.length > 1) && input.canMove();
+		if (destination.group === source) return destination.index !== undefined;
+		const existing = destination.group.model.findById(input.id);
+		return input.canMove(existing) && (existing === undefined || !this.closeController.isPending(existing));
 	}
 
-	/** Transfer preserves the input, working copy and view state while replacing control authority. */
-	public moveEditor(source: EditorGroupView, input: EditorInput, destination: EditorGroupView | 'new', admission: EditorCloseController): boolean {
-		if (!this.canMoveEditor(source, input, destination, admission)) return false;
+	/** Drop destinations stay descriptions until draft and input-operation admission succeed. */
+	public moveEditor(source: EditorGroupView, input: EditorInput, destination: EditorMoveDestination): boolean {
+		if (!this.canMoveEditor(source, input, destination)) return false;
 		const focusRevision = inputFocus.revision, focusOrigin = inputFocus.target;
 		const sourceGeneration = source.panes.openGeneration;
 		if (!source.commitPendingEdit() || source.panes.openGeneration !== sourceGeneration) return false;
-		if (destination !== 'new') {
-			const generation = destination.panes.openGeneration;
-			if (!destination.commitPendingEdit() || destination.panes.openGeneration !== generation) return false;
+		if (destination.kind !== 'window' && destination.group !== source) {
+			const generation = destination.group.panes.openGeneration;
+			if (!destination.group.commitPendingEdit() || destination.group.panes.openGeneration !== generation) return false;
 		}
-		if (!this.canMoveEditor(source, input, destination, admission)) return false;
-		const existing = destination === 'new' ? undefined : destination.model.findById(input.id), sourcePart = this.partForGroup(source);
-		const movedTo = admission.transfer(existing === undefined ? [input] : [input, existing], () => {
+		if (!this.canMoveEditor(source, input, destination)) return false;
+		if (destination.kind === 'group' && destination.group === source) {
+			return this.closeController.transfer([input], () => {
+				source.model.moveToGap(input, destination.index!);
+				return this.owners.has(source) && !source.paneSurface.retired && source.model.activeTab === input && source.panes.activePane?.input === input;
+			});
+		}
+		const existing = destination.kind === 'group' ? destination.group.model.findById(input.id) : undefined;
+		const sourcePart = this.partForGroup(source);
+		const movedTo = this.closeController.transfer(existing === undefined ? [input] : [input, existing], () => {
 			sourcePart.setOperation('move');
 			const selection = existing === undefined ? undefined : source.panes.activePane!.getSelection?.();
-			const targetPart = destination === 'new' ? this.createDocument({}, 'move') : this.partForGroup(destination);
-			const target = destination === 'new' ? targetPart.activeGroup : destination;
-			if (destination !== 'new') targetPart.setOperation('move');
+			const targetPart = destination.kind === 'window' ? this.constructDocument({ requestedBounds: destination.requestedBounds }, 'move') : this.partForGroup(destination.group);
+			if (destination.kind !== 'window') targetPart.setOperation('move');
+			const target = destination.kind === 'group' ? destination.group : destination.kind === 'split' ? targetPart.createGroup() : targetPart.activeGroup;
+			let adopted = destination.kind === 'group';
 			let retiring: EditorInput | undefined, handoff: { group: EditorGroupView; input: EditorInput } | undefined;
 			try {
 				if (this.owners.get(source) !== sourcePart || source.paneSurface.retired || source.model.activeTab !== input
-					|| this.owners.get(target) !== targetPart || target.paneSurface.retired || target.model.findById(input.id) !== existing) return false;
+					|| target.paneSurface.retired || !targetPart.ownsGroup(target) || target.model.findById(input.id) !== existing
+					|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart) return false;
 				const targetGeneration = target.panes.openGeneration;
 				return withNavigationCaptureSuspended(() => {
 					const sourceReceipt = source.detachEditorForMove(input);
-					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
+					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.paneSurface.retired || target.paneSurface.retired
+						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
 						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetGeneration
 						|| source.model.activeTab !== input || target.model.findById(input.id) !== existing) return false;
 					const targetReceipt = target.panes.clearEditor();
-					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
+					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.paneSurface.retired || target.paneSurface.retired
+						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
 						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
 						|| source.model.activeTab !== input || target.model.findById(input.id) !== existing || !input.canMove(existing)) return false;
 					if (existing !== undefined) retiring = input;
-					const receiver = source.model.transferTo(target.model, input, existing);
-					handoff = { group: target, input: receiver };
+					const publication = source.model.transferTo(target.model, input, existing, destination.kind === 'group' ? destination.index : undefined);
+					const receiver = publication.input; handoff = { group: target, input: receiver };
+					adopted = true;
+					if (destination.kind === 'split') targetPart.admitGroup(target, destination.group, destination.direction);
+					else if (destination.kind === 'window') this.publishDocument(targetPart);
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
 						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
-						|| source.model.indexOf(input) >= 0 || target.model.activeTab !== receiver) return false;
+						|| source.model.contains(input) || target.model.activeTab !== receiver) return false;
+					publication.publish();
+					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
+						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| source.model.contains(input) || target.model.activeTab !== receiver) return false;
 					source.publishMovedEditor(input, target, receiver);
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
 						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
-						|| source.model.indexOf(input) >= 0 || target.model.activeTab !== receiver) return false;
+						|| source.model.contains(input) || target.model.activeTab !== receiver) return false;
 					const successor = source.model.activeTab;
 					if (successor !== null) source.attachTransferredEditor(successor, undefined, true);
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
@@ -249,8 +303,7 @@ export class EditorParts {
 				});
 			} finally {
 				try {
-					// Settle the current model, not a captured pre-transfer input. A newer
-					// clear remains empty; a retired attachment cannot receive a control.
+					// Current model selections own reconciliation, never captured old inputs.
 					for (const group of [source, target]) {
 						if (this.owners.get(group) !== (group === source ? sourcePart : targetPart) || group.paneSurface.retired) continue;
 						const active = group.model.activeTab, pane = group.panes.activePane;
@@ -259,6 +312,10 @@ export class EditorParts {
 					}
 				} finally {
 					retiring?.dispose(); selection?.dispose();
+					if (!adopted) {
+						if (destination.kind === 'window') targetPart.dispose();
+						else if (destination.kind === 'split') targetPart.discardGroup(target);
+					}
 					if (!sourcePart.retired) sourcePart.setOperation('none');
 					if (targetPart !== sourcePart && !targetPart.retired) targetPart.setOperation('none');
 				}
@@ -288,7 +345,7 @@ export class EditorParts {
 		const part = this.owners.get(group)!;
 		group.setClosing(true);
 		const targets = group.model.tabs.map(input => ({ group, input }));
-		const completion = this.options.closeEditors(targets, origin, part.actionPrompt).then(closed => {
+		const completion = this.closeController.close(targets, origin, part.actionPrompt).then(closed => {
 			if (!closed || this.owners.get(group) !== part || part.retired || group.model.tabs.length !== 0) return false;
 			const focused = inputFocus.target;
 			const ownsFocus = focused === null ? this.activePart === part && part.activeGroup === group
@@ -312,7 +369,7 @@ export class EditorParts {
 		part.setOperation('close');
 		const targets = part.groups.flatMap(group => group.model.tabs.map(input => ({ group, input })));
 		const origin = inputFocus.resolveTarget(part.scope.lastFocused) ?? part.activeGroup.panes.activePane?.commandTarget ?? part.focusTarget;
-		const completion = this.options.closeEditors(targets, origin, part.actionPrompt).then(closed => {
+		const completion = this.closeController.close(targets, origin, part.actionPrompt).then(closed => {
 			if (part.retired) return false;
 			if (closed) this.remove(part); else part.setOperation('none');
 			return closed;
@@ -335,7 +392,7 @@ export class EditorParts {
 		part.dispose();
 		this.documentParts.splice(this.documentParts.indexOf(part), 1);
 		for (const unbind of this.partSubscriptions.get(part)!) unbind(); this.partSubscriptions.delete(part);
-		for (const group of part.groups) { this.owners.delete(group); this.groupList.splice(this.groupList.indexOf(group), 1); }
+		for (const group of part.groups) { this.owners.delete(group); this.groupsBySurface.delete(group.surface); this.groupList.splice(this.groupList.indexOf(group), 1); }
 		this.mru.splice(this.mru.indexOf(part), 1);
 		if (this.activePart === part) this.activePart = next;
 		navigationState.activeGroup = this.activePart.activeGroup;
@@ -356,6 +413,7 @@ export class EditorParts {
 	public update(deltaSeconds: number): void {
 		this.main.update(deltaSeconds);
 		for (const part of this.documentParts) part.update(deltaSeconds);
+		this.dropTarget.refresh();
 	}
 
 	public serialize(serializers: EditorInputSerializers, previous?: SerializedEditorParts): SerializedEditorParts {
@@ -403,6 +461,7 @@ export class EditorParts {
 	}
 
 	public dispose(): void {
+		this.closeController.dispose(); this.dropTarget.dispose();
 		this.restoreGeneration++;
 		for (const part of this.documentParts) { this.partsByScope.set(part.scope, null); part.dispose(); }
 		this.partsByScope.set(this.main.scope, null);
@@ -410,6 +469,6 @@ export class EditorParts {
 		for (const subscriptions of this.partSubscriptions.values()) for (const unbind of subscriptions) unbind(); this.partSubscriptions.clear();
 		this.documentParts.length = 0; this.groupList.length = 0;
 		this.minimizedDocumentCount = 0;
-		this.owners.clear(); this.mru.length = 0; this.listeners.clear();
+		this.owners.clear(); this.groupsBySurface.clear(); this.mru.length = 0; this.listeners.clear();
 	}
 }

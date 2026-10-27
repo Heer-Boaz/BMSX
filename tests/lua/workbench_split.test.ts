@@ -4,7 +4,7 @@ import test from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
@@ -21,7 +21,7 @@ test('shared pane sash captures drag, releases on blur/replacement and consumes 
 	view.layout(100, 20, 1100, 600);
 	control.setInput(view);
 	parent.focus();
-	const pointer: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
 		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, viewportX: view.position + 2, viewportY: 40 };
 	assert.equal(control.handlePointer({ ...pointer, viewportX: 200 }), false);
 	assert.equal(control.handlePointer(pointer), true);
@@ -62,7 +62,7 @@ test('vertical split uses its height for drag, limits and focused keyboard resiz
 	view.layout(150, 100, 300, 1100);
 	control.setInput(view);
 	parent.focus();
-	const pointer: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
 		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, viewportX: 200, viewportY: view.position + 2 };
 	assert.equal(control.handlePointer({ ...pointer, viewportX: 301 }), false);
 	assert.equal(control.handlePointer(pointer), true);
@@ -106,7 +106,7 @@ test('unarranged or minimum-filled sashes cannot receive resize focus or capture
 	control.focusTarget.focus(); assert.equal(control.focusTarget.hasFocus, false);
 	view.resize(0.2); assert.equal(view.ratio, 0.6, 'no arranged resize interval preserves requested intent');
 	view.minimumFirstSize = 90; view.minimumSecondSize = 10; view.layout(0, 0, 100, 50);
-	const pointer: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
 		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, viewportX: view.position, viewportY: 10 };
 	assert.equal(view.resizable, false); assert.equal(control.handlePointer(pointer), false); assert.equal(capture.active, false);
 	control.focusTarget.focus(); assert.equal(control.focusTarget.hasFocus, false);

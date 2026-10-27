@@ -412,7 +412,7 @@ test('concrete groups retain independent controls, focus ancestry and capture li
 	assert.equal(inputFocus.target, secondPane.focusTarget);
 	let cancelled = 0, released = 0;
 	const target = { handleCapturedPointer() {}, cancelPointer() { cancelled++; }, releaseCapturedPointer() { released++; } };
-	const down = { valid: true, insideViewport: true, viewportX: 0, viewportY: 0,
+	const down = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, viewportX: 0, viewportY: 0,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
 	pointerCapture.beginRoute(second.group.captureScope, down);
 	pointerCapture.capture(target, PointerButton.Primary, second.group.captureScope);

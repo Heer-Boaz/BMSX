@@ -26,7 +26,9 @@ export function handleEditorInput(
 	}
 	const commands = inputFocus.commandRunner;
 	if (editor.keybindings.inChordMode && editor.keybindings.handle(playerInput, commands, focused)) return;
-	if (editor.menubar.handleKeyboard(playerInput, focused)) return;
+	// A modifier used by a captured pointer gesture is not an Alt-only menu gesture.
+	if (pointerCapture.active) editor.menubar.cancelAlt();
+	else if (editor.menubar.handleKeyboard(playerInput, focused)) return;
 	if (handleClipboardBindings(playerInput, editor.clipboard, focused)) return;
 	if (pointerCapture.active && isKeyJustPressed('Escape', playerInput)) {
 		consumeIdeKey('Escape', playerInput);

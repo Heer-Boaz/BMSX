@@ -50,7 +50,7 @@ test('moving a retained Source into a sibling group changes control ownership wi
 	control.focus();
 	const sibling = parts.splitGroup(first, 'right'); assert.ok(sibling);
 	const windows = parts.documents.length, version = f.firstInput.workingCopy.version;
-	assert.equal(parts.moveEditor(first, input, sibling, f.editor.editorClose), true); f.update();
+	assert.equal(parts.moveEditor(first, input, { kind: 'group', group: sibling }), true); f.update();
 	assert.equal(first.model.tabs.includes(input), false); assert.ok(sibling.model.activeTab === input);
 	assert.ok(parts.activeGroup === sibling); assert.ok(parts.findGroup(input) === sibling);
 	assert.equal(parts.documents.length, windows); assert.equal(f.firstInput.workingCopy.version, version);
@@ -93,8 +93,8 @@ test('captured retired group destinations cannot admit a split or retained-input
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	const retired = f.firstGroup;
 	assert.equal(await parts.close(f.firstPart), true);
-	assert.equal(parts.canMoveEditor(f.secondGroup, f.secondInput, retired, f.editor.editorClose), false);
-	assert.equal(parts.moveEditor(f.secondGroup, f.secondInput, retired, f.editor.editorClose), false);
+	assert.equal(parts.canMoveEditor(f.secondGroup, f.secondInput, { kind: 'group', group: retired }), false);
+	assert.equal(parts.moveEditor(f.secondGroup, f.secondInput, { kind: 'group', group: retired }), false);
 	assert.equal(parts.splitGroup(retired, 'right'), undefined);
 	assert.equal(retired.focus(), false); assert.equal(f.firstPart.focus(), false);
 	assert.ok(f.secondGroup.model.activeTab === f.secondInput);

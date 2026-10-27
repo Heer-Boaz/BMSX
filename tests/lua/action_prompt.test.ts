@@ -1,10 +1,11 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -39,7 +40,7 @@ function fixture(t: TestContext) {
 	const press = (code: string) => { key(code, true); key(code, false); };
 	const pointer = (index: number, pressed = 0, down = 0, up = 0) => {
 		const bounds = index < 0 ? { left: 0, right: 1, top: 0, bottom: 1 } : prompt.view.buttons[index].bounds;
-		const snapshot: PointerSnapshot = { valid: true, insideViewport: true,
+		const snapshot: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
 			viewportX: (bounds.left + bounds.right) / 2, viewportY: (bounds.top + bounds.bottom) / 2,
 			pressedButtons: pressed, justPressedButtons: down, justReleasedButtons: up };
 		if (!capture.dispatch(snapshot, false, clock.now(), prompt.pointerScope)) prompt.handlePointer(snapshot);

@@ -8,6 +8,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { GameViewInput, openGameView } from '../../ide/workbench/contrib/game_view/editor_input';
 import { GameViewEditorPane } from '../../ide/workbench/contrib/game_view/editor_pane';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
+import type { EditorMoveDestination } from '../../ide/workbench/services/editor/editor_parts';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 function fixture(t: TestContext) {
@@ -24,7 +25,10 @@ function fixture(t: TestContext) {
 function chooseDestination(f: ReturnType<typeof fixture>, destination: EditorGroupView | 'new'): void {
 	const picker = f.editor.quickInput;
 	assert.equal(picker.visible, true);
-	const index = picker.model.list.rows.findIndex(row => 'destination' in row.item && row.item.destination === destination);
+	const index = picker.model.list.rows.findIndex(row => {
+		const candidate = (row.item as typeof row.item & { destination: EditorMoveDestination }).destination;
+		return destination === 'new' ? candidate.kind === 'window' : candidate.kind === 'group' && candidate.group === destination;
+	});
 	assert.ok(index >= 0, 'the chooser admits the actual destination owner');
 	f.key('Home', KeyModifier.ctrl);
 	for (let row = 0; row < index; row++) f.key('ArrowDown');
@@ -69,7 +73,7 @@ test('Game transfer drains the old physical pointer hold and admits input only t
 	f.host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
 	assert.equal(sample.pointerButtons, 1);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles, revision = f.host.execution.revision;
-	assert.equal(f.parts.moveEditor(f.parts.main.activeGroup, f.input, f.firstPart.activeGroup, f.editor.editorClose), true);
+	assert.equal(f.parts.moveEditor(f.parts.main.activeGroup, f.input, { kind: 'group', group: f.firstPart.activeGroup }), true);
 	const moved = f.firstGroup.panes.activePane!;
 	assert.equal(guest.guestInput, undefined); assert.equal(pointerCapture.guestBinding, undefined);
 	assert.equal(pointerCapture.draining, true); assert.equal(f.editor.guestInputRecipient, null);
@@ -105,7 +109,7 @@ test('Game move retires the old popup and Timeline authority and binds destinati
 	assert.ok(f.editor.contextMenu.invocationOrigin === f.pane.commandTarget);
 	f.editor.dispatchKey(new KeyInputEvent('Enter', KeyModifier.none));
 	const cycles = f.host.runtime.machine.scheduler.nowCycles, revision = f.host.execution.revision;
-	assert.equal(f.parts.moveEditor(f.parts.main.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true);
+	assert.equal(f.parts.moveEditor(f.parts.main.activeGroup, f.input, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	const moved = f.secondGroup.panes.activePane!;
 	assert.equal(f.editor.contextMenu.visible, false); assert.equal(f.parts.main.activeGroup.timeline.available, false);
 	assert.equal(f.pane.commandTarget.scope.runtime, undefined);

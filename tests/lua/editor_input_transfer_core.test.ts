@@ -36,7 +36,8 @@ test('model handoff publishes both final memberships, selections, metadata and r
 	};
 	const unbindSource = source.onDidChange(() => { sourceChanges++; verify(); });
 	const unbindTarget = destination.onDidChange(() => { targetChanges++; verify(); });
-	assert.strictEqual(source.transferTo(destination, moving), moving);
+	const transfer = source.transferTo(destination, moving);
+	assert.ok(transfer.input === moving); assert.equal(sourceChanges, 0); assert.equal(targetChanges, 0); transfer.publish();
 	assert.equal(sourceChanges, 1); assert.equal(targetChanges, 1);
 	unbindSource(); unbindTarget();
 	const sourceAfter = source.revision, targetAfter = destination.revision;
@@ -52,7 +53,7 @@ test('moving an inactive model member retains its source selection and pins only
 	const active = sourceInput('active.lua'), moving = sourceInput('moving.lua');
 	t.after(() => { source.clear(); destination.clear(); active.workingCopy.dispose(); moving.workingCopy.dispose(); });
 	source.add(active, { pinned: false }); source.add(moving); source.activate(active);
-	source.transferTo(destination, moving);
+	source.transferTo(destination, moving).publish();
 	assert.strictEqual(source.activeTab, active); assert.strictEqual(source.previewTab, active);
 	assert.strictEqual(destination.activeTab, moving); assert.equal(destination.previewTab, null);
 	assert.deepEqual(source.tabs, [active]); assert.deepEqual(destination.tabs, [moving]);
@@ -65,7 +66,8 @@ test('model coalescence retains the exact destination view and leaves source ret
 	source.add(moving); source.activate(moving);
 	destination.add(retained, { pinned: false }); destination.activate(retained);
 	let retired = 0; moving.onWillDispose(() => retired++);
-	assert.strictEqual(source.transferTo(destination, moving, retained), retained);
+	const transfer = source.transferTo(destination, moving, retained);
+	assert.ok(transfer.input === retained); transfer.publish();
 	assert.deepEqual(source.tabs, []); assert.equal(source.activeTab, null);
 	assert.deepEqual(destination.tabs, [retained]); assert.strictEqual(destination.activeTab, retained);
 	assert.equal(destination.previewTab, null); assert.equal(retired, 0);
@@ -87,7 +89,8 @@ test('group move detaches the old Source control before either membership publis
 	const unbindSource = source.model.onDidChange(assertDetached), unbindTarget = destination.model.onDidChange(assertDetached);
 	source.detachEditorForMove(input); destination.panes.clearEditor();
 	assert.ok(source.panes.openGeneration > sourceGeneration && destination.panes.openGeneration > targetGeneration);
-	assert.strictEqual(source.model.transferTo(destination.model, input), input);
+	const transfer = source.model.transferTo(destination.model, input);
+	assert.ok(transfer.input === input); transfer.publish();
 	unbindSource(); unbindTarget();
 	const attach = f.second.code.attach.bind(f.second.code);
 	t.mock.method(f.second.code, 'attach', (model, state, document) => {
@@ -115,7 +118,7 @@ test('a group publishes the exact replacement owner before coalesced source inpu
 	t.after(unbind);
 	input.onWillDispose(() => assert.equal(moved, true));
 	source.detachEditorForMove(input); destination.panes.clearEditor();
-	source.model.transferTo(destination.model, input, retained);
+	source.model.transferTo(destination.model, input, retained).publish();
 	source.publishMovedEditor(input, destination, retained);
 	destination.attachTransferredEditor(retained, selection, true);
 	input.dispose(); selection.dispose();

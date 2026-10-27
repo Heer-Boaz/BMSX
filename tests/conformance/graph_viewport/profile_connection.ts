@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../../hosts/common/input/text';
 import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
@@ -28,7 +29,7 @@ for (const nodeCount of [4, 1024]) {
 	const capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
 	control.setInput(f.view, f.interaction);
-	const from = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 250, viewportY: 79 };
+	const from = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 250, viewportY: 79 };
 	const to = { ...from, viewportX: 256, viewportY: 170 };
 	const alternate = { ...to, viewportX: to.viewportX + 1 };
 	control.handlePointer(from, 0);

@@ -3,6 +3,7 @@ import { copy_rect_bounds, create_rect_bounds, write_rect_bounds, type RectBound
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 
 export const WINDOW_RESIZE_MARGIN = 3;
+export const WINDOW_HEADER_VERTICAL_PADDING = 8;
 
 export const enum WindowResizeEdge { None = 0, Left = 1, Top = 2, Right = 4, Bottom = 8 }
 

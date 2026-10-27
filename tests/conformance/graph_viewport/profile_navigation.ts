@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../../hosts/common/input/text';
 import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
@@ -5,7 +6,7 @@ import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/q
 import { InputFocusService } from '../../../ide/input/focus';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../../ide/input/pointer/capture';
-import type { PointerSnapshot } from '../../../ide/common/models';
+import type { PointerInputSnapshot } from '../../../ide/common/models';
 import { WorkbenchGraphControl } from '../../../ide/workbench/ui/graph/control';
 import { WorkbenchGraphViewport } from '../../../ide/workbench/ui/graph/viewport';
 import { createWorkbenchGraphModel, createWorkbenchGraphNode, createWorkbenchGraphEdge } from '../../../ide/workbench/ui/graph/model';
@@ -44,7 +45,7 @@ for (const nodeCount of [32, 1024]) {
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
 	control.setInput(view);
 	const measurements = font.measurements;
-	const pointer: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Auxiliary,
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, pressedButtons: PointerButton.Auxiliary,
 		justPressedButtons: PointerButton.Auxiliary, justReleasedButtons: 0, viewportX: 40, viewportY: 50 };
 	control.handlePointer(pointer, 0);
 	pointer.justPressedButtons = 0;

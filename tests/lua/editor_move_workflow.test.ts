@@ -8,13 +8,17 @@ import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_p
 import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
+import type { EditorMoveDestination } from '../../ide/workbench/services/editor/editor_parts';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
 
 function selectDestination(f: Fixture, destination: EditorGroupView | 'new'): number {
 	const picker = f.editor.quickInput;
-	const index = picker.model.list.rows.findIndex(row => 'destination' in row.item && row.item.destination === destination);
+	const index = picker.model.list.rows.findIndex(row => {
+		const candidate = (row.item as typeof row.item & { destination: EditorMoveDestination }).destination;
+		return destination === 'new' ? candidate.kind === 'window' : candidate.kind === 'group' && candidate.group === destination;
+	});
 	assert.ok(index >= 0, 'the actual destination owner is admitted by the move chooser');
 	f.key('Home', KeyModifier.ctrl);
 	for (let row = 0; row < index; row++) f.key('ArrowDown');

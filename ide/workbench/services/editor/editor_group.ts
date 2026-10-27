@@ -6,6 +6,7 @@ import { beginNavigationCapture, captureNavigation, completeNavigation, navigati
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { EditorTabGroupModel, type EditorOpenOptions } from '../../ui/tab/group_model';
 import { EditorTabStrip } from '../../ui/tab/control';
+import type { EditorTabDragHandler } from '../../ui/tab/drag';
 import type { EditorTabId } from '../../ui/tab/id';
 import type { EditorInput } from '../../ui/tab/model';
 import { EditorPanes, type EditorPaneFactories, type EditorPaneOpenOptions } from './editor_panes';
@@ -38,6 +39,7 @@ export type EditorGroupPresentation = {
 	readonly workArea: Readonly<RectBounds>;
 	readonly renderContext: EditorTabStripRenderContext;
 	readonly contextMenu: ContextMenuController;
+	readonly dropTarget: EditorTabDragHandler;
 	layout(group: EditorGroupView): void;
 };
 
@@ -96,7 +98,8 @@ export class EditorGroupView {
 	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
 
 	public constructor(factories: EditorPaneFactories, commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
-		presentation: EditorGroupPresentation) {
+		presentation: EditorGroupPresentation, presented = true) {
+		this.presented = presented;
 		this.surfaceService = presentation.surfaces;
 		this.containerScope = new InputFocusScope(Symbol('editor group'), presentation.focusScope);
 		this.focusScope = new InputFocusScope(this.captureScope, this.containerScope);
@@ -128,7 +131,7 @@ export class EditorGroupView {
 		});
 		this.panes = new EditorPanes(factories, this);
 		this.tabStrip = new EditorTabStrip(this.model, this.tabLayoutContext, commands, this.tabFocusTarget,
-			id => this.activate(id), id => { void this.close(id); }, () => this.panes.activePane?.focus());
+			id => this.activate(id), id => { void this.close(id); }, () => this.panes.activePane?.focus(), presentation.dropTarget);
 		this.tabSurface = presentation.surfaces.attach({
 			role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.tabScope,
 			isVisible: () => this.presented, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.clip,
@@ -314,7 +317,7 @@ export class EditorGroupView {
 
 	/** Retire the departing attachment, never the input that is about to acquire another owner. */
 	public detachEditorForMove(input: EditorInput): number {
-		if (this.tabStrip.drag.state?.tabId === input.id) this.tabStrip.cancelDrag();
+		if (this.tabStrip.drag.state?.input === input) this.tabStrip.cancelDrag();
 		return this.model.activeTab === input ? this.panes.clearEditor('move') : this.panes.beginOpen();
 	}
 
@@ -347,7 +350,7 @@ export class EditorGroupView {
 
 	/** Commit an admitted close or explicit owner retirement for this known member. */
 	public removeEditor(input: EditorInput, closing?: ReadonlySet<EditorInput>): void {
-		if (this.tabStrip.drag.state?.tabId === input.id) this.tabStrip.cancelDrag();
+		if (this.tabStrip.drag.state?.input === input) this.tabStrip.cancelDrag();
 		const index = this.model.indexOf(input);
 		if (this.model.activeTab === input) {
 			const tabs = this.model.tabs;

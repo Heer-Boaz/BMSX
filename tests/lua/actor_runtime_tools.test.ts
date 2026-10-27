@@ -1,7 +1,7 @@
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
-import test, { afterEach } from 'node:test';
+import test, { afterEach, type TestContext } from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { createBuiltinFunction, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -45,7 +45,7 @@ import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submi
 import { RuntimeTimelineControl } from '../../ide/workbench/ui/runtime_timeline_control';
 import { updateFullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
-import { createTestGroupPresentation, createTestEditorPaneFactories } from '../helpers/editor_panes';
+import { createTestGroupPresentation, createTestEditorPaneFactories, createTestEditorCloseDependencies } from '../helpers/editor_panes';
 import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -77,7 +77,7 @@ afterEach(() => {
 	controllerFixtures.length = 0;
 });
 
-function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraModules: readonly { path: string; source: string }[] = []) {
+function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraModules: readonly { path: string; source: string }[] = []) {
 	const modules = [{ path: 'cartlib/world/world', source: worldSource }, { path: 'cartlib/fsm/fsm_component', source: 'return {}' },
 		{ path: 'cartlib/timeline/timeline_component', source: 'return {}' }, { path: 'cartlib/actioneffects/actioneffect_component', source: 'return {}' }, ...extraModules]
 		.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`) }));
@@ -98,7 +98,7 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 	const parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
 		commands: { isEnabled: () => false, execute() {} }, contextMenu, renderContext: presentation.renderContext,
 		factories: createTestEditorPaneFactories(), focusReturn: inputFocus.createTarget(null, presentation.focusScope),
-		closeEditors: targets => { for (const { group, input } of targets) group.removeEditor(input); return Promise.resolve(true); },
+		...createTestEditorCloseDependencies(t, presentation),
 		layoutMain: () => parts.main.layout(presentation.workArea) });
 	const group = parts.main.activeGroup;
 	const controller = new ActorLabController(sources, f.guest, runtime.machine.cpu,
@@ -111,7 +111,7 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} stops at rejected focused draft admission`, t => {
 	configureFontVariant('tiny');
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
-	const f = fixture(ENTRY, true, WORLD_SOURCE, []);
+	const f = fixture(t, ENTRY, true, WORLD_SOURCE, []);
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'draft.lua', contextId: TEST_SYSTEM_CONTEXT_ID, path: 'draft.lua', location: { kind: 'workspace', path: 'draft.lua' },
 		source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
 	const current = new CodeEditorInput(model);
@@ -134,7 +134,7 @@ for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} st
 });
 
 test('viewport picking follows render order and cropped negative scale, using cached typed guest identities', t => {
-	const f = fixture(`local world<const> = require('cartlib/world/world')
+	const f = fixture(t, `local world<const> = require('cartlib/world/world')
 function rename_pick() world._objects[1].id = 'renamed' end
 function hide_pick() world._render_visuals[2].visible = false end`, true, `
 local sprite<const> = require('cartlib/component/sprite_component')
@@ -180,7 +180,7 @@ return sprite`,
 });
 
 test('Actor Lab history restores the typed member and Details after choosing another actor without guest execution', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const controller = f.controller;
 	const input = controller.resolveInput(); t.after(() => input.dispose());
 	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
@@ -210,7 +210,7 @@ test('Actor Lab history restores the typed member and Details after choosing ano
 
 for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history restores requested split intent while the preview is withheld`, t => {
 	configureFontVariant(variant);
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	controller.refresh(input);
@@ -239,7 +239,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history r
 });
 
 test('Actor Lab pin action enablement uses retained membership without guest reads or identity capture churn', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const controller = f.controller;
 	const input = controller.resolveInput(); t.after(() => input.dispose());
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
@@ -268,7 +268,7 @@ test('Actor Lab pin action enablement uses retained membership without guest rea
 });
 
 test('Actor Lab capture admission publishes guest invalidation without an attached pane', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const input = f.controller.resolveInput(), transport = f.controller.viewport.transport;
 	input.interaction.setRuntime(transport);
 	const changes: boolean[] = [];
@@ -283,7 +283,7 @@ test('Actor Lab capture admission publishes guest invalidation without an attach
 });
 
 test('Actor Lab pin and reveal commands keep watch selection separate and return to the exact cross-actor member', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const controller = f.controller;
 	const input = controller.resolveInput(); t.after(() => input.dispose());
 	const choices = readActorChoices(f.sources, f.guest, -1);
@@ -318,7 +318,7 @@ test('Actor Lab pin and reveal commands keep watch selection separate and return
 });
 
 test('locked Details property commands target its subject rather than a newly selected actor', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
 	const choices = readActorChoices(f.sources, f.guest, -1);
 	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
@@ -346,7 +346,7 @@ test('locked Details property commands target its subject rather than a newly se
 });
 
 test('navigation retains the independent Details lock and subject, but never restores them across a retired generation', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
 	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
 	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
@@ -371,7 +371,7 @@ test('navigation retains the independent Details lock and subject, but never res
 test('the actual floating pane retains locked pins while closed or detached without formatting the hidden client', t => {
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => { quickInput.dispose(); contextMenu.hide(); });
-	const f = fixture(ENTRY.replace('return world', `function remove_subject() world._objects = { world._objects[2] } end
+	const f = fixture(t, ENTRY.replace('return world', `function remove_subject() world._objects = { world._objects[2] } end
 function replace_subject() world._objects[2] = { id = 1, definition_id = 'same', active = false, _components = {}, _components_by_class = {} } end
 return world`), true, WORLD_SOURCE, []);
 	t.after(() => f.stop.dispose());
@@ -610,7 +610,7 @@ return world`), true, WORLD_SOURCE, []);
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor timeline layout translates with its client and invalidates an inset-only change`, t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const input = f.controller.resolveInput(); t.after(() => input.dispose());
 	const previousFont = editorViewState.font, previousHeight = editorViewState.lineHeight, previousAdvance = editorViewState.charAdvance;
 	configureFontVariant(variant);
@@ -635,7 +635,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor timeline 
 
 test('Actor Lab navigation keeps graph edge identity and retires bookmarks at heap replacement or history resume', t => {
 	for (const retirement of ['heap-replaced', 'history-resume'] as const) {
-		const f = fixture(); t.after(() => f.stop.dispose());
+		const f = fixture(t); t.after(() => f.stop.dispose());
 		const controller = f.controller;
 		const input = controller.resolveInput(); t.after(() => input.dispose());
 		const font = new Font({ variant: 'tiny' });
@@ -661,7 +661,7 @@ test('Actor Lab navigation keeps graph edge identity and retires bookmarks at he
 
 test('Actor Lab navigation retains an absent member without selecting a different receiver', t => {
 	for (const presentation of ['outline', 'graph'] as const) {
-		const f = fixture(ENTRY.replace('return world', "function remove_state() probe._components[1]._machines[1].state_ids = { 'concurrent' } end\nreturn world"));
+		const f = fixture(t, ENTRY.replace('return world', "function remove_state() probe._components[1]._machines[1].state_ids = { 'concurrent' } end\nreturn world"));
 		t.after(() => f.stop.dispose());
 		const controller = f.controller;
 		const input = controller.resolveInput(); t.after(() => input.dispose());
@@ -683,7 +683,7 @@ test('Actor Lab navigation retains an absent member without selecting a differen
 });
 
 test('FSM graph consumes actual activity and typed membership, retains geometry through restore, and retires renamed instances', t => {
-	const f = fixture(ENTRY.replace('return world', `function move() probe._components[1]._machines_by_id.same.current_id = nil end
+	const f = fixture(t, ENTRY.replace('return world', `function move() probe._components[1]._machines_by_id.same.current_id = nil end
 function disable() probe._components[1].enabled = false end
 function rename_machine()
 	local machines = probe._components[1]._machines_by_id
@@ -740,7 +740,7 @@ return world`));
 });
 
 test('FSM graph selection distinguishes two memberships of the same physical state table', t => {
-	const f = fixture(ENTRY.replace('return world', `local machine = probe._components[1]._machines_by_id.same
+	const f = fixture(t, ENTRY.replace('return world', `local machine = probe._components[1]._machines_by_id.same
 machine.states.alias = machine.states.idle
 machine.state_ids[3] = 'alias'
 return world`));
@@ -765,7 +765,7 @@ return world`));
 });
 
 test('outline selection follows typed membership across graph return, topology changes and history gaps', t => {
-	const f = fixture(ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
+	const f = fixture(t, ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
 machine.states.alias = machine.states.idle
 machine.state_ids[3] = 'alias'
 function add_alias() machine.states.earlier = machine.states.idle; machine.state_ids[4] = 'earlier' end
@@ -796,7 +796,7 @@ return world`));
 });
 
 test('Actor Lab topology anchoring retains fractional progress through small wheel occurrences', t => {
-	const f = fixture(ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
+	const f = fixture(t, ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
 function add_earlier() machine.states.earlier = machine.states.idle; machine.state_ids[3] = 'earlier' end
 return world`));
 	t.after(() => f.stop.dispose());
@@ -822,7 +822,7 @@ return world`));
 });
 
 test('World pages retain typed identities; Actor Lab and tool trees consume real class indices, not names', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
 	const first = f.actors.list(0, 1), second = f.actors.list(1, 1);
 	assert.equal(first.status, 'available'); assert.equal(first.total, 2);
@@ -848,7 +848,7 @@ test('World pages retain typed identities; Actor Lab and tool trees consume real
 });
 
 test('tree paging and repeated detail reads do not repeat semantic traversal or formatting', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const actor = f.actors.list(0, 1).actors![0].reference;
 	let visits = 0;
 	const original = f.guest.visitTableEntries.bind(f.guest);
@@ -865,7 +865,7 @@ test('tree paging and repeated detail reads do not repeat semantic traversal or 
 });
 
 test('operation identities preserve guest tags and typed membership without retaining borrowed nodes', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const cpu = f.runtime.machine.cpu, guest = f.guest;
 	const candidates: Value[] = [null, false, true, 1, valueString(cpu.stringPool.intern('1')),
 		guest.global('probe'), guest.global('rename'), cpu.activeThread, createBuiltinFunction(BuiltinFunctionId.Type)];
@@ -896,7 +896,7 @@ test('operation identities preserve guest tags and typed membership without reta
 });
 
 test('operation discovery is read-only and rejects absent actions, methods and executable arguments', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const actor = f.actors.list(0, 1).actors![0].reference, nodes = f.actors.tree(actor, 0, 100).nodes;
 	const root = nodes[0], state = nodes.find(node => node.kind === 'state')!;
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
@@ -912,10 +912,10 @@ test('operation discovery is read-only and rejects absent actions, methods and e
 	assert.throws(() => f.actors.invocation(root.reference, 'action', 'set_pos', '1, 2, 3'), /expired/);
 });
 
-test('unloaded, uninitialized and actually empty World are distinct observations', () => {
+test('unloaded, uninitialized and actually empty World are distinct observations', t => {
 	for (const [entry, run, status] of [['return 0', true, 'not_loaded'], [ENTRY, false, 'uninitialized'],
 		[`${ENTRY.replace('return world', 'world._objects = {} return world')}`, true, 'available']] as const) {
-		const f = fixture(entry, run), result = f.actors.list(0, 10);
+		const f = fixture(t, entry, run), result = f.actors.list(0, 10);
 		assert.equal(result.status, status);
 		if (status === 'available') { assert.equal(result.total, 0); assert.deepEqual(result.actors, []); }
 		else assert.equal(result.total, undefined);
@@ -923,8 +923,8 @@ test('unloaded, uninitialized and actually empty World are distinct observations
 	}
 });
 
-for (const reason of ['execution', 'history-restored', 'heap-replaced'] as const) test(`${reason} retires actor handles, typed roots and domain borrows together`, () => {
-	const f = fixture(), actor = f.actors.list(0, 1).actors![0], node = f.actors.tree(actor.reference, 0, 1).nodes[0];
+for (const reason of ['execution', 'history-restored', 'heap-replaced'] as const) test(`${reason} retires actor handles, typed roots and domain borrows together`, t => {
+	const f = fixture(t), actor = f.actors.list(0, 1).actors![0], node = f.actors.tree(actor.reference, 0, 1).nodes[0];
 	f.guest.invalidate(reason);
 	assert.throws(() => f.actors.list(0, 1), /expired/);
 	assert.throws(() => f.actors.tree(actor.reference, 0, 1), /expired/);
@@ -936,7 +936,7 @@ for (const reason of ['execution', 'history-restored', 'heap-replaced'] as const
 	next.dispose();
 });
 
-test('Actor Lab separates compact semantic labels from actual component identities and owner-qualified names', () => {
+test('Actor Lab separates compact semantic labels from actual component identities and owner-qualified names', t => {
 	const source = `local fsm<const> = require('cartlib/fsm/fsm_component')
 local timelines<const> = require('cartlib/timeline/timeline_component')
 local left<const> = { localdef_id = 'demo.actor.left.same', states = {}, state_ids = {}, current_id = nil }
@@ -949,7 +949,7 @@ local actor<const> = { id = 'demo.actor', definition_id = 'demo.actor', active =
  _components = { timeline, first, second }, _components_by_class = { [fsm] = { first, second }, [timelines] = { timeline } } }
 first.parent = actor; second.parent = actor; timeline.parent = actor
 return { _objects = { actor } }`;
-	const f = fixture(`local world<const> = require('cartlib/world/world')
+	const f = fixture(t, `local world<const> = require('cartlib/world/world')
 local fsm<const> = require('cartlib/fsm/fsm_component')
 function remove_component() world._objects[1]._components[3] = nil; world._objects[1]._components_by_class[fsm][2] = nil end
 return world`, true, source);
@@ -973,8 +973,8 @@ return world`, true, source);
 	input.dispose(); f.stop.dispose();
 });
 
-test('ordinary pane retains stable rows, refreshes changed labels, releases detached branches and clears identities after machine replacement', () => {
-	const f = fixture(), choice = readActorChoices(f.sources, f.guest, f.stop.state.activeCartridge)[0], input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true);
+test('ordinary pane retains stable rows, refreshes changed labels, releases detached branches and clears identities after machine replacement', t => {
+	const f = fixture(t), choice = readActorChoices(f.sources, f.guest, f.stop.state.activeCartridge)[0], input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true);
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	projection.update();
@@ -1002,7 +1002,7 @@ test('ordinary pane retains stable rows, refreshes changed labels, releases deta
 });
 
 test('hidden Actor Lab releases borrows once, without revisiting an already released retained tree', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const choice = readActorChoices(f.sources, f.guest, -1)[0], input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true);
 	t.after(() => input.dispose());
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
@@ -1023,7 +1023,7 @@ test('hidden Actor Lab releases borrows once, without revisiting an already rele
 });
 
 test('explicit Actor Lab navigation reveals a retained child through collapsed ancestors', t => {
-	const f = fixture(); t.after(() => f.stop.dispose());
+	const f = fixture(t); t.after(() => f.stop.dispose());
 	const choice = readActorChoices(f.sources, f.guest, -1)[0], input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true);
 	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
@@ -1040,8 +1040,8 @@ test('explicit Actor Lab navigation reveals a retained child through collapsed a
 	input.dispose();
 });
 
-test('history selection borrows restored objects and retires unavailable bookmarks before branching', () => {
-	const f = fixture(ENTRY.replace('return world', `function add()
+test('history selection borrows restored objects and retires unavailable bookmarks before branching', t => {
+	const f = fixture(t, ENTRY.replace('return world', `function add()
 	probe._components[3] = { id = 'late', enabled = true, _parent_component_index = 3 }
 end
 return world`), false), cpu = f.runtime.machine.cpu;
@@ -1091,8 +1091,8 @@ return world`), false), cpu = f.runtime.machine.cpu;
 	input.dispose(); f.stop.dispose();
 });
 
-test('conversation admission binds all actor handles to its own stop and prompt lifetime', async () => {
-	const f = fixture(), lifetime = new AbortController();
+test('conversation admission binds all actor handles to its own stop and prompt lifetime', async t => {
+	const f = fixture(t), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, f.gteHistory, f.gpuHistory, lifetime.signal);
 	assert.throws(() => tools.execute('studio_list_actors', { inspection: 'foreign', start: 0, count: 1 }), /current suspended/);
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
@@ -1110,8 +1110,8 @@ test('conversation admission binds all actor handles to its own stop and prompt 
 	f.stop.dispose();
 });
 
-test('physical target domain, not delayed source activity, selects World after restore', () => {
-	const f = fixture();
+test('physical target domain, not delayed source activity, selects World after restore', t => {
+	const f = fixture(t);
 	f.sources.activeCartridgeSlot = 0;
 	assert.equal(f.stop.state.activeCartridge, -1);
 	assert.equal(f.actors.list(0, 10).total, 2);
@@ -1120,8 +1120,8 @@ test('physical target domain, not delayed source activity, selects World after r
 	f.stop.dispose();
 });
 
-test('activity predicates consume guest truthiness, including zero and empty string, without Boolean-only normalization', () => {
-	const f = fixture(ENTRY.replace('return world', `probe.active = 0
+test('activity predicates consume guest truthiness, including zero and empty string, without Boolean-only normalization', t => {
+	const f = fixture(t, ENTRY.replace('return world', `probe.active = 0
 probe._components[1].enabled = ''
 probe._components[1]._machines_by_id.same.states.concurrent.definition.is_concurrent = 0
 return world`));
@@ -1143,7 +1143,7 @@ local component<const> = { id = 'effects', enabled = true, _parent_component_ind
 	effects = { [first_key] = effect, [second_key] = effect, [first_fn] = effect, [second_fn] = effect } }
 actor._components[3] = component
 actor._components_by_class[effects] = { component }`);
-	const f = fixture(ENTRY, true, source); t.after(() => f.stop.dispose());
+	const f = fixture(t, ENTRY, true, source); t.after(() => f.stop.dispose());
 	const tree = new ActorRuntimeTree(); t.after(() => tree.dispose());
 	tree.update(f.sources, f.guest, -1, f.guest.global('probe') as Table);
 	const aliases = tree.roots[0].children[2].children;
@@ -1197,7 +1197,7 @@ function change_key_type()
 	entries[1], entries['1'] = entries['1'], entries[1]
 end
 return world`);
-	const f = fixture(entry, true, source); t.after(() => f.stop.dispose());
+	const f = fixture(t, entry, true, source); t.after(() => f.stop.dispose());
 	const tree = new ActorRuntimeTree(); t.after(() => tree.dispose());
 	const update = () => tree.update(f.sources, f.guest, -1, f.guest.global('probe') as Table);
 	const call = (name: string) => {
@@ -1242,7 +1242,7 @@ return world`);
 
 
 test('active reveal expands all parallel paths without replacing inspection selection or rebuilding unchanged activity', t => {
-	const f = fixture(ENTRY.replace('return world', `function move() probe._components[1]._machines[1].current_id = nil end
+	const f = fixture(t, ENTRY.replace('return world', `function move() probe._components[1]._machines[1].current_id = nil end
 return world`));
 	t.after(() => f.stop.dispose());
 	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); t.after(() => input.dispose());
@@ -1281,7 +1281,7 @@ return world`));
 });
 
 test('parallel tree follow reveals an active row rather than the inactive gap between them', t => {
-	const f = fixture(ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
+	const f = fixture(t, ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
 local first = machine.states.concurrent
 local last = machine.states.idle
 machine.states = { aaa = first, zzz = last }; machine.state_ids = { 'aaa', 'zzz' }; machine.current_id = 'zzz'
@@ -1309,7 +1309,7 @@ return world`));
 });
 
 test('historical actor absence keeps collapse and follow bookmarks but heap replacement retires them', t => {
-	const f = fixture(ENTRY, false), cpu = f.runtime.machine.cpu;
+	const f = fixture(t, ENTRY, false), cpu = f.runtime.machine.cpu;
 	t.after(() => f.stop.dispose());
 	const beforeBirth = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 100_000);
 	const input = new ActorLabInput(f.controller, 'actor-lab', 'ACTOR LAB', true); t.after(() => input.dispose());
@@ -1335,7 +1335,7 @@ test('historical actor absence keeps collapse and follow bookmarks but heap repl
 
 test('expanded stored values are inspectable selections but never fabricate logical pin commands', t => {
 	const worldSource = WORLD_SOURCE.replace('active = true, _components', 'active = true, data = { answer = 42 }, _components');
-	const f = fixture(ENTRY, true, worldSource); t.after(() => f.stop.dispose());
+	const f = fixture(t, ENTRY, true, worldSource); t.after(() => f.stop.dispose());
 	const input = f.controller.resolveInput(); t.after(() => input.dispose());
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
 	f.controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); f.controller.refreshDetails(input);
@@ -1353,7 +1353,7 @@ for (const historical of [true, false]) test(`navigation restores the original c
 	const worldSource = WORLD_SOURCE.replace('id = 1, definition_id', "id = 'actor_a', definition_id")
 		.replace("id = '1', definition_id", "id = 'actor_b', definition_id");
 	const entry = ENTRY.replace('return world', 'function remove_a() world._objects = { world._objects[2] } end\nreturn world');
-	const f = fixture(entry, true, worldSource); t.after(() => f.stop.dispose());
+	const f = fixture(t, entry, true, worldSource); t.after(() => f.stop.dispose());
 	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
 	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
 	controller.inspectActor(input, -1, choices.find(choice => choice.label === 'actor_a')!.hashId);

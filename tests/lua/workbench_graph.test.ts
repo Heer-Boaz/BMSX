@@ -8,7 +8,7 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { PolyRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { api } from '../../ide/runtime/overlay_api';
 import { drawWorkbenchGraph } from '../../ide/workbench/render/graph';
 import { createWorkbenchGraphDisc, createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode, type WorkbenchGraphModel } from '../../ide/workbench/ui/graph/model';
@@ -27,8 +27,8 @@ function fixture() {
 	view.layout(20, 20, 120, 100);
 	return { view, a, b, edge, model };
 }
-function pointer(x: number, y: number, pressed = false): PointerSnapshot {
-	return { viewportX: x, viewportY: y, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0, valid: true, insideViewport: true };
+function pointer(x: number, y: number, pressed = false): PointerInputSnapshot {
+	return { modifiers: KeyModifier.none, spaceDown: false, viewportX: x, viewportY: y, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0, valid: true, insideViewport: true };
 }
 
 test('disc symbols retain their actual pixel silhouette instead of routing to padded text bounds', () => {

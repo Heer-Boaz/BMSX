@@ -59,6 +59,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 	private rootModal: Surface | null = null;
 	private changing = false;
 	private changePending = false;
+	public revision = 0;
 
 	public constructor(private readonly onDidChange: () => void = () => {}) {}
 
@@ -113,7 +114,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 				for (const node of this.scopes.values()) {
 					if (node.role === 'transient' && node.lifetimeOwner !== undefined && !this.isAdmitted(node)) this.retireNode(node);
 				}
-				if (!this.changePending) this.onDidChange();
+				if (!this.changePending) { this.revision++; this.onDidChange(); }
 			} while (this.changePending);
 		} finally {
 			this.changing = false;

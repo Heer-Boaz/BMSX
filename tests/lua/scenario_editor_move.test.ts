@@ -102,7 +102,7 @@ test('Scenario move retains actual results, selection and reading state after th
 	const tests = captureScenarioLabTestView(view), selected = view.resultPane.rows[view.resultPane.selectionIndex];
 	const resultScroll = view.resultPane.scroll, split = view.split.ratio, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	let disposed = 0; f.input.onWillDispose(() => { disposed++; });
-	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondPart.activeGroup.model.activeTab === f.input && f.secondPart.activeGroup.panes.activePane!.input === f.input);
 	assert.ok(f.parts.findGroup(f.input) === f.secondPart.activeGroup && f.controller.resolveInput() === f.input);
 	assert.deepEqual(captureScenarioLabTestView(view), tests);
@@ -118,7 +118,7 @@ test('Scenario reveal from Main restores its minimized actual owner without rebi
 	const f = await fixture(t); f.select('passes');
 	f.editor.commands.execute('scenarioLab.run', f.firstPart.activeGroup.panes.activePane!.commandTarget);
 	const run = f.runs.results.liveRun!; await f.until(() => !f.runs.active);
-	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	const pane = f.secondPart.activeGroup.panes.activePane!, generation = f.secondPart.activeGroup.panes.openGeneration;
 	f.parts.minimize(f.secondPart); f.parts.main.focus();
 	f.controller.revealRun(run, f.parts.main.activeGroup); f.update();
@@ -154,7 +154,7 @@ test('Scenario companion attempts retire with the old attachment and Source and 
 		buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary, releasedButtons: 0, cancelledButtons: 0,
 		modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 };
 	f.editor.dispatchPointer(press);
-	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.equal(f.firstPart.quickInput.visible, false);
 	f.editor.dispatchPointer({ ...press, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary, timestamp: 1 });
 	assert.equal(f.runs.results.runs.length, 0); assert.equal(f.runs.active, false);
@@ -187,7 +187,7 @@ test('an isolated running Scenario target survives pane transfer and former-wind
 	assert.ok(target.runtime !== f.host.runtime && execution.active);
 	assert.equal(f.targets.length, 1); assert.ok(f.targets[0] === target);
 	const targetCycles = target.runtime.machine.scheduler.nowCycles, authoringCycles = f.host.runtime.machine.scheduler.nowCycles;
-	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.equal(await f.parts.close(f.firstPart), true);
 	assert.ok(f.runs.session === session && session.execution === execution && execution.target === target);
 	assert.equal(f.targets.length, 1, 'transfer does not construct a replacement test machine');
@@ -218,7 +218,7 @@ test('Scenario reveal finishes only the attachment that survived its owning pane
 	const f = await fixture(t);
 	f.firstPart.activeGroup.openEditor(new GameViewInput());
 	const unbind = f.firstPart.activeGroup.panes.onWillShowEditor(() => {
-		unbind(); assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, f.secondPart.activeGroup, f.editor.editorClose), true);
+		unbind(); assert.equal(f.parts.moveEditor(f.firstPart.activeGroup, f.input, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	});
 	t.after(unbind);
 	assert.doesNotThrow(() => f.controller.open(f.parts.main.activeGroup));

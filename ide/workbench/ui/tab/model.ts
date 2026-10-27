@@ -18,7 +18,7 @@ import type { CodeEditorInput } from '../../contrib/code_editor/editor_input';
 import type { ResourceViewerInput } from '../../contrib/resources/editor_input';
 import type { ScenarioLabInput } from '../../contrib/scenario_lab/editor_input';
 import type { SceneEditorInput } from '../../contrib/scene_editor/editor_input';
-import type { EditorTabId } from './id';
+import type { PointerInputSnapshot } from '../../../common/models';
 import type { ActorLabInput } from '../../contrib/actor_lab/editor_input';
 import type { GameViewInput } from '../../contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../contrib/edit_review/editor_input';
@@ -62,18 +62,10 @@ export type {
 	SceneEditorInput,
 };
 
-export type TabDragState = {
-	tabId: EditorTabId;
-	startX: number;
-	startY: number;
+export type TabDragState = PointerInputSnapshot & {
+	readonly input: EditorInput;
+	readonly startX: number;
+	readonly startY: number;
 	hasDragged: boolean;
-	pointerX: number;
-	pointerY: number;
 	pointerTime: number;
-	revision: number;
-	targetDirty: boolean;
-	targetLayoutRevision: number;
-	targetScroll: number;
-	targetIndex: number;
-	markerX: number;
 };

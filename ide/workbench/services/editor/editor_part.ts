@@ -24,12 +24,14 @@ import { ScrollbarController } from '../../ui/scrollbar_controller';
 import { EditorGroupView, findEditorGroup } from './editor_group';
 import type { EditorPaneFactories } from './editor_panes';
 import type { CloseEditors } from './editor_close';
+import type { EditorTabDragHandler } from '../../ui/tab/drag';
 import { EditorGroupArrangement, type EditorGroupDirection, type EditorGroupLayout, type EditorGroupSplit } from './group_arrangement';
 import type { SerializedEditorPart, SerializedEditorGroupLayout } from './editor_parts_serialization';
 import type { EditorInputSerializers } from './editor_serialization';
 
 type EditorPartOptions = {
 	readonly initialOperation: 'none' | 'move';
+	readonly presented: boolean;
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly owner: WorkbenchSurface;
 	readonly scope: InputFocusScope;
@@ -39,6 +41,7 @@ type EditorPartOptions = {
 	readonly renderContext: EditorTabStripRenderContext;
 	readonly factories: EditorPaneFactories;
 	readonly closeEditors: CloseEditors;
+	readonly dropTarget: EditorTabDragHandler;
 	readonly focusReturn: InputFocusTarget;
 	layoutMain(): void;
 	onDidActivate(part: EditorPart): void;
@@ -73,6 +76,7 @@ export class EditorPart {
 	public get mostRecentlyActiveGroups(): readonly EditorGroupView[] { return this.groupMru; }
 	private readonly groupListeners = new Set<() => void>();
 	private restoreLifetime: AbortController | undefined;
+	private presented: boolean;
 	private operationValue: 'none' | 'close' | 'move';
 	public get operation(): 'none' | 'close' | 'move' { return this.operationValue; }
 	public get closing(): boolean { return this.operationValue === 'close'; }
@@ -91,6 +95,7 @@ export class EditorPart {
 	public readonly kind: 'main' | 'document';
 
 	public constructor(private readonly options: EditorPartOptions) {
+		this.presented = options.presented;
 		this.operationValue = options.initialOperation;
 		this.kind = options.kind;
 		if (options.kind === 'document') {
@@ -103,6 +108,7 @@ export class EditorPart {
 				retireContentInput: () => this.suspend(), restoreContentInput() {}, focusContent: () => this.focus(),
 				requestClose: () => options.requestClose(this), requestMinimize: () => options.requestMinimize(this),
 			});
+			this.window.setPresented(options.presented);
 			this.window.attach(); this.scope = this.window.scope; this.clientScope = this.window.clientScope;
 			this.focusTarget = this.window.clientFocusTarget; this.surface = this.window.surface!; this.clientSurface = this.window.clientSurface!;
 			this.subscriptions.push(model.onDidChangePlacement(options.onDidChange));
@@ -112,13 +118,13 @@ export class EditorPart {
 			this.focusTarget.canFocus = () => !this.retired;
 			this.surface = this.clientSurface = options.surfaces.attach({
 				role: 'window', lifetimeOwner: options.owner, presentationParent: null, captureScope: this.scope.surfaceScope,
-				isVisible: () => true, getBounds: () => this.clientBounds, getClip: () => options.workArea,
+				isVisible: () => this.presented, getBounds: () => this.clientBounds, getClip: () => options.workArea,
 				draw: () => this.drawClient(), handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
 				onRetire: () => pointerCapture.cancelScope(this.scope.surfaceScope),
 			});
 		}
 		this.scope.commands = options.commands;
-		const first = this.makeGroup();
+		const first = this.makeGroup(options.presented);
 		this.arrangement = new EditorGroupArrangement(first); this.activeGroup = first; this.groupMru.push(first);
 		this.subscriptions.push(this.focusTarget.onDidFocus(() => this.activeGroup.focus()));
 		const presentation = { scope: this.scope, bounds: this.clientBounds, kind: 'part' as const };
@@ -164,13 +170,13 @@ export class EditorPart {
 	}
 
 	public onDidChangeGroups(listener: () => void): () => void { this.groupListeners.add(listener); return () => this.groupListeners.delete(listener); }
-	private makeGroup(): EditorGroupView {
+	private makeGroup(presented = true): EditorGroupView {
 		const group = new EditorGroupView(this.options.factories, this.options.commands,
 			(targets, origin) => this.options.closeEditors(targets, origin, this.actionPrompt), {
-				surfaces: this.options.surfaces, owner: this.clientSurface, focusScope: this.clientScope,
+				surfaces: this.options.surfaces, owner: this.clientSurface, focusScope: this.clientScope, dropTarget: this.options.dropTarget,
 				workArea: this.options.workArea, renderContext: this.options.renderContext, contextMenu: this.options.contextMenu,
 				layout: () => { if (!this.retired) this.layout(this.clientBounds); },
-			});
+			}, presented);
 		group.setOpenAdmission(this.operationValue === 'none');
 		this.groupSubscriptions.set(group, [group.onWillFocus(() => this.prepareGroupFocus(group)), group.model.onDidChange(() => {
 			if (this.restoreLifetime !== undefined && this.groups.includes(group)) this.restoreLifetime.abort();
@@ -188,10 +194,36 @@ export class EditorPart {
 	}
 
 	public splitGroup(reference: EditorGroupView, direction: EditorGroupDirection): EditorGroupView {
+		const group = this.createGroup(); this.admitGroup(group, reference, direction); return group;
+	}
+	/** The construction owner retains provisional controls without publishing topology. */
+	public createGroup(): EditorGroupView { const group = this.makeGroup(false); group.setOpenAdmission(false); return group; }
+	public ownsGroup(group: EditorGroupView): boolean { return !this.retired && this.groupSubscriptions.has(group); }
+	public discardGroup(group: EditorGroupView): void {
+		const subscriptions = this.groupSubscriptions.get(group);
+		if (subscriptions === undefined) return; // Owner retirement can already have released the provisional group.
+		for (const unbind of subscriptions) unbind();
+		this.groupSubscriptions.delete(group); group.dispose();
+	}
+	/** Paired model membership is already final when a drop adopts its new leaf. */
+	public admitGroup(group: EditorGroupView, reference: EditorGroupView, direction: EditorGroupDirection): void {
 		this.restoreLifetime?.abort();
-		const group = this.makeGroup(); this.arrangement.split(reference, group, direction); this.groupMru.push(group);
-		this.syncSashes(); for (const listener of this.groupListeners) listener();
-		this.layout(this.clientBounds); this.options.onDidChange(); return group;
+		group.setOpenAdmission(this.operationValue === 'none');
+		this.arrangement.split(reference, group, direction); this.groupMru.push(group);
+		for (const listener of this.groupListeners) listener();
+		if (this.retired) return;
+		this.syncSashes();
+		if (this.retired) return;
+		this.layout(this.clientBounds); if (!this.retired) this.options.onDidChange();
+	}
+	/** Workspace membership precedes the first visible frame and input admission. */
+	public present(): void {
+		this.presented = true;
+		this.window?.setPresented(true);
+		if (this.retired) return;
+		this.window?.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
+		if (this.retired) return;
+		this.layout(this.clientBounds);
 	}
 	/** Close/move admission has already settled every input before its empty group retires. */
 	public removeGroup(group: EditorGroupView): boolean {
@@ -283,13 +315,8 @@ export class EditorPart {
 	public layout(bounds: Readonly<RectBounds>): void {
 		copy_rect_bounds(this.clientBounds, bounds);
 		for (const group of this.groups) this.arrangement.setMinimum(group, group.minimumWidth, group.minimumHeight);
-		const minimumWidth = this.arrangement.minimumWidth, minimumHeight = this.arrangement.minimumHeight;
-		const width = bounds.right - bounds.left, height = bounds.bottom - bounds.top, size = colors.SCROLLBAR_WIDTH;
-		let horizontal = minimumWidth > width, vertical = minimumHeight > height;
-		if (horizontal && minimumHeight > height - size) vertical = true;
-		if (vertical && minimumWidth > width - size) horizontal = true;
-		write_rect_bounds(this.viewport, bounds.left, bounds.top, Math.max(bounds.left, bounds.right - (vertical ? size : 0)), Math.max(bounds.top, bounds.bottom - (horizontal ? size : 0)));
-		this.arrangement.layout(this.viewport);
+		this.arrangement.layoutClient(bounds, colors.SCROLLBAR_WIDTH);
+		copy_rect_bounds(this.viewport, this.arrangement.bounds);
 		const changed = this.presentedLayoutRevision !== this.arrangement.layoutRevision;
 		this.presentedLayoutRevision = this.arrangement.layoutRevision;
 		write_rect_bounds(this.horizontalTrack, this.viewport.left, this.viewport.bottom, this.viewport.right, bounds.bottom);
@@ -329,7 +356,7 @@ export class EditorPart {
 		this.syncSashes(); this.layout(this.clientBounds); this.options.onDidChange();
 	}
 	public async restore(state: SerializedEditorPart, serializers: EditorInputSerializers): Promise<boolean> {
-		if (this.retired) return false;
+		if (this.retired || this.surface.retired || this.operationValue !== 'none') return false;
 		this.restoreLifetime?.abort();
 		const lifetime = new AbortController(); this.restoreLifetime = lifetime;
 		const candidates: EditorGroupView[] = [], retired: EditorGroupView[] = [];

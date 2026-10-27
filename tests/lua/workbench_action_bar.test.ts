@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { KeyInputEvent } from '../../hosts/common/input/text';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
@@ -6,7 +7,7 @@ import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
@@ -55,7 +56,7 @@ function fixture(t: TestContext, orientation: 'horizontal' | 'vertical' = 'horiz
 	const press = (code: string) => { key(code, true); key(code, false); };
 	const pointer = (index: number, pressed = 0, down = 0, up = 0, blocked = false, viewportX?: number) => {
 		const bounds = index < 0 ? { left: 0, right: 4 } : state.items[index].bounds;
-		const snapshot: PointerSnapshot = { valid: true, insideViewport: true,
+		const snapshot: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
 			viewportX: viewportX ?? (bounds.left + bounds.right) / 2, viewportY: 16,
 			pressedButtons: pressed, justPressedButtons: down, justReleasedButtons: up };
 		hover.beginDispatch();

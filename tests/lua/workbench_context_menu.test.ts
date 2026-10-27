@@ -5,7 +5,7 @@ import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
 import { applyViewportSize } from '../../ide/editor/ui/view/configuration';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -43,11 +43,11 @@ function fixture(t: TestContext) {
 		menu.model.layout(384, 288, 8, FONT, measure); menu.update();
 		return lifetime;
 	};
-	const event = (x: number, y: number, held = 0, down = 0, up = 0): PointerSnapshot => ({
+	const event = (x: number, y: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 		viewportX: x, viewportY: y, pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
 		valid: true, insideViewport: true,
 	});
-	const pointer = (e: PointerSnapshot) => { if (!capture.dispatch(e, false, 0, menu.pointerScope) && menu.visible) menu.handlePointer(e); };
+	const pointer = (e: PointerInputSnapshot) => { if (!capture.dispatch(e, false, 0, menu.pointerScope) && menu.visible) menu.handlePointer(e); };
 	const row = (index: number, held = 0, down = 0, up = 0) => event(menu.model.viewport.bounds.left + 8,
 		menu.model.viewport.offsetTop + menu.model.rows[index].top + 2, held, down, up);
 	const clock = new VirtualHeadlessClock(); const input = new Input(clock, new HeadlessInputHub(), -1);

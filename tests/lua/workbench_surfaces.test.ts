@@ -6,7 +6,7 @@ import type { RectBounds } from '../../machine/ts/common/rect';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 
 const extent: RectBounds = { left: 0, top: 0, right: 300, bottom: 200 };
 const firstWindow: RectBounds = { left: 20, top: 20, right: 150, bottom: 150 };
@@ -224,7 +224,7 @@ test('a later owner-local modal retires promoted popup families and drains their
 	const siblingPopup = surfaces.attach({ ...controller('sibling popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: sibling });
 	let cancelled = 0, released = 0;
 	const drag = { handleCapturedPointer() {}, releaseCapturedPointer() { released++; }, cancelPointer() { cancelled++; } };
-	const held: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 50, viewportY: 50,
+	const held: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, viewportX: 50, viewportY: 50,
 		pressedButtons: PointerButton.Primary,
 		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
 	capture.beginRoute(submenu.captureScope, held);

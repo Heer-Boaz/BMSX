@@ -138,7 +138,7 @@ export class IdeCommandController {
 			case 'group.maximize': part.arrangement.toggleMaximize(group); group.focus(); return;
 			case 'window.moveEditor': {
 				const input = group.model.activeTab;
-				if (input !== null) showMoveEditor(this.editor.editorParts, this.editor.editorClose, this.editor.quickInput, group, input, target);
+				if (input !== null) showMoveEditor(this.editor.editorParts, this.editor.quickInput, group, input, target);
 				return;
 			}
 			case 'window.copyEditor': {
@@ -420,7 +420,7 @@ export class IdeCommandController {
 			case 'group.focusNext': case 'group.focusPrevious': case 'group.maximize': return part.operation === 'none' && part.groups.length > 1;
 			case 'window.moveEditor': {
 				const input = group.model.activeTab;
-				return input !== null && this.editor.editorParts.canMoveEditor(group, input, 'new', this.editor.editorClose);
+				return input !== null && this.editor.editorParts.canMoveEditor(group, input, { kind: 'window' });
 			}
 			case 'window.copyEditor': return !part.closing && group.model.activeTab?.createView !== undefined;
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':

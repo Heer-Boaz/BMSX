@@ -1,8 +1,9 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture, PointerCaptureService, WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { InlineBarFieldPointer } from '../../ide/input/quick_input/pointer/field';
@@ -22,8 +23,8 @@ import { createTestCodeDocuments } from '../helpers/code_documents';
 import { createTestCodeControl } from '../helpers/code_control';
 
 const scope = WORKBENCH_POINTER_SCOPE;
-function pointer(x: number, pressedButtons: number = PointerButton.Primary, justPressedButtons = 0, justReleasedButtons = 0): PointerSnapshot {
-	return { valid: true, insideViewport: true, viewportX: x, viewportY: 42, pressedButtons, justPressedButtons, justReleasedButtons };
+function pointer(x: number, pressedButtons: number = PointerButton.Primary, justPressedButtons = 0, justReleasedButtons = 0): PointerInputSnapshot {
+	return { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, viewportX: x, viewportY: 42, pressedButtons, justPressedButtons, justReleasedButtons };
 }
 
 function codeFixture(t: TestContext, variant: 'tiny' | 'msx', source = '-- source') {

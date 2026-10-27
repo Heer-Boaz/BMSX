@@ -11,7 +11,7 @@ test('stacked and pending navigation follow an exact retained view after its ori
 	f.firstInput.context.view.cursorColumn = 4;
 	const stacked = createNavigationEntry()!, pending = createNavigationEntry()!;
 	t.after(() => pending.dispose()); navigationState.back.push(stacked);
-	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, f.secondPart.activeGroup, f.editor.editorClose), true);
+	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	assert.ok(stacked.owner === f.secondGroup && pending.owner === f.secondGroup);
 	assert.equal(stacked.isDisposed, false); assert.equal(pending.isDisposed, false);
 	assert.equal(await parts.close(f.firstPart), true);
@@ -28,7 +28,7 @@ test('coalescing retargets input-bound history before the redundant input retire
 	f.first.focus(); resetNavigationHistoryState();
 	const entry = new NavigationHistoryEntry({ kind: 'input', input: f.firstInput }, new CodeEditorNavigationSelection(f.firstInput), f.firstGroup);
 	navigationState.back.push(entry);
-	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, f.secondPart.activeGroup, f.editor.editorClose), true);
+	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	assert.equal(entry.isDisposed, false); assert.ok(entry.owner === f.secondGroup);
 	assert.ok(entry.target.kind === 'input' && entry.target.input === f.secondInput);
 	assert.equal(await parts.close(f.firstPart), true); assert.equal(entry.isDisposed, false);
@@ -44,7 +44,7 @@ test('a history resolution begun before transfer cannot reopen the old group or 
 	const resolve = t.mock.method(f.editor.resourceEditors, 'resolveEditorInput', () => resolution.promise);
 	const navigation = f.editor.navigation.goBackward();
 	assert.equal(resolve.mock.callCount(), 1);
-	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, f.secondPart.activeGroup, f.editor.editorClose), true);
+	assert.equal(parts.moveEditor(f.firstPart.activeGroup, f.firstInput, { kind: 'group', group: f.secondPart.activeGroup }), true);
 	assert.equal(await parts.close(f.firstPart), true);
 	const late = new CodeEditorInput(f.firstInput.workingCopy), dispose = t.mock.method(late, 'dispose');
 	resolution.resolve(late); await navigation; resolve.mock.restore();

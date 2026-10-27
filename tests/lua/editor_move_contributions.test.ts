@@ -34,7 +34,7 @@ test('Scene move retains its exact member and canonical history while Source bel
 	const view = captureSceneEditorView(input), version = model.version, history = model.history;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const originPane = f.firstGroup.panes.activePane!;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondGroup.model.activeTab === input && f.secondGroup.panes.activePane !== originPane);
 	assert.equal(f.firstGroup.model.findById(input.id), undefined);
 	assert.deepEqual(captureSceneEditorView(input), view);
@@ -60,7 +60,7 @@ test('CartMap move to Main retains selected authored marker and grid intent, and
 	assert.equal(input.section, 'map', 'the actual map command selected the client before transfer');
 	const view = captureCartMapView(input), version = model.version, history = model.history;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.editor.editorParts.main.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.editor.editorParts.main.activeGroup }), true); f.update();
 	assert.ok(f.editor.editorParts.main.activeGroup.model.activeTab === input);
 	assert.deepEqual(captureCartMapView(input), view);
 	assert.ok(input.workingCopy === model && model.history === history && model.canUndo);
@@ -85,10 +85,10 @@ test('busy AEM refuses collision disposal but moves its same operation to a new 
 	input.applying = true;
 	const view = captureWorkbenchTreeView(input.tree, element => element.key), version = model.version;
 	const originPane = f.firstGroup.panes.activePane!, count = f.editor.editorParts.documents.length;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), false);
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), false);
 	assert.ok(f.firstGroup.model.activeTab === input && f.firstGroup.panes.activePane === originPane);
 	assert.ok(f.secondGroup.model.activeTab === receiver); assert.equal(f.editor.editorParts.documents.length, count);
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, 'new', f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'window' }), true); f.update();
 	const destination = f.editor.editorParts.activePart;
 	assert.ok(destination !== f.firstPart && destination !== f.secondPart && destination.activeGroup.model.activeTab === input);
 	assert.equal(input.applying, true); assert.deepEqual(captureWorkbenchTreeView(input.tree, element => element.key), view);
@@ -117,7 +117,7 @@ test('imported Animation move keeps exact key bindings and source ownership, and
 	const selected = { track: structuredClone(input.trackSelection), key: structuredClone(input.keySelection), detail: structuredClone(input.detailSelection) };
 	const workingCopies = [...input.getWorkingCopies()], history = imported.history, version = imported.version;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondGroup.model.activeTab === input);
 	assert.deepEqual({ track: input.trackSelection, key: input.keySelection, detail: input.detailSelection }, selected);
 	assert.ok(input.getWorkingCopies().length === workingCopies.length && input.getWorkingCopies().every((model, index) => model === workingCopies[index]));
@@ -144,10 +144,10 @@ test('Behavior live inspection vetoes transfer, then its same authored graph and
 	const inspection = new BehaviorRuntimeInspection(f.sources, f.editor.luaPrograms.guest, f.host.rewind, -1,
 		f.sources.currentBlua32Media.system!, undefined, f.editor.commands.transport);
 	input.runtimeInspection = inspection;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), false);
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), false);
 	assert.ok(f.firstGroup.model.activeTab === input); assert.ok(input.runtimeInspection === inspection);
 	input.runtimeInspection = undefined; inspection.dispose();
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondGroup.model.activeTab === input); assert.ok(input.getWorkingCopies().includes(model));
 	assert.deepEqual(captureBehaviorLensView(input), view);
 	f.editor.commands.execute('behaviorLens.source', f.secondGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
@@ -170,7 +170,7 @@ test('LuaProgram move retains its running interaction and binds subsequent autho
 	const view = captureWorkbenchTreeView(input.tree, element => element.key), model = input.workingCopy;
 	input.inspectRuntime(f.editor.commands.transport); input.interaction.running = true;
 	const interaction = input.interaction, transport = interaction.transport, cycles = f.host.runtime.machine.scheduler.nowCycles;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.editor.editorParts.main.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.editor.editorParts.main.activeGroup }), true); f.update();
 	assert.ok(f.editor.editorParts.main.activeGroup.model.activeTab === input);
 	assert.deepEqual(captureWorkbenchTreeView(input.tree, element => element.key), view);
 	assert.ok(input.interaction === interaction && interaction.transport === transport && interaction.running);
@@ -200,7 +200,7 @@ test('moving an authored input onto a different running LuaProgram deactivates o
 	displaced.inspectRuntime(f.editor.commands.transport); displaced.interaction.running = true;
 	const transport = displaced.interaction.transport, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	f.firstGroup.activate(f.firstInput.id);
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, f.firstInput, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, f.firstInput, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondGroup.model.activeTab === f.firstInput);
 	assert.ok(f.secondGroup.model.findById(displaced.id) === displaced);
 	assert.equal(displaced.interaction.running, false, 'only source detachment is a move; replacing the destination is normal deactivation');
@@ -217,7 +217,7 @@ test('Resource move retains the same lazy projection view and reading position w
 	const input = new ResourceViewerInput(f.sources.catalog, resource), view = input.view;
 	f.firstGroup.openEditor(input); input.view.scroll = 7.5; f.update();
 	const scroll = input.view.scroll, cycles = f.host.runtime.machine.scheduler.nowCycles;
-	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, f.secondPart.activeGroup, f.editor.editorClose), true); f.update();
+	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondGroup.model.activeTab === input); assert.ok(input.view === view); assert.ok(input.resource === resource);
 	assert.equal(input.view.scroll, scroll); assert.ok(input.view.content.resource === resource); assert.equal(input.view.content.error, null);
 	assert.equal(f.firstGroup.model.findById(input.id), undefined);

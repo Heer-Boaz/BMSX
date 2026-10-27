@@ -52,7 +52,7 @@ test('closing a clean Source view retires synchronously without a dirty decision
 });
 
 test('transfer reservation owns both inputs and rejects reentrant close without affecting their shared dirty source', async t => {
-	const f = await fixture(t, true), close = f.editor.editorClose, model = f.firstInput.workingCopy;
+	const f = await fixture(t, true), close = f.editor.editorParts.closeController, model = f.firstInput.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained\n' }]);
 	let attempted: Promise<boolean> | undefined;
 	assert.equal(close.transfer([f.firstInput, f.secondInput], () => {
@@ -70,7 +70,7 @@ test('transfer reservation owns both inputs and rejects reentrant close without 
 });
 
 test('pending close decisions reject a transfer atomically without reserving its other input', async t => {
-	const f = await fixture(t), close = f.editor.editorClose;
+	const f = await fixture(t), close = f.editor.editorParts.closeController;
 	f.firstInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained\n' }]);
 	const closing = f.firstGroup.close(f.firstInput.id);
 	assert.equal(f.firstPart.actionPrompt.visible, true); assert.equal(close.isPending(f.firstInput), true);
@@ -82,7 +82,7 @@ test('pending close decisions reject a transfer atomically without reserving its
 });
 
 test('a pending close Save retains input admission until its accepted write completes', async t => {
-	const f = await fixture(t), close = f.editor.editorClose;
+	const f = await fixture(t), close = f.editor.editorParts.closeController;
 	f.first.focus();
 	f.firstInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- saved\n' }]);
 	f.files.delayed = true;
@@ -95,7 +95,7 @@ test('a pending close Save retains input admission until its accepted write comp
 });
 
 test('a thrown handoff releases its admission reservation without changing input membership', async t => {
-	const f = await fixture(t), close = f.editor.editorClose, failure = new Error('interrupted handoff');
+	const f = await fixture(t), close = f.editor.editorParts.closeController, failure = new Error('interrupted handoff');
 	assert.throws(() => close.transfer([f.firstInput, f.secondInput], () => { throw failure; }), failure);
 	assert.equal(close.isPending(f.firstInput), false); assert.equal(close.isPending(f.secondInput), false);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
@@ -225,7 +225,7 @@ for (const retire of ['workspace', 'close-owner'] as const) test(`${retire} reti
 	f.first.code.focusTarget.textInput!.replaceText(6, 11, 'retained');
 	const closing = f.firstGroup.close(f.firstInput.id);
 	assert.equal(f.firstPart.actionPrompt.visible, true);
-	if (retire === 'workspace') f.ide.models.clear(); else f.editor.editorClose.dispose();
+	if (retire === 'workspace') f.ide.models.clear(); else f.editor.editorParts.closeController.dispose();
 	assert.equal(await closing, false);
 	assert.equal(f.firstPart.actionPrompt.visible, false);
 	assert.ok(inputFocus.target !== f.first.code.focusTarget, 'retired admission cannot refocus its old Source control');
@@ -411,7 +411,7 @@ test('an invalid focused sibling draft vetoes root-modal close admission without
 	const draft = { pending: true, commit() { attempts++; return false; } };
 	target.edit = draft;
 	t.after(() => { target.edit = priorEdit; });
-	assert.equal(await f.editor.editorClose.close([{ group: f.firstGroup, input: f.firstInput }]), false);
+	assert.equal(await f.editor.editorParts.closeController.close([{ group: f.firstGroup, input: f.firstInput }]), false);
 	assert.equal(attempts, 1);
 	assert.ok(target.edit === draft, 'close retains the concrete uncommitted draft');
 	assert.equal(draft.pending, true);

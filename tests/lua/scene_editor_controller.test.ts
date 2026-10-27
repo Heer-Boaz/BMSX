@@ -11,7 +11,7 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import type { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
-import { createTestEditorGroup, createTestEditorPaneFactories, createTestGroupPresentation } from '../helpers/editor_panes';
+import { createTestEditorGroup, createTestEditorPaneFactories, createTestEditorCloseDependencies, createTestGroupPresentation } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
@@ -100,7 +100,7 @@ test('Scene pane Source and member commands retain their group and input when an
 		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		layoutMain: () => parts.main.layout(bounds),
-		closeEditors: async targets => { for (const target of targets) target.group.removeEditor(target.input); return true; },
+		...createTestEditorCloseDependencies(t, presentation),
 	});
 	const first = parts.main.activeGroup, second = parts.createDocument({ requestedBounds: bounds }).activeGroup;
 	first.panes.layout(bounds);
@@ -154,7 +154,7 @@ scenes.register('incomplete', {})
 		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		layoutMain: () => parts.main.layout(bounds),
-		closeEditors: async targets => { for (const target of targets) target.group.removeEditor(target.input); return true; },
+		...createTestEditorCloseDependencies(t, presentation),
 	});
 	const group = parts.main.activeGroup;
 	group.panes.layout(bounds);

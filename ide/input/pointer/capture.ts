@@ -1,14 +1,16 @@
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
-import type { PointerSnapshot } from '../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../common/models';
 import type { GuestInputBinding } from '../focus';
+import type { KeyModifier } from '../../../hosts/common/input/text';
 
 export type PointerCaptureScope = symbol;
 export const WORKBENCH_POINTER_SCOPE: PointerCaptureScope = Symbol('workbench');
 
 export interface PointerCaptureTarget {
-	handleCapturedPointer(snapshot: PointerSnapshot, now: number): void;
-	releaseCapturedPointer(snapshot: PointerSnapshot, now: number): void;
+	handleCapturedPointer(snapshot: PointerInputSnapshot, now: number): void;
+	releaseCapturedPointer(snapshot: PointerInputSnapshot, now: number): void;
 	cancelPointer(): void;
+	onModifiersChange?(modifiers: KeyModifier, now: number): void;
 }
 
 /** One control receives the rest of a physical gesture, ahead of ordinary hit testing. */
@@ -87,8 +89,13 @@ export class PointerCaptureService {
 		if ((buttons & (this.route === undefined ? this.button : this.routeButtons)) !== 0) this.cancel();
 	}
 
+	/** The captured gesture retains pointer position while keyboard modifiers change. */
+	public dispatchModifiers(modifiers: KeyModifier, now: number): void {
+		this.target?.onModifiersChange?.(modifiers, now);
+	}
+
 	/** Blocking ends capture; it never postpones a drag until the popup closes. */
-	public dispatch(snapshot: PointerSnapshot, blocked: boolean, now: number, scope = WORKBENCH_POINTER_SCOPE): boolean {
+	public dispatch(snapshot: PointerInputSnapshot, blocked: boolean, now: number, scope = WORKBENCH_POINTER_SCOPE): boolean {
 		this.routeButtons = snapshot.pressedButtons;
 		if (this.drain) {
 			if (snapshot.pressedButtons === 0) this.drain = false;

@@ -53,9 +53,9 @@ test('overview key picking does not clear the active occurrence before resolving
 	const focus = inputFocus.createTarget(); focus.bindKeyboard(() => {});
 	const control = new AnimationLaneControl(focus, controller); control.setInput(input);
 	t.after(() => { control.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); });
-	const pointer = { viewportX: input.keys.xAt(50), viewportY: 30, valid: true, insideViewport: true,
+	const pointer = { modifiers: KeyModifier.none, spaceDown: false, viewportX: input.keys.xAt(50), viewportY: 30, valid: true, insideViewport: true,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
-	control.handlePointer({ ...pointer, viewportX: input.keys.xAt(25), viewportY: 50,
+	control.handlePointer({ modifiers: KeyModifier.none, spaceDown: false, ...pointer, viewportX: input.keys.xAt(25), viewportY: 50,
 		pressedButtons: PointerButton.Secondary, justPressedButtons: PointerButton.Secondary });
 	assert.equal(input.trackIndex, 1); assert.equal(input.keyIndex, 0);
 	assert.equal(pointerCapture.active, false, 'secondary overview selection must not start a clip/key edit');
@@ -475,7 +475,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} an actual prope
 		const y = horizontal ? split.bounds.top + 4 : split.position;
 		f.pointer(x, y, false);
 		assert.equal(pointerCapture.active, true);
-		const moved = { viewportX: x + (horizontal ? 12 : 0), viewportY: y + (horizontal ? 0 : 12), valid: true, insideViewport: true,
+		const moved = { modifiers: KeyModifier.none, spaceDown: false, viewportX: x + (horizontal ? 12 : 0), viewportY: y + (horizontal ? 0 : 12), valid: true, insideViewport: true,
 			pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 };
 		pointerCapture.dispatch(moved, false, 0); pane.update();
 		pointerCapture.dispatch({ ...moved, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 0); pane.update();
@@ -509,7 +509,7 @@ test('a key gesture retired by compact relayout or client navigation cannot edit
 		const bounds = input.keys.range.bounds, x = input.keys.xAt(0), y = (bounds.top + bounds.bottom) / 2;
 		f.pointer(x, y, false);
 		assert.equal(pointerCapture.active, true);
-		const moved = { viewportX: x + 20, viewportY: y, valid: true, insideViewport: true,
+		const moved = { modifiers: KeyModifier.none, spaceDown: false, viewportX: x + 20, viewportY: y, valid: true, insideViewport: true,
 			pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 };
 		pointerCapture.dispatch(moved, false, 0); assert.notEqual(input.keys.dragValue, undefined);
 		const measured = measureAnimationEditor(editorViewState.font);

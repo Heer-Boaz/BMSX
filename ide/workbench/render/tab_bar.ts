@@ -65,11 +65,6 @@ export function renderTabBar(strip: EditorTabStrip, context: EditorTabStripRende
 		}
 
 	}
-	const drag = strip.drag.state;
-	if (drag !== null && drag.targetIndex >= 0) {
-		const x = drag.markerX - Math.round(scrollbar.getScroll());
-		api.fill_rect(x - 1, barTop, x + 1, rowBottom, 0, constants.COLOR_TAB_ACTIVE_TEXT);
-	}
 	api.popClipRect();
 	renderWorkbenchActionBar(strip.actions, layout.font, constants.COLOR_STATUS_TEXT, constants.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 	if (scrollbar.isVisible()) scrollbar.draw(constants.COLOR_TAB_BAR_BACKGROUND, constants.COLOR_TAB_BORDER);

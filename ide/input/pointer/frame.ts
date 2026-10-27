@@ -41,3 +41,10 @@ export function copyPointerSnapshot(target: PointerSnapshot, source: PointerSnap
 	target.justPressedButtons = source.justPressedButtons;
 	target.justReleasedButtons = source.justReleasedButtons;
 }
+
+/** Retain event-time editing modifiers alongside the physical pointer occurrence. */
+export function copyPointerInputSnapshot(target: PointerInputSnapshot, source: PointerInputSnapshot): void {
+	copyPointerSnapshot(target, source);
+	target.modifiers = source.modifiers;
+	target.spaceDown = source.spaceDown;
+}

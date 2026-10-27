@@ -80,7 +80,7 @@ test('Actor move retains its physical domain and open Details, revokes its old p
 	const oldTarget = f.pane.commandTarget, transport = input.interaction.transport;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles, execution = f.host.execution.revision;
 	let disposed = 0; input.onWillDispose(() => { disposed++; });
-	assert.equal(f.parts.moveEditor(f.origin.activeGroup, input, f.destination.activeGroup, f.editor.editorClose), true); f.editor.update(0);
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, input, { kind: 'group', group: f.destination.activeGroup }), true); f.editor.update(0);
 	const moved = f.destination.activeGroup.panes.activePane!;
 	assert.ok(moved instanceof ActorLabEditorPane && moved !== f.pane);
 	assert.ok(moved.input === input && input.runtime === runtime && input.details === details);
@@ -116,7 +116,7 @@ test('Actor moving a pending argument submission cannot admit a late call or ste
 	setFieldText(picker.field, "'late'", true);
 	f.key('Enter');
 	assert.equal(picker.field.readOnly, true);
-	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true);
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, { kind: 'group', group: f.destination.activeGroup }), true);
 	const target = f.destination.activeGroup.panes.activePane!.commandTarget;
 	await f.host.tasks.join(); await Promise.resolve();
 	assert.equal(picker.visible, false); assert.equal(f.ide.actorExecution.active, undefined);
@@ -134,7 +134,7 @@ test('Actor queued mutation belongs to the invoking attachment, while a move pre
 	assert.equal(operation.invoked, false);
 	f.input.interaction.running = true;
 	assert.equal(f.host.execution.paused, false);
-	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true);
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, { kind: 'group', group: f.destination.activeGroup }), true);
 	const target = f.destination.activeGroup.panes.activePane!.commandTarget;
 	assert.equal(f.input.interaction.running, true); assert.equal(f.host.execution.paused, false);
 	assert.equal(f.editor.guestInputRecipient, null);
@@ -153,7 +153,7 @@ test('Actor transfer drains a physical guest hold and requires fresh destination
 		{ type: 'button', button: 'primary', down: true }]);
 	const guest = inputFocus.target!, binding = guest.guestInput!, interaction = guest.scope.interaction!;
 	assert.ok(binding.recipient === f.host.input && pointerCapture.guestBinding === binding);
-	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true); f.editor.update(0);
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, { kind: 'group', group: f.destination.activeGroup }), true); f.editor.update(0);
 	const moved = f.destination.activeGroup.panes.activePane!;
 	assert.equal(guest.guestInput, undefined); assert.equal(interaction.running, false);
 	assert.equal(pointerCapture.guestBinding, undefined); assert.equal(pointerCapture.draining, true);
@@ -190,7 +190,7 @@ test('Actor same-input reopening preserves queued admission, and an entered call
 		await f.host.tasks.join();
 	}
 	assert.equal(operation.invoked, true); assert.equal(operation.result, undefined);
-	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true);
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, { kind: 'group', group: f.destination.activeGroup }), true);
 	const target = f.destination.activeGroup.panes.activePane!.commandTarget;
 	willExecuteRuntimeDebuggerPlan(f.ide.debugger);
 	f.host.runtime.machine.scheduler.runCpuSlice(0, 1_000_000);
@@ -217,7 +217,7 @@ test('Actor reveal cannot start a picker after focus callbacks replace its reque
 test('Actor Details source navigation belongs to the moved concrete pane', async t => {
 	const f = fixture(t);
 	f.editor.commands.execute('actorLab.details', f.pane.commandTarget); f.editor.update(0);
-	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, f.destination.activeGroup, f.editor.editorClose), true); f.editor.update(0);
+	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, { kind: 'group', group: f.destination.activeGroup }), true); f.editor.update(0);
 	const moved = f.destination.activeGroup.panes.activePane!;
 	assert.ok(moved instanceof ActorLabEditorPane);
 	const index = moved.inspector.model.rows.findIndex(row => row.element.source?.resource.path === 'cartlib/world/world.lua');

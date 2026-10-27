@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { KeyInputEvent } from '../../hosts/common/input/text';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
@@ -6,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture, PointerCaptureService, WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -28,7 +29,7 @@ function fixture(t: TestContext) {
 	let accepted: typeof items[number] | undefined, pressId = 0;
 	const open = () => picker.pick('Choose', 'Filter', () => new TextQuickPickProvider(items), item => { accepted = item; });
 	const pointer = (x: number, y: number, held = 0, down = 0, up = 0) => {
-		const snapshot: PointerSnapshot = { valid: true, insideViewport: true, viewportX: x, viewportY: y,
+		const snapshot: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, viewportX: x, viewportY: y,
 			pressedButtons: held, justPressedButtons: down, justReleasedButtons: up };
 		if (!pointerCapture.dispatch(snapshot, false, clock.now(), picker.pointerScope)) picker.handlePointer(snapshot, down !== 0);
 	};
@@ -146,7 +147,7 @@ test('capture admission distinguishes an interactive popup from a background gra
 	const capture = new PointerCaptureService(), popup = Symbol('popup'), other = Symbol('other popup');
 	let moves = 0, cancels = 0;
 	const target = { handleCapturedPointer() { moves += 1; }, releaseCapturedPointer() { assert.fail('not a release'); }, cancelPointer() { cancels += 1; } };
-	const held = { valid: true, insideViewport: true, pressedButtons: PRIMARY, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 10, viewportY: 20 };
+	const held = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, pressedButtons: PRIMARY, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 10, viewportY: 20 };
 	capture.capture(target);
 	assert.equal(capture.dispatch(held, false, 1, popup), false);
 	assert.equal(cancels, 1, 'a background capture cannot run through a popup');

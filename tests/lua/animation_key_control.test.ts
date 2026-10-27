@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
@@ -13,7 +14,7 @@ import { createLuaTableFieldNumberEdits } from '../../ide/language/lua/source_ed
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
@@ -35,7 +36,7 @@ test('a key beneath a coincident tangent endpoint owns the pointer gesture', t =
 	const x = input.keys.xAt(32), y = input.keys.curve.yAt(0);
 	assert.deepEqual(input.keys.curve.leaveHandle.slice(2), [x, y]);
 	assert.equal(input.keys.curve.keyAt(input.keys, x, y), 1);
-	const pointer: PointerSnapshot = { viewportX: x, viewportY: y, valid: true, insideViewport: true,
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, viewportX: x, viewportY: y, valid: true, insideViewport: true,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
 	control.handlePointer({ ...pointer, pressedButtons: PointerButton.Secondary, justPressedButtons: PointerButton.Secondary });
 	assert.equal(input.keyIndex, 1);
@@ -72,7 +73,7 @@ test('key capture preserves grab offset and commits only a physical drop; click,
 	const unbind = model.onDidChangeContent(() => input.invalidateProjection());
 	t.after(() => { unbind(); control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	const primary = PointerButton.Primary;
-	const pointer = (x: number, held = 0, down = 0, up = 0): PointerSnapshot => ({
+	const pointer = (x: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 		viewportX: x, viewportY: 35, valid: true, insideViewport: true,
 		pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
 	});
@@ -114,7 +115,7 @@ test('frame and clip axes navigate without a scalar track or a document edit', t
 	});
 	control.setInput(input); control.layout(400, 20, 960, 50);
 	t.after(() => { control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
-	const pointer = (x: number, held = 0, down = 0, up = 0): PointerSnapshot => ({
+	const pointer = (x: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 		viewportX: x, viewportY: 35, valid: true, insideViewport: true,
 		pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
 	});
@@ -165,7 +166,7 @@ test('tangent direction uses both pointer axes and commits one native slope with
 		const handle = field === 'leave' ? input.keys.curve.leaveHandle : input.keys.curve.arriveHandle;
 		const x = handle[2] + 1, y = handle[3] + 1, delta = handle[2] - handle[0];
 		const primary = PointerButton.Primary;
-		const pointer = (x: number, held = 0, down = 0, up = 0): PointerSnapshot => ({ viewportX: x, viewportY: y,
+		const pointer = (x: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false, viewportX: x, viewportY: y,
 			valid: true, insideViewport: true, pressedButtons: held, justPressedButtons: down, justReleasedButtons: up });
 		control.handlePointer(pointer(x, primary, primary));
 		pointerCapture.dispatch(pointer(x, 0, 0, primary), false, 0);

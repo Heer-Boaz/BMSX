@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../../hosts/common/input/text';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
@@ -42,7 +43,7 @@ for (const siblings of [24, 1024]) {
 	const capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
 	control.setInput(viewport, { begin: () => { starts += 1; return beginBehaviorTreeDrag(model, state, () => assert.fail('unexpected list transfer')); } });
-	const from = { viewportX: viewport.bounds.left + 20, viewportY: viewport.bounds.top + 34, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 };
+	const from = { modifiers: KeyModifier.none, spaceDown: false, viewportX: viewport.bounds.left + 20, viewportY: viewport.bounds.top + 34, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 };
 	const to = { ...from, viewportX: second.bounds.right - 4 + viewport.bounds.left - viewport.scrollX };
 	const alternate = { ...to, viewportX: to.viewportX - 2 };
 	control.handlePointer(from, 0);

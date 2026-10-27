@@ -23,6 +23,7 @@ import { DisposableStore } from '../../../common/lifecycle';
 import type { EditorInputSerializer, EditorInputSerializers, SerializedEditorGroup, SerializedEditorInput, PersistentEditorInput } from '../../services/editor/editor_serialization';
 
 export type EditorOpenOptions = { readonly pinned?: boolean };
+export type EditorTransferPublication = { readonly input: EditorInput; publish(): void };
 
 /**
  * Ordered editor inputs and their active selection. The active input is
@@ -101,6 +102,7 @@ export class EditorTabGroupModel {
 	public get tabs(): readonly EditorInput[] {
 		return this.editorTabs;
 	}
+	public contains(input: EditorInput): boolean { return this.listeners.has(input); }
 
 	public get activeTab(): EditorInput | null {
 		return this.activeEditor;
@@ -241,22 +243,25 @@ export class EditorTabGroupModel {
 		this.emitChanged();
 	}
 
-	/** An admitted handoff publishes both final memberships before either group notifies observers. */
-	public transferTo(destination: EditorTabGroupModel, input: EditorInput, coalesced?: EditorInput): EditorInput {
-		const index = this.editorTabs.indexOf(input);
+	/** Topology owners adopt the paired memberships before publishing their notifications. */
+	public transferTo(destination: EditorTabGroupModel, input: EditorInput, coalesced?: EditorInput, index?: number): EditorTransferPublication {
+		const sourceIndex = this.editorTabs.indexOf(input);
 		this.listeners.get(input)!.dispose();
 		this.listeners.delete(input);
 		this.labels.delete(input);
-		this.editorTabs.splice(index, 1);
+		this.editorTabs.splice(sourceIndex, 1);
 		if (this.activeEditor === input) {
-			const successor = this.editorTabs[index - 1] ?? this.editorTabs[index];
+			const successor = this.editorTabs[sourceIndex - 1] ?? this.editorTabs[sourceIndex];
 			this.activeEditor = successor === undefined ? null : successor;
 		}
 		if (this.previewEditor === input) this.previewEditor = null;
 		const admitted = coalesced === undefined ? input : coalesced;
 		if (coalesced === undefined) {
-			destination.editorTabs.push(input);
+			destination.editorTabs.splice(index === undefined ? destination.editorTabs.length : index, 0, input);
 			destination.registerInputListeners(input);
+		} else if (index !== undefined) {
+			const from = destination.indexOf(coalesced);
+			destination.reorder(from, from < index ? index - 1 : index);
 		}
 		destination.activeEditor = admitted;
 		if (destination.previewEditor === admitted) destination.previewEditor = null;
@@ -264,12 +269,24 @@ export class EditorTabGroupModel {
 		destination.updateLabels();
 		this.revision += 1;
 		destination.revision += 1;
-		for (const listener of this.changeListeners) listener();
-		for (const listener of destination.changeListeners) listener();
-		return admitted;
+		return { input: admitted, publish: () => {
+			for (const listener of this.changeListeners) listener();
+			for (const listener of destination.changeListeners) listener();
+		} };
 	}
 
+	/** A drop supplies a pre-removal gap, distinct from a retained tab's final index. */
+	public moveToGap(input: EditorInput, gap: number): void {
+		const from = this.indexOf(input), to = from < gap ? gap - 1 : gap;
+		if (from === to && this.previewEditor !== input) return;
+		this.reorder(from, to);
+		if (this.previewEditor === input) { this.previewEditor = null; this.updateLabels(); }
+		this.emitChanged();
+	}
 	public move(fromIndex: number, toIndex: number): void {
+		this.reorder(fromIndex, toIndex); this.emitChanged();
+	}
+	private reorder(fromIndex: number, toIndex: number): void {
 		const tab = this.editorTabs[fromIndex];
 		if (fromIndex < toIndex) {
 			for (let index = fromIndex; index < toIndex; index += 1) {
@@ -281,6 +298,5 @@ export class EditorTabGroupModel {
 			}
 		}
 		this.editorTabs[toIndex] = tab;
-		this.emitChanged();
 	}
 }

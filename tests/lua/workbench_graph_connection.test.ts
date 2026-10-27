@@ -4,7 +4,7 @@ import { KeyModifier } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult as Result } from '../../ide/workbench/ui/graph/control';
@@ -21,7 +21,7 @@ function fixture() {
 	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 	f.view.selection = f.edge;
 	control.setInput(f.view, f.interaction);
-	const pointer = (x: number, y: number, pressed = true): PointerSnapshot => ({ valid: true, insideViewport: true, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0,
+	const pointer = (x: number, y: number, pressed = true): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: f.view.graphToViewportX(x), viewportY: f.view.graphToViewportY(y) });
 	const press = (end: 'source' | 'target', now = 0) => {
 		const i = end === 'source' ? 0 : f.edge.points.length - 2;

@@ -1,3 +1,8 @@
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { EditorTextModelService } from '../../ide/editor/model/model_service';
+import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
+import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
+import { ActionPrompt } from '../../ide/workbench/contrib/modal/action_prompt';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import type { TestContext } from 'node:test';
 import { ResourceViewerEditorPane } from '../../ide/workbench/contrib/resources/editor_pane';
@@ -60,6 +65,7 @@ export function createTestGroupPresentation(surfaces = new WorkbenchSurfaceServi
 	const owner = surfaces.attach({ role: 'content', captureScope: focusScope.surfaceScope,
 		isVisible: () => true, getBounds: () => workArea, getClip: () => workArea, draw() {} });
 	return { surfaces, owner, focusScope, workArea, renderContext: TEST_EDITOR_TAB_RENDER_CONTEXT,
+		dropTarget: { update() {}, drop() {}, clear() {} },
 		contextMenu: new ContextMenuController(inputFocus, pointerCapture), layout: group => group.layout(group.bounds, group.clip, group.presented) };
 }
 
@@ -138,17 +144,28 @@ const retireTestEditors: CloseEditors = targets => {
 	return Promise.resolve(true);
 };
 
+/** Mechanical fixtures still use the real close/input-operation owner. */
+export function createTestEditorCloseDependencies(t: TestContext, presentation: EditorGroupPresentation) {
+	const models = new EditorTextModelService(), catalog = new WorkspaceSourceCatalog();
+	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), catalog);
+	const prompt = new ActionPrompt(inputFocus, pointerCapture, () => presentation.surfaces.changed(), undefined,
+		{ kind: 'workspace', scope: presentation.focusScope, bounds: presentation.workArea });
+	t.after(async () => { await saves.shutdown(); prompt.dispose(); models.clear(); catalog.dispose(); });
+	return { models, saves, prompt };
+}
+
 /** Real frontend parts share one surface owner and popup family without constructing a machine. */
 export function createTestEditorParts(
 	t: TestContext,
 	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
 	factories: EditorPaneFactories = createTestEditorPaneFactories(),
+	workArea?: Readonly<RectBounds>,
 ): EditorParts {
-	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces);
+	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces, workArea);
 	const contextMenu = presentation.contextMenu;
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
-		commands, contextMenu, renderContext: presentation.renderContext, factories, closeEditors: retireTestEditors,
+		commands, contextMenu, renderContext: presentation.renderContext, factories, ...createTestEditorCloseDependencies(t, presentation),
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		layoutMain: () => parts.main.layout(presentation.workArea),
 	});

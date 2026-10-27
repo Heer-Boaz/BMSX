@@ -5,7 +5,7 @@ import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
@@ -23,7 +23,7 @@ function fixture(t: TestContext) {
 	const control = new WorkbenchScrollControl(focus, capture, parent);
 	control.setInput(view); control.lineStep = 10;
 	const pointer = (x: number, y: number, held = 0, down = 0, up = 0, blocked = false) => {
-		const event: PointerSnapshot = { viewportX: x, viewportY: y, valid: true, insideViewport: true,
+		const event: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, viewportX: x, viewportY: y, valid: true, insideViewport: true,
 			pressedButtons: held, justPressedButtons: down, justReleasedButtons: up };
 		if (!capture.dispatch(event, blocked, 0) && !blocked) control.handlePointer(event);
 		return event;

@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -7,7 +8,7 @@ import { WorkbenchSlider } from '../../ide/workbench/ui/slider';
 import { WorkbenchSliderControl } from '../../ide/workbench/ui/slider_control';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { api } from '../../ide/runtime/overlay_api';
@@ -65,7 +66,7 @@ test('history readback and changing offset text preserve a captured inline timel
 	const values: number[] = []; let cancelled = 0;
 	const slider = new WorkbenchSliderControl(focus, capture, parent, value => values.push(value), () => cancelled++);
 	slider.setInput(range); t.after(() => slider.dispose());
-	const pointer = (x: number, held = 0, down = 0, up = 0): PointerSnapshot => ({
+	const pointer = (x: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 		viewportX: x, viewportY: range.bounds.top + 4, valid: true, insideViewport: true,
 		pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
 	});

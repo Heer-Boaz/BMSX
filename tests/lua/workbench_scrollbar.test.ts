@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { ScrollbarController } from '../../ide/workbench/ui/scrollbar_controller';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -5,7 +6,7 @@ import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { ScrollbarPointerControl } from '../../ide/workbench/ui/scrollbar_pointer';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 
 for (const orientation of ['horizontal', 'vertical'] as const) {
 	test(`${orientation} captured scrollbar releases outside its track and ends when geometry changes`, () => {
@@ -13,7 +14,7 @@ for (const orientation of ['horizontal', 'vertical'] as const) {
 		const control = new ScrollbarPointerControl(capture);
 		const track = orientation === 'horizontal' ? { left: 10, top: 110, right: 110, bottom: 113 } : { left: 110, top: 10, right: 113, bottom: 110 };
 		bar.layout(track, 400, 100, 0);
-		const event = (position: number, held = 0, down = 0, up = 0): PointerSnapshot => ({
+		const event = (position: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
 			viewportX: orientation === 'horizontal' ? position : 111,
 			viewportY: orientation === 'vertical' ? position : 111,
 			valid: true, insideViewport: true, pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
@@ -132,7 +133,7 @@ test('editor scrollbar routing only hits the attached owner list, not another pa
 	const applied: string[] = [];
 	const capture = new PointerCaptureService();
 	const controller = new ScrollbarController(bars, kind => applied.push(kind), capture);
-	const pointer: PointerSnapshot = { viewportX: 101, viewportY: 100, valid: true, insideViewport: true,
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, viewportX: 101, viewportY: 100, valid: true, insideViewport: true,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
 	assert.equal(controller.begin(['resourceVertical'], pointer, 3), true);
 	pointer.viewportY = 70; pointer.justPressedButtons = 0;
@@ -150,7 +151,7 @@ test('only the current gesture subscribes to track lifetime, including loss of i
 	const capture = new PointerCaptureService(), control = new ScrollbarPointerControl(capture);
 	const first = new Scrollbar('vertical'), second = new Scrollbar('vertical');
 	const track = { left: 100, right: 103, top: 10, bottom: 110 };
-	const pointer: PointerSnapshot = { viewportX: 101, viewportY: 15, valid: true, insideViewport: true,
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, viewportX: 101, viewportY: 15, valid: true, insideViewport: true,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
 	first.layout(track, 400, 100, 0); second.layout(track, 400, 100, 0);
 	control.handlePointer(pointer, first);

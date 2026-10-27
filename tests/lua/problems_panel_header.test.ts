@@ -11,7 +11,7 @@ import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/pa
 import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import type { EditorCommandRunner } from '../../ide/common/commands';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { PROBLEMS_PANEL_HEADER_PADDING_X } from '../../ide/common/constants';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -43,7 +43,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', width = 240) {
 	};
 	const pointer = (held = 0, down = 0, up = 0) => {
 		const button = controller.header.actions.items[0].bounds;
-		const event: PointerSnapshot = { valid: true, insideViewport: true, viewportX: button.left + 2, viewportY: button.top + 2,
+		const event: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, viewportX: button.left + 2, viewportY: button.top + 2,
 			pressedButtons: held, justPressedButtons: down, justReleasedButtons: up };
 		pointerHover.beginDispatch();
 		if (!pointerCapture.dispatch(event, false, 100)) controller.handlePointer(parts, event, down !== 0, up !== 0, bounds);

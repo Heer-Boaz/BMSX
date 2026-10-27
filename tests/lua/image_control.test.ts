@@ -5,7 +5,7 @@ import { Input } from '../../hosts/common/input/manager';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { consumeIdeKey, isKeyJustPressed } from '../../ide/input/keyboard/key_input';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -23,8 +23,8 @@ function fixture(t: TestContext, keyboard?: (event: KeyInputEvent) => boolean) {
 	const parent = focus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
 	const control = new WorkbenchImageControl(focus, capture, parent, undefined, keyboard);
 	control.setInput(view);
-	const pointer = (x: number, y: number, held = 0, down = 0, up = 0): PointerSnapshot => {
-		const snapshot = { viewportX: x, viewportY: y, valid: true, insideViewport: true,
+	const pointer = (x: number, y: number, held = 0, down = 0, up = 0): PointerInputSnapshot => {
+		const snapshot = { modifiers: KeyModifier.none, spaceDown: false, viewportX: x, viewportY: y, valid: true, insideViewport: true,
 			pressedButtons: held, justPressedButtons: down, justReleasedButtons: up };
 		if (!capture.dispatch(snapshot, false, 0)) control.handlePointer(snapshot);
 		return snapshot;

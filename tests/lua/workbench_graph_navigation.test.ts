@@ -7,7 +7,7 @@ import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 import { createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode } from '../../ide/workbench/ui/graph/model';
 import { WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ide/workbench/ui/graph/control';
@@ -29,7 +29,7 @@ function fixture() {
 	const hover = new PointerHoverService();
 	const control = new WorkbenchGraphControl(focus, capture, hover);
 	control.setInput(view, { connectionEnds: () => 'both', begin: () => assert.fail('viewport navigation cannot begin a source edit') });
-	const pointer: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 55, viewportY: 64,
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, viewportX: 55, viewportY: 64,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
 	return { node, other, edge, model, view, focus, capture, hover, control, pointer };
 }

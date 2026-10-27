@@ -1,52 +1,50 @@
 import * as constants from '../../../common/constants';
-import type { PointerSnapshot } from '../../../common/models';
-import type { EditorTabId } from './id';
-import { point_in_rect } from '../../../../machine/ts/common/rect';
+import type { PointerInputSnapshot } from '../../../common/models';
+import type { KeyModifier } from '../../../../hosts/common/input/text';
 import type { PointerCaptureService, PointerCaptureScope, PointerCaptureTarget } from '../../../input/pointer/capture';
+import { copyPointerInputSnapshot } from '../../../input/pointer/frame';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
-import { dragScrollSpeed } from '../drag_scroll';
 import type { EditorTabGroupModel } from './group_model';
-import type { EditorTabStripLayout } from './layout';
-import type { TabDragState } from './model';
-import type { Scrollbar } from '../scrollbar';
+import type { EditorInput, TabDragState } from './model';
 
-/** One group's captured tab gesture; only a matching physical release commits a move. */
+/** Workbench admission, targeting and feedback for every group's physical tab gesture. */
+export interface EditorTabDragHandler {
+	update(model: EditorTabGroupModel, input: EditorInput, snapshot: PointerInputSnapshot, now: number, scroll: boolean): void;
+	drop(model: EditorTabGroupModel, input: EditorInput, snapshot: PointerInputSnapshot, now: number): void;
+	clear(): void;
+}
+
+/** One captured input identity; the shared workbench owner decides every drop. */
 export class EditorTabDrag implements PointerCaptureTarget {
 	public state: TabDragState | null = null;
 
-	public constructor(private readonly model: EditorTabGroupModel, private readonly layout: EditorTabStripLayout,
-		private readonly scrollbar: Scrollbar, private readonly capture: PointerCaptureService,
-		private readonly scope: PointerCaptureScope, private readonly onBeginDrag: () => void) {}
+	public constructor(private readonly model: EditorTabGroupModel, private readonly capture: PointerCaptureService,
+		private readonly scope: PointerCaptureScope, private readonly onBeginDrag: () => void, private readonly handler: EditorTabDragHandler) {}
 
-	public begin(tabId: EditorTabId, snapshot: PointerSnapshot, now: number): void {
-		if (this.model.tabs.length <= 1) return;
+	public begin(input: EditorInput, snapshot: PointerInputSnapshot, now: number): void {
 		this.capture.capture(this, PointerButton.Primary, this.scope);
-		this.state = {
-			tabId, startX: snapshot.viewportX, startY: snapshot.viewportY,
-			pointerX: snapshot.viewportX, pointerY: snapshot.viewportY,
-			hasDragged: false, pointerTime: now, revision: this.model.revision,
-			targetDirty: true, targetLayoutRevision: -1, targetScroll: 0, targetIndex: -1, markerX: 0,
-		};
+		this.state = { ...snapshot, input, startX: snapshot.viewportX, startY: snapshot.viewportY,
+			hasDragged: false, pointerTime: now };
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot, now);
 	}
 
-	public handleCapturedPointer(snapshot: PointerSnapshot, now: number): void {
+	public handleCapturedPointer(snapshot: PointerInputSnapshot, now: number): void {
 		this.updatePointer(snapshot, now, true);
 	}
 
-	public releaseCapturedPointer(snapshot: PointerSnapshot, now: number): void {
+	public releaseCapturedPointer(snapshot: PointerInputSnapshot, now: number): void {
 		this.updatePointer(snapshot, now, false);
 		const state = this.state;
-		if (state === null) return; // The model can retire this gesture before its physical release.
-		const from = this.model.indexOf(this.model.findById(state.tabId)!);
-		const to = state.targetIndex;
+		if (state === null) return;
 		this.cancelPointer();
-		if (to >= 0) this.model.move(from, to);
+		if (state.hasDragged) this.handler.drop(this.model, state.input, snapshot, now);
 	}
 
 	public readonly cancelPointer = (): void => {
 		this.capture.release(this);
+		const state = this.state;
 		this.state = null;
+		if (state !== null) this.handler.clear();
 	};
 
 	/** Owner retirement drains the held input; it is not a completed drop. */
@@ -55,71 +53,57 @@ export class EditorTabDrag implements PointerCaptureTarget {
 		this.cancelPointer();
 	}
 
-	private updatePointer(snapshot: PointerSnapshot, now: number, scroll: boolean): void {
-		const state = this.state!;
-		if (state.revision !== this.model.revision) { this.cancel(); return; }
-		const x = snapshot.viewportX, y = snapshot.viewportY;
+	private updatePointer(snapshot: PointerInputSnapshot, now: number, scroll: boolean): void {
+		const state = this.state;
+		if (state === null) return;
+		if (!this.model.contains(state.input)) { this.cancel(); return; }
 		if (!state.hasDragged) {
-			if (Math.max(Math.abs(x - state.startX), Math.abs(y - state.startY)) < constants.POINTER_DRAG_ACTIVATION_THRESHOLD) return;
+			copyPointerInputSnapshot(state, snapshot);
+			state.pointerTime = now;
+			if (Math.max(Math.abs(snapshot.viewportX - state.startX), Math.abs(snapshot.viewportY - state.startY)) < constants.POINTER_DRAG_ACTIVATION_THRESHOLD) return;
 			state.hasDragged = true;
 			this.onBeginDrag();
-			this.model.pin(this.model.findById(state.tabId)!);
-			state.revision = this.model.revision;
+			this.model.pin(state.input);
+			if (this.state !== state) return;
+			if (!this.model.contains(state.input)) { this.cancel(); return; }
+		} else {
+			if (scroll) this.handler.update(this.model, state.input, state, now, true);
+			if (this.state !== state) return;
+			copyPointerInputSnapshot(state, snapshot);
 			state.pointerTime = now;
-		} else if (scroll) this.scroll(state, now);
-		state.targetDirty ||= state.pointerX !== x || state.pointerY !== y;
-		state.pointerX = x; state.pointerY = y;
-		this.updateTarget(state);
+		}
+		this.handler.update(this.model, state.input, state, now, false);
 	}
 
-	/** Host time advances scrolling even when the physical pointer remains stationary. */
+	/** Host time advances target scrolling even when the physical pointer remains stationary. */
 	public advance(now: number): void {
 		const state = this.state;
 		if (state === null) return;
-		if (state.revision !== this.model.revision) { this.cancel(); return; }
-		if (state.hasDragged) this.scroll(state, now);
+		if (!this.model.contains(state.input)) { this.cancel(); return; }
+		if (state.hasDragged) {
+			state.pointerTime = now;
+			this.handler.update(this.model, state.input, state, now, true);
+		}
 	}
 
-	private scroll(state: TabDragState, now: number): void {
-		const elapsed = (now - state.pointerTime) / 1000;
-		state.pointerTime = now;
-		const viewport = this.layout.viewportBounds;
-		if (elapsed === 0 || !point_in_rect(state.pointerX, state.pointerY, viewport)) return;
-		const speed = dragScrollSpeed(state.pointerX, viewport.left, viewport.right);
-		if (speed === 0) return;
-		this.scrollbar.setScroll(this.scrollbar.getScroll() + speed * elapsed);
-	}
-
-	/** A synchronous layout publication updates the target before paint or release. */
+	/** A synchronous layout publication refreshes shared feedback before paint or release. */
 	public refreshTarget(): void {
 		const state = this.state;
 		if (state === null) return;
-		if (state.revision !== this.model.revision) { this.cancel(); return; }
-		if (state.hasDragged) this.updateTarget(state);
+		if (!this.model.contains(state.input)) { this.cancel(); return; }
+		if (state.hasDragged) this.handler.update(this.model, state.input, state, state.pointerTime, false);
 	}
 
-	private updateTarget(state: TabDragState): void {
-		const scroll = Math.round(this.scrollbar.getScroll());
-		if (!state.targetDirty && state.targetLayoutRevision === this.layout.revision && state.targetScroll === scroll) return;
-		state.targetDirty = false;
-		state.targetLayoutRevision = this.layout.revision;
-		state.targetScroll = scroll;
-		state.targetIndex = -1;
-		if (!point_in_rect(state.pointerX, state.pointerY, this.layout.viewportBounds)) return;
-		const tabs = this.model.tabs;
-		const x = state.pointerX + scroll;
-		let insertion = 0;
-		for (let index = 0; index < tabs.length; index++) {
-			const item = this.layout.items.peek(index);
-			if (x < item.contentLeft + item.tabWidth / 2) break;
-			insertion += 1;
+	public onModifiersChange(modifiers: KeyModifier, now: number): void {
+		const state = this.state;
+		if (state === null || state.modifiers === modifiers) return;
+		if (!this.model.contains(state.input)) { this.cancel(); return; }
+		if (state.hasDragged) {
+			this.handler.update(this.model, state.input, state, now, true);
+			if (this.state !== state) return;
 		}
-		const from = this.model.indexOf(this.model.findById(state.tabId)!);
-		const to = insertion > from ? insertion - 1 : insertion;
-		if (to !== from) {
-			const item = this.layout.items.peek(insertion === tabs.length ? insertion - 1 : insertion);
-			state.markerX = item.contentLeft + (insertion === tabs.length ? item.tabWidth : 0);
-			state.targetIndex = to;
-		}
+		state.modifiers = modifiers;
+		state.pointerTime = now;
+		if (state.hasDragged) this.handler.update(this.model, state.input, state, now, false);
 	}
 }

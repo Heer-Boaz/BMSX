@@ -107,7 +107,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 		const from = ide.editor.editorParts.activeGroup.model.indexOf(second);
 		test.movePointer(point(1, y));
 		for (let index = 0; index < 30; index += 1) await frame();
-		check(pointerCapture.active && ide.editor.editorParts.activeGroup.tabStrip.drag.state!.targetIndex >= 0
+		check(pointerCapture.active && ide.editor.editorParts.activeGroup.tabStrip.drag.state?.hasDragged === true
 			&& order.every((input, index) => input === ide.editor.editorParts.activeGroup.model.tabs[index]), 'A04: captured tab drag previews an insertion without reordering yet');
 		if (cancel) await press('Escape');
 		test.setPointerButton('pointer_primary', false); await frame();
