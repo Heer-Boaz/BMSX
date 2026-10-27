@@ -12,7 +12,7 @@ import { QuickInputController } from '../../ide/workbench/services/quick_input/c
 import { buildCommandQuickPickItems, showCommandPalette } from '../../ide/workbench/contrib/commands/quick_access';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
-import type { EditorInput } from '../../ide/workbench/ui/tab/model';
+import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';

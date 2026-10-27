@@ -9,7 +9,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.tools'
 	| 'menubar.window';
 
-export type WorkbenchContextMenuId = 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
 export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.run' | 'home.tools' | 'buildLog.title' | 'window.status' | 'window.title' | 'play.title' | 'animation.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
@@ -76,6 +76,14 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'sceneEditor.title': readonly WorkbenchMenuCommandItem[];
 };
 
+const WINDOW_CONTEXT_ACTIONS: readonly WorkbenchMenuItem[] = [
+	{ type: 'command', command: 'window.maximize' },
+	{ type: 'command', command: 'window.snapLeft' },
+	{ type: 'command', command: 'window.snapRight' },
+	{ type: 'separator' },
+	{ type: 'command', command: 'window.hide' },
+];
+
 const GRAPH_ZOOM_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 	{ type: 'command', command: 'graph.zoomOut' },
 	{ type: 'command', command: 'graph.resetZoom' },
@@ -93,6 +101,23 @@ const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
+	'editorTabs.context': [
+		{ type: 'command', command: 'save' },
+		{ type: 'command', command: 'keepEditor' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'window.moveEditor' },
+		{ type: 'command', command: 'window.copyEditor' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'tabs.close' },
+	],
+	'editorGroup.context': [
+		{ type: 'command', command: 'group.splitRight' },
+		{ type: 'command', command: 'group.splitDown' },
+		{ type: 'command', command: 'group.move' },
+		{ type: 'command', command: 'group.maximize' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'group.close' },
+	],
 	'home.work': [
 		{ type: 'command', command: 'resources.focus', icon: 'source' },
 		{ type: 'command', command: 'resourceSearch', icon: 'filter' },
@@ -220,6 +245,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
 	'problems.title': [{ type: 'command', command: 'problems.coverage', icon: 'info' }],
 	'window.status': [{ type: 'command', command: 'openEditors', icon: 'restore', showLabel: true }],
+	'window.context': WINDOW_CONTEXT_ACTIONS,
+	'window.minimizable.context': [{ type: 'command', command: 'window.minimize' }, ...WINDOW_CONTEXT_ACTIONS],
 	'window.title': [{ type: 'command', command: 'window.minimize', icon: 'minimize' },
 		{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
 		{ type: 'command', command: 'window.hide', icon: 'close' }],

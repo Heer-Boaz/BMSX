@@ -1,4 +1,5 @@
 import type { InputFocusTarget } from '../input/focus';
+import type { EditorInput } from '../workbench/common/editor_inputs';
 
 export type EditorSearchCommandId =
 	| 'commandPalette'
@@ -178,9 +179,9 @@ export type EditorCommandId =
 	| EditorScenarioLabCommandId;
 
 export type EditorCommandEnablement = {
-	isEnabled(command: EditorCommandId, target?: InputFocusTarget | null): boolean;
+	isEnabled(command: EditorCommandId, target?: InputFocusTarget | null, input?: EditorInput): boolean;
 };
 
 export interface EditorCommandRunner extends EditorCommandEnablement {
-	execute(command: EditorCommandId, target?: InputFocusTarget | null): void;
+	execute(command: EditorCommandId, target?: InputFocusTarget | null, input?: EditorInput): void;
 }

@@ -4,7 +4,7 @@ import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorPaneSelection } from './editor_selection';
-import type { EditorInput } from '../../ui/tab/model';
+import type { EditorInput } from '../../common/editor_inputs';
 import type { InputFocusScope, InputFocusTarget } from '../../../input/focus';
 
 export type EditorPaneClearReason = 'deactivate' | 'move';

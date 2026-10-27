@@ -109,6 +109,8 @@ run-target selection remain distinct. Runtime clients publish their physical
 transport and live-follow intent through `InputInteraction`; authoring controls
 hold the primary target. Runtime commands and Timeline retain the logical client
 attachment, independently of a temporarily hidden guest-input viewport.
+Physical controls publish interaction activation. Executing a retained command
+subject does not replay its earlier interaction or replace newer focus routing.
 Transients borrow the invoking interaction without
 borrowing guest input. Attachment and transport retirement revoke that authority.
 Runtime inputs retain logical live-follow intent and captured observations;
@@ -166,6 +168,9 @@ descendant controls are constructed. Pane factories consume that group's actual
 surface and extent. Layout publishes each group's retained title/content bounds;
 paint and input use those same surfaces. Tab layout, hover and gestures live in
 the strip, not in frontend-wide chrome state.
+`workbench/common/editor_inputs.ts` owns the retained view union. Commands can
+address an exact input alongside their concrete control origin; popup projection
+does not change group selection to manufacture that subject.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
 Source inputs own their model-to-view subscriptions. Closing one releases its

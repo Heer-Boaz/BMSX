@@ -1,4 +1,5 @@
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -23,7 +24,7 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
-import type { EditorInput } from '../../ide/workbench/ui/tab/model';
+import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import type { EditorPart } from '../../ide/workbench/services/editor/editor_part';
 import type { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
@@ -68,10 +69,11 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 		},
 	};
 	const handler: EditorTabDragHandler = { update() {}, drop() {}, clear() {} };
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 	const strip = new EditorTabStrip(group, context, {
 		isEnabled: () => commandsEnabled,
 		execute: command => { commands.push(command); },
-	}, focusParent, id => { if (!activationAccepted) return false; group.activate(group.findById(id)!); return true; }, id => { group.removeAt(group.indexOf(group.findById(id)!)); }, () => groupActivationAccepted, handler);
+	}, focusParent, id => { if (!activationAccepted) return false; group.activate(group.findById(id)!); return true; }, id => { group.removeAt(group.indexOf(group.findById(id)!)); }, () => groupActivationAccepted, handler, contextMenu);
 	const layout = () => { strip.layout(bounds); };
 	const paint = () => {
 		drawnLabels = 0;
@@ -90,7 +92,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 		return strip.handlePointer(snapshot, now);
 	};
 	t.after(() => {
-		strip.dispose(); group.clear(); focusParent.release();
+		strip.dispose(); contextMenu.dispose(); group.clear(); focusParent.release();
 		for (const model of models) model.dispose();
 	});
 	return { add, group, strip, bounds, scope, item, begin, dispatch, press, layout, paint, draw, frame, context, commands, setFont, handler, activate: (input: EditorInput) => group.activate(input),

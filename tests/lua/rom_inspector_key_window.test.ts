@@ -12,6 +12,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import { RomMapKeyWindow } from '../../ide/workbench/contrib/rom_inspector/key_window';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -59,7 +60,8 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	inputFocus.workbenchScope.commands = commands; origin.focus();
-	let key = new RomMapKeyWindow(input, commands, surfaces, owner, origin, area);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+	let key = new RomMapKeyWindow(input, commands, contextMenu, surfaces, owner, origin, area);
 	const overlay = createHostOverlayFixture(384, 288);
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
@@ -78,10 +80,10 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 		const up = point(x, y, 0, 0, 1); pointerCapture.dispatch(up, false, 1, surface.captureScope); pointerCapture.endRoute(up);
 		key.update();
 	};
-	t.after(() => { key.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); unbind(); surfaces.dispose(); input.dispose();
+	t.after(() => { key.dispose(); contextMenu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); unbind(); surfaces.dispose(); input.dispose();
 		inputFocus.workbenchScope.commands = previousCommands; colors.setIdeThemeVariant(previousTheme); });
 	return { input, surfaces, owner, origin, unrelated, commands, draw, clickAction, get key() { return key; },
-		recreate() { key.dispose(); key = new RomMapKeyWindow(input, commands, surfaces, owner, origin, area); } };
+		recreate() { key.dispose(); key = new RomMapKeyWindow(input, commands, contextMenu, surfaces, owner, origin, area); } };
 }
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {

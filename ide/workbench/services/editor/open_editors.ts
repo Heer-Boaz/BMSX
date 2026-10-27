@@ -1,5 +1,5 @@
 import type { EditorGroupView } from './editor_group';
-import type { EditorInput } from '../../ui/tab/model';
+import type { EditorInput } from '../../common/editor_inputs';
 import type { EditorParts } from './editor_parts';
 import type { QuickInputController } from '../quick_input/controller';
 import { TextQuickPickProvider } from '../quick_input/text_provider';

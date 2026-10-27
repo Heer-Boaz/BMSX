@@ -1,7 +1,7 @@
 import { resourceIdentityEquals } from '../common/resource';
 import { DisposableStore } from '../common/lifecycle';
 import type { ResourceEditorIdentity } from '../workbench/common/editor_input';
-import type { EditorInput } from '../workbench/ui/tab/model';
+import type { EditorInput } from '../workbench/common/editor_inputs';
 import type { EditorMoveEvent, EditorGroupView } from '../workbench/services/editor/editor_group';
 import type { EditorPaneSelection } from '../workbench/services/editor/editor_selection';
 

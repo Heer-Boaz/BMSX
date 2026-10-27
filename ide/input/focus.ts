@@ -48,6 +48,7 @@ export class InputFocusScope {
 	/** A declared local runtime can be unavailable without redirecting its commands. */
 	public runtime: InputRuntimeContext | undefined;
 	private contextRetirementListeners: Set<() => void> | undefined;
+	private contextRetirements = 0;
 	/** Command ancestry is independent of presentation and the control's focus-return parent. */
 	public constructor(public surfaceScope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE,
 		public readonly commandParent: InputFocusScope | null = null) {}
@@ -70,6 +71,13 @@ export class InputFocusScope {
 		return false;
 	}
 
+	/** Any owning attachment's retirement ends an invocation, even if the same scopes are reused. */
+	public get contextGeneration(): number {
+		let generation = 0;
+		for (let scope: InputFocusScope | null = this; scope !== null; scope = scope.commandParent) generation += scope.contextRetirements;
+		return generation;
+	}
+
 	/** A transient's command authority ends with its invoking attachment or an ancestor. */
 	public onDidRetireContext(listener: () => void): () => void {
 		const listeners = this.contextRetirementListeners ??= new Set();
@@ -80,6 +88,7 @@ export class InputFocusScope {
 
 	/** Reusable controls may bind another input only after retiring the old context. */
 	public retireContext(): void {
+		this.contextRetirements++;
 		const listeners = this.contextRetirementListeners;
 		this.contextRetirementListeners = undefined;
 		if (listeners !== undefined) for (const listener of listeners) listener();

@@ -24,11 +24,9 @@ import type { EditorTextSelection } from '../../ide/editor/navigation/text_selec
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
 import { createTestGroupPresentation } from '../helpers/editor_panes';
 import { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
-import type {
-	BehaviorLensInput,
-	EditorInput,
-	ScenarioLabInput,
-} from '../../ide/workbench/ui/tab/model';
+import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
+import type { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
+import type { ScenarioLabInput } from '../../ide/workbench/contrib/scenario_lab/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { EditorTextModel } from '../../ide/editor/model/text_model';

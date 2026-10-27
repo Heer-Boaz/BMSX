@@ -7,7 +7,7 @@ import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/vie
 import { resetBlinkState } from '../../../editor/ui/view/caret/blink';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
-import type { CodeEditorInput } from '../tab/model';
+import type { CodeEditorInput } from '../../contrib/code_editor/editor_input';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { CodeEditorPane } from '../../contrib/code_editor/editor_pane';
 

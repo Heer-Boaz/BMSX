@@ -1,4 +1,4 @@
-import type { EditorInput } from '../../ui/tab/model';
+import type { EditorInput } from '../../common/editor_inputs';
 
 export type PersistentEditorInput = Exclude<EditorInput, { readonly serializable: false }>;
 

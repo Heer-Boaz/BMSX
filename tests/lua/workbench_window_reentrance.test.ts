@@ -43,7 +43,7 @@ for (const coalesced of [false, true]) for (const phase of ['departing Source bl
 	test(`utility retirement from ${phase} revokes its title-action ${coalesced ? 'coalesced click' : 'press'}`, t => {
 		const f = createActualSourcePanes(t), model = new WorkbenchWindowModel({ left: 40, top: 80, right: 300, bottom: 250 }, 120, 80);
 		const actionBar = createWorkbenchActionBar('window.title');
-		const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, f.editor.surfaces, f.editor.commands, {
+		const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, f.editor.surfaces, f.editor.commands, f.editor.contextMenu, {
 			model, actionBar, lifetimeOwner: f.firstGroup.paneSurface,
 			presentationParent: f.editor.surfaces.windowContext(f.firstGroup.paneSurface),
 			focusScope: f.firstPart.scope, focusReturn: f.first.commandTarget, workArea: f.firstPart.surface.getClip(),

@@ -5,7 +5,7 @@ import * as constants from '../../../common/constants';
 import { ELLIPSIS, truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import type { EditorTabGroupModel } from './group_model';
 import type { EditorTabId } from './id';
-import type { EditorInput } from './model';
+import type { EditorInput } from '../../common/editor_inputs';
 import { layoutWorkbenchActionBar, type WorkbenchActionBarState } from '../action_bar';
 import type { Scrollbar } from '../scrollbar';
 

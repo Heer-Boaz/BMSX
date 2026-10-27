@@ -102,7 +102,7 @@ export class EditorPart {
 		if (options.kind === 'document') {
 			const model = new WorkbenchWindowModel(options.requestedBounds, 0, 0);
 			model.open = true; model.setPlacement(options.placement); model.setMinimized(options.minimized);
-			this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, options.surfaces, options.commands, {
+			this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, options.surfaces, options.commands, options.contextMenu, {
 				model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: options.owner, presentationParent: null,
 				focusScope: options.scope, focusReturn: options.focusReturn, workArea: options.workArea,
 				content: { draw: () => this.drawClient() }, layoutContent: bounds => this.layout(bounds),

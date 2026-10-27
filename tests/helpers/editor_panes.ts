@@ -26,12 +26,10 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../ide/common/
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { restoreCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
-import type {
-	BehaviorLensInput,
-	CodeEditorInput,
-	EditorInput,
-	ScenarioLabInput,
-} from '../../ide/workbench/ui/tab/model';
+import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
+import type { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
+import type { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import type { ScenarioLabInput } from '../../ide/workbench/contrib/scenario_lab/editor_input';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
 import type { EditorPaneFactories } from '../../ide/workbench/services/editor/editor_panes';
 import { EditorGroupView, type EditorGroupPresentation } from '../../ide/workbench/services/editor/editor_group';

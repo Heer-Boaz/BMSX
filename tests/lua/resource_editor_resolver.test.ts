@@ -15,7 +15,7 @@ import { CartMapInput, WORKBENCH_CART_MAP_EDITOR_ID } from '../../ide/workbench/
 import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { AemEditorInput, WORKBENCH_AEM_EDITOR_ID } from '../../ide/workbench/contrib/aem/editor_input';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import type { EditorInput } from '../../ide/workbench/ui/tab/model';
+import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';

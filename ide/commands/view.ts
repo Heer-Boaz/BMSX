@@ -1,4 +1,5 @@
 import type { EditorGroupView } from '../workbench/services/editor/editor_group';
+import type { EditorInput } from '../workbench/common/editor_inputs';
 import { openHome } from '../workbench/contrib/home/editor_input';
 import { workspaceState } from '../workbench/workspace/state';
 import type { RuntimeFaultState } from '../runtime/fault_state';
@@ -56,7 +57,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 	}
 }
 
-export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId, group: EditorGroupView): void {
+export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId, group: EditorGroupView, input?: EditorInput): void {
 	const picker = editor.editorParts.partForGroup(group).quickInput;
 	switch (command) {
 		case 'home': openHome(group, workspaceState.context); return;
@@ -90,7 +91,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			editor.behaviorLens.open(group, picker, null, { pinned: false });
 			return;
 		case 'keepEditor':
-			group.model.pin(group.model.activeTab);
+			group.model.pin(input === undefined ? group.model.activeTab : input);
 			return;
 		case 'openEditors': showOpenEditors(editor.editorParts, editor.quickInput); return;
 		case 'behaviorLens.actionEffects':

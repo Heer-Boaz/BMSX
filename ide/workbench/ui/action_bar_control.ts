@@ -152,6 +152,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 			state.focusedIndex = index;
 			// Keep field focus/drafts until the command's normal admission step.
 			this.unbindPressBlur = this.focus.target?.onDidBlur(this.cancelPress);
+			this.focusTarget.activate();
+			if (this.input !== state || this.pointerCommand !== command) return true;
 			if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 		}
 		return true;

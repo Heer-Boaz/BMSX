@@ -106,7 +106,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 	protected override activate(): void {
 		this.boundRevision = -1; this.freshLayout = true; this.presentation.reset();
 		this.lastClickRow = undefined; this.lastClickTime = 0;
-		this.key = new RomMapKeyWindow(this.input, this.commands, this.surfaces, this.owner, this.list.focusTarget, this.workArea);
+		this.key = new RomMapKeyWindow(this.input, this.commands, this.contextMenu, this.surfaces, this.owner, this.list.focusTarget, this.workArea);
 		for (const target of [this.key.window.focusTarget, this.key.scroll.focusTarget]) for (const command of COMMANDS)
 			target.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.actions.setInput(this.input.actions, this.focusTarget);

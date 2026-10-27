@@ -8,6 +8,7 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusScope, InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchWindowModel, type WindowPlacement } from '../../ide/workbench/ui/window/model';
@@ -26,11 +27,12 @@ const pointer = (x: number, y: number, buttons = 0, pressed = 0, released = 0): 
 
 function fixture() {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const contextMenu = new ContextMenuController(focus, capture);
 	const surfaces = new WorkbenchSurfaceService();
 	const workArea = { left: 0, top: 20, right: 500, bottom: 380 };
 	const parent = focus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
 	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope, isVisible: () => true,
-		getBounds: () => workArea, getClip: () => workArea, draw() {} });
+		getBounds: () => workArea, getClip: () => workArea, draw() {}, onRetire: () => contextMenu.dispose() });
 	const font = new Font({ variant: 'tiny' });
 	let measurements = 0;
 	const measure = (text: string, from: number, to: number) => { measurements += 1; return font.measure(text.slice(from, to)); };
@@ -46,7 +48,7 @@ function fixture() {
 		const model = new WorkbenchWindowModel({ left, top, right: left + 240, bottom: top + 180 }, 120, 80);
 		model.title = name;
 		let input = false, layouts = 0, restores = 0, retires = 0, painted = 0, clicked = 0, hidden = 0;
-		const control = new WorkbenchFloatingWindow(focus, capture, hover, surfaces, commands, {
+		const control = new WorkbenchFloatingWindow(focus, capture, hover, surfaces, commands, contextMenu, {
 			model, actionBar: actions, lifetimeOwner: owner, presentationParent: null, ...windowOptions, focusReturn: parent, workArea,
 			getTitleTooltip,
 			content: { draw() { painted += 1; }, handlePointer(snapshot) {
@@ -83,7 +85,7 @@ function fixture() {
 		dispatch(pointer(x, y, button, button), now);
 		dispatch(pointer(x, y, 0, 0, button), now + 1);
 	};
-	return { focus, capture, surfaces, workArea, parent, owner, font, window, dispatch, click, measurements: () => measurements };
+	return { focus, capture, surfaces, contextMenu, workArea, parent, owner, font, window, dispatch, click, measurements: () => measurements };
 }
 
 function titlePoint(model: WorkbenchWindowModel) {

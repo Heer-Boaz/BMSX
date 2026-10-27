@@ -15,6 +15,10 @@ import type { EditorTabGroupModel } from './group_model';
 import type { EditorTabId } from './id';
 import { EditorTabStripLayout, type EditorTabStripLayoutContext } from './layout';
 import { EditorTabDrag, type EditorTabDragHandler } from './drag';
+import type { EditorInput } from '../../common/editor_inputs';
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import { WORKBENCH_MENUS } from '../menu/registry';
+import type { DisposableStore } from '../../../common/lifecycle';
 
 /** A concrete group's tab control, with no frontend-wide selection or geometry state. */
 export class EditorTabStrip implements PointerHoverTarget {
@@ -38,15 +42,21 @@ export class EditorTabStrip implements PointerHoverTarget {
 	private projectedDragging = false;
 	private projectedScroll = 0;
 	private actionsAttached = false;
+	private contextMenuSession: DisposableStore | undefined;
 
-	public constructor(public readonly model: EditorTabGroupModel, private readonly layoutContext: EditorTabStripLayoutContext, commands: EditorCommandRunner,
+	public constructor(public readonly model: EditorTabGroupModel, private readonly layoutContext: EditorTabStripLayoutContext, private readonly commands: EditorCommandRunner,
 		private readonly focusParent: InputFocusTarget, private readonly activate: (id: EditorTabId) => boolean,
-		private readonly close: (id: EditorTabId) => void, private readonly focusContent: () => boolean, dragHandler: EditorTabDragHandler) {
+		private readonly close: (id: EditorTabId) => void, private readonly focusContent: () => boolean, dragHandler: EditorTabDragHandler,
+		private readonly contextMenu: ContextMenuController) {
 		const scope = focusParent.scope.surfaceScope;
 		this.scrollControl = new ScrollbarPointerControl(pointerCapture, scope);
 		this.layoutState = new EditorTabStripLayout(model, this.actions, this.scrollbar);
 		this.drag = new EditorTabDrag(pointerCapture, scope, () => { this.lastClickId = null; }, dragHandler);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, focusParent, focusContent);
+		this.actionBar.focusTarget.registerCommand('contextMenu', {
+			isEnabled: () => this.actionsAttached,
+			run: () => this.openContextMenu(this.layoutState.bounds.left, this.layoutState.bounds.bottom, undefined, true),
+		});
 	}
 
 	/** Host-time gesture advancement runs before the owning group publishes its next layout. */
@@ -91,6 +101,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 
 	/** The group keeps its strip alive when its last editor closes. */
 	public clear(): void {
+		if (this.contextMenuSession !== undefined) this.contextMenu.hide();
 		this.drag.cancel();
 		pointerCapture.cancelTarget(this.scrollControl);
 		this.scrollControl.cancelPointer();
@@ -147,6 +158,13 @@ export class EditorTabStrip implements PointerHoverTarget {
 			pointerHover.release(this.actionBar);
 			return false;
 		}
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
+			this.lastClickId = null;
+			this.drag.cancel();
+			const input = this.hoverId === null ? undefined : this.model.findById(this.hoverId);
+			this.openContextMenu(snapshot.viewportX, snapshot.viewportY, input, false);
+			return true;
+		}
 		if (this.actionBar.handlePointer(snapshot)) {
 			if (snapshot.justPressedButtons !== 0) this.lastClickId = null;
 			return true;
@@ -192,6 +210,22 @@ export class EditorTabStrip implements PointerHoverTarget {
 		this.lastClickId = null;
 		if (primary && this.focusContent()) this.drag.begin({ kind: 'group', model: this.model }, snapshot, now);
 		return true;
+	}
+
+	private openContextMenu(x: number, y: number, input: EditorInput | undefined, keyboard: boolean): void {
+		this.contextMenu.show(x, y, WORKBENCH_MENUS[input === undefined ? 'editorGroup.context' : 'editorTabs.context'], this.commands,
+			{ invocationOrigin: this.focusParent, editor: input, selectFirst: keyboard,
+				onWillShow: lifetime => {
+					this.contextMenuSession = lifetime;
+					lifetime.add({ dispose: () => { this.contextMenuSession = undefined; } });
+					if (input !== undefined) {
+						lifetime.add({ dispose: input.onWillDispose(() => this.contextMenu.hide()) });
+						lifetime.add({ dispose: this.model.onDidChange(() => {
+							if (!this.model.contains(input)) this.contextMenu.hide();
+						}) });
+						if (!this.model.contains(input)) this.contextMenu.hide();
+					}
+				} });
 	}
 
 	public handleWheel(event: WheelInputSnapshot): boolean {

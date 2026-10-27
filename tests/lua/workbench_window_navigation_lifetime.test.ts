@@ -40,7 +40,7 @@ test('workspace Problems and coverage-header focus retain the active editor fami
 test('retired inner-window command origins cannot open, select or copy their surviving editor frontend', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	const model = new WorkbenchWindowModel(f.secondPart.window!.model.requestedBounds, 100, 70); model.open = true;
-	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, f.editor.surfaces, f.editor.commands, {
+	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, f.editor.surfaces, f.editor.commands, f.editor.contextMenu, {
 		model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: f.secondGroup.paneSurface,
 		presentationParent: f.editor.surfaces.windowContext(f.secondGroup.paneSurface),
 		focusScope: f.second.commandTarget.scope, focusReturn: f.second.commandTarget, workArea: f.secondGroup.workArea,

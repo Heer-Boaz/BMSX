@@ -19,7 +19,7 @@ import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
-import type { BehaviorLensInput } from '../../ui/tab/model';
+import type { BehaviorLensInput } from './editor_input';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { BehaviorLensController } from './controller';
 import {

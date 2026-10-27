@@ -151,7 +151,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	private createDetailsWindow(): void {
 		const pane = this, input = this.input;
-		this.detailsWindow = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, this.surfaces, this.commands, {
+		this.detailsWindow = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, this.surfaces, this.commands, this.contextMenu, {
 			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: this.paneSurface,
 			presentationParent: this.surfaces.windowContext(this.paneSurface),
 			focusScope: this.focusTarget.scope, get focusReturn() { return pane.commandTarget; }, workArea: this.workArea,

@@ -8,7 +8,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerInputSnapshot } from '../../ide/common/models';
-import { InputFocusService } from '../../ide/input/focus';
+import { InputFocusService, type InputFocusTarget } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ITEM_PADDING_X, WORKBENCH_ACTION_BAR_ITEM_SPACING } from '../../ide/workbench/ui/action_bar';
@@ -558,4 +558,37 @@ test('vertical actions navigate on their own axis and revoke an armed trigger on
 	f.press('ArrowUp'); f.press('Space'); assert.deepEqual(f.calls, [second, first]);
 	f.press('End'); f.press('Enter'); assert.deepEqual(f.calls, [second, first, last]);
 	f.press('Home'); f.press('Enter'); assert.deepEqual(f.calls, [second, first, last, first]);
+});
+
+
+test('an admitted physical action press activates its actual control once without blurring the field or replaying at release', t => {
+	const f = fixture(t), field = f.focus.createTarget(f.content), context = f.focus.createTarget();
+	field.bindKeyboard(() => {}); field.focus(); f.bar.setInput(f.state, context); f.bar.update();
+	const activations: InputFocusTarget[] = [], command = f.state.items[0].command;
+	const unbind = f.focus.onDidActivateInteraction(target => {
+		activations.push(target);
+		assert.ok(target === f.bar.focusTarget && target !== context);
+		assert.equal(f.capture.active, true); assert.equal(f.state.pressedCommand, command);
+		assert.ok(f.focus.target === field);
+	}); t.after(unbind);
+	f.pointer(0, PRIMARY, PRIMARY);
+	assert.deepEqual(activations, [f.bar.focusTarget]); assert.deepEqual(f.calls, []); assert.ok(f.focus.target === field);
+	f.pointer(0, 0, 0, PRIMARY);
+	assert.deepEqual(f.calls, [command]); assert.deepEqual(activations, [f.bar.focusTarget]); assert.ok(f.focus.target === field);
+	f.enabled.delete(command); f.bar.update(); f.pointer(0, PRIMARY, PRIMARY); f.pointer(0, 0, 0, PRIMARY);
+	assert.deepEqual(activations, [f.bar.focusTarget]); assert.deepEqual(f.calls, [command]);
+});
+
+test('physical action activation may retire the armed input before a coalesced release without executing', t => {
+	const f = fixture(t), field = f.focus.createTarget(f.content);
+	field.bindKeyboard(() => {}); field.focus();
+	let activations = 0;
+	const unbind = f.focus.onDidActivateInteraction(target => {
+		assert.ok(target === f.bar.focusTarget); activations++;
+		assert.equal(f.capture.active, true); assert.equal(f.state.pressedCommand, f.state.items[0].command);
+		f.bar.clearInput();
+	}); t.after(unbind);
+	assert.doesNotThrow(() => f.pointer(0, 0, PRIMARY, PRIMARY));
+	assert.equal(activations, 1); assert.equal(f.capture.active, false); assert.equal(f.state.pressedCommand, null);
+	assert.deepEqual(f.calls, []); assert.ok(f.focus.target === field);
 });

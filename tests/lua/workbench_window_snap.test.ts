@@ -11,6 +11,7 @@ import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { api } from '../../ide/runtime/overlay_api';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
@@ -19,6 +20,7 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 
 function fixture(t: TestContext, placement: WindowPlacement = 'normal', areaWidth = 600, minimumWidth = 120) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const contextMenu = new ContextMenuController(focus, capture);
 	const surfaces = new WorkbenchSurfaceService(), font = new Font({ variant: 'tiny' });
 	const area = { left: 20, top: 30, right: 20 + areaWidth, bottom: 430 };
 	const parent = focus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
@@ -31,7 +33,7 @@ function fixture(t: TestContext, placement: WindowPlacement = 'normal', areaWidt
 		isEnabled: (command, target) => focus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => focus.executeCommand(command, target),
 	};
-	const control = new WorkbenchFloatingWindow(focus, capture, hover, surfaces, commands, {
+	const control = new WorkbenchFloatingWindow(focus, capture, hover, surfaces, commands, contextMenu, {
 		model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: owner, presentationParent: null,
 		focusScope: parent.scope, focusReturn: parent, workArea: area, content: { draw() {} }, layoutContent() {},
 		retireContentInput() { retires++; }, restoreContentInput() { restores++; }, focusContent() { client.focus(); },
@@ -64,7 +66,7 @@ function fixture(t: TestContext, placement: WindowPlacement = 'normal', areaWidt
 	};
 	const title = () => ({ x: model.header.left + (model.header.right - model.header.left) * 0.6,
 		y: (model.header.top + model.header.bottom) / 2 });
-	t.after(() => { control.dispose(); surfaces.dispose(); focus.setTarget(null); });
+	t.after(() => { control.dispose(); contextMenu.dispose(); surfaces.dispose(); focus.setTarget(null); });
 	return { focus, capture, surfaces, model, control, client, commands, area, layout, paint, dispatch, title,
 		restores: () => restores, retires: () => retires };
 }

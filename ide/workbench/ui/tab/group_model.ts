@@ -12,13 +12,11 @@ import type {
 	BuildLogTabId,
 	PlayTabId,
 } from './id';
-import type {
-	BehaviorLensInput,
-	CodeEditorInput,
-	EditorInput,
-	ResourceViewerInput,
-	ScenarioLabInput,
-} from './model';
+import type { EditorInput } from '../../common/editor_inputs';
+import type { BehaviorLensInput } from '../../contrib/behavior_lens/editor_input';
+import type { CodeEditorInput } from '../../contrib/code_editor/editor_input';
+import type { ResourceViewerInput } from '../../contrib/resources/editor_input';
+import type { ScenarioLabInput } from '../../contrib/scenario_lab/editor_input';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { EditorInputSerializer, EditorInputSerializers, SerializedEditorGroup, SerializedEditorInput, PersistentEditorInput } from '../../services/editor/editor_serialization';
 

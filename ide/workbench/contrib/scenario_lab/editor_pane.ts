@@ -20,7 +20,7 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { IdeCommandController } from '../../../commands/controller';
-import type { ScenarioLabInput } from '../../ui/tab/model';
+import type { ScenarioLabInput } from './editor_input';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { ScenarioLabController } from './controller';
 import {

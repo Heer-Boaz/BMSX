@@ -16,7 +16,7 @@ import type { ActionPrompt } from '../../contrib/modal/action_prompt';
 import { EditorDropTarget } from './editor_drop_target';
 import type { EditorGroupView } from './editor_group';
 import type { EditorTabGroupModel, EditorGroupTransferPublication } from '../../ui/tab/group_model';
-import type { EditorInput } from '../../ui/tab/model';
+import type { EditorInput } from '../../common/editor_inputs';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
 import type { EditorInputSerializers } from './editor_serialization';
 import type { SerializedDocumentEditorPart, SerializedEditorParts } from './editor_parts_serialization';
@@ -224,7 +224,7 @@ export class EditorParts {
 	public canMoveEditor(source: EditorGroupView, input: EditorInput, destination: EditorMoveDestination): boolean {
 		const part = this.owners.get(source);
 		if (part === undefined || part.retired || source.paneSurface.retired || !source.openingAdmitted || part.operation !== 'none'
-			|| source.model.activeTab !== input || this.closeController.isPending(input)) return false;
+			|| !source.model.contains(input) || this.closeController.isPending(input)) return false;
 		if (destination.kind === 'window') return input.canMove();
 		const receiver = this.owners.get(destination.group);
 		if (receiver === undefined || receiver.retired || destination.group.paneSurface.retired || !destination.group.openingAdmitted || receiver.operation !== 'none') return false;
@@ -238,45 +238,47 @@ export class EditorParts {
 	public moveEditor(source: EditorGroupView, input: EditorInput, destination: EditorMoveDestination): boolean {
 		if (!this.canMoveEditor(source, input, destination)) return false;
 		const focusRevision = inputFocus.revision, focusOrigin = inputFocus.target;
-		const sourceGeneration = source.panes.openGeneration;
-		if (!source.commitPendingEdit() || source.panes.openGeneration !== sourceGeneration) return false;
+		const sourceGeneration = source.panes.openGeneration, movingActive = source.model.activeTab === input;
+		if (movingActive && (!source.commitPendingEdit() || source.panes.openGeneration !== sourceGeneration)) return false;
 		if (destination.kind !== 'window' && destination.group !== source) {
 			const generation = destination.group.panes.openGeneration;
 			if (!destination.group.commitPendingEdit() || destination.group.panes.openGeneration !== generation) return false;
 		}
-		if (!this.canMoveEditor(source, input, destination)) return false;
+		if (!this.canMoveEditor(source, input, destination) || (source.model.activeTab === input) !== movingActive) return false;
 		if (destination.kind === 'group' && destination.group === source) {
 			return this.closeController.transfer([input], () => {
 				source.model.moveToGap(input, destination.index!);
-				return this.owners.has(source) && !source.paneSurface.retired && source.model.activeTab === input && source.panes.activePane?.input === input;
+				const active = source.model.activeTab;
+				return this.owners.has(source) && !source.paneSurface.retired && source.model.contains(input)
+					&& (active === null ? source.panes.activePane === null : source.panes.activePane?.input === active);
 			});
 		}
 		const existing = destination.kind === 'group' ? destination.group.model.findById(input.id) : undefined;
 		const sourcePart = this.partForGroup(source);
 		const movedTo = this.closeController.transfer(existing === undefined ? [input] : [input, existing], () => {
 			sourcePart.setOperation('move');
-			const selection = existing === undefined ? undefined : source.panes.activePane!.getSelection?.();
+			const selection = existing === undefined || !movingActive ? undefined : source.panes.activePane!.getSelection?.();
 			const targetPart = destination.kind === 'window' ? this.constructDocument({ requestedBounds: destination.requestedBounds }, 'move') : this.partForGroup(destination.group);
-			if (destination.kind !== 'window') targetPart.setOperation('move');
+			if (destination.kind !== 'window' && targetPart !== sourcePart) targetPart.setOperation('move');
 			const target = destination.kind === 'group' ? destination.group : destination.kind === 'split' ? targetPart.createGroup() : targetPart.activeGroup;
 			let adopted = destination.kind === 'group';
 			let retiring: EditorInput | undefined, handoff: { group: EditorGroupView; input: EditorInput } | undefined;
 			try {
-				if (this.owners.get(source) !== sourcePart || source.paneSurface.retired || source.model.activeTab !== input
+				if (this.owners.get(source) !== sourcePart || source.paneSurface.retired || !source.model.contains(input) || (source.model.activeTab === input) !== movingActive
 					|| target.paneSurface.retired || !targetPart.ownsGroup(target) || target.model.findById(input.id) !== existing
 					|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart) return false;
 				const targetGeneration = target.panes.openGeneration;
 				return withNavigationCaptureSuspended(() => {
-					const sourceReceipt = source.detachEditorForMove(input);
+					const sourceReceipt = movingActive ? source.detachEditorForMove(input) : source.panes.openGeneration;
 					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.paneSurface.retired || target.paneSurface.retired
 						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
-						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetGeneration
-						|| source.model.activeTab !== input || target.model.findById(input.id) !== existing) return false;
+						|| movingActive && source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetGeneration
+						|| !source.model.contains(input) || (source.model.activeTab === input) !== movingActive || target.model.findById(input.id) !== existing) return false;
 					const targetReceipt = target.panes.clearEditor();
 					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.paneSurface.retired || target.paneSurface.retired
 						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
-						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
-						|| source.model.activeTab !== input || target.model.findById(input.id) !== existing || !input.canMove(existing)) return false;
+						|| movingActive && source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| !source.model.contains(input) || (source.model.activeTab === input) !== movingActive || target.model.findById(input.id) !== existing || !input.canMove(existing)) return false;
 					if (existing !== undefined) retiring = input;
 					const publication = source.model.transferTo(target.model, input, existing, destination.kind === 'group' ? destination.index : undefined);
 					const receiver = publication.input; handoff = { group: target, input: receiver };
@@ -284,25 +286,25 @@ export class EditorParts {
 					if (destination.kind === 'split') targetPart.admitGroup(target, destination.group, destination.direction);
 					else if (destination.kind === 'window') this.publishDocument(targetPart);
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
-						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| movingActive && source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
 						|| source.model.contains(input) || target.model.activeTab !== receiver) return false;
 					publication.publish();
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
-						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| movingActive && source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
 						|| source.model.contains(input) || target.model.activeTab !== receiver) return false;
 					source.publishMovedEditor(input, target, receiver);
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
-						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
+						|| movingActive && source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
 						|| source.model.contains(input) || target.model.activeTab !== receiver) return false;
 					const successor = source.model.activeTab;
-					if (successor !== null) source.attachTransferredEditor(successor, undefined, true);
+					if (successor !== null && source.panes.activePane?.input !== successor) source.attachTransferredEditor(successor, undefined, true);
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
 						|| target.panes.openGeneration !== targetReceipt || target.model.activeTab !== receiver
 						|| successor !== null && (source.model.activeTab !== successor || source.panes.activePane?.input !== successor)) return false;
 					const sourceAttachment = source.panes.openGeneration;
 					target.attachTransferredEditor(receiver, selection, true);
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
-						|| source.panes.openGeneration !== sourceAttachment || target.model.activeTab !== receiver || target.panes.activePane?.input !== receiver) return false;
+						|| movingActive && source.panes.openGeneration !== sourceAttachment || target.model.activeTab !== receiver || target.panes.activePane?.input !== receiver) return false;
 					if (!targetPart.revealGroup(target)) return false;
 					return handoff;
 				});

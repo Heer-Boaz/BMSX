@@ -11,6 +11,7 @@ import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { WorkbenchFloatingWindow } from '../../ui/window/control';
@@ -26,12 +27,12 @@ export class RomMapKeyWindow {
 	private measuredFont: typeof editorViewState.font | undefined;
 	private rowHeight = 0;
 
-	public constructor(private readonly input: RomInspectorInput, commands: EditorCommandRunner,
+	public constructor(private readonly input: RomInspectorInput, commands: EditorCommandRunner, contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, focusReturn: InputFocusTarget,
 		workArea: Readonly<RectBounds>) {
 		this.total = formatByteSize(input.snapshot.rom.byteLength);
 		input.keyWindow.title = `Map key: ${input.snapshot.label}`;
-		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
+		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, contextMenu, {
 			model: input.keyWindow, actionBar: input.keyActions, lifetimeOwner: owner,
 			presentationParent: surfaces.windowContext(owner), focusScope: focusReturn.scope, focusReturn, workArea,
 			content: {

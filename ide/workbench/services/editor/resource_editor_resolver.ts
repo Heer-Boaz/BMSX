@@ -1,5 +1,5 @@
 import type { RuntimeResource } from '../../../common/resource';
-import type { EditorInput } from '../../ui/tab/model';
+import type { EditorInput } from '../../common/editor_inputs';
 
 export type ResourceEditorSelector =
 	| { kind: 'asset_type'; assetType: RuntimeResource['source']['type'] }

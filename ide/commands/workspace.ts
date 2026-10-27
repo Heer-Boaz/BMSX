@@ -1,4 +1,5 @@
 import type { EditorGroupView } from '../workbench/services/editor/editor_group';
+import type { EditorInput } from '../workbench/common/editor_inputs';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
 import { TextEditorInput } from '../workbench/common/editor_input';
@@ -59,6 +60,7 @@ export function executeEditorWorkspaceCommand(
 	command: EditorWorkspaceCommandId,
 	group: EditorGroupView,
 	runTargets: RunTargetSelection,
+	input?: EditorInput,
 ): void {
 	const part = editor.editorParts.partForGroup(group);
 	switch (command) {
@@ -66,7 +68,7 @@ export function executeEditorWorkspaceCommand(
 			openCreateResourcePrompt(editor, group, sources.catalog, clock);
 			return;
 		case 'save': {
-			const activeInput = group.model.activeTab;
+			const activeInput = input === undefined ? group.model.activeTab : input;
 			if (activeInput instanceof TextEditorInput) for (const model of activeInput.getWorkingCopies()) {
 				if (!model.dirty || model.readOnly) continue;
 				void saveTextFileFromCommand(textFileSaves, model, editor, sources);

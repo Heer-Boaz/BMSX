@@ -2,6 +2,7 @@ import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { editorCommandTitle } from '../../../commands/catalog';
 import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
+import type { EditorInput } from '../../common/editor_inputs';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import { InputFocusScope, type InputFocusService, type InputFocusTarget } from '../../../input/focus';
@@ -24,11 +25,13 @@ export type ContextMenuOptions = {
 	readonly invocationOrigin?: InputFocusTarget;
 	/** Explicit action capability owner; physical context menus use the invoking leaf. */
 	readonly commandTarget?: InputFocusTarget | null;
+	/** Exact retained editor addressed by a tab menu, independent of its group's selection. */
+	readonly editor?: EditorInput;
 	/** Pointer context menus return to the clicked client, independent of the previously focused control. */
 	readonly returnFocus?: InputFocusTarget;
 };
 
-type ContextMenuCommandRunner = EditorCommandRunner & { isActive?(command: EditorCommandId): boolean };
+type ContextMenuCommandRunner = EditorCommandRunner & { isActive?(command: EditorCommandId, target?: InputFocusTarget | null, input?: EditorInput): boolean };
 
 type ContextMenuSession = {
 	readonly commands: ContextMenuCommandRunner;
@@ -162,10 +165,10 @@ export class ContextMenuController implements PointerCaptureTarget {
 		}
 		for (const row of this.model.rows) {
 			if (row.command === undefined) continue;
-			const enabled = session.commands.isEnabled(row.command, session.commandOrigin);
+			const enabled = session.commands.isEnabled(row.command, session.commandOrigin, session.options.editor);
 			if (this.session !== session) return;
 			row.enabled = enabled;
-			const active = session.commands.isActive?.(row.command) === true;
+			const active = session.commands.isActive?.(row.command, session.commandOrigin, session.options.editor) === true;
 			if (this.session !== session) return;
 			if (active !== row.active) {
 				row.active = active;
@@ -181,13 +184,13 @@ export class ContextMenuController implements PointerCaptureTarget {
 		if (index < 0) return;
 		const command = this.model.rows[index].command!;
 		const session = this.session!, { commands, commandOrigin } = session;
-		const enabled = commands.isEnabled(command, commandOrigin);
+		const enabled = commands.isEnabled(command, commandOrigin, session.options.editor);
 		if (this.session !== session || !enabled) return;
 		this.requestRevision++;
 		try {
 			this.retireSession(true, true);
 			session.disposables.dispose();
-			if (session.contextAdmitted) commands.execute(command, commandOrigin);
+			if (session.contextAdmitted) commands.execute(command, commandOrigin, session.options.editor);
 		} finally {
 			session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
 			if (this.retiringSession === session) this.retiringSession = undefined;

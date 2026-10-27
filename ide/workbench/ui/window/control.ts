@@ -12,6 +12,8 @@ import type { PointerCaptureScope, PointerCaptureService, PointerCaptureTarget }
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import type { WorkbenchSurface, WorkbenchSurfaceCallbacks } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import { WORKBENCH_MENUS } from '../menu/registry';
 import { drawWorkbenchWindowPlacement, drawWorkbenchWindow } from '../../render/window';
 import { layoutWorkbenchActionBar, type WorkbenchActionBarState } from '../action_bar';
 import { WorkbenchActionBarControl } from '../action_bar_control';
@@ -98,8 +100,8 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	private clientInputAttached = false;
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
-		private readonly hover: PointerHoverService, private readonly surfaces: WorkbenchSurfaceService, commands: EditorCommandRunner,
-		private readonly options: WorkbenchWindowOptions) {
+		private readonly hover: PointerHoverService, private readonly surfaces: WorkbenchSurfaceService, private readonly commands: EditorCommandRunner,
+		private readonly contextMenu: ContextMenuController, private readonly options: WorkbenchWindowOptions) {
 		this.scope = new InputFocusScope(Symbol('window'), options.focusScope);
 		this.clientScope = new InputFocusScope(Symbol('window client'), this.scope);
 		this.focusTarget = focus.createTarget(options.focusReturn, this.scope);
@@ -133,7 +135,10 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			run: () => this.setPlacement('normal') });
 		this.focusTarget.registerCommand('window.hide', { isEnabled: () => this.visible,
 			run: () => { if (options.requestClose !== undefined) options.requestClose(); else this.hide(); } });
-		for (const command of ['window.minimize', 'window.maximize', 'window.snapLeft', 'window.snapRight', 'window.restore', 'window.hide'] as const)
+		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.visible,
+			run: () => this.openContextMenu(this.model.header.left, this.model.header.bottom, true) });
+		this.actionFocusTarget.registerCommand('contextMenu', this.focusTarget.getCommand('contextMenu')!);
+		for (const command of ['contextMenu', 'window.minimize', 'window.maximize', 'window.snapLeft', 'window.snapRight', 'window.restore', 'window.hide'] as const)
 			this.clientFocusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.updateChromeState();
 		windowsByScope.set(this.scope, this);
@@ -298,6 +303,17 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.options.focusContent();
 	}
 
+	private openContextMenu(x: number, y: number, keyboard: boolean): void {
+		const surface = this.surface!;
+		this.surfaces.raise(surface);
+		if (this.surface !== surface || !this.visible) return;
+		this.focusTarget.focus();
+		if (this.surface !== surface || !this.focusTarget.hasFocus) return;
+		this.tooltip.hide();
+		this.contextMenu.show(x, y, WORKBENCH_MENUS[this.options.requestMinimize === undefined ? 'window.context' : 'window.minimizable.context'], this.commands,
+			{ selectFirst: keyboard, invocationOrigin: this.focusTarget, commandTarget: this.focusTarget, returnFocus: this.focusTarget });
+	}
+
 	private handleKeyboard(input: KeyInputEvent): void {
 		if (input.modifiers !== KeyModifier.none) return;
 		if (isKeyJustPressed('Escape', input)) {
@@ -315,6 +331,10 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		const edge = this.model.resizeEdgeAt(snapshot.viewportX, snapshot.viewportY);
 		const header = point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.header);
 		const actionRegion = point_in_rect(snapshot.viewportX, snapshot.viewportY, this.options.actionBar.bounds);
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && header && !actionRegion && edge === WindowResizeEdge.None) {
+			this.openContextMenu(snapshot.viewportX, snapshot.viewportY, false);
+			return;
+		}
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && !actionRegion && (edge !== WindowResizeEdge.None || header)) {
 			// Publish the complete gesture before focus/stack callbacks can revoke it.
 			this.startX = snapshot.viewportX; this.startY = snapshot.viewportY;

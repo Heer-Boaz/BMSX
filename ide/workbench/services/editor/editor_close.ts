@@ -6,7 +6,7 @@ import type { EditorTextModelService } from '../../../editor/model/model_service
 import { findEditorGroup, type EditorGroupView } from './editor_group';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { TextEditorInput } from '../../common/editor_input';
-import type { EditorInput } from '../../ui/tab/model';
+import type { EditorInput } from '../../common/editor_inputs';
 import { sourceTabDescription } from '../../ui/tab/titles';
 import type { ActionPrompt } from '../../contrib/modal/action_prompt';
 import type { ActionPromptRequest } from '../../contrib/modal/action_prompt_view';

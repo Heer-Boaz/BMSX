@@ -84,7 +84,7 @@ export class GteDetailsWindow {
 		private readonly focusReturn: InputFocusTarget, private readonly workArea: Readonly<RectBounds>,
 		private readonly quickInput: QuickInputController, private readonly contextMenu: ContextMenuController,
 		private readonly source: CapturedLuaSourceBinding, private readonly openSource: () => void) {
-		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
+		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, contextMenu, {
 			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: owner,
 			presentationParent: surfaces.windowContext(owner),
 			focusScope: focusReturn.scope, focusReturn, workArea, getTitleTooltip: () => this.titleTooltip,

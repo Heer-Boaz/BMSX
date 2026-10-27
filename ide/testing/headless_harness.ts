@@ -19,7 +19,7 @@ import type { HotResumeOperation } from '../workbench/services/execution/hot_res
 import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
 import type { CodeHoverTooltip } from '../editor/contrib/hover/state';
 import type { CodeTabContext } from '../workbench/ui/code_tab/model';
-import type { EditorInput } from '../workbench/ui/tab/model';
+import type { EditorInput } from '../workbench/common/editor_inputs';
 import type {
 	RecordedLogMessage,
 	RecordingLogOutput,

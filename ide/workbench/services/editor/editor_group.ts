@@ -8,7 +8,7 @@ import { EditorTabGroupModel, type EditorOpenOptions } from '../../ui/tab/group_
 import { EditorTabStrip } from '../../ui/tab/control';
 import type { EditorTabDragHandler } from '../../ui/tab/drag';
 import type { EditorTabId } from '../../ui/tab/id';
-import type { EditorInput } from '../../ui/tab/model';
+import type { EditorInput } from '../../common/editor_inputs';
 import { EditorPanes, type EditorPaneFactories, type EditorPaneOpenOptions } from './editor_panes';
 import type { EditorPaneSelection } from './editor_selection';
 import type { CloseEditors } from './editor_close';
@@ -30,6 +30,7 @@ import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_inp
 import { WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ui/action_bar';
 import { ELLIPSIS } from '../../../common/text';
 import { TAB_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_SYMBOL, TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../../common/constants';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
 /** The container supplies ancestry and allowable popup extent before controls are constructed. */
 export type EditorGroupPresentation = {
@@ -64,6 +65,7 @@ export class EditorGroupView {
 	public readonly captureScope = Symbol('editor-group');
 	private readonly containerScope: InputFocusScope;
 	private readonly surfaceService: WorkbenchSurfaceService;
+	private readonly contextMenu: ContextMenuController;
 	public readonly focusScope: InputFocusScope;
 	public readonly tabScope = Symbol('editor-tabs');
 	public readonly tabFocusTarget: InputFocusTarget;
@@ -97,10 +99,11 @@ export class EditorGroupView {
 	private readonly disposeListeners = new Set<() => void>();
 	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
 
-	public constructor(factories: EditorPaneFactories, commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
+	public constructor(factories: EditorPaneFactories, private readonly commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
 		presentation: EditorGroupPresentation, presented = true) {
 		this.presented = presented;
 		this.surfaceService = presentation.surfaces;
+		this.contextMenu = presentation.contextMenu;
 		this.containerScope = new InputFocusScope(Symbol('editor group'), presentation.focusScope);
 		this.focusScope = new InputFocusScope(this.captureScope, this.containerScope);
 		this.tabFocusTarget = inputFocus.createTarget(null, new InputFocusScope(this.tabScope, this.containerScope));
@@ -108,6 +111,10 @@ export class EditorGroupView {
 		copy_rect_bounds(this.clip, presentation.workArea);
 		this.focusTarget = inputFocus.createTarget(null, this.focusScope);
 		this.focusTarget.canFocus = () => this.presented;
+		this.focusTarget.registerCommand('contextMenu', {
+			isEnabled: () => this.presented && this.panes.activePane === null,
+			run: () => this.openContextMenu(this.panes.contentBounds.left, this.panes.contentBounds.top, true),
+		});
 		this.subscriptions.push(this.focusTarget.bindKeyboard(input => {
 			if (input.modifiers !== KeyModifier.none) return;
 			if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); commands.execute('home', this.focusTarget); }
@@ -131,7 +138,7 @@ export class EditorGroupView {
 		});
 		this.panes = new EditorPanes(factories, this);
 		this.tabStrip = new EditorTabStrip(this.model, this.tabLayoutContext, commands, this.tabFocusTarget,
-			id => this.activate(id), id => { void this.close(id); }, () => this.commitPendingEdit() && this.focus(), presentation.dropTarget);
+			id => this.activate(id), id => { void this.close(id); }, () => this.commitPendingEdit() && this.focus(), presentation.dropTarget, presentation.contextMenu);
 		this.tabSurface = presentation.surfaces.attach({
 			role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.tabScope,
 			isVisible: () => this.presented, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.clip,
@@ -149,7 +156,11 @@ export class EditorGroupView {
 			},
 			handlePointer: (snapshot, now) => {
 				const pane = this.panes.activePane;
-				if (pane === null) { if (snapshot.justPressedButtons !== 0) this.focus(); return; }
+				if (pane === null) {
+					if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, false);
+					else if (snapshot.justPressedButtons !== 0) this.focus();
+					return;
+				}
 				pane.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0,
 					(snapshot.justPressedButtons & PointerButton.Secondary) !== 0, now, isCtrlDown(snapshot) || isMetaDown(snapshot));
 			},
@@ -176,6 +187,11 @@ export class EditorGroupView {
 				if (runtime !== undefined) this.timeline.setContext(runtime);
 			}
 		}));
+	}
+
+	private openContextMenu(x: number, y: number, keyboard: boolean): void {
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['editorGroup.context'], this.commands,
+			{ invocationOrigin: this.focusTarget, selectFirst: keyboard });
 	}
 
 	public onWillFocus(listener: () => boolean): () => void { this.focusListeners.add(listener); return () => this.focusListeners.delete(listener); }

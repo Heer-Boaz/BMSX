@@ -1043,7 +1043,7 @@ test('menu presentation follows its invoking window session and retires on owner
 test('retiring a real window with its property menu focused returns to an admitted owner', t => {
 	const { editor, extent } = fixture(t);
 	const tree = inputFocus.createTarget(null, editor.editorParts.main.activeGroup.focusScope); tree.bindKeyboard(() => {});
-	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
+	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, editor.contextMenu, {
 		model: new WorkbenchWindowModel({ left: 20, top: 30, right: 250, bottom: 240 }, 100, 80),
 		actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorParts.main.activeGroup.paneSurface,
 		presentationParent: editor.surfaces.windowContext(editor.editorParts.main.activeGroup.paneSurface),
@@ -1543,7 +1543,7 @@ test('real window hide and root-modal admission cancel true producer guest holds
 	const { editor, host, extent } = fixture(t);
 	const tree = inputFocus.createTarget(null, editor.editorParts.main.activeGroup.focusScope); tree.bindKeyboard(() => {});
 	const model = new WorkbenchWindowModel({ left: 30, top: 40, right: 350, bottom: 260 }, 100, 80);
-	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
+	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, editor.contextMenu, {
 		model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorParts.main.activeGroup.paneSurface,
 		presentationParent: editor.surfaces.windowContext(editor.editorParts.main.activeGroup.paneSurface),
 		focusScope: tree.scope, focusReturn: tree, workArea: extent,

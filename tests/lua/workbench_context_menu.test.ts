@@ -14,6 +14,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { WORKBENCH_MENUS, type WorkbenchMenuItem } from '../../ide/workbench/ui/menu/registry';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
+import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 
 const PRIMARY = PointerButton.Primary;
 const ITEMS: readonly WorkbenchMenuItem[] = [
@@ -61,6 +62,32 @@ function fixture(t: TestContext) {
 	t.after(() => menu.dispose());
 	return { focus, capture, origin, menu, commands, executed, disabled, show, row, event, pointer, press };
 }
+
+test('menu enablement, checked state and execution retain the same explicit editor and command origin', t => {
+	const f = fixture(t), input = new HomeInput(null), clicked = f.focus.createTarget();
+	t.after(() => input.dispose());
+	let enabled = 0, checked = 0, executed = 0;
+	f.menu.show(100, 80, [{ type: 'command', command: 'keepEditor' }], {
+		isEnabled(command, target, editor) {
+			assert.ok(command === 'keepEditor' && target === clicked && editor === input);
+			enabled++;
+			return true;
+		},
+		isActive(command, target, editor) {
+			assert.ok(command === 'keepEditor' && target === clicked && editor === input);
+			checked++;
+			return true;
+		},
+		execute(command, target, editor) {
+			assert.ok(command === 'keepEditor' && target === clicked && editor === input);
+			assert.ok(f.focus.target === f.origin && !f.menu.visible);
+			executed++;
+		},
+	}, { commandTarget: clicked, editor: input, selectFirst: true });
+	assert.ok(f.menu.model.rows[0].active && enabled > 0 && checked > 0);
+	f.menu.accept();
+	assert.equal(executed, 1);
+});
 
 test('a context menu returns to its explicit clicked client without pre-focusing away from the invoking control', t => {
 	const f = fixture(t), clicked = f.focus.createTarget(f.origin);

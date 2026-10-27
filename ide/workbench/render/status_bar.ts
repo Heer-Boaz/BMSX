@@ -9,7 +9,7 @@ import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
 import type { EditorPane } from '../services/editor/editor_pane';
-import type { EditorInput } from '../ui/tab/model';
+import type { EditorInput } from '../common/editor_inputs';
 import type { RuntimeLuaEvaluation } from '../../runtime/lua_evaluation';
 import type { StudioServerConnectionState } from '../common/server_connection';
 import { renderServerConnection } from './server_connection';

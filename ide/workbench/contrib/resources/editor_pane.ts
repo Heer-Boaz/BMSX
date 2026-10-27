@@ -12,7 +12,7 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import { editorViewState } from '../../../editor/ui/view/state';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
-import type { ResourceViewerInput } from '../../ui/tab/model';
+import type { ResourceViewerInput } from './editor_input';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { Scrollbar } from '../../ui/scrollbar';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';

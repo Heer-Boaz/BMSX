@@ -5,7 +5,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { showGroupOpenEditors, showOpenEditors } from '../../ide/workbench/services/editor/open_editors';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
-import type { EditorInput } from '../../ide/workbench/ui/tab/model';
+import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 function selectInput(f: ReturnType<typeof createActualSourcePanes>, input: EditorInput): void {

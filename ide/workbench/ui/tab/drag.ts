@@ -5,7 +5,7 @@ import type { PointerCaptureService, PointerCaptureScope, PointerCaptureTarget }
 import { copyPointerInputSnapshot } from '../../../input/pointer/frame';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { EditorTabGroupModel } from './group_model';
-import type { EditorInput } from './model';
+import type { EditorInput } from '../../common/editor_inputs';
 
 /** An editor retains its exact input; a group retains its actual live model. */
 export type EditorTabDragSource =

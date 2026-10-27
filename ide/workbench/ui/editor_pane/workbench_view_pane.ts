@@ -1,6 +1,6 @@
 import type { PointerInputSnapshot } from '../../../common/models';
 import { EditorPane, type EditorPaneClearReason } from '../../services/editor/editor_pane';
-import type { EditorInput } from '../tab/model';
+import type { EditorInput } from '../../common/editor_inputs';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 
 type WorkbenchViewInput = Exclude<EditorInput, { kind: 'code_editor' }>;

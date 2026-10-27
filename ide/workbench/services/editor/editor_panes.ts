@@ -1,6 +1,6 @@
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
-import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
+import type { EditorInput, EditorInputKind } from '../../common/editor_inputs';
 import type { EditorPane, EditorPaneClearReason } from './editor_pane';
 import type { EditorGroupView } from './editor_group';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
