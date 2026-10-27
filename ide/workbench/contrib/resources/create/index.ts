@@ -69,7 +69,7 @@ function showNewSourceInput(
 				editor.animations.openDefinition(destination, created.contextId, collectAnimationDefinitions(created, project.getSnapshot())[0], { preserveFocus });
 			}
 			else if (kind === 'progression' || kind === 'input') editor.luaPrograms.openResource(destination, created, kind, { preserveFocus });
-			else if (kind === 'aem') void editor.navigation.openResource(destination, created, undefined, preserveFocus);
+			else if (kind === 'aem') void editor.navigation.openResource(destination, created, { preserveFocus });
 			else openLuaCodeTab(destination, catalog, created, undefined, preserveFocus);
 		}, lifetime => lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) }));
 }

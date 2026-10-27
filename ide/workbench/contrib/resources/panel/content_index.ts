@@ -67,8 +67,9 @@ export class ProjectContentIndex {
 	private dirty = true;
 	private publicationChanged = false;
 	private disposed = false;
+	private readonly changeListeners = new Set<() => void>();
 
-	public constructor(private readonly models: EditorTextModelService, private readonly catalog: WorkspaceSourceCatalog,
+	public constructor(private readonly models: EditorTextModelService, public readonly catalog: WorkspaceSourceCatalog,
 		private readonly registrations: BehaviorRegistrationIndex) {
 		this.subscriptions = [
 			catalog.onDidChange(() => { this.dirty = true; }),
@@ -76,6 +77,11 @@ export class ProjectContentIndex {
 			models.onDidRemoveModel(model => this.retireModel(model)),
 			models.onWillClear(() => this.clear()),
 		];
+	}
+
+	public onDidChange(listener: () => void): () => void {
+		this.changeListeners.add(listener);
+		return () => this.changeListeners.delete(listener);
 	}
 
 	/** Unchanged frames do not query snapshots, scan resources or allocate projection rows. */
@@ -128,6 +134,7 @@ export class ProjectContentIndex {
 		}
 		this.entriesByResource = published;
 		this.revision++;
+		for (const listener of this.changeListeners) listener();
 		return true;
 	}
 
@@ -146,6 +153,7 @@ export class ProjectContentIndex {
 		this.disposed = true;
 		for (const unsubscribe of this.subscriptions) unsubscribe();
 		this.clear();
+		this.changeListeners.clear();
 	}
 
 	private clear(): void {

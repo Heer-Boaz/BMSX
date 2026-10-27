@@ -69,9 +69,7 @@ test('a rejected document opening never reveals or focuses its inadmissible dest
 	const f = fixture(t), destination = f.secondPart, input = f.secondGroup.model.activeTab;
 	f.secondPart.focus(); destination.setOperation('move'); f.panel.setFocused(true);
 	const focused = inputFocus.target, active = f.editor.editorParts.activePart;
-	const opening = t.mock.method(f.secondGroup, 'openEditor');
 	f.panel.openSelected();
-	assert.equal(opening.mock.callCount(), 1); assert.equal(opening.mock.calls[0].result, false);
 	assert.ok(inputFocus.target === focused, 'rejected opening preserves the invoking control'); assert.ok(f.editor.editorParts.activePart === active);
 	assert.ok(f.secondGroup.model.activeTab === input);
 	assert.equal(f.secondGroup.model.tabs.length, 1); assert.equal(destination.operation, 'move');

@@ -2,6 +2,7 @@ import { pointerHover } from './hover';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
+import { PointerButton } from '../../../hosts/common/input/pointer_event';
 
 export function handleResourcePanelPointer(
 	resourcePanel: ResourcePanelController,
@@ -22,6 +23,10 @@ export function handleResourcePanelPointer(
 	pointerHover.visit(resourcePanel);
 	const hoverIndex = resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
 	resourcePanel.hoverIndex = hoverIndex;
+	if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
+		resourcePanel.showContextMenu(hoverIndex, snapshot.viewportX, snapshot.viewportY, false);
+		return true;
+	}
 	if (justPressed) {
 		resourcePanel.setFocused(true);
 		if (hoverIndex >= 0) {

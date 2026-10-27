@@ -14,6 +14,13 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import type { ResourcePanelController } from './panel/controller';
 import type { ResourceEditorResolver } from '../../services/editor/resource_editor_resolver';
 import type { EditorGroupView } from '../../services/editor/editor_group';
+import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
+
+export type ResourceNavigationOptions = {
+	readonly selection?: EditorTextSelection;
+	readonly preserveFocus?: boolean;
+	readonly editorId?: string;
+};
 
 export class EditorNavigationController {
 	public constructor(
@@ -24,8 +31,9 @@ export class EditorNavigationController {
 	}
 
 	/** The attached generation, or undefined when another opening superseded this request. */
-	public async openResource(group: EditorGroupView, resource: RuntimeResource, selection?: EditorTextSelection, preserveFocus = false): Promise<number | undefined> {
-		const result = await group.openResolvedEditor(this.editorResolver.resolveEditorInput(resource), { selection, preserveFocus });
+	public async openResource(group: EditorGroupView, resource: RuntimeResource, options?: ResourceNavigationOptions): Promise<number | undefined> {
+		const result = await group.openResolvedEditor(this.editorResolver.resolveEditorInput(resource, options?.editorId),
+			{ selection: options?.selection, preserveFocus: options?.preserveFocus });
 		if (result === undefined) return undefined;
 		if (!result.activated) return result.generation;
 		this.resourcePanel.queuePendingSelection(resource);
@@ -37,7 +45,7 @@ export class EditorNavigationController {
 	}
 
 	public focusChunkSource(group: EditorGroupView, identity: ResourceIdentity, selection?: EditorTextSelection): Promise<number | undefined> {
-		return this.openResource(group, this.catalog.resolveResource(identity)!, selection);
+		return this.openResource(group, this.catalog.resolveResource(identity)!, { editorId: WORKBENCH_TEXT_EDITOR_ID, selection });
 	}
 
 	public focusChunkSourceForContext(
@@ -47,7 +55,7 @@ export class EditorNavigationController {
 		selection?: EditorTextSelection,
 	): void {
 		const resource = this.catalog.resolveResource({ contextId, path })!;
-		void this.openResource(group, resource, selection);
+		void this.openResource(group, resource, { editorId: WORKBENCH_TEXT_EDITOR_ID, selection });
 	}
 
 	public async goBackward(): Promise<void> {

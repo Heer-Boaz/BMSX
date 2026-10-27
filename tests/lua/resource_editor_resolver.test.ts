@@ -95,6 +95,23 @@ test('filename suffix and asset type selectors must both match', async () => {
 	assert.throws(() => resolver.resolveEditorInput(resource('res/cue.aem.yaml', 'aem'), yamlEditor.id), /No editor/);
 });
 
+test('editor capability queries use registered selectors without constructing inputs or changing default resolution', () => {
+	const resolver = new ResourceEditorResolver([
+		{ id: 'visual', selector: { kind: 'filename_suffix', suffix: '.yaml', assetType: 'data' },
+			createEditorInput: () => assert.fail('a capability query must not construct a view') },
+		{ id: 'text', selector: { kind: 'asset_type', assetType: 'data' },
+			createEditorInput: () => assert.fail('a capability query must not construct a view') },
+		{ id: 'viewer', selector: { kind: 'all' },
+			createEditorInput: () => assert.fail('a capability query must not construct a view') },
+	]);
+	const yaml = resource('res/room.YAML', 'data'), image = resource('res/room.yaml', 'image');
+	assert.equal(resolver.hasEditor(yaml, 'visual'), true); assert.equal(resolver.hasEditor(yaml, 'text'), true);
+	assert.equal(resolver.hasEditor(image, 'visual'), false); assert.equal(resolver.hasEditor(image, 'text'), false);
+	assert.equal(resolver.hasEditor(image, 'viewer'), true); assert.equal(resolver.hasEditor(yaml, 'missing'), false);
+	assert.equal(resolver.getEditorId(yaml), 'visual'); assert.equal(resolver.getEditorId(yaml, 'text'), 'text');
+	assert.throws(() => resolver.resolveEditorInput(yaml, 'missing'), /No editor/);
+});
+
 for (const [path, kind, source] of [
 	['res/data/castle_map.yaml', 'pietious', '1: { map: [".."], objects: [] }\n'],
 	['res/data/castle_map.yml', 'pietious', '1: { map: [".."], objects: [] }\n'],
@@ -115,6 +132,9 @@ for (const [path, kind, source] of [
 	const text = await resolver.resolveEditorInput(resource, WORKBENCH_TEXT_EDITOR_ID); inputs.push(text);
 	assert.ok(first instanceof CartMapInput && second instanceof CartMapInput);
 	assert.equal(resolver.getEditorId(resource), WORKBENCH_CART_MAP_EDITOR_ID);
+	assert.equal(resolver.hasEditor(resource, WORKBENCH_CART_MAP_EDITOR_ID), true);
+	assert.equal(resolver.hasEditor(resource, WORKBENCH_TEXT_EDITOR_ID), true);
+	assert.equal(resolver.hasEditor(resource, WORKBENCH_AEM_EDITOR_ID), false);
 	assert.equal(first.mapKind, kind); assert.equal(second.mapKind, kind);
 	assert.ok(text instanceof CodeEditorInput);
 	assert.ok(first.workingCopy === second.workingCopy && text.workingCopy === first.workingCopy);
@@ -143,6 +163,8 @@ test('built-in generic YAML remains Source and Audio Event Maps retain their own
 	const aemSource = await resolver.resolveEditorInput(aem, WORKBENCH_TEXT_EDITOR_ID); inputs.push(aemSource);
 	assert.ok(yamlView instanceof CodeEditorInput && aemView instanceof AemEditorInput && aemSource instanceof CodeEditorInput);
 	assert.equal(resolver.getEditorId(yaml), WORKBENCH_TEXT_EDITOR_ID); assert.equal(resolver.getEditorId(aem), WORKBENCH_AEM_EDITOR_ID);
+	assert.equal(resolver.hasEditor(yaml, WORKBENCH_TEXT_EDITOR_ID), true); assert.equal(resolver.hasEditor(yaml, WORKBENCH_CART_MAP_EDITOR_ID), false);
+	assert.equal(resolver.hasEditor(aem, WORKBENCH_AEM_EDITOR_ID), true); assert.equal(resolver.hasEditor(aem, WORKBENCH_TEXT_EDITOR_ID), true);
 	assert.ok(aemView.workingCopy === aemSource.workingCopy && aemView.workingCopy === editorTextModelService.get(aem));
 	assert.equal(yamlView.workingCopy.buffer.getText(), '# canonical settings\nvalue: 3\n');
 	assert.equal(aemView.workingCopy.buffer.getText(), 'events: {}\n');

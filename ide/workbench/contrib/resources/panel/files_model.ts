@@ -50,6 +50,16 @@ export class ResourceFilesModel {
 	private filter: ResourcePanelFilterMode | undefined;
 	private publication = 0;
 	private contentRevision = -1;
+	private readonly changeListeners = new Set<() => void>();
+
+	public onDidChange(listener: () => void): () => void {
+		this.changeListeners.add(listener);
+		return () => this.changeListeners.delete(listener);
+	}
+	private publish(): void {
+		this.revision++;
+		for (const listener of this.changeListeners) listener();
+	}
 
 	public get selectedNode(): WorkbenchTreeNode<FileElement> | null {
 		return this.tree.selectionIndex < 0 ? null : this.tree.rows[this.tree.selectionIndex];
@@ -202,7 +212,7 @@ export class ResourceFilesModel {
 			root.node.children.sort(compareFileNodes);
 			for (const node of root.directories.values()) node.children.sort(compareFileNodes);
 		}
-		rebuildWorkbenchTreeRows(this.tree, selected); this.revision++;
+		rebuildWorkbenchTreeRows(this.tree, selected); this.publish();
 		return true;
 	}
 
@@ -220,21 +230,22 @@ export class ResourceFilesModel {
 		if (node === undefined || !node.visible) return false;
 		let changed = false;
 		for (let parent = node.parent; parent !== null; parent = parent.parent) if (parent.collapsed) { parent.collapsed = false; changed = true; }
-		if (changed) { rebuildWorkbenchTreeRows(this.tree, node); this.revision++; }
+		if (changed) rebuildWorkbenchTreeRows(this.tree, node);
 		else this.tree.selectionIndex = this.tree.rows.indexOf(node);
 		this.tree.hoverIndex = -1; revealWorkbenchListSelection(this.tree);
+		if (changed) this.publish();
 		return true;
 	}
 
 	public navigate(command: WorkbenchTreeNavigation): WorkbenchTreeNavigationResult {
 		const result = navigateWorkbenchTree(this.tree, command);
-		if (result === WorkbenchTreeNavigationResult.Collapse) this.revision++;
+		if (result === WorkbenchTreeNavigationResult.Collapse) this.publish();
 		return result;
 	}
 	public toggle(index: number): boolean {
 		const node = this.tree.rows[index];
 		if (!setWorkbenchTreeCollapsed(this.tree, index, !node.collapsed)) return false;
-		this.revision++;
+		this.publish();
 		return true;
 	}
 }

@@ -68,7 +68,8 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 		`${cart}: semantic source owner already returns the exact local declaration`);
 	console.info(`STUDIO: ${cart} source ranges and held keyboard/Ctrl-click/context-menu/lens navigation`);
 	for (const route of ['keyboard', 'ctrl-click', 'context-menu'] as const) {
-		await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource, { row: useRow, startColumn: useColumn, endColumn: useColumn });
+		await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource,
+			{ selection: { row: useRow, startColumn: useColumn, endColumn: useColumn } });
 		await frame();
 		if (route === 'keyboard') {
 			await runPaletteCommand('Go: Go to Definition');

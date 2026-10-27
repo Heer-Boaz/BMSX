@@ -1,24 +1,16 @@
 import { WORKBENCH_TEXT_EDITOR_ID } from '../../code_editor/editor_input';
 import type { CallHierarchyPanelItem } from './items';
 import type { CartEditor } from '../../../../cart_editor';
-import { inputFocus } from '../../../../input/focus';
-import { findEditorGroup, type EditorGroupView } from '../../../services/editor/editor_group';
+import { inputFocus, type InputFocusTarget } from '../../../../input/focus';
+import type { EditorGroupView } from '../../../services/editor/editor_group';
 import type { ProjectContentEntry, ProjectContentIndex } from './content_index';
+import { editorTextModelService } from '../../../../editor/model/model_service';
+import type { EditorTextModel } from '../../../../editor/model/text_model';
+import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
 
-/** An authored occurrence retains its own identity while drafts and semantic publication settle. */
-export function openProjectContent(editor: CartEditor, index: ProjectContentIndex, entry: ProjectContentEntry): void {
-	const origin = findEditorGroup(inputFocus.target);
-	if (origin === null) return;
-	if (origin !== undefined) {
-		const generation = origin.panes.openGeneration;
-		if (!origin.commitPendingEdit() || origin.panes.openGeneration !== generation) return;
-		// Closing an accepted property transient can return within its group;
-		// another part's newer interaction does not authorize this old opening.
-		if (inputFocus.target !== null && findEditorGroup(inputFocus.target) !== origin) return;
-	}
-	if (!index.isCurrent(entry)) return;
+/** Resolve contribution affinity while the invoking owner is known, not after popup focus returns. */
+export function resolveProjectContentDestination(editor: CartEditor, entry: ProjectContentEntry, invoking: EditorGroupView): EditorGroupView {
 	let destination: EditorGroupView | undefined;
-	const invoking = origin ?? editor.editorParts.activeGroup;
 	search: for (const part of editor.editorParts.mostRecentlyActive) {
 		if (part.operation !== 'none') continue;
 		for (const group of part.mostRecentlyActiveGroups) {
@@ -34,7 +26,30 @@ export function openProjectContent(editor: CartEditor, index: ProjectContentInde
 			destination ??= group;
 		}
 	}
-	destination ??= editor.editorParts.editorDestination(invoking);
+	return destination ?? editor.editorParts.editorDestination(invoking);
+}
+
+/** Canonical source admission can publish model listeners; those callbacks do not inherit this request. */
+function admitProjectContent(index: ProjectContentIndex, entry: ProjectContentEntry, destination: EditorGroupView,
+	origin: InputFocusTarget): EditorTextModel | undefined {
+	if (!destination.openingAdmitted || inputFocus.admittedTarget !== origin) return;
+	const generation = destination.panes.openGeneration, scope = origin.scope, context = scope.contextGeneration;
+	if (!destination.commitPendingEdit() || !index.isCurrent(entry)) return;
+	let focused = inputFocus.admittedTarget;
+	if (!destination.openingAdmitted || destination.panes.openGeneration !== generation || scope.contextGeneration !== context
+		|| focused !== null && !scope.contains(focused.scope)) return;
+	const model = resolveLuaTextFileModel(editorTextModelService, index.catalog, entry.ownerResource);
+	if (!index.isCurrent(entry)) return;
+	focused = inputFocus.admittedTarget;
+	if (!destination.openingAdmitted || destination.panes.openGeneration !== generation || scope.contextGeneration !== context
+		|| focused !== null && !scope.contains(focused.scope)) return;
+	return model;
+}
+
+/** The captured occurrence and destination survive ordinary menu focus, never a later active group. */
+export function openProjectContent(editor: CartEditor, index: ProjectContentIndex, entry: ProjectContentEntry,
+	destination: EditorGroupView, origin: InputFocusTarget): void {
+	if (admitProjectContent(index, entry, destination, origin) === undefined) return;
 	switch (entry.kind) {
 		case 'scene': editor.sceneEditor.openDefinition(destination, entry.ownerResource, entry.range); break;
 		case 'behavior_tree': case 'state_machine': case 'action_effect':
@@ -42,6 +57,17 @@ export function openProjectContent(editor: CartEditor, index: ProjectContentInde
 		case 'progression': case 'input': editor.luaPrograms.openOccurrence(destination, entry.occurrence); break;
 		case 'animation': editor.animations.openDefinition(destination, entry.projectContextId, entry.definition); break;
 	}
+}
+
+/** Declaration offsets belong to their canonical authored owner, even when browsed at an importing consumer. */
+export function openProjectContentSource(editor: CartEditor, index: ProjectContentIndex, entry: ProjectContentEntry,
+	destination: EditorGroupView, origin: InputFocusTarget): Promise<number | undefined> | undefined {
+	const model = admitProjectContent(index, entry, destination, origin);
+	if (model === undefined) return;
+	const position = { row: 0, column: 0 };
+	model.buffer.positionAt(entry.range.start, position);
+	return editor.navigation.focusChunkSource(destination, entry.ownerResource,
+		{ row: position.row, startColumn: position.column, endColumn: position.column });
 }
 
 export function openResourcePanelCallHierarchyLocation(

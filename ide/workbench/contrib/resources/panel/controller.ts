@@ -51,9 +51,12 @@ import { inputFocus } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
 import type { ProjectContentIndex } from './content_index';
-import { openProjectContent } from './open_actions';
+import { openProjectContent, resolveProjectContentDestination } from './open_actions';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
-import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation } from '../../../ui/tree_view';
+import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation, type WorkbenchTreeNode } from '../../../ui/tree_view';
+import type { FileElement } from './files_model';
+import { ResourcePanelContextMenu } from './context_menu';
+import { findEditorGroup } from '../../../services/editor/editor_group';
 
 export type ResourcePanelItemMetrics = {
 	fontVariant: FontVariant | null;
@@ -136,6 +139,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	private resizeStartX = 0;
 	private resizeStartRatio = 0;
 	private readonly unbindKeyboard: () => void;
+	private readonly contextMenu: ResourcePanelContextMenu;
 
 	constructor(
 		private readonly editor: CartEditor,
@@ -153,6 +157,14 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		}, pointerCapture);
 		this.focusTarget.canFocus = () => this.isVisible();
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
+		this.contextMenu = new ResourcePanelContextMenu(editor, catalog, content, this);
+		this.focusTarget.registerCommand('contextMenu', {
+			isEnabled: () => this.isVisible() && this.mode === 'resources' && this.files.selectedNode !== null,
+			run: () => {
+				const layout = this.prepareLayout(), index = this.selectionIndex;
+				this.showContextMenu(index, layout.contentLeft, layout.contentTop + (index - (this.scroll | 0) + 1) * this.lineHeight, true);
+			},
+		});
 	}
 
 	public dispose(): void {
@@ -193,6 +205,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	togglePanel(): void { this.visible ? this.hide() : this.show(); }
 
 	show(): void {
+		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		pointerHover.release(this);
 		this.files.tree.hoverIndex = -1;
 		this.widthRatio = clampResourcePanelRatio(this.widthRatio);
@@ -203,6 +216,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	showCallHierarchy(model: CallHierarchyModel): void {
+		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		pointerHover.release(this);
 		this.widthRatio = clampResourcePanelRatio(this.widthRatio);
 		this.mode = 'command';
@@ -240,6 +254,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	hide(): void {
+		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		this.scrollbarController.cancel();
 		pointerHover.release(this);
 		this.visible = false;
@@ -255,6 +270,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 			showEditorMessage('Filter is unavailable in call hierarchy view.', 'warning', 2.4);
 			return;
 		}
+		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		this.filterMode = this.filterMode === 'lua_only' ? 'all' : 'lua_only';
 		if (this.visible) this.refresh();
 		const modeLabel = this.filterMode === 'lua_only' ? 'Lua resources' : 'all resources';
@@ -325,12 +341,31 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		if (selected === null) return;
 		if (selected.element.kind === 'file') void this.editor.navigation.openResource(this.editor.editorParts.editorDestination(undefined, { resource: selected.element.resource,
 			editorId: this.editor.resourceEditors.getEditorId(selected.element.resource) }), selected.element.resource);
-		else if (selected.element.kind === 'definition') openProjectContent(this.editor, this.content, selected.element.content);
+		else if (selected.element.kind === 'definition') {
+			const origin = inputFocus.admittedTarget;
+			if (origin === null) return;
+			const invoking = findEditorGroup(origin);
+			if (invoking === null) return;
+			openProjectContent(this.editor, this.content, selected.element.content,
+				resolveProjectContentDestination(this.editor, selected.element.content, invoking ?? this.editor.editorParts.activeGroup), origin);
+		}
 		else this.toggleSelectedFileDisclosure();
 	}
 
 	public toggleSelectedFileDisclosure(): void {
-		if (this.files.toggle(this.selectionIndex)) { this.updateFilesMetrics(); this.ensureSelectionVisible(); }
+		const node = this.files.selectedNode;
+		if (node !== null) this.toggleFileDisclosure(node);
+	}
+
+	public toggleFileDisclosure(node: WorkbenchTreeNode<FileElement>): void {
+		if (this.files.toggle(this.files.tree.rows.indexOf(node))) { this.updateFilesMetrics(); this.ensureSelectionVisible(); }
+	}
+
+	public showContextMenu(index: number, x: number, y: number, keyboard: boolean): void {
+		if (this.mode !== 'resources' || index < 0) return;
+		const node = this.files.tree.rows[index];
+		this.setSelectionIndex(index);
+		this.contextMenu.open(node, x, y, keyboard);
 	}
 
 	openSelectedCallHierarchyLocation(): void {

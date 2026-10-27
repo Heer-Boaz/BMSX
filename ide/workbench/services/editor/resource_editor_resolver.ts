@@ -21,6 +21,10 @@ export class ResourceEditorResolver {
 		return this.resolveRegistration(resource, preferredEditorId).id;
 	}
 
+	public hasEditor(resource: RuntimeResource, editorId: string): boolean {
+		return this.findRegistration(resource, editorId) !== undefined;
+	}
+
 	public resolveEditorInput(
 		resource: RuntimeResource,
 		preferredEditorId?: string,
@@ -29,6 +33,12 @@ export class ResourceEditorResolver {
 	}
 
 	private resolveRegistration(resource: RuntimeResource, preferredEditorId?: string): ResourceEditorRegistration {
+		const registration = this.findRegistration(resource, preferredEditorId);
+		if (registration === undefined) throw new Error(`No editor '${preferredEditorId}' is registered for '${resource.path}'.`);
+		return registration;
+	}
+
+	private findRegistration(resource: RuntimeResource, preferredEditorId?: string): ResourceEditorRegistration | undefined {
 		for (let index = 0; index < this.registrations.length; index += 1) {
 			const registration = this.registrations[index];
 			if ((preferredEditorId === undefined || registration.id === preferredEditorId)
@@ -36,7 +46,7 @@ export class ResourceEditorResolver {
 				return registration;
 			}
 		}
-		throw new Error(`No editor '${preferredEditorId}' is registered for '${resource.path}'.`);
+		return undefined;
 	}
 }
 
