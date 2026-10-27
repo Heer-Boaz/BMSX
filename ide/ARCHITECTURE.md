@@ -56,6 +56,14 @@ or install a cartridge. Project selection belongs at workspace attachment, not
 inside Home or a tool pane. Physical execution remains with the workbench's
 execution services and their explicit targets.
 
+Shared execution composition owns the primary `RuntimeTransport` and
+`RunTargetSelection`. Global run/debug controls and audio monitoring consume
+that explicit selection; editor focus and Source navigation do not select a
+target. Play admission retains its selection request until the physical session
+is ready. Closing the selected target clears selection rather than choosing
+another machine. Window-local runtime controls retain their own transport
+binding independently of global selection.
+
 Platform composition supplies an admitted source context before workspace
 attachment. Node workspace metadata and browser-owned metadata retain those
 opaque identities. A source-folder open has its own selection; matching paths

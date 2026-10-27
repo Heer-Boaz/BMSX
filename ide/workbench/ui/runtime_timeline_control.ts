@@ -53,7 +53,7 @@ export class RuntimeTimelineControl {
 			run: () => this.openContextMenu(this.layout.bounds.left, this.layout.bounds.top, target, true),
 		});
 	}
-	public get available(): boolean { return this.context !== undefined; }
+	public get available(): boolean { return this.context !== undefined && this.transport !== undefined; }
 	public get requested(): boolean { return this.requestedValue; }
 	public get height(): number { return this.presented ? RuntimeTimelineLayout.height(editorViewState.font.renderFont()) : 0; }
 	public get visible(): boolean { return this.presented; }
@@ -117,7 +117,7 @@ export class RuntimeTimelineControl {
 		this.requestedCycles = cycles;
 	}
 	public update(): void {
-		if (this.context === undefined) return;
+		if (!this.available) return;
 		const { runtime, rewind, navigation } = this.transport!;
 		if (this.seekOperation?.result !== undefined) {
 			if (this.seekOperation.result.status !== 'completed') {

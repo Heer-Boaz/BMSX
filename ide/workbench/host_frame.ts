@@ -28,7 +28,8 @@ function executeWorkbenchHostMenuAction(
 		case HostMenuInput.Active:
 			return false;
 		case HostMenuInput.RebootCart: {
-			const operation = performReboot(ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, ide.logOutput);
+			const operation = performReboot(ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, ide.logOutput,
+				ide.runTargets, { action: 'reboot' });
 			void operation.completion.then(result => {
 				if (result.status === 'reset' && ide.boots.latestOperation === operation) screen.reset(presenter, runtime);
 			}).catch(error => ide.failHostFrame(error));
@@ -158,8 +159,6 @@ export function runWorkbenchHostFrame(
 		ide.play.advance(hostDeltaMs, playEnabled && !holdPlay);
 		const play = ide.play.current?.session;
 		if (play !== undefined) play.audio.muteMenu(hostMenuInput !== HostMenuInput.Inactive);
-		audioOutput.device.select(play?.ready === true && playEnabled
-			&& ide.editor.editorGroup.panes.activePane?.runtimeTransport === play.transport ? play.audio : audioOutput);
 
 		session.execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
 		audioOutput.muteUi(ide.editor.executionSuspended);

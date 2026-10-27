@@ -9,6 +9,7 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ScenarioTestModule } from '../../../testing/scenario/test_collection';
 import type { WorkspaceRecord } from '../../../workspace/records';
 import { buildFixtureMedia } from '../execution/fixture_media';
+import type { RunTargetSelection } from '../execution/run_target';
 import { captureLuaTextModelSources } from '../working_copy/lua_sources';
 import { PlayInput } from './input';
 import type { PlaySession, PlaySessionFactory } from './session';
@@ -23,7 +24,8 @@ export class PlayHandle {
 	public preparation!: Promise<void>;
 	public closeOperation: Promise<void> | undefined;
 	public constructor(public readonly module: ScenarioTestModule['resource'], public readonly title: string,
-		public readonly source: string, public readonly sourceRevision: number, public readonly companionContextId: string | null) {}
+		public readonly source: string, public readonly sourceRevision: number, public readonly companionContextId: string | null,
+		public selectionRequest: number | undefined) {}
 	public get state() {
 		return this.closed ? 'closed' : this.closing ? 'closing' : this.failure !== undefined ? 'failed'
 			: this.session === undefined ? 'preparing' : this.session.state;
@@ -42,7 +44,7 @@ export class PlayService {
 	private publishedState: PlayHandle['state'] | undefined;
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
 		private readonly dirtyRecords: ReadonlyMap<string, WorkspaceRecord>, private readonly model: MachineModelSpec,
-		private readonly input: Input, private readonly factory: PlaySessionFactory) {
+		private readonly input: Input, private readonly runTargets: RunTargetSelection, private readonly factory: PlaySessionFactory) {
 		this.unbindModels = models.onWillClear(() => { if (this.current !== undefined) void this.close(this.current); });
 	}
 	public onDidChange(listener: (event: PlayEvent) => void): () => void {
@@ -53,7 +55,8 @@ export class PlayService {
 		if (this.current !== undefined) throw new Error('Close or reset the current Play session first.');
 		if (module.suite?.kind !== 'integration') throw new Error('Play requires an integration fixture.');
 		// Capture working copies and begin the independent build before the first await.
-		const handle = new PlayHandle({ ...module.resource }, module.label, module.source, module.sourceTimestamp, companionContextId);
+		const handle = new PlayHandle({ ...module.resource }, module.label, module.source, module.sourceTimestamp, companionContextId,
+			this.runTargets.request());
 		const snapshots = captureLuaTextModelSources(this.models, this.sources.catalog, true);
 		const media = buildFixtureMedia(this.sources, new Map(this.dirtyRecords), snapshots, module.resource.contextId, this.model, companionContextId);
 		this.current = handle;
@@ -71,6 +74,7 @@ export class PlayService {
 			handle.session = this.factory(media.systemRom, [program.layer.bytes, companion], media.machineModel,
 				new PlayInput(new InputChannel(this.input)), program);
 		} catch (error) {
+			handle.selectionRequest = undefined;
 			if (!handle.closing) handle.failure = { error };
 		}
 		if (!handle.closing) this.publish(handle);
@@ -82,11 +86,19 @@ export class PlayService {
 		if (session !== undefined) {
 			session.execution.setPauseReason(HostPauseReason.Workbench, !enabled);
 			session.advance(hostDeltaMs);
+			const request = handle.selectionRequest;
+			if (request !== undefined) {
+				if (session.ready) {
+					handle.selectionRequest = undefined;
+					this.runTargets.complete(request, session);
+				} else if (session.state === 'failed' || session.failure !== undefined) handle.selectionRequest = undefined;
+			}
 		}
 		if (handle.state !== this.publishedState) this.publish(handle);
 	}
 	public stop(handle: PlayHandle): void {
 		if (this.current !== handle) throw new Error('Play handle is not the current session.');
+		handle.selectionRequest = undefined;
 		if (handle.session === undefined) void this.close(handle);
 		else handle.session.stop();
 	}
@@ -99,8 +111,10 @@ export class PlayService {
 	public close(handle: PlayHandle): Promise<void> {
 		if (handle.closeOperation !== undefined) return handle.closeOperation;
 		handle.closing = true;
+		handle.selectionRequest = undefined;
 		if (this.current === handle) this.current = undefined;
 		// Revoke admission/input immediately; join preparation and backend work before completion.
+		if (handle.session !== undefined) this.runTargets.retire(handle.session);
 		const disposing = handle.session?.dispose();
 		handle.closeOperation = (async () => {
 			await handle.preparation;

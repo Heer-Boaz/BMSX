@@ -191,7 +191,6 @@ async function startBrowserStudio(): Promise<void> {
 		options.browserInput.setNativeWheelHandler(event => ide.editor.dispatchWheel(event));
 		if (workspace.kind === 'http') ide.editor.importFiles = (directory, signal) => importWorkspaceFiles(httpSession(workspace.baseUrl), directory, signal);
 		systemOutput.flush(runtime, options.logOutput);
-		audioOutput.device.select(audioOutput);
 		bindBrowserFullscreenShortcut(
 			options.input,
 			execution,

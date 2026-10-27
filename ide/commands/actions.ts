@@ -4,7 +4,6 @@ import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import type { BootService, BootOperation } from '../workbench/services/execution/boot';
 import type { HotResumeService, HotResumeOperation } from '../workbench/services/execution/hot_resume';
-import type { Blua32CartridgeEntry } from '../runtime/lua_pipeline';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import type { EditorActionRequest } from './action_request';
 import * as constants from '../common/constants';
@@ -13,6 +12,8 @@ import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import type { CartEditor } from '../cart_editor';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import { showEditorMessage } from '../common/feedback_state';
+import type { RunTargetSelection } from '../workbench/services/execution/run_target';
+import { navigationState } from '../navigation/navigation_history';
 
 export function performEditorAction(
 	editor: CartEditor,
@@ -23,17 +24,17 @@ export function performEditorAction(
 	audioOutput: HostAudioOutput,
 	logOutput: LogOutput,
 	request: EditorActionRequest,
+	runTargets: RunTargetSelection,
 ): boolean {
 	switch (request.action) {
 		case 'hot-resume':
 			if (!hotResumes.acceptingRequests) return false;
-			performHotResume(hotResumes, editor, execution, overlayRenderer, audioOutput, logOutput);
+			performHotResume(hotResumes, editor, execution, overlayRenderer, audioOutput, logOutput, runTargets, request);
 			return true;
 		case 'reboot':
 		case 'run':
-			if (!boots.acceptingRequests) return false;
-			performReboot(boots, editor, execution, overlayRenderer, audioOutput, logOutput,
-				request.action === 'run' ? request.entry : undefined);
+			if (!boots.acceptingRequests || request.action === 'run' && runTargets.primary === undefined) return false;
+			performReboot(boots, editor, execution, overlayRenderer, audioOutput, logOutput, runTargets, request);
 			return true;
 		case 'close':
 			deactivateEditor(editor, overlayRenderer, audioOutput);
@@ -53,15 +54,21 @@ export function performHotResume(
 	overlayRenderer: OverlayRenderer,
 	audioOutput: HostAudioOutput,
 	logOutput: LogOutput,
+	runTargets: RunTargetSelection,
+	request: Extract<EditorActionRequest, { action: 'hot-resume' }>,
 ): HotResumeOperation {
 	persistWorkspaceSessionLocally();
+	const selectionRevision = runTargets.revision;
 	const operation = hotResumes.resume();
 	showEditorMessage('Hot Resume: pending', 'info', 2.0);
 	void operation.admission.then(admission => {
 		if (hotResumes.latestOperation !== operation || admission.status !== 'accepted'
 			|| operation.result !== null && operation.result.status !== 'completed') return;
+		const presentation = request.presentation;
+		if (selectionRevision !== runTargets.revision || presentation !== undefined
+			&& (navigationState.activeGroup !== presentation.group || presentation.generation !== presentation.group.panes.openGeneration)) return;
 		execution.requestExecution(true);
-		deactivateEditor(editor, overlayRenderer, audioOutput);
+		if (presentation !== undefined) deactivateEditor(editor, overlayRenderer, audioOutput);
 	});
 	void operation.completion.then(result => {
 		if (hotResumes.latestOperation !== operation) return;
@@ -93,19 +100,30 @@ export function performReboot(
 	overlayRenderer: OverlayRenderer,
 	audioOutput: HostAudioOutput,
 	logOutput: LogOutput,
-	entry?: Blua32CartridgeEntry,
+	runTargets: RunTargetSelection,
+	request: Extract<EditorActionRequest, { action: 'run' | 'reboot' }>,
 ): BootOperation {
 	persistWorkspaceSessionLocally();
-	const operation = boots.reboot(entry);
+	const selectionRevision = runTargets.revision;
+	const operation = boots.reboot(request.action === 'run' ? request.entry : undefined);
 	showEditorMessage('Reboot: pending', 'info', 2.0);
 	void operation.completion.then(result => {
 		if (boots.latestOperation !== operation) return;
 		switch (result.status) {
-			case 'reset':
-				execution.requestExecution(true);
-				deactivateEditor(editor, overlayRenderer, audioOutput);
+			case 'reset': {
+				const primary = runTargets.primary;
+				const admitted = request.action === 'run'
+					? primary !== undefined && runTargets.complete(request.selectionRequest, primary)
+					: selectionRevision === runTargets.revision;
+				const presentation = request.presentation;
+				if (admitted && (presentation === undefined || navigationState.activeGroup === presentation.group
+					&& presentation.generation === presentation.group.panes.openGeneration)) {
+					execution.requestExecution(true);
+					if (presentation !== undefined) deactivateEditor(editor, overlayRenderer, audioOutput);
+				}
 				showEditorMessage('Reboot: reset complete', 'info', 2.0);
 				return;
+			}
 			case 'rejected':
 			case 'failed':
 				logOutput.log(LogLevel.Error, result.error instanceof Error ? result.error.message : String(result.error));

@@ -121,8 +121,6 @@ export function runStudioHostFrame(
 	try {
 		const hostDeltaMs = beginHostFrame(session, input, workbench.logOutput, currentTime);
 		workbench.play.advance(hostDeltaMs, true);
-		const play = workbench.play.current?.session;
-		audioOutput.device.select(play?.ready === true ? play.audio : audioOutput);
 		const action = advanceStudioFrame(session, runtime, presenter, audioOutput, systemOutput, workbench, screen, hostDeltaMs);
 		if (session.rewind.active || !workbench.runtimeTasks.ready) screen.requestHeldPresentation();
 		presentHostPresentation(session, runtime, presenter, audioOutput, action, screen, hostDeltaMs);

@@ -108,6 +108,7 @@ export function createHeadlessIdeHarness(
 		},
 		performHotResume: () => performHotResume(
 			ide.hotResumes, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, logOutput,
+			ide.runTargets, { action: 'hot-resume', presentation: { group: ide.editor.editorGroup, generation: ide.editor.editorGroup.panes.openGeneration } },
 		),
 		toggleLuaBreakpoint: (path: string, line: number) => {
 			const resource = (ide.sources.catalog.resolveResource({ contextId: ide.sources.activeContextId, path })
@@ -117,6 +118,7 @@ export function createHeadlessIdeHarness(
 		isDebuggerStopped: () => ide.debugger.source.stop !== undefined,
 		reboot: () => performReboot(
 			ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, logOutput,
+			ide.runTargets, { action: 'reboot', presentation: { group: ide.editor.editorGroup, generation: ide.editor.editorGroup.panes.openGeneration } },
 		),
 		executeCommand: command => ide.editor.commands.execute(command),
 		openLuaSource: (path: string) => {

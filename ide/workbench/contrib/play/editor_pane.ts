@@ -68,7 +68,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	}
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	public override get suspendsRuntime(): boolean { return false; }
-	public override get runtimeControlContext() { return this.session?.ready === true ? this.focusTarget : undefined; }
+	public override get runtimeControlContext() { return this.focusTarget; }
 	public override get runtimeTransport() { return this.session?.ready === true ? this.session.transport : undefined; }
 	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.titleSource = ''; this.update(); }
 	public override clearInput(): void {

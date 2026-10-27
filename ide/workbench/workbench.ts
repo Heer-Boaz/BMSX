@@ -24,6 +24,7 @@ import { RuntimeLuaEvaluation } from '../runtime/lua_evaluation';
 import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
 import { syncRuntimeSourceActivity, type RuntimeSourceState } from '../runtime/sources';
 import { SuspendedGuestSession, type GuestInvalidationReason } from '../runtime/suspended_guest';
+import { RuntimeTransport } from '../runtime/transport';
 import type { TestTargetFactory } from '../testing/target';
 import type { WorkspaceRecord } from '../workspace/records';
 import { ActorExecutionService } from './contrib/actor_lab/execution';
@@ -32,6 +33,7 @@ import { WorkspaceToolService } from './services/assistant/tool_service';
 import { ResourceDiagnosticsService } from './services/diagnostics/resource_diagnostics';
 import { BootService } from './services/execution/boot';
 import { HotResumeService } from './services/execution/hot_resume';
+import { RunTargetSelection } from './services/execution/run_target';
 import { PlayService } from './services/play/service';
 import type { PlaySessionFactory } from './services/play/session';
 import { ScenarioRunService } from './services/testing/scenario_runs';
@@ -62,6 +64,9 @@ export class StudioWorkbench {
 	public readonly models: EditorTextModelService;
 	public readonly runtimeTasks: RuntimeTaskQueue;
 	public readonly execution: HostExecutionControl;
+	public readonly audio: HostAudioOutput;
+	public readonly transport: RuntimeTransport;
+	public readonly runTargets: RunTargetSelection;
 	public readonly rewind: HostRewind;
 	public readonly gameCapture: GameImageCapture;
 	public readonly microtasks: MicrotaskQueue;
@@ -90,6 +95,7 @@ export class StudioWorkbench {
 	private readonly replacedListeners = new Set<(reason: GuestInvalidationReason) => void>();
 	private readonly stopListeners = new Set<() => void>();
 	private readonly hostFailureListeners = new Set<(stack: string) => void>();
+	private readonly unbindRunTargetAudio: () => void;
 	private shutdownOperation: Promise<void> | undefined;
 
 	public constructor(options: StudioWorkbenchOptions) {
@@ -100,6 +106,7 @@ export class StudioWorkbench {
 		this.models = models;
 		this.runtimeTasks = runtimeTasks;
 		this.execution = execution;
+		this.audio = audioOutput;
 		this.rewind = rewind;
 		this.clock = clock;
 		this.microtasks = microtasks;
@@ -112,7 +119,6 @@ export class StudioWorkbench {
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.guest = new SuspendedGuestSession(runtime);
 		this.scenarioRuns = new ScenarioRunService(models, sources, workspaceDirtyRecords, runtime.model, createTestTarget);
-		this.play = new PlayService(models, sources, workspaceDirtyRecords, runtime.model, input, createPlaySession);
 		this.textFileSaves = new TextFileSaveService(models, clock, sources.catalog);
 		this.hotResumes = new HotResumeService(models, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
@@ -123,6 +129,13 @@ export class StudioWorkbench {
 		this.actorExecution = new ActorExecutionService(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);
 		this.frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, runtimeTasks, this.debugger, this.fault, this.guest);
 		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, execution, rewind, runtimeTasks, this.fault, this.guest, this.frameNavigation);
+		this.transport = new RuntimeTransport(runtime, execution, rewind, this.frameNavigation, () => runtimeTasks.ready
+			&& !execution.frameStepPending && this.fault.hostFrameFailure === undefined && this.fault.faultSnapshot === null
+			&& this.debugger.source.stop === undefined && !this.debugger.plans.controlActive && !this.scenarioRuns.active);
+		this.runTargets = new RunTargetSelection(this);
+		audioOutput.device.select(audioOutput);
+		this.unbindRunTargetAudio = this.runTargets.onDidChange(target => audioOutput.device.select(target === undefined ? null : target.audio));
+		this.play = new PlayService(models, sources, workspaceDirtyRecords, runtime.model, input, this.runTargets, createPlaySession);
 		this.inspection = new RuntimeInspectionService(runtime, sources, this.guest, this.debugger, execution, runtimeTasks,
 			rewind, this.fault, this.frameNavigation, this.debuggerExecution);
 		this.behaviorSources = new BehaviorSourceDocuments(models, sources.catalog);
@@ -198,6 +211,8 @@ export class StudioWorkbench {
 		return this.shutdownOperation;
 	}
 	private async close(): Promise<void> {
+		this.runTargets.select(undefined);
+		this.unbindRunTargetAudio();
 		this.tools.dispose();
 		this.events.dispose(); this.gte.dispose(); this.gpu.dispose();
 		this.frameNavigation.dispose(); this.debuggerExecution.dispose();

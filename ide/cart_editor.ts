@@ -367,7 +367,7 @@ export class RuntimeCartEditor implements CartEditor {
 	) {
 		const { runtime, sources, fault, guest, debugger: debuggerState, events, gte, gpu, runtimeTasks, execution,
 			rewind, scenarioRuns, play: playSessions, textFileSaves, hotResumes, boots, diagnostics, luaEvaluation,
-			actorExecution, frameNavigation, debuggerExecution } = workbench;
+			actorExecution, frameNavigation } = workbench;
 		this.events = events; this.gte = gte; this.gpu = gpu;
 		this.diagnostics = diagnostics;
 		this.codeDocuments = new CodeDocumentProjections(editorTextModelService, {
@@ -402,16 +402,13 @@ export class RuntimeCartEditor implements CartEditor {
 			boots,
 			runtimeTasks,
 			execution,
-			rewind,
 			overlayRenderer,
-			runtime,
+			workbench.transport,
+			workbench.runTargets,
 			audioOutput,
 			clock,
 			logOutput,
-			scenarioRuns,
 			textFileSaves,
-			frameNavigation,
-			debuggerExecution,
 		);
 		inputFocus.workbenchScope.commands = this.commands;
 		const workArea = getWorkbenchWorkArea();

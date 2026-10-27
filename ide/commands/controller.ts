@@ -3,15 +3,12 @@ import { openCreateResourcePrompt } from '../workbench/contrib/resources/create'
 import { chooseBuild, showBuildJobs } from '../workbench/contrib/builds/commands';
 import { createCartridge } from '../workbench/contrib/projects/commands';
 import { importCartridgeFiles } from '../workbench/contrib/resources/import';
-import type { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { executeClipboardAction } from '../input/clipboard';
-import type { RuntimeFrameNavigation } from '../runtime/frame_navigation';
-import { RuntimeTransport } from '../runtime/transport';
+import type { RuntimeTransport } from '../runtime/transport';
+import type { RunTargetSelection } from '../workbench/services/execution/run_target';
 import { navigationState } from '../navigation/navigation_history';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
-import type { HostRewind } from '../../hosts/common/rewind';
-import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
@@ -30,7 +27,6 @@ import type { TextFileSaveService } from '../workbench/services/working_copy/tex
 import { saveTextFileFromCommand } from './source_save';
 import type { EditorTextModel } from '../editor/model/text_model';
 import { type RuntimeSourceState } from '../runtime/sources';
-import type { ScenarioRunService } from '../workbench/services/testing/scenario_runs';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
@@ -75,7 +71,6 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 ]);
 
 export class IdeCommandController {
-	public readonly transport: RuntimeTransport;
 	public constructor(
 		private readonly editor: CartEditor,
 		private readonly sources: RuntimeSourceState,
@@ -85,26 +80,23 @@ export class IdeCommandController {
 		private readonly boots: BootService,
 		private readonly runtimeTasks: RuntimeTaskQueue,
 		private readonly execution: HostExecutionControl,
-		private readonly rewind: HostRewind,
 		private readonly overlayRenderer: OverlayRenderer,
-		runtime: Runtime,
+		public readonly transport: RuntimeTransport,
+		private readonly runTargets: RunTargetSelection,
 		private readonly audioOutput: HostAudioOutput,
 		private readonly clock: HostClock,
 		private readonly logOutput: LogOutput,
-		scenarioRuns: ScenarioRunService,
 		private readonly textFileSaves: TextFileSaveService,
-		private readonly frameNavigation: RuntimeFrameNavigation,
-		private readonly debuggerExecution: RuntimeDebuggerExecution,
-	) {
-		this.transport = new RuntimeTransport(runtime, execution, rewind, frameNavigation, () => runtimeTasks.ready
-			&& !execution.frameStepPending && fault.hostFrameFailure === undefined && fault.faultSnapshot === null
-			&& debuggerState.source.stop === undefined && !debuggerState.plans.controlActive && !scenarioRuns.active);
-	}
+	) {}
 	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): void {
 		const originGroup = findEditorGroup(target);
 		if (originGroup === null) return;
 		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
-		const transport = group.panes.activePane?.runtimeTransport ?? this.transport;
+		const pane = group.panes.activePane;
+		const selected = this.runTargets.selected;
+		const transport = originGroup !== undefined && pane?.runtimeControlContext !== undefined
+			? pane.runtimeTransport : selected?.transport;
+		const capturePane = pane?.runtimeTransport === transport ? pane : undefined;
 		// Committing the focused draft and choosing an action's target are distinct.
 		// Pointer actions retain field focus but invoke their own explicit context.
 		if (SOURCE_COMMANDS.has(command)) {
@@ -219,18 +211,17 @@ export class IdeCommandController {
 				group.tabStrip.scrollbar.setScroll(group.tabStrip.scrollbar.getScroll()
 					+ (command === 'tabs.scrollLeft' ? -1 : 1) * (group.tabStrip.layoutState.viewportBounds.right - group.tabStrip.layoutState.viewportBounds.left) * 0.75);
 				return;
-			case 'pause':
-				if (this.execution.userPaused) {
-					if (this.rewind.active) this.rewind.resumeHere();
-					this.execution.requestExecution(true);
-					if (this.debuggerState.source.stop === undefined) {
+			case 'pause': {
+				if (selected === undefined) return;
+				const playback = selected.transport;
+				if (playback.execution.userPaused) {
+					playback.resumeHere();
+					if (playback === this.transport && selected.debuggerExecution.state.source.stop === undefined) {
 						deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
 					}
-				} else {
-					if (this.rewind.active) this.rewind.pauseSeek();
-					this.execution.setPauseReason(HostPauseReason.Requested, true);
-				}
+				} else playback.pause();
 				return;
+			}
 			case 'runtime.focusTimeline': this.editor.runtimeTimeline.focus(); return;
 			case 'runtime.hideTimeline': this.editor.runtimeTimeline.hide(); return;
 			case 'runtime.toggleTimeline':
@@ -239,29 +230,34 @@ export class IdeCommandController {
 				return;
 			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
 			case 'runtime.pause':
-				group.panes.activePane?.setRuntimeCaptureRunning?.(false);
+				if (transport === undefined) return;
+				capturePane?.setRuntimeCaptureRunning?.(false);
 				transport.pause();
 				return;
 			case 'runtime.present':
 			case 'runtime.accept':
-				group.panes.activePane?.setRuntimeCaptureRunning?.(false);
+				if (transport === undefined) return;
+				capturePane?.setRuntimeCaptureRunning?.(false);
 				transport.navigation.finishReview(command === 'runtime.present' ? 'present' : 'here');
 				return;
 			case 'runtime.resume':
-				group.panes.activePane?.setRuntimeCaptureRunning?.(true);
+				if (transport === undefined) return;
+				capturePane?.setRuntimeCaptureRunning?.(true);
 				transport.resumeHere();
 				return;
 			case 'gameView.playback': {
+				if (transport === undefined) return;
 				const running = transport.togglePlayback();
-				group.panes.activePane?.setRuntimeCaptureRunning?.(running);
+				capturePane?.setRuntimeCaptureRunning?.(running);
 				return;
 			}
 			case 'gameView.togglePanel': this.editor.gamePanel.toggle(); return;
 			case 'gameView.closePanel': this.editor.gamePanel.close(); return;
 			case 'stepFrame':
 			case 'stepFrameBack':
-				openGameView(group);
-				this.frameNavigation.step(command === 'stepFrameBack' ? -1 : 1);
+				if (selected === undefined) return;
+				if (selected.transport === this.transport) openGameView(group);
+				selected.transport.navigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
 			case 'scenarioLab.debug':
 			case 'scenarioLab.play':
@@ -280,10 +276,13 @@ export class IdeCommandController {
 			case 'debugStepInto':
 			case 'debugStepOut':
 			case 'debugStepOver':
-				this.debuggerExecution.resume(command === 'debugStepInto' ? 'into' : command === 'debugStepOut' ? 'out'
-					: command === 'debugStepOver' ? 'over' : 'continue', 'game');
-				clearExecutionStopHighlights(group);
-				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+				if (selected === undefined) return;
+				selected.debuggerExecution.resume(command === 'debugStepInto' ? 'into' : command === 'debugStepOut' ? 'out'
+					: command === 'debugStepOver' ? 'over' : 'continue', selected.transport === this.transport ? 'game' : 'workbench');
+				if (selected.transport === this.transport) {
+					clearExecutionStopHighlights(group);
+					deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+				}
 				return;
 		}
 		if (isEditorSearchCommand(command)) {
@@ -308,6 +307,7 @@ export class IdeCommandController {
 				this.textFileSaves,
 				command,
 				group,
+				this.runTargets,
 			);
 			return;
 		}
@@ -337,6 +337,7 @@ export class IdeCommandController {
 			this.audioOutput,
 			this.logOutput,
 			request,
+			this.runTargets,
 		);
 	}
 
@@ -344,7 +345,10 @@ export class IdeCommandController {
 		const originGroup = findEditorGroup(focus);
 		if (originGroup === null) return false;
 		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
-		const transport = group.panes.activePane?.runtimeTransport ?? this.transport;
+		const pane = group.panes.activePane;
+		const selected = this.runTargets.selected;
+		const transport = originGroup !== undefined && pane?.runtimeControlContext !== undefined
+			? pane.runtimeTransport : selected?.transport;
 		const implementation = focus?.getCommand(command);
 		if (implementation !== undefined) return implementation.isEnabled();
 		switch (command) {
@@ -406,25 +410,25 @@ export class IdeCommandController {
 			case 'tabs.scrollRight': return group.tabStrip.scrollbar.getScroll() < group.tabStrip.scrollbar.getMaximumScroll();
 			case 'openEditors': return group.model.tabs.length > 0;
 			case 'pause':
-				return !this.execution.userPaused || this.runtimeTasks.mutationReady;
+				return selected?.transport.playbackEnabled === true;
 			case 'stepFrame':
 			case 'stepFrameBack':
-				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
+				return selected?.transport.navigation.canStep(command === 'stepFrameBack' ? -1 : 1) === true;
 			case 'runtime.focusTimeline': return this.editor.isActive && this.editor.runtimeTimeline.available;
 			case 'runtime.hideTimeline': return this.editor.isActive && this.editor.runtimeTimeline.canHide;
 			case 'runtime.toggleTimeline': return this.editor.isActive && (this.editor.runtimeTimeline.available || this.editor.runtimeTimeline.requested);
 			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
-			case 'runtime.pause': return transport.playbackEnabled;
+			case 'runtime.pause': return transport?.playbackEnabled === true;
 			case 'runtime.present':
 			case 'runtime.accept':
-				return transport.navigation.canFinishReview;
+				return transport?.navigation.canFinishReview === true;
 			case 'runtime.resume':
-				return transport.rewind.active && transport.navigation.active === undefined
+				return transport !== undefined && transport.rewind.active && transport.navigation.active === undefined
 					&& transport.playbackEnabled;
 			case 'gameView.togglePanel': return this.editor.isActive && group.panes.activePane?.companionGameMinimumWidth !== undefined;
 			case 'gameView.closePanel': return this.editor.gamePanel.enabled;
 			case 'gameView.playback':
-				return this.editor.gamePanel.visible && transport.playbackEnabled;
+				return this.editor.gamePanel.visible && transport?.playbackEnabled === true;
 			case 'scenarioLab.play':
 			case 'scenarioLab.debug':
 			case 'scenarioLab.debugWithCompanion':
@@ -438,11 +442,12 @@ export class IdeCommandController {
 			case 'scenarioLab.cancel':
 				return this.editor.scenarioLab.isCommandEnabled(command);
 			case 'debugContinue':
-				return this.debuggerState.source.stop !== undefined && this.debuggerExecution.canResume('continue');
+				return selected !== undefined && selected.debuggerExecution.state.source.stop !== undefined
+					&& selected.debuggerExecution.canResume('continue');
 			case 'debugStepInto':
 			case 'debugStepOver':
 			case 'debugStepOut':
-				return this.debuggerExecution.canResume(command === 'debugStepInto' ? 'into' : command === 'debugStepOver' ? 'over' : 'out');
+				return selected?.debuggerExecution.canResume(command === 'debugStepInto' ? 'into' : command === 'debugStepOver' ? 'over' : 'out') === true;
 			case 'save': {
 				const activeInput = group.model.activeTab;
 				return this.textFileSaves.acceptingSaves && activeInput instanceof TextEditorInput
@@ -511,7 +516,7 @@ export class IdeCommandController {
 			case 'debugEvaluation':
 				return this.debuggerState.plans.controlSuspended;
 			case 'pause':
-				return this.execution.userPaused;
+				return this.runTargets.selected?.transport.execution.userPaused === true;
 			case 'resources':
 				return this.editor.resourcePanel.visible;
 			case 'problems':

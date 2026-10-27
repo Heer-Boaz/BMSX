@@ -19,6 +19,7 @@ import type { EditorActionRequest } from './action_request';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
 import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
 import type { ActionPromptRequest } from '../workbench/contrib/modal/action_prompt_view';
+import type { RunTargetSelection } from '../workbench/services/execution/run_target';
 
 const ACTION_PROMPTS: Readonly<Record<Exclude<EditorActionRequest['action'], 'theme-toggle'>, ActionPromptRequest>> = {
 	'hot-resume': { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE HOT-RESUME?',
@@ -59,6 +60,7 @@ export function executeEditorWorkspaceCommand(
 	textFileSaves: TextFileSaveService,
 	command: EditorWorkspaceCommandId,
 	group: EditorGroupView,
+	runTargets: RunTargetSelection,
 ): void {
 	switch (command) {
 		case 'createResource':
@@ -85,7 +87,7 @@ export function executeEditorWorkspaceCommand(
 					}).catch(error => editor.handleRuntimeTaskError(error, 'Source action failed'));
 					return;
 				}
-				performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, audioOutput, logOutput, request);
+				performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, audioOutput, logOutput, request, runTargets);
 			};
 			if (command === 'runCurrentFile' || command === 'runProject') {
 				const input = group.model.activeTab, resource = input?.resource;
@@ -104,12 +106,15 @@ export function executeEditorWorkspaceCommand(
 					return new TextQuickPickProvider(projects);
 				}, project => {
 					if (sources.currentBlua32Media.cartridgeSlots[project.domain] !== project.image) return;
-					requestAction({ action: 'run', expectedImage: project.image, entry: command === 'runCurrentFile'
-						? { domain: project.domain, sourcePath: resource!.path } : { domain: project.domain } });
+					requestAction({ action: 'run', expectedImage: project.image, selectionRequest: runTargets.request(), entry: command === 'runCurrentFile'
+						? { domain: project.domain, sourcePath: resource!.path } : { domain: project.domain },
+						presentation: { group, generation: group.panes.openGeneration } });
 				});
 				return;
 			}
-			requestAction({ action: command });
+			if (command === 'reboot' || command === 'hot-resume')
+				requestAction({ action: command, presentation: { group, generation: group.panes.openGeneration } });
+			else requestAction({ action: command });
 			return;
 		}
 	}

@@ -99,7 +99,6 @@ class HeadlessStudioRuntime {
 		const boot = this.workbench.boots.start('installed').result!;
 		if (boot.status === 'failed' || boot.status === 'rejected') throw boot.error;
 		this.systemOutput.flush(this.runtime, this.log);
-		this.audioOutput.device.select(this.audioOutput);
 		this.requests = new StudioToolRequests(this.workbench.tools, { sourceAccess: options.sourceAccess, reviewApproval: 'agent' });
 		this.recovery.start();
 		this.runtime.frameScheduler.clearQueuedTime();

@@ -17,6 +17,7 @@ import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { TestInput } from '../../ide/testing/input';
 import { PlayRuntimeSession } from '../../ide/workbench/play_runtime';
 import { PlayService } from '../../ide/workbench/services/play/service';
+import { RunTargetSelection } from '../../ide/workbench/services/execution/run_target';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
@@ -54,7 +55,8 @@ while true do game.updates=game.updates+1; mem[${gxGpuPcrtcRegisterAddress(GX_GP
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1), device = new HostAudioDevice(new DiscardingAudioSink());
 	const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, () => assert.fail('Play does not construct a TestRun target'));
 	const sessions: PlayRuntimeSession[] = [];
-	const service = new PlayService(models, sources, new Map(), PSX_MACHINE_SPEC, input, (system, slots, model, channel, program) => {
+	const runTargets = new RunTargetSelection();
+	const service = new PlayService(models, sources, new Map(), PSX_MACHINE_SPEC, input, runTargets, (system, slots, model, channel, program) => {
 		const session = new PlayRuntimeSession(new OffscreenMachine(system, slots, model, channel), program, device, { log() {} });
 		sessions.push(session); return session;
 	});
@@ -69,17 +71,21 @@ while true do game.updates=game.updates+1; mem[${gxGpuPcrtcRegisterAddress(GX_GP
 		await service.dispose(); runs.dispose(); models.clear(); authoring.dispose(); input.dispose();
 		closeWorkspaceRecords(); await rm(directory, { recursive: true, force: true });
 	});
-	return { service, sessions, sources, models, runs, module, model, authoring, advance, ready };
+	return { service, runTargets, sessions, sources, models, runs, module, model, authoring, advance, ready };
 }
 
 test('Play service captures current source, resets into a fresh physical world and preserves authoring', async t => {
 	const f = await fixture(t), before = captureRuntimeMachineState(f.authoring.runtime), original = f.sources.currentBlua32Media;
 	f.model.pushEditOperations([{ offset: SCENE.indexOf('12'), deleteLength: 2, text: '34' }]); f.runs.refreshSources();
 	const accepted = f.service.start(f.module), captured = f.model.buffer.getText();
+	assert.equal(f.runTargets.selected, undefined, 'Play preparation does not select an unadmitted physical target');
 	f.model.pushEditOperations([{ offset: captured.indexOf('34'), deleteLength: 2, text: '56' }]);
 	await f.ready();
 	assert.equal(accepted.source, captured); assert.equal(accepted.sourceRevision, f.model.version - 1);
 	const session = accepted.session!;
+	assert.equal(f.runTargets.selected, session);
+	assert.throws(() => f.service.start(f.module), /current Play session/);
+	assert.equal(f.runTargets.selected, session, 'rejected admission preserves the selected physical owner');
 	assert.deepEqual(session.guest.readStringMember(session.guest.global(buildModuleExportSlotName('game', [])), 'marker'), 34);
 	assert.equal(session.evidence.logs.at(0).text, 'ready');
 	assert.equal(f.runs.results.runs.length, 0, 'interactive admission creates no automatic case or result');
@@ -89,15 +95,21 @@ test('Play service captures current source, resets into a fresh physical world a
 	assert.deepEqual(captureRuntimeMachineState(session.target.runtime), held, 'inactive Studio holds Play');
 	f.runs.refreshSources();
 	const next = f.service.reset(accepted, f.module);
+	assert.equal(f.runTargets.selected, undefined, 'reset retires the previous physical selection before rebuilding');
 	assert.equal(accepted.closing, true); assert.equal(session.input.interactive, false);
 	assert.throws(() => f.service.stop(accepted), /current session/);
 	await f.ready();
 	assert.equal(accepted.closed, true); assert.equal(session.state, 'closed');
 	assert.notEqual(next.session!.target.runtime, session.target.runtime);
+	assert.equal(f.runTargets.selected, next.session);
 	assert.deepEqual(next.session!.guest.readStringMember(next.session!.guest.global(buildModuleExportSlotName('game', [])), 'marker'), 56);
 	f.service.stop(next);
 	for (let grant = 0; next.state !== 'stopped' && grant < 2000; grant++) await f.advance();
 	assert.equal(next.state, 'stopped'); assert.equal(next.session!.evidence.logs.at(1).text, 'cleanup');
+	assert.equal(f.runTargets.selected, next.session, 'Stop retains its physical target and inspection binding');
+	const closing = f.service.close(next);
+	assert.equal(f.runTargets.selected, undefined, 'close clears selection before backend disposal completes');
+	await closing;
 	assert.deepEqual(captureRuntimeMachineState(f.authoring.runtime), before);
 	assert.equal(f.sources.currentBlua32Media, original); assert.equal(f.sessions.length, 2);
 });
@@ -112,6 +124,34 @@ test('closing preparation cannot create a late world; model clear closes the act
 	f.models.clear();
 	await live.closeOperation;
 	assert.equal(f.service.current, undefined); assert.equal(live.closed, true); assert.equal(live.session!.state, 'closed');
+});
+
+test('a newer explicit run choice supersedes late Play readiness without preventing physical admission', async t => {
+	const f = await fixture(t), handle = f.service.start(f.module);
+	await handle.preparation;
+	assert.notEqual(handle.state, 'ready');
+	f.runTargets.select(undefined);
+	await f.ready();
+	assert.equal(handle.session!.ready, true);
+	assert.equal(f.runTargets.selected, undefined);
+	assert.equal(handle.selectionRequest, undefined);
+	f.runTargets.select(handle.session);
+	const closing = f.service.close(handle);
+	assert.equal(f.runTargets.selected, undefined);
+	await closing;
+});
+
+test('failed Play preparation leaves explicit empty run selection unchanged', async t => {
+	const f = await fixture(t), offset = SCENE.indexOf("require('game')");
+	f.model.pushEditOperations([{ offset, deleteLength: "require('game')".length, text: "require('missing_play_dependency')" }]);
+	f.runs.refreshSources();
+	const handle = f.service.start(f.module);
+	await handle.preparation;
+	assert.equal(handle.state, 'failed');
+	assert.ok(handle.failure);
+	assert.equal(handle.session, undefined);
+	assert.equal(handle.selectionRequest, undefined);
+	assert.equal(f.runTargets.selected, undefined);
 });
 
 for (const optLevel of [0, 3] as const) test(`O${optLevel}: new authored fixtures admit alongside an empty project file`, async t => {

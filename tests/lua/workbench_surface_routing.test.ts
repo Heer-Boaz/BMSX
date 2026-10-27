@@ -24,6 +24,23 @@ import { RuntimeIdeState } from '../../ide/workbench/state';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
 import { createHostFrameFixture } from '../helpers/host_frame';
+import { HostAudioOutput } from '../../hosts/common/audio_output';
+import { HostExecutionControl } from '../../hosts/common/execution_control';
+import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
+import { HostRewind } from '../../hosts/common/rewind';
+import { createRuntimeDebuggerState } from '../../ide/runtime/debugger_state';
+import { RuntimeDebuggerExecution } from '../../ide/runtime/debugger_execution';
+import { RuntimeFrameNavigation } from '../../ide/runtime/frame_navigation';
+import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
+import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
+import { RuntimeTransport } from '../../ide/runtime/transport';
+import { PlayHandle } from '../../ide/workbench/services/play/service';
+import { PlayEditorInput } from '../../ide/workbench/contrib/play/editor_input';
+import { performHotResume, performReboot } from '../../ide/commands/actions';
+import type { EditorActionRequest } from '../../ide/commands/action_request';
+import type { BootOperation, BootResult } from '../../ide/workbench/services/execution/boot';
+import type { HotResumeAdmissionResult, HotResumeOperation, HotResumeResult } from '../../ide/workbench/services/execution/hot_resume';
+import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
 import { ImagePreviewCache } from '../../ide/workbench/ui/image_preview';
 import { ImagePreviewOverlay } from '../../ide/workbench/ui/image_preview_overlay';
 import { createTestRuntimeSourceState, createTestSystemImageRuntimeSourceState, createTestRuntime } from '../helpers/runtime_sources';
@@ -360,6 +377,131 @@ test('generic command admission and execution use the exact target and disabled 
 	editor.commands.execute('undo', absent);
 	assert.equal(ancestor, 0, 'an absent local capability does not inherit a document action');
 });
+
+test('global run controls and audio retain their selected physical owner independently of editor focus', async t => {
+	const { ide, editor, host, sources } = fixture(t), other = createHostFrameFixture();
+	const audio = new HostAudioOutput(host.audio.device, other.runtime.machine.audioController, other.runtime.timing.ufpsScaled);
+	const execution = new HostExecutionControl(audio), tasks = new RuntimeTaskQueue(audio, other.presenter);
+	const rewind = new HostRewind(other.runtime, other.presenter, other.screen, tasks, audio, { log() {} });
+	const state = createRuntimeDebuggerState(other.runtime, sources), fault = createRuntimeFaultState();
+	const guest = new SuspendedGuestSession(other.runtime);
+	const navigation = new RuntimeFrameNavigation(other.runtime, execution, rewind, tasks, state, fault, guest);
+	const debuggerExecution = new RuntimeDebuggerExecution(other.runtime, state, execution, rewind, tasks, fault, guest, navigation);
+	const transport = new RuntimeTransport(other.runtime, execution, rewind, navigation, () => tasks.ready);
+	const selected = { transport, audio, debuggerExecution };
+	t.after(async () => {
+		ide.runTargets.retire(selected);
+		navigation.dispose(); debuggerExecution.dispose(); await tasks.join();
+		audio.dispose(); other.audio.dispose(); other.input.dispose();
+	});
+	host.execution.setPauseReason(HostPauseReason.Requested, true);
+	execution.setPauseReason(HostPauseReason.Requested, true);
+	ide.runTargets.select(selected);
+	assert.ok(host.audio.device.selected === audio);
+	editor.commands.execute('gameView'); editor.update(0);
+	assert.ok(ide.runTargets.selected === selected, 'opening a primary-target view cannot select it for global execution');
+	assert.ok(host.audio.device.selected === audio);
+	const pane = editor.editorGroup.panes.activePane!, primaryPause = t.mock.method(ide.transport, 'pause');
+	editor.commands.execute('pause', null);
+	assert.equal(execution.userPaused, false);
+	assert.equal(host.execution.userPaused, true);
+	assert.equal(editor.isActive, true, 'resuming another target does not hide the authoring workbench');
+	editor.commands.execute('runtime.pause', inputFocus.target);
+	assert.equal(primaryPause.mock.callCount(), 1, 'the primary view retains its own explicit local transport');
+	assert.equal(execution.userPaused, false);
+	assert.ok(ide.runTargets.selected === selected);
+	execution.setPauseReason(HostPauseReason.Requested, true);
+	editor.commands.execute('stepFrame', null);
+	assert.equal(execution.frameStepPending, true);
+	assert.equal(host.execution.frameStepPending, false);
+	assert.ok(editor.editorGroup.panes.activePane === pane, 'a global step on another target cannot replace the main view');
+	execution.finishFrameStep(); navigation.afterHostFrame();
+	assert.equal(editor.commands.isEnabled('debugContinue', null), false, 'Continue still requires a source debugger stop');
+	assert.equal(editor.commands.isEnabled('debugStepInto', null), false);
+	ide.runTargets.retire(selected);
+	assert.equal(host.audio.device.selected, null);
+	for (const command of ['pause', 'stepFrame', 'debugContinue', 'runtime.pause'] as const)
+		assert.equal(editor.commands.isEnabled(command, null), false, 'retirement cannot redirect a global action to primary');
+	const revision = host.execution.revision;
+	editor.commands.execute('pause', null); editor.commands.execute('stepFrame', null); editor.commands.execute('runtime.pause', null);
+	assert.equal(host.execution.revision, revision);
+	assert.ok(editor.editorGroup.panes.activePane === pane);
+});
+
+test('a preparing Play client cannot redirect its unavailable local transport or Timeline to primary', t => {
+	const { ide, editor } = fixture(t);
+	const handle = new PlayHandle({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'preparing.lua' }, 'Preparing fixture', '', 0, null, undefined);
+	handle.preparation = Promise.resolve();
+	editor.editorGroup.openEditor(new PlayEditorInput(handle, ide.play)); editor.update(0);
+	const pane = editor.editorGroup.panes.activePane!, primaryPause = t.mock.method(ide.transport, 'pause');
+	assert.ok(pane.runtimeControlContext !== undefined);
+	assert.equal(pane.runtimeTransport, undefined);
+	assert.equal(editor.runtimeTimeline.available, false);
+	editor.runtimeTimeline.focus();
+	assert.equal(editor.runtimeTimeline.visible, false);
+	assert.equal(editor.commands.isEnabled('runtime.pause', pane.runtimeControlContext), false);
+	editor.commands.execute('runtime.pause', pane.runtimeControlContext);
+	assert.equal(primaryPause.mock.callCount(), 0);
+	assert.ok(ide.runTargets.selected === ide, 'unavailable local state does not change global run selection');
+	editor.commands.execute('runtime.pause', null);
+	assert.equal(primaryPause.mock.callCount(), 1, 'the separate global invocation still addresses the selected primary');
+});
+
+for (const action of ['run', 'reboot', 'hot-resume'] as const) for (const newer of ['none', 'selection', 'editor'] as const) {
+	test(`${action} receipt admits only its retained run intent and editor presentation after newer ${newer}`, async t => {
+		const { ide, editor, host, sources } = actorFixture(t), group = editor.editorGroup;
+		host.presenter.initialize(new RenderPassLibrary(host.backend, host.presenter));
+		t.after(() => host.presenter.dispose());
+		const presentation = { group, generation: group.panes.openGeneration };
+		const request: Extract<EditorActionRequest, { action: 'run' | 'reboot' | 'hot-resume' }> = action === 'run'
+			? { action, entry: { domain: 0 }, expectedImage: sources.currentBlua32Media.system!,
+				selectionRequest: ide.runTargets.request(), presentation }
+			: { action, presentation };
+		// This is a success-presentation regression: only the physical receipt
+		// producer is replaced. Build/source admission has its own owner tests.
+		const bootDone = Promise.withResolvers<BootResult>();
+		const boot: BootOperation = { id: 1, kind: 'reboot', sourceSnapshots: [], entry: undefined,
+			status: 'queued', result: null, completion: bootDone.promise };
+		const admission = Promise.withResolvers<HotResumeAdmissionResult>(), applyDone = Promise.withResolvers<HotResumeResult>();
+		const hot: HotResumeOperation = { id: 1, sourceSnapshots: [], status: 'queued', applied: false, result: null,
+			admission: admission.promise, completion: applyDone.promise };
+		t.mock.method(ide.boots, 'reboot', () => boot);
+		t.mock.getter(ide.boots, 'latestOperation', () => boot);
+		t.mock.method(ide.hotResumes, 'resume', () => hot);
+		t.mock.getter(ide.hotResumes, 'latestOperation', () => hot);
+		if (newer === 'none') {
+			const prompt = editor.actionPrompt.show({ title: 'Source decision', message: '', primary: 'Apply',
+				secondary: 'Keep working', primaryEnabled: true, defaultChoice: 'primary' });
+			editor.actionPrompt.close('primary'); await prompt;
+			assert.equal(group.panes.openGeneration, presentation.generation,
+				'the command\'s own prompt changes keyboard focus, not editor attachment admission');
+		}
+		if (request.action === 'hot-resume')
+			performHotResume(ide.hotResumes, editor, host.execution, ide.overlayRenderer, host.audio, ide.logOutput, ide.runTargets, request);
+		else performReboot(ide.boots, editor, host.execution, ide.overlayRenderer, host.audio, ide.logOutput, ide.runTargets, request);
+		if (newer === 'selection') ide.runTargets.select(undefined);
+		if (newer === 'editor') group.openEditor(new GameViewInput());
+		const revision = host.execution.revision, pane = group.panes.activePane;
+		if (action === 'hot-resume') {
+			admission.resolve({ status: 'accepted', mode: 'applied' }); await admission.promise;
+			applyDone.resolve({ status: 'completed', applied: true }); await applyDone.promise;
+		} else {
+			bootDone.resolve({ status: 'reset', installed: true, reset: true }); await bootDone.promise;
+		}
+		await Promise.resolve();
+		if (newer === 'none') {
+			assert.ok(host.execution.revision > revision);
+			assert.equal(host.execution.userPaused, false);
+			assert.equal(editor.isActive, false);
+		} else {
+			assert.equal(host.execution.revision, revision, 'an old receipt cannot publish a newer execution intent');
+			assert.equal(host.execution.userPaused, true);
+			assert.equal(editor.isActive, true);
+			assert.ok(group.panes.activePane === pane, 'physical success cannot replace or hide the newer interaction');
+		}
+		assert.ok(ide.runTargets.selected === (newer === 'selection' ? undefined : ide));
+	});
+}
 
 test('root Palette in an empty group cannot revive commands from its detached last-focused pane', t => {
 	const { editor } = fixture(t), group = editor.editorGroup;
