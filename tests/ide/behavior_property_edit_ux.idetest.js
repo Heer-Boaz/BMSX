@@ -31,7 +31,7 @@ const requestCompanion = async input => {
 	}
 	return companion ? 'companion' : 'full-preview-unavailable';
 };
-const sourceAction = input => input.view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.source');
+const sourceAction = input => input.view.presentation.actionBar.items.find(item => item.command === 'editor.source');
 const more = input => input.view.presentation.actionBar.overflow.button;
 const availableActions = input => {
 	const bar = input.view.presentation.actionBar;

@@ -1,3 +1,5 @@
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -182,8 +184,10 @@ test('accepted map moves and focused history reveal the restored member in both 
 	const { model, input } = fixture(`map_rows: ["${cells.join('')}"]\n`, 'nemesis');
 	const bounds = { left: 0, top: 0, right: 320, bottom: 200 }, surfaces = new WorkbenchSurfaceService();
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('map fixture'), getBounds: () => bounds, getClip: () => bounds, isVisible: () => true, draw() {} });
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	t.after(() => menu.dispose());
 	const pane = new CartMapPane(null!,
-		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, bounds, undefined!, inputFocus.workbenchScope);
+		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope, menu);
 	t.after(() => {
 		inputFocus.setTarget(null);
 		pane.clearInput(); pane.dispose(); input.dispose(); model.dispose();

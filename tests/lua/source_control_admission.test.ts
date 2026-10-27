@@ -143,7 +143,7 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 	assert.equal(subscriptions, 1);
 	f.editor.sceneEditor.openResource(f.editor.editorParts.main.activeGroup, f.model.resource); f.editor.update(0);
 	assert.equal(subscriptions, 1);
-	f.editor.commands.execute('sceneEditor.source', inputFocus.target!.commandContext); await setImmediate(); f.editor.update(0);
+	f.editor.commands.execute('editor.source', inputFocus.target!.commandContext); await setImmediate(); f.editor.update(0);
 	assert.equal(f.editor.editorParts.main.activeGroup.model.activeTab?.kind, 'code_editor');
 	assert.ok(f.editor.editorParts.main.activeGroup.model.tabs.includes(input), 'Source retains the Scene input in its actual group');
 	assert.equal(subscriptions, 1, 'only the attached Source control retains a readonly observer');

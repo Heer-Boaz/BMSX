@@ -95,10 +95,10 @@ for (const [command, kind, path] of [
 		if (kind === 'cart_map') {
 			const visible = bar.items.filter(item => item.visible && !item.overflowed);
 			t.assert(bar.overflow === undefined && visible.length === 2
-				&& visible.some(item => item.command === 'cartMap.source')
+				&& visible.some(item => item.command === 'editor.source')
 				&& visible.some(item => item.command === (input.layout.mode === 'outline' ? 'cartMap.map' : 'cartMap.outline')),
 				'the compact map toolbar must expose Source and exactly its other client, without More');
-			await click(visible.find(item => item.command === 'cartMap.source').bounds); sourceOpened(input, source);
+			await click(visible.find(item => item.command === 'editor.source').bounds); sourceOpened(input, source);
 			input = await open(command, kind); await focusContent(input);
 			await press('ShiftLeft', 'Tab');
 			t.assert(input.actionBar.hasFocus, 'map Source is not keyboard reachable at the supported minimum');

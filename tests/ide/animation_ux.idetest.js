@@ -39,7 +39,7 @@ t.assert(apply.value === 'apply_slide' && apply.description.includes('end_demo.l
 await capture('animation-selected-callback-tiny');
 await press('ControlLeft', 'ShiftLeft', 'KeyT');
 await capture('animation-selected-callback-msx');
-t.command('animation.source'); await t.frames(3);
+t.command('editor.source'); await t.frames(3);
 const authored = t.activeWorkbenchTab();
 t.assert(authored.kind === 'code_editor' && authored.workingCopy === animation.workingCopy, 'Source no longer owns the canonical EndDemo working copy');
 t.assert(animation.workingCopy.buffer.getText() === source, 'presentation edited canonical authored source');

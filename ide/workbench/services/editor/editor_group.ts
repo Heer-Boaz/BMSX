@@ -55,7 +55,10 @@ export function findEditorGroup(target: InputFocusTarget | null): EditorGroupVie
 	return undefined;
 }
 
-export type EditorTabOpenOptions = EditorOpenOptions & EditorPaneOpenOptions;
+export type EditorTabOpenOptions = EditorOpenOptions & EditorPaneOpenOptions & {
+	/** The requesting owner may retire while input resolution or a destination draft publishes. */
+	readonly isCurrent?: () => boolean;
+};
 export type EditorInputOpenResult = { readonly generation: number; readonly activated: boolean };
 export type EditorMoveEvent = { readonly input: EditorInput; readonly destination: EditorGroupView; readonly replacement: EditorInput };
 
@@ -267,12 +270,12 @@ export class EditorGroupView {
 	}
 
 	public openEditor(input: EditorInput, options: EditorTabOpenOptions = {}): boolean {
-		if (!this.openingAdmitted) {
+		if (!this.openingAdmitted || options.isCurrent?.() === false) {
 			if (this.model.indexOf(input) < 0) input.dispose();
 			return false;
 		}
 		let generation = this.panes.openGeneration;
-		if (!this.commitPendingEdit() || this.panes.openGeneration !== generation) {
+		if (!this.commitPendingEdit() || this.panes.openGeneration !== generation || options.isCurrent?.() === false) {
 			if (this.model.indexOf(input) < 0) input.dispose();
 			return false;
 		}
@@ -294,12 +297,12 @@ export class EditorGroupView {
 
 	/** Own opening admission and departure before candidate resolution can publish or yield. */
 	public async openResolvedEditor(resolveInput: () => EditorInput | Promise<EditorInput>, options: EditorTabOpenOptions = {}): Promise<EditorInputOpenResult | undefined> {
-		if (!this.openingAdmitted) return undefined;
+		if (!this.openingAdmitted || options.isCurrent?.() === false) return undefined;
 		const generation = this.panes.beginOpen(), focusRevision = inputFocus.revision;
 		let departure = options.preserveFocus ? null : beginNavigationCapture();
 		try {
 			const input = await resolveInput();
-			if (!this.openingAdmitted || generation !== this.panes.openGeneration) { input.dispose(); return undefined; }
+			if (!this.openingAdmitted || generation !== this.panes.openGeneration || options.isCurrent?.() === false) { input.dispose(); return undefined; }
 			const preserveFocus = options.preserveFocus || focusRevision !== inputFocus.revision;
 			if (!withNavigationCaptureSuspended(() => this.openEditor(input, { ...options, preserveFocus }))) return undefined;
 			if (!preserveFocus) {

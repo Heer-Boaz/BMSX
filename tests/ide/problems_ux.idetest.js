@@ -65,7 +65,7 @@ await t.frames(2);
 await press('Enter');
 const audio = t.activeWorkbenchTab();
 t.assert(audio.kind === 'aem_editor', 'the actual audio event map did not open');
-t.command('aem.source');
+t.command('editor.source');
 await t.frames(40);
 const yaml = t.activeWorkbenchTab();
 t.assert(yaml.kind === 'code_editor' && yaml.workingCopy === audio.workingCopy && yaml.context.model.mode === 'aem',

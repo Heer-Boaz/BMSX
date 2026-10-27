@@ -559,18 +559,18 @@ test('root Palette in an empty group cannot revive commands from its detached la
 	group.openEditor(new HostErrorInput('previous document'));
 	const detached = group.panes.activePane!.commandTarget;
 	let staleExecutions = 0;
-	detached.registerCommand('sceneEditor.source', { isEnabled: () => true, run: () => { staleExecutions++; } });
+	detached.registerCommand('editor.source', { isEnabled: () => true, run: () => { staleExecutions++; } });
 	detached.focus();
 	assert.ok(detached.scope.lastFocused === detached);
 	group.clear();
 	assert.equal(group.panes.activePane, null);
 	assert.ok(detached.scope.lastFocused === detached, 'the concrete pane retains focus memory independently of its attachment');
-	assert.equal(detached.getCommand('sceneEditor.source')!.isEnabled(), true);
+	assert.equal(detached.getCommand('editor.source')!.isEnabled(), true);
 	inputFocus.setTarget(null);
 	editor.commands.execute('commandPalette', null);
 	const items = editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
 	assert.ok(editor.quickInput.invocationOrigin === group.tabFocusTarget);
-	assert.equal(items.some(item => item.command === 'sceneEditor.source'), false);
+	assert.equal(items.some(item => item.command === 'editor.source'), false);
 	assert.ok(items.every(item => item.target === group.tabFocusTarget));
 	const row = editor.quickInput.model.list.rows.findIndex(row => items[row.itemIndex].command === 'home');
 	assert.ok(row >= 0);
@@ -585,7 +585,7 @@ test('chrome Palette after a preserve-focus switch addresses the new attached cl
 	group.openEditor(new HostErrorInput('previous document'));
 	const detached = group.panes.activePane!.commandTarget;
 	let staleExecutions = 0, currentExecutions = 0;
-	detached.registerCommand('sceneEditor.source', { isEnabled: () => true, run: () => { staleExecutions++; } });
+	detached.registerCommand('editor.source', { isEnabled: () => true, run: () => { staleExecutions++; } });
 	detached.focus();
 	editor.resourcePanel.show();
 	const chrome = inputFocus.target;
@@ -596,13 +596,13 @@ test('chrome Palette after a preserve-focus switch addresses the new attached cl
 	assert.ok(attached !== detached);
 	assert.ok(inputFocus.target === chrome);
 	assert.ok(detached.scope.lastFocused === detached);
-	attached.registerCommand('sceneEditor.source', {
+	attached.registerCommand('editor.source', {
 		isEnabled: () => true,
 		run: () => { assert.equal(group.panes.activePane!.input, next); currentExecutions++; },
 	});
 	editor.commands.execute('commandPalette', chrome);
 	const items = editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
-	const item = items.find(item => item.command === 'sceneEditor.source');
+	const item = items.find(item => item.command === 'editor.source');
 	assert.ok(item);
 	assert.ok(item.target === attached);
 	// The active editor supplies view actions; Files retains its own local capabilities.
@@ -781,7 +781,7 @@ test('Animation body clients and its actual property draft publish exact client-
 		}
 		const picks = buildCommandQuickPickItems(editor.commands, client);
 		for (const command of commands) assert.ok(picks.some(item => item.command === command));
-		for (const command of ['animation.source', 'animation.fit', 'animation.snap', 'animation.addFrame'] as const) {
+		for (const command of ['editor.source', 'animation.fit', 'animation.snap', 'animation.addFrame'] as const) {
 			assert.equal(client.getCommand(command), tracks.getCommand(command));
 			assert.equal(editor.commands.isEnabled(command, client), true);
 			assert.ok(picks.some(item => item.command === command));
@@ -840,7 +840,7 @@ test('Animation body clients and its actual property draft publish exact client-
 	editor.editorParts.main.quickInput.hide(); timeline.workingCopy.undo();
 	assert.equal(timeline.workingCopy.buffer.getText(), timelineSource); assert.equal(timeline.workingCopy.undo(), null);
 	editor.editorParts.main.activeGroup.panes.clearEditor();
-	for (const client of [...clients, field, valueField]) for (const command of ['animation.source', 'animation.fit', 'animation.snap', 'animation.addKey', 'animation.addFrame'] as const)
+	for (const client of [...clients, field, valueField]) for (const command of ['editor.source', 'animation.fit', 'animation.snap', 'animation.addKey', 'animation.addFrame'] as const)
 		assert.equal(editor.commands.isEnabled(command, client), false);
 });
 

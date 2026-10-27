@@ -1,5 +1,4 @@
-import type { EditorParts } from '../../services/editor/editor_parts';
-import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -37,11 +36,14 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { SceneOutlineFeedback } from './feedback';
-import type { EditorGroupView } from '../../services/editor/editor_group';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 	public override get companionGameMinimumWidth(): number { return measureSceneEditorMinimumWidth(); }
+	public override getSourceLocation(): EditorSourceLocation | undefined {
+		const input = this.input;
+		return this.controller.getSourceLocation(input);
+	}
 	public override getSelection(): SceneEditorNavigationSelection {
 		this.controller.refresh(this.input);
 		return new SceneEditorNavigationSelection(this.input);
@@ -66,8 +68,6 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		private readonly sources: RuntimeSourceState,
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>,
-		private readonly group: EditorGroupView,
-		parts: EditorParts,
 		scope: InputFocusScope,
 	) {
 		super(scope);
@@ -100,10 +100,6 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		} };
 		this.focusTarget.registerCommand('sceneEditor.details', sectionCommands.details);
 		this.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
-		this.focusTarget.registerCommand('sceneEditor.source', {
-			isEnabled: () => this.hasInput,
-			run: () => this.controller.openSource(parts.editorDestination(this.group, { resource: this.input.workingCopy.resource, editorId: WORKBENCH_TEXT_EDITOR_ID }), this.input),
-		});
 		this.focusTarget.registerCommand('sceneEditor.removeMember', {
 			isEnabled: () => this.hasInput && this.controller.canRemoveSelectedMember(this.input),
 			run: () => { const input = this.input; if (this.focusInput(input)) this.controller.removeSelectedMember(input); },

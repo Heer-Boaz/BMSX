@@ -41,7 +41,7 @@ function fixture(t: TestContext, source = PROGRAM, dependencies = [createScenari
 	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const guest = new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload()));
 	const aem = new AemEditorController(sources, guest, null!, null!);
-	const programs = new LuaProgramController(sources, guest, null!, null!, null!);
+	const programs = new LuaProgramController(sources, guest, null!, null!);
 	t.after(() => {
 		picker.dispose(); menu.dispose(); first.dispose(); second.dispose();
 		editorTextModelService.clear(); inputFocus.setTarget(null);
@@ -224,7 +224,7 @@ test('Animation matching queries distinguish owning table, semantic project and 
 		createScenarioTestSourceRecord('caller_b.lua', 1, caller),
 		createScenarioTestSourceRecord('cartlib/component/sprite_animation_component.lua', 1, ''),
 	]);
-	const controller = new AnimationEditorController(f.sources.catalog, null!);
+	const controller = new AnimationEditorController(f.sources.catalog);
 	const project = getOrCreateSemanticProject(editorTextModelService, f.resource.contextId);
 	project.synchronizeSources(f.sources.catalog);
 	const snapshot = project.getSnapshot();

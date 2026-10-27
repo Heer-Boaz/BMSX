@@ -16,7 +16,8 @@ import { resolveTextFileModel } from '../../services/working_copy/text_file_mode
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
-import { resolveTextCodeEditorInput } from '../../ui/code_tab/io';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import { projectAemSource } from './source';
 import { AemEditorInput } from './editor_input';
 import { aemFieldTemplates, aemSequenceTemplate, aemSequenceValueTemplate } from './schema';
 
@@ -38,13 +39,14 @@ export class AemEditorController {
 				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
-	public openSource(group: EditorGroupView, input: AemEditorInput): void {
-		const selected = input.tree.rows[input.tree.selectionIndex]?.element;
+	public getSourceLocation(input: AemEditorInput): EditorSourceLocation {
+		projectAemSource(input);
+		const model = input.workingCopy, selected = input.tree.rows[input.tree.selectionIndex]?.element;
+		if (selected === undefined) return { model, modelVersion: input.version };
 		const position = { row: 0, column: 0 };
-		if (selected !== undefined) input.workingCopy.buffer.positionAt(selected.node.range![0], position);
-		void group.openResolvedEditor(() => resolveTextCodeEditorInput(this.sources.catalog, input.workingCopy.resource),
-			{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } })
-			.catch(error => showEditorWarningBanner(`Cannot open audio source: ${error instanceof Error ? error.message : String(error)}`));
+		model.buffer.positionAt(selected.node.range![0], position);
+		return { model, modelVersion: input.version,
+			selection: { row: position.row, startColumn: position.column, endColumn: position.column } };
 	}
 	public apply(input: AemEditorInput, quickInput: QuickInputController): void {
 		const resource = input.workingCopy.resource;

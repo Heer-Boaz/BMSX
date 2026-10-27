@@ -43,7 +43,7 @@ for (let font = 0; font < 2; font++) {
 	t.command('theme-toggle'); await t.frames(2);
 	const more = input.actionBar.overflow.button;
 	const opensMore = more.visible;
-	const action = opensMore ? more : input.actionBar.items.find(item => item.command === 'aem.source');
+	const action = opensMore ? more : input.actionBar.items.find(item => item.command === 'editor.source');
 	t.assert(action !== undefined && action.visible && action.enabled && !action.overflowed,
 		'the responsive toolbar did not present its actual Source or More action');
 	await click((action.bounds.left + action.bounds.right) / 2, (action.bounds.top + action.bounds.bottom) / 2);

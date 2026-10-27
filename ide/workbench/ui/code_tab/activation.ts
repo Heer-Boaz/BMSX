@@ -17,6 +17,9 @@ export function storeCodeTabContext(code: CodeEditorControl, context: CodeTabCon
 }
 
 export function applyActiveCodeTabSelection(code: CodeEditorControl, selection: EditorTextSelection): void {
+	const generation = selection.generation;
+	// An admitted opening may publish source edits before its caret is consumed.
+	if (generation !== undefined && (code.model !== generation.model || code.model.version !== generation.modelVersion)) return;
 	code.clearVisualCursor();
 	setSingleCursorPosition(code.view, selection.row, selection.startColumn);
 	setSingleCursorSelectionAnchor(code.view, selection.row, selection.endColumn);

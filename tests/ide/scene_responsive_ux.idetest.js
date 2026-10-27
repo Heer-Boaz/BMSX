@@ -53,7 +53,7 @@ const focusX = async () => {
 };
 const sourceReturn = async () => {
 	const expected = selected().source;
-	t.command('sceneEditor.source'); await t.frames(3);
+	t.command('editor.source'); await t.frames(3);
 	const code = t.activeWorkbenchTab();
 	t.assert(code.kind === 'code_editor' && code.workingCopy === model, 'Source did not open the canonical shared working copy');
 	t.assert(code.context.view.cursorRow === expected.start.line - 1 && code.context.view.cursorColumn === expected.start.column - 1,

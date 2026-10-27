@@ -9,7 +9,6 @@ import { inputFocus } from '../../ide/input/focus';
 import { SceneEditorController } from '../../ide/workbench/contrib/scene_editor/controller';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
-import type { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestEditorGroup, createTestEditorPaneFactories, createTestEditorCloseDependencies, createTestGroupPresentation } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -35,11 +34,7 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
 	const first = createTestEditorGroup(), second = createTestEditorGroup();
-	const opened: Parameters<EditorNavigationController['focusChunkSource']>[] = [];
-	const navigation = { focusChunkSource: (...args: Parameters<EditorNavigationController['focusChunkSource']>) => {
-		opened.push(args); return Promise.resolve(undefined);
-	} } as EditorNavigationController;
-	const controller = new SceneEditorController(sources.catalog, navigation);
+	const controller = new SceneEditorController(sources.catalog);
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	t.after(() => {
 		first.dispose(); second.dispose(); inputFocus.setTarget(null);
@@ -53,8 +48,8 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 	selectSceneOutlineRow(left, 1); selectSceneOutlineRow(right, 0);
 	second.activate(right.id);
 	const siblingRange = { ...right.selectionRange };
-	controller.openSource(first, left);
-	assert.equal(opened[0][0], first); assert.deepEqual(opened[0][1], resource);
+	const location = controller.getSourceLocation(left);
+	assert.ok(location?.model === left.workingCopy); assert.equal(location.modelVersion, left.workingCopy.version);
 	assert.deepEqual(right.selectionRange, siblingRange);
 	assert.equal(controller.canRemoveSelectedMember(right), false);
 	assert.equal(controller.canMoveSelectedMember(left, 1), true);
@@ -75,16 +70,12 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 	assert.equal(left.workingCopy.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 });
 
-test('Scene pane Source and member commands retain their group and input when another group gains focus', t => {
+test('Scene pane source production and member commands retain their input when another group gains focus', t => {
 	const sources = createScenarioTestSourceState([
 		createScenarioTestSourceRecord('scene.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
-	const opened: Parameters<EditorNavigationController['focusChunkSource']>[] = [];
-	const navigation = { focusChunkSource: (...args: Parameters<EditorNavigationController['focusChunkSource']>) => {
-		opened.push(args); return Promise.resolve(undefined);
-	} } as EditorNavigationController;
-	const controller = new SceneEditorController(sources.catalog, navigation);
+	const controller = new SceneEditorController(sources.catalog);
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
@@ -95,7 +86,7 @@ test('Scene pane Source and member commands retain their group and input when an
 	let parts: EditorParts;
 	const factories = createTestEditorPaneFactories();
 	factories.scene_editor = group => new SceneEditorPane(controller, commands as IdeCommandController, sources, menu,
-		surfaces, group.paneSurface, bounds, group, parts, group.focusScope);
+		surfaces, group.paneSurface, bounds, group.focusScope);
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds,
 		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
@@ -117,8 +108,8 @@ test('Scene pane Source and member commands retain their group and input when an
 	pane.update(0); pane.focus();
 	const origin = inputFocus.target!;
 	first.activate(left.id);
-	inputFocus.executeCommand('sceneEditor.source', origin);
-	assert.equal(opened[0][0], second); assert.deepEqual(opened[0][1], resource);
+	const location = pane.getSourceLocation!();
+	assert.ok(location?.model === right.workingCopy); assert.equal(location.modelVersion, right.workingCopy.version);
 	assert.equal(origin.getCommand('sceneEditor.moveMemberDown')!.isEnabled(), true);
 	inputFocus.executeCommand('sceneEditor.moveMemberDown', origin);
 	assert.ok(right.workingCopy.buffer.getText().indexOf("member_id = 'source only'") < right.workingCopy.buffer.getText().indexOf("member_id = 'subject'"));
@@ -139,7 +130,7 @@ scenes.register('incomplete', {})
 		createScenarioTestSourceRecord('unopened.lua', 1, source),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
-	const controller = new SceneEditorController(sources.catalog, {} as EditorNavigationController);
+	const controller = new SceneEditorController(sources.catalog);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
@@ -149,7 +140,7 @@ scenes.register('incomplete', {})
 	let parts: EditorParts;
 	const factories = createTestEditorPaneFactories();
 	factories.scene_editor = group => new SceneEditorPane(controller, commands as IdeCommandController, sources, menu,
-		surfaces, group.paneSurface, bounds, group, parts, group.focusScope);
+		surfaces, group.paneSurface, bounds, group.focusScope);
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds,
 		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),

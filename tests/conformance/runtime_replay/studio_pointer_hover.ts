@@ -7,7 +7,7 @@ import { check, type StudioFixture } from './studio_fixture';
 export async function testStudioPointerHover(test: StudioFixture, scene: SceneEditorInput): Promise<void> {
 	const { ide, frame, press, click, movePointer } = test;
 	const text = scene.workingCopy.buffer.getText();
-	const source = scene.actionBar.items.find(item => item.command === 'sceneEditor.source')!;
+	const source = scene.actionBar.items.find(item => item.command === 'editor.source')!;
 	movePointer(source.bounds); await frame();
 	check(scene.actionBar.hoveredCommand === source.command, 'A09: the real Scene Source button is hovered');
 	movePointer(getProblemsPanelBounds()!); await frame();

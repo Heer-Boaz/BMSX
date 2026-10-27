@@ -72,7 +72,7 @@ function fixture(t: TestContext) {
 	const editorParts = createTestEditorParts(t);
 	const group = editorParts.main.activeGroup;
 	const behavior = new BehaviorLensController(sources, null, new BehaviorSourceDocuments(editorTextModelService, sources.catalog), () => assert.fail('metadata must not start an FSM layout worker'), null, null, null);
-	const scene = new SceneEditorController(sources.catalog, null);
+	const scene = new SceneEditorController(sources.catalog);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const runs = new ScenarioRunService(editorTextModelService, sources, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
 	const scenario = new ScenarioLabController(null, null, null, runs, null);

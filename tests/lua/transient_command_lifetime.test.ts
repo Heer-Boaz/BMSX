@@ -33,7 +33,7 @@ function fixture(t: TestContext) {
 	originGroup.panes.activePane!.focus();
 	const origin = inputFocus.target!;
 	const executed: EditorInput[] = [];
-	origin.registerCommand('aem.source', {
+	origin.registerCommand('editor.source', {
 		isEnabled: () => true,
 		run: () => { executed.push(originGroup.panes.activePane!.input); },
 	});
@@ -62,12 +62,12 @@ for (const transient of ['context menu', 'quick pick'] as const) {
 		});
 		t.after(unbind);
 		if (transient === 'context menu') {
-			f.menu.show(0, 0, [{ type: 'command', command: 'aem.source' }], f.commands,
+			f.menu.show(0, 0, [{ type: 'command', command: 'editor.source' }], f.commands,
 				{ invocationOrigin: f.origin, commandTarget: f.origin, returnFocus: f.origin, selectFirst: true });
 			f.menu.accept();
 		} else {
 			f.picker.pick('Source action', '', () => new TextQuickPickProvider([{ label: 'Source', description: '', detail: '' }]),
-				() => f.commands.execute('aem.source', f.origin));
+				() => f.commands.execute('editor.source', f.origin));
 			f.picker.accept();
 		}
 		assert.equal(group.model.activeTab, replacement);
@@ -82,18 +82,18 @@ test('local keyboard commands do not inherit semantic context or focus-return ca
 	const pane = inputFocus.createTarget(), field = inputFocus.createTarget(pane), returnParent = inputFocus.createTarget();
 	let localUndo = 0, paneUndo = 0, source = 0, parent = 0;
 	pane.registerCommand('undo', { isEnabled: () => true, run: () => { paneUndo++; } });
-	pane.registerCommand('aem.source', { isEnabled: () => true, run: () => { source++; } });
+	pane.registerCommand('editor.source', { isEnabled: () => true, run: () => { source++; } });
 	field.registerCommand('undo', { isEnabled: () => false, run: () => { localUndo++; } });
 	returnParent.registerCommand('redo', { isEnabled: () => true, run: () => { parent++; } });
 	const unbound = inputFocus.createTarget(returnParent);
 	t.after(() => inputFocus.setTarget(null));
-	assert.equal(field.getCommand('aem.source'), undefined, 'focus-return ancestry is not command authority');
+	assert.equal(field.getCommand('editor.source'), undefined, 'focus-return ancestry is not command authority');
 	assert.equal(unbound.getCommand('redo'), undefined);
 	field.commandContext = pane;
 	assert.equal(field.getCommand('undo')!.isEnabled(), false, 'a disabled local action does not fall through to a different owner');
-	assert.equal(field.getCommand('aem.source'), undefined, 'semantic context does not install pane keyboard capabilities');
+	assert.equal(field.getCommand('editor.source'), undefined, 'semantic context does not install pane keyboard capabilities');
 	inputFocus.executeCommand('undo', field);
-	inputFocus.executeCommand('aem.source', field);
+	inputFocus.executeCommand('editor.source', field);
 	inputFocus.executeCommand('redo', unbound);
 	assert.equal(localUndo, 0); assert.equal(paneUndo, 0);
 	assert.equal(source, 0); assert.equal(parent, 0);
@@ -123,11 +123,11 @@ test('Palette captures the explicit Source subject while a disabled field Undo c
 	showCommandPalette(f.picker, commands);
 	const items = f.picker.model.items as ReturnType<typeof buildCommandQuickPickItems>;
 	assert.equal(items.some(item => item.command === 'undo'), false, 'disabled local Undo excludes another owner\'s enabled Undo');
-	const source = items.find(item => item.command === 'aem.source');
+	const source = items.find(item => item.command === 'editor.source');
 	assert.ok(source);
 	assert.equal(source.target, f.origin);
 	assert.equal(f.picker.invocationOrigin, field.focusTarget);
-	f.picker.model.list.selectionIndex = f.picker.model.list.rows.findIndex(row => items[row.itemIndex].command === 'aem.source');
+	f.picker.model.list.selectionIndex = f.picker.model.list.rows.findIndex(row => items[row.itemIndex].command === 'editor.source');
 	t.after(f.picker.field.focusTarget.onDidBlur(() => laterFocus.focus()));
 	f.picker.accept();
 	assert.deepEqual(executedTargets, [f.origin]);

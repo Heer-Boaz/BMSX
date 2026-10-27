@@ -192,7 +192,7 @@ test('one More merges the overflowed primary suffix and authored secondary group
 		assert.ok(!commands.includes('animation.more'));
 		assert.deepEqual(commands.slice(0, state.items.filter(item => item.overflowed).length), state.items.filter(item => item.overflowed).map(item => item.command));
 		assert.ok(commands.includes('animation.addFrame'), 'secondary retains the existing domain visibility policy independently of primary visibility');
-		assert.ok(commands.includes('animation.source'));
+		assert.ok(commands.includes('editor.source'));
 		const firstSecondary = entries.findIndex(item => item.type === 'command' && item.command === 'animation.duplicate');
 		if (firstSecondary > 0) assert.equal(entries[firstSecondary - 1].type, 'separator');
 		for (let index = 1; index < entries.length; index++) assert.ok(entries[index].type !== 'separator' || entries[index - 1].type !== 'separator');

@@ -50,8 +50,13 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { addActionEffectProperty, editableActionEffect, removeActionEffectProperty } from './action_effect_authoring';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { BehaviorSourceIndex } from './source_index';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 
 export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLensInput> {
+	public override getSourceLocation(): EditorSourceLocation | undefined {
+		const input = this.input;
+		return this.controller.getSourceLocation(input);
+	}
 	public override get companionGameMinimumWidth(): number { return measureBehaviorLensMinimumWidth(this.input.view); }
 
 	public override getSelection(): BehaviorLensNavigationSelection {
@@ -176,10 +181,6 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 				},
 			});
 		}
-		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.source', {
-			isEnabled: () => true,
-			run: () => this.controller.openSource(this.group, this.input),
-		});
 		for (const [command, direction] of [['behaviorLens.moveChildEarlier', -1], ['behaviorLens.moveChildLater', 1]] as const) this.graph.focusTarget.registerCommand(command, {
 			isEnabled: () => this.controller.canMoveSelectedChild(this.input, direction),
 			run: () => {
@@ -336,7 +337,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 				acceptEffectPropertySelection(view, view.presentation, result === WorkbenchPropertyPointerResult.Collapse);
 				finishBehaviorLensNavigation(view);
 			}
-			if (result === WorkbenchPropertyPointerResult.Activate) this.controller.openSource(this.group, this.input);
+			if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('editor.source', this.focusTarget);
 			return result !== WorkbenchPropertyPointerResult.Outside;
 		}
 		if (view.presentation.kind !== 'outline') {
@@ -346,13 +347,13 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 				else acceptStateGraphSelection(view, view.presentation);
 			}
 			if (result === WorkbenchGraphPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
-			if (result === WorkbenchGraphPointerResult.Activate) this.controller.openSource(this.group, this.input);
+			if (result === WorkbenchGraphPointerResult.Activate) this.commands.execute('editor.source', this.graph.focusTarget);
 			return result !== WorkbenchGraphPointerResult.Outside;
 		}
 		if (justPressed) this.focus();
 		const result = this.pointer.handle(view, view.presentation, snapshot, justPressed, now);
 		if (result === BehaviorLensPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
-		if (result === BehaviorLensPointerResult.Activate) this.controller.openSource(this.group, this.input);
+		if (result === BehaviorLensPointerResult.Activate) this.commands.execute('editor.source', this.focusTarget);
 		return result !== BehaviorLensPointerResult.Outside;
 	}
 

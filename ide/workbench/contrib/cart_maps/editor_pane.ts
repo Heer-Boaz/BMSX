@@ -1,3 +1,5 @@
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -33,12 +35,16 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import type { EditorFont } from '../../../editor/ui/view/font';
-import type { EditorGroupView } from '../../services/editor/editor_group';
 
 /** Display seeds carry coordinates; an accepted draft carries a versioned source proposal. */
 export type CartMapCoordinateEdit = { readonly coordinate: number; readonly edit?: EditorModelEdit };
 
 export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
+	public override getSourceLocation(): EditorSourceLocation | undefined {
+		const input = this.input;
+		return this.controller.getSourceLocation(input);
+	}
+
 	public override get companionGameMinimumWidth(): number { return measureCartMapMinimumWidth(this.input); }
 	public readonly controls: readonly ValueInput<CartMapCoordinateEdit>[];
 	private readonly actions: WorkbenchActionBarControl;
@@ -69,20 +75,18 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 		else if (mode === 'outline') this.gridFocus.cancelInput();
 	};
 	private readonly beforeFieldHide = (axis: number): void => { this.controls[axis].field.focusTarget.cancelInput(); };
-	public constructor(controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
+	public constructor(private readonly controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>,
-		group: EditorGroupView, scope: InputFocusScope) {
+		scope: InputFocusScope, contextMenu: ContextMenuController) {
 		super(scope);
 		this.tooltip.attach(surfaces, paneSurface, workArea);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'map';
 		this.gridFocus.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline';
 		this.gridFocus.commandContext = this.focusTarget;
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
-		const source = { isEnabled: () => this.hasInput, run: () => controller.openSource(group, this.input) };
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		const map = { isEnabled: () => this.hasInput && this.input.grid.content !== undefined, run: () => this.showSection('map') };
 		const outline = { isEnabled: () => this.hasInput, run: () => this.showSection('outline') };
 		for (const target of [this.focusTarget, this.gridFocus]) {
-			target.registerCommand('cartMap.source', source);
 			target.registerCommand('cartMap.map', map);
 			target.registerCommand('cartMap.outline', outline);
 		}
@@ -115,7 +119,6 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 			const target = this.controls[axis].field.focusTarget;
 			target.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline' && !this.controls[axis].field.readOnly
 				&& this.input.fieldBounds[axis].bottom > this.input.fieldBounds[axis].top && this.input.fieldBounds[axis].right > this.input.fieldBounds[axis].left;
-			target.registerCommand('cartMap.source', source);
 			target.registerCommand('cartMap.map', map);
 			target.registerCommand('cartMap.outline', outline);
 		}

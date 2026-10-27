@@ -10,7 +10,8 @@ import { createLuaTableFieldsInsertionEdits, formatLuaTableFieldSource, validate
 import type { Blua32SourceImage, RuntimeSourceState } from '../../../runtime/sources';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
-import type { EditorNavigationController } from '../resources/navigation';
+import { luaSourceLocation } from '../../../language/lua/source_location';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
@@ -26,7 +27,6 @@ import { captureWorkbenchTreeView, restoreWorkbenchTreeView } from '../../ui/tre
 export class LuaProgramController {
 	private readonly projections = new WeakMap<LuaProgramInput, LuaProgramRuntimeProjection>();
 	public constructor(private readonly sources: RuntimeSourceState, public readonly guest: SuspendedGuestSession,
-		private readonly navigation: EditorNavigationController,
 		private readonly rewind: HostRewind, private readonly transport: RuntimeTransport) {}
 	public readonly createView = (source: LuaProgramInput): LuaProgramInput => {
 		this.refresh(source);
@@ -130,12 +130,14 @@ export class LuaProgramController {
 		input.publishModels();
 		input.status = reader.syntaxComplete ? 'Authored Lua / Save and Hot Resume apply changes' : 'Incomplete syntax / source editing required';
 	}
-	public openSource(group: EditorGroupView, input: LuaProgramInput): void {
+	public getSourceLocation(input: LuaProgramInput): EditorSourceLocation | undefined {
+		this.refresh(input);
 		const row = input.liveVisible ? undefined : input.tree.rows[input.tree.selectionIndex]?.element;
 		const file = row?.file ?? input.occurrence?.file;
-		const range = file === undefined ? undefined : file.chunk.locations.range((row?.expression ?? input.occurrence!.call.expression).span);
-		this.navigation.focusChunkSource(group, file === undefined ? input.workingCopy.resource : input.sourceModels.get(file.file)!.resource,
-			range === undefined ? null : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
+		if (file === undefined) return { model: input.workingCopy, modelVersion: input.workingCopy.version };
+		const model = input.sourceModels.get(file.file)!;
+		const range = file.chunk.locations.range((row?.expression ?? input.occurrence!.call.expression).span);
+		return luaSourceLocation(getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.contextId), model, file, range);
 	}
 	public chooseInstance(input: LuaProgramInput, quickInput: QuickInputController): void {
 		input.interaction.running = false;

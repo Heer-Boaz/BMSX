@@ -24,7 +24,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	let viewport = graph.viewport;
 	const children = () => viewport.model.nodes[0].children[0].children;
 	const duplicate = 'behaviorLens.duplicateChild';
-	const sourceButton = graph.actionBar.items.find(item => item.command === 'behaviorLens.source')!;
+	const sourceButton = graph.actionBar.items.find(item => item.command === 'editor.source')!;
 	let version = model.version;
 	check(!ide.editor.commands.isEnabled(duplicate), 'BT duplicate: a registration is not a list member');
 	await press('ControlLeft', 'KeyD');

@@ -60,14 +60,15 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'animation', 'animation.create', 'animation.createSprite', 'animation.addTrack', 'animation.addKey',
 	'animation.addClip', 'animation.addFrame', 'animation.addProperty', 'animation.openClip',
 	'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.fit', 'animation.snap',
-	'animation.edit', 'animation.remove', 'animation.source', 'animation.producerSource',
+	'editor.source', 'editor.sourceToSide', 'animation.producerSourceToSide',
+	'animation.edit', 'animation.remove', 'animation.producerSource',
 	'animation.tracks', 'animation.keys', 'animation.details',
-	'aem', 'aem.create', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.apply', 'aem.testEvent',
-	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
+	'aem', 'aem.create', 'aem.edit', 'aem.add', 'aem.remove', 'aem.apply', 'aem.testEvent',
+	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'progression', 'inputBindings',
 	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
 	'behaviorLens.addProperty', 'behaviorLens.removeProperty',
-	'cartMap', 'cartMap.source',
-	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source', 'behaviorLens.details',
+	'cartMap',
+	'sceneEditor', 'behaviorLens', 'behaviorLens.details',
 	'behaviorLens.preview',
 	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
 ]);
@@ -128,6 +129,12 @@ export class IdeCommandController {
 		}
 		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
+			case 'editor.source': case 'editor.sourceToSide': {
+				const pane = group.panes.activePane;
+				if (pane === null || pane.input !== editor || pane.getSourceLocation === undefined) return;
+				void this.editor.navigation.openSource(group, () => pane.getSourceLocation!(), command === 'editor.sourceToSide' ? 'side' : 'default');
+				return;
+			}
 			case 'window.restoreMinimized': showOpenWindows(this.editor.editorParts, this.editor.quickInput, true); return;
 			case 'window.showAll': showOpenWindows(this.editor.editorParts, this.editor.quickInput); return;
 			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
@@ -426,6 +433,10 @@ export class IdeCommandController {
 		if (implementation !== undefined) return implementation.isEnabled();
 		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
+			case 'editor.source': case 'editor.sourceToSide': {
+				const pane = group.panes.activePane;
+				return group.openingAdmitted && pane !== null && pane.input === editor && pane.getSourceLocation !== undefined;
+			}
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
 			case 'group.close': return this.editor.editorParts.canCloseGroup(group);

@@ -42,7 +42,7 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 	const graphFocus = inputFocus.target;
 	check(!menu.visible && graphFocus !== null && graphFocus !== sourcePane(test).code.focusTarget, 'context menu: Escape restores graph focus');
 	await press('ShiftLeft', 'F10');
-	check(menu.visible && menu.model.rows[menu.model.selectedIndex].command === 'behaviorLens.source',
+	check(menu.visible && menu.model.rows[menu.model.selectedIndex].command === 'editor.source',
 		'context menu: keyboard opens on selected graph node with first enabled command');
 	// Source opens on key release; a held activation cannot become typing in the destination.
 	setKey('Enter', true); for (let i = 0; i < 30; i += 1) await frame();

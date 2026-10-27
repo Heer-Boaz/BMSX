@@ -43,7 +43,7 @@ test('Scene fresh views preserve the selected source occurrence while retaining 
 		createScenarioTestSourceRecord('scene.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
-	const controller = new SceneEditorController(sources.catalog, null!);
+	const controller = new SceneEditorController(sources.catalog);
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	controller.openResource(group, resource);
@@ -72,7 +72,7 @@ test('Animation fresh views retain their exact imported subject and deep-copy so
 	const sources = createScenarioTestSourceState([
 		createScenarioTestSourceRecord('animation.lua', 1, text), createScenarioTestSourceRecord('tracks.lua', 1, imported),
 	]);
-	const controller = new AnimationEditorController(sources.catalog, null!), group = createTestEditorGroup();
+	const controller = new AnimationEditorController(sources.catalog), group = createTestEditorGroup();
 	t.after(() => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua' })!;
 	const source = controller.openResource(group, resource);
@@ -106,7 +106,7 @@ test('Animation fresh views keep the selected definition and its consuming sourc
 		createScenarioTestSourceRecord('second.lua', 1, 'return {duration_frames=2}'),
 		createScenarioTestSourceRecord('cartlib/component/sprite_animation_component.lua', 1, ''),
 	]);
-	const controller = new AnimationEditorController(sources.catalog, null!), group = createTestEditorGroup(); t.after(() => group.dispose());
+	const controller = new AnimationEditorController(sources.catalog), group = createTestEditorGroup(); t.after(() => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'consumer.lua' })!;
 	const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId); project.synchronizeSources(sources.catalog);
 	const definition = collectAnimationDefinitions(resource, project.getSnapshot()).find(candidate => candidate.file.file === resourceIdentityKey({ contextId: resource.contextId, path: 'second.lua' }))!;
@@ -130,7 +130,7 @@ test('LuaProgram fresh views share authored imported working copies but never co
 	]);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload()), guest = new SuspendedGuestSession(runtime);
 	const transport = new RuntimeTransport(runtime, null!, null!, null!, () => true);
-	const controller = new LuaProgramController(sources, guest, null!, null!, transport), group = createTestEditorGroup();
+	const controller = new LuaProgramController(sources, guest, null!, transport), group = createTestEditorGroup();
 	t.after(() => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'program.lua' })!;
 	const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId); project.synchronizeSources(sources.catalog);

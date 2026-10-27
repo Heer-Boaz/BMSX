@@ -6,7 +6,9 @@ import { editorTextModelService } from '../../../editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { Blua32SourceImage, RuntimeSourceState } from '../../../runtime/sources';
-import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, resourceIdentityEquals, type ResourceDomain, type ResourceIdentity } from '../../../common/resource';
+import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, resourceIdentityEquals, resourceIdentityKey, type ResourceDomain, type ResourceIdentity } from '../../../common/resource';
+import { luaSourceLocation } from '../../../language/lua/source_location';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
@@ -181,10 +183,15 @@ export class BehaviorLensController {
 		group.openEditor(new WorkspaceEditReviewInput(proposal, evidence));
 	}
 
-	public openSource(group: EditorGroupView, input: BehaviorLensInput): void {
+	public getSourceLocation(input: BehaviorLensInput, subject: 'selected' | 'definition' = 'selected'): EditorSourceLocation | undefined {
 		this.updateView(input);
-		if (selectedBehaviorLensSourceRange(input.view) === null) this.openDefinitionSource(group, input.view);
-		else this.openSelectedSource(group, input.view);
+		const view = input.view;
+		const selected = subject === 'selected' ? selectedBehaviorLensSourceRange(view) : null;
+		const range = selected ?? (view.definitionRowKey === null ? undefined : view.source.nodesByRowKey.get(view.definitionRowKey)!.occurrenceRange);
+		const model = range === undefined ? input.workingCopy : view.source.models.get(range.path)!;
+		const path = resourceIdentityKey(model.identity), file = view.document.files.find(file => file.file === path)!;
+		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.contextId);
+		return luaSourceLocation(project, model, file, range);
 	}
 
 	public inspectRuntimeEffect(group: EditorGroupView, quickInput: QuickInputController, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
@@ -411,11 +418,11 @@ export class BehaviorLensController {
 		const view = input.view;
 		const result = executeBehaviorLensNavigation(view, command);
 		if (result === BehaviorLensNavigationResult.Activate) {
-			this.openSelectedSource(group, view);
+			void this.navigation.openSource(group, () => this.getSourceLocation(input));
 			return true;
 		}
 		if (result === BehaviorLensNavigationResult.Back) {
-			this.openDefinitionSource(group, view);
+			void this.navigation.openSource(group, () => this.getSourceLocation(input, 'definition'));
 			return true;
 		}
 		if (result === BehaviorLensNavigationResult.Changed) {
@@ -428,33 +435,4 @@ export class BehaviorLensController {
 		return result === BehaviorLensNavigationResult.Panned;
 	}
 
-
-	private openSelectedSource(group: EditorGroupView, view: BehaviorLensViewState): void {
-		const range = selectedBehaviorLensSourceRange(view);
-		if (range === null) {
-			return;
-		}
-		this.navigation.focusChunkSource(
-			group,
-			view.source.models.get(range.path)!.resource,
-			{
-				row: range.start.line - 1,
-				startColumn: range.start.column - 1,
-				endColumn: range.start.column - 1,
-			},
-		);
-	}
-
-	private openDefinitionSource(group: EditorGroupView, view: BehaviorLensViewState): void {
-		if (view.definitionRowKey === null) {
-			this.navigation.focusChunkSource(group, view.resource);
-			return;
-		}
-		const range = view.source.nodesByRowKey.get(view.definitionRowKey)!.occurrenceRange;
-		this.navigation.focusChunkSource(group, view.source.models.get(range.path)!.resource, {
-			row: range.start.line - 1,
-			startColumn: range.start.column - 1,
-			endColumn: range.start.column - 1,
-		});
-	}
 }

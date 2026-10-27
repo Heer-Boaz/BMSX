@@ -430,7 +430,7 @@ export class RuntimeCartEditor implements CartEditor {
 			home: group => new HomeEditorPane(this.commands, group.focusScope),
 			play_session: group => new PlayEditorPane(this.commands, this.play, this.contextMenu, this.navigation, group,
 				this.editorParts.partForGroup(group).quickInput, group.focusScope),
-			animation: group => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput),
+			animation: group => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput, this.navigation),
 			host_error: group => new HostErrorPane(group.focusScope),
 			build_log: group => new BuildLogPane(this.clipboard, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
 			rom_inspector: group => new RomInspectorPane(this.commands, this.sources, this.navigation, this.editorParts.partForGroup(group).quickInput, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
@@ -456,14 +456,14 @@ export class RuntimeCartEditor implements CartEditor {
 				this.clock,
 			),
 			resource_view: group => new ResourceViewerEditorPane(group.focusScope),
-			aem_editor: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput),
+			aem_editor: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.editorParts.partForGroup(group).quickInput),
 			lua_program: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput),
 			behavior_lens: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput),
 			actor_lab: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea,
 				group, this.editorParts.partForGroup(group).quickInput, group.focusScope),
 			game_view: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope),
-			cart_map: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
-			scene_editor: group => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, this.editorParts, group.focusScope),
+			cart_map: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.contextMenu),
+			scene_editor: group => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
 			scenario_lab: group => new ScenarioLabEditorPane(
 				this.scenarioLab,
 				this.commands,
@@ -536,10 +536,11 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources.catalog,
 			this.resourcePanel,
 			this.resourceEditors,
+			this.editorParts,
 		);
 		this.cartMaps = new CartMapController(this.sources.catalog);
-		this.sceneEditor = new SceneEditorController(this.sources.catalog, this.navigation);
-		this.animations = new AnimationEditorController(this.sources.catalog, this.navigation);
+		this.sceneEditor = new SceneEditorController(this.sources.catalog);
+		this.animations = new AnimationEditorController(this.sources.catalog);
 		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
 			this.editorParts, this.navigation, actorExecution, rewind, sources,
 			{ kind: 'direct', presenter, recipient: input, transport: this.commands.transport });
@@ -563,7 +564,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.play,
 		);
 		this.aemEditor = new AemEditorController(sources, guest, runtime, runtimeTasks);
-		this.luaPrograms = new LuaProgramController(sources, guest, this.navigation, rewind, workbench.transport);
+		this.luaPrograms = new LuaProgramController(sources, guest, rewind, workbench.transport);
 		this.actionStrings = new ActionStringTester(sources.catalog, clock, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {
 			home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.context) },

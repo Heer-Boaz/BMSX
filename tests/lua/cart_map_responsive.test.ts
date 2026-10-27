@@ -1,3 +1,4 @@
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -44,8 +45,10 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	t.after(() => menu.dispose());
 	const pane = new CartMapPane(null!, commands,
-		createScenarioTestSourceState([]), surfaces, surface, bounds, undefined!, inputFocus.workbenchScope);
+		createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope, menu);
 	const keybindings = new EditorCommandKeybindingController(inputFocus, new VirtualHeadlessClock());
 	pane.setInput(input, bounds); pane.update();
 	const layout = (nextWidth = bounds.right - bounds.left, nextVariant: 'tiny' | 'msx' = editorViewState.font.variant) => {

@@ -54,7 +54,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 		'zoom: navigation preserves selection and does not run layout');
 	await press('ShiftLeft', 'F10');
 	const menu = ide.editor.contextMenu;
-	check(menu.visible && menu.model.rows.some(row => row.command === 'behaviorLens.source' && row.enabled)
+	check(menu.visible && menu.model.rows.some(row => row.command === 'editor.source' && row.enabled)
 		&& menu.model.rows.every(row => row.command === undefined || !row.command.startsWith('graph.')), 'zoom: selected-node menu contains target actions, not viewport zoom');
 	await press('Escape');
 	await runPaletteCommand('Graph: Reset Zoom (100%)');

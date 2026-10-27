@@ -7,7 +7,7 @@ import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { FileQuickPickProvider } from '../../services/quick_input/file_provider';
 import { resolveTextFileModel } from '../../services/working_copy/text_file_model';
-import { resolveTextCodeEditorInput } from '../../ui/code_tab/io';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import { buildResourceQuickPickItems } from '../resources/quick_access';
 import { CartMapInput, type CartMapKind } from './editor_input';
 import { projectCartMap } from './source_projection';
@@ -44,12 +44,11 @@ export class CartMapController {
 		void group.openResolvedEditor(() => resolveCartMapInput(this.catalog, resource, kind))
 			.catch(error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
 	}
-	public openSource(group: EditorGroupView, input: CartMapInput): void {
+	public getSourceLocation(input: CartMapInput): EditorSourceLocation {
 		projectCartMap(input);
-		const position = { row: 0, column: 0 };
-		input.workingCopy.buffer.positionAt(input.selectionRange.start, position);
-		void group.openResolvedEditor(() => resolveTextCodeEditorInput(this.catalog, input.workingCopy.resource),
-			{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } })
-			.catch(error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
+		const model = input.workingCopy, position = { row: 0, column: 0 };
+		model.buffer.positionAt(input.selectionRange.start, position);
+		return { model, modelVersion: input.version,
+			selection: { row: position.row, startColumn: position.column, endColumn: position.column } };
 	}
 }

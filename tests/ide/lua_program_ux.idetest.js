@@ -71,7 +71,7 @@ for (const variant of ['tiny', 'msx']) {
 	t.assert(more.visible, 'the actual program has no secondary-action menu');
 	const commands = [...bar.items.filter(item => item.visible && !item.overflowed).map(item => item.command),
 		...bar.overflow.items.filter(item => item.type === 'command').map(item => item.command)];
-	t.assert(commands.includes('luaProgram.source') && commands.includes('luaProgram.selectInstance') && new Set(commands).size === commands.length,
+	t.assert(commands.includes('editor.source') && commands.includes('luaProgram.selectInstance') && new Set(commands).size === commands.length,
 		'primary overflow and filtered secondary context are not one complete command set');
 	t.assert(!commands.includes('luaProgram.more') && !commands.includes('luaProgram.testInput'), 'the popup contains nested More or an ineligible input-only command');
 	await click(8, input.live.layout.contentTop + input.live.layout.rowHeight / 2);
@@ -88,14 +88,14 @@ for (const variant of ['tiny', 'msx']) {
 	if (variant === 'tiny') await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 // Invoke Source from whichever actual action surface owns it at this width.
-const sourceAction = input.actionBar.items.find(item => item.command === 'luaProgram.source');
+const sourceAction = input.actionBar.items.find(item => item.command === 'editor.source');
 if (sourceAction.visible && !sourceAction.overflowed) {
 	await click((sourceAction.bounds.left + sourceAction.bounds.right) / 2, (sourceAction.bounds.top + sourceAction.bounds.bottom) / 2);
 } else {
 	await press('Enter');
 	const eligible = input.actionBar.overflow.items.filter(entry => entry.type === 'command'
 		&& !input.actionBar.items.some(item => item.command === entry.command && !item.enabled));
-	const sourceIndex = eligible.findIndex(item => item.command === 'luaProgram.source');
+	const sourceIndex = eligible.findIndex(item => item.command === 'editor.source');
 	t.assert(sourceIndex >= 0, 'the actual Source action was not reachable');
 	await press('Home');
 	for (let row = 0; row < sourceIndex; row++) await press('ArrowDown');

@@ -241,7 +241,7 @@ test('Scene and Source use real sibling groups while canonical edits, Save and S
 	const source = sourceGroup.panes.getPane('code_editor')!;
 	assert.ok(source instanceof CodeEditorPane);
 	assert.ok(source.input.workingCopy === scene.workingCopy);
-	f.editor.commands.execute('sceneEditor.source', scenePane.commandTarget); await setImmediate(); f.update();
+	f.editor.commands.execute('editor.source', scenePane.commandTarget); await setImmediate(); f.update();
 	assert.equal(parts.activeGroup, sourceGroup);
 	assert.equal(parts.documents.length, 0, 'ordinary Source navigation does not invent a floating host');
 	assert.equal(sceneGroup.model.activeTab, scene); assert.equal(sceneGroup.panes.activePane, scenePane);

@@ -61,7 +61,7 @@ for (const font of ['tiny', 'msx']) {
 				'property acceptance replaced the canonical document or lost its exact edit history');
 			const position = { row: 0, column: 0 };
 			model.buffer.positionAt(tree.rows[tree.selectionIndex].element.node.range[0], position);
-			t.command('aem.source'); await t.frames(3);
+			t.command('editor.source'); await t.frames(3);
 			const code = t.activeWorkbenchTab();
 			t.assert(code.kind === 'code_editor' && code.workingCopy === model && code.resource === resource
 				&& code.context.view.cursorRow === position.row && code.context.view.cursorColumn === position.column,

@@ -1,3 +1,4 @@
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -45,6 +46,11 @@ const SOURCE_VALUE_READING_COLUMNS = 20;
 const RUNTIME_VALUE_READING_COLUMNS = 24;
 
 export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInput> {
+	public override getSourceLocation(): EditorSourceLocation | undefined {
+		const input = this.input;
+		return this.controller.getSourceLocation(input);
+	}
+
 	// A root property keeps a meaningful source name and expression, including its tree/control lanes.
 	public override get companionGameMinimumWidth(): number {
 		return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(), PROPERTY_NAME_READING_COLUMNS,
@@ -94,7 +100,6 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 			const property = this.selected();
 			return property?.field !== undefined && property.container!.structural && !this.input.sourceModels.get(property.file.file)!.readOnly;
 		}, run: () => this.controller.remove(this.input) });
-		this.focusTarget.registerCommand('luaProgram.source', { isEnabled: () => true, run: () => this.controller.openSource(group, this.input) });
 		this.focusTarget.registerCommand('luaProgram.live', { isEnabled: () => !this.input.liveVisible, run: () => {
 			this.input.interaction.running = false;
 			if (this.input.instance === undefined) this.controller.chooseInstance(this.input, this.quickInput);

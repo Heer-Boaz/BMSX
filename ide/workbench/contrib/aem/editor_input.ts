@@ -1,3 +1,4 @@
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { Document, Node } from 'yaml';
 import { WorkingCopyEditorInput, type AbstractEditorInput } from '../../common/editor_input';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -22,7 +23,7 @@ export type AemProperty = WorkbenchPropertyElement & {
 
 export class AemEditorInput extends WorkingCopyEditorInput<`aem:${string}`, 'aem_editor'> {
 	public readonly tree = createWorkbenchPropertyTree<AemProperty>();
-	public readonly actionBar = createWorkbenchActionBar('aem.title', true);
+	public readonly actionBar = createWorkbenchActionBar('aem.title', true, WORKBENCH_MENUS['editor.source.actions']);
 	public version = -1;
 	public document: Document | undefined;
 	public source = '';

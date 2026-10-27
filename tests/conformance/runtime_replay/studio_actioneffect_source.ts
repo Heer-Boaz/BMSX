@@ -111,7 +111,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	await click(propertyBounds, 1, 'pointer_secondary');
 	check(ide.editor.contextMenu.visible && view.selection?.rowKey === period.source.rowKey,
 		'ActionEffect context: right click targets the property without expanding or activating it');
-	await test.clickContextCommand('behaviorLens.source');
+	await test.clickContextCommand('editor.source');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
 		'ActionEffect context: shared menu opens exact field source without editing');
 	const oldDocument = view.document;

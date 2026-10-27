@@ -6,6 +6,7 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../common/editor_inputs';
 import type { InputFocusScope, InputFocusTarget } from '../../../input/focus';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 
 export type EditorPaneClearReason = 'deactivate' | 'move';
 
@@ -24,6 +25,8 @@ export abstract class EditorPane<TInput extends EditorInput> {
 
 	/** Optional selection capability; editors without one still have an input identity. */
 	public getSelection?(): EditorPaneSelection;
+	/** The contribution owns source meaning and the canonical generation behind its selection. */
+	public getSourceLocation?(): EditorSourceLocation | undefined;
 	private inputValue: TInput | null = null;
 	protected get hasInput(): boolean { return this.inputValue !== null; }
 

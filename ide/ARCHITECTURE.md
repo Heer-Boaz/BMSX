@@ -74,6 +74,16 @@ normalizes and retires an empty group; the final routing leaf remains present.
 Ordinary opening uses actual matching views and the invoking group,
 independently of editor kind; creating a floating part is explicit. Floating
 parts use the shared window container, not another Studio session or workspace.
+Visual panes expose an optional source-location capability: the contribution
+selects the canonical text model, source generation and authored caret. Shared
+editor commands and resource navigation own opening admission, history and
+placement. Ordinary Source follows text-view affinity; explicit Source to Side
+uses a neighbor in the invoking part. Producer/provenance navigation remains a
+separate contribution action when it names a different subject. A source
+location never reconstructs text from a visual or runtime projection. Opening
+admission retains the requesting attachment; the text-selection consumer
+applies generation-bound coordinates only to their exact canonical model
+generation, independently of the already admitted view.
 Workspace storage records
 part topology and requested placement independently of shared source recovery.
 Workspace persistence is unversioned. Frontend layout, editor-view mementos

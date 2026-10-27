@@ -40,7 +40,7 @@ test('Scene move retains its exact member and canonical history while Source bel
 	assert.deepEqual(captureSceneEditorView(input), view);
 	assert.ok(input.workingCopy === model && model.history === history && model.canUndo);
 	assert.equal(model.version, version); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
-	f.editor.commands.execute('sceneEditor.source', f.secondGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
+	f.editor.commands.execute('editor.source', f.secondGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
 	const source = f.secondGroup.panes.activePane!.input;
 	assert.ok(source?.kind === 'code_editor' && source.workingCopy === model);
 	assert.ok(f.editor.editorParts.activePart === f.secondPart && f.firstGroup.model.activeTab === f.firstInput);
@@ -65,7 +65,7 @@ test('CartMap move to Main retains selected authored marker and grid intent, and
 	assert.deepEqual(captureCartMapView(input), view);
 	assert.ok(input.workingCopy === model && model.history === history && model.canUndo);
 	assert.equal(model.version, version); assert.equal(model.buffer.getText(), '# retained\n' + source);
-	f.editor.commands.execute('cartMap.source', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget.commandContext);
+	f.editor.commands.execute('editor.source', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget.commandContext);
 	await setImmediate(); f.update();
 	const code = f.editor.editorParts.main.activeGroup.panes.activePane!.input;
 	assert.ok(code?.kind === 'code_editor' && code.workingCopy === model);
@@ -97,7 +97,7 @@ test('busy AEM refuses collision disposal but moves its same operation to a new 
 	assert.equal(destination.quickInput.visible, true); assert.equal(f.firstPart.quickInput.visible, false);
 	assert.ok(inputFocus.target === destination.quickInput.field.focusTarget);
 	f.key('Escape'); assert.equal(destination.quickInput.visible, false);
-	f.editor.commands.execute('aem.source', destination.activeGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
+	f.editor.commands.execute('editor.source', destination.activeGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
 	const code = destination.activeGroup.panes.activePane!.input;
 	assert.ok(code?.kind === 'code_editor' && code.workingCopy === model);
 	assert.equal(model.buffer.getText(), '# retained\n' + source); assert.equal(model.version, version);
@@ -126,7 +126,7 @@ test('imported Animation move keeps exact key bindings and source ownership, and
 	f.editor.commands.execute('animation.addTrack', f.secondGroup.panes.activePane!.commandTarget.commandContext);
 	assert.equal(f.secondPart.quickInput.visible, true); assert.equal(f.firstPart.quickInput.visible, false);
 	f.key('Escape');
-	f.editor.commands.execute('animation.source', f.secondGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
+	f.editor.commands.execute('editor.source', f.secondGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
 	const code = f.secondGroup.panes.activePane!.input;
 	assert.ok(code?.kind === 'code_editor' && code.workingCopy === imported);
 	assert.equal(input.workingCopy.buffer.getText(), primary); assert.equal(imported.buffer.getText(), '-- retained\n' + tracks);
@@ -150,7 +150,7 @@ test('Behavior live inspection vetoes transfer, then its same authored graph and
 	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondGroup.model.activeTab === input); assert.ok(input.getWorkingCopies().includes(model));
 	assert.deepEqual(captureBehaviorLensView(input), view);
-	f.editor.commands.execute('behaviorLens.source', f.secondGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
+	f.editor.commands.execute('editor.source', f.secondGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();
 	const code = f.secondGroup.panes.activePane!.input;
 	assert.ok(code?.kind === 'code_editor' && code.workingCopy === model);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained lease\n' }]);
@@ -182,7 +182,7 @@ test('LuaProgram move retains its running interaction and binds subsequent autho
 	f.editor.commands.execute('luaProgram.add', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget.commandContext);
 	assert.equal(f.editor.editorParts.main.quickInput.visible, true); assert.equal(f.firstPart.quickInput.visible, false);
 	f.key('Escape');
-	f.editor.commands.execute('luaProgram.source', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget.commandContext);
+	f.editor.commands.execute('editor.source', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget.commandContext);
 	await setImmediate(); f.update();
 	const code = f.editor.editorParts.main.activeGroup.panes.activePane!.input;
 	assert.ok(code?.kind === 'code_editor' && code.workingCopy === model);

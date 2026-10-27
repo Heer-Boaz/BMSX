@@ -182,7 +182,7 @@ for (const format of ['yaml', 'json'] as const) {
 		assert.equal(aem.model.buffer.getText(), edited); assert.equal(aem.model.canUndo, true);
 		const position = { row: 0, column: 0 };
 		aem.model.buffer.positionAt(aem.input.tree.rows[aem.input.tree.selectionIndex].element.node.range![0], position);
-		f.editor.commands.execute('aem.source'); await setImmediate(); f.editor.update(0);
+		f.editor.commands.execute('editor.source'); await setImmediate(); f.editor.update(0);
 		const code = f.editor.editorParts.main.activeGroup.model.activeTab!; assert.ok(code.kind === 'code_editor');
 		assert.ok(code.workingCopy === aem.model && code.resource === aem.input.resource && f.pane.code.model === aem.model);
 		assert.notEqual(code.id, aem.input.id);

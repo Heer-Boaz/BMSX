@@ -18,7 +18,7 @@ import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_
 import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
-import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createTestEditorGroup, createTestEditorParts } from '../helpers/editor_panes';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
@@ -183,7 +183,7 @@ test('one explicit navigation records a departure before mutating the same retai
 
 test('history awaits the registered resource opener and restores a closed text input after hidden edits', async t => {
 	configureFontVariant('tiny');
-	const group = createTestEditorGroup();
+	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	t.after(initializeNavigationState(group));
 	const origin = code('origin.lua'); group.openEditor(origin);
 	const closed = code('target.lua'); closed.context.view.cursorRow = 1; closed.context.view.cursorColumn = 6;
@@ -204,7 +204,7 @@ test('history awaits the registered resource opener and restores a closed text i
 			id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async actual => {
 				assert.equal(actual, resource); await openGate; return reopened;
 			},
-		}]),
+		}]), parts,
 	);
 	t.after(() => { group.dispose(); });
 	const version = reopened.workingCopy.version;
@@ -222,7 +222,7 @@ test('history awaits the registered resource opener and restores a closed text i
 
 test('Back activates a surviving visual preview without turning navigation into Keep Open', async t => {
 	configureFontVariant('tiny');
-	const group = createTestEditorGroup();
+	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	t.after(initializeNavigationState(group));
 	const origin = code('origin.lua'); group.openEditor(origin);
 	const visual = new SceneEditorInput(origin.workingCopy);
@@ -231,7 +231,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 	navigationState.back.push(target);
 	const navigation = new EditorNavigationController(
 		new WorkspaceSourceCatalog(), { focusTarget: inputFocus.createTarget(), isFocused: () => false } as ResourcePanelController,
-		new ResourceEditorResolver([]),
+		new ResourceEditorResolver([]), parts,
 	);
 	t.after(() => { group.dispose(); });
 	await navigation.goBackward();
@@ -245,7 +245,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 for (const route of ['resource', 'history'] as const) for (const interruption of ['new navigation', 'direct tab', 'same tab', 'teardown', 'owner disposal'] as const) {
 	test(`slow ${route} resolution cannot reactivate after ${interruption}`, async t => {
 		configureFontVariant('tiny');
-		const group = createTestEditorGroup();
+		const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 		t.after(initializeNavigationState(group));
 		const origin = code('origin.lua'); group.openEditor(origin);
 		const older = code('older.lua'), newer = code('newer.lua');
@@ -262,7 +262,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 					if (resource === older.workingCopy.resource) { await openGate; return older; }
 					return newer;
 				},
-			}]),
+			}]), parts,
 		);
 		t.after(() => { group.dispose(); });
 		const target = new NavigationHistoryEntry({ kind: 'resource', ...older.toResourceEditor() }, new CodeEditorNavigationSelection(older), group);
@@ -297,7 +297,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 
 test('cancelled resolution disposes its fresh candidate without disturbing the retained same-resource input', async t => {
 	configureFontVariant('tiny');
-	const group = createTestEditorGroup();
+	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	t.after(initializeNavigationState(group));
 	const input = code('retained.lua'); group.openEditor(input);
 	const candidate = new CodeEditorInput(input.workingCopy);
@@ -306,7 +306,7 @@ test('cancelled resolution disposes its fresh candidate without disturbing the r
 	const navigation = new EditorNavigationController(
 		new WorkspaceSourceCatalog(),
 		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
-		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => candidate }]),
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => candidate }]), parts,
 	);
 	t.after(() => { group.dispose(); });
 	const pending = navigation.openResource(group, input.workingCopy.resource);
@@ -319,7 +319,7 @@ test('cancelled resolution disposes its fresh candidate without disturbing the r
 
 test('a delayed resource open preserves a newer focus target in the same owning group', async t => {
 	configureFontVariant('tiny');
-	const group = createTestEditorGroup();
+	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	t.after(initializeNavigationState(group));
 	t.after(() => group.dispose());
 	group.openEditor(code('origin.lua'));
@@ -330,7 +330,7 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 		new WorkspaceSourceCatalog(),
 		{} as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
-			createEditorInput: async () => { await gate; return candidate; } }]),
+			createEditorInput: async () => { await gate; return candidate; } }]), parts,
 	);
 	const pending = navigation.openResource(group, candidate.workingCopy.resource);
 	// A group-owned popup may take focus while its content resource is resolving.
@@ -347,7 +347,7 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 
 test('async resource admission captures the departure before an in-control caret move', async t => {
 	configureFontVariant('tiny');
-	const group = createTestEditorGroup();
+	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	t.after(initializeNavigationState(group));
 	t.after(() => group.dispose());
 	const origin = code('origin.lua');
@@ -361,7 +361,7 @@ test('async resource admission captures the departure before an in-control caret
 		new WorkspaceSourceCatalog(),
 		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
-			createEditorInput: async () => { await gate; return destination; } }]),
+			createEditorInput: async () => { await gate; return destination; } }]), parts,
 	);
 	const focused = inputFocus.target;
 	const pending = navigation.openResource(group, destination.workingCopy.resource);
@@ -380,7 +380,7 @@ test('async resource admission captures the departure before an in-control caret
 
 for (const direction of ['back', 'forward'] as const) test(`invalid focused draft does not consume ${direction} navigation or leave its current view`, async t => {
 	configureFontVariant('tiny');
-	const group = createTestEditorGroup();
+	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	t.after(initializeNavigationState(group));
 	t.after(() => group.dispose());
 	const first = code('first.lua'), second = code('second.lua');
@@ -391,7 +391,7 @@ for (const direction of ['back', 'forward'] as const) test(`invalid focused draf
 		catalog,
 		{ focusTarget: inputFocus.createTarget() } as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
-			createEditorInput: resource => new CodeEditorInput(editorTextModelService.get(resource)!) }]));
+			createEditorInput: resource => new CodeEditorInput(editorTextModelService.get(resource)!) }]), parts);
 	if (direction === 'forward') await navigation.goBackward();
 	const current = group.model.activeTab, focus = inputFocus.target!;
 	const back = [...navigationState.back], forward = [...navigationState.forward];
@@ -409,7 +409,7 @@ for (const direction of ['back', 'forward'] as const) test(`invalid focused draf
 
 for (const direction of ['back', 'forward'] as const) test(`an invalid draft begun during ${direction} resolution retains the original destination for retry`, async t => {
 	configureFontVariant('tiny');
-	const group = createTestEditorGroup();
+	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	t.after(initializeNavigationState(group));
 	let control: ValueInput<number> | undefined;
 	t.after(() => { control?.cancel(); inputFocus.setTarget(null); control?.dispose(); group.dispose(); });
@@ -431,7 +431,7 @@ for (const direction of ['back', 'forward'] as const) test(`an invalid draft beg
 					candidate.onWillDispose(() => { retired += 1; });
 				}
 				return candidate;
-			} }]));
+			} }]), parts);
 	if (direction === 'forward') await navigation.goBackward();
 	const current = direction === 'back' ? second : first, destination = direction === 'back' ? first : second;
 	const back = [...navigationState.back], forward = [...navigationState.forward], target = navigationState[direction].at(-1)!;

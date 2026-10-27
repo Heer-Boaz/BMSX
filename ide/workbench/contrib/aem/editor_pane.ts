@@ -1,3 +1,4 @@
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -7,7 +8,6 @@ import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
-import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
@@ -44,6 +44,11 @@ const PROPERTY_NAME_READING_COLUMNS = 12;
 const EXPRESSION_READING_COLUMNS = 20;
 
 export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
+	public override getSourceLocation(): EditorSourceLocation | undefined {
+		const input = this.input;
+		return this.controller.getSourceLocation(input);
+	}
+
 	public override getSelection(): AemNavigationSelection { return new AemNavigationSelection(this.input); }
 	// A root property keeps a meaningful source name and expression, including its tree/control lanes.
 	public override get companionGameMinimumWidth(): number {
@@ -55,7 +60,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 	private readonly edit: WorkbenchPropertyEdit<EditorTextEdit>;
 	private readonly actionTooltip = new WorkbenchTooltip();
 	public constructor(private readonly controller: AemEditorController, private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.tree.layout.visibleRowCount > 0;
 		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
@@ -77,7 +82,6 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		this.focusTarget.registerCommand('aem.remove', { isEnabled: () => !this.input.workingCopy.readOnly && this.input.tree.rows[this.input.tree.selectionIndex]?.element.parent !== undefined,
 			run: () => this.controller.remove(this.input) });
 		this.focusTarget.registerCommand('aem.apply', { isEnabled: () => !this.input.applying, run: () => this.controller.apply(this.input, this.quickInput) });
-		this.focusTarget.registerCommand('aem.source', { isEnabled: () => true, run: () => this.controller.openSource(group, this.input) });
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => true, run: () => {
 			const tree = this.input.tree;
 			this.openContextMenu(tree.layout.contentLeft + 8, tree.layout.contentTop + (tree.selectionIndex - (tree.scroll | 0)) * tree.layout.rowHeight, true);

@@ -115,7 +115,7 @@ await capture('audio-events-more-keyboard');
 await press('Escape');
 t.assert(audio.actionBar.hasFocus, 'dismissing keyboard More did not restore its actual toolbar focus');
 await press('Enter');
-await chooseOverflowCommand(audio.actionBar, 'aem.source');
+await chooseOverflowCommand(audio.actionBar, 'editor.source');
 await t.frames(3);
 const audioCode = t.activeWorkbenchTab();
 t.assert(audioCode.kind === 'code_editor' && audioCode.workingCopy === audio.workingCopy,

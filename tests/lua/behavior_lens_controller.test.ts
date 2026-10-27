@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { KeyInputEvent } from '../../hosts/common/input/text';
 import type { EditorCommandRunner } from '../../ide/common/commands';
-import type { ResourceIdentity } from '../../ide/common/resource';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
@@ -47,7 +44,7 @@ function fixture(t: TestContext, source = SOURCE) {
 	]);
 	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const surfaces = new WorkbenchSurfaceService();
-	const navigation = new EditorNavigationController(sources.catalog, null!, null!);
+	const navigation = new EditorNavigationController(sources.catalog, null!, null!, null!);
 	const documents = new BehaviorSourceDocuments(editorTextModelService, sources.catalog);
 	const controller = new BehaviorLensController(sources, navigation, documents,
 		() => assert.fail('Behavior-tree views do not create an FSM layout worker'), null!, null!, null!);
@@ -80,22 +77,10 @@ function fixture(t: TestContext, source = SOURCE) {
 	return { controller, documents, navigation, picker, first, second, registration };
 }
 
-test('Behavior Lens toolbar publishes and dispatches its concrete local Source capability on first attachment', t => {
+test('Behavior Lens pane publishes its canonical source location on first attachment', t => {
 	const f = fixture(t), input = f.controller.openDefinition(f.first, f.registration);
-	const opened = t.mock.method(f.navigation, 'focusChunkSource', () => Promise.resolve(1));
-	f.first.panes.activePane!.focus();
-	const graph = inputFocus.target!;
-	assert.equal(inputFocus.moveFocus(false), true);
-	const toolbar = inputFocus.target;
-	assert.ok(toolbar !== null && toolbar !== graph && toolbar.parent === graph.commandContext);
-	assert.ok(toolbar.getCommand('behaviorLens.source') === graph.getCommand('behaviorLens.source'));
-	inputFocus.handleKeyboard(new KeyInputEvent('Enter', 0, false, true));
-	assert.equal(opened.mock.callCount(), 0, 'the matching release owns toolbar acceptance');
-	inputFocus.handleKeyboard(new KeyInputEvent('Enter', 0, false, false));
-	assert.equal(opened.mock.callCount(), 1);
-	const [group, resource] = opened.mock.calls[0].arguments;
-	assert.ok(group === f.first);
-	assert.ok(resource === input.workingCopy.resource);
+	const location = f.first.panes.activePane!.getSourceLocation!();
+	assert.ok(location?.model === input.workingCopy); assert.equal(location.modelVersion, input.workingCopy.version);
 });
 
 test('shared Behavior Lens operations and pane commands consume their concrete view, not the later active group', t => {
@@ -118,14 +103,9 @@ test('shared Behavior Lens operations and pane commands consume their concrete v
 	f.second.panes.activePane!.focus();
 	const secondTarget = inputFocus.target!;
 	const source = selectedBehaviorLensSourceRange(first.view)!;
-	const opened: { group: EditorGroupView; resource: ResourceIdentity; selection: EditorTextSelection | undefined }[] = [];
-	t.mock.method(f.navigation, 'focusChunkSource', (group, resource, selection) => {
-		opened.push({ group, resource, selection });
-		return Promise.resolve(1);
-	});
-	firstTarget.getCommand('behaviorLens.source')!.run();
-	assert.deepEqual(opened, [{ group: f.first, resource: first.workingCopy.resource,
-		selection: { row: source.start.line - 1, startColumn: source.start.column - 1, endColumn: source.start.column - 1 } }]);
+	const location = f.first.panes.activePane!.getSourceLocation!();
+	assert.ok(location?.model === first.workingCopy);
+	assert.deepEqual(location.selection, { row: source.start.line - 1, startColumn: source.start.column - 1, endColumn: source.start.column - 1 });
 	assert.equal(inputFocus.target, secondTarget, 'the shared Source operation does not focus another pane itself');
 	const remove = firstTarget.getCommand('behaviorLens.removeChild')!;
 	assert.equal(remove.isEnabled(), true);

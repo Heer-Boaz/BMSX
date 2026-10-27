@@ -39,15 +39,21 @@ import { drawAnimationEditor } from './render';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import type { EditorNavigationController } from '../resources/navigation';
 
 const TRACK_NAVIGATION = [['ArrowUp', -1], ['ArrowDown', 1]] as const;
 const DETAILS_NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['Home', 'home'], ['End', 'end']] as const;
 const ANIMATION_AUTHORING_COMMANDS = ['animation.addTrack', 'animation.addKey', 'animation.addClip', 'animation.addFrame',
 	'animation.addProperty', 'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.openClip',
-	'animation.fit', 'animation.snap', 'animation.remove', 'animation.source', 'animation.producerSource', 'animation.edit', 'animation.more'] as const;
+	'animation.fit', 'animation.snap', 'animation.remove', 'animation.producerSource', 'animation.producerSourceToSide', 'animation.edit', 'animation.more'] as const;
 
 export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditorInput> {
 	public override get companionGameMinimumWidth(): number { return measureAnimationEditor(editorViewState.font).compactWidth; }
+	public override getSourceLocation(): EditorSourceLocation | undefined {
+		const input = this.input;
+		return this.controller.getSourceLocation(input);
+	}
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly clients: WorkbenchActionBarControl;
 	private readonly columnSash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
@@ -73,7 +79,8 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 	public constructor(private readonly controller: AnimationEditorController,
 		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>,
-		private readonly group: EditorGroupView, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
+		private readonly group: EditorGroupView, scope: InputFocusScope, private readonly quickInput: QuickInputController,
+		private readonly navigation: EditorNavigationController) {
 		super(scope);
 		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, workArea);
 		this.propertyPointer.attachFeedback(surfaces, paneSurface, workArea, this.detailsFocus);
@@ -120,10 +127,12 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		this.focusTarget.registerCommand('animation.fit', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.fit(); this.input.keys.curve.bind(this.input.keys); } });
 		this.focusTarget.registerCommand('animation.snap', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.snap = !this.input.keys.snap; this.input.status = this.input.keys.snap ? 'Snap on' : 'Snap off'; } });
 		this.focusTarget.registerCommand('animation.remove', { isEnabled: () => this.hasInput && this.controller.authoring.canRemove(this.input), run: () => this.controller.authoring.remove(this.input) });
-		this.focusTarget.registerCommand('animation.source', { isEnabled: () => this.hasInput, run: () => this.controller.openSource(this.group, this.input) });
-		this.focusTarget.registerCommand('animation.producerSource', {
+		for (const [command, placement] of [['animation.producerSource', 'default'], ['animation.producerSourceToSide', 'side']] as const) this.focusTarget.registerCommand(command, {
 			isEnabled: () => this.hasInput && this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined,
-			run: () => this.controller.openProducerSource(this.group, this.input),
+			run: () => {
+				const input = this.input;
+				void this.navigation.openSource(this.group, () => this.controller.getProducerSourceLocation(input), placement);
+			},
 		});
 		this.focusTarget.registerCommand('animation.edit', { isEnabled: () => {
 			if (!this.hasInput) return false;

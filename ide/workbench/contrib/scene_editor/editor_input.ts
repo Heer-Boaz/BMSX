@@ -1,3 +1,4 @@
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { LuaChunk, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -36,7 +37,7 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		roots: [], rows: [], selectionIndex: -1, scroll: 0, hoverIndex: -1,
 		layout: { contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0, indentWidth: 0, twistieWidth: 0 },
 	};
-	public readonly actionBar = createWorkbenchActionBar('sceneEditor.title', true);
+	public readonly actionBar = createWorkbenchActionBar('sceneEditor.title', true, WORKBENCH_MENUS['editor.source.actions']);
 	public readonly properties = POSITION_AXES.map(axis => ({
 		axis, label: axis.toUpperCase(), field: null as LuaTableField | null,
 		value: null as number | null, sourceText: '', text: '', contentBounds: create_rect_bounds(), bounds: create_rect_bounds(),

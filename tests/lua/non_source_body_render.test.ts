@@ -32,7 +32,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
 		const input = new AnimationEditorInput(model, model.resource.contextId);
 		// These deferred authoring services are not used by source projection, layout or this read-only renderer.
-		const controller = new AnimationEditorController(sources.catalog, undefined!);
+		const controller = new AnimationEditorController(sources.catalog);
 		controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 0);
 		const keys = new AnimationKeyControl(inputFocus.createTarget(), controller, controller.authoring); keys.setInput(input);
 		t.after(() => {

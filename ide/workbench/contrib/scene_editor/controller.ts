@@ -9,7 +9,8 @@ import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_m
 import type { RuntimeResource } from '../../../common/resource';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
 import type { EditorGroupView } from '../../services/editor/editor_group';
-import type { EditorNavigationController } from '../resources/navigation';
+import { luaSourceLocation } from '../../../language/lua/source_location';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import { SceneEditorInput } from './editor_input';
 import { buildSceneSourceDocument } from './source';
 import { installSceneOutline, selectSceneOutlineRow, type SceneMemberElement } from './outline';
@@ -18,10 +19,7 @@ import { SceneEditorNavigationSelection } from './navigation_selection';
 
 /** Source projection admission; no world reads or runtime scene ownership. */
 export class SceneEditorController {
-	public constructor(
-		private readonly catalog: WorkspaceSourceCatalog,
-		private readonly navigation: EditorNavigationController,
-	) {}
+	public constructor(private readonly catalog: WorkspaceSourceCatalog) {}
 
 	public readonly createView = (source: SceneEditorInput): SceneEditorInput => {
 		this.refresh(source);
@@ -73,15 +71,11 @@ export class SceneEditorController {
 		}
 	}
 
-	public openSource(group: EditorGroupView, input: SceneEditorInput): void {
+	public getSourceLocation(input: SceneEditorInput): EditorSourceLocation | undefined {
 		this.refresh(input);
 		const row = input.outline.rows[input.outline.selectionIndex]?.element;
-		const position = row === undefined ? undefined : {
-			row: row.source.start.line - 1,
-			startColumn: row.source.start.column - 1,
-			endColumn: row.source.start.column - 1,
-		};
-		void this.navigation.focusChunkSource(group, input.workingCopy.resource, position);
+		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.contextId);
+		return luaSourceLocation(project, input.workingCopy, input.document.analysis, row?.source);
 	}
 
 	/** Current source-command target; definition roots and source-only rows are not members. */

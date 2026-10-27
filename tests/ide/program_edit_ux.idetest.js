@@ -48,7 +48,7 @@ for (const variant of ['tiny', 'msx']) {
 }
 t.command('gameView.closePanel'); await t.frames(2);
 const range = property.file.chunk.locations.range(property.field.value.span);
-t.command('luaProgram.source'); await t.frames(3);
+t.command('editor.source'); await t.frames(3);
 t.assert(t.activeWorkbenchTab().kind === 'code_editor' && t.activeWorkbenchTab().workingCopy === owner, 'Source lost the exact edited resource-owned model');
 t.assert(t.activeWorkbenchTab().context.view.cursorRow === range.start.line - 1 && t.activeWorkbenchTab().context.view.cursorColumn === range.start.column - 1,
 	'Source did not retain its original written field position');

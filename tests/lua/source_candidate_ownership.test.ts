@@ -2,8 +2,6 @@ import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { AemEditorController } from '../../ide/workbench/contrib/aem/controller';
-import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { CodeEditorInputSerializer } from '../../ide/workbench/contrib/code_editor/editor_serializer';
 import { resolveLuaCodeEditorInput, resolveTextCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
@@ -11,17 +9,17 @@ import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
-test('a superseded audio Source opening retires only its fresh candidate, not retained views of the same working copy', async t => {
+test('a superseded resolved text opening retires only its fresh candidate, not retained views of the same working copy', async t => {
 	const sources = createScenarioTestSourceState([]), group = createTestEditorGroup();
 	sources.catalog.registerTextSources(TEST_CARTRIDGE_CONTEXT_IDS[0], [{ type: 'aem', resid: 'candidate-audio', source_path: 'candidate_audio.aem' }]);
 	const resource = sources.catalog.resolveResource( { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'candidate_audio.aem' })!;
 	const model = editorTextModelService.retain(resource, 'aem', 'events: {}\n');
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '# edited\n' }]);
 	const retained = await resolveTextCodeEditorInput(sources.catalog, resource), sibling = await resolveTextCodeEditorInput(sources.catalog, resource);
-	const siblingGroup = new EditorTabGroupModel(), audio = new AemEditorInput(model);
+	const siblingGroup = new EditorTabGroupModel();
 	group.model.add(retained); group.model.activate(retained); siblingGroup.initialize(sibling);
 	t.after(() => {
-		group.dispose(); audio.dispose(); siblingGroup.clear(); editorTextModelService.clear();
+		group.dispose(); siblingGroup.clear(); editorTextModelService.clear();
 	});
 	const retainedView = retained.context.view, siblingView = sibling.context.view, sourceIdentity = retainedView.editSource;
 	retainedView.cursorColumn = 3; siblingView.cursorColumn = 5;
@@ -30,9 +28,9 @@ test('a superseded audio Source opening retires only its fresh candidate, not re
 	t.mock.method(CodeEditorInput.prototype, 'dispose', function (this: CodeEditorInput): void {
 		discarded.push(this); dispose.call(this);
 	});
-	new AemEditorController(sources, null!, null!, null!).openSource(group, audio);
+	const opening = group.openResolvedEditor(() => resolveTextCodeEditorInput(sources.catalog, resource));
 	group.panes.beginOpen();
-	await new Promise<void>(resolve => setImmediate(resolve));
+	assert.equal(await opening, undefined);
 	assert.equal(discarded.length, 1);
 	const candidate = discarded[0], discardedView = candidate.context.view;
 	assert.notEqual(candidate, retained); assert.notEqual(candidate, sibling); assert.equal(candidate.workingCopy, model);

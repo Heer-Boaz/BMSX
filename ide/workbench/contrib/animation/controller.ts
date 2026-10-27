@@ -13,7 +13,8 @@ import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
-import type { EditorNavigationController } from '../resources/navigation';
+import { luaSourceLocation } from '../../../language/lua/source_location';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import { AnimationEditorInput, type AnimationSourceSelection } from './editor_input';
 import { buildAnimationSourceDocument } from './source';
 import { projectAnimationDetails } from './details';
@@ -24,8 +25,7 @@ import { revealWorkbenchListSelection } from '../../ui/list_view';
 /** Admits source generations, selects syntax and issues edits through their real working copies. */
 export class AnimationEditorController {
 	public readonly authoring: AnimationAuthoring;
-	public constructor(private readonly catalog: WorkspaceSourceCatalog,
-		private readonly navigation: EditorNavigationController) { this.authoring = new AnimationAuthoring(this, catalog); }
+	public constructor(private readonly catalog: WorkspaceSourceCatalog) { this.authoring = new AnimationAuthoring(this, catalog); }
 
 	public readonly createView = (source: AnimationEditorInput): AnimationEditorInput => {
 		this.refresh(source);
@@ -279,24 +279,29 @@ export class AnimationEditorController {
 		input.publishModels();
 	}
 
-	public openSource(group: EditorGroupView, input: AnimationEditorInput): void {
-		const track = input.document?.tracks[input.trackIndex], key = track?.keys[input.keyIndex], clip = input.document?.clips[input.clipIndex];
+	public getSourceLocation(input: AnimationEditorInput): EditorSourceLocation | undefined {
+		this.refresh(input);
+		const document = input.document;
+		if (document === undefined) return { model: input.workingCopy, modelVersion: input.workingCopy.version };
+		const track = document.tracks[input.trackIndex], key = track?.keys[input.keyIndex], clip = document.clips[input.clipIndex];
 		const property = input.details.rows[input.details.selectionIndex]?.element;
-		const file = property?.source.file ?? key?.file ?? track?.file ?? clip?.file ?? input.document?.root.file;
-		const span = property?.field.span ?? key?.field.span ?? track?.field.span ?? clip?.field.span ?? input.document?.root.table.span;
-		const range = file === undefined || span === undefined ? undefined : file.chunk.locations.range(span);
-		this.navigation.focusChunkSource(group, file === undefined ? input.workingCopy.resource : this.modelFor(input, file).resource,
-			range === undefined ? undefined : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
+		const file = property?.source.file ?? (input.framesSelected ? document.root.file : key?.file ?? track?.file ?? clip?.file ?? document.root.file);
+		const span = property?.field.span ?? (input.framesSelected ? document.framesField!.span : key?.field.span ?? track?.field.span ?? clip?.field.span ?? document.root.table.span);
+		const model = this.modelFor(input, file), project = getOrCreateSemanticProject(editorTextModelService, input.projectContextId);
+		return luaSourceLocation(project, model, file, file.chunk.locations.range(span));
 	}
 	public openClip(group: EditorGroupView, input: AnimationEditorInput): void {
 		const source = input.document!.clips[input.clipIndex].sequence!;
 		this.openDefinition(group, input.projectContextId, { file: source.file, table: source.table, label: input.document!.clips[input.clipIndex].label });
 	}
 
-	public openProducerSource(group: EditorGroupView, input: AnimationEditorInput): void {
-		const written = input.details.rows[input.details.selectionIndex].element.producer!.source;
+	public getProducerSourceLocation(input: AnimationEditorInput): EditorSourceLocation | undefined {
+		this.refresh(input);
+		const producer = input.details.rows[input.details.selectionIndex]?.element.producer;
+		if (producer === undefined) return undefined;
+		const written = producer.source;
 		const range = written.file.chunk.locations.range(written.expression.span);
-		this.navigation.focusChunkSource(group, this.modelFor(input, written.file).resource,
-			{ row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
+		const model = this.modelFor(input, written.file), project = getOrCreateSemanticProject(editorTextModelService, input.projectContextId);
+		return luaSourceLocation(project, model, written.file, range);
 	}
 }

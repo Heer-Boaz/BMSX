@@ -1,3 +1,4 @@
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { resourceIdentityKey } from '../../../common/resource';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -68,7 +69,7 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 	public readonly selectionRange: TrackedTextRange = { start: 0, end: 0 };
 	public readonly tree = new ScrollableWorkbenchTree<CartMapTreeElement>();
 	public readonly grid = new CartMapGrid();
-	public readonly actionBar = createWorkbenchActionBar('cartMap.title');
+	public readonly actionBar = createWorkbenchActionBar('cartMap.title', true, WORKBENCH_MENUS['editor.source.actions']);
 	public readonly fieldBounds = [create_rect_bounds(), create_rect_bounds()] as const;
 	public readonly layout: CartMapLayout = {
 		minimumFont: undefined,

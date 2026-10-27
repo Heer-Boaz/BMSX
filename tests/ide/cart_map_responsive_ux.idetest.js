@@ -123,7 +123,7 @@ for (const variant of ['tiny', 'msx']) {
 	await capture(`map-${input.mapKind}-${variant}-pending-y-cancel`);
 	await press('Escape'); await press('Escape'); outline(); unchanged(); sameSubject();
 	const position = { row: 0, column: 0 }; model.buffer.positionAt(input.selectionRange.start, position);
-	await clickAction('cartMap.source');
+	await clickAction('editor.source');
 	const code = t.activeWorkbenchTab();
 	t.assert(code.kind === 'code_editor' && code.workingCopy === model && code.context.view.cursorRow === position.row
 		&& code.context.view.cursorColumn === position.column, 'Source lost the canonical YAML model or encoded source position');

@@ -40,7 +40,7 @@ function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.fro
 	const resourceEditors = createResourceEditorResolver(sources.catalog), editor = { editorParts: parts, resourceEditors, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
 		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog)));
-	const navigation = new EditorNavigationController(sources.catalog, panel, resourceEditors);
+	const navigation = new EditorNavigationController(sources.catalog, panel, resourceEditors, parts);
 	group.focus();
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();
 	group.panes.layout({ left: 140, top: 20, right: 384, bottom: 270 });
