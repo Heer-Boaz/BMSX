@@ -10,6 +10,7 @@ import type { EditorGroupView } from '../../ide/workbench/services/editor/editor
 import type { EditorMoveDestination } from '../../ide/workbench/services/editor/editor_parts';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
 import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
@@ -193,7 +194,11 @@ test('secondary strip background invokes only its own group without inventing an
 
 for (const [code, modifiers] of [['ContextMenu', KeyModifier.none], ['F10', KeyModifier.shift]] as const)
 	test(`${code} on actual tab-strip chrome opens its group menu and cancels back to that same control`, t => {
-		const f = createActualSourcePanes(t), group = f.firstGroup, chrome = group.tabStrip.actionBar.focusTarget;
+		const path = 'source_with_a_long_path_for_the_actual_overflow_toolbar.lua';
+		const f = createActualSourcePanes(t, false, [[path, 'return 3']]), group = f.firstGroup, chrome = group.tabStrip.actionBar.focusTarget;
+		group.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!));
+		group.activate(f.firstInput.id); f.firstBounds.right = 180; f.update();
+		assert.ok(group.tabStrip.actions.items.some(item => item.visible && item.enabled && !item.overflowed));
 		chrome.focus(); const pane = group.panes.activePane;
 		f.key(code, modifiers); assert.equal(f.editor.contextMenu.visible, true);
 		assert.ok(group.model.activeTab === f.firstInput && group.panes.activePane === pane);

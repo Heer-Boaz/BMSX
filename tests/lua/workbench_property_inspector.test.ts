@@ -298,22 +298,54 @@ test('embedded inspector joins pane focus order and distinguishes dismissal from
 	const departingEditor = f.focus.createTarget();
 	departingEditor.focus();
 	f.inspector.show(document, false);
-	assert.equal(f.focus.target, departingEditor, 'restoring a visible document must not steal focus');
+	assert.ok(f.focus.target === departingEditor, 'restoring a visible document must not steal focus');
 	const before = f.focus.createTarget(f.parent), after = f.focus.createTarget(f.parent);
 	f.inspector.setFocusOrder(before, after);
 	before.focus(); f.focus.moveFocus(false);
-	assert.equal(f.focus.target, f.inspector.focusTarget);
+	assert.ok(f.focus.target === f.inspector.focusTarget);
 	f.focus.moveFocus(false); f.focus.moveFocus(false);
-	assert.equal(f.focus.target, after);
+	assert.ok(f.focus.target === after);
 	f.focus.moveFocus(true); f.focus.moveFocus(true);
-	assert.equal(f.focus.target, f.inspector.focusTarget);
+	assert.ok(f.focus.target === f.inspector.focusTarget);
 	f.inspector.hide();
-	assert.equal(f.focus.target, f.parent, 'an embedded document returns to its pane, not the departed editor');
+	assert.ok(f.focus.target === f.parent, 'an embedded document returns to its pane, not the departed editor');
 	assert.equal(closed, 0, 'switching editors does not dismiss the retained Details pane');
 	f.inspector.show(document);
 	f.press('Escape');
 	assert.equal(closed, 1);
 	assert.equal(f.inspector.visible, false);
+});
+
+test('persistent inspector skips a disabled Source action in both directions and retires its last actionable toolbar focus', t => {
+	const f = fixture(t), before = f.focus.createTarget(f.parent), after = f.focus.createTarget(f.parent);
+	f.inspector.setFocusOrder(before, after);
+	f.inspector.show({ title: 'Details', items: f.items, dismissible: false,
+		canOpenSource: item => item === f.items[1] || item === f.items[2], openSource() {} }, false);
+	f.inspector.update();
+	f.inspector.focusTarget.focus();
+	assert.equal(f.inspector.actionBar.items[0].visible, true);
+	assert.equal(f.inspector.actionBar.items[0].enabled, false);
+	f.focus.moveFocus(false);
+	assert.ok(f.focus.target === after, 'a visible disabled action is not a tab stop');
+	f.focus.moveFocus(true);
+	assert.ok(f.focus.target === f.inspector.focusTarget);
+	f.press('ArrowDown'); f.inspector.update();
+	f.focus.moveFocus(false);
+	const toolbar = f.focus.target;
+	assert.ok(toolbar !== null && toolbar !== f.inspector.focusTarget && toolbar.parent === f.inspector.focusTarget);
+	f.focus.moveFocus(false);
+	assert.ok(f.focus.target === after);
+	f.focus.moveFocus(true);
+	assert.ok(f.focus.target === toolbar, 'an enabled Source remains in the reverse focus order');
+	f.inspector.updateItems([f.items[0], { ...f.items[1] }, f.items[2]], (left, right) => left.label === right.label);
+	f.inspector.update();
+	assert.equal(f.inspector.actionBar.items[0].visible, true);
+	assert.equal(f.inspector.actionBar.items[0].enabled, false);
+	assert.ok(f.focus.target === f.inspector.focusTarget, 'revoking the last action returns to live inspector content');
+	f.focus.moveFocus(false);
+	assert.ok(f.focus.target === after);
+	f.focus.moveFocus(true);
+	assert.ok(f.focus.target === f.inspector.focusTarget);
 });
 
 test('persistent details return focus without dismissal and skip an empty action bar', t => {

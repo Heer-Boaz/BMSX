@@ -142,7 +142,7 @@ not an editable asset schema or an isolated preview contract.
 | Audio | `cartlib/aem.lua` and `apu.lua` support event-driven audio; `contrib/aem/` edits canonical maps, rules/actions and transitions, with explicit installed-target application and Actor Lab event audition. | Standalone waveform/asset audition needs a Studio preview owner. A graph projection of existing AEM actions would be Studio presentation; a signal-flow mixer/submix graph would require a separately agreed domain and execution contract. Neither follows from drawing nodes, and lack of a graph does not mean event-driven audio is missing. |
 | Play/debug/edit correspondence | Isolated Play, Scenario Lab, Source breakpoints, Actor/GPU/GTE/Event tools, replay and explicit Hot Resume already exist. World/Scene retain definition, Scene and authored member identity for Scene-spawned objects. | “Play this authored Scene” needs an authored launch contract. Applying runtime transforms back to source still needs the exact source occurrence, property/override correspondence and normal source edits; procedural objects need not have an authored member. Retained runtime IDs alone do not supply writeback. Epic's [PIE/SIE workflow](https://dev.epicgames.com/documentation/unreal-engine/ineditor-testing-play-and-simulate-in-unreal-engine) is a comparison, not permission to reconstruct authored data from runtime state. |
 | Source control and comparison | Working-copy dirty state, Undo/Redo, Save conflicts, recovery and proposed-edit review with before/after hunks have existing owners. | Repository status/history, staging/commit and general file/revision comparison and merge are separate Studio/host workflows. Proposal review is not version control, and rejecting a stale Save is not a conflict-resolution editor. VS Code's [SCM contribution](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/scm/browser/scm.contribution.ts) separates that workspace activity from document editing; adopting it would not require a cartlib feature. |
-| Contextual UI commands | Shared context menus, command registration and captured invocation contexts serve window chrome, exact editor tabs and group backgrounds. | Coverage of other tool surfaces remains a separate UX task. Individually focusable tab navigation is distinct from the group-action control's keyboard menu. Right-click and keyboard Context Menu expose owner-admitted actions without duplicating command state or borrowing the later active editor. |
+| Contextual UI commands | Shared context menus, command registration and captured invocation contexts serve window chrome, exact editor tabs and group backgrounds. The tab list has individual keyboard focus, independently of its group-action toolbar. | Coverage of other tool surfaces remains a separate UX task. Right-click and keyboard Context Menu expose owner-admitted actions without duplicating command state or borrowing the later active editor. |
 | Editor/project settings | Theme/font commands, session placement and source-backed cart configuration exist at separate owners. | A searchable settings model and UI with explicit defaults, scopes and persistence are missing. Editor preferences are not gameplay configuration. Go to File needs a configurable project-only versus BIOS/shared-library inclusion policy based on admitted provenance; folder-name guesses and isolated tool toggles are not a settings system. |
 
 This mapping records prerequisites and product choices, not approval to build
@@ -567,6 +567,29 @@ reserve gameplay keys.
 Popup checked state, enablement and execution all consume the same retained
 origin and editor subject. Menu dismissal keeps the existing focus-return
 contract independent of that subject.
+
+The tab list is one composite keyboard control with a retained, exact focused
+input separate from the group's selected input. `Focus Editor Tabs` enters at
+the selected tab, or focuses the first tab when selection is explicitly absent;
+it never creates an editor selection. Left/Right wrap through tab focus, and
+Home/End focus the endpoints. Enter or Space activates on its matching release
+while retaining tab focus; Escape enters the group's content. Tab leaves the
+list through an actually available group toolbar, then content; an invisible
+or disabled toolbar is not a focus stop. Pane-owned internal focus chains remain
+with their contributions.
+
+This uses [APG manual tab activation](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/)
+because panes are lazy and can attach runtime input. It deliberately differs
+from [VS Code's arrow activation with retained tab focus](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/multiEditorTabsControl.ts#L1097-L1148).
+Roving focus alone does not replace a pane, publish its draft or acquire guest
+input. The focused tab's context menu and editor commands retain that exact input.
+Reorder, labels, pinning and dirty-state publication preserve the binding; losing
+the input ends pending command authority and focuses the following slot, otherwise
+the preceding tab. Losing the last tab exits to the group's real empty client.
+The shared strip projection reveals keyboard focus and paints its theme focus
+outline independently of active-tab styling. Stationary focus, hover and popup
+blur do not undo the user's manual tab scrolling. This canvas keyboard contract
+does not by itself provide a DOM or screen-reader accessibility tree.
 - Back/Forward records the part/group plus the existing reopenable
   resource-editor or retained-input identity and selection. A closed tab can be
   reopened in its surviving group. Group/part removal retires destinations in

@@ -29,6 +29,7 @@ export type TabItemLayout = {
 	markerHeight: number;
 	closable: boolean;
 	active: boolean;
+	focused: boolean;
 	hovered: boolean;
 	contentLeft: number;
 	tabWidth: number;
@@ -51,7 +52,7 @@ export class EditorTabStripLayout {
 	public readonly viewportBounds = create_rect_bounds();
 	public readonly items = new ScratchBuffer<TabItemLayout>(() => ({
 		input: null!, bounds: null!, closeBounds: null!, text: '', closeWidth: 0, indicatorWidth: 0,
-		dirty: false, markerWidth: 0, markerHeight: 0, closable: false, active: false, hovered: false, contentLeft: 0, tabWidth: 0,
+		dirty: false, markerWidth: 0, markerHeight: 0, closable: false, active: false, focused: false, hovered: false, contentLeft: 0, tabWidth: 0,
 	}), 8);
 	public revision = 0;
 	public totalHeight = 0;
@@ -64,6 +65,9 @@ export class EditorTabStripLayout {
 	private laidOutScroll = 0;
 	private revealedGroupRevision = -1;
 	private revealedScrollbarRevision = -1;
+	private revealedFocusedInput: EditorInput | null = null;
+	private revealedFocusedLeft = 0;
+	private revealedFocusedRight = 0;
 	private readonly measuredLabels = new WeakMap<EditorInput, MeasuredTab>();
 
 	public constructor(private readonly model: EditorTabGroupModel, private readonly actions: WorkbenchActionBarState,
@@ -81,12 +85,15 @@ export class EditorTabStripLayout {
 		this.charAdvance = 0;
 		this.revealedGroupRevision = -1;
 		this.revealedScrollbarRevision = -1;
+		this.revealedFocusedInput = null;
+		this.revealedFocusedLeft = 0;
+		this.revealedFocusedRight = 0;
 		this.revision += 1;
 	}
 
 	/** The owning group supplies its actual strip extent, independent of root menu placement. */
 	public layout(bounds: Readonly<RectBounds>, context: EditorTabStripLayoutContext,
-		hoverId: EditorTabId | null, dragging: boolean): void {
+		hoverId: EditorTabId | null, dragging: boolean, focusedInput: EditorInput | null = null): void {
 		const previousCount = this.items.length;
 		const tabs = this.model.tabs;
 		for (let index = tabs.length; index < previousCount; index++) this.items.peek(index).input = null!;
@@ -105,6 +112,7 @@ export class EditorTabStripLayout {
 		const availableStrip = stripRight - tabsLeft;
 		let contentWidth = constants.TAB_DIRTY_LEFT_MARGIN;
 		let activeLeft = 0, activeRight = 0;
+		let focusedLeft = 0, focusedRight = 0;
 		let itemsChanged = previousCount !== tabs.length;
 		for (let index = 0; index < tabs.length; index++) {
 			const tab = tabs[index], metric = this.items.get(index);
@@ -135,6 +143,7 @@ export class EditorTabStripLayout {
 			metric.markerHeight = dirty ? markerHeight : 0;
 			metric.closable = closable;
 			metric.active = tab === this.model.activeTab;
+			metric.focused = tab === focusedInput;
 			metric.hovered = hovered;
 			contentWidth += Math.min(measured.naturalWidth, availableWidth) + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
 			if (index + 1 < tabs.length) contentWidth += constants.TAB_BUTTON_SPACING;
@@ -164,6 +173,7 @@ export class EditorTabStripLayout {
 			metric.text = measured.text; metric.tabWidth = width;
 			metric.contentLeft = tabsLeft + contentWidth;
 			if (metric.active) { activeLeft = contentWidth; activeRight = contentWidth + width; }
+			if (metric.focused) { focusedLeft = contentWidth; focusedRight = contentWidth + width; }
 			contentWidth += width;
 			if (index + 1 < tabs.length) contentWidth += constants.TAB_BUTTON_SPACING;
 		}
@@ -177,11 +187,20 @@ export class EditorTabStripLayout {
 		write_rect_bounds(this.track, tabsLeft, rowBottom, tabsRight, barBottom);
 		const previousScrollbarRevision = this.scrollbar.revision;
 		this.scrollbar.layout(this.track, contentWidth, tabsRight - tabsLeft, this.scrollbar.getScroll());
-		if (this.revealedGroupRevision !== this.model.revision || this.revealedScrollbarRevision !== this.scrollbar.revision) {
-			if (!dragging) this.scrollbar.reveal(activeLeft, activeRight);
-			this.revealedGroupRevision = this.model.revision;
-			this.revealedScrollbarRevision = this.scrollbar.revision;
+		const rangeChanged = this.revealedScrollbarRevision !== this.scrollbar.revision;
+		if (!dragging) {
+			if (focusedInput !== null) {
+				if (this.revealedFocusedInput !== focusedInput || rangeChanged
+					|| this.revealedFocusedLeft !== focusedLeft || this.revealedFocusedRight !== focusedRight) {
+					this.scrollbar.reveal(focusedLeft, focusedRight);
+				}
+			} else if (this.revealedGroupRevision !== this.model.revision || rangeChanged) this.scrollbar.reveal(activeLeft, activeRight);
 		}
+		this.revealedGroupRevision = this.model.revision;
+		this.revealedScrollbarRevision = this.scrollbar.revision;
+		this.revealedFocusedInput = focusedInput;
+		this.revealedFocusedLeft = focusedLeft;
+		this.revealedFocusedRight = focusedRight;
 		const scroll = Math.round(this.scrollbar.getScroll());
 		if (!itemsChanged && !extentChanged && previousScrollbarRevision === this.scrollbar.revision && this.laidOutScroll === scroll) return;
 		this.revision += 1;

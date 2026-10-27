@@ -49,7 +49,7 @@ import { showGroupOpenEditors } from '../workbench/services/editor/open_editors'
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
-	'tabs.next', 'tabs.previous', 'window.copyEditor', 'window.moveEditor', 'group.move', 'group.splitRight', 'group.splitDown',
+	'tabs.next', 'tabs.previous', 'window.copyEditor', 'window.moveEditor', 'group.move', 'group.focusTabs', 'group.splitRight', 'group.splitDown',
 	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
 	'scenarioLab.play', 'play.reset', 'play.source',
 	'scenarioLab.runWithCompanion', 'scenarioLab.debugWithCompanion', 'scenarioLab.playWithCompanion',
@@ -116,7 +116,7 @@ export class IdeCommandController {
 			}
 		}
 		if (commandScope?.contextGeneration !== contextGeneration || input !== undefined && !group.model.contains(input)) return;
-		const implementation = target?.getCommand(command);
+		const implementation = input === undefined ? target?.getCommand(command) : undefined;
 		if (implementation !== undefined) {
 			if (implementation.isEnabled()) implementation.run();
 			return;
@@ -132,6 +132,7 @@ export class IdeCommandController {
 				if (this.isEnabled(command, target)) showMoveDestination(this.editor.editorParts, this.editor.quickInput, { kind: 'group', model: group.model }, target);
 				return;
 			case 'group.openEditors': showGroupOpenEditors(group, part.quickInput); return;
+			case 'group.focusTabs': group.focus('tabs'); return;
 			case 'group.splitRight': case 'group.splitDown': {
 				const created = this.editor.editorParts.splitGroup(group, command === 'group.splitRight' ? 'right' : 'down');
 				if (created !== undefined) created.focus();
@@ -416,7 +417,7 @@ export class IdeCommandController {
 		const selected = this.runTargets.selected;
 		const local = focus?.scope.runtimeOwner?.runtime?.interaction;
 		const transport = local === undefined ? selected?.transport : local.transport;
-		const implementation = focus?.getCommand(command);
+		const implementation = input === undefined ? focus?.getCommand(command) : undefined;
 		if (implementation !== undefined) return implementation.isEnabled();
 		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
@@ -426,6 +427,7 @@ export class IdeCommandController {
 			case 'group.move': return this.editor.editorParts.canMoveGroup(group, { kind: 'window' })
 				|| part.groups.some(other => this.editor.editorParts.canMoveGroup(group, { kind: 'split', group: other, direction: 'right' }));
 			case 'group.openEditors': return group.model.tabs.length > 0;
+			case 'group.focusTabs': return group.openingAdmitted && group.model.tabs.length > 0;
 			case 'group.splitRight': case 'group.splitDown': return part.operation === 'none';
 			case 'group.focusNext': case 'group.focusPrevious': case 'group.maximize': return part.operation === 'none' && part.groups.length > 1;
 			case 'window.moveEditor': {
@@ -589,7 +591,7 @@ export class IdeCommandController {
 		if (originPart === null) return false;
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return false;
-		const implementation = target?.getCommand(command);
+		const implementation = input === undefined ? target?.getCommand(command) : undefined;
 		if (implementation !== undefined) return implementation.isChecked?.() === true;
 		const part = this.editor.editorParts.partForGroup(group);
 		switch (command) {

@@ -413,6 +413,29 @@ test('global and self-context items create no command proxies or stale projected
 	assert.equal(f.bar.focusTarget.getCommand(command), undefined);
 });
 
+test('first attachment publishes actionable focus admission after local command binding for parent and self contexts', () => {
+	for (const self of [false, true]) {
+		const focus = new InputFocusService(), content = focus.createTarget();
+		content.bindKeyboard(() => {}); content.focus();
+		const state = createWorkbenchActionBar('events.title'), command = state.items[0].command;
+		const handler = { isEnabled: () => true, run() {} };
+		const commands: EditorCommandRunner = {
+			isEnabled: (id, target) => target?.getCommand(id)?.isEnabled() === true,
+			execute() {},
+		};
+		const bar = new WorkbenchActionBarControl(focus, new PointerCaptureService(), new PointerHoverService(), commands, content, () => content.focus());
+		const context = self ? bar.focusTarget : content;
+		context.registerCommand(command, handler);
+		bar.setInput(state, context);
+		assert.ok(bar.focusTarget.getCommand(command) === handler);
+		assert.equal(state.items[0].enabled, true);
+		bar.focusTarget.focus();
+		assert.ok(focus.target === bar.focusTarget, 'the first focus request does not resolve to the parent before a frame update');
+		assert.equal(state.focusedIndex, 0);
+		bar.dispose();
+	}
+});
+
 test('1000 unchanged toolbar updates retain item capability references without lookup or registration', t => {
 	const f = fixture(t), command = f.state.items[0].command;
 	const handler = { isEnabled: () => true, run() {} };

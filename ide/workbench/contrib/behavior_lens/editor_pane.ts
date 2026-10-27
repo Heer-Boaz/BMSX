@@ -26,7 +26,7 @@ import {
 	handleBehaviorLensGamepadInput,
 	handleBehaviorLensKeyboardInput,
 } from './keyboard';
-import type { IdeCommandController } from '../../../commands/controller';
+import type { EditorCommandRunner } from '../../../common/commands';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { drawBehaviorLens } from './render';
 import { prepareBehaviorLensLayout, measureBehaviorLensMinimumWidth } from './layout';
@@ -84,7 +84,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 
 	public constructor(
 		private readonly controller: BehaviorLensController,
-		private readonly commands: IdeCommandController,
+		private readonly commands: EditorCommandRunner,
 		private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, workArea: Readonly<RectBounds>,
 		private readonly group: EditorGroupView,

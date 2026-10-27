@@ -138,7 +138,7 @@ export class EditorGroupView {
 		});
 		this.panes = new EditorPanes(factories, this);
 		this.tabStrip = new EditorTabStrip(this.model, this.tabLayoutContext, commands, this.tabFocusTarget,
-			id => this.activate(id), id => { void this.close(id); }, () => this.commitPendingEdit() && this.focus(), presentation.dropTarget, presentation.contextMenu);
+			(id, preserveFocus) => this.activate(id, undefined, undefined, preserveFocus), id => { void this.close(id); }, () => this.commitPendingEdit() && this.focus(), presentation.dropTarget, presentation.contextMenu);
 		this.tabSurface = presentation.surfaces.attach({
 			role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.tabScope,
 			isVisible: () => this.presented, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.clip,
@@ -195,12 +195,13 @@ export class EditorGroupView {
 	}
 
 	public onWillFocus(listener: () => boolean): () => void { this.focusListeners.add(listener); return () => this.focusListeners.delete(listener); }
-	public focus(): boolean {
-		if (!this.openingAdmitted) return false;
+	public focus(control: 'content' | 'tabs' = 'content'): boolean {
+		if (!this.openingAdmitted || control === 'tabs' && this.model.tabs.length === 0) return false;
 		const generation = this.panes.openGeneration, focusRevision = inputFocus.revision;
 		for (const listener of this.focusListeners) {
 			if (!listener() || generation !== this.panes.openGeneration || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
 		}
+		if (control === 'tabs') return this.tabStrip.focus();
 		const pane = this.panes.activePane;
 		if (pane === null) this.focusTarget.focus(); else pane.focus();
 		return inputFocus.target !== null && this.focusScope.contains(inputFocus.target.scope);
@@ -378,7 +379,7 @@ export class EditorGroupView {
 			if (successor === undefined) for (let position = index + 1; position < tabs.length; position++) if (!closing?.has(tabs[position])) {
 				successor = tabs[position]; break;
 			}
-			if (successor !== undefined) this.doActivate(successor, undefined, undefined, navigationState.activeGroup !== this);
+			if (successor !== undefined) this.doActivate(successor, undefined, undefined, navigationState.activeGroup !== this || this.tabStrip.focusTarget.hasFocus);
 			else this.panes.clearEditor();
 		}
 		this.model.removeAt(index);

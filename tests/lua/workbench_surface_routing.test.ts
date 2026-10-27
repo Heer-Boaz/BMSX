@@ -291,22 +291,39 @@ test('the real Assistant transcript owns only its selected-message actions for t
 	input.selection.select(undefined);
 	editor.editorParts.main.activeGroup.openEditor(input); editor.update(0);
 	assert.ok(inputFocus.target === input.draft.focusTarget);
-	assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.moveFocus(false), true);
+	assert.equal(inputFocus.moveFocus(false), true);
 	const client = inputFocus.target!;
 	assert.notEqual(client, input.draft.focusTarget);
+	for (const command of ['assistant.send', 'assistant.queue', 'assistant.direct'] as const) assert.equal(client.getCommand(command), undefined,
+		'the unavailable turn toolbar is omitted; Tab reaches the actual transcript, not a pane alias');
+	assert.equal(inputFocus.moveFocus(true), true); assert.ok(inputFocus.target === input.draft.focusTarget);
+	assert.equal(inputFocus.moveFocus(false), true); assert.ok(inputFocus.target === client);
 	for (const command of ['assistant.review', 'assistant.copy'] as const) {
 		assert.ok(client.getCommand(command), 'the transcript publishes its real selected-message action');
 		assert.equal(client.getCommand(command), client.parent!.getCommand(command));
 		assert.equal(editor.commands.isEnabled(command, client), false);
 	}
-	for (const command of ['assistant.send', 'assistant.queue', 'assistant.direct'] as const) assert.equal(client.getCommand(command), undefined);
 	input.selection.select(message);
 	assert.equal(editor.commands.isEnabled('assistant.copy', client), true);
 	assert.equal(editor.commands.isEnabled('assistant.review', client), false);
 	editor.commands.execute('assistant.copy', client);
 	assert.equal((await editor.clipboard.read()).text, message.text.getText());
 	input.selection.select(proposed);
+	editor.update(0);
 	assert.equal(editor.commands.isEnabled('assistant.review', client), true);
+	input.draft.focusTarget.focus(); assert.equal(inputFocus.moveFocus(false), true);
+	const turnActions = inputFocus.target!;
+	assert.ok(turnActions !== client && turnActions !== input.draft.focusTarget);
+	assert.equal(input.turnActions.hasFocus, true);
+	assert.equal(turnActions.getCommand('assistant.review'), client.getCommand('assistant.review'));
+	assert.equal(inputFocus.moveFocus(false), true); assert.ok(inputFocus.target === client);
+	assert.equal(inputFocus.moveFocus(true), true); assert.ok(inputFocus.target === turnActions);
+	input.selection.select(undefined); editor.update(0);
+	assert.ok(inputFocus.target === input.draft.focusTarget, 'retiring the focused turn actions returns to the actual composer');
+	assert.equal(input.turnActions.hasFocus, false);
+	assert.equal(inputFocus.moveFocus(false), true); assert.ok(inputFocus.target === client);
+	assert.equal(inputFocus.moveFocus(true), true); assert.ok(inputFocus.target === input.draft.focusTarget);
+	input.selection.select(proposed); editor.update(0);
 	editor.editorParts.main.activeGroup.panes.clearEditor();
 	for (const command of ['assistant.review', 'assistant.copy'] as const) assert.equal(editor.commands.isEnabled(command, client), false);
 	editor.commands.execute('assistant.review', client); assert.equal(editor.editorParts.main.activeGroup.panes.activePane, null);
@@ -318,6 +335,17 @@ test('the real Assistant transcript owns only its selected-message actions for t
 	assert.equal(review.kind, 'workspace_edit_review');
 	assert.ok(review.kind === 'workspace_edit_review' && review.proposal === proposal);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
+	const group = editor.editorParts.main.activeGroup, companion = new GameViewInput();
+	group.openEditor(input); editor.update(0);
+	assert.equal(inputFocus.moveFocus(false), true); assert.ok(inputFocus.target === turnActions);
+	let retired = 0;
+	const unbindBlur = turnActions.onDidBlur(() => { retired++; group.openEditor(companion); });
+	input.selection.select(undefined);
+	try { editor.update(0); } finally { unbindBlur(); }
+	assert.equal(retired, 1);
+	assert.ok(group.panes.activePane!.input === companion);
+	assert.ok(inputFocus.target === group.panes.activePane!.commandTarget,
+		'toolbar retirement must preserve the newer actual client selected by its blur callback');
 });
 
 test('Assistant borrows its draft command context only for the concrete input attachment', t => {

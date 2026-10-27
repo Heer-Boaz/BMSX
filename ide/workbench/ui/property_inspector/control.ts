@@ -54,6 +54,12 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private padPressed = false;
 	private returnFocus: InputFocusTarget | null = null;
 	private focusOrder: { previous: InputFocusTarget; next: InputFocusTarget } | undefined;
+	private readonly focusAfterContent = () => {
+		(this.actions.focusTarget.canFocus!() ? this.actions.focusTarget : this.focusOrder?.next ?? this.focusTarget).focus();
+	};
+	private readonly focusBeforeNext = () => {
+		(this.actions.focusTarget.canFocus!() ? this.actions.focusTarget : this.focusTarget).focus();
+	};
 	private feedback: WorkbenchTooltip | undefined;
 	private feedbackOwner: WorkbenchSurface | undefined;
 	private feedbackArea: Readonly<RectBounds> | undefined;
@@ -141,16 +147,15 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	}
 
 	private updateFocusOrder(): void {
-		const hasActions = this.actionBar.items.some(item => item.visible);
 		const previous = this.focusOrder?.previous ?? this.focusTarget;
 		const next = this.focusOrder?.next ?? this.focusTarget;
 		previous.next = this.focusTarget;
 		this.focusTarget.previous = previous;
-		this.focusTarget.next = hasActions ? this.actions.focusTarget : next;
+		this.focusTarget.next = this.focusAfterContent;
 		this.actions.focusTarget.previous = this.focusTarget;
 		this.actions.focusTarget.next = next;
-		next.previous = hasActions ? this.actions.focusTarget : this.focusTarget;
-		if (!hasActions && this.actions.focusTarget.hasFocus) this.focusTarget.focus();
+		next.previous = this.focusBeforeNext;
+		if (!this.actions.focusTarget.canFocus!() && this.actions.focusTarget.hasFocus) this.focusTarget.focus();
 	}
 
 	private close(): void {
@@ -209,6 +214,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	public update(): void {
 		if (!this.visible) return;
 		this.actions.update();
+		if (!this.actions.focusTarget.canFocus!() && this.actions.focusTarget.hasFocus) this.focusTarget.focus();
 	}
 
 	public layout(font: BFont, measure: TextRangeMeasure, measureText: (text: string) => number, bounds: RectBounds): void {

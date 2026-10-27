@@ -34,6 +34,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'group.splitRight': { category: 'Editor Groups', title: 'Split Group Right' },
 	'group.splitDown': { category: 'Editor Groups', title: 'Split Group Down' },
 	'group.focusNext': { category: 'Editor Groups', title: 'Focus Next Group' },
+	'group.focusTabs': { category: 'Editor Groups', title: 'Focus Editor Tabs' },
 	'group.focusPrevious': { category: 'Editor Groups', title: 'Focus Previous Group' },
 	'group.maximize': { category: 'Editor Groups', title: 'Maximize Group', activeTitle: 'Restore Groups' },
 	'window.copyEditor': { category: 'Window', title: 'Open Editor in New Window' },

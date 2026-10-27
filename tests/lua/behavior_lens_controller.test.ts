@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
+import { KeyInputEvent } from '../../hosts/common/input/text';
+import type { EditorCommandRunner } from '../../ide/common/commands';
 import type { ResourceIdentity } from '../../ide/common/resource';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -24,7 +26,6 @@ import { createTestGroupPresentation } from '../helpers/editor_panes';
 import { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
-import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createTestRuntime, createTestRuntimeRomPayload, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 
@@ -50,6 +51,10 @@ function fixture(t: TestContext, source = SOURCE) {
 	const documents = new BehaviorSourceDocuments(editorTextModelService, sources.catalog);
 	const controller = new BehaviorLensController(sources, navigation, documents,
 		() => assert.fail('Behavior-tree views do not create an FSM layout worker'), null!, null!, null!);
+	const commands: EditorCommandRunner = {
+		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
+		execute: (command, target) => inputFocus.executeCommand(command, target),
+	};
 	const unused = (): never => assert.fail('This owner regression only opens Behavior Lens views');
 	const createGroup = () => {
 		const group = new EditorGroupView({
@@ -59,10 +64,9 @@ function fixture(t: TestContext, source = SOURCE) {
 			code_editor: unused, resource_view: unused, aem_editor: unused, lua_program: unused, actor_lab: unused,
 			game_view: unused, cart_map: unused, scene_editor: unused, scenario_lab: unused,
 			behavior_lens: owner => {
-
-				return new BehaviorLensEditorPane(controller, null!, menu, surfaces, owner.paneSurface, owner.workArea, owner, owner.focusScope, picker);
+				return new BehaviorLensEditorPane(controller, commands, menu, surfaces, owner.paneSurface, owner.workArea, owner, owner.focusScope, picker);
 			},
-		}, { isEnabled: () => false, execute() {} }, unused, createTestGroupPresentation(surfaces, BOUNDS));
+		}, commands, unused, createTestGroupPresentation(surfaces, BOUNDS));
 		group.panes.layout(BOUNDS);
 		return group;
 	};
@@ -75,6 +79,24 @@ function fixture(t: TestContext, source = SOURCE) {
 	});
 	return { controller, documents, navigation, picker, first, second, registration };
 }
+
+test('Behavior Lens toolbar publishes and dispatches its concrete local Source capability on first attachment', t => {
+	const f = fixture(t), input = f.controller.openDefinition(f.first, f.registration);
+	const opened = t.mock.method(f.navigation, 'focusChunkSource', () => Promise.resolve(1));
+	f.first.panes.activePane!.focus();
+	const graph = inputFocus.target!;
+	assert.equal(inputFocus.moveFocus(false), true);
+	const toolbar = inputFocus.target;
+	assert.ok(toolbar !== null && toolbar !== graph && toolbar.parent === graph.commandContext);
+	assert.ok(toolbar.getCommand('behaviorLens.source') === graph.getCommand('behaviorLens.source'));
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', 0, false, true));
+	assert.equal(opened.mock.callCount(), 0, 'the matching release owns toolbar acceptance');
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', 0, false, false));
+	assert.equal(opened.mock.callCount(), 1);
+	const [group, resource] = opened.mock.calls[0].arguments;
+	assert.ok(group === f.first);
+	assert.ok(resource === input.workingCopy.resource);
+});
 
 test('shared Behavior Lens operations and pane commands consume their concrete view, not the later active group', t => {
 	const f = fixture(t);
@@ -224,8 +246,6 @@ test('Behavior presentation acknowledges a source generation consumed by its con
 	viewport.selection = viewport.model.nodes[0].children[0].children[0];
 	acceptBehaviorGraphSelection(input.view, graph);
 	const revealed = t.mock.method(viewport, 'reveal');
-	// This fixture exercises the pane's source/presentation update, not command-bar availability.
-	t.mock.method(WorkbenchActionBarControl.prototype, 'update', () => {});
 	const previous = input.view.source;
 	input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- controller consumed this edit\n' }]);
 	f.controller.updateView(input);
@@ -263,7 +283,6 @@ effects.register_effect('explicit.effect', {
 	acceptEffectPropertySelection(input.view, properties, false);
 	assert.ok(tree.selectionIndex >= tree.layout.visibleRowCount);
 	tree.scroll = 0;
-	t.mock.method(WorkbenchActionBarControl.prototype, 'update', () => {});
 	input.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- property apply refresh\n' }]);
 	f.controller.updateView(input);
 	pane.update(0);

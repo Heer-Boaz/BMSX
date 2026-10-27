@@ -83,11 +83,9 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 			isEnabled: () => this.input.draft.focusTarget.hasFocus && this.references.suggestions.visible && this.references.suggestions.model.list.selectionIndex >= 0,
 			run: () => this.references.suggestions.acceptSelection(),
 		});
-		const ring = [this.input.draft.focusTarget, this.turnToolbar.control.focusTarget, this.transcriptView.scroll.focusTarget];
-		for (let index = 0; index < ring.length; index++) {
-			ring[index].next = ring[(index + 1) % ring.length];
-			ring[index].previous = ring[(index + ring.length - 1) % ring.length];
-		}
+		const draft = this.input.draft.focusTarget, toolbar = this.turnToolbar.control.focusTarget, transcript = this.transcriptView.scroll.focusTarget;
+		toolbar.previous = draft; toolbar.next = transcript;
+		draft.previous = transcript; transcript.next = draft;
 		this.imagesVisible = false;
 		this.attachments.focusTarget.commandContext = this.focusTarget;
 		this.attachments.focusTarget.next = this.input.draft.focusTarget;
@@ -202,7 +200,16 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		const transcriptBottom = this.contentTop - 4 - (busy || input.editingQueuedId !== undefined ? row + 2 : 0);
 		this.transcriptView.layout(layout.top + 4, transcriptBottom, atEnd, changed || composerChanged);
 
-		this.turnToolbar.update(changed || footerChanged); this.references.update(input);
+		this.turnToolbar.update(changed || footerChanged);
+		const draft = input.draft.focusTarget, toolbar = this.turnToolbar.control.focusTarget, transcript = this.transcriptView.scroll.focusTarget;
+		const hasTurnActions = toolbar.canFocus!();
+		draft.next = hasTurnActions ? toolbar : transcript;
+		transcript.previous = hasTurnActions ? toolbar : draft;
+		if (!hasTurnActions && toolbar.hasFocus) {
+			draft.focus();
+			if (!this.hasInput || this.input !== input) return;
+		}
+		this.references.update(input);
 	}
 	public draw(): void {
 		const input = this.input, { layout } = input;

@@ -168,6 +168,8 @@ descendant controls are constructed. Pane factories consume that group's actual
 surface and extent. Layout publishes each group's retained title/content bounds;
 paint and input use those same surfaces. Tab layout, hover and gestures live in
 the strip, not in frontend-wide chrome state.
+The strip's keyboard control retains focus independently of editor selection;
+its reusable command context ends with its concrete focused-input binding.
 `workbench/common/editor_inputs.ts` owns the retained view union. Commands can
 address an exact input alongside their concrete control origin; popup projection
 does not change group selection to manufacture that subject.

@@ -111,6 +111,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'tabs.close' },
 	],
 	'editorGroup.context': [
+		{ type: 'command', command: 'group.focusTabs' },
 		{ type: 'command', command: 'group.splitRight' },
 		{ type: 'command', command: 'group.splitDown' },
 		{ type: 'command', command: 'group.move' },
@@ -457,6 +458,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'group.splitRight' },
 		{ type: 'command', command: 'group.splitDown' },
 		{ type: 'command', command: 'group.focusNext' },
+		{ type: 'command', command: 'group.focusTabs' },
 		{ type: 'command', command: 'group.focusPrevious' },
 		{ type: 'command', command: 'group.maximize' },
 		{ type: 'command', command: 'group.move' },

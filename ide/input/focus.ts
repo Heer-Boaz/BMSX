@@ -87,11 +87,13 @@ export class InputFocusScope {
 	}
 
 	/** Reusable controls may bind another input only after retiring the old context. */
-	public retireContext(): void {
+	public retireContext(): number {
 		this.contextRetirements++;
+		const generation = this.contextGeneration;
 		const listeners = this.contextRetirementListeners;
 		this.contextRetirementListeners = undefined;
 		if (listeners !== undefined) for (const listener of listeners) listener();
+		return generation;
 	}
 }
 

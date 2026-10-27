@@ -39,7 +39,12 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		private readonly focusContent: () => void, private readonly contextMenu?: ContextMenuController,
 		private readonly orientation: 'horizontal' | 'vertical' = 'horizontal') {
 		this.focusTarget = focus.createTarget(parent);
-		this.focusTarget.canFocus = () => this.input !== undefined;
+		this.focusTarget.canFocus = () => {
+			const state = this.input;
+			if (state === undefined) return false;
+			for (const item of state.items) if (item.visible && !item.overflowed && item.enabled) return true;
+			return state.overflow?.button.visible === true && state.overflow.button.enabled;
+		};
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), this.cancelPress);
 		this.unbindFocus = this.focusTarget.onDidFocus(() => {
 			this.input!.hasFocus = true;
@@ -56,14 +61,14 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		this.clearInput();
 		this.input = input;
 		this.focusTarget.commandContext = context;
-		if (context === this.focusTarget) return;
-		for (const item of input.items) {
+		if (context !== this.focusTarget) for (const item of input.items) {
 			const command = context.getCommand(item.command);
 			if (command !== undefined) {
 				this.focusTarget.registerCommand(item.command, command);
 				this.itemCommands.push(item.command);
 			}
 		}
+		this.update();
 	}
 
 	public clearInput(): void {
