@@ -34,6 +34,7 @@ import { WorkbenchTooltip } from '../../ui/tooltip';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { GteDebuggerInput } from './editor_input';
+import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
 import { gteCommandName } from './presentation';
 import { GteDetailsWindow } from './details_window';
 import { drawGteDebugger, type GteCommandRow } from './render';
@@ -105,7 +106,7 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 	}
 	public override get commandTarget() { return this.scroll.focusTarget; }
 	protected override activate(): void {
-		this.input.interaction.setRuntime(this.commands.transport);
+		this.input.interaction.setRuntime(this.commands.transport, this.input.interaction.running);
 		this.focusTarget.scope.interaction = this.input.interaction;
 		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.input.interaction };
 		this.freshLayout = true; this.historyRevision = -1; this.labels.clear();
@@ -120,12 +121,12 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		this.sourceRevision = -1;
 		this.update();
 	}
-	public override clearInput(): void {
-		this.input.interaction.setRuntime(null);
+	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
+		if (reason !== 'move') this.input.interaction.setRuntime(null);
 		this.unbindSelection!(); this.unbindSelection = undefined; this.retireContextMenu(); this.tooltip.detach(); this.details!.dispose(); this.details = undefined;
 		this.actions.clearInput(); this.scroll.clearInput();
 		this.source.clear(); this.labels.clear(); this.rows.length = 0;
-		super.clearInput();
+		super.clearInput(reason);
 	}
 	public override dispose(): void { if (this.hasInput) this.clearInput(); this.unbindSource(); this.source.clear(); this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
 	/** Input events may select and inspect another command before the next host frame. */

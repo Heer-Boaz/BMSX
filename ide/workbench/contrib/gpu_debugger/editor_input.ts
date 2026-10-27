@@ -11,11 +11,14 @@ import type { PropertyInspectorViewState } from '../../ui/property_inspector/mod
 import { WorkbenchWindowModel } from '../../ui/window/model';
 import { GpuOperationProjection, type GpuDebugView } from './presentation';
 import type { GpuDiagramViewState } from './diagram';
+import type { GpuDebuggerTabId } from '../../ui/tab/id';
 
 export type GpuInspectorPage = 'properties' | 'diagram' | 'words';
+let nextInputId = 0;
 
 /** Retained optional GPU observation, independent of the reusable pane's attachment. */
-export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_debugger'> {
+export class GpuDebuggerInput extends ReadonlyEditorInput<GpuDebuggerTabId, 'gpu_debugger'> {
+	public override canMove(): boolean { return true; }
 	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
 	public readonly actions = createWorkbenchActionBar('gpu.title', true, WORKBENCH_MENUS['gpu.context']);
@@ -44,7 +47,9 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 	private generation = -1;
 	private readonly selectionListeners = new Set<() => void>();
 	public constructor(public readonly history: RuntimeGpuHistory) {
-		super('gpu-debugger', 'gpu_debugger', 'GPU OPERATIONS', true);
+		const sequence = nextInputId++;
+		super(`gpu-debugger:${sequence}`, 'gpu_debugger', 'GPU', true);
+		this.setLabel(this.title, `GPU operation view ${sequence}`, `#${sequence}`);
 		this.disposables.add(history.observe());
 	}
 	public select(sequence: number): void { this.following = false; this.copySelection(sequence); }
@@ -87,6 +92,8 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 }
 
 export function openGpuDebugger(group: EditorGroupView, history: RuntimeGpuHistory): void {
-	const existing = group.model.findById('gpu-debugger');
+	const active = group.model.activeTab;
+	const existing = active?.kind === 'gpu_debugger' && active.history === history ? active
+		: group.model.tabs.find(input => input.kind === 'gpu_debugger' && input.history === history);
 	group.openEditor(existing ?? new GpuDebuggerInput(history), { pinned: true });
 }

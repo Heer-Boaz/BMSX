@@ -33,6 +33,7 @@ import type { GpuDebuggerInput } from './editor_input';
 import { gpuOperationName } from './presentation';
 import { drawGpuDebugger, type GpuOperationRow } from './render';
 import { GpuDetailsWindow } from './details_window';
+import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
 
 const COMMANDS = ['gpu.follow', 'gpu.view', 'gpu.details', 'gpu.goToFrame', 'gpu.filter', 'gpu.clear'] as const;
 const CLIENT_COMMANDS = [...COMMANDS, 'pause', 'stepFrameBack', 'stepFrame'] as const;
@@ -90,7 +91,7 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 	}
 	public override get commandTarget() { return this.list.focusTarget; }
 	protected override activate(): void {
-		this.input.interaction.setRuntime(this.commands.transport);
+		this.input.interaction.setRuntime(this.commands.transport, this.input.interaction.running);
 		this.focusTarget.scope.interaction = this.input.interaction;
 		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.input.interaction };
 		this.freshLayout = true; this.historyRevision = -1; this.selectedRevision = -1;
@@ -104,13 +105,13 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 		this.unbindSelection = this.input.onWillChangeSelection(() => this.retireMenu());
 		this.update();
 	}
-	public override clearInput(): void {
-		this.input.interaction.setRuntime(null);
+	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
+		if (reason !== 'move') this.input.interaction.setRuntime(null);
 		this.retireMenu();
 		if (this.filterSession !== undefined) this.quickInput.hide();
 		this.unbindSelection!(); this.unbindSelection = undefined;
 		this.details!.dispose(); this.details = undefined; this.tooltip.detach();
-		this.actions.clearInput(); this.list.clearInput(); this.labels.clear(); this.rows.length = 0; super.clearInput();
+		this.actions.clearInput(); this.list.clearInput(); this.labels.clear(); this.rows.length = 0; super.clearInput(reason);
 	}
 	public override dispose(): void { if (this.hasInput) this.clearInput(); this.actions.dispose(); this.list.dispose(); super.dispose(); }
 	private ownMenu(lifetime: DisposableStore): void {

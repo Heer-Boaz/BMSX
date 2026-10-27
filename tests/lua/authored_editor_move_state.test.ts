@@ -29,7 +29,7 @@ function aemFixture(t: TestContext) {
 	return { ...f, input, receiver, model, authored: source };
 }
 
-test('authored inputs own their move capability without lending it to physical or diagnostic inputs', t => {
+test('portable inputs own their move capability without lending it to diagnostic inputs or pane-owned inspections', t => {
 	const f = aemFixture(t), workingCopy = f.firstInput.workingCopy;
 	const behavior = f.editor.behaviorLens.createInput(workingCopy, 'graph');
 	const inputs = [new SceneEditorInput(workingCopy), new CartMapInput(f.model, 'nemesis'),
@@ -38,9 +38,9 @@ test('authored inputs own their move capability without lending it to physical o
 		new ResourceViewerInput(f.sources.catalog, workingCopy.resource)];
 	for (const input of inputs) f.editor.editorParts.main.group.model.add(input);
 	for (const input of [f.firstInput, f.input, ...inputs]) assert.equal(input.canMove(), true);
-	const physical = new GameViewInput(), diagnostic = new HostErrorInput('fixture diagnostic');
-	t.after(() => { physical.dispose(); diagnostic.dispose(); });
-	assert.equal(physical.canMove(), false); assert.equal(diagnostic.canMove(), false);
+	const game = new GameViewInput(), diagnostic = new HostErrorInput('fixture diagnostic');
+	t.after(() => { game.dispose(); diagnostic.dispose(); });
+	assert.equal(game.canMove(), true); assert.equal(diagnostic.canMove(), false);
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const inspection = new BehaviorRuntimeInspection(f.sources, f.editor.luaPrograms.guest, f.host.rewind, -1,
 		f.sources.currentBlua32Media.system!, undefined, f.editor.commands.transport);

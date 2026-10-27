@@ -13,6 +13,7 @@ let snapshotSequence = 0;
 
 /** A retained mounted-image snapshot; catalog selection and held inspection are independent. */
 export class RomInspectorInput extends ReadonlyEditorInput<`rom-inspector:${number}`, 'rom_inspector'> {
+	public override canMove(): boolean { return true; }
 	public override readonly serializable = false;
 	public readonly model: RomInspectorModel;
 	public readonly reader: RomInspectorContentModel;

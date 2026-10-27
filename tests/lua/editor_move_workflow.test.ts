@@ -5,7 +5,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
-import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import type { EditorPart } from '../../ide/workbench/services/editor/editor_part';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
@@ -135,13 +135,13 @@ test('a destination entering close admission after the chooser snapshot cannot r
 	assert.equal(input.workingCopy.buffer.getText(), f.source);
 });
 
-test('physical Game input has no move action and cannot create a destination through direct command dispatch', t => {
-	const f = createActualSourcePanes(t), parts = f.editor.editorParts, game = new GameViewInput();
-	parts.main.group.openEditor(game); f.update();
+test('host diagnostic input has no move action and cannot create a destination through direct command dispatch', t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts, diagnostic = new HostErrorInput('fixture diagnostic');
+	parts.main.group.openEditor(diagnostic); f.update();
 	const target = parts.main.group.panes.activePane!.commandTarget, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	assert.equal(f.editor.commands.isEnabled('window.moveEditor', target), false);
 	f.editor.commands.execute('window.moveEditor', target);
 	assert.equal(f.editor.quickInput.visible, false); assert.equal(parts.documents.length, 2);
-	assert.ok(parts.main.group.model.activeTab === game && f.firstGroup.model.activeTab === f.firstInput);
+	assert.ok(parts.main.group.model.activeTab === diagnostic && f.firstGroup.model.activeTab === f.firstInput);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });

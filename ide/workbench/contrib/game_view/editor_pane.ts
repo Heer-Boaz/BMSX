@@ -1,4 +1,3 @@
-import { InputInteraction } from '../../../input/interaction';
 import type { InputFocusScope } from '../../../input/focus';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
@@ -18,11 +17,11 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
+import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
 
 /** A large game viewport; transport commands share host execution and rewind. */
 export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 	private readonly gameInput: GameInputControl;
-	private readonly runtimeContext = new InputInteraction();
 	private shownFrame = -1;
 	private shownHistory = false;
 	private frameLabel = '';
@@ -40,18 +39,17 @@ export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 	}
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	protected override activate(): void {
-		this.runtimeContext.setRuntime(this.commands.transport);
-		this.focusTarget.scope.interaction = null;
-		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.runtimeContext };
+		const interaction = this.input.interaction;
+		interaction.setRuntime(this.commands.transport, interaction.running);
+		this.focusTarget.scope.interaction = interaction;
+		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction };
 		this.update();
 		this.gameInput.setInput(this.input.frameBounds);
 	}
-	public override clearInput(): void {
-		this.focusTarget.scope.interaction = undefined;
-		this.focusTarget.scope.runtime = undefined;
-		this.runtimeContext.setRuntime(null);
+	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
+		if (reason !== 'move') this.input.interaction.running = false;
 		this.gameInput.clearInput();
-		super.clearInput();
+		super.clearInput(reason);
 	}
 	public override dispose(): void {
 		this.gameInput.dispose();

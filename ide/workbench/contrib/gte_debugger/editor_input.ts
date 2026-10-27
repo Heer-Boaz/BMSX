@@ -11,9 +11,13 @@ import type { PropertyInspectorViewState } from '../../ui/property_inspector/mod
 import { WorkbenchWindowModel } from '../../ui/window/model';
 import { GteCommandProjection, type GteDebugPlane, type GteDebugView } from './presentation';
 import type { GteDiagramAnchor } from './diagram';
+import type { GteDebuggerTabId } from '../../ui/tab/id';
+
+let nextInputId = 0;
 
 /** A retained observation session. Source navigation detaches its pane, not its lease. */
-export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_debugger'> {
+export class GteDebuggerInput extends ReadonlyEditorInput<GteDebuggerTabId, 'gte_debugger'> {
+	public override canMove(): boolean { return true; }
 	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
 	public readonly actions = createWorkbenchActionBar('gte.title', true, WORKBENCH_MENUS['gte.context']);
@@ -40,7 +44,9 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 	public selectionRevision = 0;
 	private generation = -1;
 	public constructor(public readonly history: RuntimeGteHistory) {
-		super('gte-debugger', 'gte_debugger', 'GTE', true);
+		const sequence = nextInputId++;
+		super(`gte-debugger:${sequence}`, 'gte_debugger', 'GTE', true);
+		this.setLabel(this.title, `Observation view ${sequence}`, `#${sequence}`);
 		this.disposables.add(history.observe());
 	}
 	public onWillChangeSelection(listener: () => void): () => void {
@@ -87,6 +93,8 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 }
 
 export function openGteDebugger(group: EditorGroupView, history: RuntimeGteHistory): void {
-	const existing = group.model.findById('gte-debugger');
+	const active = group.model.activeTab;
+	const existing = active?.kind === 'gte_debugger' && active.history === history ? active
+		: group.model.tabs.find(input => input.kind === 'gte_debugger' && input.history === history);
 	group.openEditor(existing ?? new GteDebuggerInput(history), { pinned: true });
 }

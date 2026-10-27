@@ -91,6 +91,9 @@ hold the primary target. Runtime commands and Timeline retain the logical client
 attachment, independently of a temporarily hidden guest-input viewport.
 Transients borrow the invoking interaction without
 borrowing guest input. Attachment and transport retirement revoke that authority.
+Runtime inputs retain logical live-follow intent and captured observations;
+moving their view replaces control scopes, not those sessions. Independent
+inspection views remain distinct even when they observe the same history.
 Finite workbench operations declare their execution intent at host admission;
 they do not erase the UI or explicit pause reasons.
 

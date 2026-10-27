@@ -1,6 +1,6 @@
 import type { RuntimeTransport } from '../runtime/transport';
 
-/** One control attachment's physical target and live-follow intent. Null names no admitted target. */
+/** One logical client's physical target and live-follow intent. Control scopes admit its authority. */
 export class InputInteraction {
 	private transportValue: RuntimeTransport | null;
 	private runningValue: boolean;

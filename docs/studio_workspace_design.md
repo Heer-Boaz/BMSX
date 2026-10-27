@@ -78,6 +78,11 @@ invitation to substitute Home or another declaration.
   checks the input's move capability and transfers the existing input with view
   state. Studio likewise separates transfer from copying, but detaches the old
   pane first because its retained inputs own mutable view bindings.
+- VS Code's [terminal editor](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/browser/terminalEditor.ts#L70-L94)
+  attaches and detaches presentation around a retained runtime instance; the
+  [terminal input](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/browser/terminalEditorInput.ts#L24-L85)
+  keeps that instance independently of the pane. Studio likewise separates
+  runtime-client intent from concrete focus, popup and guest-input authority.
 - Godot's [main-screen container](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/editor_main_screen.h#L49-L64)
   keeps the main area present, while its
   [dock manager](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/docks/editor_dock_manager.h)
@@ -253,6 +258,14 @@ view and physical target are distinct identities:
   heap/media/history lifetime. Domain numbers and object hashes can repeat in
   the authoring machine, Play and test targets. They cannot identify an authored
   asset or be restored as if they did.
+
+Runtime tool inputs identify retained view sessions, not just a tool kind or a
+physical target. Two GPU/GTE views can hold different observations from the same
+history, including evidence that has expired from its rolling buffer. Their
+view identities remain distinct when moved into one group. Ordinary tool open
+reuses the invoking group's active matching view, then another view of that
+same history; it does not merge two retained sessions. The same separation
+applies to independent event readers and Game clients over one primary target.
 
 The source catalog and canonical models use `(contextId, path)`. Physical
 system/cartridge domain numbers belong to execution attachments, never resource
@@ -539,6 +552,15 @@ Chrome/transients retain an admitted activated client context rather than
 searching visible panes when there is no focused leaf. Retiring that client
 uses normal focus-return/activation to select a surviving context. The host
 menu's own pause policy remains a separate host responsibility.
+
+A runtime tool's retained input owns its logical live-follow intent. Moving it
+retains that intent and any captured evidence while retiring the old control's
+focus, popups, native input and pointer route. Its new pane publishes the same
+logical interaction through its own scope. Ordinary deactivation still ends
+live-follow according to the contribution's contract. Game's non-guest client
+and guest viewport have separate interactions: focusing its chrome activates
+its own intent, while guest keyboard/controller input requires fresh viewport
+focus. Moving or restoring a view never restores guest-input capture.
 
 Background panes do not publish competing hold values. Global run controls and
 audio monitoring bind to the explicitly selected run target; window-local
