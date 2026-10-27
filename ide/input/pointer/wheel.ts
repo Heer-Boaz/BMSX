@@ -1,4 +1,5 @@
 import type { CartEditor } from '../../cart_editor';
+import type { WorkbenchSurfaceService } from '../../workbench/services/windows/service';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { problemsPanel, getProblemsPanelBounds } from '../../workbench/contrib/problems/panel/controller';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
@@ -13,9 +14,9 @@ import { DisplayPointMappingResult } from '../../../machine/ts/render/video_outp
 const guestPoint = { x: 0, y: 0 };
 
 /** Pointer and wheel use the same retained paint/target structure. */
-export function handleEditorWheelInput(editor: CartEditor, event: WheelInputSnapshot, native: WheelInputEvent): boolean {
+export function handleEditorWheelInput(surfaces: WorkbenchSurfaceService, event: WheelInputSnapshot, native: WheelInputEvent): boolean {
 	if (!event.valid || !event.insideViewport || event.deltaX === 0 && event.deltaY === 0) return true;
-	const surface = editor.surfaces.hitTest(event.viewportX, event.viewportY);
+	const surface = surfaces.hitTest(event.viewportX, event.viewportY);
 	// A selected opaque surface owns an unhandled wheel too. Only its actual
 	// controller can explicitly admit this occurrence to a guest viewport.
 	if (surface?.handleWheel?.(event) !== false) return true;
@@ -32,13 +33,6 @@ export function handleWorkbenchChromeWheel(editor: CartEditor, event: WheelInput
 	if (handleResourcePanelWheel(editor.resourcePanel, event) || handleProblemsPanelWheel(event)) return true;
 	const guest = inputFocus.admittedTarget?.guestInput;
 	return guest === undefined || !point_in_rect(event.viewportX, event.viewportY, guest.bounds);
-}
-
-export function handleWorkbenchPaneWheel(editor: CartEditor, event: WheelInputSnapshot): boolean {
-	const guest = inputFocus.admittedTarget?.guestInput;
-	if (guest !== undefined && point_in_rect(event.viewportX, event.viewportY, guest.bounds)) return false;
-	editor.editorGroup.panes.activePane?.handleWheel(event);
-	return true;
 }
 
 function handleResourcePanelWheel(resourcePanel: ResourcePanelController, event: WheelInputSnapshot): boolean {

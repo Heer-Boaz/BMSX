@@ -28,8 +28,7 @@ export function revealScenarioRun(state: ScenarioLabViewState, run: ScenarioRun)
 	refreshScenarioLabProjection(state);
 	state.resultPane.selectionIndex = state.resultPane.rows.findIndex(row => row.id === run.id);
 	state.focus = 'results';
-	revealWorkbenchListSelection(state.testPane);
-	revealWorkbenchListSelection(state.resultPane);
+	state.pendingReveal = true;
 	updateScenarioLabStatus(state);
 }
 

@@ -28,6 +28,7 @@ export class ScenarioLabNavigationSelection extends EditorPaneSelection {
 	}
 
 	public restore(view: ScenarioLabViewState): void {
+		view.pendingReveal = false;
 		restoreScenarioLabTestView(view, this.tests);
 		view.resultPane.expandedResultIds.clear();
 		for (const id of this.expandedResults) view.resultPane.expandedResultIds.add(id);

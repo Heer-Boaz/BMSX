@@ -14,6 +14,7 @@ import { sourceTabDescription } from '../../../ui/tab/titles';
 import { editorChromeState } from '../../../ui/chrome_state';
 
 export type PanelLayout = {
+	resizeBounds: RectBounds;
 	headerTop: number;
 	headerBottom: number;
 	contentTop: number;
@@ -62,6 +63,7 @@ export function computeProblemsPanelVisibleHeight(contentHeightPx: number, fixed
 
 export function createProblemsPanelLayout(): PanelLayout {
 	return {
+		resizeBounds: create_rect_bounds(),
 		headerTop: 0,
 		headerBottom: 0,
 		contentTop: 0,
@@ -71,6 +73,9 @@ export function createProblemsPanelLayout(): PanelLayout {
 }
 
 export function writeProblemsPanelLayout(bounds: RectBounds, out: PanelLayout): PanelLayout {
+	if (bounds.left === bounds.right || bounds.top === bounds.bottom) write_rect_bounds(out.resizeBounds, bounds.left, bounds.top, bounds.left, bounds.top);
+	else write_rect_bounds(out.resizeBounds, bounds.left, bounds.top - constants.PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN,
+		bounds.right, bounds.top + constants.PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN);
 	const headerTop = bounds.top;
 	const headerBottom = headerTop + problemsPanelHeaderHeight();
 	const contentTop = headerBottom;
@@ -172,11 +177,6 @@ export function getProblemsPanelBounds(): RectBounds | null {
 	}
 	write_rect_bounds(panelBoundsScratch, 0, top, editorViewState.viewportWidth, bottom);
 	return panelBoundsScratch;
-}
-
-export function isPointerOverProblemsPanelDivider(bounds: Readonly<RectBounds>, x: number, y: number): boolean {
-	const margin = constants.PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
-	return y >= bounds.top - margin && y <= bounds.top + margin && x >= bounds.left && x <= bounds.right;
 }
 
 export function clampProblemsPanelHeight(requestedHeight: number): number {

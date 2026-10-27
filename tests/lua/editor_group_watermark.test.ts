@@ -29,7 +29,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
 	const draw = (left: number, width: number, height = 288) => {
 		editorViewState.editorAreaLeft = left; editorChromeState.editorRightInset = 384 - left - width;
 		editorViewState.viewportHeight = height; refreshWorkbenchLayout();
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawEditorGroupWatermark(); overlay.renderer.endFrame();
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawEditorGroupWatermark(getWorkbenchEditorBounds()); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
 			glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);

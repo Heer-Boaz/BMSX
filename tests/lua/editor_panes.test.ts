@@ -22,6 +22,7 @@ import test from 'node:test';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
+import { createTestGroupPresentation } from '../helpers/editor_panes';
 import { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 import type {
 	BehaviorLensInput,
@@ -167,7 +168,7 @@ function createEditorPanes() {
 	}, { isEnabled: () => false, execute() {} }, async targets => {
 		for (const { group, input } of targets) group.removeEditor(input);
 		return true;
-	});
+	}, createTestGroupPresentation());
 	return {
 		group,
 		codePane: () => codePane!,

@@ -13,6 +13,35 @@ import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
+test('real group surfaces route pointer and wheel to their own Source and retire without disturbing a sibling gesture', t => {
+	const f = createActualSourcePanes(t, true), a = f.first.code, b = f.second.code;
+	assert.ok(f.editor.surfaces.findByScope(f.firstGroup.captureScope) === f.firstGroup.paneSurface);
+	assert.ok(f.editor.surfaces.findByScope(f.secondGroup.captureScope) === f.secondGroup.paneSurface);
+	assert.ok(f.editor.surfaces.findByScope(f.firstGroup.tabScope) === f.firstGroup.tabSurface);
+	assert.ok(f.editor.surfaces.findByScope(f.secondGroup.tabScope) === f.secondGroup.tabSurface);
+	assert.ok(f.firstGroup.paneSurface !== f.secondGroup.paneSurface);
+	const firstWheel = t.mock.method(f.first, 'handleWheel'), secondWheel = t.mock.method(f.second, 'handleWheel');
+	const bounds = getCodeAreaBounds(b), x = bounds.textLeft + 1, y = bounds.codeTop + 1;
+	a.focusTarget.focus();
+	f.editor.dispatchWheel({ x, y, deltaX: 0, deltaY: 0.25, attachmentDeltaY: 0.25, modifiers: KeyModifier.none, timestamp: 0 });
+	assert.equal(firstWheel.mock.callCount(), 0); assert.equal(secondWheel.mock.callCount(), 1);
+	assert.ok(inputFocus.target === a.focusTarget, 'a spatial wheel does not transfer keyboard focus');
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
+	assert.ok(inputFocus.target === b.focusTarget); assert.equal(b.pointer.pointerSelecting, true);
+	assert.ok(pointerCapture.routeScope === f.secondGroup.captureScope);
+	// Forced container retirement, not a user dirty-close decision.
+	f.editor.editorGroups.splice(f.editor.editorGroups.indexOf(f.firstGroup), 1);
+	f.firstGroup.dispose();
+	assert.equal(f.firstGroup.paneSurface.retired, true); assert.equal(f.firstGroup.tabSurface.retired, true);
+	assert.equal(f.secondGroup.paneSurface.retired, false); assert.equal(f.secondGroup.tabSurface.retired, false);
+	assert.ok(inputFocus.target === b.focusTarget); assert.equal(pointerCapture.active, true);
+	f.editor.dispatchPointer({ x: x + b.font.advance('a'), y, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
+	assert.equal(b.pointer.pointerSelecting, false); assert.ok(b.model === f.secondInput.workingCopy);
+});
+
 test('two actual Source panes retain native targets, focused editing, clipboard and history for different models', t => {
 	const f = createActualSourcePanes(t), a = f.first.code, b = f.second.code;
 	const firstNative = a.focusTarget.textInput!, secondNative = b.focusTarget.textInput!;

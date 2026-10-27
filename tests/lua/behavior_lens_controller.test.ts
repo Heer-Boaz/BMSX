@@ -20,6 +20,7 @@ import { BehaviorLensNavigationSelection } from '../../ide/workbench/contrib/beh
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { createTestGroupPresentation } from '../helpers/editor_panes';
 import { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
@@ -58,11 +59,10 @@ function fixture(t: TestContext, source = SOURCE) {
 			code_editor: unused, resource_view: unused, aem_editor: unused, lua_program: unused, actor_lab: unused,
 			game_view: unused, cart_map: unused, scene_editor: unused, scenario_lab: unused,
 			behavior_lens: owner => {
-				const surface = surfaces.attach({ role: 'content', captureScope: owner.captureScope,
-					getBounds: () => BOUNDS, getClip: () => BOUNDS, isVisible: () => true, draw() {} });
-				return new BehaviorLensEditorPane(controller, null!, menu, surfaces, surface, BOUNDS, owner, owner.focusScope);
+
+				return new BehaviorLensEditorPane(controller, null!, menu, surfaces, owner.paneSurface, owner.workArea, owner, owner.focusScope);
 			},
-		}, { isEnabled: () => false, execute() {} }, unused);
+		}, { isEnabled: () => false, execute() {} }, unused, createTestGroupPresentation(surfaces, BOUNDS));
 		group.panes.layout(BOUNDS);
 		return group;
 	};

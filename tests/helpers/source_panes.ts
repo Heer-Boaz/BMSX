@@ -1,7 +1,6 @@
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
 import type { TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
@@ -18,7 +17,8 @@ import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../lua/cpu_test_harness';
 import { linkTestSystemBlua32 } from './blua32';
-import { createTestEditorGroup } from './editor_panes';
+import { createTestEditorGroup, TEST_EDITOR_TAB_LAYOUT_CONTEXT, TEST_EDITOR_TAB_RENDER_CONTEXT } from './editor_panes';
+import { create_rect_bounds, write_rect_bounds } from '../../machine/ts/common/rect';
 import { createHostFrameFixture } from './host_frame';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from './runtime_sources';
 
@@ -50,23 +50,26 @@ export function createActualSourcePanes(t: TestContext, sameModel = false) {
 	const first = firstGroup.panes.getPane('code_editor') as CodeEditorPane;
 	let secondGroup: EditorGroupView;
 	secondGroup = createTestEditorGroup(editor.commands, scope => new CodeEditorPane(scope, secondGroup, editor, clipboard,
-		sources, ide.guest, ide.fault, host.runtime, ide.debugger, host.clock), editor.editorClose.close);
+		sources, ide.guest, ide.fault, host.runtime, ide.debugger, host.clock), editor.editorClose.close, {
+		surfaces: editor.surfaces, owner: firstGroup.paneSurface.lifetimeOwner!, focusScope: inputFocus.workbenchScope,
+		workArea: firstGroup.workArea, renderContext: TEST_EDITOR_TAB_RENDER_CONTEXT,
+	});
 	editor.editorGroups.push(secondGroup);
 	const firstBounds = { left: 0, top: 32, right: 384, bottom: 290 };
 	const secondBounds = { left: 400, top: 32, right: 800, bottom: 290 };
-	const surface = editor.surfaces.attach({ role: 'content', captureScope: secondGroup.captureScope,
-		isVisible: () => secondGroup.panes.activePane !== null, getBounds: () => secondBounds, getClip: () => secondBounds,
-		draw: () => secondGroup.panes.activePane?.draw(),
-		handlePointer: (snapshot, now) => secondGroup.panes.activePane?.handlePointer(snapshot,
-			(snapshot.justPressedButtons & PointerButton.Primary) !== 0, (snapshot.justPressedButtons & PointerButton.Secondary) !== 0, now, false),
-		handleWheel: event => { secondGroup.panes.activePane?.handleWheel(event); return true; },
-		onRetire: () => pointerCapture.cancelScope(secondGroup.captureScope),
-	});
+
 	const secondInput = resolveLuaCodeEditorInput(sources.catalog, sameModel ? firstInput.workingCopy.resource
 		: sources.catalog.resolveResource({ contextId: sources.systemContextId, path: 'second.lua' })!);
 	secondGroup.panes.layout(secondBounds); secondGroup.openEditor(secondInput);
 	const second = secondGroup.panes.getPane('code_editor') as CodeEditorPane;
-	const arrange = () => { firstGroup.panes.layout(firstBounds); secondGroup.panes.layout(secondBounds); };
+	const firstTabs = create_rect_bounds(), secondTabs = create_rect_bounds();
+	const arrange = () => {
+		write_rect_bounds(firstTabs, firstBounds.left, firstBounds.top - editorViewState.tabBarHeight, firstBounds.right, firstBounds.top);
+		write_rect_bounds(secondTabs, secondBounds.left, secondBounds.top - editorViewState.tabBarHeight, secondBounds.right, secondBounds.top);
+		firstGroup.tabStrip.layout(firstTabs, TEST_EDITOR_TAB_LAYOUT_CONTEXT);
+		secondGroup.tabStrip.layout(secondTabs, TEST_EDITOR_TAB_LAYOUT_CONTEXT);
+		firstGroup.panes.layout(firstBounds); secondGroup.panes.layout(secondBounds);
+	};
 	const update = (milliseconds = 0) => {
 		host.clock.advance(milliseconds); editor.update(milliseconds / 1000); secondGroup.panes.activePane?.update(milliseconds / 1000); arrange(); runBackgroundTasks(host.clock);
 	};
@@ -78,7 +81,7 @@ export function createActualSourcePanes(t: TestContext, sameModel = false) {
 		editor.draw(); ide.overlayRenderer.endFrame(); return host.presenter.hostOverlayQueue.consumeOverlayFrame();
 	};
 	t.after(async () => {
-		surface.dispose(); editor.editorGroups.splice(editor.editorGroups.indexOf(secondGroup), 1); secondGroup.dispose();
+		editor.editorGroups.splice(editor.editorGroups.indexOf(secondGroup), 1); secondGroup.dispose();
 		inputFocus.setTarget(null); pointerCapture.interrupt(false);
 		await editor.shutdown(); clearBackgroundTasks(); host.audio.dispose(); host.input.dispose();
 	});

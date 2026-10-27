@@ -182,6 +182,8 @@ export type ScenarioLabViewState = {
 	readonly resultPane: ScenarioLabResultPaneState;
 	focus: ScenarioLabFocus;
 	runActive: boolean;
+	/** Explicit run navigation waits for the actual pane's first available viewport. */
+	pendingReveal: boolean;
 	readonly split: WorkbenchSplitView;
 	splitRevision: number;
 	readonly layout: ScenarioLabLayout;

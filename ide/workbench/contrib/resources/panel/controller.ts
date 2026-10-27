@@ -126,6 +126,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
 	private readonly bounds: RectBounds = create_rect_bounds();
 	public readonly layout: ResourcePanelLayout = createResourcePanelLayout(this.bounds);
+	public readonly resizeBounds = this.layout.resizeBounds;
 	private readonly filesMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
 	private readonly callMetrics = new ScratchBuffer<ResourcePanelItemMetrics>(createResourcePanelItemMetrics);
 	private readonly scrollbarController: ScrollbarController<'resourceVertical' | 'resourceHorizontal'>;

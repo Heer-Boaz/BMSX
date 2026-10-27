@@ -111,8 +111,12 @@ Font-generation measurements are shared by attached views; each `CodeLayout`
 owns wrapping, visual rows and its control's inline-text projection.
 
 Contributions own concrete retained editor inputs. `EditorGroupView` owns its
-group model, pane cache, focus/capture scopes and tab-strip control. Tab layout,
-hover and gestures live in that strip, not in frontend-wide chrome state.
+group model, pane cache, tab/content surfaces, focus/capture scopes and tab-strip
+control. Its container supplies focus ancestry and the retained work area before
+descendant controls are constructed. Pane factories consume that group's actual
+surface and extent. Layout publishes each group's retained title/content bounds;
+paint and input use those same surfaces. Tab layout, hover and gestures live in
+the strip, not in frontend-wide chrome state.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
 Source inputs own their model-to-view subscriptions. Closing one releases its

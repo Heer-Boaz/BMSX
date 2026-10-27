@@ -7,17 +7,11 @@ import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense
 import { createBehaviorQuickPickItem } from '../behavior_lens/quick_access';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { editorTextModelService } from '../../../editor/model/model_service';
-import type { WheelInputSnapshot } from '../../../common/models';
 import type { CartEditor } from '../../../cart_editor';
 import type { EditorScenarioLabCommandId } from '../../../common/commands';
 import type { ScenarioLabTabId } from '../../ui/tab/id';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorGroupView } from '../../services/editor/editor_group';
-import { prepareScenarioLabLayout } from './layout';
-import {
-	scrollWorkbenchList,
-	workbenchListContainsPosition,
-} from '../../ui/list_view';
 import {
 	scenarioLabCommandEnabled,
 	revealScenarioRun,
@@ -35,7 +29,6 @@ import type { BehaviorRegistrationIndex } from '../behavior_lens/registration_in
 import { ScenarioLabInput } from './editor_input';
 
 const SCENARIO_LAB_TAB_ID: ScenarioLabTabId = 'scenario-lab';
-const WHEEL_SCROLL_ROWS = 3;
 
 /** Workbench contribution that projects tests/results and invokes the run owner. */
 export class ScenarioLabController {
@@ -83,7 +76,6 @@ export class ScenarioLabController {
 			view.runActive = this.runs.active;
 			updateScenarioLabStatus(view);
 		}
-		prepareScenarioLabLayout(view);
 	}
 
 	public executeCommand(command: EditorScenarioLabCommandId): void {
@@ -141,14 +133,6 @@ export class ScenarioLabController {
 		return node?.kind === 'module' ? node : node?.kind === 'test' ? this.runs.collection.getNode(node.parentId) as ScenarioTestModule : undefined;
 	}
 
-	public handleWheel(view: ScenarioLabViewState, event: WheelInputSnapshot): void {
-		prepareScenarioLabLayout(view);
-		const delta = event.deltaY * WHEEL_SCROLL_ROWS;
-		if (workbenchListContainsPosition(view.testPane, event.viewportX, event.viewportY)) scrollWorkbenchList(view.testPane, delta);
-		else if (workbenchListContainsPosition(view.resultPane, event.viewportX, event.viewportY)) scrollWorkbenchList(view.resultPane, delta);
-		else if (view.focus === 'tests') scrollWorkbenchList(view.testPane, delta);
-		else scrollWorkbenchList(view.resultPane, delta);
-	}
 
 	private getOrCreateView(): ScenarioLabViewState {
 		if (this.view !== null) {

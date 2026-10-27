@@ -14,6 +14,7 @@ import type { WorkbenchGraphViewport } from '../../../ide/workbench/ui/graph/vie
 import type { WorkbenchGraphDragSource } from '../../../ide/workbench/ui/graph/drag';
 import { drawWorkbenchGraph } from '../../../ide/workbench/render/graph';
 import { BrowserGraphLayoutEngine } from '../../../ide/browser/graph_layout';
+import { createTestGroupPresentation } from '../../helpers/editor_panes';
 import { GraphLayoutTestInput } from '../../helpers/graph_layout_input';
 
 /** A domain-free test contribution, mounted by the production editor-group owner. */
@@ -72,7 +73,7 @@ export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 		rom_inspector: unused, event_viewer: unused, gte_debugger: unused, gpu_debugger: unused, terminal: unused, actor_lab: unused, game_view: unused, workspace_edit_review: unused, assistant: unused, aem_editor: unused, lua_program: unused, conversation_observer: unused }, { isEnabled: () => false, execute() {} }, async targets => {
 		for (const { group, input } of targets) group.removeEditor(input);
 		return true;
-	});
+	}, createTestGroupPresentation());
 	group.openEditor(inputs[0]);
 	for (let index = 1; index < inputs.length; index += 1) group.model.add(inputs[index]);
 	return { inputs, pane, group };

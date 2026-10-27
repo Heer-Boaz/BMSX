@@ -7,7 +7,7 @@ import { drawEditorText } from '../../editor/render/text_renderer';
 import type { EditorFont } from '../../editor/ui/view/font';
 import { editorViewState } from '../../editor/ui/view/state';
 import { api } from '../../runtime/overlay_api';
-import { getWorkbenchEditorBounds } from '../common/layout';
+import type { RectBounds } from '../../../machine/ts/common/rect';
 
 /** Entry points for an empty editor group, as VS Code's editor group watermark. */
 const WATERMARK_COMMANDS: readonly EditorCommandId[] = ['commandPalette', 'resourceSearch', 'resources', 'createResource'];
@@ -35,8 +35,7 @@ function measureWatermark(font: EditorFont): void {
 	rowWidth = titleColumnWidth + keyColumnWidth;
 }
 
-export function drawEditorGroupWatermark(): void {
-	const bounds = getWorkbenchEditorBounds();
+export function drawEditorGroupWatermark(bounds: Readonly<RectBounds>): void {
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_CODE_BACKGROUND);
 	const font = editorViewState.font;
 	if (font !== measuredFont) measureWatermark(font);

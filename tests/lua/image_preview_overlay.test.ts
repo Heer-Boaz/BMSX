@@ -96,7 +96,7 @@ function workbenchFixture(t: TestContext) {
 	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	editorRuntimeState.active = true; editor.update(0);
 	const cache = new ImagePreviewCache(async () => pixels);
-	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.paneSurface, editor.commands);
+	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.editorGroup.paneSurface, editor.commands);
 	preview.layout(bounds, 6);
 	t.after(async () => {
 		preview.dispose(); cache.dispose(); inputFocus.setTarget(null);

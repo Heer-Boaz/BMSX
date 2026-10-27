@@ -27,9 +27,35 @@ import type {
 	ScenarioLabInput,
 } from '../../ide/workbench/ui/tab/model';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
-import { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
+import { EditorGroupView, type EditorGroupPresentation } from '../../ide/workbench/services/editor/editor_group';
 import type { CloseEditors } from '../../ide/workbench/services/editor/editor_close';
-import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
+import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { drawEditorText } from '../../ide/editor/render/text_renderer';
+import { editorViewState } from '../../ide/editor/ui/view/state';
+import { measureText, measureTextRange } from '../../ide/editor/common/text/layout';
+
+export const TEST_EDITOR_TAB_LAYOUT_CONTEXT = {
+	get font() { return editorViewState.font.renderFont(); },
+	get tabBarHeight() { return editorViewState.tabBarHeight; },
+	get charAdvance() { return editorViewState.charAdvance; },
+	measureText, measureTextRange,
+};
+
+export const TEST_EDITOR_TAB_RENDER_CONTEXT = {
+	drawText(text: string, x: number, y: number, z: number, color: number): void {
+		drawEditorText(editorViewState.font, text, x, y, z, color);
+	},
+};
+
+/** Real retained container/surfaces for group lifecycle tests; no primary workbench aliases. */
+export function createTestGroupPresentation(surfaces = new WorkbenchSurfaceService(),
+	workArea: Readonly<RectBounds> = { left: 0, top: 0, right: 800, bottom: 600 }): EditorGroupPresentation {
+	const focusScope = new InputFocusScope(Symbol('test editor container'), inputFocus.workbenchScope);
+	const owner = surfaces.attach({ role: 'content', captureScope: focusScope.surfaceScope,
+		isVisible: () => true, getBounds: () => workArea, getClip: () => workArea, draw() {} });
+	return { surfaces, owner, focusScope, workArea, renderContext: TEST_EDITOR_TAB_RENDER_CONTEXT };
+}
 
 class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public override get commandTarget() { return this.focusTarget; }
@@ -111,6 +137,7 @@ export function createTestEditorGroup(
 	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
 	codePane?: (scope: InputFocusScope) => EditorPane<CodeEditorInput>,
 	closeEditors: CloseEditors = retireTestEditors,
+	presentation: EditorGroupPresentation = createTestGroupPresentation(),
 ): EditorGroupView {
 	const group = new EditorGroupView({
 		home: group => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(group.focusScope, activateViewInput),
@@ -136,6 +163,6 @@ export function createTestEditorGroup(
 		scenario_lab: group => new TestEditorPane<ScenarioLabInput>(group.focusScope, activateViewInput),
 		scene_editor: group => new TestEditorPane<SceneEditorInput>(group.focusScope, activateViewInput),
 		cart_map: group => new TestEditorPane<CartMapInput>(group.focusScope, activateViewInput),
-	}, commands, closeEditors);
+	}, commands, closeEditors, presentation);
 	return group;
 }

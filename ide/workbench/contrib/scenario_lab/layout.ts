@@ -3,12 +3,13 @@ import { uppercaseOutsideStrings } from '../../../common/text';
 import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorFont } from '../../../editor/ui/view/font';
-import { getWorkbenchEditorBounds, updateFullWidthWorkbenchLayout } from '../../common/layout';
+import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import {
 	clampWorkbenchListScroll,
 	layoutWorkbenchList,
+	revealWorkbenchListSelection,
 } from '../../ui/list_view';
 import {
 	refreshScenarioLabProjection,
@@ -29,7 +30,6 @@ const TOOLBAR_PADDING_Y = 2;
 const PANE_PADDING_X = 4;
 const PANE_HEADER_PADDING_Y = 2;
 const TREE_INDENT_COLUMNS = 2;
-const STATUS_PADDING_X = 4;
 // Tests retain suite/module/case lanes; results keep a readable failure summary beside them.
 const TEST_READING_COLUMNS = 24;
 const RESULT_READING_COLUMNS = 32;
@@ -189,14 +189,6 @@ function writeScenarioResultText(state: ScenarioLabViewState): void {
 	}
 }
 
-function writeScenarioLabStatusText(state: ScenarioLabViewState): void {
-	const status = state.status;
-	const availableWidthCandidate = editorViewState.viewportWidth - STATUS_PADDING_X * 2;
-	const availableWidth = availableWidthCandidate > 0 ? availableWidthCandidate : 0;
-	status.renderedInfo = truncateTextToWidth(status.info, availableWidth);
-	status.dirty = false;
-}
-
 function layoutScenarioLabPane<Row>(
 	pane: ScenarioLabPaneState<Row>,
 	left: number,
@@ -220,7 +212,7 @@ function layoutScenarioLabPane<Row>(
 }
 
 /** Refreshes the retained projection and geometry only at owner revision boundaries. */
-export function prepareScenarioLabLayout(state: ScenarioLabViewState, bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): ScenarioLabLayout {
+export function prepareScenarioLabLayout(state: ScenarioLabViewState, bounds: Readonly<RectBounds>): ScenarioLabLayout {
 	refreshScenarioLabProjection(state);
 	const layout = state.layout;
 	if (updateFullWidthWorkbenchLayout(layout, bounds) || state.splitRevision !== state.split.revision) {
@@ -275,10 +267,12 @@ export function prepareScenarioLabLayout(state: ScenarioLabViewState, bounds: Re
 		writeScenarioResultText(state);
 		state.resultPane.textDirty = false;
 	}
-	if (state.status.dirty) {
-		writeScenarioLabStatusText(state);
-	}
 	clampWorkbenchListScroll(state.testPane);
 	clampWorkbenchListScroll(state.resultPane);
+	if (state.pendingReveal && state.testPane.layout.visibleRowCount !== 0 && state.resultPane.layout.visibleRowCount !== 0) {
+		state.pendingReveal = false;
+		revealWorkbenchListSelection(state.testPane);
+		revealWorkbenchListSelection(state.resultPane);
+	}
 	return layout;
 }

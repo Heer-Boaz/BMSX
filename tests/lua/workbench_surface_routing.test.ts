@@ -985,7 +985,7 @@ test('real popup and modal sources publish visibility before focus admission and
 
 	editor.quickInput.pick('Choose', '', () => new TextQuickPickProvider([{ label: 'one', description: '', detail: '' }]), () => {});
 	assert.equal(editor.quickInput.field.focusTarget.hasFocus, true);
-	assert.equal(editor.surfaces.isAdmitted(editor.paneSurface), false);
+	assert.equal(editor.surfaces.isAdmitted(editor.editorGroup.paneSurface), false);
 	assert.equal(editor.surfaces.topBlockingSurface?.captureScope, editor.quickInput.pointerScope);
 	editor.quickInput.hide();
 	assert.equal(inputFocus.target, origin);
@@ -996,7 +996,7 @@ test('real popup and modal sources publish visibility before focus admission and
 		modifiers: KeyModifier.none, timestamp: 0 }), true);
 	editor.actionPrompt.close();
 	assert.equal(await decision, 'cancel');
-	assert.equal(editor.surfaces.isAdmitted(editor.paneSurface), true);
+	assert.equal(editor.surfaces.isAdmitted(editor.editorGroup.paneSurface), true);
 	assert.equal(inputFocus.target, origin);
 });
 
@@ -1043,7 +1043,7 @@ test('retiring a real window with its property menu focused returns to an admitt
 	const tree = inputFocus.createTarget(null, editor.editorGroup.focusScope); tree.bindKeyboard(() => {});
 	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
 		model: new WorkbenchWindowModel({ left: 20, top: 30, right: 250, bottom: 240 }, 100, 80),
-		actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.paneSurface,
+		actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorGroup.paneSurface,
 		focusReturn: tree, workArea: extent, content: { draw() {} }, layoutContent() {},
 		retireContentInput: () => inspector.hide(),
 		restoreContentInput: () => inspector.show({ title: 'DETAILS', items: [{ label: 'A', value: 'B', description: '', warning: false }],
@@ -1094,8 +1094,8 @@ test('session popup promotes to its actual root or owner-local modal context, ne
 
 	const localScope = Symbol('owner-local modal');
 	const local = editor.surfaces.attach({
-		role: 'modal', blockedScope: editor.paneSurface, lifetimeOwner: editor.paneSurface, captureScope: localScope,
-		isVisible: () => true, getBounds: editor.paneSurface.getBounds, getClip: editor.paneSurface.getClip, draw() {},
+		role: 'modal', blockedScope: editor.editorGroup.paneSurface, lifetimeOwner: editor.editorGroup.paneSurface, captureScope: localScope,
+		isVisible: () => true, getBounds: editor.editorGroup.paneSurface.getBounds, getClip: editor.editorGroup.paneSurface.getClip, draw() {},
 	});
 	const localTarget = inputFocus.createTarget(tree, new InputFocusScope(localScope));
 	localTarget.canFocus = () => local.visible;
@@ -1105,7 +1105,7 @@ test('session popup promotes to its actual root or owner-local modal context, ne
 	assert.equal(localPopup.lifetimeOwner, local);
 	assert.equal(localPopup.presentationParent, local);
 	assert.equal(editor.surfaces.isAdmitted(localPopup), true);
-	assert.equal(editor.surfaces.isAdmitted(editor.paneSurface), false);
+	assert.equal(editor.surfaces.isAdmitted(editor.editorGroup.paneSurface), false);
 	assert.equal(editor.surfaces.hitTest(100, 200), localPopup);
 	assert.notEqual(editor.surfaces.hitTest(2, 2), localPopup, 'an owner-local popup does not block root chrome');
 	local.dispose();
@@ -1162,8 +1162,8 @@ test('actual Quick Input and action prompt retain their modal lifetime while the
 test('the actual lightbox keeps its property popup inside the pane admission context and retires it on close', t => {
 	const { editor } = fixture(t);
 	const cache = new ImagePreviewCache(async () => ({ width: 1, height: 1, pixels: new Uint8Array([1, 2, 3, 255]) }));
-	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.paneSurface, editor.commands);
-	preview.layout(editor.paneSurface.getBounds(), editorViewState.lineHeight);
+	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.editorGroup.paneSurface, editor.commands);
+	preview.layout(editor.editorGroup.paneSurface.getBounds(), editorViewState.lineHeight);
 	t.after(() => { preview.dispose(); cache.dispose(); });
 	preview.open('fixture:image');
 	editor.contextMenu.show(100, 60, [{ type: 'command', command: 'save' }], editor.commands);
@@ -1173,7 +1173,7 @@ test('the actual lightbox keeps its property popup inside the pane admission con
 	assert.equal(popup.lifetimeOwner, preview.surface);
 	assert.equal(popup.presentationParent, preview.surface);
 	assert.equal(editor.surfaces.isInContext(popup.captureScope, preview.surface.captureScope), true);
-	assert.equal(editor.surfaces.isAdmitted(editor.paneSurface), false);
+	assert.equal(editor.surfaces.isAdmitted(editor.editorGroup.paneSurface), false);
 	preview.close();
 	assert.equal(editor.contextMenu.visible, false);
 	assert.equal(popup.retired, true);
@@ -1307,7 +1307,7 @@ test('a toolbar menu uses its explicit tree invocation for lifetime and commands
 		{ selectFirst: true, invocationOrigin: tree });
 	const popup = editor.surfaces.findByScope(editor.contextMenu.pointerScope)!;
 	assert.equal(editor.contextMenu.invocationOrigin, tree);
-	assert.equal(popup.lifetimeOwner, editor.paneSurface);
+	assert.equal(popup.lifetimeOwner, editor.editorGroup.paneSurface);
 	assert.equal(editor.contextMenu.focusTarget.commandContext, tree);
 	assert.equal(editor.contextMenu.model.rows[0].enabled, true);
 	editor.contextMenu.accept();
@@ -1538,7 +1538,7 @@ test('real window hide and root-modal admission cancel true producer guest holds
 	const tree = inputFocus.createTarget(null, editor.editorGroup.focusScope); tree.bindKeyboard(() => {});
 	const model = new WorkbenchWindowModel({ left: 30, top: 40, right: 350, bottom: 260 }, 100, 80);
 	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
-		model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.paneSurface,
+		model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorGroup.paneSurface,
 		focusReturn: tree, workArea: extent,
 		content: { draw() {}, handlePointer: snapshot => { game.handlePointer(snapshot); } },
 		layoutContent: bounds => game.setInput(bounds), retireContentInput: () => game.clearInput(),

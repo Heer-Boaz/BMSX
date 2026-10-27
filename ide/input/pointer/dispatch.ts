@@ -1,9 +1,9 @@
 import type { PointerInputSnapshot } from '../../common/models';
 import { PointerButton, type PointerInputEvent } from '../../../hosts/common/input/pointer_event';
-import { handleEditorPanelPointer, handleEditorPanelResizePointer } from './panel';
-import { isCtrlDown, isMetaDown } from '../keyboard/key_input';
+import { handleEditorPanelPointer } from './panel';
 import { handleEditorChromePointerDispatch } from './chrome_dispatch';
 import type { CartEditor } from '../../cart_editor';
+import type { WorkbenchSurfaceService } from '../../workbench/services/windows/service';
 import { pointerCapture, WORKBENCH_POINTER_SCOPE } from './capture';
 import { pointerHover } from './hover';
 import { point_in_rect } from '../../../machine/ts/common/rect';
@@ -14,7 +14,7 @@ import { DisplayPointMappingResult } from '../../../machine/ts/render/video_outp
 const guestPoint = { x: 0, y: 0 };
 
 /** One structural target owns the occurrence, or the existing gesture continues. */
-export function handleTextEditorPointerInput(snapshot: PointerInputSnapshot, event: PointerInputEvent, editor: CartEditor): void {
+export function handleTextEditorPointerInput(snapshot: PointerInputSnapshot, event: PointerInputEvent, surfaces: WorkbenchSurfaceService): void {
 	const now = event.timestamp;
 	pointerHover.beginDispatch();
 	try {
@@ -24,12 +24,12 @@ export function handleTextEditorPointerInput(snapshot: PointerInputSnapshot, eve
 			focused.release();
 		}
 		const routeScope = pointerCapture.routeScope;
-		const routed = routeScope === undefined ? undefined : editor.surfaces.findByScope(routeScope);
-		if (routeScope !== undefined && (!snapshot.valid || routed === undefined || !editor.surfaces.isAdmitted(routed))) {
+		const routed = routeScope === undefined ? undefined : surfaces.findByScope(routeScope);
+		if (routeScope !== undefined && (!snapshot.valid || routed === undefined || !surfaces.isAdmitted(routed))) {
 			pointerCapture.cancelScope(routeScope);
 		}
 		const target = pointerCapture.routeScope !== undefined ? routed
-			: snapshot.valid && snapshot.insideViewport ? editor.surfaces.hitTest(snapshot.viewportX, snapshot.viewportY) : null;
+			: snapshot.valid && snapshot.insideViewport ? surfaces.hitTest(snapshot.viewportX, snapshot.viewportY) : null;
 		const scope = target?.captureScope ?? WORKBENCH_POINTER_SCOPE;
 		if (pointerCapture.dispatch(snapshot, false, now, scope)) return;
 		if (target === null || target === undefined) return;
@@ -72,15 +72,4 @@ export function handleWorkbenchChromePointer(editor: CartEditor, snapshot: Point
 	if (handleEditorChromePointerDispatch(editor, snapshot, justPressed)) return;
 	handleEditorPanelPointer(editor.resourcePanel, editor.editorGroup, snapshot, justPressed,
 		(snapshot.justReleasedButtons & PointerButton.Primary) !== 0);
-}
-
-/** The selected pane receives only occurrences admitted by its retained surface. */
-export function handleWorkbenchPanePointer(editor: CartEditor, snapshot: PointerInputSnapshot, now: number): void {
-	// Splitter grab margins cross the layout boundary by a few pixels. Their
-	// existing geometry owner admits that part of the pane's content route too.
-	if (handleEditorPanelResizePointer(editor.resourcePanel, snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0)) return;
-	editor.editorGroup.panes.activePane?.handlePointer(snapshot,
-		(snapshot.justPressedButtons & PointerButton.Primary) !== 0,
-		(snapshot.justPressedButtons & PointerButton.Secondary) !== 0,
-		now, isCtrlDown(snapshot) || isMetaDown(snapshot));
 }

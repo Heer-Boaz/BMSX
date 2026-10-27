@@ -1,20 +1,8 @@
 import { pointerHover } from './hover';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
-import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, problemsPanel } from '../../workbench/contrib/problems/panel/controller';
+import { getProblemsPanelBounds, problemsPanel } from '../../workbench/contrib/problems/panel/controller';
 import type { EditorGroupView } from '../../workbench/services/editor/editor_group';
-
-export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
-	if (!justPressed) {
-		return false;
-	}
-	const bounds = getProblemsPanelBounds();
-	if (bounds === null || !isPointerOverProblemsPanelDivider(bounds, snapshot.viewportX, snapshot.viewportY)) {
-		return false;
-	}
-	problemsPanel.beginResize(snapshot, bounds.bottom - bounds.top);
-	return true;
-}
 
 export function handleProblemsPanelPointer(
 	editorGroup: EditorGroupView,

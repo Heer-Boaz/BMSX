@@ -11,6 +11,23 @@ import type { EditorInput } from '../../ui/tab/model';
 import { EditorPanes, type EditorPaneFactories, type EditorPaneOpenOptions } from './editor_panes';
 import type { EditorPaneSelection } from './editor_selection';
 import type { CloseEditors } from './editor_close';
+import type { WorkbenchSurface } from '../windows/model';
+import type { WorkbenchSurfaceService } from '../windows/service';
+import type { RectBounds } from '../../../../machine/ts/common/rect';
+import { point_in_rect } from '../../../../machine/ts/common/rect';
+import { PointerButton } from '../../../../hosts/common/input/pointer_event';
+import { isCtrlDown, isMetaDown } from '../../../input/keyboard/key_input';
+import type { EditorTabStripRenderContext } from '../../render/tab_bar';
+import { drawEditorGroupWatermark } from '../../render/editor_group_watermark';
+
+/** The container supplies ancestry and allowable popup extent before controls are constructed. */
+export type EditorGroupPresentation = {
+	readonly surfaces: WorkbenchSurfaceService;
+	readonly owner: WorkbenchSurface;
+	readonly focusScope: InputFocusScope;
+	readonly workArea: Readonly<RectBounds>;
+	readonly renderContext: EditorTabStripRenderContext;
+};
 
 const groupsByScope = new WeakMap<InputFocusScope, EditorGroupView | null>();
 
@@ -30,15 +47,22 @@ export type EditorInputOpenResult = { readonly generation: number; readonly acti
 export class EditorGroupView {
 	public readonly model = new EditorTabGroupModel();
 	public readonly captureScope = Symbol('editor-group');
-	public readonly focusScope = new InputFocusScope(this.captureScope, inputFocus.workbenchScope);
+	public readonly focusScope: InputFocusScope;
 	public readonly tabScope = Symbol('editor-tabs');
-	public readonly tabFocusTarget = inputFocus.createTarget(null, new InputFocusScope(this.tabScope, this.focusScope));
+	public readonly tabFocusTarget: InputFocusTarget;
 	public readonly panes: EditorPanes;
 	public readonly tabStrip: EditorTabStrip;
+	public readonly paneSurface: WorkbenchSurface;
+	public readonly tabSurface: WorkbenchSurface;
+	public readonly workArea: Readonly<RectBounds>;
 	private readonly unbindFocus: () => void;
 	private readonly disposeListeners = new Set<() => void>();
 
-	public constructor(factories: EditorPaneFactories, commands: EditorCommandRunner, private readonly closeEditors: CloseEditors) {
+	public constructor(factories: EditorPaneFactories, commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
+		presentation: EditorGroupPresentation) {
+		this.focusScope = new InputFocusScope(this.captureScope, presentation.focusScope);
+		this.tabFocusTarget = inputFocus.createTarget(null, new InputFocusScope(this.tabScope, this.focusScope));
+		this.workArea = presentation.workArea;
 		this.focusScope.interaction = new InputInteraction();
 		groupsByScope.set(this.focusScope, this);
 		groupsByScope.set(this.tabFocusTarget.scope, this);
@@ -51,6 +75,32 @@ export class EditorGroupView {
 		this.panes = new EditorPanes(factories, this);
 		this.tabStrip = new EditorTabStrip(this.model, commands, this.tabFocusTarget,
 			id => this.activate(id), id => { void this.close(id); }, () => this.panes.activePane?.focus());
+		this.tabSurface = presentation.surfaces.attach({
+			role: 'content', lifetimeOwner: presentation.owner, presentationParent: presentation.owner, captureScope: this.tabScope,
+			isVisible: () => true, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.tabStrip.layoutState.bounds,
+			draw: () => this.tabStrip.draw(presentation.renderContext),
+			handlePointer: (snapshot, now) => this.tabStrip.handlePointer(snapshot, now),
+			handleWheel: event => this.tabStrip.handleWheel(event),
+			onRetire: () => pointerCapture.cancelScope(this.tabScope),
+		});
+		this.paneSurface = presentation.surfaces.attach({
+			role: 'content', lifetimeOwner: presentation.owner, presentationParent: presentation.owner, captureScope: this.captureScope,
+			isVisible: () => true, getBounds: () => this.panes.contentBounds, getClip: () => this.panes.contentBounds,
+			draw: () => {
+				const pane = this.panes.activePane;
+				if (pane === null) drawEditorGroupWatermark(this.panes.contentBounds); else pane.draw();
+			},
+			handlePointer: (snapshot, now) => this.panes.activePane?.handlePointer(snapshot,
+				(snapshot.justPressedButtons & PointerButton.Primary) !== 0,
+				(snapshot.justPressedButtons & PointerButton.Secondary) !== 0, now, isCtrlDown(snapshot) || isMetaDown(snapshot)),
+			handleWheel: event => {
+				const focused = inputFocus.admittedTarget, guest = focused?.guestInput;
+				if (guest !== undefined && focused!.scope.surfaceScope === this.captureScope
+					&& point_in_rect(event.viewportX, event.viewportY, guest.bounds)) return false;
+				this.panes.activePane?.handleWheel(event); return true;
+			},
+			onRetire: () => pointerCapture.cancelScope(this.captureScope),
+		});
 	}
 
 	public onWillDispose(listener: () => void): () => void {
@@ -163,8 +213,7 @@ export class EditorGroupView {
 		this.focusScope.retireContext();
 		this.tabFocusTarget.scope.retireContext();
 		this.tabStrip.dispose();
-		pointerCapture.cancelScope(this.captureScope);
-		pointerCapture.cancelScope(this.tabScope);
+		this.paneSurface.dispose(); this.tabSurface.dispose();
 		this.model.clear();
 	}
 }

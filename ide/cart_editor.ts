@@ -105,7 +105,6 @@ import { pointerHover } from './input/pointer/hover';
 import { pointerCapture } from './input/pointer/capture';
 import { PointerButton } from '../hosts/common/input/pointer_event';
 import { WorkbenchSurfaceService } from './workbench/services/windows/service';
-import type { WorkbenchSurface } from './workbench/services/windows/model';
 import { Scrollbar } from './workbench/ui/scrollbar';
 import { focusCapturedRuntimeSource, clearExecutionStopHighlights } from './runtime_error/navigation';
 import { getBuiltinIdentifiersSnapshot } from './editor/contrib/intellisense/engine';
@@ -117,8 +116,8 @@ import { WorkspaceEditReviewPane } from './workbench/contrib/edit_review/editor_
 import { handleEditorInput } from './input/keyboard/dispatch';
 import { captureKeys } from './workbench/contrib/code_editor/input/keyboard/capture_keys';
 import { applyEditorInputOverrides } from './workbench/contrib/code_editor/input/keyboard/text_input';
-import { handleTextEditorPointerInput, handleWorkbenchChromePointer, handleWorkbenchPanePointer } from './input/pointer/dispatch';
-import { handleEditorWheelInput, handleWorkbenchChromeWheel, handleWorkbenchPaneWheel } from './input/pointer/wheel';
+import { handleTextEditorPointerInput, handleWorkbenchChromePointer } from './input/pointer/dispatch';
+import { handleEditorWheelInput, handleWorkbenchChromeWheel } from './input/pointer/wheel';
 import {
 	cancelWorkspaceAutosave,
 	requestWorkspaceAutosave,
@@ -140,7 +139,6 @@ import { ScenarioLabController } from './workbench/contrib/scenario_lab/controll
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { drawResourcePanel } from './workbench/render/resource_panel';
 import { renderStatusBar } from './workbench/render/status_bar';
-import { drawEditorGroupWatermark } from './workbench/render/editor_group_watermark';
 import { renderTopBar } from './workbench/render/top_bar';
 import { layoutTopBar } from './workbench/ui/top_bar/layout';
 import { MenubarController } from './workbench/ui/top_bar/controller';
@@ -196,7 +194,6 @@ export type CartEditor = TextInputHost & {
 	readonly editorGroups: EditorGroupView[];
 	readonly editorClose: EditorCloseController;
 	readonly surfaces: WorkbenchSurfaceService;
-	readonly paneSurface: WorkbenchSurface;
 	readonly editorInputSerializers: EditorInputSerializers;
 	readonly navigation: EditorNavigationController;
 	readonly cartMaps: CartMapController;
@@ -260,8 +257,11 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly editorGroups: EditorGroupView[] = [];
 	public readonly editorClose: EditorCloseController;
 	public readonly surfaces: WorkbenchSurfaceService;
-	public readonly paneSurface: WorkbenchSurface;
 	private readonly chromeScope = Symbol('workbench chrome');
+	private readonly resourceResizeScope = Symbol('resource panel resize');
+	private readonly resourceVerticalScope = Symbol('resource panel vertical scrollbar');
+	private readonly resourceHorizontalScope = Symbol('resource panel horizontal scrollbar');
+	private readonly problemsResizeScope = Symbol('problems panel resize');
 	private readonly rootSurfaceBounds = { left: 0, top: 0,
 		get right() { return editorViewState.viewportWidth; },
 		get bottom() { return editorViewState.viewportHeight; },
@@ -405,54 +405,6 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		inputFocus.workbenchScope.commands = this.commands;
 		const workArea = getWorkbenchWorkArea();
-		this.editorGroup = new EditorGroupView({
-			home: group => new HomeEditorPane(this.commands, group.focusScope),
-			play_session: group => new PlayEditorPane(this.commands, this.contextMenu, this.navigation, group, group.focusScope),
-			animation: group => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			host_error: group => new HostErrorPane(group.focusScope),
-			build_log: group => new BuildLogPane(this.clipboard, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
-			rom_inspector: group => new RomInspectorPane(this.commands, this.sources, this.navigation, this.quickInput, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			event_viewer: group => new EventViewerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu,
-				this.surfaces, this.paneSurface, workArea, group.focusScope),
-			gpu_debugger: group => new GpuDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
-			gte_debugger: group => new GteDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			terminal: group => new TerminalPane(this.terminal, input, presenter, group.focusScope, workbench.transport),
-			conversation_observer: group => new ConversationObserverPane(decodeImage, this.surfaces, this.paneSurface, this.commands, group.focusScope),
-			assistant: group => new AssistantPane(this.clipboard, group, this.assistantCommands, decodeImage,
-				this.surfaces, this.paneSurface, this.commands, this.contextMenu, workArea, group.focusScope),
-			workspace_edit_review: group => new WorkspaceEditReviewPane(group, this.quickInput, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
-			code_editor: group => new CodeEditorPane(
-				group.focusScope,
-				group,
-				this,
-				this.clipboard,
-				this.sources,
-				this.guest,
-				this.fault,
-				this.runtime,
-				this.debuggerState,
-				this.clock,
-			),
-			resource_view: group => new ResourceViewerEditorPane(group.focusScope),
-			aem_editor: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			lua_program: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			behavior_lens: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			actor_lab: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
-			game_view: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope),
-			cart_map: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			scene_editor: group => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			scenario_lab: group => new ScenarioLabEditorPane(
-				this.scenarioLab,
-				this.commands,
-				this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
-		}, this.commands, this.editorClose.close);
-		this.editorGroups.push(this.editorGroup);
-		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, () => this.editorGroup.panes.activePane?.focus());
-		this.runtimeTimeline.focusScope.surfaceScope = this.chromeScope;
-		this.unbindTimelineInteraction = inputFocus.onDidActivateInteraction(target => {
-			const scope = target.scope.runtimeOwner;
-			if (this.isActive && scope !== undefined) this.runtimeTimeline.setContext(scope.runtime);
-		});
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
 		this.surfaces = new WorkbenchSurfaceService(this.onSurfaceChange);
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture, this.attachContextMenuSession);
@@ -467,29 +419,94 @@ export class RuntimeCartEditor implements CartEditor {
 			handleWheel: event => handleWorkbenchChromeWheel(this, event),
 			onRetire: () => pointerCapture.cancelScope(this.chromeScope),
 		});
-		this.runtimeTimeline.attach(this.surfaces, chromeSurface, workArea, this.contextMenu);
-		this.surfaces.attach({
-			role: 'content', captureScope: this.editorGroup.tabScope, isVisible: () => true,
-			getBounds: () => this.editorGroup.tabStrip.layoutState.bounds,
-			getClip: () => this.rootSurfaceBounds,
-			draw: () => this.editorGroup.tabStrip.draw(this.chromeRenderContext),
-			handlePointer: (snapshot, now) => this.editorGroup.tabStrip.handlePointer(snapshot, now),
-			handleWheel: event => this.editorGroup.tabStrip.handleWheel(event),
-			onRetire: () => pointerCapture.cancelScope(this.editorGroup.tabScope),
-		});
-		this.menubar.attach(this.surfaces, chromeSurface, workArea);
-		this.paneSurface = this.surfaces.attach({
-			role: 'content', captureScope: this.editorGroup.captureScope, isVisible: () => true,
-			getBounds: getWorkbenchEditorBounds, getClip: getWorkbenchEditorBounds,
-			draw: () => {
-				const pane = this.editorGroup.panes.activePane;
-				if (pane === null) drawEditorGroupWatermark(); else pane.draw();
-			},
-			handlePointer: (snapshot, now) => handleWorkbenchPanePointer(this, snapshot, now),
-			handleWheel: event => handleWorkbenchPaneWheel(this, event),
-			onRetire: () => pointerCapture.cancelScope(this.editorGroup.captureScope),
-		});
 
+		this.editorGroup = new EditorGroupView({
+			home: group => new HomeEditorPane(this.commands, group.focusScope),
+			play_session: group => new PlayEditorPane(this.commands, this.contextMenu, this.navigation, group, group.focusScope),
+			animation: group => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
+			host_error: group => new HostErrorPane(group.focusScope),
+			build_log: group => new BuildLogPane(this.clipboard, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
+			rom_inspector: group => new RomInspectorPane(this.commands, this.sources, this.navigation, this.quickInput, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
+			event_viewer: group => new EventViewerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu,
+				this.surfaces, group.paneSurface, group.workArea, group.focusScope),
+			gpu_debugger: group => new GpuDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
+			gte_debugger: group => new GteDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
+			terminal: group => new TerminalPane(this.terminal, input, presenter, group.focusScope, workbench.transport),
+			conversation_observer: group => new ConversationObserverPane(decodeImage, this.surfaces, group.paneSurface, this.commands, group.focusScope),
+			assistant: group => new AssistantPane(this.clipboard, group, this.assistantCommands, decodeImage,
+				this.surfaces, group.paneSurface, this.commands, this.contextMenu, group.workArea, group.focusScope),
+			workspace_edit_review: group => new WorkspaceEditReviewPane(group, this.quickInput, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
+			code_editor: group => new CodeEditorPane(
+				group.focusScope,
+				group,
+				this,
+				this.clipboard,
+				this.sources,
+				this.guest,
+				this.fault,
+				this.runtime,
+				this.debuggerState,
+				this.clock,
+			),
+			resource_view: group => new ResourceViewerEditorPane(group.focusScope),
+			aem_editor: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
+			lua_program: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
+			behavior_lens: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
+			actor_lab: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
+			game_view: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope),
+			cart_map: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
+			scene_editor: group => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
+			scenario_lab: group => new ScenarioLabEditorPane(
+				this.scenarioLab,
+				this.commands,
+				this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
+		}, this.commands, this.editorClose.close, {
+			surfaces: this.surfaces, owner: chromeSurface, focusScope: inputFocus.workbenchScope,
+			workArea, renderContext: this.chromeRenderContext,
+		});
+		this.editorGroups.push(this.editorGroup);
+		this.surfaces.attach({
+			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourceResizeScope,
+			isVisible: () => this.resourcePanel.isVisible(), getBounds: () => this.resourcePanel.resizeBounds,
+			getClip: () => this.rootSurfaceBounds, draw() {},
+			handlePointer: snapshot => {
+				if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) this.resourcePanel.beginResize(snapshot);
+			},
+			onRetire: () => pointerCapture.cancelTarget(this.resourcePanel),
+		});
+		this.surfaces.attach({
+			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.problemsResizeScope,
+			isVisible: () => problemsPanel.isVisible, getBounds: () => problemsPanel.resizeBounds,
+			getClip: () => this.rootSurfaceBounds, draw() {},
+			handlePointer: snapshot => {
+				if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) problemsPanel.beginResize(snapshot);
+			},
+			onRetire: () => pointerCapture.cancelTarget(problemsPanel),
+		});
+		this.surfaces.attach({
+			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourceVerticalScope,
+			isVisible: () => this.resourcePanel.isVisible() && this.resourcePanel.resourceVertical.isVisible(),
+			getBounds: () => this.resourcePanel.resourceVertical.getTrack(), getClip: () => this.rootSurfaceBounds, draw() {},
+			handlePointer: snapshot => { this.resourcePanel.handleScrollbarPointer(snapshot); },
+			handleWheel: event => handleWorkbenchChromeWheel(this, event),
+			onRetire: () => pointerCapture.cancelScope(this.resourceVerticalScope),
+		});
+		this.surfaces.attach({
+			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourceHorizontalScope,
+			isVisible: () => this.resourcePanel.isVisible() && this.resourcePanel.resourceHorizontal.isVisible(),
+			getBounds: () => this.resourcePanel.resourceHorizontal.getTrack(), getClip: () => this.rootSurfaceBounds, draw() {},
+			handlePointer: snapshot => { this.resourcePanel.handleScrollbarPointer(snapshot); },
+			handleWheel: event => handleWorkbenchChromeWheel(this, event),
+			onRetire: () => pointerCapture.cancelScope(this.resourceHorizontalScope),
+		});
+		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, () => this.editorGroup.panes.activePane?.focus());
+		this.runtimeTimeline.focusScope.surfaceScope = this.chromeScope;
+		this.unbindTimelineInteraction = inputFocus.onDidActivateInteraction(target => {
+			const scope = target.scope.runtimeOwner;
+			if (this.isActive && scope !== undefined) this.runtimeTimeline.setContext(scope.runtime);
+		});
+		this.runtimeTimeline.attach(this.surfaces, chromeSurface, workArea, this.contextMenu);
+		this.menubar.attach(this.surfaces, chromeSurface, workArea);
 		this.surfaces.attach({
 			role: 'modal', blockedScope: null, captureScope: this.quickInput.pointerScope,
 			isVisible: () => this.quickInput.visible, getBounds: () => this.quickInput.layout.bounds,
@@ -628,7 +645,7 @@ export class RuntimeCartEditor implements CartEditor {
 		editorRuntimeState.currentTimeMs = event.timestamp;
 		projectEditorPointerEvent(this.display, event, this.pointerSnapshot);
 		if (event.cancelledButtons !== 0) pointerCapture.cancelButtons(event.cancelledButtons);
-		handleTextEditorPointerInput(this.pointerSnapshot, event, this);
+		handleTextEditorPointerInput(this.pointerSnapshot, event, this.surfaces);
 		// Selection and native focus must be published before this trusted gesture returns.
 		if ((event.buttons | event.pressedButtons | event.releasedButtons) !== 0) inputFocus.notifyTargetChanged();
 	}
@@ -653,7 +670,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.acceptsInput) return true;
 		editorRuntimeState.currentTimeMs = event.timestamp;
 		projectEditorWheelEvent(this.display, event, this.wheelSnapshot);
-		return handleEditorWheelInput(this, this.wheelSnapshot, event);
+		return handleEditorWheelInput(this.surfaces, this.wheelSnapshot, event);
 	}
 	public get fontVariant(): FontVariant { return editorViewState.fontVariant; }
 

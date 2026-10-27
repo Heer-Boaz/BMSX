@@ -34,6 +34,7 @@ function resourcePanelMaxRatio(): number {
 
 export type ResourcePanelLayout = {
 	bounds: RectBounds;
+	resizeBounds: RectBounds;
 	verticalTrack: RectBounds;
 	horizontalTrack: RectBounds;
 	contentLeft: number;
@@ -52,6 +53,7 @@ export type ResourcePanelLayout = {
 export function createResourcePanelLayout(bounds: RectBounds): ResourcePanelLayout {
 	return {
 		bounds,
+		resizeBounds: create_rect_bounds(),
 		verticalTrack: create_rect_bounds(),
 		horizontalTrack: create_rect_bounds(),
 		contentLeft: 0,
@@ -104,10 +106,13 @@ export function writeResourcePanelLayout(
 		out.contentTop = out.effectiveBottom = bounds.top;
 		out.availableWidth = out.capacity = out.maxVerticalScroll = out.maxHorizontalScroll = 0;
 		out.verticalVisible = out.horizontalVisible = false;
+		write_rect_bounds(out.resizeBounds, bounds.left, bounds.top, bounds.left, bounds.top);
 		write_rect_bounds(out.verticalTrack, bounds.left, bounds.top, bounds.left, bounds.top);
 		write_rect_bounds(out.horizontalTrack, bounds.left, bounds.top, bounds.left, bounds.top);
 		return out;
 	}
+	write_rect_bounds(out.resizeBounds, bounds.right - constants.RESOURCE_PANEL_DIVIDER_DRAG_MARGIN, bounds.top,
+		bounds.right + constants.RESOURCE_PANEL_DIVIDER_DRAG_MARGIN, bounds.bottom);
 	const dividerLeft = bounds.right - 1;
 	const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
 	const contentTop = bounds.top + 2;

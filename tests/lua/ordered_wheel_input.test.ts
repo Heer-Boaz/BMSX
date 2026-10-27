@@ -7,15 +7,16 @@ import type { WheelInputEvent } from '../../hosts/common/input/pointer_event';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
-import type { CartEditor } from '../../ide/cart_editor';
 import type { WheelInputSnapshot } from '../../ide/common/models';
-import { handleEditorWheelInput, handleWorkbenchPaneWheel } from '../../ide/input/pointer/wheel';
+import { handleEditorWheelInput } from '../../ide/input/pointer/wheel';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
-import { WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { inputFocus } from '../../ide/input/focus';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { getWorkbenchEditorBounds, refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { editorViewState } from '../../ide/editor/ui/view/state';
+import { createTestEditorGroup, createTestGroupPresentation } from '../helpers/editor_panes';
+import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
+import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import { FrameBitmap } from '../../hosts/common/frame_bitmap';
 
 test('remote wheel preserves ordering, fractions and source-time context before the next guest sample', t => {
@@ -66,7 +67,7 @@ test('remote wheel preserves ordering, fractions and source-time context before 
 	assert.deepEqual(scroll, [0.25, 0.25]);
 });
 
-test('public wheel router delivers each occurrence to its current pane using supplied geometry and modifiers', () => {
+test('public wheel router delivers each occurrence to its current pane using supplied geometry and modifiers', t => {
 	inputFocus.setTarget(null);
 	editorViewState.viewportWidth = 400;
 	editorViewState.viewportHeight = 300;
@@ -74,30 +75,30 @@ test('public wheel router delivers each occurrence to its current pane using sup
 	editorViewState.tabBarTotalHeight = 10;
 	refreshWorkbenchLayout();
 	const firstPane: WheelInputSnapshot[] = [], secondPane: WheelInputSnapshot[] = [];
-	let activePane = { handleWheel: (event: WheelInputSnapshot) => firstPane.push(event) };
-	// Only the routing dependencies are replaced; this is not a RuntimeCartEditor/UI fixture.
 	const surfaces = new WorkbenchSurfaceService();
-	const editor = { surfaces, editorGroup: { panes: { get activePane() { return activePane; } } } } as unknown as CartEditor;
-	surfaces.attach({
-		role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true, draw() {},
-		getBounds: getWorkbenchEditorBounds, getClip: getWorkbenchEditorBounds,
-		handleWheel: event => handleWorkbenchPaneWheel(editor, event),
-	});
+	const presentation = createTestGroupPresentation(surfaces);
+	const group = createTestEditorGroup(undefined, undefined, undefined, presentation);
+	group.panes.layout(getWorkbenchEditorBounds());
+	group.openEditor(new HostErrorInput('first view'));
+	t.mock.method(group.panes.activePane!, 'handleWheel', (event: WheelInputSnapshot) => firstPane.push(event));
+	t.after(() => { group.dispose(); surfaces.dispose(); inputFocus.setTarget(null); });
+
 	const first: WheelInputSnapshot = {
 		viewportX: 100, viewportY: 100, valid: true, insideViewport: true,
 		deltaX: 0.125, deltaY: 0.25, modifiers: KeyModifier.shift,
 	};
-	handleEditorWheelInput(editor, first, { x: 100, y: 100, ...first, attachmentDeltaY: 0.25, timestamp: 0 });
-	activePane = { handleWheel: event => secondPane.push(event) };
+	handleEditorWheelInput(surfaces, first, { x: 100, y: 100, ...first, attachmentDeltaY: 0.25, timestamp: 0 });
+	group.openEditor(new TerminalInput());
+	t.mock.method(group.panes.activePane!, 'handleWheel', (event: WheelInputSnapshot) => secondPane.push(event));
 	const second = { ...first, deltaX: -0.125, deltaY: -0.25, modifiers: KeyModifier.ctrl };
-	handleEditorWheelInput(editor, second, { x: 100, y: 100, ...second, attachmentDeltaY: -0.25, timestamp: 0 });
+	handleEditorWheelInput(surfaces, second, { x: 100, y: 100, ...second, attachmentDeltaY: -0.25, timestamp: 0 });
 	assert.deepEqual(firstPane, [first]);
 	assert.deepEqual(secondPane, [second]);
 	assert.equal(firstPane[0], first);
 	assert.equal(secondPane[0], second);
 	assert.equal(firstPane[0].modifiers, KeyModifier.shift);
 	assert.equal(secondPane[0].modifiers, KeyModifier.ctrl);
-	handleEditorWheelInput(editor, { ...first, viewportY: 5 }, { x: 100, y: 5, ...first, attachmentDeltaY: 0.25, timestamp: 0 });
+	handleEditorWheelInput(surfaces, { ...first, viewportY: 5 }, { x: 100, y: 5, ...first, attachmentDeltaY: 0.25, timestamp: 0 });
 	assert.equal(secondPane.length, 1, 'wheel over non-scrolling chrome does not reach the active editor');
 });
 
@@ -107,31 +108,29 @@ test('wheel ownership follows exclusive UI surfaces and spatial guest hits, not 
 	editorViewState.viewportWidth = 400; editorViewState.viewportHeight = 300;
 	refreshWorkbenchLayout();
 	input.setPointerAdmissionMode('routed');
-	const focusedGame = inputFocus.createTarget();
+	const surfaces = new WorkbenchSurfaceService();
+	const extent = { left: 0, top: 0, right: 400, bottom: 300 };
+	const presentation = createTestGroupPresentation(surfaces, extent);
+	const group = createTestEditorGroup(undefined, undefined, undefined, presentation);
+	group.panes.layout(getWorkbenchEditorBounds());
+	group.openEditor(new HostErrorInput('wheel view'));
+	let sourceScroll = 0;
+	t.mock.method(group.panes.activePane!, 'handleWheel', (event: WheelInputSnapshot) => { sourceScroll += event.deltaY; });
+	const focusedGame = inputFocus.createTarget(null, group.focusScope);
 	const frames = new FrameBitmap();
 	frames.publish(new Uint8Array(4), 1, 1, { presentationSequence: 0, cycles: 0, videoTick: 0 });
 	focusedGame.guestInput = { bounds: { left: 250, top: 40, right: 390, bottom: 250 }, recipient: input,
 		presentation: { kind: 'offscreen', frames } };
 	focusedGame.focus();
-	t.after(() => { inputFocus.setTarget(null); frames.dispose(); input.dispose(); });
-	let sourceScroll = 0;
+	t.after(() => { inputFocus.setTarget(null); group.dispose(); surfaces.dispose(); frames.dispose(); input.dispose(); });
 	const popup = { visible: false, handleWheel() {} };
-	const surfaces = new WorkbenchSurfaceService();
-	const extent = { left: 0, top: 0, right: 400, bottom: 300 };
-	const editor = { surfaces,
-		editorGroup: { panes: { activePane: { handleWheel: (event: WheelInputSnapshot) => { sourceScroll += event.deltaY; } } } },
-	} as unknown as CartEditor;
-	surfaces.attach({
-		role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true, draw() {},
-		getBounds: getWorkbenchEditorBounds, getClip: getWorkbenchEditorBounds,
-		handleWheel: event => handleWorkbenchPaneWheel(editor, event),
-	});
+
 	surfaces.attach({
 		role: 'transient', outsidePress: 'consume', captureScope: Symbol('popup'),
 		isVisible: () => popup.visible, getBounds: () => extent, getClip: () => extent, draw() {},
 		handleWheel: () => { popup.handleWheel(); return true; },
 	});
-	const remote = new RemoteInput(input, clock, undefined, undefined, event => handleEditorWheelInput(editor, {
+	const remote = new RemoteInput(input, clock, undefined, undefined, event => handleEditorWheelInput(surfaces, {
 		viewportX: event.x, viewportY: event.y, valid: true, insideViewport: true,
 		deltaX: event.deltaX, deltaY: event.deltaY, modifiers: event.modifiers,
 	}, event));

@@ -178,7 +178,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const visiblePreviewPoint = (bounds: Readonly<RectBounds>): RectBounds => {
 		for (let y = bounds.top + 1; y < bounds.bottom; y += 1) {
 			for (let x = bounds.left + 1; x < bounds.right; x += 1) {
-				if (ide.editor.surfaces.hitTest(x, y) === ide.editor.paneSurface) return { left: x, top: y, right: x, bottom: y };
+				if (ide.editor.surfaces.hitTest(x, y) === ide.editor.editorGroup.paneSurface) return { left: x, top: y, right: x, bottom: y };
 			}
 		}
 		throw new Error('The embedded preview has no unobscured pointer target');

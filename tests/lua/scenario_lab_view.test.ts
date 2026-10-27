@@ -33,6 +33,12 @@ import {
 } from '../../ide/testing/scenario/result_service';
 import { ScenarioTestCollection, scenarioTestId } from '../../ide/testing/scenario/test_collection';
 import { createScenarioLabViewState } from '../../ide/workbench/contrib/scenario_lab/view_state';
+import { RuntimeIdeState } from '../../ide/workbench/state';
+import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
+import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
+import { createHostFrameFixture } from '../helpers/host_frame';
+import { inputFocus } from '../../ide/input/focus';
+import { KeyModifier } from '../../hosts/common/input/text';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission, RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import {
@@ -623,6 +629,39 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario tree paint, inden
 });
 
 
+test('first explicit run reveal waits for an available local viewport and consumes its intent only once', t => {
+	installWorkbenchViewport(t);
+	const collection = new ScenarioTestCollection(createScenarioTestSourceState(Array.from({ length: 20 }, (_, index) =>
+		createScenarioTestSourceRecord(`tests/suite_${index}_assert.lua`, index))).catalog);
+	const results = new ScenarioResultService(), view = createScenarioLabViewState(collection, results, false);
+	const modules = collection.resolveRoot(collection.roots[0].id), module = modules[modules.length - 1], item = module.children[0];
+	const target = results.beginRun(item.id, [{ test: item, source: module.source, sourceRevision: 1 }]);
+	results.complete(results.startItem(target, 0, 0), 1); results.completeRun(target);
+	for (let index = 0; index < 10; index++) {
+		const run = results.beginRun(item.id, [{ test: item, source: module.source, sourceRevision: 1 }]);
+		results.complete(results.startItem(run, 0, 0), 1); results.completeRun(run);
+	}
+	revealScenarioRun(view, target);
+	assert.equal(view.layout.font, null);
+	const collapsed = { left: 421, top: 31, right: 701, bottom: 31 };
+	prepareScenarioLabLayout(view, collapsed);
+	assert.equal(view.testPane.scroll, 0); assert.equal(view.resultPane.scroll, 0);
+	const available = { ...collapsed, bottom: 151 };
+	prepareScenarioLabLayout(view, available);
+	assert.equal(view.testPane.selectedNodeId, item.id);
+	assert.ok(view.resultPane.rows[view.resultPane.selectionIndex].run === target);
+	for (const pane of [view.testPane, view.resultPane]) {
+		assert.ok(pane.selectionIndex >= pane.layout.visibleRowCount, 'the retained selection requires a real reveal');
+		assert.ok(pane.selectionIndex >= pane.scroll && pane.selectionIndex < pane.scroll + pane.layout.visibleRowCount);
+		pane.scroll = 0;
+	}
+	results.beginRun(item.id, [{ test: item, source: module.source, sourceRevision: 1 }]);
+	for (let frame = 0; frame < 20; frame++) prepareScenarioLabLayout(view, available);
+	assert.equal(view.testPane.scroll, 0); assert.equal(view.resultPane.scroll, 0);
+	prepareScenarioLabLayout(view, { ...available, bottom: 171 });
+	assert.equal(view.testPane.scroll, 0); assert.equal(view.resultPane.scroll, 0);
+});
+
 test('explicit run reveal expands ancestors; later results do not steal the selected test', t => {
 	const { collection, results, view } = createViewFixture(t);
 	const root = collection.roots[0], module = root.children[1], item = module.children[0];
@@ -709,4 +748,54 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} compan
 	const advance = t.mock.method(font, 'advance');
 	for (let frame = 0; frame < 1000; frame++) measureScenarioLabMinimumWidth(view);
 	assert.equal(advance.mock.callCount(), 0);
+});
+
+
+test('Scenario controller refresh, wheel and status rendering retain the actual pane layout beside another view', async t => {
+	installWorkbenchViewport(t);
+	const host = createHostFrameFixture();
+	const sources = createScenarioTestSourceState(Array.from({ length: 20 }, (_, index) =>
+		createScenarioTestSourceRecord(`suite_${index}_assert.lua`, index)));
+	const unused = (): never => { throw new Error('Scenario layout does not execute domain work.'); };
+	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
+		{ measureDisplay: () => ({ left: 0, top: 0, width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT }) },
+		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
+		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
+		sources, new Map(), unused, unused, unused);
+	t.after(async () => {
+		inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose();
+	});
+	ide.editor.scenarioLab.open();
+	const pane = ide.editor.editorGroup.panes.getPane('scenario_lab')!, view = pane.input.view;
+	const bounds = { left: 421, top: 31, right: 701, bottom: 151 };
+	pane.layout(bounds); pane.update(0);
+	const other = createScenarioLabViewState(view.collection, view.resultService, false);
+	assert.equal(other.layout.font, null, 'constructing a view does not borrow a shell rectangle or perform layout');
+	const otherBounds = { left: 23, top: 47, right: 383, bottom: 247 };
+	prepareScenarioLabLayout(other, otherBounds);
+	const geometry = () => [view.layout.left, view.layout.top, view.layout.right, view.layout.bottom,
+		view.split.position, view.testPane.layout.contentTop, view.testPane.layout.contentBottom];
+	const arranged = geometry(), otherSplit = other.split.position;
+	const rows = view.testPane.rows.slice();
+	for (let frame = 0; frame < 20; frame++) {
+		ide.editor.scenarioLab.updateView(view); pane.update(0);
+		prepareScenarioLabLayout(other, otherBounds);
+	}
+	assert.deepEqual(geometry(), arranged, 'domain refresh and sibling layout do not replace the pane rectangle');
+	assert.ok(view.testPane.rows.every((row, index) => row === rows[index]), 'stationary layout retains the source projection');
+	view.focus = 'results';
+	pane.handleWheel({ valid: true, insideViewport: true, viewportX: view.testPane.layout.contentLeft + 1,
+		viewportY: view.testPane.layout.contentTop + 1, modifiers: KeyModifier.none, deltaX: 0, deltaY: 1 });
+	assert.ok(view.testPane.scroll > 0, 'the actual hovered client, not focused sibling or primary-shell geometry, receives the wheel');
+	assert.equal(view.resultPane.scroll, 0); assert.equal(other.testPane.scroll, 0);
+	assert.deepEqual(geometry(), arranged); assert.equal(other.split.position, otherSplit);
+	pane.getSelection!();
+	assert.deepEqual(geometry(), arranged, 'capturing navigation keeps the actual arranged viewport');
+	view.status.info = 'A retained result summary that is longer than the available local status rectangle.';
+	view.status.dirty = true;
+	const statusBounds = { left: 421, top: 161, right: 531, bottom: 171 };
+	t.mock.method(api, 'blit_text_inline_with_font', () => {});
+	pane.drawStatusBar(statusBounds, 0);
+	assert.ok(editorViewState.font.measure(view.status.renderedInfo) <= statusBounds.right - statusBounds.left - 8,
+		'the supplied status rectangle, not the frontend width, owns text truncation');
 });

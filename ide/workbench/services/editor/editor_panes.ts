@@ -24,7 +24,7 @@ export class EditorPanes {
 	private readonly clearListeners = new Set<() => void>();
 	private readonly disposeListeners = new Set<() => void>();
 	private openGenerationValue = 0;
-	private readonly contentBounds = create_rect_bounds();
+	public readonly contentBounds = create_rect_bounds();
 
 	public layout(bounds: Readonly<RectBounds>): void {
 		const current = this.contentBounds;

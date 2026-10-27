@@ -2,7 +2,6 @@ import { getWorkbenchConnectionBounds } from '../../workbench/common/layout';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { CartEditor } from '../../cart_editor';
 import type { PointerSnapshot } from '../../common/models';
-import { handleEditorPanelResizePointer } from './panel';
 
 
 export function handleEditorChromePointerDispatch(
@@ -14,10 +13,6 @@ export function handleEditorChromePointerDispatch(
 		return true;
 	}
 	if (editor.gamePanel.handlePointer(snapshot)) {
-		return true;
-	}
-	if (editor.resourcePanel.handleScrollbarPointer(snapshot)) return true;
-	if (handleEditorPanelResizePointer(editor.resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
 	if (!snapshot.valid) return true;

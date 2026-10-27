@@ -572,7 +572,7 @@ test('the actual Problems sash preserves automatic sizing until motion and commi
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(0); f.editor.update(0);
 	let bounds = getProblemsPanelBounds()!, x = (bounds.left + bounds.right) / 2;
-	let y = bounds.top + PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+	let y = (problemsPanel.resizeBounds.top + problemsPanel.resizeBounds.bottom) / 2;
 	const automatic = problemsPanel.visibleHeight;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
@@ -601,7 +601,7 @@ test('the actual Problems sash preserves automatic sizing until motion and commi
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
 	problemsPanel.setFixedHeightPx(1000000); f.editor.update(0);
 	bounds = getProblemsPanelBounds()!; const presented = bounds.bottom - bounds.top;
-	x = (bounds.left + bounds.right) / 2; y = bounds.top + PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+	x = (bounds.left + bounds.right) / 2; y = (problemsPanel.resizeBounds.top + problemsPanel.resizeBounds.bottom) / 2;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 7 });
 	assert.equal(pointerCapture.active, true); assert.equal(problemsPanel.visibleHeight, 1000000);
@@ -620,7 +620,7 @@ for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as
 	const caret = { ...f.editor.textTarget!.caretRect() };
 	problemsPanel.setFocused(true);
 	const bounds = getProblemsPanelBounds()!, x = (bounds.left + bounds.right) / 2;
-	const y = bounds.top + PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+	const y = (problemsPanel.resizeBounds.top + problemsPanel.resizeBounds.bottom) / 2;
 	// The physical producer is down before the corresponding native editor occurrence.
 	f.host.input.inputButton('pointer:0', 'pointer_primary', true, 1, 1, 1);
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,

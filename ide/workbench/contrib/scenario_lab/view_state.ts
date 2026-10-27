@@ -2,7 +2,6 @@ import { WorkbenchSplitView } from '../../ui/split_view';
 import {
 	createScenarioLabLayout,
 	createScenarioLabPaneLayout,
-	prepareScenarioLabLayout,
 } from './layout';
 import { updateScenarioLabStatus } from './navigation';
 import {
@@ -58,6 +57,7 @@ export function createScenarioLabViewState(
 		},
 		focus: 'tests',
 		runActive,
+		pendingReveal: false,
 		split: new WorkbenchSplitView(5 / 12),
 		splitRevision: -1,
 		layout: createScenarioLabLayout(),
@@ -73,6 +73,5 @@ export function createScenarioLabViewState(
 	rebuildScenarioLabTestRows(view);
 	refreshScenarioLabProjection(view);
 	updateScenarioLabStatus(view);
-	prepareScenarioLabLayout(view);
 	return view;
 }

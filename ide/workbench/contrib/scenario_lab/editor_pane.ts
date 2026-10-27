@@ -1,5 +1,6 @@
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { WorkbenchSplitControl } from '../../ui/split_control';
+import { scrollWorkbenchList, workbenchListContainsPosition } from '../../ui/list_view';
 import { drawWorkbenchSplit } from '../../render/split_view';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { ScenarioTargetInspection } from './target_inspection';
@@ -9,7 +10,8 @@ import { describeScenarioMessageDetails, describeScenarioTestResult, type Scenar
 import type { ScenarioLabInspectableRow } from './view_model';
 import { selectedScenarioResultRow } from './projection';
 import { prepareScenarioLabLayout, measureScenarioLabMinimumWidth } from './layout';
-import { measureText, measureTextRange } from '../../../editor/common/text/layout';
+import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
+import type { EditorFont } from '../../../editor/ui/view/font';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ScenarioLabNavigationSelection } from './navigation_selection';
@@ -43,6 +45,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 	public override get companionGameMinimumWidth(): number { return measureScenarioLabMinimumWidth(this.input.view); }
 	public override getSelection(): ScenarioLabNavigationSelection {
 		this.controller.updateView(this.input.view);
+		prepareScenarioLabLayout(this.input.view, this.contentBounds);
 		return new ScenarioLabNavigationSelection(this.input.view);
 	}
 
@@ -77,6 +80,8 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 	};
 	private readonly actionBar: WorkbenchActionBarControl;
 	private readonly actionTooltip = new WorkbenchTooltip();
+	private statusWidth = -1;
+	private statusFont: EditorFont | undefined;
 	private readonly rowFeedback: ScenarioLabRowFeedback;
 
 	public constructor(
@@ -127,6 +132,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 	}
 
 	protected override activate(): void {
+		this.statusWidth = -1;
 		this.actionBar.setInput(this.input.view.actionBar, this.resultsFocus);
 		this.split.setInput(this.input.view.split);
 	}
@@ -136,6 +142,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		this.targetInspection.hide();
 		navigationSelection.restore(this.input.view);
 		this.controller.updateView(this.input.view);
+		prepareScenarioLabLayout(this.input.view, this.contentBounds);
 	}
 
 	public override get commandTarget(): InputFocusTarget { return this.input.view.focus === 'results' ? this.resultsFocus : this.focusTarget; }
@@ -165,9 +172,15 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		super.dispose();
 	}
 
+	public override layout(bounds: Readonly<RectBounds>): void {
+		super.layout(bounds);
+		prepareScenarioLabLayout(this.input.view, bounds);
+	}
+
 	public override update(): void {
 		const view = this.input.view;
 		this.controller.updateView(view);
+		prepareScenarioLabLayout(view, this.contentBounds);
 		this.actionBar.update();
 		const hint = this.actionBar.tooltipItem;
 		if (hint !== undefined && !this.inspector.visible && this.targetInspection.model === undefined)
@@ -247,10 +260,23 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 	public handleWheel(event: WheelInputSnapshot): void {
 		if (this.targetInspection.model !== undefined) this.targetInspection.handleWheel(event, event.deltaY * 3);
 		else if (this.inspector.visible) this.inspector.handleWheel(event, event.deltaY * editorViewState.font.lineHeight * 3);
-		else this.controller.handleWheel(this.input.view, event);
+		else {
+			const view = this.input.view;
+			prepareScenarioLabLayout(view, this.contentBounds);
+			const delta = event.deltaY * 3;
+			if (workbenchListContainsPosition(view.testPane, event.viewportX, event.viewportY)) scrollWorkbenchList(view.testPane, delta);
+			else if (workbenchListContainsPosition(view.resultPane, event.viewportX, event.viewportY)) scrollWorkbenchList(view.resultPane, delta);
+			else if (view.focus === 'tests') scrollWorkbenchList(view.testPane, delta);
+			else scrollWorkbenchList(view.resultPane, delta);
+		}
 	}
 
 	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
+		const status = this.input.view.status, width = bounds.right - bounds.left - 8, font = editorViewState.font;
+		if (status.dirty || this.statusWidth !== width || this.statusFont !== font) {
+			status.renderedInfo = truncateTextToWidth(status.info, width);
+			status.dirty = false; this.statusWidth = width; this.statusFont = font;
+		}
 		drawEditorText(
 			editorViewState.font,
 			this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : this.input.view.status.renderedInfo,

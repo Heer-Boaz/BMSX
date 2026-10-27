@@ -4,7 +4,7 @@ import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer
 import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
 import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
 import type { EditorDiagnostic, PointerSnapshot } from '../../../../common/models';
-import type { RectBounds } from '../../../../../machine/ts/common/rect';
+import { write_rect_bounds, type RectBounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import * as constants from '../../../../common/constants';
 import type { DiagnosticsCoverage } from '../../../services/diagnostics/resource_diagnostics';
@@ -38,7 +38,6 @@ import { WorkbenchTooltip } from '../../../ui/tooltip';
 
 export {
 	getProblemsPanelBounds,
-	isPointerOverProblemsPanelDivider,
 } from './layout';
 
 const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
@@ -56,6 +55,7 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 	/** Requested diagnostic-row position; pending projection cannot erase the reading intent. */
 	private scrollPosition = 0;
 	private readonly layout = createProblemsPanelLayout();
+	public readonly resizeBounds = this.layout.resizeBounds;
 	private readonly itemLayouts = new ScratchBuffer<ProblemsPanelItemLayout>(createProblemsPanelItemLayout);
 	private cachedLayout: PanelLayout = null;
 	private fixedHeightPx: number = null;
@@ -80,6 +80,7 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 
 	public detach(): void {
 		pointerCapture.cancelTarget(this);
+		write_rect_bounds(this.resizeBounds, 0, 0, 0, 0);
 		this.feedback.detach(); this.feedbackArea = undefined;
 		this.unbindFeedbackBlur?.(); this.unbindFeedbackBlur = undefined;
 		this.header.detach();
@@ -130,6 +131,7 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 			return;
 		}
 		this.visible = false;
+		write_rect_bounds(this.resizeBounds, 0, 0, 0, 0);
 		this.feedback.hide();
 		this.header.setVisible(false);
 		this.focusTarget.release();
@@ -214,7 +216,7 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 
 	public update(): void {
 		const bounds = getProblemsPanelBounds();
-		if (bounds === null) { pointerCapture.cancelTarget(this); return; }
+		if (bounds === null) { write_rect_bounds(this.resizeBounds, 0, 0, 0, 0); pointerCapture.cancelTarget(this); return; }
 		this.prepareLayout(bounds);
 		this.header.updateFeedback();
 		this.updateFeedback(bounds);
@@ -279,9 +281,9 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 
 	public setFixedHeightPx(height: number): void { this.fixedHeightPx = height > 0 ? height : null; this.cachedLayout = null; }
 
-	public beginResize(snapshot: PointerSnapshot, presentedHeight: number): void {
+	public beginResize(snapshot: PointerSnapshot): void {
 		this.resizeStartY = this.resizeLastY = snapshot.viewportY;
-		this.resizeStartHeight = presentedHeight;
+		this.resizeStartHeight = this.layout.contentBottom + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y - this.layout.headerTop;
 		pointerCapture.capture(this);
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 	}
