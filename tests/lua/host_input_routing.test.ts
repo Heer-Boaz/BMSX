@@ -1,4 +1,4 @@
-import { HostPauseReason } from '../../hosts/common/execution_control';
+import { HostExecutionIntent, HostPauseReason } from '../../hosts/common/execution_control';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
@@ -59,12 +59,12 @@ test('a pending launch holds execution independently of user pause and stepping'
 	execution.requestExecution(true);
 	assert.equal(execution.launchPending, true);
 	assert.equal(execution.executionBlocked(), true);
-	assert.equal(execution.executionBlocked(true), true);
+	assert.equal(execution.executionBlocked(HostExecutionIntent.Game), true);
 	execution.setPauseReason(HostPauseReason.Requested, true);
 	execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
 	assert.equal(execution.userPaused, true);
 	assert.equal(execution.executionBlocked(), true);
-	assert.equal(execution.executionBlocked(true), false);
+	assert.equal(execution.executionBlocked(HostExecutionIntent.Game), false);
 });
 
 test('background history defers CPU admission without disabling edit intent', async () => {

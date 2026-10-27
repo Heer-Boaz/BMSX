@@ -397,7 +397,6 @@ async function main(): Promise<void> {
 								ide: createHeadlessIdeHarness(
 									ide,
 									runtime,
-									audioOutput,
 									ideTestLogOutput,
 								),
 								logger: inputLogger,

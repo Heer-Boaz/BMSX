@@ -12,6 +12,7 @@ import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { InputFocusScope, inputFocus, type InputFocusTarget } from '../../ide/input/focus';
+import { InputInteraction } from '../../ide/input/interaction';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
@@ -97,6 +98,7 @@ function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: 
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	editorRuntimeState.active = true;
+	editor.interaction.setActive(true);
 	host.input.setPointerAdmissionMode('routed');
 	let buttons = 0;
 	function pointer(x: number, y: number, nextButtons = buttons) {
@@ -244,7 +246,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 			assert.ok(graph.viewport === viewport);
 			assert.deepEqual({ zoom: viewport.zoom, x: viewport.scrollX, y: viewport.scrollY }, viewState);
 			assert.equal(input.detailsWindow, detailsModel); assert.equal(details.subject, subject); assert.equal(details.locked, true);
-			assert.equal(pane.runtimeControlContext, graphFocus, 'compact composition retains the real graph command origin');
+			assert.equal(pane.commandTarget, graphFocus, 'compact composition retains the real graph command origin');
 		}
 		pane.focus(); assert.equal(inputFocus.target, graphFocus);
 		editor.updateViewport({ width: 256, height: 360 }); editor.update(0);
@@ -418,6 +420,27 @@ test('global run controls and audio retain their selected physical owner indepen
 	execution.finishFrameStep(); navigation.afterHostFrame();
 	assert.equal(editor.commands.isEnabled('debugContinue', null), false, 'Continue still requires a source debugger stop');
 	assert.equal(editor.commands.isEnabled('debugStepInto', null), false);
+	const localScope = new InputFocusScope(editor.editorGroup.focusScope.surfaceScope, editor.editorGroup.focusScope);
+	const local = new InputInteraction(transport);
+	localScope.interaction = local;
+	const client = inputFocus.createTarget(null, localScope); client.bindKeyboard(() => {});
+	localScope.runtime = { target: client, interaction: local };
+	client.commandContext = pane.commandTarget;
+	client.focus();
+	editor.commands.execute('runtime.playback', client);
+	assert.equal(local.running, true); assert.equal(execution.userPaused, false);
+	assert.equal(host.execution.userPaused, true, 'a different command subject cannot replace the actual local runtime');
+	assert.equal(primaryPause.mock.callCount(), 1);
+	editor.commands.execute('runtime.focusTimeline', client);
+	assert.equal(editor.runtimeTimeline.available, true);
+	assert.ok(inputFocus.target!.commandContext === client, 'Timeline retains the actual runtime client rather than its authoring command alias');
+	transport.retire();
+	assert.ok(inputFocus.target === pane.commandTarget, 'retirement returns focus through the actual owning pane');
+	assert.ok(editor.runtimeTimeline.focusScope.runtime === pane.commandTarget.scope.runtimeOwner!.runtime,
+		'the newly activated client, not global run selection, supplies the replacement Timeline attachment');
+	assert.equal(editor.commands.isEnabled('runtime.pause', client), false);
+	editor.commands.execute('runtime.pause', client);
+	assert.equal(primaryPause.mock.callCount(), 1, 'retiring a local physical target never redirects it to the selected target');
 	ide.runTargets.retire(selected);
 	assert.equal(host.audio.device.selected, null);
 	for (const command of ['pause', 'stepFrame', 'debugContinue', 'runtime.pause'] as const)
@@ -434,13 +457,13 @@ test('a preparing Play client cannot redirect its unavailable local transport or
 	handle.preparation = Promise.resolve();
 	editor.editorGroup.openEditor(new PlayEditorInput(handle, ide.play)); editor.update(0);
 	const pane = editor.editorGroup.panes.activePane!, primaryPause = t.mock.method(ide.transport, 'pause');
-	assert.ok(pane.runtimeControlContext !== undefined);
-	assert.equal(pane.runtimeTransport, undefined);
+	assert.ok(pane.commandTarget !== undefined);
+	assert.equal(pane.commandTarget.scope.runtime!.interaction.transport, null);
 	assert.equal(editor.runtimeTimeline.available, false);
 	editor.runtimeTimeline.focus();
 	assert.equal(editor.runtimeTimeline.visible, false);
-	assert.equal(editor.commands.isEnabled('runtime.pause', pane.runtimeControlContext), false);
-	editor.commands.execute('runtime.pause', pane.runtimeControlContext);
+	assert.equal(editor.commands.isEnabled('runtime.pause', pane.commandTarget), false);
+	editor.commands.execute('runtime.pause', pane.commandTarget);
 	assert.equal(primaryPause.mock.callCount(), 0);
 	assert.ok(ide.runTargets.selected === ide, 'unavailable local state does not change global run selection');
 	editor.commands.execute('runtime.pause', null);
@@ -477,8 +500,8 @@ for (const action of ['run', 'reboot', 'hot-resume'] as const) for (const newer 
 				'the command\'s own prompt changes keyboard focus, not editor attachment admission');
 		}
 		if (request.action === 'hot-resume')
-			performHotResume(ide.hotResumes, editor, host.execution, ide.overlayRenderer, host.audio, ide.logOutput, ide.runTargets, request);
-		else performReboot(ide.boots, editor, host.execution, ide.overlayRenderer, host.audio, ide.logOutput, ide.runTargets, request);
+			performHotResume(ide.hotResumes, editor, host.execution, ide.overlayRenderer, ide.logOutput, ide.runTargets, request);
+		else performReboot(ide.boots, editor, host.execution, ide.overlayRenderer, ide.logOutput, ide.runTargets, request);
 		if (newer === 'selection') ide.runTargets.select(undefined);
 		if (newer === 'editor') group.openEditor(new GameViewInput());
 		const revision = host.execution.revision, pane = group.panes.activePane;
@@ -510,15 +533,15 @@ test('root Palette in an empty group cannot revive commands from its detached la
 	let staleExecutions = 0;
 	detached.registerCommand('sceneEditor.source', { isEnabled: () => true, run: () => { staleExecutions++; } });
 	detached.focus();
-	assert.equal(group.focusScope.lastFocused, detached);
+	assert.ok(detached.scope.lastFocused === detached);
 	group.clear();
 	assert.equal(group.panes.activePane, null);
-	assert.equal(group.focusScope.lastFocused, detached, 'focus memory is retained independently of attachment');
+	assert.ok(detached.scope.lastFocused === detached, 'the concrete pane retains focus memory independently of its attachment');
 	assert.equal(detached.getCommand('sceneEditor.source')!.isEnabled(), true);
 	inputFocus.setTarget(null);
 	editor.commands.execute('commandPalette', null);
 	const items = editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
-	assert.equal(editor.quickInput.invocationOrigin, group.tabFocusTarget);
+	assert.ok(editor.quickInput.invocationOrigin === group.tabFocusTarget);
 	assert.equal(items.some(item => item.command === 'sceneEditor.source'), false);
 	assert.ok(items.every(item => item.target === group.tabFocusTarget));
 	const row = editor.quickInput.model.list.rows.findIndex(row => items[row.itemIndex].command === 'home');
@@ -543,8 +566,8 @@ test('chrome Palette after a preserve-focus switch addresses the new attached cl
 	group.openEditor(next, { preserveFocus: true });
 	const attached = group.panes.activePane!.commandTarget;
 	assert.notEqual(attached, detached);
-	assert.equal(inputFocus.target, chrome);
-	assert.equal(group.focusScope.lastFocused, detached);
+	assert.ok(inputFocus.target === chrome);
+	assert.ok(detached.scope.lastFocused === detached);
 	attached.registerCommand('sceneEditor.source', {
 		isEnabled: () => true,
 		run: () => { assert.equal(group.panes.activePane!.input, next); currentExecutions++; },
@@ -562,7 +585,7 @@ test('chrome Palette after a preserve-focus switch addresses the new attached cl
 	assert.equal(currentExecutions, 1);
 	assert.equal(staleExecutions, 0);
 	assert.equal(group.panes.activePane!.input, next);
-	assert.equal(inputFocus.target, chrome);
+	assert.ok(inputFocus.target === chrome);
 });
 
 test('chrome Palette retains Host Error body Copy and writes the exact attached document bytes', async t => {
@@ -589,7 +612,7 @@ test('chrome Palette retains Host Error body Copy and writes the exact attached 
 	editor.quickInput.model.list.selectionIndex = row;
 	editor.quickInput.accept();
 	assert.equal((await editor.clipboard.read()).text, stack);
-	assert.equal(inputFocus.target, chrome);
+	assert.ok(inputFocus.target === chrome);
 	assert.equal(group.panes.activePane, pane);
 });
 
@@ -808,24 +831,24 @@ test('common runtime commands orchestrate the physical transport and the active 
 	const { editor, host } = fixture(t);
 	const toggle = t.mock.method(editor.commands.transport, 'togglePlayback');
 	assert.equal(editor.editorGroup.panes.activePane, null);
-	editor.commands.execute('gameView.playback');
+	editor.commands.execute('runtime.playback');
 	assert.equal(toggle.mock.callCount(), 1, 'the transport operation does not depend on an optional capture view');
 	editor.commands.execute('events');
 	const pane = editor.editorGroup.panes.activePane!;
 	assert.equal(pane.input.kind, 'event_viewer');
-	assert.equal(pane.runtimeControlContext!.getCommand('runtime.pause'), undefined, 'a latch is not a partial public command');
-	pane.setRuntimeCaptureRunning!(true); host.execution.setPauseReason(HostPauseReason.Requested, false);
-	assert.equal(pane.suspendsRuntime, false);
-	editor.commands.execute('runtime.pause', pane.runtimeControlContext);
-	assert.equal(pane.suspendsRuntime, true); assert.equal(host.execution.userPaused, true);
-	editor.commands.execute('gameView.playback', pane.runtimeControlContext);
-	assert.equal(pane.suspendsRuntime, false); assert.equal(host.execution.userPaused, false);
+	assert.equal(pane.commandTarget!.getCommand('runtime.pause'), undefined, 'a latch is not a partial public command');
+	pane.commandTarget.scope.runtime!.interaction.running = true; host.execution.setPauseReason(HostPauseReason.Requested, false);
+	assert.equal(pane.commandTarget.scope.runtime!.interaction.running, true);
+	editor.commands.execute('runtime.pause', pane.commandTarget);
+	assert.equal(pane.commandTarget.scope.runtime!.interaction.running, false); assert.equal(host.execution.userPaused, true);
+	editor.commands.execute('runtime.playback', pane.commandTarget);
+	assert.equal(pane.commandTarget.scope.runtime!.interaction.running, true); assert.equal(host.execution.userPaused, false);
 	assert.equal(toggle.mock.callCount(), 2);
 });
 
 for (const command of ['events', 'gpuDebugger', 'gteDebugger'] as const) test(`${command} reading client owns complete pane actions without a semantic alias lookup`, t => {
 	const { editor } = fixture(t); editor.commands.execute(command);
-	const pane = editor.editorGroup.panes.activePane!, owner = pane.runtimeControlContext!;
+	const owner = inputFocus.target!.commandContext;
 	assert.notEqual(inputFocus.target, owner, 'the actual reading control, not its pane action context, has focus');
 	for (const action of ['pause', 'stepFrameBack', 'stepFrame', command === 'events' ? 'events.filter' : command === 'gpuDebugger' ? 'gpu.follow' : 'gte.follow'] as const)
 		assert.equal(inputFocus.target!.getCommand(action), owner.getCommand(action), 'the client publishes the actual complete command handler');
@@ -835,11 +858,32 @@ for (const command of ['events', 'gpuDebugger', 'gteDebugger'] as const) test(`$
 for (const command of ['events', 'gpuDebugger', 'gteDebugger'] as const) test(`${command} timeline Tab boundaries return to its actual reading client`, t => {
 	const { editor } = fixture(t); editor.commands.execute(command); editor.update(0);
 	const client = inputFocus.target!;
-	assert.notEqual(client, editor.editorGroup.panes.activePane!.runtimeControlContext);
+	assert.notEqual(client, inputFocus.target!.commandContext);
 	editor.runtimeTimeline.focus(); assert.equal(inputFocus.moveFocus(true), true);
 	assert.ok(inputFocus.target === client, 'Shift+Tab restores the actual reading client');
 	editor.runtimeTimeline.focus(); assert.equal(inputFocus.moveFocus(false), true);
 	assert.ok(inputFocus.target === client, 'an unavailable history range leaves no intermediate slider stop');
+});
+
+test('revealing Timeline from its own chrome retains the invoking client instead of attaching chrome to itself', t => {
+	const { editor } = fixture(t);
+	editor.commands.execute('events');
+	const client = inputFocus.target!;
+	const logical = client.scope.runtimeOwner!.runtime!;
+	editor.commands.execute('runtime.focusTimeline', client);
+	const chrome = inputFocus.target!, scope = editor.runtimeTimeline.focusScope;
+	assert.ok(chrome.commandContext === logical.target);
+	for (let invocation = 0; invocation < 3; invocation++) {
+		editor.commands.execute('runtime.focusTimeline', chrome);
+		assert.ok(inputFocus.target === chrome);
+		assert.ok(chrome.commandContext === logical.target);
+		assert.ok(scope.interactionOrigin === logical.target.scope);
+	}
+	editor.commands.execute('runtime.hideTimeline', chrome);
+	assert.ok(inputFocus.target === client);
+	editor.commands.execute('runtime.toggleTimeline', client);
+	assert.ok(inputFocus.target === chrome);
+	assert.ok(chrome.commandContext === logical.target);
 });
 
 test('context menu admission and execution belong to the explicit control, not its semantic command alias or current popup focus', t => {
@@ -1276,7 +1320,7 @@ test('routed guest gesture survives UI overlap, focus changes, extra buttons and
 	const { editor, host, pointer, extent } = fixture(t);
 	const scope = new InputFocusScope(Symbol('preview'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter });
+	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	const bounds = { left: 100, top: 60, right: 300, bottom: 240 };
 	game.setInput(bounds);
 	let paneOccurrences = 0, windowOccurrences = 0;
@@ -1317,7 +1361,7 @@ test('UI gesture cannot migrate into a guest and explicit viewport retirement dr
 	const { editor, host, pointer, extent } = fixture(t);
 	const scope = new InputFocusScope(Symbol('preview'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter });
+	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	const bounds = { left: 100, top: 60, right: 300, bottom: 240 };
 	game.setInput(bounds); game.focusTarget.focus();
 	let uiOccurrences = 0;
@@ -1353,8 +1397,8 @@ test('wheel routes the current exposed preview independently of a captured point
 	t.after(() => { first.dispose(); second.dispose(); });
 	const scope = new InputFocusScope(Symbol('previews'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const firstGame = new GameInputControl(owner, first, { kind: 'direct', presenter: host.presenter });
-	const secondGame = new GameInputControl(owner, second, { kind: 'direct', presenter: host.presenter });
+	const firstGame = new GameInputControl(owner, first, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
+	const secondGame = new GameInputControl(owner, second, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	firstGame.setInput({ left: 20, top: 60, right: 170, bottom: 240 });
 	secondGame.setInput({ left: 200, top: 60, right: 350, bottom: 240 });
 	editor.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, isVisible: () => true,
@@ -1452,7 +1496,7 @@ test('native producer cancellation ends a routed guest hold without a successful
 	const { editor, host, extent } = fixture(t);
 	const scope = new InputFocusScope(Symbol('guest'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter });
+	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	game.setInput({ left: 20, top: 60, right: 350, bottom: 240 });
 	editor.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, isVisible: () => true,
 		getBounds: () => extent, getClip: () => extent, draw() {}, handlePointer: snapshot => { game.handlePointer(snapshot); } });
@@ -1500,7 +1544,7 @@ test('real window hide and root-modal admission cancel true producer guest holds
 		layoutContent: bounds => game.setInput(bounds), retireContentInput: () => game.clearInput(),
 		restoreContentInput: () => game.setInput(model.client), focusContent: () => game.focusTarget.focus(),
 	});
-	const game = new GameInputControl(window.clientFocusTarget, host.input, { kind: 'direct', presenter: host.presenter });
+	const game = new GameInputControl(window.clientFocusTarget, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	const show = () => { window.show(false); window.layout(editorViewState.font.renderFont(), measureTextRange, measureText); game.focusTarget.focus(); };
 	t.after(() => { game.dispose(); window.dispose(); });
 	show();
@@ -1527,7 +1571,7 @@ test('retiring the press owner cannot admit that occurrence to a replacement vie
 	const { editor, host, pointer, extent } = fixture(t);
 	const scope = new InputFocusScope(Symbol('replaced preview'));
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
-	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter });
+	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	game.setInput(extent);
 	const snapshot = createInputControllerSnapshot();
 	for (const shortClick of [false, true]) {

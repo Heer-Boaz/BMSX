@@ -7,7 +7,9 @@ import type { EditorTextSelection } from '../../ide/editor/navigation/text_selec
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
+import { InputInteraction } from '../../ide/input/interaction';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { RuntimeTransport } from '../../ide/runtime/transport';
 import { BehaviorLensController } from '../../ide/workbench/contrib/behavior_lens/controller';
 import { BehaviorLensEditorPane } from '../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { acceptEffectPropertySelection } from '../../ide/workbench/contrib/behavior_lens/action_effect_properties';
@@ -23,7 +25,7 @@ import { QuickInputController } from '../../ide/workbench/services/quick_input/c
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
-import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { createTestRuntime, createTestRuntimeRomPayload, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 
 const SOURCE = `local trees<const> = require('cartlib/behaviour_tree/library')
 trees.register('explicit.tree', { root = { type = 'sequence', children = {
@@ -46,7 +48,7 @@ function fixture(t: TestContext, source = SOURCE) {
 	const navigation = new EditorNavigationController(sources.catalog, null!, null!);
 	const documents = new BehaviorSourceDocuments(editorTextModelService, sources.catalog);
 	const controller = new BehaviorLensController(sources, navigation, picker, documents,
-		() => assert.fail('Behavior-tree views do not create an FSM layout worker'), null!, null!);
+		() => assert.fail('Behavior-tree views do not create an FSM layout worker'), null!, null!, null!);
 	const unused = (): never => assert.fail('This owner regression only opens Behavior Lens views');
 	const createGroup = () => {
 		const group = new EditorGroupView({
@@ -58,7 +60,7 @@ function fixture(t: TestContext, source = SOURCE) {
 			behavior_lens: owner => {
 				const surface = surfaces.attach({ role: 'content', captureScope: owner.captureScope,
 					getBounds: () => BOUNDS, getClip: () => BOUNDS, isVisible: () => true, draw() {} });
-				return new BehaviorLensEditorPane(controller, null!, menu, null!, surfaces, surface, BOUNDS, owner, owner.focusScope);
+				return new BehaviorLensEditorPane(controller, null!, menu, surfaces, surface, BOUNDS, owner, owner.focusScope);
 			},
 		}, { isEnabled: () => false, execute() {} }, unused);
 		group.panes.layout(BOUNDS);
@@ -277,4 +279,27 @@ effects.register_effect('explicit.effect', {
 	pane.setOptions(undefined, selection);
 	pane.update(0);
 	assert.equal(tree.scroll, 0, 'explicit navigation restores its viewport rather than forcing the selected property onscreen');
+});
+
+
+test('authored Behavior graph controls do not acquire a runtime command subject from an open runtime inspector', t => {
+	const f = fixture(t), input = f.controller.openDefinition(f.first, f.registration);
+	f.first.panes.activePane!.focus();
+	const graph = inputFocus.target!, pane = f.first.panes.activePane as BehaviorLensEditorPane;
+	const transport = new RuntimeTransport(createTestRuntime(createTestRuntimeRomPayload()), null!, null!, null!, () => true);
+	const interaction = new InputInteraction(transport);
+	pane.inspector.show({ title: '', items: [], interaction, canOpenSource: () => false, openSource() {} }, false);
+	assert.equal(pane.inspector.visible, true);
+	assert.ok(pane.inspector.focusTarget.scope.runtime!.interaction === interaction);
+	assert.ok(pane.inspector.focusTarget.scope.runtime!.target === pane.inspector.focusTarget);
+	assert.equal(pane.inspector.focusTarget.scope.interactionOwner!.interaction, interaction);
+	graph.focus();
+	for (const command of ['pause', 'stepFrame', 'stepFrameBack'] as const) {
+		assert.equal(graph.getCommand(command), undefined);
+		assert.equal(graph.commandContext.getCommand(command), undefined);
+		assert.ok(pane.inspector.focusTarget.getCommand(command));
+	}
+	assert.equal(graph.scope.interactionOwner!.interaction!.transport, null);
+	assert.equal(graph.scope.runtimeOwner, undefined);
+	assert.equal(input.runtimeInspection, undefined);
 });

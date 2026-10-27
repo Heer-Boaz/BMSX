@@ -2,9 +2,9 @@ import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/r
 import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { HostPauseReason } from '../../hosts/common/execution_control';
+import { HostExecutionIntent, HostPauseReason } from '../../hosts/common/execution_control';
 import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
-import { runtimeDebuggerExecutionRequested, resetRuntimeDebuggerExecution, resumeRuntimeDebugger, applyRuntimeDebuggerHotResume, RuntimeDebuggerResumeMode } from '../../ide/runtime/debugger_state';
+import { runtimeDebuggerExecutionIntent, runtimeDebuggerExecutionRequested, resetRuntimeDebuggerExecution, resumeRuntimeDebugger, applyRuntimeDebuggerHotResume, RuntimeDebuggerResumeMode } from '../../ide/runtime/debugger_state';
 import type { SourceExecutionOperation } from '../../ide/runtime/debugger_execution';
 import { RuntimeDebuggerPlanResult } from '../../ide/runtime/debugger_plans';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -56,7 +56,7 @@ function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: 
 	t.after(() => { owner.dispose(); f.presenter.dispose(); });
 	const execute = () => {
 		owner.beforeHostFrame();
-		if (runtimeDebuggerExecutionRequested(state) && !state.plans.controlSuspended) cpu.runUntilDepth(0, 100_000);
+		if (!f.execution.executionBlocked(runtimeDebuggerExecutionIntent(state)) && !state.plans.controlSuspended) cpu.runUntilDepth(0, 100_000);
 		owner.afterHostFrame();
 	};
 	const line = () => blua32SourceRangeAtPc(image.symbols!, image.image.header.textAddress, state.source.stop!.pc)!.start.line;
@@ -87,6 +87,38 @@ for (const level of [0, 3] as const) test(`O${level}: shared source operations a
 	op = f.owner.resume('over', 'workbench'); f.execute(); await op.completion;
 	assert.equal(f.line(), 11); assert.equal(pointReads, 0, 'same installed image reuses step PCs');
 	assert.equal(runtimeDebuggerExecutionRequested(f.state), false);
+});
+
+test('game-context Continue retires at the authoring hold before another instruction', async t => {
+	const f = fixture(t); f.stopped();
+	f.execution.setPauseReason(HostPauseReason.Workbench, false);
+	const pc = f.cpu.readFramePc(f.cpu.getFrameDepth() - 1), cycles = f.runtime.machine.scheduler.currentNowCycles();
+	const operation = f.owner.resume('continue', 'game');
+	assert.equal(runtimeDebuggerExecutionIntent(f.state), HostExecutionIntent.Game);
+	f.execution.setPauseReason(HostPauseReason.Workbench, true);
+	f.execute();
+	assert.equal((await operation.completion).reason, 'host-paused');
+	assert.equal(f.cpu.readFramePc(f.cpu.getFrameDepth() - 1), pc);
+	assert.equal(f.runtime.machine.scheduler.currentNowCycles(), cycles);
+	assert.equal(runtimeDebuggerExecutionIntent(f.state), HostExecutionIntent.None);
+	assert.equal(f.execution.executionBlocked(), true);
+});
+
+test('workbench execution remains admitted intent while a mandatory host hold blocks its physical target', async t => {
+	const f = fixture(t); f.stopped(); f.state.breakpoints.set(RESOURCE, [3]);
+	const operation = f.owner.resume('continue', 'workbench');
+	const pc = f.cpu.readFramePc(f.cpu.getFrameDepth() - 1);
+	assert.equal(runtimeDebuggerExecutionIntent(f.state), HostExecutionIntent.Workbench);
+	f.execution.setPauseReason(HostPauseReason.HostSuspended, true);
+	f.execute();
+	assert.equal(operation.result, undefined);
+	assert.equal(f.cpu.readFramePc(f.cpu.getFrameDepth() - 1), pc);
+	f.execution.setPauseReason(HostPauseReason.HostSuspended, false);
+	f.execute();
+	assert.equal((await operation.completion).reason, 'breakpoint');
+	assert.equal(f.line(), 3);
+	assert.equal(f.execution.userPaused, true);
+	assert.equal(f.execution.executionBlocked(), true);
 });
 
 test('breakpoints have real bindings, deterministic persistence and shared change events, never a nearest-line fallback', t => {

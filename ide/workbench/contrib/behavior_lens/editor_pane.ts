@@ -47,20 +47,12 @@ import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import { addActionEffectProperty, editableActionEffect, removeActionEffectProperty } from './action_effect_authoring';
-import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { BehaviorSourceIndex } from './source_index';
 
 export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLensInput> {
 	public override get companionGameMinimumWidth(): number { return measureBehaviorLensMinimumWidth(this.input.view); }
 
-	public override get suspendsRuntime(): boolean { return this.input.runtimeInspection?.running !== true; }
-	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
-	public override get runtimeControlContext() { return this.input.runtimeInspection === undefined ? undefined : this.inspector.focusTarget; }
-	public override setRuntimeCaptureRunning(running: boolean): void {
-		const inspection = this.input.runtimeInspection;
-		if (inspection !== undefined) inspection.running = running;
-	}
 	public override getSelection(): BehaviorLensNavigationSelection {
 		this.controller.updateView(this.input);
 		this.layout(this.contentBounds);
@@ -93,7 +85,6 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		private readonly controller: BehaviorLensController,
 		private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController,
-		private readonly frameNavigation: RuntimeFrameNavigation,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, workArea: Readonly<RectBounds>,
 		private readonly group: EditorGroupView,
 		scope: InputFocusScope,
@@ -107,14 +98,17 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		this.graph.focusTarget.commandContext = this.focusTarget;
 		this.inspector.focusTarget.commandContext = this.focusTarget;
 		this.propertyEdit.control.field.focusTarget.commandContext = this.focusTarget;
-		for (const target of [this.focusTarget, this.inspector.focusTarget]) {
-			target.registerCommand('pause', { isEnabled: () => this.input.runtimeInspection !== undefined && this.commands.transport.playbackEnabled,
-				run: () => { this.input.runtimeInspection!.running = this.commands.transport.togglePlayback(); } });
-			for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
-				isEnabled: () => this.input.runtimeInspection !== undefined && this.frameNavigation.canStep(direction),
-				run: () => { this.input.runtimeInspection!.running = false; this.frameNavigation.step(direction); },
-			});
-		}
+		this.inspector.focusTarget.registerCommand('pause', {
+			isEnabled: () => this.input.runtimeInspection?.interaction.transport?.playbackEnabled === true,
+			run: () => { const interaction = this.input.runtimeInspection!.interaction; interaction.running = interaction.transport!.togglePlayback(); },
+		});
+		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) this.inspector.focusTarget.registerCommand(command, {
+			isEnabled: () => {
+				const transport = this.input.runtimeInspection?.interaction.transport;
+				return transport?.available === true && transport.navigation.canStep(direction);
+			},
+			run: () => { const interaction = this.input.runtimeInspection!.interaction; interaction.running = false; interaction.transport!.navigation.step(direction); },
+		});
 		this.focusTarget.registerCommand('behaviorLens.addProperty', {
 			isEnabled: () => !this.inspector.visible && editableActionEffect(this.input.view) !== undefined,
 			run: () => addActionEffectProperty(this.input.view, this.controller.quickInput),

@@ -211,6 +211,7 @@ export class StudioWorkbench {
 		return this.shutdownOperation;
 	}
 	private async close(): Promise<void> {
+		this.transport.retire();
 		this.runTargets.select(undefined);
 		this.unbindRunTargetAudio();
 		this.tools.dispose();

@@ -1,5 +1,5 @@
 import { SOURCE_EXECUTION_MODES, type SourceExecutionMode } from './source_debugger';
-import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
+import { HostExecutionIntent, HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -142,7 +142,7 @@ export class RuntimeDebuggerExecution<TState extends SourceExecutionState = Runt
 				this.suspend(operation); this.stopped(operation, 'stopped', 'thread-completed');
 			} else if (this.state.plans.controlSuspended || this.runtime.machine.cpu.getFrameDepth() === 0) {
 				this.suspend(operation); this.stopped(operation, 'stopped', 'execution-paused');
-			} else if (operation.context === 'game' && this.execution.executionBlocked(true)) {
+			} else if (operation.context === 'game' && this.execution.executionBlocked(HostExecutionIntent.Game)) {
 				this.stopped(operation, 'stopped', 'host-paused');
 			}
 		}

@@ -109,7 +109,7 @@ export class GteDetailsWindow {
 		});
 		this.inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.window.clientFocusTarget, 'client');
 		this.diagramControl = new WorkbenchScrollControl(inputFocus, pointerCapture, this.window.clientFocusTarget,
-			event => this.handleDiagramKeyboard(event), this.window.clientScope.surfaceScope);
+			event => this.handleDiagramKeyboard(event), this.window.clientScope);
 		this.diagramControl.onWillScroll = () => { input.following = false; input.diagramAnchor.projectedScroll = undefined; };
 		this.viewActions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands,
 			this.window.clientFocusTarget, () => this.focusContent(), contextMenu);

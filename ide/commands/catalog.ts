@@ -184,7 +184,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'runtime.present': { category: 'Run', title: 'Return to Present', shortTitle: 'Back' },
 	'runtime.accept': { category: 'Run', title: 'Use This Point' },
 	'runtime.resume': { category: 'Run', title: 'Continue from Here', shortTitle: 'OK' },
-	'gameView.playback': { category: 'Game', title: 'Play / Pause', shortTitle: 'Play/Pause' },
+	'runtime.playback': { category: 'Run', title: 'Play / Pause', shortTitle: 'Play/Pause' },
 	'actorLab.playback': { category: 'Actor Lab', title: 'Play / Pause', shortTitle: 'Play/Pause' },
 	'actorLab.select': { category: 'Actor Lab', title: 'Select Running Actor', shortTitle: 'Actor' },
 	'actorLab.find': { category: 'Actor Lab', title: 'Find in Actor', shortTitle: 'Find in Actor' },

@@ -1,7 +1,7 @@
 import type { PointerSnapshot } from '../../common/models';
 import type { EditorCommandRunner } from '../../common/commands';
 import { editorViewState } from '../../editor/ui/view/state';
-import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget, type InputRuntimeContext } from '../../input/focus';
 import { pointerCapture } from '../../input/pointer/capture';
 import { pointerHover } from '../../input/pointer/hover';
 import type { FrameNavigationOperation } from '../../runtime/frame_navigation';
@@ -34,8 +34,11 @@ export class RuntimeTimelineControl {
 	private readonly slider: WorkbenchSliderControl;
 	private readonly tooltip = new WorkbenchTooltip();
 	private workArea!: Readonly<RectBounds>;
-	private context: InputFocusTarget | undefined;
+	private binding: InputRuntimeContext | undefined;
 	private transport: RuntimeTransport | undefined;
+	private unbindInteraction: (() => void) | undefined;
+	private unbindContext: (() => void) | undefined;
+	private unbindTransport: (() => void) | undefined;
 	private contextMenu!: ContextMenuController;
 	private requestedValue = false;
 	private presented = false;
@@ -53,7 +56,7 @@ export class RuntimeTimelineControl {
 			run: () => this.openContextMenu(this.layout.bounds.left, this.layout.bounds.top, target, true),
 		});
 	}
-	public get available(): boolean { return this.context !== undefined && this.transport !== undefined; }
+	public get available(): boolean { return this.binding !== undefined && this.transport !== undefined; }
 	public get requested(): boolean { return this.requestedValue; }
 	public get height(): number { return this.presented ? RuntimeTimelineLayout.height(editorViewState.font.renderFont()) : 0; }
 	public get visible(): boolean { return this.presented; }
@@ -71,34 +74,51 @@ export class RuntimeTimelineControl {
 		this.contextMenu = contextMenu;
 		this.tooltip.attach(surfaces, owner, workArea);
 	}
-	public setContext(context: InputFocusTarget | undefined, transport: RuntimeTransport | undefined): void {
-		if (context !== this.context || transport !== this.transport) {
-			this.clearPresentation();
-			// Outline/graph are concrete command clients of the same physical transport.
-			if (transport !== this.transport) {
-				this.requestedCycles = undefined;
-				if (this.seekOperation !== undefined) this.transport!.navigation.cancel(this.seekOperation);
-				this.seekOperation = undefined;
-			}
-			this.context = context; this.transport = transport;
+	public setContext(binding: InputRuntimeContext | undefined): void {
+		if (binding === this.binding) return;
+		this.unbindInteraction?.(); this.unbindContext?.();
+		this.unbindInteraction = undefined; this.unbindContext = undefined;
+		const restoreFocus = this.clearPresentation();
+		this.binding = binding;
+		this.focusScope.interactionOrigin = binding?.target.scope;
+		this.focusScope.runtime = binding;
+		if (binding !== undefined) {
+			this.unbindContext = binding.target.scope.onDidRetireContext(() => this.setContext(undefined));
+			this.unbindInteraction = binding.interaction.onDidChange(() => this.updateTransport());
 		}
-		// Composition publishes the requested view's admitted height before update.
+		this.updateTransport();
+		if (restoreFocus) this.focusContent();
+	}
+	private updateTransport(): void {
+		const target = this.binding?.interaction.transport;
+		const transport = target?.available ? target : undefined;
+		let restoreFocus = false;
+		if (transport !== this.transport) {
+			restoreFocus = this.clearPresentation();
+			this.requestedCycles = undefined;
+			if (this.seekOperation !== undefined) this.transport!.navigation.cancel(this.seekOperation);
+			this.seekOperation = undefined;
+			this.unbindTransport?.();
+			this.transport = transport;
+			this.unbindTransport = transport?.onDidRetire(() => this.updateTransport());
+		}
 		this.updatePresentation();
+		if (restoreFocus) this.focusContent();
 	}
 	private updatePresentation(): void {
 		const visible = this.available && this.requestedValue;
 		if (visible === this.presented) return;
 		if (visible) {
 			this.presented = true;
-			this.actions.setInput(this.actionState, this.context!);
+			this.actions.setInput(this.actionState, this.binding!.target);
 			this.actions.focusTarget.previous = this.focusContent;
-			this.slider.focusTarget.commandContext = this.context!;
+			this.slider.focusTarget.commandContext = this.binding!.target;
 			this.slider.focusTarget.next = this.focusContent;
 			this.slider.setInput(this.range);
-		} else this.clearPresentation();
+		} else if (this.clearPresentation()) this.focusContent();
 	}
-	private clearPresentation(): void {
-		if (!this.presented) return;
+	private clearPresentation(): boolean {
+		if (!this.presented) return false;
 		const actions = this.actions.focusTarget, slider = this.slider.focusTarget;
 		const menu = this.contextMenu;
 		const invokingMenu = menu.visible && (menu.invocationOrigin === actions || menu.invocationOrigin === slider);
@@ -110,10 +130,10 @@ export class RuntimeTimelineControl {
 		pointerCapture.cancelTarget(this.slider); pointerCapture.cancelTarget(this.actions);
 		this.slider.clearInput(); this.actions.clearInput(); this.tooltip.hide();
 		this.actions.focusTarget.previous = null; this.slider.focusTarget.next = null;
-		if (ownsFocus) this.focusContent();
+		return ownsFocus;
 	}
 	private requestSeek(cycles: number): void {
-		if (this.seekOperation === undefined) this.commands.execute('runtime.pause', this.context);
+		if (this.seekOperation === undefined) this.commands.execute('runtime.pause', this.binding?.target);
 		this.requestedCycles = cycles;
 	}
 	public update(): void {
@@ -140,7 +160,7 @@ export class RuntimeTimelineControl {
 		const playing = !rewind.stopped && (this.transport!.state === 'LIVE' || this.transport!.state === 'REPLAY');
 		this.actionState.items[1].icon = playing ? 'pause' : 'play';
 		this.actions.update();
-		this.actionState.items[1].tooltip = editorCommandTitle('pause', !playing);
+		this.actionState.items[1].tooltip = editorCommandTitle('runtime.playback', !playing);
 		const top = editorViewState.viewportHeight - statusAreaHeight() - this.height;
 		const offsetTenths = rewind.active ? Math.trunc((history.latestCycles - rewind.positionCycles) * 10 / runtime.timing.cpuHz) : 0;
 		const durationTenths = Math.trunc((history.latestCycles - history.earliestCycles) * 10 / runtime.timing.cpuHz);
@@ -167,11 +187,11 @@ export class RuntimeTimelineControl {
 	private openContextMenu(x: number, y: number, origin: InputFocusTarget, keyboard: boolean): void {
 		this.tooltip.hide();
 		this.contextMenu.show(x, y, WORKBENCH_MENUS['gamePanel.context'], this.commands,
-			{ invocationOrigin: origin, returnFocus: origin, commandTarget: this.context!, selectFirst: keyboard });
+			{ invocationOrigin: origin, returnFocus: origin, commandTarget: this.binding!.target, selectFirst: keyboard });
 	}
 	public draw(): void {
 		if (this.presented) drawRuntimeTimeline(this.layout, this.actionState, this.range,
 			this.slider.focusTarget.hasFocus, editorViewState.font.renderFont());
 	}
-	public dispose(): void { this.setContext(undefined, undefined); this.tooltip.detach(); this.slider.dispose(); this.actions.dispose(); }
+	public dispose(): void { this.setContext(undefined); this.tooltip.detach(); this.slider.dispose(); this.actions.dispose(); }
 }

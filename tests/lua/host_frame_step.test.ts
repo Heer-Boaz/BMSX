@@ -1,7 +1,7 @@
 import { createHostFrameFixture } from '../helpers/host_frame';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HostPauseReason } from '../../hosts/common/execution_control';
+import { HostExecutionIntent, HostPauseReason } from '../../hosts/common/execution_control';
 import { HostFrameAction, prepareHostUpdate } from '../../hosts/common/host_frame';
 import { executeHostLogicalTick, executeHostUpdate } from '../../hosts/common/machine_step';
 import { HostMenuInput } from '../../hosts/common/host_overlay_menu';
@@ -17,7 +17,7 @@ test('frame advance bypasses inspection pause but keeps initialization blockers 
 	assert.equal(execution.userPaused, true);
 	assert.equal(suspend.mock.callCount(), 1);
 	assert.equal(resume.mock.callCount(), 0);
-	for (const reason of [HostPauseReason.AwaitingLaunch, HostPauseReason.Fullscreen, HostPauseReason.VibrationInitialization]) {
+	for (const reason of [HostPauseReason.AwaitingLaunch, HostPauseReason.Fullscreen, HostPauseReason.VibrationInitialization, HostPauseReason.HostSuspended]) {
 		execution.setPauseReason(reason, true);
 		assert.equal(execution.executionBlocked(), true);
 		execution.setPauseReason(reason, false);
@@ -28,6 +28,29 @@ test('frame advance bypasses inspection pause but keeps initialization blockers 
 	assert.equal(execution.executionBlocked(), true, 'closing Studio must retain requested pause');
 	assert.equal(suspend.mock.callCount(), 1);
 	assert.equal(resume.mock.callCount(), 0);
+});
+
+test('target-owned workbench execution bypasses only authoring and requested holds without clearing them', () => {
+	const { execution, session, runtime } = createHostFrameFixture();
+	execution.setPauseReason(HostPauseReason.Workbench, true);
+	execution.setPauseReason(HostPauseReason.Requested, true);
+	const revision = execution.revision;
+	assert.equal(prepareHostUpdate(session, runtime, true, HostMenuInput.Inactive, HostExecutionIntent.None), HostFrameAction.PresentPaused);
+	assert.equal(prepareHostUpdate(session, runtime, true, HostMenuInput.Inactive, HostExecutionIntent.Game), HostFrameAction.PresentPaused);
+	assert.equal(prepareHostUpdate(session, runtime, true, HostMenuInput.Inactive, HostExecutionIntent.Workbench), HostFrameAction.Execute);
+	assert.equal(prepareHostUpdate(session, runtime, true, HostMenuInput.Active, HostExecutionIntent.Workbench), HostFrameAction.PresentPending);
+	for (const reason of [HostPauseReason.AwaitingLaunch, HostPauseReason.Fullscreen, HostPauseReason.VibrationInitialization, HostPauseReason.HostSuspended]) {
+		execution.setPauseReason(reason, true);
+		assert.equal(execution.executionBlocked(HostExecutionIntent.Workbench), true);
+		execution.setPauseReason(reason, false);
+	}
+	assert.equal(execution.userPaused, true);
+	assert.equal(execution.paused, true);
+	assert.equal(execution.revision, revision);
+	assert.equal(execution.executionBlocked(), true);
+	execution.setPauseReason(HostPauseReason.Workbench, false);
+	assert.equal(execution.executionBlocked(HostExecutionIntent.Game), false);
+	assert.equal(execution.executionBlocked(), true);
 });
 
 test('continue and source-step replace pending frame advance instead of leaking a later step', () => {

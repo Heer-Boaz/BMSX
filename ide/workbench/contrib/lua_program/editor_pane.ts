@@ -35,7 +35,6 @@ import * as colors from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ActionStringTester } from '../scenario_lab/actionstring';
-import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import { truncateMeasuredText } from '../../../common/text';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 
@@ -60,9 +59,10 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	private headerNaturalWidth = 0;
 	private readonly actionTooltip = new WorkbenchTooltip();
 	private headerFont: typeof editorViewState.font | undefined;
+	private unbindInteraction: (() => void) | undefined;
 	public constructor(private readonly controller: LuaProgramController,
 		private readonly commands: IdeCommandController, private readonly tester: ActionStringTester,
-		private readonly frameNavigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
+		private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && (this.input.liveVisible ? this.input.live : this.input.tree).layout.visibleRowCount > 0;
@@ -73,7 +73,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 			&& this.input.actionBar.bounds.top < this.input.actionBar.bounds.bottom;
 		this.actions.onDidOpenOverflow = lifetime => {
 			const input = this.input;
-			input.running = false; this.pointer.hideFeedback(); this.actionTooltip.hide();
+			input.interaction.running = false; this.pointer.hideFeedback(); this.actionTooltip.hide();
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => contextMenu.hide()) });
 		};
 		this.edit = new WorkbenchPropertyEdit(this.focusTarget, value => value.edit.text, surfaces, paneSurface, workArea);
@@ -94,21 +94,21 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		}, run: () => this.controller.remove(this.input) });
 		this.focusTarget.registerCommand('luaProgram.source', { isEnabled: () => true, run: () => this.controller.openSource(group, this.input) });
 		this.focusTarget.registerCommand('luaProgram.live', { isEnabled: () => !this.input.liveVisible, run: () => {
-			this.input.running = false;
+			this.input.interaction.running = false;
 			if (this.input.instance === undefined) this.controller.chooseInstance(this.input);
-			else { this.input.liveVisible = true; this.input.liveDirty = true; }
+			else this.input.inspectRuntime(this.commands.transport);
 		} });
 		this.focusTarget.registerCommand('luaProgram.authoring', { isEnabled: () => this.input.liveVisible,
-			run: () => { this.input.running = false; this.input.liveVisible = false; } });
+			run: () => this.input.showAuthoring() });
 		this.focusTarget.registerCommand('luaProgram.more', { isEnabled: () => this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
 		this.focusTarget.registerCommand('luaProgram.selectInstance', { isEnabled: () => this.input.liveVisible,
 			run: () => this.controller.chooseInstance(this.input) });
-		this.focusTarget.registerCommand('pause', { isEnabled: () => this.input.liveVisible && this.commands.transport.playbackEnabled,
-			run: () => { this.input.running = this.commands.transport.togglePlayback(); } });
+		this.focusTarget.registerCommand('pause', { isEnabled: () => this.input.interaction.transport?.playbackEnabled === true,
+			run: () => { this.input.interaction.running = this.input.interaction.transport!.togglePlayback(); } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) {
 			this.focusTarget.registerCommand(command, {
-				isEnabled: () => this.input.liveVisible && this.frameNavigation.canStep(direction),
-				run: () => { this.input.running = false; this.frameNavigation.step(direction); },
+				isEnabled: () => this.input.interaction.transport?.available === true && this.input.interaction.transport.navigation.canStep(direction),
+				run: () => { this.input.interaction.running = false; this.input.interaction.transport!.navigation.step(direction); },
 			});
 		}
 		this.focusTarget.registerCommand('luaProgram.testInput', { isEnabled: () => this.input.programKind === 'input' && this.tester.canStart(this.input.workingCopy.resource.contextId), run: () => {
@@ -125,15 +125,23 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 			run: () => executeTextHistoryCommand(this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!, direction),
 		});
 	}
-	public override get suspendsRuntime(): boolean { return !this.input.running; }
-	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
-	public override get runtimeControlContext() { return this.input.liveVisible ? this.focusTarget : undefined; }
-	public override setRuntimeCaptureRunning(running: boolean): void { if (this.input.liveVisible) this.input.running = running; }
-	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.update(); }
+	protected override activate(): void {
+		const interaction = this.input.interaction, scope = this.focusTarget.scope;
+		scope.interaction = interaction;
+		const context = { target: this.focusTarget, interaction };
+		const bindRuntime = () => { scope.runtime = interaction.transport === null ? undefined : context; };
+		bindRuntime();
+		this.unbindInteraction = interaction.onDidChange(bindRuntime);
+		this.actions.setInput(this.input.actionBar, this.focusTarget); this.update();
+	}
 	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.update(); }
 	public override get commandTarget(): InputFocusTarget { return this.focusTarget.canFocus!() ? this.focusTarget : this.actions.focusTarget; }
-	public override clearInput(): void { this.input.running = false; this.input.invalidateProjection(); this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); super.clearInput(); }
-	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
+	public override clearInput(): void {
+		this.input.interaction.running = false; this.input.invalidateProjection(); this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput();
+		super.clearInput();
+		this.unbindInteraction!(); this.unbindInteraction = undefined;
+	}
+	public override dispose(): void { this.unbindInteraction?.(); this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
 	private selected() { return this.input.liveVisible ? undefined : this.input.tree.rows[this.input.tree.selectionIndex]?.element; }
 	private editProperty(): void {
 		this.pointer.hideFeedback();
@@ -232,7 +240,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	private openContextMenu(x: number, y: number, keyboard = false): void {
 		this.pointer.hideFeedback();
 		const input = this.input;
-		input.running = false;
+		input.interaction.running = false;
 		const items = WORKBENCH_MENUS['luaProgram.context'].filter(item => item.type !== 'command' || this.commands.isEnabled(item.command, this.focusTarget));
 		this.contextMenu.show(x, y, items, this.commands, { selectFirst: keyboard, commandTarget: this.focusTarget,
 			onWillShow: lifetime => lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.contextMenu.hide()) }) });

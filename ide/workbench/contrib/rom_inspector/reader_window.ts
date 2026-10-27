@@ -119,7 +119,7 @@ export class RomEntryInspectorWindow {
 		this.image = new WorkbenchImageControl(inputFocus, pointerCapture, this.window.clientFocusTarget,
 			this.window.clientScope.surfaceScope, event => this.handleEscape(event));
 		this.bytes = new WorkbenchScrollControl(inputFocus, pointerCapture, this.window.clientFocusTarget,
-			event => this.handleBytesKeyboard(event), this.window.clientScope.surfaceScope);
+			event => this.handleBytesKeyboard(event), this.window.clientScope);
 		this.horizontal = new ScrollbarPointerControl(pointerCapture, this.window.clientScope.surfaceScope);
 		this.viewActions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands,
 			this.window.clientFocusTarget, () => this.focusContent(), contextMenu);

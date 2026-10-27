@@ -110,9 +110,9 @@ export class GpuDetailsWindow {
 		});
 		this.inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.window.clientFocusTarget, 'client');
 		this.diagram = new WorkbenchScrollControl(inputFocus, pointerCapture, this.window.clientFocusTarget,
-			event => this.handleDiagramKeyboard(event), this.window.clientScope.surfaceScope);
+			event => this.handleDiagramKeyboard(event), this.window.clientScope);
 		this.words = new WorkbenchScrollControl(inputFocus, pointerCapture, this.window.clientFocusTarget,
-			event => this.handleWordKeyboard(event), this.window.clientScope.surfaceScope);
+			event => this.handleWordKeyboard(event), this.window.clientScope);
 		this.diagram.onWillScroll = () => { input.following = false; this.projectedScroll = undefined; };
 		this.words.onWillScroll = () => { input.following = false; };
 		this.contentActions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.window.clientFocusTarget,

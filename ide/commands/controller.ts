@@ -9,7 +9,6 @@ import type { RunTargetSelection } from '../workbench/services/execution/run_tar
 import { navigationState } from '../navigation/navigation_history';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
-import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
@@ -83,7 +82,6 @@ export class IdeCommandController {
 		private readonly overlayRenderer: OverlayRenderer,
 		public readonly transport: RuntimeTransport,
 		private readonly runTargets: RunTargetSelection,
-		private readonly audioOutput: HostAudioOutput,
 		private readonly clock: HostClock,
 		private readonly logOutput: LogOutput,
 		private readonly textFileSaves: TextFileSaveService,
@@ -92,11 +90,10 @@ export class IdeCommandController {
 		const originGroup = findEditorGroup(target);
 		if (originGroup === null) return;
 		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
-		const pane = group.panes.activePane;
 		const selected = this.runTargets.selected;
-		const transport = originGroup !== undefined && pane?.runtimeControlContext !== undefined
-			? pane.runtimeTransport : selected?.transport;
-		const capturePane = pane?.runtimeTransport === transport ? pane : undefined;
+		const runtimeContext = target?.scope.runtimeOwner?.runtime;
+		const local = runtimeContext?.interaction;
+		const transport = local === undefined ? selected?.transport : local.transport;
 		// Committing the focused draft and choosing an action's target are distinct.
 		// Pointer actions retain field focus but invoke their own explicit context.
 		if (SOURCE_COMMANDS.has(command)) {
@@ -107,6 +104,7 @@ export class IdeCommandController {
 				if (!edit.commit() || attachment !== group.panes.openGeneration) return;
 			}
 		}
+		target?.activate();
 		const implementation = target?.getCommand(command);
 		if (implementation !== undefined) {
 			if (implementation.isEnabled()) implementation.run();
@@ -217,47 +215,53 @@ export class IdeCommandController {
 				if (playback.execution.userPaused) {
 					playback.resumeHere();
 					if (playback === this.transport && selected.debuggerExecution.state.source.stop === undefined) {
-						deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+						deactivateEditor(this.editor, this.overlayRenderer);
 					}
 				} else playback.pause();
 				return;
 			}
-			case 'runtime.focusTimeline': this.editor.runtimeTimeline.focus(); return;
+			case 'runtime.focusTimeline':
+				if (runtimeContext !== undefined) this.editor.runtimeTimeline.setContext(runtimeContext);
+				this.editor.runtimeTimeline.focus(); return;
 			case 'runtime.hideTimeline': this.editor.runtimeTimeline.hide(); return;
 			case 'runtime.toggleTimeline':
 				if (this.editor.runtimeTimeline.requested) this.editor.runtimeTimeline.hide();
-				else this.editor.runtimeTimeline.focus();
+				else {
+					if (runtimeContext !== undefined) this.editor.runtimeTimeline.setContext(runtimeContext);
+					this.editor.runtimeTimeline.focus();
+				}
 				return;
 			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
 			case 'runtime.pause':
-				if (transport === undefined) return;
-				capturePane?.setRuntimeCaptureRunning?.(false);
+				if (transport?.available !== true) return;
+				if (local !== undefined) { local.running = false; this.editor.interaction.activateRuntime(target!); }
 				transport.pause();
 				return;
 			case 'runtime.present':
 			case 'runtime.accept':
-				if (transport === undefined) return;
-				capturePane?.setRuntimeCaptureRunning?.(false);
+				if (transport?.available !== true) return;
+				if (local !== undefined) { local.running = false; this.editor.interaction.activateRuntime(target!); }
 				transport.navigation.finishReview(command === 'runtime.present' ? 'present' : 'here');
 				return;
 			case 'runtime.resume':
-				if (transport === undefined) return;
-				capturePane?.setRuntimeCaptureRunning?.(true);
+				if (transport?.available !== true) return;
+				if (local !== undefined) { local.running = true; this.editor.interaction.activateRuntime(target!); }
 				transport.resumeHere();
 				return;
-			case 'gameView.playback': {
-				if (transport === undefined) return;
+			case 'runtime.playback': {
+				if (transport?.playbackEnabled !== true) return;
 				const running = transport.togglePlayback();
-				capturePane?.setRuntimeCaptureRunning?.(running);
+				if (local !== undefined) { local.running = running; this.editor.interaction.activateRuntime(target!); }
 				return;
 			}
 			case 'gameView.togglePanel': this.editor.gamePanel.toggle(); return;
 			case 'gameView.closePanel': this.editor.gamePanel.close(); return;
 			case 'stepFrame':
 			case 'stepFrameBack':
-				if (selected === undefined) return;
-				if (selected.transport === this.transport) openGameView(group);
-				selected.transport.navigation.step(command === 'stepFrameBack' ? -1 : 1);
+				if (transport?.available !== true) return;
+				if (local !== undefined) { local.running = false; this.editor.interaction.activateRuntime(target!); }
+				if (local === undefined && transport === this.transport) openGameView(group);
+				transport.navigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
 			case 'scenarioLab.debug':
 			case 'scenarioLab.play':
@@ -281,7 +285,7 @@ export class IdeCommandController {
 					: command === 'debugStepOver' ? 'over' : 'continue', selected.transport === this.transport ? 'game' : 'workbench');
 				if (selected.transport === this.transport) {
 					clearExecutionStopHighlights(group);
-					deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+					deactivateEditor(this.editor, this.overlayRenderer);
 				}
 				return;
 		}
@@ -301,7 +305,6 @@ export class IdeCommandController {
 				this.boots,
 				this.execution,
 				this.overlayRenderer,
-				this.audioOutput,
 				this.clock,
 				this.logOutput,
 				this.textFileSaves,
@@ -334,7 +337,6 @@ export class IdeCommandController {
 			this.boots,
 			this.execution,
 			this.overlayRenderer,
-			this.audioOutput,
 			this.logOutput,
 			request,
 			this.runTargets,
@@ -345,10 +347,9 @@ export class IdeCommandController {
 		const originGroup = findEditorGroup(focus);
 		if (originGroup === null) return false;
 		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
-		const pane = group.panes.activePane;
 		const selected = this.runTargets.selected;
-		const transport = originGroup !== undefined && pane?.runtimeControlContext !== undefined
-			? pane.runtimeTransport : selected?.transport;
+		const local = focus?.scope.runtimeOwner?.runtime?.interaction;
+		const transport = local === undefined ? selected?.transport : local.transport;
 		const implementation = focus?.getCommand(command);
 		if (implementation !== undefined) return implementation.isEnabled();
 		switch (command) {
@@ -413,22 +414,21 @@ export class IdeCommandController {
 				return selected?.transport.playbackEnabled === true;
 			case 'stepFrame':
 			case 'stepFrameBack':
-				return selected?.transport.navigation.canStep(command === 'stepFrameBack' ? -1 : 1) === true;
-			case 'runtime.focusTimeline': return this.editor.isActive && this.editor.runtimeTimeline.available;
+				return transport?.available === true && transport.navigation.canStep(command === 'stepFrameBack' ? -1 : 1);
+			case 'runtime.focusTimeline': return this.editor.isActive && (local === undefined ? this.editor.runtimeTimeline.available : transport?.available === true);
 			case 'runtime.hideTimeline': return this.editor.isActive && this.editor.runtimeTimeline.canHide;
-			case 'runtime.toggleTimeline': return this.editor.isActive && (this.editor.runtimeTimeline.available || this.editor.runtimeTimeline.requested);
+			case 'runtime.toggleTimeline': return this.editor.isActive && ((local === undefined ? this.editor.runtimeTimeline.available : transport?.available === true) || this.editor.runtimeTimeline.requested);
 			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
 			case 'runtime.pause': return transport?.playbackEnabled === true;
 			case 'runtime.present':
 			case 'runtime.accept':
-				return transport?.navigation.canFinishReview === true;
+				return transport?.available === true && transport.navigation.canFinishReview;
 			case 'runtime.resume':
-				return transport !== undefined && transport.rewind.active && transport.navigation.active === undefined
+				return transport?.available === true && transport.rewind.active && transport.navigation.active === undefined
 					&& transport.playbackEnabled;
 			case 'gameView.togglePanel': return this.editor.isActive && group.panes.activePane?.companionGameMinimumWidth !== undefined;
 			case 'gameView.closePanel': return this.editor.gamePanel.enabled;
-			case 'gameView.playback':
-				return this.editor.gamePanel.visible && transport?.playbackEnabled === true;
+			case 'runtime.playback': return transport?.playbackEnabled === true;
 			case 'scenarioLab.play':
 			case 'scenarioLab.debug':
 			case 'scenarioLab.debugWithCompanion':

@@ -12,6 +12,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createBlua32SourceImage, createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
+import { RuntimeTransport } from '../../ide/runtime/transport';
 import { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_input';
 import { LuaProgramRuntimeProjection, readProgramInstances } from '../../ide/workbench/contrib/lua_program/runtime';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -50,14 +51,15 @@ function fixture(optLevel: 0 | 3, source = ENTRY) {
 	const guest = new SuspendedGuestSession(runtime);
 	const model = new EditorTextModel({ contextLabel: 'fixture-source', sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua', source: {type: 'lua', resid: 'entry'} }, 'lua', source);
 	const input = new LuaProgramInput(model, 'progression', {start: 0, end: source.length}, guest);
-	input.liveVisible = true;
+	const transport = new RuntimeTransport(runtime, null!, null!, null!, () => true);
+	input.inspectRuntime(transport);
 	input.runtimeDomain = 0; input.runtimeImage = sources.currentBlua32Media.cartridgeSlots[0]!;
 	const choices = readProgramInstances(sources, guest, 0, 'progression');
 	input.instance = choices.find(item => item.identity.tag === ValueTag.Number)!.identity;
 	const projection = new LuaProgramRuntimeProjection(sources, guest);
 	projection.refresh(input);
 	const invoke = (name: string) => { guest.invalidate(); runCompletionClosure(runtime.machine.cpu, guest.global(name) as Closure, []); projection.refresh(input); };
-	return {runtime, sources, guest, input, projection, choices, invoke};
+	return {runtime, sources, guest, input, projection, choices, invoke, transport};
 }
 
 for (const optLevel of [0, 3] as const) {
@@ -134,3 +136,23 @@ test(`history restore reacquires the typed context bookmark and restored state (
 	assert.equal(f.input.instance, undefined);
 });
 }
+
+
+test('Lua program mode changes publish their owned target before observers and never recover follow intent implicitly', t => {
+	const f = fixture(0); t.after(() => f.input.dispose());
+	const input = f.input, observations: Array<[boolean, RuntimeTransport | null, boolean]> = [];
+	t.after(input.interaction.onDidChange(() => observations.push([input.liveVisible, input.interaction.transport, input.interaction.running])));
+	input.interaction.running = true;
+	input.showAuthoring();
+	assert.equal(input.liveVisible, false);
+	assert.equal(input.interaction.transport, null);
+	assert.equal(input.interaction.running, false);
+	input.inspectRuntime(f.transport);
+	assert.deepEqual(observations, [[true, f.transport, true], [false, null, false], [true, f.transport, false]]);
+	input.interaction.running = true;
+	f.guest.invalidate('heap-replaced');
+	assert.equal(input.interaction.running, false);
+	assert.equal(input.interaction.transport, f.transport);
+	input.dispose();
+	assert.equal(input.interaction.transport, null);
+});

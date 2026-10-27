@@ -1,6 +1,5 @@
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { editorRuntimeState } from '../editor/common/runtime_state';
-import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import type { BootService, BootOperation } from '../workbench/services/execution/boot';
 import type { HotResumeService, HotResumeOperation } from '../workbench/services/execution/hot_resume';
@@ -21,7 +20,6 @@ export function performEditorAction(
 	boots: BootService,
 	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
-	audioOutput: HostAudioOutput,
 	logOutput: LogOutput,
 	request: EditorActionRequest,
 	runTargets: RunTargetSelection,
@@ -29,15 +27,15 @@ export function performEditorAction(
 	switch (request.action) {
 		case 'hot-resume':
 			if (!hotResumes.acceptingRequests) return false;
-			performHotResume(hotResumes, editor, execution, overlayRenderer, audioOutput, logOutput, runTargets, request);
+			performHotResume(hotResumes, editor, execution, overlayRenderer, logOutput, runTargets, request);
 			return true;
 		case 'reboot':
 		case 'run':
 			if (!boots.acceptingRequests || request.action === 'run' && runTargets.primary === undefined) return false;
-			performReboot(boots, editor, execution, overlayRenderer, audioOutput, logOutput, runTargets, request);
+			performReboot(boots, editor, execution, overlayRenderer, logOutput, runTargets, request);
 			return true;
 		case 'close':
-			deactivateEditor(editor, overlayRenderer, audioOutput);
+			deactivateEditor(editor, overlayRenderer);
 			return true;
 		case 'theme-toggle':
 			toggleThemeMode();
@@ -52,7 +50,6 @@ export function performHotResume(
 	editor: CartEditor,
 	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
-	audioOutput: HostAudioOutput,
 	logOutput: LogOutput,
 	runTargets: RunTargetSelection,
 	request: Extract<EditorActionRequest, { action: 'hot-resume' }>,
@@ -68,7 +65,7 @@ export function performHotResume(
 		if (selectionRevision !== runTargets.revision || presentation !== undefined
 			&& (navigationState.activeGroup !== presentation.group || presentation.generation !== presentation.group.panes.openGeneration)) return;
 		execution.requestExecution(true);
-		if (presentation !== undefined) deactivateEditor(editor, overlayRenderer, audioOutput);
+		if (presentation !== undefined) deactivateEditor(editor, overlayRenderer);
 	});
 	void operation.completion.then(result => {
 		if (hotResumes.latestOperation !== operation) return;
@@ -98,7 +95,6 @@ export function performReboot(
 	editor: CartEditor,
 	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
-	audioOutput: HostAudioOutput,
 	logOutput: LogOutput,
 	runTargets: RunTargetSelection,
 	request: Extract<EditorActionRequest, { action: 'run' | 'reboot' }>,
@@ -119,7 +115,7 @@ export function performReboot(
 				if (admitted && (presentation === undefined || navigationState.activeGroup === presentation.group
 					&& presentation.generation === presentation.group.panes.openGeneration)) {
 					execution.requestExecution(true);
-					if (presentation !== undefined) deactivateEditor(editor, overlayRenderer, audioOutput);
+					if (presentation !== undefined) deactivateEditor(editor, overlayRenderer);
 				}
 				showEditorMessage('Reboot: reset complete', 'info', 2.0);
 				return;

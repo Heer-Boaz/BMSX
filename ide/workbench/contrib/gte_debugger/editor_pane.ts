@@ -86,9 +86,9 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		this.scroll.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled,
-			run: () => { this.input.running = commands.transport.togglePlayback(); } });
+			run: () => { this.input.interaction.running = commands.transport.togglePlayback(); } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) this.focusTarget.registerCommand(command, {
-			isEnabled: () => navigation.canStep(direction), run: () => { this.input.running = false; navigation.step(direction); },
+			isEnabled: () => navigation.canStep(direction), run: () => { this.input.interaction.running = false; navigation.step(direction); },
 		});
 		for (const command of CLIENT_COMMANDS) this.scroll.focusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput, run: () => {
@@ -103,12 +103,11 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		this.scroll.focusTarget.next = this.actions.focusTarget; this.scroll.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.next = this.actions.focusTarget; this.focusTarget.previous = this.scroll.focusTarget;
 	}
-	public override get suspendsRuntime(): boolean { return !this.input.running; }
-	public override get runtimeControlContext() { return this.focusTarget; }
-	public override get runtimeTransport() { return this.commands.transport; }
-	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }
 	public override get commandTarget() { return this.scroll.focusTarget; }
 	protected override activate(): void {
+		this.input.interaction.setRuntime(this.commands.transport);
+		this.focusTarget.scope.interaction = this.input.interaction;
+		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.input.interaction };
 		this.freshLayout = true; this.historyRevision = -1; this.labels.clear();
 		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.list);
 		this.unbindSelection = this.input.onWillChangeSelection(() => { this.retireContextMenu(); this.actions.cancelCommand('gte.details'); });
@@ -122,7 +121,8 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		this.update();
 	}
 	public override clearInput(): void {
-		this.input.running = false; this.unbindSelection!(); this.unbindSelection = undefined; this.retireContextMenu(); this.tooltip.detach(); this.details!.dispose(); this.details = undefined;
+		this.input.interaction.setRuntime(null);
+		this.unbindSelection!(); this.unbindSelection = undefined; this.retireContextMenu(); this.tooltip.detach(); this.details!.dispose(); this.details = undefined;
 		this.actions.clearInput(); this.scroll.clearInput();
 		this.source.clear(); this.labels.clear(); this.rows.length = 0;
 		super.clearInput();
@@ -183,7 +183,7 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 			case 'gte.clear': input.clear(); break;
 			case 'gte.source': this.openSource(); break;
 			case 'gte.goToFrame': {
-				input.running = false; const sequence = input.selected.sequence;
+				input.interaction.running = false; const sequence = input.selected.sequence;
 				void this.navigation.seek(input.selected.cycles).completion.then(result => showEditorMessage(
 					result.status === 'completed' ? `Frame ${result.after.videoTick} at/before #${sequence}` : `GTE: ${result.status}`, 'info', 4)); break;
 			}

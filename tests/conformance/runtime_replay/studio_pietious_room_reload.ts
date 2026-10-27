@@ -67,7 +67,7 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	check(guest.readStringMember(rebuiltRoom, 'world') === null, 'a second UI reload also releases its previous room');
 	await test.capture?.('reloaded-room');
 	await test.runMenuCommand('pause');
-	check(lab.running && !test.execution.userPaused, 'Run Resume resumes the live Actor Lab preview');
+	check(lab.interaction.running && !test.execution.userPaused, 'Run Resume resumes the live Actor Lab preview');
 	await press('ControlRight', 'ShiftRight');
 	check(!ide.editor.isActive, 'the ordinary Studio toggle returns to the running game');
 	console.info('STUDIO: Pietious Actor Lab room recreation from loaded YAML and retained session PASS');

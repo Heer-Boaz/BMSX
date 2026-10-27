@@ -124,6 +124,8 @@ for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true])
 	const source = session.debugSources.catalog.find(entry => entry.path.endsWith('cartlib/world/world.lua'))!;
 	assert.equal(session.debugSources.setBreakpoints(source.source, [4])[0].status, 'bound');
 	const primary = captureRuntimeMachineState(f.authoring.runtime);
+	session.execution.setPauseReason(HostPauseReason.Workbench, true);
+	session.execution.setPauseReason(HostPauseReason.Requested, true);
 	const operation = session.actorExecution.start({ kind: 'method', target, identity, method: 'change', args: [] });
 	await f.settle(() => operation.status === 'paused');
 	assert.equal(operation.invoked, true); assert.equal(f.field('marker'), 12, 'the breakpoint precedes the requested mutation');
@@ -145,6 +147,8 @@ for (const optLevel of [0, 3] as const) for (const closeAtStop of [false, true])
 		assert.equal(operation.result!.status, 'completed'); assert.deepEqual(operation.result!.values, ['33']);
 		assert.equal(f.field('marker'), 33); assert.equal(session.debugger.plans.mutationActive, false);
 		assert.equal(f.target.runtime.history.mode, HistoryMode.Recording, 'recording restarts only after the admitted call settles');
+		assert.equal(session.execution.userPaused, true);
+		assert.equal(session.execution.executionBlocked(), true);
 	}
 	assert.deepEqual(captureRuntimeMachineState(f.authoring.runtime), primary);
 });
@@ -330,6 +334,7 @@ test('closing Play releases input/audio immediately but joins owned callbacks be
 	}, () => assert.fail('owned callback must complete'), RuntimeTaskKind.History);
 	await Promise.resolve();
 	const before = captureRuntimeMachineState(f.target.runtime), closing = f.session.dispose();
+	assert.equal(f.session.transport.available, false, 'physical retirement precedes asynchronous target teardown');
 	assert.equal(f.session.dispose(), closing);
 	assert.equal(f.session.state, 'closing'); assert.equal(f.input.guestInputRecipient, null);
 	assert.equal(f.device.selected, null); assert.ok(f.session.frames.bitmap);

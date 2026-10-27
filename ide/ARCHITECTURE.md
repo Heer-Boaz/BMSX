@@ -64,6 +64,17 @@ is ready. Closing the selected target clears selection rather than choosing
 another machine. Window-local runtime controls retain their own transport
 binding independently of global selection.
 
+`WorkbenchInteraction` owns automatic UI execution holds from the activated
+control attachment. Keyboard focus, guest-input admission, popup invocation and
+run-target selection remain distinct. Runtime clients publish their physical
+transport and live-follow intent through `InputInteraction`; authoring controls
+hold the primary target. Runtime commands and Timeline retain the logical client
+attachment, independently of a temporarily hidden guest-input viewport.
+Transients borrow the invoking interaction without
+borrowing guest input. Attachment and transport retirement revoke that authority.
+Finite workbench operations declare their execution intent at host admission;
+they do not erase the UI or explicit pause reasons.
+
 Platform composition supplies an admitted source context before workspace
 attachment. Node workspace metadata and browser-owned metadata retain those
 opaque identities. A source-folder open has its own selection; matching paths

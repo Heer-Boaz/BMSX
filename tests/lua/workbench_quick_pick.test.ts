@@ -385,6 +385,8 @@ for (const kind of ['pick', 'input'] as const) test(`a ${kind} replacing a conte
 	else picker.input('Value', '', '', async value => value, () => {});
 	assert.equal(menu.visible, false);
 	assert.equal(picker.invocationOrigin, client);
+	assert.ok(picker.field.focusTarget.scope.interactionOrigin === subject.scope,
+		'execution interaction remains with the actual invoking client independently of picker command and return focus');
 	assert.equal(inputFocus.target, picker.field.focusTarget);
 	picker.hide();
 	assert.equal(inputFocus.target, client);

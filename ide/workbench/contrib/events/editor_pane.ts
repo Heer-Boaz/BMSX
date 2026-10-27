@@ -1,3 +1,4 @@
+import { InputInteraction } from '../../../input/interaction';
 import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { clamp } from '../../../../machine/ts/common/clamp';
@@ -67,7 +68,7 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 	private filter = '';
 	private selectedSequence = -1;
 	private selectedReachable = false;
-	private running = false;
+	private readonly interaction = new InputInteraction();
 	private filterSession: DisposableStore | undefined;
 	public constructor(private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController,
@@ -78,11 +79,11 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 		this.tooltip.attach(surfaces, owner, workArea);
 		this.unbindListBlur = this.scroll.focusTarget.onDidBlur(() => { this.keyboardFeedback = false; this.tooltip.hide(); });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled,
-			run: () => { this.running = commands.transport.togglePlayback(); } });
+			run: () => { this.interaction.running = commands.transport.togglePlayback(); } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) {
 			this.focusTarget.registerCommand(command, {
 				isEnabled: () => navigation.canStep(direction),
-				run: () => { this.running = false; navigation.step(direction); },
+				run: () => { this.interaction.running = false; navigation.step(direction); },
 			});
 		}
 		this.scroll.focusTarget.commandContext = this.focusTarget;
@@ -106,17 +107,16 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 		this.actions.focusTarget.next = this.scroll.focusTarget; this.actions.focusTarget.previous = this.scroll.focusTarget;
 		this.scroll.focusTarget.next = this.actions.focusTarget; this.scroll.focusTarget.previous = this.actions.focusTarget;
 	}
-	public override get suspendsRuntime(): boolean { return !this.running; }
-	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
-	public override get runtimeControlContext() { return this.focusTarget; }
-	public override setRuntimeCaptureRunning(running: boolean): void { this.running = running; }
 	public override get commandTarget() { return (this.inspector.visible ? this.inspector : this.scroll).focusTarget; }
 	protected override activate(): void {
+		this.interaction.setRuntime(this.commands.transport);
+		this.focusTarget.scope.interaction = this.interaction;
+		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.interaction };
 		this.presentation.reset(); this.historyRevision = -1;
 		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.viewport);
 	}
 	public override clearInput(): void {
-		this.running = false;
+		this.interaction.setRuntime(null);
 		if (this.filterSession !== undefined) this.quickInput.hide();
 		this.tooltip.hide(); pointerHover.release(this); this.feedbackRecord = undefined;
 		if (this.contextMenu.visible && this.contextMenu.invocationOrigin?.scope === this.focusTarget.scope) this.contextMenu.hide();
@@ -170,7 +170,7 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 					input.viewport.scrollbar.reveal(input.selected * input.layout.rowHeight, (input.selected + 1) * input.layout.rowHeight, 0);
 				}
 				const record = input.projection.rows[input.selected];
-				this.running = false;
+				this.interaction.running = false;
 				const operation = this.navigation.seek(record.cycles);
 				void operation.completion.then(result => showEditorMessage(result.status === 'completed'
 					? `Frame ${result.after.videoTick} at/before event #${record.sequence} (timeline ${record.timeline}).`

@@ -3,7 +3,7 @@ import type { GameImageCapture, ImageDecoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { HostRewind } from '../../hosts/common/rewind';
-import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
+import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { EditorDisplay, Viewport } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
@@ -66,7 +66,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 			models: editorTextModelService, workspaceDirtyRecords, gameCapture, createTestTarget, createPlaySession });
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.editor = new RuntimeCartEditor(
-			this, presenter, display, input, audioOutput, clock, clipboard, logOutput, resourcePanelWidthRatio,
+			this, presenter, display, input, clock, clipboard, logOutput, resourcePanelWidthRatio,
 			viewport, DEFAULT_IDE_FONT_VARIANT, this.overlayRenderer, decodeImage, createGraphLayoutEngine,
 			connectAssistant, observeConversation,
 		);
@@ -79,8 +79,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 			pointerHover.clear();
 		});
 		this.onDidStop(() => {
-			activateEditor(this.editor, sources, runtime, audioOutput);
-			execution.setPauseReason(HostPauseReason.Workbench, this.editor.executionSuspended);
+			activateEditor(this.editor, sources, runtime);
 			void presentRuntimeDebuggerStop(this.editor, this.debugger, sources.catalog).catch(error => this.failHostFrame(error));
 		});
 		this.onDidFailHostFrame(stack => {

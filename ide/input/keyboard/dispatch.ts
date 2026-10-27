@@ -11,6 +11,7 @@ export function handleEditorInput(
 	editor: CartEditor,
 ): void {
 	const focused = inputFocus.admittedTarget;
+	if (playerInput.down && !playerInput.consumed) focused?.activate();
 	if (focused === null && (editor.surfaces.topBlockingSurface !== null || inputFocus.target !== null)) {
 		editor.menubar.cancelAlt();
 		// A blocked retained focus is not permission to dispatch root shortcuts.

@@ -1,3 +1,5 @@
+import { InputInteraction } from '../../../input/interaction';
+import type { RuntimeTransport } from '../../../runtime/transport';
 import type { InputFocusScope } from '../../../input/focus';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
@@ -17,13 +19,22 @@ import type { TerminalInput } from './editor_input';
 /** The physical BIOS terminal, not a host REPL or a second line editor. */
 export class TerminalPane extends WorkbenchViewEditorPane<TerminalInput> {
 	private readonly gameInput: GameInputControl;
-	public constructor(private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter, scope: InputFocusScope) {
-		super(scope); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
+	private readonly runtimeContext = new InputInteraction();
+	public constructor(private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter, scope: InputFocusScope, private readonly transport: RuntimeTransport) {
+		super(scope); this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter }, transport);
 	}
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	public override get commandTarget() { return this.terminal.active ? this.gameInput.focusTarget : this.focusTarget; }
-	protected override activate(): void { this.terminal.resume(); this.update(); }
+	protected override activate(): void {
+		this.runtimeContext.setRuntime(this.transport);
+		this.focusTarget.scope.interaction = null;
+		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.runtimeContext };
+		this.terminal.resume(); this.update();
+	}
 	public override clearInput(): void {
+		this.focusTarget.scope.interaction = undefined;
+		this.focusTarget.scope.runtime = undefined;
+		this.runtimeContext.setRuntime(null);
 		this.gameInput.clearInput(); this.terminal.suspend(); super.clearInput();
 	}
 	public override dispose(): void { this.gameInput.dispose(); super.dispose(); }

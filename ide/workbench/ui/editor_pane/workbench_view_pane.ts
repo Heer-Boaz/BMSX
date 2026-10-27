@@ -1,7 +1,7 @@
 import type { PointerInputSnapshot } from '../../../common/models';
 import { EditorPane } from '../../services/editor/editor_pane';
 import type { EditorInput } from '../tab/model';
-import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 
 type WorkbenchViewInput = Exclude<EditorInput, { kind: 'code_editor' }>;
 
@@ -15,7 +15,7 @@ export abstract class WorkbenchViewEditorPane<
 
 	public constructor(scope: InputFocusScope) {
 		super();
-		this.focusTarget = inputFocus.createTarget(null, scope);
+		this.focusTarget = inputFocus.createTarget(null, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.canFocus = () => this.hasInput;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.unbindGamepad = this.focusTarget.bindGamepad(input => this.handleGamepad(input));
@@ -25,6 +25,9 @@ export abstract class WorkbenchViewEditorPane<
 	public override get commandTarget(): InputFocusTarget { return this.focusTarget; }
 
 	public override clearInput(): void {
+		this.focusTarget.scope.interaction = undefined;
+		this.focusTarget.scope.runtime = undefined;
+		this.focusTarget.scope.retireContext();
 		this.focusTarget.release();
 		super.clearInput();
 	}
@@ -45,7 +48,10 @@ export abstract class WorkbenchViewEditorPane<
 		now: number,
 		_gotoModifierActive: boolean,
 	): void {
+		const activation = inputFocus.interactionRevision;
 		this.handleViewPointer(snapshot, justPressed, now);
+		if (snapshot.valid && snapshot.insideViewport && snapshot.justPressedButtons !== 0
+			&& activation === inputFocus.interactionRevision) this.focusTarget.activate();
 	}
 
 	protected handleViewPointer(

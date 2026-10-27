@@ -5,6 +5,8 @@ import type { RuntimeFrameNavigation } from './frame_navigation';
 
 /** Playback intent and finite navigation of one explicit physical target. Views own only their focus/projection. */
 export class RuntimeTransport {
+	private retired = false;
+	private retirementListeners: Set<() => void> | undefined;
 	public constructor(public readonly runtime: Runtime, public readonly execution: HostExecutionControl,
 		public readonly rewind: HostRewind, public readonly navigation: RuntimeFrameNavigation,
 		private readonly canControl: () => boolean) {}
@@ -13,7 +15,21 @@ export class RuntimeTransport {
 		if (this.execution.paused || this.rewind.active && !this.rewind.playing) return 'PAUSED';
 		return this.rewind.active ? 'REPLAY' : 'LIVE';
 	}
-	public get playbackEnabled(): boolean { return this.canControl() && !this.rewind.seeking; }
+	public get available(): boolean { return !this.retired; }
+	public get playbackEnabled(): boolean { return !this.retired && this.canControl() && !this.rewind.seeking; }
+	public onDidRetire(listener: () => void): () => void {
+		const listeners = this.retirementListeners ??= new Set();
+		listeners.add(listener);
+		return () => listeners.delete(listener);
+	}
+	public retire(): void {
+		if (this.retired) return;
+		this.retired = true;
+		if (this.retirementListeners !== undefined) {
+			for (const listener of this.retirementListeners) listener();
+			this.retirementListeners.clear();
+		}
+	}
 	public pause(): void {
 		if (this.rewind.active) this.rewind.pauseSeek();
 		this.execution.setPauseReason(HostPauseReason.Requested, true);

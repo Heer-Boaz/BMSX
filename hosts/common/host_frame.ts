@@ -7,6 +7,7 @@ import { LogLevel, type LogOutput } from './log';
 import type { RenderPresentationState } from './presentation_state';
 import type { SystemOutputLog } from './system_output_log';
 import type { HostFrameSession } from './frame_session';
+import { HostExecutionIntent } from './execution_control';
 import { executeHostUpdate } from './machine_step';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
@@ -108,13 +109,13 @@ export function prepareHostUpdate(
 	runtime: Runtime,
 	runReady: boolean,
 	hostMenuInput: HostMenuInput,
-	explicitStep = false,
+	executionIntent = HostExecutionIntent.None,
 ): HostFrameAction {
 	if (hostMenuInput === HostMenuInput.Active) {
 		runtime.frameScheduler.clearQueuedTime();
 		return HostFrameAction.PresentPending;
 	}
-	if (session.execution.executionBlocked(explicitStep)) return HostFrameAction.PresentPaused;
+	if (session.execution.executionBlocked(executionIntent)) return HostFrameAction.PresentPaused;
 	if (!runReady) {
 		runtime.frameScheduler.clearQueuedTime();
 		return HostFrameAction.PresentPending;

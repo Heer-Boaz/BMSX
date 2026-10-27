@@ -2,6 +2,7 @@ import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { HostExecutionIntent } from '../../hosts/common/execution_control';
 
 import {
 	createRuntimeDebuggerState,
@@ -10,6 +11,7 @@ import {
 	didExecuteRuntimeDebuggerPlan,
 	discardRuntimeDebuggerPlans,
 	runtimeDebuggerExecutionRequested,
+	runtimeDebuggerExecutionIntent,
 	RuntimeDebuggerResumeMode,
 	type RuntimeDebuggerState,
 } from '../../ide/runtime/debugger_state';
@@ -387,11 +389,13 @@ return actor, advance
 	assert.ok(partial > 0 && partial < 100);
 	state.plans.setControlSuspended(true);
 	assert.equal(runtimeDebuggerExecutionRequested(state), false);
+	assert.equal(runtimeDebuggerExecutionIntent(state), HostExecutionIntent.None);
 	assert.equal(cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	assert.equal(actor.getStringKey(key), partial);
 	assert.equal(cpu.getFrameDepth(), depth + 1);
 	state.plans.setControlSuspended(false);
 	assert.equal(runtimeDebuggerExecutionRequested(state), true);
+	assert.equal(runtimeDebuggerExecutionIntent(state), HostExecutionIntent.Workbench);
 	cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET);
 	state.plans.didExecute();
 	assert.equal(completed, true);

@@ -1,7 +1,6 @@
 import { performHotResume, performReboot } from '../commands/actions';
 import type { BootOperation } from '../workbench/services/execution/boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
 import type { CodeEditorContext } from '../editor/ui/code_editor_state';
 import type { CodeEditorPane } from '../workbench/contrib/code_editor/editor_pane';
@@ -76,7 +75,6 @@ export type HeadlessIdeHeapStats = {
 export function createHeadlessIdeHarness(
 	ide: RuntimeIdeState,
 	runtime: Runtime,
-	audioOutput: HostAudioOutput,
 	logOutput: RecordingLogOutput,
 ): HeadlessIdeHarness {
 	return {
@@ -107,7 +105,7 @@ export function createHeadlessIdeHarness(
 			return source.code.hoverTooltip;
 		},
 		performHotResume: () => performHotResume(
-			ide.hotResumes, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, logOutput,
+			ide.hotResumes, ide.editor, ide.execution, ide.overlayRenderer, logOutput,
 			ide.runTargets, { action: 'hot-resume', presentation: { group: ide.editor.editorGroup, generation: ide.editor.editorGroup.panes.openGeneration } },
 		),
 		toggleLuaBreakpoint: (path: string, line: number) => {
@@ -117,7 +115,7 @@ export function createHeadlessIdeHarness(
 		},
 		isDebuggerStopped: () => ide.debugger.source.stop !== undefined,
 		reboot: () => performReboot(
-			ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, logOutput,
+			ide.boots, ide.editor, ide.execution, ide.overlayRenderer, logOutput,
 			ide.runTargets, { action: 'reboot', presentation: { group: ide.editor.editorGroup, generation: ide.editor.editorGroup.panes.openGeneration } },
 		),
 		executeCommand: command => ide.editor.commands.execute(command),
@@ -126,7 +124,6 @@ export function createHeadlessIdeHarness(
 				ide.editor,
 				ide.sources,
 				runtime,
-				audioOutput,
 			);
 			const resource = (ide.sources.catalog.resolveResource({ contextId: ide.sources.activeContextId, path })
 				?? ide.sources.catalog.resolveModule(ide.sources.activeContextId, path))!;

@@ -12,6 +12,8 @@ import { sourceTabDescription } from '../../ui/tab/titles';
 import type { Blua32SourceImage } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 import type { WorkbenchPropertyElement } from '../../ui/property_tree';
+import { InputInteraction } from '../../../input/interaction';
+import type { RuntimeTransport } from '../../../runtime/transport';
 
 let nextInputId = 0;
 
@@ -23,8 +25,8 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 	public sourceRevision: symbol | undefined;
 	public occurrence: LuaProgramOccurrence | undefined;
 	public readonly occurrenceRange: TrackedTextRange;
-	public running = false;
-	public liveVisible = false;
+	public readonly interaction = new InputInteraction();
+	private liveVisibleValue = false;
 	public liveDirty = true;
 	public instance: SuspendedValueIdentity | undefined;
 	public runtimeDomain: ResourceDomain | undefined;
@@ -50,7 +52,7 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 		this.disposables.add({ dispose: guest.onDidInvalidate(reason => {
 			this.liveDirty = true;
 			if (reason !== 'execution') {
-				this.running = false;
+				this.interaction.running = false;
 				if (reason === 'heap-replaced') this.instance = undefined;
 				this.programHashId = 0; this.stateHashId = 0; this.stateRevision = -1;
 				this.live.roots.length = 0; this.live.rows.length = 0;
@@ -58,8 +60,18 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 			}
 		}) });
 	}
+	public get liveVisible(): boolean { return this.liveVisibleValue; }
+	public inspectRuntime(transport: RuntimeTransport): void {
+		this.liveVisibleValue = true;
+		this.liveDirty = true;
+		this.interaction.setRuntime(transport);
+	}
+	public showAuthoring(): void {
+		this.liveVisibleValue = false;
+		this.interaction.setRuntime(null);
+	}
 	public invalidateProjection(): void { for (const listener of this.projectionListeners) listener(); }
 	public onDidInvalidateProjection(listener: () => void): () => void { this.projectionListeners.add(listener); return () => this.projectionListeners.delete(listener); }
-	public override dispose(): void { this.invalidateProjection(); this.projectionListeners.clear(); super.dispose(); }
+	public override dispose(): void { this.interaction.setRuntime(null); this.invalidateProjection(); this.projectionListeners.clear(); super.dispose(); }
 	public publishModels(): void { this.setWorkingCopies(new Set(this.sourceModels.values())); }
 }

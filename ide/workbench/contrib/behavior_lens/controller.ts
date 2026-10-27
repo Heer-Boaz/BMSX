@@ -54,6 +54,7 @@ import { readBehaviorDefinitions, type BehaviorDefinitionChoice } from './runtim
 import { readBehaviorTreeInstances, type BehaviorTreeInstanceChoice } from './behavior_tree_runtime';
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import { BehaviorRuntimeInspection, type BehaviorRuntimeSelection } from './runtime_inspection';
+import type { RuntimeTransport } from '../../../runtime/transport';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -71,6 +72,7 @@ export class BehaviorLensController {
 		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
 		private readonly guest: SuspendedGuestSession,
 		private readonly rewind: HostRewind,
+		private readonly transport: RuntimeTransport,
 	) {}
 
 	public open(group: EditorGroupView, kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
@@ -246,8 +248,8 @@ export class BehaviorLensController {
 	}
 
 	private showRuntimeInspection(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>, domain: ResourceDomain, image: Blua32SourceImage, title: string, selection: BehaviorRuntimeSelection): void {
-		const inspection = new BehaviorRuntimeInspection(this.sources, this.guest, this.rewind, domain, image, selection);
-		const lifetime = inspector.show({ title, items: inspection.refresh()!,
+		const inspection = new BehaviorRuntimeInspection(this.sources, this.guest, this.rewind, domain, image, selection, this.transport);
+		const lifetime = inspector.show({ title, items: inspection.refresh()!, interaction: inspection.interaction,
 			canOpenSource: item => canOpenBehaviorInspectionSource(this.sources.catalog, item),
 			openSource: item => this.openInspectionSource(group, input, item),
 		});

@@ -42,6 +42,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 		this.close();
 		this.capture.cancel();
 		this.returnFocus = this.focus.target;
+		this.focusTarget.scope.interactionOrigin = this.returnFocus?.scope;
 		this.request = request;
 		this.unbindOrigin = this.returnFocus?.commandContext.scope.onDidRetireContext(() => this.close('cancel', false));
 		this.focused = this.view.buttons.findIndex(button => button.choice === request.defaultChoice);
@@ -62,6 +63,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 		if (choice === 'primary' && !this.request!.primaryEnabled) return;
 		const resolve = this.resolve!, returnFocus = this.returnFocus;
 		this.request = undefined; this.resolve = undefined; this.returnFocus = null;
+		this.focusTarget.scope.interactionOrigin = undefined;
 		this.unbindOrigin?.(); this.unbindOrigin = undefined;
 		this.cancelPointer();
 		if (this.focusTarget.hasFocus || this.acceptsFocusTransfer(this.focus.target)) this.focus.setTarget(restoreFocus ? returnFocus : null);

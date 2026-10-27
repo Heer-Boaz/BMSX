@@ -23,7 +23,7 @@ export async function applyWorkspaceAutosavePayload(
 	await restoreWorkspaceDirtyModels(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords);
 	await editor.editorGroup.model.deserialize(payload.editorGroup, editor.editorInputSerializers);
 	const active = editor.editorGroup.model.activeTab;
-	if (active !== null) editor.editorGroup.activate(active.id);
+	if (active !== null) editor.editorGroup.activate(active.id, undefined, undefined, true);
 	debuggerState.breakpoints.restore(payload.breakpoints);
 }
 

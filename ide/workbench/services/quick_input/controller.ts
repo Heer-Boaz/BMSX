@@ -24,6 +24,7 @@ type QuickInputSession = {
 	readonly kind: 'pick' | 'input';
 	origin: InputFocusTarget | null;
 	returnFocus: InputFocusTarget | null;
+	interactionOrigin: InputFocusScope | undefined;
 	readonly disposables: DisposableStore;
 	contextAdmitted: boolean;
 	unbindOrigin: (() => void) | undefined;
@@ -99,11 +100,11 @@ export class QuickInputController implements PointerCaptureTarget {
 	): void {
 		let provider: QuickPickProvider<T>;
 		const session: QuickInputSession = {
-			kind: 'pick', origin: null, returnFocus: null, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
+			kind: 'pick', origin: null, returnFocus: null, interactionOrigin: undefined, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
 			prepare: () => {
 				// Catalogs observe the invoking control after ordinary blur has published
 				// its draft, before native focus sees the new field presentation.
-				session.origin = invocationOrigin === undefined ? session.returnFocus : invocationOrigin;
+				session.origin = invocationOrigin === undefined ? inputFocus.resolveTarget(session.origin) : invocationOrigin;
 				provider = provide(session.origin, session.disposables);
 				if (this.session !== session) return;
 				this.title = title;
@@ -143,9 +144,8 @@ export class QuickInputController implements PointerCaptureTarget {
 		onWillShow?: (lifetime: DisposableStore) => void,
 	): void {
 		const session: QuickInputSession = {
-			kind: 'input', origin: null, returnFocus: null, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
+			kind: 'input', origin: null, returnFocus: null, interactionOrigin: undefined, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
 			prepare: () => {
-				session.origin = session.returnFocus;
 				this.title = title;
 				this.placeholder = placeholder;
 				this.labelsDirty = true;
@@ -197,9 +197,14 @@ export class QuickInputController implements PointerCaptureTarget {
 		const origin = invocationOrigin !== undefined ? invocationOrigin : previous !== null ? previous.origin
 			: target === this.contextMenu.focusTarget ? this.contextMenu.returnFocus
 			: this.retiringSession !== null && target === this.field.focusTarget ? this.retiringSession.origin : target;
+		const interactionOrigin = invocationOrigin !== undefined ? invocationOrigin?.scope : previous !== null ? previous.interactionOrigin
+			: target === this.contextMenu.focusTarget ? this.contextMenu.invocationOrigin?.scope
+			: this.retiringSession !== null && target === this.field.focusTarget ? this.retiringSession.interactionOrigin : target?.scope;
 		session.origin = origin;
 		session.returnFocus = returnFocus;
+		session.interactionOrigin = interactionOrigin;
 		this.session = session;
+		this.field.focusTarget.scope.interactionOrigin = interactionOrigin;
 		session.unbindOrigin = origin?.commandContext.scope.onDidRetireContext(() => {
 			session.contextAdmitted = false;
 			if (this.session === session) this.hide(false);
@@ -250,6 +255,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		const session = this.session;
 		if (session === null) return;
 		this.session = null;
+		this.field.focusTarget.scope.interactionOrigin = undefined;
 		if (!handoff) { session.contextAdmitted = false; session.unbindOrigin?.(); }
 		this.retiringSession = session;
 		this.clearPresentation();

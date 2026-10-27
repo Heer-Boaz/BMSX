@@ -6,7 +6,6 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../ui/tab/model';
 import type { InputFocusScope, InputFocusTarget } from '../../../input/focus';
-import type { RuntimeTransport } from '../../../runtime/transport';
 
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
@@ -15,14 +14,6 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	/** Scope of a concrete control borrowed by this pane, when separate from its group scope. */
 	public get inputScope(): InputFocusScope | undefined { return undefined; }
 	protected contentBounds!: Readonly<RectBounds>;
-	/** Authoring pauses gameplay, including host-only tools. Live preview panes explicitly release this hold. */
-	public get suspendsRuntime(): boolean { return true; }
-	/** A live inspector supplies the command scope for the shared runtime transport. */
-	public get runtimeControlContext(): InputFocusTarget | undefined { return undefined; }
-	/** The displayed timeline and commands must name the same physical target. */
-	public get runtimeTransport(): RuntimeTransport | undefined { return undefined; }
-	/** Update this view's live capture latch; its transport owns physical execution. */
-	public setRuntimeCaptureRunning?(running: boolean): void;
 	/** Current-font client minimum beside the game; panes already presenting scanout opt out. */
 	public abstract get companionGameMinimumWidth(): number | undefined;
 

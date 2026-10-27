@@ -16,7 +16,7 @@ import { Input } from '../../hosts/common/input/manager';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import { HostExecutionControl, HostPauseReason } from '../../hosts/common/execution_control';
+import { HostExecutionControl, HostExecutionIntent, HostPauseReason } from '../../hosts/common/execution_control';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { forkRuntimeSourceState } from '../../ide/runtime/sources';
@@ -148,7 +148,7 @@ test('rejected startup keeps an independent launch hold, including Continue and 
 	f.execution.requestExecution(true);
 	assert.equal(f.execution.executionBlocked(), true);
 	f.execution.requestFrameStep();
-	assert.equal(f.execution.executionBlocked(true), true);
+	assert.equal(f.execution.executionBlocked(HostExecutionIntent.Game), true);
 	assert.equal(f.resets(), 1);
 	f.model.undo();
 	assert.equal((await f.service.reboot().completion).status, 'reset');

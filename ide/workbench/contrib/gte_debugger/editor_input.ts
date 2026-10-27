@@ -1,3 +1,4 @@
+import { InputInteraction } from '../../../input/interaction';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import { GteCommandSnapshot, type RuntimeGteHistory } from '../../../runtime/gte_history';
 import { ReadonlyEditorInput } from '../../common/editor_input';
@@ -31,7 +32,7 @@ export class GteDebuggerInput extends ReadonlyEditorInput<'gte-debugger', 'gte_d
 	private readonly selectionListeners = new Set<() => void>();
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
 	public following = true;
-	public running = false;
+	public readonly interaction = new InputInteraction();
 	public filter = '';
 	public view: GteDebugView = 'auto';
 	public plane: GteDebugPlane = 'xy';

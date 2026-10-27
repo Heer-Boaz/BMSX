@@ -1,3 +1,4 @@
+import { InputInteraction } from '../../../input/interaction';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -32,6 +33,7 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	private session: PlaySession | undefined;
 	private gameInput: GameInputControl | undefined;
+	private readonly runtimeContext = new InputInteraction();
 	private status = '';
 	private state = '';
 	private tick = -1;
@@ -59,19 +61,20 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput
 			&& this.contentBounds.left < this.contentBounds.right && this.contentBounds.top < this.contentBounds.bottom,
 			run: () => this.openContextMenu(this.contentBounds.left, this.contentBounds.top, true) });
-		this.focusTarget.registerCommand('pause', { isEnabled: () => this.session?.transport.playbackEnabled === true,
-			run: () => { this.session!.transport.togglePlayback(); } });
-		for (const [command, direction] of [['stepFrame', 1], ['stepFrameBack', -1]] as const) {
-			this.focusTarget.registerCommand(command, { isEnabled: () => this.session?.ready === true && this.session.navigation.canStep(direction),
-				run: () => { this.session!.navigation.step(direction); } });
-		}
+		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.isEnabled('runtime.playback', this.focusTarget),
+			run: () => commands.execute('runtime.playback', this.focusTarget) });
 	}
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
-	public override get suspendsRuntime(): boolean { return false; }
-	public override get runtimeControlContext() { return this.focusTarget; }
-	public override get runtimeTransport() { return this.session?.ready === true ? this.session.transport : undefined; }
-	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.titleSource = ''; this.update(); }
+	protected override activate(): void {
+		this.runtimeContext.setRuntime(null);
+		this.focusTarget.scope.interaction = null;
+		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.runtimeContext };
+		this.actions.setInput(this.input.actionBar, this.focusTarget); this.titleSource = ''; this.update();
+	}
 	public override clearInput(): void {
+		this.focusTarget.scope.interaction = undefined;
+		this.focusTarget.scope.runtime = undefined;
+		this.runtimeContext.setRuntime(null);
 		this.details.hide(); this.actions.clearInput();
 		this.gameInput?.dispose(); this.gameInput = undefined; this.session = undefined;
 		super.clearInput();
@@ -80,11 +83,13 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	public override update(): void {
 		const session = this.input.handle.session;
 		if (session !== this.session) {
+			this.runtimeContext.setRuntime(null);
 			this.details.hide();
 			this.gameInput?.dispose(); this.gameInput = undefined; this.session = session;
 			this.focusTarget.next = this.actions.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 			if (session !== undefined) {
-				this.gameInput = new GameInputControl(this.focusTarget, session.input.physical, { kind: 'offscreen', frames: session.frames });
+				this.runtimeContext.setRuntime(session.transport);
+				this.gameInput = new GameInputControl(this.focusTarget, session.input.physical, { kind: 'offscreen', frames: session.frames }, session.transport);
 				this.focusTarget.next = this.gameInput.focusTarget;
 				this.gameInput.focusTarget.previous = this.focusTarget; this.gameInput.focusTarget.next = this.actions.focusTarget;
 				this.actions.focusTarget.previous = this.gameInput.focusTarget;
@@ -142,6 +147,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 		return super.handleViewPointer(snapshot, justPressed, now);
 	}
 	private openContextMenu(x: number, y: number, keyboard: boolean): void {
+		this.focusTarget.activate();
 		this.contextMenu.show(x, y, WORKBENCH_MENUS['play.context'], this.commands,
 			{ invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget, selectFirst: keyboard });
 	}

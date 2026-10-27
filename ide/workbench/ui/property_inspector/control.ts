@@ -6,7 +6,8 @@ import type { EditorCommandId } from '../../../common/commands';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerPosition, PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
-import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
+import { InputFocusScope, type InputFocusService, type InputFocusTarget } from '../../../input/focus';
+import type { InputInteraction } from '../../../input/interaction';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
@@ -23,6 +24,7 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 export type PropertyInspection<Element> = {
 	readonly title: string;
 	readonly items: readonly Element[];
+	readonly interaction?: InputInteraction;
 	/** Embedded details remain visible when focus returns to their owner. */
 	readonly dismissible?: boolean;
 	readonly focusReturn?: InputFocusTarget;
@@ -69,7 +71,8 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private pointerY = 0;
 
 	public constructor(private readonly focus: InputFocusService, capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget, public readonly chrome: 'header' | 'client' = 'header') {
-		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input), undefined,
+		const scope = new InputFocusScope(parent.scope.surfaceScope, parent.scope);
+		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input), scope,
 			() => { this.triggerKey = undefined; this.padPressed = false; });
 		this.focusTarget = this.scroll.focusTarget;
 		this.scroll.onWillScroll = () => this.retireFeedback();
@@ -115,6 +118,8 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 
 	public show(input: PropertyInspection<Element>, focus = true): DisposableStore {
 		this.hide();
+		this.focusTarget.scope.interaction = input.interaction;
+		this.focusTarget.scope.runtime = input.interaction === undefined ? undefined : { target: this.focusTarget, interaction: input.interaction };
 		this.returnFocus = input.focusReturn ?? (focus ? this.focus.target : this.focusTarget.parent);
 		this.input = input;
 		this.actionBar.items[0].visible = this.chrome === 'header' && input.items.some(item => input.canOpenSource(item));
@@ -156,6 +161,9 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	}
 
 	public hide(): void {
+		this.focusTarget.scope.interaction = undefined;
+		this.focusTarget.scope.runtime = undefined;
+		this.focusTarget.scope.retireContext();
 		this.retireFeedback(); this.feedback?.detach(); this.feedbackOwner = undefined; this.feedbackArea = undefined;
 		this.hover.release(this);
 		const ownedFocus = this.focusTarget.hasFocus || this.actions.focusTarget.hasFocus;
@@ -274,6 +282,8 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	public onPointerLeave(): void { this.model.hoverIndex = -1; this.retireFeedback(); }
 
 	public handlePointer(snapshot: PointerSnapshot): boolean {
+		if (snapshot.valid && snapshot.insideViewport && snapshot.justPressedButtons !== 0
+			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) this.focusTarget.activate();
 		if (this.actions.handlePointer(snapshot)) return true;
 		let pointerIntent = false;
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.viewport.bounds)) {

@@ -9,6 +9,8 @@ import type { BehaviorInspectionProperty } from './inspection';
 import { findStateMachineState, inspectStateMachineState, type StateMachineInstance } from './state_machine_runtime';
 import { BehaviorRuntimeProperties } from './runtime_properties';
 import { findRuntimeComponent } from './runtime_components';
+import { InputInteraction } from '../../../input/interaction';
+import type { RuntimeTransport } from '../../../runtime/transport';
 
 /** Table identities within one heap, not borrowed picker results or authored definition ids. */
 export type BehaviorRuntimeSelection = { readonly componentHashId: number } & (
@@ -23,7 +25,7 @@ type ResolvedBehavior = { kind: 'action_effect'; choice: ActionEffectInstance }
 
 /** One visible inspection lifetime. Guest reads end before returning a property document. */
 export class BehaviorRuntimeInspection {
-	public running = false;
+	public readonly interaction: InputInteraction;
 	private dirty = true;
 	private historical: boolean;
 	private retired: 'missing' | 'heap-replaced' | undefined;
@@ -32,7 +34,8 @@ export class BehaviorRuntimeInspection {
 	private readonly properties: BehaviorRuntimeProperties;
 
 	public constructor(private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession,
-		private readonly rewind: HostRewind, private readonly domain: ResourceDomain, private readonly image: Blua32SourceImage, private selection: BehaviorRuntimeSelection | undefined) {
+		private readonly rewind: HostRewind, private readonly domain: ResourceDomain, private readonly image: Blua32SourceImage, private selection: BehaviorRuntimeSelection | undefined, transport: RuntimeTransport) {
+		this.interaction = new InputInteraction(transport);
 		this.historical = rewind.active;
 		this.properties = new BehaviorRuntimeProperties(sources, guest);
 		this.unbindInvalidation = guest.onDidInvalidate(reason => {
@@ -48,7 +51,7 @@ export class BehaviorRuntimeInspection {
 		});
 	}
 
-	public dispose(): void { this.running = false; this.selection = undefined; this.unbindInvalidation(); this.unbindHistoryReviewEnd(); }
+	public dispose(): void { this.interaction.setRuntime(null); this.selection = undefined; this.unbindInvalidation(); this.unbindHistoryReviewEnd(); }
 
 	public refresh(): readonly BehaviorInspectionProperty[] | undefined {
 		if (!this.dirty || this.rewind.seeking) return undefined;
@@ -72,7 +75,7 @@ export class BehaviorRuntimeInspection {
 	}
 
 	private retire(reason: 'missing' | 'heap-replaced'): void {
-		this.selection = undefined; this.retired = reason; this.running = false;
+		this.selection = undefined; this.retired = reason; this.interaction.running = false;
 	}
 
 	private resolve(): ResolvedBehavior | undefined {

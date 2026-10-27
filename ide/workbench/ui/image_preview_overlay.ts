@@ -45,7 +45,7 @@ export class ImagePreviewOverlay {
 				this.layoutBody(this.previews.use(this.url!)); return false;
 			}
 			consumeIdeKey('Escape', input); consumeIdeKey('Enter', input); this.close(); return true;
-		}, this.context.scope.surfaceScope);
+		}, this.context.scope);
 		this.scroll.setInput(this.viewport);
 		this.scroll.focusTarget.canFocus = () => this.visible;
 		this.scroll.onWillScroll = edge => { this.statusEdge = edge; };
@@ -75,7 +75,10 @@ export class ImagePreviewOverlay {
 	}
 	public open(url: string): void {
 		this.scroll.cancelPointer();
-		if (!this.visible) this.returnFocus = inputFocus.target;
+		if (!this.visible) {
+			this.returnFocus = inputFocus.target;
+			this.context.scope.interactionOrigin = this.returnFocus?.scope;
+		}
 		this.image?.dispose(); this.image = this.previews.retain(url);
 		this.url = url;
 		this.statusEdge = 'start';
@@ -88,6 +91,7 @@ export class ImagePreviewOverlay {
 		if (!this.visible) return;
 		this.scroll.cancelPointer();
 		this.url = undefined;
+		this.context.scope.interactionOrigin = undefined;
 		this.image!.dispose(); this.image = undefined;
 		const origin = this.returnFocus;
 		this.returnFocus = null;

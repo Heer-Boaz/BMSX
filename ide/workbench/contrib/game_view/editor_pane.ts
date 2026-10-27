@@ -1,3 +1,4 @@
+import { InputInteraction } from '../../../input/interaction';
 import type { InputFocusScope } from '../../../input/focus';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
@@ -21,29 +22,34 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 /** A large game viewport; transport commands share host execution and rewind. */
 export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 	private readonly gameInput: GameInputControl;
+	private readonly runtimeContext = new InputInteraction();
 	private shownFrame = -1;
 	private shownHistory = false;
 	private frameLabel = '';
 	public constructor(private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController, private readonly runtime: Runtime, recipient: InputRecipient, presenter: VideoPresenter, scope: InputFocusScope) {
 		super(scope);
-		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
-		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { commands.transport.togglePlayback(); } });
+		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter }, commands.transport);
+		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.isEnabled('runtime.playback', this.focusTarget),
+			run: () => commands.execute('runtime.playback', this.focusTarget) });
 		this.focusTarget.next = this.gameInput.focusTarget;
 		this.focusTarget.previous = this.gameInput.focusTarget;
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput
 			&& this.contentBounds.left < this.contentBounds.right && this.contentBounds.top < this.contentBounds.bottom,
 			run: () => this.openContextMenu(this.contentBounds.left, this.contentBounds.top, true) });
 	}
-	public override get suspendsRuntime(): boolean { return false; }
 	public override get companionGameMinimumWidth(): undefined { return undefined; }
-	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
-	public override get runtimeControlContext() { return this.focusTarget; }
 	protected override activate(): void {
+		this.runtimeContext.setRuntime(this.commands.transport);
+		this.focusTarget.scope.interaction = null;
+		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.runtimeContext };
 		this.update();
 		this.gameInput.setInput(this.input.frameBounds);
 	}
 	public override clearInput(): void {
+		this.focusTarget.scope.interaction = undefined;
+		this.focusTarget.scope.runtime = undefined;
+		this.runtimeContext.setRuntime(null);
 		this.gameInput.clearInput();
 		super.clearInput();
 	}
@@ -82,6 +88,7 @@ export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 		return super.handleViewPointer(snapshot, justPressed, now);
 	}
 	private openContextMenu(x: number, y: number, keyboard: boolean): void {
+		this.focusTarget.activate();
 		this.contextMenu.show(x, y, WORKBENCH_MENUS['gamePanel.context'], this.commands,
 			{ invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget, selectFirst: keyboard });
 	}

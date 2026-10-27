@@ -6,7 +6,6 @@ import type { TextFileSaveService } from '../workbench/services/working_copy/tex
 import { saveTextFileFromCommand } from './source_save';
 import { editorTextModelService } from '../editor/model/model_service';
 import { performEditorAction } from './actions';
-import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
@@ -54,7 +53,6 @@ export function executeEditorWorkspaceCommand(
 	boots: BootService,
 	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
-	audioOutput: HostAudioOutput,
 	clock: HostClock,
 	logOutput: LogOutput,
 	textFileSaves: TextFileSaveService,
@@ -87,7 +85,7 @@ export function executeEditorWorkspaceCommand(
 					}).catch(error => editor.handleRuntimeTaskError(error, 'Source action failed'));
 					return;
 				}
-				performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, audioOutput, logOutput, request, runTargets);
+				performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, logOutput, request, runTargets);
 			};
 			if (command === 'runCurrentFile' || command === 'runProject') {
 				const input = group.model.activeTab, resource = input?.resource;

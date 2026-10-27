@@ -10,7 +10,7 @@ import { SystemOutputLog } from '../../hosts/common/system_output_log';
 import { RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import type { BuiltFixtureProgram } from '../testing/fixture_media';
 import { createRuntimeFaultState, readSupervisorFaultReport } from '../runtime/fault_state';
-import { createSourceExecutionState, runtimeDebuggerExecutionRequested, willExecuteRuntimeDebuggerPlan, didExecuteRuntimeDebuggerPlan,
+import { createSourceExecutionState, runtimeDebuggerExecutionIntent, willExecuteRuntimeDebuggerPlan, didExecuteRuntimeDebuggerPlan,
 	didFaultRuntimeDebuggerPlan, discardRuntimeDebuggerPlans, type SourceExecutionState } from '../runtime/debugger_state';
 import { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
@@ -152,7 +152,7 @@ export class PlayRuntimeSession implements PlaySession {
 			this.rewind.runPlayback(this.execution.consumeElapsedTime(hostDeltaMs));
 			this.frameSession.syncMachineOutput(runtime, this.audio);
 		}
-		if (this.tasks.ready && !this.rewind.active && !this.execution.executionBlocked(runtimeDebuggerExecutionRequested(this.debugger))
+		if (this.tasks.ready && !this.rewind.active && !this.execution.executionBlocked(runtimeDebuggerExecutionIntent(this.debugger))
 			&& !this.debugger.plans.controlSuspended && this.debugger.source.stop === undefined) {
 			if (this.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(this.debugger);
 			this.guest.invalidate();
@@ -192,6 +192,7 @@ export class PlayRuntimeSession implements PlaySession {
 	/** Forced lifetime close admits no more guest work and releases the target only after owned callbacks finish. */
 	public dispose(): Promise<void> {
 		if (this.closeOperation !== undefined) return this.closeOperation;
+		this.transport.retire();
 		this.closing = true;
 		this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
 		this.target.input.interactive = false;

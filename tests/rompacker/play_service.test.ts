@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
 import { HostAudioDevice } from '../../hosts/common/audio_device';
+import { HostExecutionIntent, HostPauseReason } from '../../hosts/common/execution_control';
 import { Input } from '../../hosts/common/input/manager';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { DiscardingAudioSink } from '../../hosts/node/common/discarding_audio';
@@ -61,7 +62,7 @@ while true do game.updates=game.updates+1; mem[${gxGpuPcrtcRegisterAddress(GX_GP
 		sessions.push(session); return session;
 	});
 	const module = runs.collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], PATH), model = models.retain(sources.catalog.luaResources.find(resource => resource.path === PATH)!, 'lua', SCENE);
-	const advance = async () => { service.advance(1000 / 60, true); await service.current?.session?.tasks.join(); await setImmediate(); };
+	const advance = async () => { service.advance(1000 / 60); await service.current?.session?.tasks.join(); await setImmediate(); };
 	const ready = async () => {
 		await service.current!.preparation;
 		for (let grant = 0; service.current!.state !== 'ready' && grant < 2000; grant++) await advance();
@@ -89,10 +90,17 @@ test('Play service captures current source, resets into a fresh physical world a
 	assert.deepEqual(session.guest.readStringMember(session.guest.global(buildModuleExportSlotName('game', [])), 'marker'), 34);
 	assert.equal(session.evidence.logs.at(0).text, 'ready');
 	assert.equal(f.runs.results.runs.length, 0, 'interactive admission creates no automatic case or result');
-	f.service.advance(1000 / 60, false);
+	session.execution.setPauseReason(HostPauseReason.Workbench, true);
+	f.service.advance(1000 / 60);
+	assert.equal(session.execution.executionBlocked(HostExecutionIntent.Game), true, 'service updates retain the interaction owner hold');
+	session.execution.setPauseReason(HostPauseReason.Workbench, false);
+	f.service.advance(0);
+	assert.equal(session.execution.executionBlocked(HostExecutionIntent.Game), false, 'service updates do not invent an authoring hold');
+	session.execution.setPauseReason(HostPauseReason.HostSuspended, true);
+	f.service.advance(1000 / 60);
 	const held = captureRuntimeMachineState(session.target.runtime);
-	for (let index = 0; index < 5; index++) f.service.advance(1000, false);
-	assert.deepEqual(captureRuntimeMachineState(session.target.runtime), held, 'inactive Studio holds Play');
+	for (let index = 0; index < 5; index++) f.service.advance(1000);
+	assert.deepEqual(captureRuntimeMachineState(session.target.runtime), held, 'the host-owned suspension survives service updates');
 	f.runs.refreshSources();
 	const next = f.service.reset(accepted, f.module);
 	assert.equal(f.runTargets.selected, undefined, 'reset retires the previous physical selection before rebuilding');

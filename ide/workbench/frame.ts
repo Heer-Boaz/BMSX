@@ -9,7 +9,7 @@ import type { SystemOutputLog } from '../../hosts/common/system_output_log';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
-import { didExecuteRuntimeDebuggerPlan, didFaultRuntimeDebuggerPlan, runtimeDebuggerExecutionRequested,
+import { didExecuteRuntimeDebuggerPlan, didFaultRuntimeDebuggerPlan, runtimeDebuggerExecutionIntent,
 	willExecuteRuntimeDebuggerPlan } from '../runtime/debugger_state';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import { runBackgroundTasks } from '../common/background_tasks';
@@ -42,9 +42,10 @@ export function advanceStudioFrame(
 	const runtimeReady = workbench.runtimeTasks.ready && workbench.fault.hostFrameFailure === undefined && !session.rewind.active
 		&& !workbench.debugger.plans.controlSuspended && workbench.debugger.source.stop === undefined;
 	let action: HostFrameAction;
+	const executionIntent = runtimeDebuggerExecutionIntent(workbench.debugger);
 	const machineWillAdvance = (
 		hostMenuInput === HostMenuInput.Inactive
-		&& !session.execution.executionBlocked(runtimeDebuggerExecutionRequested(workbench.debugger))
+		&& !session.execution.executionBlocked(executionIntent)
 		&& runtimeReady
 	);
 	action = prepareHostUpdate(
@@ -52,7 +53,7 @@ export function advanceStudioFrame(
 		runtime,
 		runtimeReady,
 		hostMenuInput,
-		runtimeDebuggerExecutionRequested(workbench.debugger),
+		executionIntent,
 	);
 	if (action === HostFrameAction.Execute) {
 		if (workbench.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(workbench.debugger);
@@ -120,7 +121,7 @@ export function runStudioHostFrame(
 	let presented = false;
 	try {
 		const hostDeltaMs = beginHostFrame(session, input, workbench.logOutput, currentTime);
-		workbench.play.advance(hostDeltaMs, true);
+		workbench.play.advance(hostDeltaMs);
 		const action = advanceStudioFrame(session, runtime, presenter, audioOutput, systemOutput, workbench, screen, hostDeltaMs);
 		if (session.rewind.active || !workbench.runtimeTasks.ready) screen.requestHeldPresentation();
 		presentHostPresentation(session, runtime, presenter, audioOutput, action, screen, hostDeltaMs);

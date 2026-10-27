@@ -64,7 +64,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		private readonly onDidChangeVisibility: (lifetime?: DisposableStore) => void = () => {}) {
 		this.focusTarget = focus.createTarget(null, new InputFocusScope(this.pointerScope));
 		this.focusTarget.canFocus = () => this.session !== undefined;
-		this.scroll = new WorkbenchScrollControl(focus, capture, this.focusTarget, undefined, this.pointerScope);
+		this.scroll = new WorkbenchScrollControl(focus, capture, this.focusTarget, undefined, this.focusTarget.scope);
 		this.scroll.setInput(this.model.viewport);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());
 		this.unbindBlur = this.focusTarget.onDidBlur(() => { if (this.session !== undefined) this.hide(false); });
@@ -97,6 +97,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: returnOrigin, commandOrigin, disposables, options,
 			presentation: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined };
 		this.session = session;
+		this.focusTarget.scope.interactionOrigin = invocationOrigin?.scope;
 		session.unbindOrigin = commandOrigin?.commandContext.scope.onDidRetireContext(() => {
 			session.contextAdmitted = false;
 			if (this.session === session) this.hide(false);
@@ -134,6 +135,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		if (session === undefined) return;
 		const request = this.requestRevision;
 		this.session = undefined;
+		this.focusTarget.scope.interactionOrigin = undefined;
 		if (!handoff) { session.contextAdmitted = false; session.unbindOrigin?.(); }
 		this.retiringSession = session;
 		this.cancelPointer();

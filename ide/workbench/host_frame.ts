@@ -12,7 +12,6 @@ import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { RuntimeIdeState } from './state';
 import { performReboot } from '../commands/actions';
 import * as workbenchMode from './mode';
-import { runtimeDebuggerExecutionRequested } from '../runtime/debugger_state';
 import { advanceStudioFrame, finishStudioFrame } from './frame';
 
 function executeWorkbenchHostMenuAction(
@@ -21,14 +20,13 @@ function executeWorkbenchHostMenuAction(
 	input: HostMenuInput,
 	runtime: Runtime,
 	presenter: VideoPresenter,
-	audioOutput: HostAudioOutput,
 ): boolean {
 	switch (input) {
 		case HostMenuInput.Inactive:
 		case HostMenuInput.Active:
 			return false;
 		case HostMenuInput.RebootCart: {
-			const operation = performReboot(ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, ide.logOutput,
+			const operation = performReboot(ide.boots, ide.editor, ide.execution, ide.overlayRenderer, ide.logOutput,
 				ide.runTargets, { action: 'reboot' });
 			void operation.completion.then(result => {
 				if (result.status === 'reset' && ide.boots.latestOperation === operation) screen.reset(presenter, runtime);
@@ -141,7 +139,6 @@ export function runWorkbenchHostFrame(
 			hostMenuInput,
 			runtime,
 			presenter,
-			audioOutput,
 		)) {
 			runtime.frameScheduler.clearQueuedTime();
 			systemOutput.flush(runtime, logOutput, ide.luaEvaluation.receiveOutput);
@@ -151,17 +148,12 @@ export function runWorkbenchHostFrame(
 			workbenchMode.tickIdeInput(ide, input);
 		}
 		input.guestInputRecipient = ide.editor.guestInputRecipient;
-		const playEnabled = ide.editor.isActive && hostMenuInput === HostMenuInput.Inactive;
-		const inspectedPlay = ide.play.current?.session, pane = ide.editor.editorGroup.panes.activePane;
-		const holdPlay = inspectedPlay !== undefined && pane?.runtimeTransport === inspectedPlay.transport && pane.suspendsRuntime
-			&& !runtimeDebuggerExecutionRequested(inspectedPlay.debugger)
-			&& input.guestInputRecipient !== inspectedPlay.input.physical;
-		ide.play.advance(hostDeltaMs, playEnabled && !holdPlay);
 		const play = ide.play.current?.session;
-		if (play !== undefined) play.audio.muteMenu(hostMenuInput !== HostMenuInput.Inactive);
-
-		session.execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
-		audioOutput.muteUi(ide.editor.executionSuspended);
+		if (play !== undefined) {
+			play.execution.setPauseReason(HostPauseReason.HostSuspended, !ide.editor.isActive || hostMenuInput !== HostMenuInput.Inactive);
+			play.audio.muteMenu(hostMenuInput !== HostMenuInput.Inactive);
+		}
+		ide.play.advance(hostDeltaMs);
 		let action = advanceStudioFrame(session, runtime, presenter, audioOutput, systemOutput, ide, screen,
 			hostDeltaMs, hostMenuInput, menuPaused);
 		if (hostMenuInput !== HostMenuInput.Active && ide.overlayRenderer.active) {

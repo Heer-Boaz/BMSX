@@ -80,7 +80,7 @@ test('game frame controls share commands and use distinct non-repeating Studio k
 	assert.notEqual(resolveEditorCommandKeybinding('F7', KeyModifier.shift, commands)?.repeat, true);
 	assert.equal(resolveEditorCommandKeybinding('F7', KeyModifier.ctrl, commands), null);
 	const actions = createWorkbenchActionBar('runtime.title').items;
-	assert.ok(actions.some(action => action.command === 'pause'));
+	assert.ok(actions.some(action => action.command === 'runtime.playback'));
 	for (const command of ['stepFrameBack', 'stepFrame'] as const) {
 		assert.ok(actions.some(action => action.command === command));
 		assert.ok(WORKBENCH_MENUS['menubar.run'].some(item => item.type === 'command' && item.command === command));

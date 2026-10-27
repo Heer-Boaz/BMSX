@@ -18,13 +18,14 @@ import { LuaProgramInput } from './editor_input';
 import { LuaProgramRuntimeProjection, readProgramInstances, type ProgramInstanceChoice } from './runtime';
 import { programFieldTemplates, programEntryTemplate } from './schema';
 import type { HostRewind } from '../../../../hosts/common/rewind';
+import type { RuntimeTransport } from '../../../runtime/transport';
 
 /** Source ownership and runtime readback meet in a retained input, never in a second program database. */
 export class LuaProgramController {
 	private readonly projections = new WeakMap<LuaProgramInput, LuaProgramRuntimeProjection>();
 	public constructor(private readonly sources: RuntimeSourceState, public readonly guest: SuspendedGuestSession,
 		private readonly navigation: EditorNavigationController, public readonly quickInput: QuickInputController,
-		private readonly rewind: HostRewind) {}
+		private readonly rewind: HostRewind, private readonly transport: RuntimeTransport) {}
 	public open(group: EditorGroupView, kind: LuaProgramKind): void {
 		this.quickInput.pick(kind === 'progression' ? 'PROGRESSION PROGRAMS' : 'INPUT BINDINGS', 'Choose a producer call',
 			() => {
@@ -120,7 +121,7 @@ export class LuaProgramController {
 			range === undefined ? null : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
 	public chooseInstance(input: LuaProgramInput): void {
-		input.running = false;
+		input.interaction.running = false;
 		const choices: Array<ProgramInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
@@ -135,7 +136,7 @@ export class LuaProgramController {
 		}, item => {
 			input.instance = item.identity; input.instanceLabel = item.label; input.runtimeDomain = item.domain; input.runtimeImage = item.image;
 			input.programHashId = 0; input.stateHashId = 0; input.stateRevision = -1;
-			input.liveVisible = true; input.liveDirty = true;
+			input.inspectRuntime(this.transport);
 		});
 	}
 	public add(input: LuaProgramInput): void {

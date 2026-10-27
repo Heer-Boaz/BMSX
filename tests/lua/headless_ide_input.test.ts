@@ -57,7 +57,7 @@ t.controlInput([
  { type: 'wheel', deltaY: -2 }
 ]);
 `);
-	await runIdeTest({ testPath, frameIntervalMs: 20, ide: createHeadlessIdeHarness(ide, host.runtime, host.audio, log),
+	await runIdeTest({ testPath, frameIntervalMs: 20, ide: createHeadlessIdeHarness(ide, host.runtime, log),
 		logger() {}, clock: host.clock, input: host.inputHub, controlInput, capture });
 	assert.deepEqual(keys, [
 		['ControlLeft', true, KeyModifier.ctrl], ['KeyS', true, KeyModifier.ctrl], ['KeyS', false, KeyModifier.ctrl],

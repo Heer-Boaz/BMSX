@@ -1,5 +1,4 @@
 import type { Input } from '../../../../hosts/common/input/manager';
-import { HostPauseReason } from '../../../../hosts/common/execution_control';
 import { InputChannel } from '../../../../hosts/common/input/channel';
 import type { MachineModelSpec } from '../../../../machine/ts/spec/bmsx/model';
 import { buildFixtureProgram } from '../../../testing/fixture_media';
@@ -79,12 +78,11 @@ export class PlayService {
 		}
 		if (!handle.closing) this.publish(handle);
 	}
-	public advance(hostDeltaMs: number, enabled: boolean): void {
+	public advance(hostDeltaMs: number): void {
 		const handle = this.current;
 		if (handle === undefined || handle.closing) return;
 		const session = handle.session;
 		if (session !== undefined) {
-			session.execution.setPauseReason(HostPauseReason.Workbench, !enabled);
 			session.advance(hostDeltaMs);
 			const request = handle.selectionRequest;
 			if (request !== undefined) {

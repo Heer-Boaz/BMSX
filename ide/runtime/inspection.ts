@@ -9,7 +9,7 @@ import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ResourceDomain } from '../common/resource';
 import { DisposableStore } from '../common/lifecycle';
-import { runtimeDebuggerExecutionRequested, RuntimeDebuggerStopReason, type RuntimeDebuggerState } from './debugger_state';
+import { runtimeDebuggerExecutionIntent, runtimeDebuggerExecutionRequested, RuntimeDebuggerStopReason, type RuntimeDebuggerState } from './debugger_state';
 import type { RuntimeFaultState } from './fault_state';
 import type { Blua32SourceImage, RuntimeSourceState } from './sources';
 import type { SuspendedGuestSession } from './suspended_guest';
@@ -50,7 +50,7 @@ export class RuntimeInspectionService {
 		return this.debuggerExecution.active === undefined && this.navigation.active === undefined && !this.execution.launchPending && !this.execution.frameStepPending
 			&& !this.rewind.seeking && !this.rewind.playing && this.fault.hostFrameFailure === undefined
 			&& (this.rewind.active || this.debuggerState.source.stop !== undefined || this.debuggerState.plans.controlSuspended
-				|| this.execution.executionBlocked(runtimeDebuggerExecutionRequested(this.debuggerState)));
+				|| this.execution.executionBlocked(runtimeDebuggerExecutionIntent(this.debuggerState)));
 	}
 
 	public status() {

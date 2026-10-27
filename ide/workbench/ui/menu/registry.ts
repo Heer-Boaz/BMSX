@@ -480,7 +480,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'gamePanel.title': [{ type: 'command', command: 'gameView.closePanel', icon: 'close' }],
 	'runtime.title': [
 		{ type: 'command', command: 'stepFrameBack', icon: 'stepBack' },
-		{ type: 'command', command: 'pause', icon: 'play' },
+		{ type: 'command', command: 'runtime.playback', icon: 'play' },
 		{ type: 'command', command: 'stepFrame', icon: 'stepForward' },
 		{ type: 'command', command: 'runtime.resume', icon: 'accept' },
 		{ type: 'command', command: 'runtime.present', icon: 'present' },

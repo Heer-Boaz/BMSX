@@ -71,6 +71,7 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		this.attachments.setInput(this.input.attachments);
 		const draftInput = this.input;
 		draftInput.draft.focusTarget.scope.surfaceScope = this.focusTarget.scope.surfaceScope;
+		draftInput.draft.focusTarget.scope.interactionOrigin = this.focusTarget.scope;
 		draftInput.draft.focusTarget.scope.commands = this.focusTarget.scope.commands;
 		draftInput.draft.focusTarget.commandContext = this.focusTarget;
 		draftInput.draft.focusTarget.canFocus = () => this.hasInput && this.input === draftInput;
@@ -97,10 +98,12 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 	public override clearInput(): void {
 		if (this.hasInput) {
 			const draft = this.input.draft.focusTarget;
-			draft.release();
-			draft.commandContext = draft;
 			draft.canFocus = () => false;
+			draft.scope.interactionOrigin = undefined;
 			draft.scope.commands = undefined;
+			draft.commandContext = draft;
+			draft.scope.retireContext();
+			draft.release();
 			draft.next = draft.previous = null;
 			for (const command of COMMANDS) draft.unregisterCommand(command);
 			draft.unregisterCommand('suggest.accept');

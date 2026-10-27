@@ -36,7 +36,7 @@ function fixture(t: TestContext) {
 	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
 	const guest = new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload()));
 	const aem = new AemEditorController(sources, picker, guest, null!, null!);
-	const programs = new LuaProgramController(sources, guest, null!, picker, null!);
+	const programs = new LuaProgramController(sources, guest, null!, picker, null!, null!);
 	t.after(() => {
 		picker.dispose(); menu.dispose(); first.dispose(); second.dispose();
 		editorTextModelService.clear(); inputFocus.setTarget(null);

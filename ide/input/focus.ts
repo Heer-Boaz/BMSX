@@ -7,6 +7,7 @@ import type { InputRecipient } from '../../hosts/common/input/channel';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { FrameBitmap } from '../../hosts/common/frame_bitmap';
 import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope } from './pointer/capture';
+import type { InputInteraction } from './interaction';
 
 export type GuestInputPresentation =
 	| { readonly kind: 'direct'; readonly presenter: VideoPresenter }
@@ -16,6 +17,12 @@ export type GuestInputBinding = {
 	bounds: Readonly<RectBounds>;
 	readonly recipient: InputRecipient;
 	readonly presentation: GuestInputPresentation;
+};
+
+/** A logical runtime client and its canonical interaction share one attachment lifetime. */
+export type InputRuntimeContext = {
+	readonly target: InputFocusTarget;
+	readonly interaction: InputInteraction;
 };
 
 export type FocusCommand = {
@@ -34,10 +41,29 @@ export interface InputEdit {
 export class InputFocusScope {
 	public lastFocused: InputFocusTarget | null = null;
 	public commands: EditorCommandRunner | undefined;
+	/** Undefined inherits ownership; null is chrome retaining the activated client. */
+	public interaction: InputInteraction | null | undefined;
+	/** A popup borrows its invoker's execution context, not its command subject. */
+	public interactionOrigin: InputFocusScope | undefined;
+	/** A declared local runtime can be unavailable without redirecting its commands. */
+	public runtime: InputRuntimeContext | undefined;
 	private contextRetirementListeners: Set<() => void> | undefined;
 	/** Command ancestry is independent of presentation and the control's focus-return parent. */
 	public constructor(public surfaceScope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE,
 		public readonly commandParent: InputFocusScope | null = null) {}
+
+	public get interactionOwner(): InputFocusScope | undefined {
+		for (let scope: InputFocusScope | null | undefined = this; scope != null;
+			scope = scope.interactionOrigin === undefined ? scope.commandParent : scope.interactionOrigin) {
+			if (scope.interaction !== undefined) return scope;
+		}
+		return undefined;
+	}
+	public get runtimeOwner(): InputFocusScope | undefined {
+		for (let scope: InputFocusScope | null = this; scope !== null; scope = scope.commandParent)
+			if (scope.runtime !== undefined) return scope;
+		return undefined;
+	}
 
 	/** A transient's command authority ends with its invoking attachment or an ancestor. */
 	public onDidRetireContext(listener: () => void): () => void {
@@ -91,6 +117,8 @@ export class InputFocusTarget {
 	public focus(): void {
 		this.owner.setTarget(this);
 	}
+	/** Actual client interaction can activate a view without moving keyboard focus. */
+	public activate(): void { this.owner.activateInteraction(this); }
 
 	/** Only the control losing focus may release it; hiding another view must not steal it. */
 	public release(): void {
@@ -172,6 +200,8 @@ export class InputFocusService {
 	public readonly workbenchScope = new InputFocusScope();
 	private targetValue: InputFocusTarget | null = null;
 	private readonly changeListeners = new Set<() => void>();
+	private readonly interactionListeners = new Set<(target: InputFocusTarget) => void>();
+	private interactionRevisionValue = 0;
 	private focusRevision = 0;
 	private pendingTargetValue: InputFocusTarget | null = null;
 	private scopeAdmission: ((scope: InputFocusScope) => boolean) | undefined;
@@ -185,6 +215,19 @@ export class InputFocusService {
 	public onDidChangeTarget(listener: () => void): () => void {
 		this.changeListeners.add(listener);
 		return () => this.changeListeners.delete(listener);
+	}
+	public get interactionRevision(): number { return this.interactionRevisionValue; }
+	public onDidActivateInteraction(listener: (target: InputFocusTarget) => void): () => void {
+		this.interactionListeners.add(listener);
+		return () => this.interactionListeners.delete(listener);
+	}
+	public activateInteraction(target: InputFocusTarget): void {
+		if (this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) return;
+		const revision = ++this.interactionRevisionValue;
+		for (const listener of this.interactionListeners) {
+			listener(target);
+			if (revision !== this.interactionRevisionValue) break;
+		}
 	}
 
 	/** Native text owners synchronize only after an actual control interaction. */
@@ -229,7 +272,11 @@ export class InputFocusService {
 		const revision = ++this.focusRevision;
 		this.pendingTargetValue = target;
 		const previous = this.targetValue;
-		if (previous === target) { this.pendingTargetValue = null; this.notifyTargetChanged(); return; }
+		if (previous === target) {
+			this.pendingTargetValue = null;
+			if (target !== null) this.activateInteraction(target);
+			this.notifyTargetChanged(); return;
+		}
 		// Like Godot's Viewport, detach before notifying the departing control.
 		this.targetValue = null;
 		if (previous !== null) previous.didBlur(target);
@@ -238,6 +285,8 @@ export class InputFocusService {
 		this.pendingTargetValue = null;
 		this.targetValue = target;
 		if (target !== null) { target.scope.lastFocused = target; target.didFocus(); }
+		if (revision !== this.focusRevision) return;
+		if (target !== null) this.activateInteraction(target);
 		if (revision !== this.focusRevision) return;
 		this.notifyTargetChanged();
 	}

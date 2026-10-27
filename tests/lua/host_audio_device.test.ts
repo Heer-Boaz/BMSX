@@ -28,7 +28,7 @@ test('inactive runtime controls cannot replace, suspend or retime the selected p
 	const second = new HostAudioOutput(device, secondary.machine.audioController, 50 * HZ_SCALE);
 	device.select(first);
 	assert.equal(sink.puller, first.pullRuntimeAudio, 'the sink owns the actual callback, not a routing wrapper');
-	second.muteUi(true); second.mutePause(true); second.muteUi(false); second.mutePause(false);
+	second.muteMenu(true); second.mutePause(true); second.muteMenu(false); second.mutePause(false);
 	second.restart(40 * HZ_SCALE); second.syncTiming(30 * HZ_SCALE);
 	assert.equal(sink.puller, first.pullRuntimeAudio);
 	assert.equal(sink.replacements, 1);

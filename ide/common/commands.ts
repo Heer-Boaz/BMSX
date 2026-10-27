@@ -109,7 +109,7 @@ export type EditorCommandId =
 	| 'workspaceEditReview.source'
 	| 'workspaceEditReview.impacts'
 	| 'runtime.pause' | 'runtime.present' | 'runtime.accept' | 'runtime.resume' | 'runtime.focusTimeline' | 'runtime.hideTimeline' | 'runtime.toggleTimeline'
-	| 'gameView.playback'
+	| 'runtime.playback'
 	| 'gameView.togglePanel' | 'gameView.closePanel'
 	| 'actorLab.playback' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
 	| 'actorLab.stateGraph' | 'actorLab.outline' | 'actorLab.follow' | 'actorLab.revealActive' | 'actorLab.more' | 'actorLab.find'

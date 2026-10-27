@@ -1,10 +1,10 @@
 import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerPosition, PointerSnapshot } from '../../common/models';
-import type { InputFocusService, InputFocusTarget } from '../../input/focus';
+import type { InputFocusService, InputFocusTarget, InputFocusScope } from '../../input/focus';
 import { consumeIdeKey, isKeyDown } from '../../input/keyboard/key_input';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
-import { type PointerCaptureScope, type PointerCaptureService } from '../../input/pointer/capture';
+import { type PointerCaptureService } from '../../input/pointer/capture';
 import type { WorkbenchScrollViewport } from './scroll_viewport';
 import { ScrollbarPointerControl } from './scrollbar_pointer';
 
@@ -19,9 +19,9 @@ export class WorkbenchScrollControl {
 	private readonly unbindKeyboard: () => void;
 
 	public constructor(focus: InputFocusService, capture: PointerCaptureService, parent: InputFocusTarget,
-		keyboard?: (input: KeyInputEvent) => boolean, scope?: PointerCaptureScope, cancelKeyboard?: () => void) {
-		this.pointer = new ScrollbarPointerControl(capture, scope);
-		this.focusTarget = focus.createTarget(parent);
+		keyboard?: (input: KeyInputEvent) => boolean, scope: InputFocusScope = parent.scope, cancelKeyboard?: () => void) {
+		this.pointer = new ScrollbarPointerControl(capture, scope.surfaceScope);
+		this.focusTarget = focus.createTarget(parent, scope);
 		this.focusTarget.canFocus = () => this.input !== null;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => {
 			if (keyboard?.(input)) return;

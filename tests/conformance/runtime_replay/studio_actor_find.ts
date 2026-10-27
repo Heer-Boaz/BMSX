@@ -104,7 +104,7 @@ export async function runStudioActorFind(test: StudioFixture) {
 	const timeline = (picker.model.list.rows[0].item as ActorMemberChoice).node;
 	await press('Enter'); await frame();
 	check(lab.presentation === 'outline' && outline.rows[outline.selectionIndex].element.node === timeline
-		&& inputFocus.target === pane.runtimeControlContext && inspector.visible,
+		&& inputFocus.target === pane.commandTarget && inspector.visible,
 		'accepting from the graph restores outline presentation and focus at the exact member');
 	await test.capture?.('graph-find-return');
 

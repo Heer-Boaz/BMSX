@@ -20,6 +20,7 @@ import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/vie
 import { getWorkbenchEditorBounds, refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
+import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
@@ -35,6 +36,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
+import { InputInteraction } from '../../ide/input/interaction';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
@@ -59,8 +61,9 @@ function menuFixture(t: TestContext) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
+	ide.boots.didReplaceMachine();
 	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
-	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
+	editorRuntimeState.active = true; editor.interaction.setActive(true); host.input.setPointerAdmissionMode('routed'); editor.update(0);
 	const pane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane;
 	const origin = inputFocus.target!, model = pane.code.model!, view = pane.code.view!;
 	view.cursorRow = 1; view.cursorColumn = 6;
@@ -230,7 +233,7 @@ test('AltRight, modifier chords, repeats and cancelled AltLeft candidates never 
 
 test('physical menu gestures remain guest input while a real scanout client has focus', t => {
 	const { editor, host, origin, key } = menuFixture(t);
-	const game = new GameInputControl(origin, host.input, { kind: 'direct', presenter: host.presenter });
+	const game = new GameInputControl(origin, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	game.setInput({ left: 80, top: 32, right: 320, bottom: 240 }); game.focusTarget.focus();
 	t.after(() => game.dispose());
 	const binding = game.focusTarget.guestInput!;
@@ -244,6 +247,25 @@ test('physical menu gestures remain guest input while a real scanout client has 
 	key('AltLeft', KeyModifier.alt); game.setInput(binding.bounds); game.focusTarget.focus();
 	key('AltLeft', KeyModifier.none, false); game.clearInput(); key('AltLeft', KeyModifier.none, false);
 	assert.equal(editor.contextMenu.visible, false, 'changing focus into a guest retires a Studio-only candidate');
+});
+
+test('runtime picker execution retains a source field focus until a fresh authoring interaction, not the accepting key release', t => {
+	const f = menuFixture(t);
+	const scope = new InputFocusScope(f.editor.editorGroup.focusScope.surfaceScope, f.editor.editorGroup.focusScope);
+	const interaction = new InputInteraction(f.editor.commands.transport);
+	scope.interaction = interaction;
+	const runtimeClient = inputFocus.createTarget(null, scope); runtimeClient.bindKeyboard(() => {});
+	scope.runtime = { target: runtimeClient, interaction };
+	f.editor.quickInput.pick('Runtime action', '', () => new TextQuickPickProvider([{ label: 'Resume', description: '', detail: '' }]),
+		() => f.editor.commands.execute('runtime.playback', runtimeClient), undefined, runtimeClient);
+	f.key('Enter');
+	assert.ok(inputFocus.target === f.origin);
+	assert.equal(interaction.running, true); assert.equal(f.host.execution.executionBlocked(), false);
+	f.key('Enter', KeyModifier.none, false);
+	assert.equal(f.host.execution.executionBlocked(), false, 'the accepting key release is not a new interaction with the restored source field');
+	f.key('ArrowLeft');
+	assert.equal(f.host.execution.executionBlocked(), true);
+	assert.equal(f.host.execution.userPaused, false, 'typing/caret interaction restores only the automatic authoring hold');
 });
 
 test('empty-group Studio retirement and blocked admission cannot carry an Alt candidate into a later session', t => {
@@ -338,9 +360,9 @@ test('a requested primary GamePanel supplies Timeline beside Source without coup
 	f.editor.updateViewport({ width: 700, height: 288 });
 	f.editor.commands.execute('gameView.togglePanel'); f.editor.update(0);
 	assert.equal(f.editor.gamePanel.visible, true); assert.equal(f.editor.gamePanel.enabled, true);
-	assert.ok(f.editor.gamePanel.runtimeTransport === f.editor.commands.transport);
-	assert.ok(f.editor.gamePanel.runtimeTransport!.navigation === f.editor.commands.transport.navigation);
-	assert.equal(timeline.available, true); assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
+	assert.ok(f.editor.gamePanel.focusScope.runtime?.interaction.transport === f.editor.commands.transport);
+	assert.ok(f.editor.gamePanel.focusScope.runtime?.interaction.transport!.navigation === f.editor.commands.transport.navigation);
+	assert.equal(timeline.available, false); assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
 	const bounds = getWorkbenchEditorBounds(), x = bounds.right + 6, y = bounds.top + 1;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
@@ -351,6 +373,12 @@ test('a requested primary GamePanel supplies Timeline beside Source without coup
 	assert.equal(f.editor.contextMenu.model.rows[0].enabled, true);
 	f.key('Home'); f.key('Home', KeyModifier.none, false); f.key('Enter'); f.key('Enter', KeyModifier.none, false);
 	assert.equal(timeline.requested, true); assert.equal(timeline.visible, true);
+	const logicalRuntime = f.editor.gamePanel.focusScope.runtime!;
+	const panel = logicalRuntime.target;
+	panel.focus(); inputFocus.moveFocus(true);
+	const guest = inputFocus.target!;
+	assert.ok(guest.guestInput !== undefined, 'the panel focus ring enters its actual guest viewport');
+	assert.ok(timeline.focusScope.runtime === logicalRuntime, 'guest input activation retains the logical runtime client');
 	// The offered height withholds the preview; it must not alternate the logical
 	// target and Timeline inset on subsequent composition passes.
 	f.editor.updateViewport({ width: 700, height: 100 });
@@ -359,7 +387,8 @@ test('a requested primary GamePanel supplies Timeline beside Source without coup
 		assert.equal(f.editor.gamePanel.visible, false); assert.equal(f.editor.gamePanel.enabled, true);
 		assert.equal(timeline.available, true); assert.equal(timeline.visible, true);
 		assert.equal(editorChromeState.runtimeTimelineHeight, timeline.height);
-		assert.ok(f.editor.gamePanel.runtimeTransport === f.editor.commands.transport);
+		assert.ok(f.editor.gamePanel.focusScope.runtime?.interaction.transport === f.editor.commands.transport);
+		assert.equal(guest.guestInput, undefined, 'withholding presentation retires physical guest input, not the logical Timeline');
 	}
 	f.editor.commands.execute('runtime.toggleTimeline'); f.editor.update(0);
 	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
@@ -367,8 +396,8 @@ test('a requested primary GamePanel supplies Timeline beside Source without coup
 	assert.equal(f.editor.gamePanel.visible, true); assert.equal(timeline.visible, false);
 	const game = new GameViewInput(); f.editor.editorGroup.openEditor(game); f.editor.update(0);
 	assert.equal(f.editor.gamePanel.enabled, true); assert.equal(f.editor.gamePanel.visible, false);
-	assert.equal(f.editor.gamePanel.runtimeControlContext, undefined); assert.equal(f.editor.gamePanel.runtimeTransport, undefined);
-	assert.ok(f.editor.editorGroup.panes.activePane!.runtimeTransport === f.editor.commands.transport);
+	assert.equal(f.editor.gamePanel.focusScope.runtime, undefined);
+	assert.ok(f.editor.editorGroup.panes.activePane!.commandTarget.scope.runtimeOwner!.runtime!.interaction.transport === f.editor.commands.transport);
 	assert.equal(timeline.available, true, 'the selected Game view owns its own target rather than borrowing a hidden companion');
 	const source = f.editor.editorGroup.model.tabs.find(tab => tab.kind === 'code_editor')!;
 	f.editor.editorGroup.activate(source.id); f.editor.update(0);

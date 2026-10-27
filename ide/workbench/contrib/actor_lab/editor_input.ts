@@ -1,3 +1,4 @@
+import { InputInteraction } from '../../../input/interaction';
 import { WorkbenchSplitView } from '../../ui/split_view';
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { ActorLabLayout } from './layout';
@@ -26,7 +27,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public worldHashId: number | undefined;
 	public actorPresent = false;
 	public historical = false;
-	public running = false;
+	public readonly interaction = new InputInteraction();
 	public selectionPath: readonly ActorNodeIdentity[] | undefined;
 	public details: ActorDetails | undefined;
 	public detailsSelection: ActorDetailsSelection | undefined;
@@ -61,7 +62,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 		this.details?.invalidate(reason);
 		if (reason !== 'execution') {
 			this.timeline.clear();
-			this.running = false;
+			this.interaction.running = false;
 			this.follow.pending = undefined;
 		}
 		if (reason === 'history-restored') this.historical = true;

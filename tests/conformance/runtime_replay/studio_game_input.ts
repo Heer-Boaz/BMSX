@@ -68,18 +68,18 @@ export async function runStudioGameInput(test: StudioFixture) {
 
 	harness.openLuaSource('cart.lua');
 	await runPaletteCommand('View: Toggle Game Panel');
-	check(ide.editor.gamePanel.visible && ide.editor.executionSuspended, 'source editor owns the hold while its game panel is unfocused');
+	check(ide.editor.gamePanel.visible && execution.executionBlocked(), 'source editor owns the hold while its game panel is unfocused');
 	const panelCenter = { left: editorViewState.viewportWidth - editorChromeState.editorRightInset / 2,
 		right: editorViewState.viewportWidth - editorChromeState.editorRightInset / 2 + 1,
 		top: (view.layout.top + editorViewState.editorAreaBottom) / 2, bottom: (view.layout.top + editorViewState.editorAreaBottom) / 2 + 1 };
 	await click(panelCenter);
-	check(inputFocus.target?.guestInput?.bounds !== undefined && !ide.editor.executionSuspended && ide.editor.guestInputRecipient !== null,
+	check(inputFocus.target?.guestInput?.bounds !== undefined && !execution.executionBlocked() && ide.editor.guestInputRecipient !== null,
 		'focused side panel releases only the workbench hold and routes game input');
 	await test.capture?.('panel-focused');
 	await press('ShiftLeft', 'F1');
 	const held = cycles();
 	for (let index = 0; index < 4; index++) await frame();
-	check(cycles() === held && ide.editor.executionSuspended, 'release restores source authoring hold');
+	check(cycles() === held && execution.executionBlocked(), 'release restores source authoring hold');
 	await runPaletteCommand('Run: Pause Runtime');
 	check(execution.userPaused, 'explicit transport pause is independent of input focus');
 	await click(panelCenter);
@@ -110,7 +110,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	harness.openLuaSource('cart.lua');
 	await frame();
 	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
-	check(sample.keyWords.every(word => word === 0) && ide.editor.executionSuspended,
+	check(sample.keyWords.every(word => word === 0) && execution.executionBlocked(),
 		'opening another editor revokes viewport input before the guest samples again');
 	setKey('KeyZ', false);
 
@@ -119,7 +119,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const actor = ide.editor.editorGroup.model.activeTab;
 	if (actor.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	await click(test.visiblePreviewPoint(actor.previewBounds));
-	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && !ide.editor.executionSuspended,
+	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && !execution.executionBlocked(),
 		'Actor Lab preview shares guest focus and releases the authoring hold');
 	setKey('KeyZ', true);
 	await until(() => (runtime.machine.memory.readIoU32(keyAddress) & keyMask) !== 0, 'Actor Lab keyboard reaches the real ICU');
@@ -165,13 +165,13 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await test.capture?.('actor-hover');
 	await click(point, 1, 'pointer_secondary');
 	check(actor.actorHashId === pickHashId && actor.outline.rows[actor.outline.selectionIndex].element.node.hashId === pickHashId
-		&& !actor.running && ide.editor.guestInputRecipient === null && cycles() === actorHeld && runtime.machine.cpu.luaHeap.usedBytes() === pickHeap,
+		&& !actor.interaction.running && ide.editor.guestInputRecipient === null && cycles() === actorHeld && runtime.machine.cpu.luaHeap.usedBytes() === pickHeap,
 		'inspection click reveals the same live actor through the existing tree without injecting game input');
 	await test.capture?.('actor-picked');
 	await runPaletteCommand('Actor Lab: Play / Pause');
 	test.movePointer(point);
 	for (let index = 0; index < 6; index++) await frame();
-	check(actor.running && cycles() > actorHeld && actor.actorHashId === pickHashId && inputFocus.target?.guestInput?.bounds === undefined,
+	check(actor.interaction.running && cycles() > actorHeld && actor.actorHashId === pickHashId && inputFocus.target?.guestInput?.bounds === undefined,
 		'hover while playing neither pauses the cart nor moves selection or game focus');
 	await test.capture?.('actor-hover-playing');
 	await click(point);
@@ -179,14 +179,14 @@ export async function runStudioGameInput(test: StudioFixture) {
 	test.setPointerButton('pointer_secondary', true);
 	await until(() => (runtime.machine.memory.readIoU32(IO_INP_POINTER_BUTTONS) & (1 << INP_POINTER_BUTTON_SECONDARY)) !== 0,
 		'hovered Actor Lab game focus still delivers its secondary button to HID');
-	check(actor.running && actor.actorHashId === focusedActor && inputFocus.target?.guestInput?.bounds === actor.previewBounds,
+	check(actor.interaction.running && actor.actorHashId === focusedActor && inputFocus.target?.guestInput?.bounds === actor.previewBounds,
 		'hover over a focused game does not intercept buttons or select an actor');
 	await test.capture?.('actor-hover-game-focused');
 	test.setPointerButton('pointer_secondary', false); await frame();
 	await press('ShiftLeft', 'F1');
 	test.setPointerButton('pointer_secondary', true); await frame();
 	test.setPointerButton('pointer_secondary', false); await frame();
-	check(!actor.running && actor.actorHashId === ide.editor.actorLab.viewportPicker.hit.hashId && actor.actorHashId !== 0,
+	check(!actor.interaction.running && actor.actorHashId === ide.editor.actorLab.viewportPicker.hit.hashId && actor.actorHashId !== 0,
 		'inspecting the hovered live actor is the explicit pause and selection action');
 	const previewPlacement = JSON.stringify(actor.previewBounds);
 	await runPaletteCommand('Actor Lab: Inspect Instance');
@@ -308,7 +308,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const saved = model.lastSavedSource, boot = ide.boots.latestOperation;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- input admission regression\n' }]);
 	ide.editor.commands.execute('reboot');
-	check(inputFocus.target === ide.editor.actionPrompt.focusTarget && ide.editor.executionSuspended,
+	check(inputFocus.target === ide.editor.actionPrompt.focusTarget && execution.executionBlocked(),
 		'a command invoked over game focus transfers input to its confirmation dialog');
 	setKey('Escape', true);
 	for (let index = 0; index < 4; index++) await frame();

@@ -1,4 +1,5 @@
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
+import { HostExecutionIntent } from '../../hosts/common/execution_control';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import type { RuntimeSourceState } from './sources';
@@ -66,9 +67,15 @@ export function resumeRuntimeDebugger(state: SourceExecutionState, mode: Runtime
 	state.source.resume(mode);
 }
 
+export function runtimeDebuggerExecutionIntent(state: SourceExecutionState): HostExecutionIntent {
+	if (!(state.source.stop === undefined && (state.executionContext !== undefined || state.source.stepping)
+		|| state.plans.controlExecutionRequested)) return HostExecutionIntent.None;
+	return state.plans.workbenchExecutionRequested || state.executionContext === 'workbench'
+		? HostExecutionIntent.Workbench : HostExecutionIntent.Game;
+}
+
 export function runtimeDebuggerExecutionRequested(state: SourceExecutionState): boolean {
-	return state.source.stop === undefined && (state.executionContext !== undefined || state.source.stepping)
-		|| state.plans.controlExecutionRequested;
+	return runtimeDebuggerExecutionIntent(state) !== HostExecutionIntent.None;
 }
 
 export function interruptRuntimeDebuggerExecution(state: SourceExecutionState): void {

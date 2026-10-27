@@ -8,6 +8,7 @@ import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
+import { RuntimeTransport } from '../../ide/runtime/transport';
 import { BehaviorRuntimeInspection } from '../../ide/workbench/contrib/behavior_lens/runtime_inspection';
 import { readStateMachineInstances } from '../../ide/workbench/contrib/behavior_lens/state_machine_runtime';
 import { parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
@@ -55,9 +56,10 @@ return component`;
 	runtime.onStateReset = () => guest.invalidate('heap-replaced');
 	const rewind = { active: historical, seeking: false, playing: false };
 	const choice = readStateMachineInstances(sources, guest, -1).items[0];
+	const transport = new RuntimeTransport(runtime, null!, rewind as HostRewind, null!, () => true);
 	const inspection = new BehaviorRuntimeInspection(sources, guest, rewind as HostRewind, -1, sources.currentBlua32Media.system!,
-		{ kind: 'state_machine', componentHashId: choice.component.hashId, machineHashId: choice.machine.hashId, stateHashId: choice.machine.hashId });
-	return { runtime, cpu, guest, sources, rewind, inspection, beforeBirth, choice };
+		{ kind: 'state_machine', componentHashId: choice.component.hashId, machineHashId: choice.machine.hashId, stateHashId: choice.machine.hashId }, transport);
+	return { runtime, cpu, guest, sources, rewind, inspection, transport, beforeBirth, choice };
 }
 
 test('visible behavior inspection compares completed observations, not paused refreshes, and reacquires history values', t => {
@@ -90,8 +92,8 @@ test('visible behavior inspection compares completed observations, not paused re
 	assert.deepEqual(document.map(row => row.value), before);
 	assert.equal(current.valueChanged, true, 'restoring a previous value is a change from the last completed observation');
 	assert.ok(document.every(row => row.valueChanged === (row === current)));
-	f.inspection.running = true; f.guest.invalidate('heap-replaced');
-	assert.equal(f.inspection.running, false);
+	f.inspection.interaction.running = true; f.guest.invalidate('heap-replaced');
+	assert.equal(f.inspection.interaction.running, false);
 	const retired = f.inspection.refresh()!;
 	assert.ok(retired.every(row => row.warning && row.valueChanged === false));
 	const retiredReads = reads;
@@ -188,9 +190,9 @@ for (const observed of [false, true]) test(`live admission retires ${observed ? 
 	assert.equal(f.inspection.refresh(), undefined);
 	f.rewind.seeking = false;
 	if (observed) assert.ok(f.inspection.refresh()!.every(row => row.warning && row.valueChanged === false));
-	f.inspection.running = true;
+	f.inspection.interaction.running = true;
 	f.guest.willEndHistoryReview();
-	assert.equal(f.inspection.running, false);
+	assert.equal(f.inspection.interaction.running, false);
 	assert.strictEqual(f.inspection.refresh(), document, 'admission publishes retirement before another execution invalidation');
 	assert.ok(document.every(row => row.warning && row.valueChanged === false));
 	f.guest.invalidate();
@@ -207,15 +209,15 @@ test('live admission keeps a restored behavior instance and later live removal r
 	f.cpu.restoreRuntimeState(f.beforeBirth); f.guest.invalidate('history-restored');
 	f.inspection.refresh();
 	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
-	f.inspection.running = true;
+	f.inspection.interaction.running = true;
 	f.guest.willEndHistoryReview();
-	assert.equal(f.inspection.running, true, 'admission resolves current membership even before the pane observes it');
+	assert.equal(f.inspection.interaction.running, true, 'admission resolves current membership even before the pane observes it');
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.deepEqual(document.map(row => row.value), before);
 	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('remove_component') as Closure, []);
 	assert.equal(readStateMachineInstances(f.sources, f.guest, -1).items.length, 0);
 	assert.strictEqual(f.inspection.refresh(), document);
-	assert.equal(f.inspection.running, false);
+	assert.equal(f.inspection.interaction.running, false);
 	assert.ok(document.every(row => row.warning && row.valueChanged === false));
 	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('restore_component') as Closure, []);
 	assert.equal(readStateMachineInstances(f.sources, f.guest, -1).items[0].component.hashId, f.choice.component.hashId);
@@ -234,11 +236,11 @@ test('a live guest call ending review retires subsequently missing membership', 
 	history.captureCheckpoint();
 	history.beginSeek(history.latestCycles);
 	assert.equal(history.mode, HistoryMode.Reviewing);
-	f.inspection.running = true;
+	f.inspection.interaction.running = true;
 	f.guest.callClosure(f.guest.global('remove_component'));
 	assert.equal(history.mode, HistoryMode.Disabled);
 	assert.strictEqual(f.inspection.refresh(), document);
-	assert.equal(f.inspection.running, false);
+	assert.equal(f.inspection.interaction.running, false);
 	assert.ok(document.every(row => row.warning && row.description.includes('SELECT A RUNTIME INSTANCE AGAIN')));
 	f.guest.callClosure(f.guest.global('restore_component'));
 	assert.equal(f.inspection.refresh(), undefined, 'ending recording must not leave the inspector in historical mode');
@@ -254,9 +256,9 @@ for (const observed of [false, true]) test(`discarding review retires ${observed
 	f.cpu.runUntilDepth(0, 100_000);
 	history.beginSeek(history.earliestCycles);
 	if (observed) assert.ok(f.inspection.refresh()!.every(row => row.warning));
-	f.inspection.running = true;
+	f.inspection.interaction.running = true;
 	history.stop();
-	assert.equal(f.inspection.running, false, 'discard reconciles before another guest allocation');
+	assert.equal(f.inspection.interaction.running, false, 'discard reconciles before another guest allocation');
 	f.guest.invalidate(); f.cpu.runUntilDepth(0, 100_000);
 	const replacement = readStateMachineInstances(f.sources, f.guest, -1).items[0];
 	assert.equal(replacement.component.hashId, f.choice.component.hashId);
@@ -289,4 +291,19 @@ test('heap replacement remains terminal across historical navigation and live ad
 	f.guest.willEndHistoryReview();
 	assert.equal(f.inspection.refresh(), undefined);
 	assert.deepEqual(document.map(row => row.value), retired, 'history admission does not replace the retirement reason');
+});
+
+
+test('behavior inspection owns its physical target before readback and retires only its own attachment', t => {
+	const f = fixture(); t.after(() => f.inspection.dispose());
+	assert.equal(f.inspection.interaction.transport, f.transport);
+	assert.equal(f.inspection.interaction.running, false);
+	const observations: Array<[RuntimeTransport | null, boolean]> = [];
+	t.after(f.inspection.interaction.onDidChange(() => observations.push([f.inspection.interaction.transport, f.inspection.interaction.running])));
+	f.inspection.interaction.running = true;
+	f.guest.invalidate('heap-replaced');
+	assert.deepEqual(observations, [[f.transport, true], [f.transport, false]]);
+	assert.equal(f.inspection.interaction.transport, f.transport, 'a lost instance does not select a different physical target');
+	f.inspection.dispose();
+	assert.deepEqual(observations.at(-1), [null, false]);
 });

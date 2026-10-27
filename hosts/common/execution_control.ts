@@ -6,6 +6,13 @@ export const enum HostPauseReason {
 	Fullscreen = 1 << 2,
 	AwaitingLaunch = 1 << 3,
 	Workbench = 1 << 4,
+	HostSuspended = 1 << 5,
+}
+
+export const enum HostExecutionIntent {
+	None,
+	Game,
+	Workbench,
 }
 
 /** Execution policy, independent of frame pacing, presentation and focused views. */
@@ -30,8 +37,9 @@ export class HostExecutionControl {
 		return (this.pauseReasons & HostPauseReason.VibrationInitialization) !== 0;
 	}
 
-	public executionBlocked(explicitStep = false): boolean {
-		let ignored = explicitStep ? HostPauseReason.Requested : 0;
+	public executionBlocked(intent = HostExecutionIntent.None): boolean {
+		let ignored = intent !== HostExecutionIntent.None ? HostPauseReason.Requested : 0;
+		if (intent === HostExecutionIntent.Workbench) ignored |= HostPauseReason.Workbench;
 		if (this.pendingFrameStep) ignored |= HostPauseReason.Requested | HostPauseReason.Workbench;
 		return (this.pauseReasons & ~ignored) !== 0;
 	}

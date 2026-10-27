@@ -9,6 +9,8 @@ import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
+import { RuntimeTransport } from '../../ide/runtime/transport';
+import { RuntimeFrameNavigation } from '../../ide/runtime/frame_navigation';
 import { createRuntimeDebuggerState } from '../../ide/runtime/debugger_state';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { LuaEvaluation, RuntimeLuaEvaluation } from '../../ide/runtime/lua_evaluation';
@@ -36,7 +38,11 @@ function fixture(t: TestContext, variant: FontVariant, width = 384) {
 	const sources = createTestRuntimeSourceState({ records: [], path2lua: {}, module2lua: {}, entrySourcePath: '',
 		projectRootPath: '', can_boot_from_source: false, revision: 0 }, [null, null], SYSTEM_RESOURCE_DOMAIN);
 	const debuggerState = createRuntimeDebuggerState(host.runtime, sources);
-	const evaluation = new RuntimeLuaEvaluation(host.runtime, sources, new SuspendedGuestSession(host.runtime),
+	const suspended = new SuspendedGuestSession(host.runtime);
+	const navigation = new RuntimeFrameNavigation(host.runtime, host.execution, host.rewind, host.tasks, debuggerState, fault, suspended);
+	t.after(() => navigation.dispose());
+	const transport = new RuntimeTransport(host.runtime, host.execution, host.rewind, navigation, () => true);
+	const evaluation = new RuntimeLuaEvaluation(host.runtime, sources, suspended,
 		debuggerState, fault, host.tasks, host.execution, host.rewind);
 	const bounds = { left: 0, top: 24, right: width, bottom: 274 }, surfaces = new WorkbenchSurfaceService();
 	const scope = new InputFocusScope(Symbol('status guest'));
@@ -45,7 +51,7 @@ function fixture(t: TestContext, variant: FontVariant, width = 384) {
 		getBounds: () => bounds, getClip: () => bounds, isVisible: () => visible, draw() {} });
 	const parent = inputFocus.createTarget(null, scope); parent.bindKeyboard(() => {});
 	const frames = new FrameBitmap(); frames.publish(new Uint8Array(4), 1, 1, { presentationSequence: 0, cycles: 0, videoTick: 0 });
-	const guest = new GameInputControl(parent, host.input, { kind: 'offscreen', frames }); guest.setInput(bounds);
+	const guest = new GameInputControl(parent, host.input, { kind: 'offscreen', frames }, transport); guest.setInput(bounds);
 	const unbind = inputFocus.bindScopeAdmission(focusScope => {
 		const attached = surfaces.findByScope(focusScope.surfaceScope);
 		return attached !== undefined && surfaces.isAdmitted(attached);

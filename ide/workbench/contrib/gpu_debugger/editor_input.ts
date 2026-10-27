@@ -1,3 +1,4 @@
+import { InputInteraction } from '../../../input/interaction';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import { GpuOperationSnapshot, type RuntimeGpuHistory } from '../../../runtime/gpu_history';
 import { ReadonlyEditorInput } from '../../common/editor_input';
@@ -34,7 +35,7 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<'gpu-debugger', 'gpu_d
 	public readonly detailsView: PropertyInspectorViewState = { selectionIndex: 0, selectionVisible: false, anchorIndex: 0, anchorOffset: 0 };
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
 	public following = true;
-	public running = false;
+	public readonly interaction = new InputInteraction();
 	public filter = '';
 	public view: GpuDebugView = 'geometry';
 	public selectedPoint = 0;

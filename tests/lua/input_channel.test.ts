@@ -8,6 +8,10 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
 import { inputFocus } from '../../ide/input/focus';
+import { createFrameRuntime } from '../helpers/frame_runtime';
+import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { RuntimeTransport } from '../../ide/runtime/transport';
 import { FrameBitmap } from '../../hosts/common/frame_bitmap';
 
 test('focused physical recipients are exclusive; the primary supervisor and host keys remain independent', t => {
@@ -39,12 +43,15 @@ test('focused physical recipients are exclusive; the primary supervisor and host
 });
 
 test('a game viewport focus attachment names its recipient and retains one bounds binding across layouts', t => {
-	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
+	const f = createRuntimeInspectionFixture(createFrameRuntime(), createScenarioTestSourceState([]));
+	const input = f.input;
+	const transport = new RuntimeTransport(f.runtime, f.execution, f.rewind, f.frameNavigation, () => true);
+	t.after(() => { f.frameNavigation.dispose(); f.presenter.dispose(); });
 	const channel = new InputChannel(input), parent = inputFocus.createTarget();
 	const frames = new FrameBitmap();
 	frames.publish(new Uint8Array(4), 1, 1, { presentationSequence: 0, cycles: 0, videoTick: 0 });
 	const presentation = { kind: 'offscreen', frames } as const;
-	const view = new GameInputControl(parent, channel, presentation);
+	const view = new GameInputControl(parent, channel, presentation, transport);
 	t.after(() => { view.dispose(); frames.dispose(); channel.dispose(); inputFocus.setTarget(null); input.dispose(); });
 	const bounds = { left: 1, top: 2, right: 100, bottom: 80 };
 	view.setInput(bounds); view.focusTarget.focus();

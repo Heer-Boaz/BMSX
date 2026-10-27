@@ -52,7 +52,7 @@ export class RomMapKeyWindow {
 			if (!isKeyJustPressed('Escape', event)) return false;
 			this.window.focusTarget.handleKeyboard(event);
 			return true;
-		}, this.window.clientScope.surfaceScope);
+		}, this.window.clientScope);
 		for (const command of ['window.collapse', 'window.hide'] as const)
 			this.scroll.focusTarget.registerCommand(command, this.window.focusTarget.getCommand(command)!);
 		this.scroll.focusTarget.previous = this.window.actionFocusTarget;

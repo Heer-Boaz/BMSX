@@ -1,5 +1,6 @@
 import type { EditorCommandRunner } from '../../../common/commands';
 import { InputFocusScope, inputFocus, type InputFocusTarget } from '../../../input/focus';
+import { InputInteraction } from '../../../input/interaction';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { beginNavigationCapture, captureNavigation, completeNavigation, navigationState, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
@@ -38,6 +39,7 @@ export class EditorGroupView {
 	private readonly disposeListeners = new Set<() => void>();
 
 	public constructor(factories: EditorPaneFactories, commands: EditorCommandRunner, private readonly closeEditors: CloseEditors) {
+		this.focusScope.interaction = new InputInteraction();
 		groupsByScope.set(this.focusScope, this);
 		groupsByScope.set(this.tabFocusTarget.scope, this);
 		this.focusScope.commands = commands;

@@ -1,4 +1,5 @@
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
+import { WorkbenchInteraction } from './workbench/services/execution/interaction';
 import { EditorCloseController } from './workbench/services/editor/editor_close';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { create_rect_bounds, write_rect_bounds } from '../machine/ts/common/rect';
@@ -72,7 +73,6 @@ import type { GraphLayoutEngineFactory } from './workbench/services/graph_layout
 import { SceneEditorController } from './workbench/contrib/scene_editor/controller';
 import { QuickInputController } from './workbench/services/quick_input/controller';
 import { SceneEditorPane } from './workbench/contrib/scene_editor/editor_pane';
-import type { HostAudioOutput } from '../hosts/common/audio_output';
 import type { Input } from '../hosts/common/input/manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { Clipboard, ClipboardTarget } from '../hosts/common/clipboard';
@@ -99,7 +99,7 @@ import {
 } from './editor/ui/view/configuration';
 import { editorViewState } from './editor/ui/view/state';
 import { updateBlink } from './editor/ui/inline/text_field';
-import { inputFocus } from './input/focus';
+import { inputFocus, InputFocusScope } from './input/focus';
 import type { KeyInputEvent, TextInputHost, TextInputTarget } from '../hosts/common/input/text';
 import { pointerHover } from './input/pointer/hover';
 import { pointerCapture } from './input/pointer/capture';
@@ -183,7 +183,7 @@ export type CartEditor = TextInputHost & {
 	readonly tools: WorkspaceToolService;
 	readonly diagnostics: ResourceDiagnosticsService;
 	readonly codeDocuments: CodeDocumentProjections;
-	readonly executionSuspended: boolean;
+	readonly interaction: WorkbenchInteraction;
 	readonly guestInputRecipient: InputRecipient | null;
 	readonly isAvailable: boolean;
 	readonly resourcePanel: ResourcePanelController;
@@ -239,6 +239,8 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly terminal: BiosTerminal;
 	public readonly runtimeTimeline: RuntimeTimelineControl;
 	public readonly gamePanel: GamePanel;
+	public readonly interaction: WorkbenchInteraction;
+	private readonly unbindTimelineInteraction: () => void;
 	private readonly activeListeners = new Set<(active: boolean) => void>();
 	private readonly pointerSnapshot: PointerInputSnapshot = { viewportX: 0, viewportY: 0, insideViewport: false, valid: false,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: 0, spaceDown: false };
@@ -248,14 +250,6 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.isActive) return this.input;
 		const viewport = inputFocus.admittedTarget?.guestInput;
 		return viewport === undefined ? null : viewport.recipient;
-	}
-	public get executionSuspended(): boolean {
-		// Automatic authoring hold only; explicit transport pause has a separate host owner.
-		return this.isActive && (this.actionPrompt.visible || this.quickInput.visible || this.contextMenu.visible
-			|| !this.debuggerState.plans.workbenchExecutionRequested
-			&& !(this.debuggerState.executionContext === 'workbench' && this.debuggerState.source.stop === undefined)
-			&& !(this.editorGroup.panes.activePane?.runtimeTransport === this.commands.transport && this.editorGroup.panes.activePane.suspendsRuntime === false)
-			&& inputFocus.target?.guestInput?.recipient !== this.input);
 	}
 	public readonly isAvailable: boolean;
 	public readonly resourcePanel: ResourcePanelController;
@@ -352,7 +346,6 @@ export class RuntimeCartEditor implements CartEditor {
 		presenter: VideoPresenter,
 		display: EditorDisplay,
 		input: Input,
-		audioOutput: HostAudioOutput,
 		clock: HostClock,
 		clipboard: Clipboard,
 		logOutput: LogOutput,
@@ -392,6 +385,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.debuggerState = debuggerState;
 		this.overlayRenderer = overlayRenderer;
 		this.isAvailable = runtimeSourcesSupportIde(this.sources);
+		this.interaction = new WorkbenchInteraction(inputFocus, workbench.transport);
 		this.editorClose = new EditorCloseController(this.editorGroups, textFileSaves, this.actionPrompt, editorTextModelService);
 		this.commands = new IdeCommandController(
 			this,
@@ -405,7 +399,6 @@ export class RuntimeCartEditor implements CartEditor {
 			overlayRenderer,
 			workbench.transport,
 			workbench.runTargets,
-			audioOutput,
 			clock,
 			logOutput,
 			textFileSaves,
@@ -423,7 +416,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.surfaces, this.paneSurface, workArea, group.focusScope),
 			gpu_debugger: group => new GpuDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
 			gte_debugger: group => new GteDebuggerPane(this.quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			terminal: group => new TerminalPane(this.terminal, input, presenter, group.focusScope),
+			terminal: group => new TerminalPane(this.terminal, input, presenter, group.focusScope, workbench.transport),
 			conversation_observer: group => new ConversationObserverPane(decodeImage, this.surfaces, this.paneSurface, this.commands, group.focusScope),
 			assistant: group => new AssistantPane(this.clipboard, group, this.assistantCommands, decodeImage,
 				this.surfaces, this.paneSurface, this.commands, this.contextMenu, workArea, group.focusScope),
@@ -442,8 +435,8 @@ export class RuntimeCartEditor implements CartEditor {
 			),
 			resource_view: group => new ResourceViewerEditorPane(group.focusScope),
 			aem_editor: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			lua_program: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
-			behavior_lens: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, frameNavigation, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			lua_program: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
+			behavior_lens: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
 			actor_lab: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, this.paneSurface, workArea, group.focusScope),
 			game_view: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope),
 			cart_map: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, this.paneSurface, workArea, group, group.focusScope),
@@ -456,6 +449,10 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorGroups.push(this.editorGroup);
 		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, () => this.editorGroup.panes.activePane?.focus());
 		this.runtimeTimeline.focusScope.surfaceScope = this.chromeScope;
+		this.unbindTimelineInteraction = inputFocus.onDidActivateInteraction(target => {
+			const scope = target.scope.runtimeOwner;
+			if (this.isActive && scope !== undefined) this.runtimeTimeline.setContext(scope.runtime);
+		});
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
 		this.surfaces = new WorkbenchSurfaceService(this.onSurfaceChange);
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture, this.attachContextMenuSession);
@@ -514,8 +511,8 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources.catalog,
 		);
 
-		this.gamePanel = new GamePanel(this.editorGroup.panes, this.commands, this.contextMenu, input, presenter);
-		this.gamePanel.focusScope.surfaceScope = this.chromeScope;
+		this.gamePanel = new GamePanel(this.editorGroup.panes, this.commands, this.contextMenu, input, presenter,
+			new InputFocusScope(this.chromeScope, inputFocus.workbenchScope));
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.editorGroup, this.quickInput, this.clipboard);
 		this.navigation = new EditorNavigationController(
 			this.sources.catalog,
@@ -539,6 +536,7 @@ export class RuntimeCartEditor implements CartEditor {
 			createGraphLayoutEngine,
 			guest,
 			rewind,
+			workbench.transport,
 		);
 		this.scenarioLab = new ScenarioLabController(
 			this,
@@ -549,7 +547,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.play,
 		);
 		this.aemEditor = new AemEditorController(sources, this.quickInput, guest, runtime, runtimeTasks);
-		this.luaPrograms = new LuaProgramController(sources, guest, this.navigation, this.quickInput, rewind);
+		this.luaPrograms = new LuaProgramController(sources, guest, this.navigation, this.quickInput, rewind, workbench.transport);
 		this.actionStrings = new ActionStringTester(sources.catalog, clock, this.quickInput, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {
 			home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.context) },
@@ -673,6 +671,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const activeTab = this.editorGroup.model.activeTab;
 		if (activeTab !== null) this.editorGroup.activate(activeTab.id);
 		editorRuntimeState.active = true;
+		this.interaction.setActive(true);
 		if (!wasActive) this.enterRenderTargets();
 		this.diagnostics.setEnabled(true);
 		this.overlayRenderer.active = true;
@@ -706,6 +705,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public deactivate(): void {
+		this.interaction.setActive(false);
 		this.menubar.cancelAlt();
 		pointerCapture.cancel();
 		this.input.setPointerAdmissionMode('physical');
@@ -759,9 +759,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.menubar.update();
 		this.editorGroup.tabStrip.update(editorRuntimeState.currentTimeMs);
 		this.layoutEditorTabStrip();
-		const pane = this.editorGroup.panes.activePane;
-		if (pane?.runtimeControlContext !== undefined) this.runtimeTimeline.setContext(pane.runtimeControlContext, pane.runtimeTransport);
-		else this.runtimeTimeline.setContext(this.gamePanel.runtimeControlContext, this.gamePanel.runtimeTransport);
 		editorChromeState.runtimeTimelineHeight = this.runtimeTimeline.height;
 		let layoutChanged = refreshWorkbenchLayout();
 		if (this.resourcePanel.refresh()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
@@ -837,6 +834,8 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		this.interaction.dispose();
+		this.unbindTimelineInteraction();
 		this.editorClose.dispose();
 		inputFocus.workbenchScope.commands = undefined;
 		this.unbindHostInput();

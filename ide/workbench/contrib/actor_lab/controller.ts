@@ -99,7 +99,7 @@ export class ActorLabController {
 	public auditionEvent(domain: ResourceDomain, name: string): void {
 		const input = this.resolveInput();
 		if (!this.group.openEditor(input)) return;
-		input.running = false;
+		input.interaction.running = false;
 		if (input.domain === domain) this.refresh(input);
 		if (input.domain !== domain || input.actorHashId === 0) this.selectActor(input, () => { this.refresh(input); this.emitEvent(input, name); }, domain);
 		else this.emitEvent(input, name);
@@ -117,7 +117,7 @@ export class ActorLabController {
 			input.follow.stop(); input.stateGraph = undefined; input.presentation = 'outline'; input.historical = false;
 			input.actorHashId = actorHashId;
 			input.selectionPath = undefined;
-			input.running = false; input.dirty = true;
+			input.interaction.running = false; input.dirty = true;
 			this.refresh(input);
 			const effect = input.runtime.roots[0]?.children.find(node => node.hashId === componentHashId)?.children
 				.find(node => node.hashId === effectHashId && this.guest.matchesIdentity(node.key, key));
@@ -160,7 +160,7 @@ export class ActorLabController {
 	}
 
 	public restoreSelection(input: ActorLabInput, selection: ActorLabNavigationSelection, font: BFont): void {
-		input.running = false;
+		input.interaction.running = false;
 		input.timeline.clear();
 		input.follow.stop();
 		const previousGraph = input.stateGraph;
@@ -204,7 +204,7 @@ export class ActorLabController {
 	}
 
 	public selectActor(input: ActorLabInput, accepted?: () => void, domain = this.cpu.activeCartridgeSlot()): void {
-		input.running = false;
+		input.interaction.running = false;
 		this.quickInput.pick('RUNNING ACTORS', 'Choose the actual instance to experiment with',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
@@ -215,13 +215,13 @@ export class ActorLabController {
 			});
 	}
 	public inspectActor(input: ActorLabInput, domain: ResourceDomain, hashId: number): void {
-		input.running = false; input.timeline.clear();
+		input.interaction.running = false; input.timeline.clear();
 		input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = this.rewind.active;
 		input.domain = domain; input.actorHashId = hashId; input.selectionPath = undefined; input.dirty = true;
 		this.refresh(input); this.projection.reveal(input.runtime.roots[0]);
 	}
 	public findMember(input: ActorLabInput, accepted: () => void): void {
-		input.running = false;
+		input.interaction.running = false;
 		this.quickInput.pick('FIND IN ACTOR', 'Find a member by name, kind or owner path', (_origin, lifetime) => {
 			lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 			return createActorMemberChoices(input.runtime.roots, this.selected(input));
@@ -353,7 +353,7 @@ export class ActorLabController {
 	}
 	public revealPinnedProperty(input: ActorLabInput, item: ActorDetailsProperty): void {
 		const target = item.watch!.target;
-		input.running = false;
+		input.interaction.running = false;
 		input.follow.stop(); input.stateGraph = undefined; input.presentation = 'outline';
 		input.domain = target.domain; input.actorHashId = target.actorHashId;
 		input.selectionPath = undefined; input.dirty = true;
@@ -363,7 +363,7 @@ export class ActorLabController {
 	}
 
 	public actions(input: ActorLabInput): void {
-		input.running = false;
+		input.interaction.running = false;
 		const node = this.selected(input)!;
 		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, node, this.guest);
 		const items = actorActions(node).map(action => ({ ...action, detail: '' }));
@@ -382,7 +382,7 @@ export class ActorLabController {
 	}
 
 	public callMethod(input: ActorLabInput): void {
-		input.running = false;
+		input.interaction.running = false;
 		const node = this.selected(input)!;
 		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, node, this.guest);
 		this.quickInput.pick(`CALL / ${node.label}`, 'Stored Lua functions; selected instance is passed as self',
@@ -406,7 +406,7 @@ export class ActorLabController {
 			|| node.kind === 'state' && node.path !== undefined);
 	}
 	public emitEvent(input: ActorLabInput, eventName = ''): void {
-		input.running = false;
+		input.interaction.running = false;
 		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, input.runtime.roots[0], this.guest);
 		this.quickInput.input('EMIT FROM ACTOR', 'Event name', eventName, async text => text, name => {
 			this.quickInput.input(`PAYLOAD / ${name}`, 'Lua literal', '{}', async text => prepareLuaLiteral(text), payload => {
@@ -420,7 +420,7 @@ export class ActorLabController {
 	}
 
 	public spawn(input: ActorLabInput): void {
-		input.running = false;
+		input.interaction.running = false;
 		const prefab = readRuntimeLuaModuleExport(this.sources, this.guest, input.domain, 'cartlib/world/prefab');
 		const choices: (QuickPickItem & { id: SuspendedValueIdentity; definition: SuspendedValueIdentity })[] = [];
 		if (prefab.kind === 'value' && prefab.value !== null) {

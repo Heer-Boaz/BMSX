@@ -9,7 +9,7 @@ import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { PlayRuntimeSession } from './play_runtime';
 import { activateEditor } from './overlay_modes';
 import type { HostRewind } from '../../hosts/common/rewind';
-import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
+import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { createRuntimeSourceState, type RuntimeSourceBindings } from '../runtime/sources';
@@ -94,13 +94,11 @@ export async function prepareWorkbenchRuntime(
 	);
 	ide.editor.onDidChangeActive(active => {
 		if (active) hostMenu.dismiss();
-		execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
-		audioOutput.muteUi(ide.editor.executionSuspended);
 	});
 	const startup = ide.boots.start(startupSource).result!;
 	if (startup.status === 'rejected' || startup.status === 'failed') {
 		ide.editor.handleRuntimeTaskError(startup.error, 'Startup failed');
-		activateEditor(ide.editor, sources, runtime, audioOutput);
+		activateEditor(ide.editor, sources, runtime);
 	}
 	return ide;
 }

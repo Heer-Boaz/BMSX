@@ -125,7 +125,6 @@ export async function initializeIdeFeatures(
 		connectAssistant,
 		observeConversation,
 	);
-	audioOutput.muteUi(state.editor.executionSuspended);
 	if (!editorAvailable) {
 		disposeShortcutHandlers(state);
 		return state;
@@ -138,7 +137,7 @@ export async function initializeIdeFeatures(
 		rejectedDirtyPaths,
 	);
 	if (state.editor.editorGroup.model.tabs.length === 0) openHome(state.editor.editorGroup, workspaceState.context);
-	registerRuntimeShortcuts(state, runtime, input, audioOutput);
+	registerRuntimeShortcuts(state, runtime, input);
 	return state;
 }
 
@@ -146,7 +145,6 @@ export function registerRuntimeShortcuts(
 	state: RuntimeIdeState,
 	runtime: Runtime,
 	input: Input,
-	audioOutput: HostAudioOutput,
 ): void {
 	disposeShortcutHandlers(state);
 	const registry = input.getGlobalShortcutRegistry();
@@ -159,7 +157,6 @@ export function registerRuntimeShortcuts(
 			state.sources,
 			state.overlayRenderer,
 			runtime,
-			audioOutput,
 		) },
 	));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {

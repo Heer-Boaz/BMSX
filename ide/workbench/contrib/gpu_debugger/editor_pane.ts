@@ -77,9 +77,9 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 		this.list.onWillScroll = () => { this.input.following = false; };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.list.focusTarget.registerCommand('list.find', this.focusTarget.getCommand('gpu.filter')!);
-		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { this.input.running = commands.transport.togglePlayback(); } });
+		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { this.input.interaction.running = commands.transport.togglePlayback(); } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) this.focusTarget.registerCommand(command, {
-			isEnabled: () => navigation.canStep(direction), run: () => { this.input.running = false; navigation.step(direction); },
+			isEnabled: () => navigation.canStep(direction), run: () => { this.input.interaction.running = false; navigation.step(direction); },
 		});
 		for (const command of CLIENT_COMMANDS) this.list.focusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput, run: () => this.showContextMenu(this.input.list.bounds.left, this.input.list.bounds.top, true) });
@@ -88,12 +88,11 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 		this.actions.focusTarget.previous = this.list.focusTarget; this.actions.focusTarget.next = this.list.focusTarget;
 		this.list.focusTarget.previous = this.actions.focusTarget; this.list.focusTarget.next = this.actions.focusTarget;
 	}
-	public override get suspendsRuntime(): boolean { return !this.input.running; }
-	public override get runtimeControlContext() { return this.focusTarget; }
-	public override get runtimeTransport() { return this.commands.transport; }
-	public override setRuntimeCaptureRunning(running: boolean): void { this.input.running = running; }
 	public override get commandTarget() { return this.list.focusTarget; }
 	protected override activate(): void {
+		this.input.interaction.setRuntime(this.commands.transport);
+		this.focusTarget.scope.interaction = this.input.interaction;
+		this.focusTarget.scope.runtime = { target: this.focusTarget, interaction: this.input.interaction };
 		this.freshLayout = true; this.historyRevision = -1; this.selectedRevision = -1;
 		this.actions.setInput(this.input.actions, this.focusTarget); this.list.setInput(this.input.list);
 		this.tooltip.attach(this.surfaces, this.paneSurface, this.workArea);
@@ -106,7 +105,8 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 		this.update();
 	}
 	public override clearInput(): void {
-		this.input.running = false; this.retireMenu();
+		this.input.interaction.setRuntime(null);
+		this.retireMenu();
 		if (this.filterSession !== undefined) this.quickInput.hide();
 		this.unbindSelection!(); this.unbindSelection = undefined;
 		this.details!.dispose(); this.details = undefined; this.tooltip.detach();
@@ -146,7 +146,7 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 			case 'gpu.clear': input.clear(); break;
 			case 'gpu.details': input.following = false; this.details!.show(); break;
 			case 'gpu.goToFrame': {
-				input.running = false; const sequence = input.selected.sequence;
+				input.interaction.running = false; const sequence = input.selected.sequence;
 				void this.navigation.seek(input.selected.cycles).completion.then(result => showEditorMessage(result.status === 'completed'
 					? `Frame ${result.after.videoTick} at/before observation #${sequence}` : `GPU: ${result.status}`, 'info', 4)); break;
 			}

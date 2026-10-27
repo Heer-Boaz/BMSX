@@ -284,6 +284,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean, secondary: boolean, now: number, goto: boolean): void {
+		if (snapshot.valid && snapshot.insideViewport && snapshot.justPressedButtons !== 0) this.code.focusTarget.activate();
 		this.code.acceptPointerInput(snapshot);
 		if (handleQuickInputPointer(this.find, this.rename, this.lineJump, this.bars, snapshot, justPressed)) return;
 		if (this.code.scrollbarController.begin(CODE_SCROLLBARS, snapshot, this.code.lineHeight)) return;

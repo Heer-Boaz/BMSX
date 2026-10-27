@@ -118,7 +118,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		browserInput.setNativeWheelHandler(event => ide.editor.dispatchWheel(event));
 	}
 	const output = new SystemOutputLog();
-	const harness = createHeadlessIdeHarness(ide, runtime, audio, log);
+	const harness = createHeadlessIdeHarness(ide, runtime, log);
 	const history = runtime.history;
 	const cycles = () => runtime.machine.scheduler.currentNowCycles();
 	const frame = async () => {

@@ -1,3 +1,4 @@
+import { InputInteraction } from '../../../input/interaction';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
@@ -7,7 +8,7 @@ import type { IdeCommandController } from '../../../commands/controller';
 import { measureText } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorFont } from '../../../editor/ui/view/font';
-import { inputFocus } from '../../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -33,13 +34,14 @@ const SPLIT_GAP = 4;
 export class GamePanel {
 	public enabled = false;
 	public visible = false;
+	private attached = false;
 	private readonly bounds = create_rect_bounds();
 	private readonly frame = create_rect_bounds();
 	private readonly split = new WorkbenchSplitView(0.58);
-	private readonly focusTarget = inputFocus.createTarget(null);
-	public readonly focusScope = this.focusTarget.scope;
+	private readonly focusTarget: InputFocusTarget;
 	private readonly gameInput: GameInputControl;
-	private readonly sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
+	private readonly runtimeContext = new InputInteraction();
+	private readonly sash: WorkbenchSplitControl;
 	private readonly actionBar = createWorkbenchActionBar('gamePanel.title');
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly unbindKeyboard: () => void;
@@ -48,17 +50,13 @@ export class GamePanel {
 	private minimumWidth = 0;
 	private minimumHeight = 0;
 	private headerBottom = 0;
-	/** The requested primary scanout part retains its physical target while presentation is constrained. */
-	public get runtimeControlContext() {
-		return this.enabled && this.panes.activePane?.companionGameMinimumWidth !== undefined ? this.focusTarget : undefined;
-	}
-	public get runtimeTransport() {
-		return this.enabled && this.panes.activePane?.companionGameMinimumWidth !== undefined ? this.commands.transport : undefined;
-	}
 
 	public constructor(private readonly panes: EditorPanes, private readonly commands: IdeCommandController,
-		private readonly contextMenu: ContextMenuController, recipient: InputRecipient, presenter: VideoPresenter) {
-		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter });
+		private readonly contextMenu: ContextMenuController, recipient: InputRecipient, presenter: VideoPresenter,
+		public readonly focusScope: InputFocusScope) {
+		this.focusTarget = inputFocus.createTarget(null, focusScope);
+		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
+		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter }, commands.transport);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focusTarget.focus());
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {
 			if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.close(); }
@@ -83,9 +81,17 @@ export class GamePanel {
 	}
 
 	private detach(): void {
+		this.attached = false;
+		this.focusScope.interaction = undefined; this.focusScope.runtime = undefined;
+		this.hidePresentation();
+		this.runtimeContext.setRuntime(null);
+		this.focusScope.retireContext();
+	}
+	private hidePresentation(): void {
 		const ownsFocus = this.focusTarget.hasFocus || this.sash.focusTarget.hasFocus || this.actions.focusTarget.hasFocus || this.gameInput.focusTarget.hasFocus;
+		this.visible = false;
 		this.gameInput.clearInput();
-		this.sash.clearInput(); this.actions.clearInput(); this.focusTarget.release(); this.visible = false;
+		this.sash.clearInput(); this.actions.clearInput(); this.focusTarget.release();
 		if (ownsFocus) this.panes.activePane?.focus();
 	}
 	public dispose(): void {
@@ -97,6 +103,14 @@ export class GamePanel {
 	public update(): boolean {
 		const pane = this.panes.activePane;
 		const minimumClientWidth = this.enabled ? pane?.companionGameMinimumWidth : undefined;
+		const attached = minimumClientWidth !== undefined;
+		if (attached !== this.attached) {
+			if (attached) {
+				this.attached = true;
+				this.runtimeContext.setRuntime(this.commands.transport);
+				this.focusScope.interaction = null; this.focusScope.runtime = { target: this.focusTarget, interaction: this.runtimeContext };
+			} else this.detach();
+		}
 		const font = editorViewState.font;
 		if (minimumClientWidth !== undefined && this.minimumFont !== font) {
 			this.minimumFont = font;
@@ -109,17 +123,17 @@ export class GamePanel {
 			&& editorViewState.viewportWidth - editorViewState.editorAreaLeft >= minimumClientWidth + this.minimumWidth + SPLIT_GAP
 			&& editorViewState.editorAreaBottom - topMargin() >= this.minimumHeight;
 		if (visible !== this.visible) {
-			if (visible) { this.sash.setInput(this.split); this.actions.setInput(this.actionBar, this.focusTarget); this.gameInput.setInput(this.frame); }
-			else this.detach();
+			if (visible) {
+				this.visible = true;
+				this.sash.setInput(this.split); this.actions.setInput(this.actionBar, this.focusTarget); this.gameInput.setInput(this.frame);
+			}
+			else this.hidePresentation();
 			this.visible = visible;
 		}
 		const previousInset = editorChromeState.editorRightInset;
 		if (!visible) { editorChromeState.editorRightInset = 0; return previousInset !== 0; }
 		this.split.minimumFirstSize = minimumClientWidth + SPLIT_GAP / 2;
 		this.split.minimumSecondSize = this.minimumWidth + SPLIT_GAP / 2;
-		this.focusTarget.commandContext = pane.runtimeControlContext ?? this.focusTarget;
-		this.sash.focusTarget.commandContext = this.focusTarget.commandContext;
-		this.actions.setInput(this.actionBar, this.focusTarget.commandContext);
 		this.split.layout(editorViewState.editorAreaLeft, topMargin(), editorViewState.viewportWidth, editorViewState.editorAreaBottom);
 		const left = this.split.position + SPLIT_GAP / 2, top = this.split.bounds.top;
 		const right = this.split.bounds.right, bottom = this.split.bounds.bottom;
@@ -166,7 +180,8 @@ export class GamePanel {
 		return true;
 	}
 	private openContextMenu(x: number, y: number, keyboard: boolean): void {
+		this.focusTarget.activate();
 		this.contextMenu.show(x, y, WORKBENCH_MENUS['gamePanel.context'], this.commands,
-			{ invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget.commandContext, selectFirst: keyboard });
+			{ invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget, selectFirst: keyboard });
 	}
 }
