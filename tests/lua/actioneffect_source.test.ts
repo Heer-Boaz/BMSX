@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LuaSyntaxKind, LuaTableFieldKind } from '../../toolchain/ts/lua/syntax/ast';
@@ -11,7 +12,7 @@ import { installBehaviorLensDocument, selectBehaviorLensDefinition } from '../..
 import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavior_lens/source_correspondence';
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../helpers/actioneffect_source_fixture';
 
-const resource = { sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 function document(source: string) {
 	return buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/actioneffects'])));
 }

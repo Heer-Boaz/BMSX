@@ -4,9 +4,8 @@ import { LuaSourceCorrespondence } from '../../toolchain/ts/lua/semantic/source_
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import type { ProgramObjectImage } from '../../toolchain/ts/lua/compiler/program_object';
-import { collectProgramSources, type ProgramSourceModule, type ProgramSources } from './program_sources';
+import { collectProgramSources, collectInstalledProgramSources, type ProgramSourceModule, type ProgramSources } from './program_sources';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
-import { advanceLuaSourceRevision, type LuaSourceRegistry } from './source_registry';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
@@ -16,7 +15,6 @@ import {
 	createBlua32SourceImage,
 	createBlua32SystemSourceImage,
 	installRuntimeRomLayers,
-	resolveRuntimeLuaSource,
 	type Blua32SourceImage,
 	type Blua32SourceMedia,
 	type RuntimeSourceState,
@@ -45,7 +43,9 @@ import {
 } from '../../toolchain/ts/rompack/asset_symbols';
 import {
 	ROM_ASSET_SYMBOL_MODULE_PATH,
+	ROM_ASSET_SYMBOL_SOURCE_PATH,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
+	SYSTEM_ASSET_SYMBOL_SOURCE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import type {
@@ -64,6 +64,7 @@ export type RebuiltBlua32Image<
 > = {
 	linked: TLinkedImage;
 	sourceSelection: 'workspace' | 'installed';
+	sourceRevision: number;
 	previousImage: Blua32ImageLayout;
 	previousSymbols: Blua32SymbolsImage;
 	sources: ReadonlyMap<string, string>;
@@ -100,15 +101,35 @@ export type RuntimeRomAssetEditBatch = readonly [
 	cartridgeSlot1: ReadonlyArray<RomAssetEdit>,
 ];
 
-export function blua32MediaRequiresRebuild(sources: RuntimeSourceState): boolean {
-	return sources.systemBlua32MediaDirty
-		|| sources.cartridgeBlua32MediaDirty[0]
-		|| sources.cartridgeBlua32MediaDirty[1];
+/** Command-boundary comparison against each attachment's actual compiled members. */
+export function blua32InstallationNeedsRebuild(sources: RuntimeSourceState, domain: -1 | 0 | 1): boolean {
+	const attachment = domain === -1 ? null : sources.cartridgeSlots[domain];
+	if (domain !== -1 && attachment === null) return false;
+	const context = sources.catalog.getContext(domain === -1 ? sources.systemContextId : attachment!.contextId);
+	if ((domain === -1 ? sources.systemBlua32MediaDirty : sources.cartridgeBlua32MediaDirty[domain])
+		|| context.programRevision !== (domain === -1 ? sources.systemSourceRevision : attachment!.installedSourceRevision)) return true;
+	const installed = domain === -1 ? sources.systemInstalledBlua32Sources : attachment!.installedBlua32Sources;
+	for (const [module, text] of installed) {
+		const record = context.luaSources.module2lua[module];
+		if (record === undefined || !record.generated && readWorkspaceLuaSourceText(context.luaSources, record) !== text) return true;
+	}
+	return false;
 }
 
-function prepareRegistryProgramSources(
+export function blua32MediaRequiresRebuild(sources: RuntimeSourceState): boolean {
+	return blua32InstallationNeedsRebuild(sources, -1) || blua32InstallationNeedsRebuild(sources, 0) || blua32InstallationNeedsRebuild(sources, 1);
+}
+
+/** Publish workspace rebuild selections for these physical installations only. */
+export function prepareBlua32SourceBuildRequest(sources: RuntimeSourceState): Blua32BuildRequest {
+	return { system: blua32InstallationNeedsRebuild(sources, -1) ? 'workspace' : null,
+		cartridgeSlots: [blua32InstallationNeedsRebuild(sources, 0) ? 'workspace' : null, blua32InstallationNeedsRebuild(sources, 1) ? 'workspace' : null] };
+}
+
+function prepareBlua32ProgramSources(
 	programSources: ProgramSources,
 	assetModulePath: string,
+	assetSourcePath: string,
 	assetModule: RomAssetSymbolModule,
 ): {
 	entry: ProgramSourceModule;
@@ -117,10 +138,13 @@ function prepareRegistryProgramSources(
 	diagnosticSources: Map<string, Blua32DiagnosticSource>;
 	entrySourcePath: string;
 } {
-	const generated = programSources.modules.find(module => module.path === assetModulePath)!;
-	generated.source = assetModule.source;
-	generated.chunk = parseLuaChunk(assetModule.source, assetModulePath).chunk;
-	generated.linkValues = assetModule.linkValues;
+	// This build's asset directory owns its generated module, independently of
+	// whether the preceding executable included an asset-symbol compiler input.
+	const generated: ProgramSourceModule = { path: assetModulePath, sourcePath: assetSourcePath,
+		source: assetModule.source, chunk: parseLuaChunk(assetModule.source, assetModulePath).chunk, linkValues: assetModule.linkValues };
+	const generatedIndex = programSources.modules.findIndex(module => module.path === assetModulePath);
+	if (generatedIndex === -1) programSources.modules.push(generated);
+	else programSources.modules[generatedIndex] = generated;
 	const entryPath = programSources.entry.path;
 	const entrySource = programSources.entry.source;
 	const modules = programSources.modules;
@@ -176,29 +200,6 @@ function applyLinkedAssetModule(
 	});
 }
 
-function commitInstalledBlua32Sources(
-	registry: LuaSourceRegistry,
-	installedSources: ReadonlyMap<string, string>,
-): void {
-	let changed = false;
-	for (let index = 0; index < registry.records.length; index += 1) {
-		const record = registry.records[index];
-		if (!record.generated) {
-			continue;
-		}
-		const source = installedSources.get(record.module_path)!;
-		if (record.src === source) {
-			continue;
-		}
-		record.src = source;
-		record.base_src = source;
-		changed = true;
-	}
-	if (changed) {
-		advanceLuaSourceRevision(registry);
-	}
-}
-
 export function buildBlua32Media(
 	sources: RuntimeSourceState,
 	ramByteCount: number,
@@ -207,7 +208,8 @@ export function buildBlua32Media(
 	assetEdits?: RuntimeRomAssetEditBatch,
 	entry?: Blua32CartridgeEntry,
 ): RebuiltBlua32Media {
-	const systemRegistry = sources.systemLuaSources;
+	const systemContext = sources.catalog.getContext(sources.systemContextId);
+	const systemRegistry = systemContext.luaSources;
 	const cartridgeImageOffsets: [number, number] = [0, 0];
 	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
 		const cartridge = sources.cartridgeSlots[slot];
@@ -222,9 +224,10 @@ export function buildBlua32Media(
 	if (request.system !== null) {
 		const imageOffset = sources.systemRom.header.blua32ImageOffset;
 		const imageAddress = SYSTEM_ROM_BASE + imageOffset;
-		const selected = collectProgramSources(systemRegistry, systemRegistry.entrySourcePath,
-			[...installedSystem.symbols!.metadata.preloadModules, ...BIOS_FUNCTION_EXPORTS.map(exported => exported.path)],
-			request.system === 'workspace' ? { kind: 'workspace' } : { kind: 'installed', sources: sources.systemInstalledBlua32Sources });
+		const selected = request.system === 'workspace'
+			? collectProgramSources(systemRegistry, systemRegistry.entrySourcePath,
+				[...installedSystem.symbols!.metadata.preloadModules, ...BIOS_FUNCTION_EXPORTS.map(exported => exported.path)])
+			: collectInstalledProgramSources(installedSystem.sources, installedSystem.symbols!.metadata.compiledModulePaths);
 		const assetChanges: Blua32PublicAssetChanges = request.system === 'workspace'
 			? buildLuaSourceAssetChanges(sources.systemRom, systemRegistry, sources.systemInstalledBlua32Sources, selected.parsed, assetEdits?.[0])
 			: { assetEdits: assetEdits?.[0] };
@@ -233,9 +236,10 @@ export function buildBlua32Media(
 			installedSystem.layout.bytes.byteLength,
 			assetChanges,
 		);
-		const programSources = prepareRegistryProgramSources(
+		const programSources = prepareBlua32ProgramSources(
 			selected,
 			SYSTEM_ASSET_SYMBOL_MODULE_PATH,
+			SYSTEM_ASSET_SYMBOL_SOURCE_PATH,
 			buildRelocatableRomAssetSymbolModule(
 				publicAssets.entries,
 				sources.systemRom.id,
@@ -268,6 +272,7 @@ export function buildBlua32Media(
 		rebuiltSystem = {
 			linked,
 			sourceSelection: request.system,
+			sourceRevision: request.system === 'workspace' ? systemContext.programRevision : sources.systemSourceRevision,
 			previousImage: installedSystem.layout,
 			previousSymbols: installedSystem.symbols!,
 			sources: programSources.sources,
@@ -291,20 +296,23 @@ export function buildBlua32Media(
 		const installed = sources.currentBlua32Media.cartridgeSlots[slot]!;
 		// A BIOS relink must not admit pending cart edits merely because its imports changed.
 		const sourceSelection = request.cartridgeSlots[slot] ?? 'installed';
-		const selected = collectProgramSources(cartridge.luaSources, entry?.domain === slot ? entry.sourcePath : cartridge.luaSources.entrySourcePath,
-			installed.symbols!.metadata.preloadModules,
-			sourceSelection === 'workspace' ? { kind: 'workspace' } : { kind: 'installed', sources: cartridge.installedBlua32Sources });
+		const context = sources.catalog.getContext(cartridge.contextId);
+		const selected = sourceSelection === 'workspace'
+			? collectProgramSources(context.luaSources, entry?.domain === slot ? entry.sourcePath : context.luaSources.entrySourcePath,
+				installed.symbols!.metadata.preloadModules)
+			: collectInstalledProgramSources(installed.sources, installed.symbols!.metadata.compiledModulePaths);
 		const assetChanges: Blua32PublicAssetChanges = sourceSelection === 'workspace'
-			? buildLuaSourceAssetChanges(cartridge.rom, cartridge.luaSources, cartridge.installedBlua32Sources, selected.parsed, assetEdits?.[slot + 1])
+			? buildLuaSourceAssetChanges(cartridge.rom, context.luaSources, cartridge.installedBlua32Sources, selected.parsed, assetEdits?.[slot + 1])
 			: { assetEdits: assetEdits?.[slot + 1] };
 		const compileAssets = layoutBlua32PublicAssets(
 			cartridge.rom,
 			installed.layout.bytes.byteLength,
 			assetChanges,
 		);
-		const programSources = prepareRegistryProgramSources(
+		const programSources = prepareBlua32ProgramSources(
 			selected,
 			ROM_ASSET_SYMBOL_MODULE_PATH,
+			ROM_ASSET_SYMBOL_SOURCE_PATH,
 			buildRelocatableRomAssetSymbolModule(
 				compileAssets.entries,
 				cartridge.rom.id,
@@ -357,6 +365,7 @@ export function buildBlua32Media(
 		rebuiltCartridgeSlots[slot] = {
 			linked,
 			sourceSelection,
+			sourceRevision: sourceSelection === 'workspace' ? context.programRevision : cartridge.installedSourceRevision,
 			previousImage: installed.layout,
 			previousSymbols: installed.symbols!,
 			sources: programSources.sources,
@@ -408,7 +417,7 @@ export function layoutBlua32MediaInstallation(
 			rebuilt.system!.linked.layout,
 			rebuilt.system!.linked.symbols,
 			rebuilt.system!.linked.biosImports,
-			compiledBlua32Sources(rebuilt.system!.diagnosticSources),
+			compiledBlua32Sources(rebuilt.system!.diagnosticSources), sources.systemContextId,
 		);
 	}
 	for (let slot = 0; slot < cartridgeLayers.length; slot += 1) {
@@ -419,7 +428,7 @@ export function layoutBlua32MediaInstallation(
 		cartridgeImages[slot] = createBlua32SourceImage(
 			rebuilt.cartridgeSlots[slot]!.linked.layout,
 			rebuilt.cartridgeSlots[slot]!.linked.symbols,
-			compiledBlua32Sources(rebuilt.cartridgeSlots[slot]!.diagnosticSources), slot as 0 | 1,
+			compiledBlua32Sources(rebuilt.cartridgeSlots[slot]!.diagnosticSources), sources.cartridgeSlots[slot]!.contextId,
 		);
 	}
 	return {
@@ -445,8 +454,7 @@ export function installBlua32Media(
 	installRuntimeRomLayers(sources, systemLayer, cartridgeLayers);
 	if (systemLayer !== null) {
 		runtime.machine.memory.installSystemRom(systemLayer.bytes);
-		commitInstalledBlua32Sources(sources.systemLuaSources, rebuilt.system!.sources);
-		sources.systemLuaSources.entrySourcePath = rebuilt.system!.entrySourcePath;
+		sources.systemSourceRevision = rebuilt.system!.sourceRevision;
 		sources.systemInstalledBlua32Sources = rebuilt.system!.sources;
 		if (rebuilt.system!.sourceSelection === 'workspace') sources.systemBlua32MediaDirty = false;
 	}
@@ -457,11 +465,7 @@ export function installBlua32Media(
 		}
 		const cartridge = sources.cartridgeSlots[slot]!;
 		runtime.machine.cartridgeController.installRom(slot, layer.bytes);
-		commitInstalledBlua32Sources(
-			cartridge.luaSources,
-			rebuilt.cartridgeSlots[slot]!.sources,
-		);
-		cartridge.luaSources.entrySourcePath = rebuilt.cartridgeSlots[slot]!.entrySourcePath;
+		cartridge.installedSourceRevision = rebuilt.cartridgeSlots[slot]!.sourceRevision;
 		cartridge.installedBlua32Sources = rebuilt.cartridgeSlots[slot]!.sources;
 		if (rebuilt.cartridgeSlots[slot]!.sourceSelection === 'workspace') sources.cartridgeBlua32MediaDirty[slot] = false;
 	}
@@ -477,16 +481,12 @@ export function prepareBlua32MediaBoot(
 ): Blua32MediaInstallation | null {
 	let installation: Blua32MediaInstallation | null = null;
 	if (rebuildBlua32Media || entry !== undefined) {
+		const request = prepareBlua32SourceBuildRequest(sources);
 		const rebuilt = buildBlua32Media(
 			sources,
 			runtime.machine.memory.ramByteCount(),
-			{
-				system: sources.systemBlua32MediaDirty ? 'workspace' : null,
-				cartridgeSlots: [
-					sources.cartridgeBlua32MediaDirty[0] || entry?.domain === 0 ? 'workspace' : null,
-					sources.cartridgeBlua32MediaDirty[1] || entry?.domain === 1 ? 'workspace' : null,
-				],
-			},
+			entry === undefined ? request : { ...request,
+				cartridgeSlots: [entry.domain === 0 ? 'workspace' : request.cartridgeSlots[0], entry.domain === 1 ? 'workspace' : request.cartridgeSlots[1]] },
 			'boot',
 			undefined,
 			entry,
@@ -509,7 +509,7 @@ export function bootInstalledBlua32Media(
 }
 
 export function resourceSourceForChunk(sources: RuntimeSourceState, identity: ResourceIdentity): string {
-	const luaSource = resolveRuntimeLuaSource(sources, identity);
+	const luaSource = sources.catalog.resolveLuaSource(identity);
 	if (!luaSource) {
 		throw new Error(`Missing Lua source for '${identity.path}'.`);
 	}

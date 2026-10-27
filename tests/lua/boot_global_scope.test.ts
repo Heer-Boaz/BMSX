@@ -47,15 +47,15 @@ test('semantic frontend caching keeps the domain policy outside immutable syntax
 	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['capture.lua']));
 	workspace.updateFile('capture.lua', 'return __bmsx_next');
 	const snapshot = workspace.getSnapshot();
-	const bios = createEditorSemanticFrontend(snapshot, -1);
-	const cart0 = createEditorSemanticFrontend(snapshot, 0);
-	const cart1 = createEditorSemanticFrontend(snapshot, 1);
+	const bios = createEditorSemanticFrontend(snapshot, 'system');
+	const cart0 = createEditorSemanticFrontend(snapshot, 'cart');
+	const cart1 = createEditorSemanticFrontend(snapshot, 'cart');
 	assert.deepEqual(bios.getFile('capture.lua').diagnostics, []);
 	assert.equal(cart0.getFile('capture.lua').diagnostics.length, 1);
 	assert.equal(cart1.getFile('capture.lua').diagnostics.length, 1);
 	for (let read = 0; read < 100; read++) {
-		assert.equal(createEditorSemanticFrontend(snapshot, -1), bios);
-		assert.equal(createEditorSemanticFrontend(snapshot, 0), cart0);
-		assert.equal(createEditorSemanticFrontend(snapshot, 1), cart1);
+		assert.equal(createEditorSemanticFrontend(snapshot, 'system'), bios);
+		assert.equal(createEditorSemanticFrontend(snapshot, 'cart'), cart0);
+		assert.equal(createEditorSemanticFrontend(snapshot, 'cart'), cart1);
 	}
 });

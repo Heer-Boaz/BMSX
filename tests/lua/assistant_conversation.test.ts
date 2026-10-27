@@ -60,18 +60,18 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return old\n')]);
 	const storage = { getItem: () => null, setItem: () => assert.fail('not Save'), removeItem: () => assert.fail('not Delete') };
 	const connections: Connection[] = [];
-	const model = models.retain(sources.luaResources[0], 'lua', 'return old\n');
+	const model = models.retain(sources.catalog.luaResources[0], 'lua', 'return old\n');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]);
 	const image = linkTestSystemBlua32(compileLuaSource('return nil', 'conversation', 0));
 	const runtime = createTestRuntime(image.romBytes);
 	runtime.machine.cpu.reset();
 	const guest = new SuspendedGuestSession(runtime);
 	const { events, gteHistory, gpuHistory, hotResumes, boots, actorExecution, debuggerExecution, luaEvaluation, inspection, frameNavigation, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest, models, storage);
-	const diagnostics = new ResourceDiagnosticsService(models, sources, new VirtualHeadlessClock());
+	const diagnostics = new ResourceDiagnosticsService(models, sources.catalog, new VirtualHeadlessClock());
 	const testRuns = new ScenarioRunService(models, sources, new Map(), runtime.model, () => assert.fail('this fixture cannot create test targets'));
 	const testResults = testRuns.results;
-	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, guest, runtime, tasks);
-	const tools = new WorkspaceToolService(models, sources, diagnostics, testRuns, inspection, frameNavigation, gameCapture, luaEvaluation, debuggerExecution, actorExecution, new BehaviorSourceDocuments(models, sources), saves, boots, hotResumes, events, gteHistory, gpuHistory, new VirtualHeadlessClock());
+	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources.catalog);
+	const tools = new WorkspaceToolService(models, sources, diagnostics, testRuns, inspection, frameNavigation, gameCapture, luaEvaluation, debuggerExecution, actorExecution, new BehaviorSourceDocuments(models, sources.catalog), saves, boots, hotResumes, events, gteHistory, gpuHistory, new VirtualHeadlessClock());
 	const conversation = new AssistantConversation(models, sources, tools, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
@@ -156,7 +156,7 @@ test('conversation dispatches runtime tools against its actual target without st
 
 test('conversation reads historical test evidence after source edits and retires its handles with the prompt/workspace', async t => {
 	const f = fixture(t), conversation = f.conversation;
-	const module = new ScenarioTestCollection(createScenarioTestSourceState([createScenarioTestSourceRecord('suite_assert.lua', 7)])).roots[0].children[0];
+	const module = new ScenarioTestCollection(createScenarioTestSourceState([createScenarioTestSourceRecord('suite_assert.lua', 7)]).catalog).roots[0].children[0];
 	const run = f.testResults.beginRun(module.id, [{ test: module.children[0], source: module.source, sourceRevision: 7 }]);
 	const result = f.testResults.startItem(run, 0, 0); f.testResults.complete(result, 1); f.testResults.completeRun(run);
 	await conversation.connect(); await conversation.sendPrompt('Read the earlier run');

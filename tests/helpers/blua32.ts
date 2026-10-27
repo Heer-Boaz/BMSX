@@ -228,6 +228,7 @@ function createRawTestBlua32Object(
 		optLevel: 0,
 		traceStatements: 'erase',
 		preloadModules: [],
+		compiledModulePaths: [],
 		protoIds: functionIds,
 		protoDisplayNames: functionIds.slice(),
 		globalNames,

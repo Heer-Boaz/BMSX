@@ -4,46 +4,43 @@ import { collectAnimationDefinitions } from '../../animation/definitions';
 import type { CartEditor } from '../../../../cart_editor';
 import type { HostClock } from '../../../../../hosts/common/clock';
 import { structuredTextAssetFromPath } from '../../../../../toolchain/ts/rompack/assets';
-import { resolveRuntimeResource, runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import { createTextResource } from '../../../../workspace/workspace';
 import { openLuaCodeTab } from '../../../ui/code_tab/io';
 import { NEW_AEM_SOURCE, newLuaSource, type NewSourceKind } from './source_templates';
-import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../../common/resource';
 import { TextQuickPickProvider } from '../../../services/quick_input/text_provider';
 import type { QuickPickItem } from '../../../services/quick_input/provider';
 
 export function openCreateResourcePrompt(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	clock: HostClock,
 	kind: NewSourceKind = 'empty',
 ): void {
 	const identity = editor.editorGroup.model.activeTab?.resource;
 	if (identity !== undefined) {
-		const resource = resolveRuntimeResource(sources, identity)!;
+		const resource = catalog.resolveResource(identity)!;
 		if (resource.location.kind === 'project') {
 			const path = resource.location.path;
-			showNewSourceInput(editor, sources, clock, resource.domain, path.slice(0, path.lastIndexOf('/') + 1), kind);
+			showNewSourceInput(editor, catalog, clock, resource.contextId, path.slice(0, path.lastIndexOf('/') + 1), kind);
 			return;
 		}
 	}
 	// Shared/generated sources and non-resource panes have no implicit project owner. Choose a workspace folder,
 	// not the socket currently executing (which may be BIOS supervisor code).
-	const projects: Array<QuickPickItem & { domain: ResourceDomain }> = [];
-	for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
-		const cartridge = sources.cartridgeSlots[domain];
-		if (cartridge) projects.push({ domain, label: cartridge.projectRootPath, description: `CART ${domain}`, detail: '' });
+	const projects: Array<QuickPickItem & { contextId: string }> = [];
+	for (const context of catalog.contexts.values()) {
+		projects.push({ contextId: context.id, label: context.projectRootPath, description: context.programDomain, detail: '' });
 	}
-	projects.push({ domain: SYSTEM_RESOURCE_DOMAIN, label: sources.systemProjectRootPath, description: 'SYSTEM', detail: '' });
 	editor.quickInput.pick(kind === 'aem' ? 'NEW AUDIO EVENT MAP' : 'NEW LUA FILE', 'Choose project folder', () => new TextQuickPickProvider(projects),
-		project => showNewSourceInput(editor, sources, clock, project.domain, '', kind));
+		project => showNewSourceInput(editor, catalog, clock, project.contextId, '', kind));
 }
 
 function showNewSourceInput(
-	editor: CartEditor, sources: RuntimeSourceState, clock: HostClock,
-	domain: ResourceDomain, directory: string, kind: NewSourceKind,
+	editor: CartEditor, catalog: WorkspaceSourceCatalog, clock: HostClock,
+	contextId: string, directory: string, kind: NewSourceKind,
 ): void {
-	const root = runtimeSourceProjectRootPath(sources, domain);
+	const root = catalog.getContext(contextId).projectRootPath;
 	editor.quickInput.input(`${kind === 'aem' ? 'NEW AUDIO EVENT MAP' : 'NEW LUA FILE'} - ${root}`, 'Project-relative path',
 		kind === 'aem' ? 'res/data/events.aem.yaml' : directory,
 		async relativePath => {
@@ -53,21 +50,21 @@ function showNewSourceInput(
 				if (asset?.type !== 'aem') throw new Error('Use .aem.yaml or .aem.json.');
 				contents = NEW_AEM_SOURCE[asset.format];
 			} else contents = newLuaSource(kind, relativePath);
-			return createTextResource(clock, sources, { domain, relativePath, contents });
+			return createTextResource(clock, catalog, { contextId, relativePath, contents });
 		},
 		created => {
 			editor.resourcePanel.queuePendingSelection(created);
 			if (editor.resourcePanel.isVisible()) editor.resourcePanel.refresh();
 			if (kind === 'action_effect') editor.behaviorLens.openDefinition(editor.behaviorLens.documents.registrations
-				.getRegistrations(created.domain).find(registration => registration.resource.path === created.path && registration.behaviorKind === 'action_effect')!);
+				.getRegistrations(created.contextId).find(registration => registration.resource.path === created.path && registration.behaviorKind === 'action_effect')!);
 			else if (kind === 'animation') editor.animations.openResource(created);
 			else if (kind === 'sprite_animation') {
-				const project = getOrCreateSemanticProject(editorTextModelService, created.domain);
-				project.synchronizeRuntimeSources(sources);
-				editor.animations.openDefinition(created.domain, collectAnimationDefinitions(created, project.getSnapshot())[0]);
+				const project = getOrCreateSemanticProject(editorTextModelService, created.contextId);
+				project.synchronizeSources(catalog);
+				editor.animations.openDefinition(created.contextId, collectAnimationDefinitions(created, project.getSnapshot())[0]);
 			}
 			else if (kind === 'progression' || kind === 'input') editor.luaPrograms.openResource(created, kind);
 			else if (kind === 'aem') void editor.navigation.openResource(created);
-			else openLuaCodeTab(editor.editorGroup, sources, created);
+			else openLuaCodeTab(editor.editorGroup, catalog, created);
 		});
 }

@@ -101,6 +101,7 @@ struct Blua32DebugMetadata {
 	Blua32StaticScopes staticScopes;
 	TraceStatementSelection traceStatements = std::string("erase");
 	std::vector<std::string> preloadModules;
+	std::vector<std::string> compiledModulePaths;
 	std::vector<std::string> functionIds;
 	std::vector<std::string> functionDisplayNames;
 	std::vector<Blua32SourceRange> functionDefinitions;

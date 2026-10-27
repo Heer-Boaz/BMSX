@@ -306,10 +306,10 @@ export class ActorLabController {
 		const lifetime = inspector.show({ title: 'DETAILS', items: input.details!.items, focusReturn, dismissible: false,
 			canOpenSource: item => !input.dirty && !this.rewind.seeking
 				&& (item.watch === undefined ? input.details!.available : item.watch.available && !item.watch.retired)
-				&& canOpenBehaviorInspectionSource(this.authoringSources, item),
+				&& canOpenBehaviorInspectionSource(this.authoringSources.catalog, item),
 			openSource: item => {
 				const source = item.source!;
-				this.navigation.focusChunkSourceForContext(source.resource.domain, source.resource.path, {
+				this.navigation.focusChunkSourceForContext(source.resource.contextId, source.resource.path, {
 					row: source.range.start.line - 1, startColumn: source.range.start.column - 1, endColumn: source.range.start.column - 1,
 				});
 			},

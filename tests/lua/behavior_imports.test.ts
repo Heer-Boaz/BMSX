@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
@@ -17,7 +18,7 @@ import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 
 function workspace(files: Record<string, string>) {
 	const [inputs, bindings] = createResourceModuleProjectFixture(Object.entries(files).map(([path, source]) =>
-		buildResourceLuaSemanticFixtureFile(source, { domain: 0, path })),
+		buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })),
 		['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects']);
 	const workspace = new LuaSemanticWorkspace(bindings);
 	workspace.updateFiles(inputs.map(input => input.analysis!));
@@ -34,11 +35,11 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 test('imported BT constructors and ordinary aliases keep use, origin and repeated graph occurrences distinct', () => {
 	const project = workspace({ 'main.lua': main, 'definition.lua': "return require('provider')", 'provider.lua': provider });
 	const snapshot = project.getSnapshot();
-	const document = buildBehaviorSourceDocument({ domain: 0, path: 'main.lua' }, snapshot);
+	const document = buildBehaviorSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }, snapshot);
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
-	assert.equal(definition.authoredRange.path, resourceIdentityKey({ domain: 0, path: 'provider.lua' }));
-	assert.equal(definition.referenceRange?.path, resourceIdentityKey({ domain: 0, path: 'main.lua' }));
+	assert.equal(definition.authoredRange.path, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'provider.lua' }));
+	assert.equal(definition.referenceRange?.path, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }));
 	assert.equal(definition.root.nodeType, 'sequence');
 	const branch = definition.root.branches[0];
 	assert.ok(branch.role === 'children');
@@ -46,7 +47,7 @@ test('imported BT constructors and ordinary aliases keep use, origin and repeate
 	assert.equal(first.node.authoredRange, second.node.authoredRange);
 	assert.notEqual(first.node.occurrenceRange, second.node.occurrenceRange);
 	assert.notEqual(first.node.rowKey, second.node.rowKey);
-	assert.deepEqual(document.files.map(file => file.file).sort(), ['definition.lua', 'main.lua', 'provider.lua'].map(path => resourceIdentityKey({ domain: 0, path })));
+	assert.deepEqual(document.files.map(file => file.file).sort(), ['definition.lua', 'main.lua', 'provider.lua'].map(path => resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })));
 });
 
 test('imported FSM state/callback sources bind returns in each consuming scope', () => {
@@ -58,15 +59,15 @@ fsm.register('second', { states = { room = { initial = 'idle', states = states }
 		'states.lua': "local callback = require('callback')\nreturn { idle = { update = callback }, active = {} }",
 		'callback.lua': "local next_state = '../active'\nreturn function() return next_state end",
 	});
-	const document = buildBehaviorSourceDocument({ domain: 0, path: 'main.lua' }, project.getSnapshot());
+	const document = buildBehaviorSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }, project.getSnapshot());
 	for (const definition of document.definitions) {
 		assert.ok(definition.behaviorKind === 'state_machine');
 		const transition = definition.transitions.find(item => item.slot.kind === 'update')!;
 		const outcome = transition.outcomes[0];
 		assert.ok(outcome.proof.kind === 'return' && outcome.target.kind === 'path');
-		assert.equal(outcome.proof.file.chunk.locations.range(outcome.proof.binding.span).path, resourceIdentityKey({ domain: 0, path: 'states.lua' }));
-		assert.equal(outcome.proof.callbackFile.chunk.locations.range(outcome.proof.statement.span).path, resourceIdentityKey({ domain: 0, path: 'callback.lua' }));
-		assert.equal(outcome.valueFile!.chunk.locations.range(outcome.value!.span).path, resourceIdentityKey({ domain: 0, path: 'callback.lua' }));
+		assert.equal(outcome.proof.file.chunk.locations.range(outcome.proof.binding.span).path, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'states.lua' }));
+		assert.equal(outcome.proof.callbackFile.chunk.locations.range(outcome.proof.statement.span).path, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'callback.lua' }));
+		assert.equal(outcome.valueFile!.chunk.locations.range(outcome.value!.span).path, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'callback.lua' }));
 		assert.equal(outcome.target.target, definition.scopes.find(scope => scope.name === 'active')!.rowKey);
 	}
 });
@@ -78,7 +79,7 @@ test('competing and unknown origins never choose the one known constructor', () 
 		"if condition then return {} end; return { root = { type = 'wait' } }",
 	]) {
 		const project = workspace({ 'main.lua': main, 'definition.lua': source });
-		const definition = buildBehaviorSourceDocument({ domain: 0, path: 'main.lua' }, project.getSnapshot()).definitions[0];
+		const definition = buildBehaviorSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }, project.getSnapshot()).definitions[0];
 		assert.ok(definition.behaviorKind === 'behavior_tree');
 		assert.equal(definition.root, null);
 		assert.equal(definition.resolution, 'unresolved');
@@ -87,7 +88,7 @@ test('competing and unknown origins never choose the one known constructor', () 
 
 test('recovered provider syntax is incomplete even when the registering document parses completely', () => {
 	const project = workspace({ 'main.lua': main, 'definition.lua': provider + '\nlocal broken =' });
-	const document = buildBehaviorSourceDocument({ domain: 0, path: 'main.lua' }, project.getSnapshot());
+	const document = buildBehaviorSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }, project.getSnapshot());
 	assert.equal(document.syntaxComplete, false);
 	assert.equal(document.definitions[0].resolution, 'partial');
 });
@@ -99,7 +100,7 @@ test('writes through another import or a captured alias retain source mutation e
 		"local value = require('definition'); setmetatable(value, metadata)",
 	]) {
 		const project = workspace({ 'main.lua': main, 'definition.lua': provider, 'mutation.lua': mutation });
-		const definition = buildBehaviorSourceDocument({ domain: 0, path: 'main.lua' }, project.getSnapshot()).definitions[0];
+		const definition = buildBehaviorSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }, project.getSnapshot()).definitions[0];
 		assert.equal(definition.resolution, 'partial');
 		const query = project.getSnapshot().symbolResolver.writtenSources;
 		assert.equal(query.tableMutations(), query.tableMutations());
@@ -112,7 +113,7 @@ test('cyclic authored BT/FSM source becomes an unresolved occurrence, not recurs
 		"local fsm<const> = require('cartlib/fsm/library'); local body<const> = { states = {} }; body.states.self = body; fsm.register('cycle', body)",
 	]) {
 		const project = workspace({ 'main.lua': source });
-		const document = buildBehaviorSourceDocument({ domain: 0, path: 'main.lua' }, project.getSnapshot());
+		const document = buildBehaviorSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }, project.getSnapshot());
 		assert.notEqual(document.definitions[0].resolution, 'complete');
 	}
 });
@@ -122,10 +123,10 @@ test('an imported effect owns its list and scalar fields; source edit and Undo r
 	const code = "local effects<const> = require('cartlib/actioneffects'); effects.register_effect('imported', require('definition'))";
 	const effect = "return { period_ms = 40, blocked_tags = { 'busy' }, handler = function(owner) owner:act() end }";
 	const models = new Map(Object.entries({ 'main.lua': code, 'definition.lua': effect }).map(([path, source]) =>
-		[resourceIdentityKey({ domain: 0, path }), new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', source)]));
+		[resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }), new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua', resid: path } }, 'lua', source)]));
 	t.after(() => { for (const model of models.values()) model.dispose(); });
 	const project = workspace({ 'main.lua': code, 'definition.lua': effect });
-	const mainModel = models.get(resourceIdentityKey({ domain: 0, path: 'main.lua' }))!, sourceModel = models.get(resourceIdentityKey({ domain: 0, path: 'definition.lua' }))!;
+	const mainModel = models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }))!, sourceModel = models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definition.lua' }))!;
 	const document = () => buildBehaviorSourceDocument(mainModel.identity, project.getSnapshot());
 	const view = createBehaviorLensViewState(document(), mainModel, 'properties', path => models.get(path)!);
 	t.after(() => view.source.release());
@@ -135,7 +136,7 @@ test('an imported effect owns its list and scalar fields; source edit and Undo r
 	projectActionEffectProperties(view, view.presentation, definition);
 	assert.equal(definition.body.issues, SourceTableIssue.None);
 	const duration = definition.body.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!;
-	assert.equal(definition.body.file.chunk.locations.range(duration.field.span).path, resourceIdentityKey({ domain: 0, path: 'definition.lua' }));
+	assert.equal(definition.body.file.chunk.locations.range(duration.field.span).path, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definition.lua' }));
 	view.selection = { kind: 'node', rowKey: duration.source.rowKey };
 	assert.ok(buildBehaviorInspection(view).some(item => item.value.includes('40')));
 	assert.equal(mainModel.dirty, false); assert.equal(sourceModel.dirty, false);

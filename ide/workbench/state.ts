@@ -81,7 +81,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 		this.onDidStop(() => {
 			activateEditor(this.editor, sources, runtime, audioOutput);
 			execution.setPauseReason(HostPauseReason.Workbench, this.editor.executionSuspended);
-			void presentRuntimeDebuggerStop(this.editor, this.debugger).catch(error => this.failHostFrame(error));
+			void presentRuntimeDebuggerStop(this.editor, this.debugger, sources.catalog).catch(error => this.failHostFrame(error));
 		});
 		this.onDidFailHostFrame(stack => {
 			this.overlayRenderer.abandonFrame();

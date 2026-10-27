@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
@@ -19,7 +20,7 @@ import type { RuntimeSourceState } from '../../ide/runtime/sources';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'inline.lua', location: { kind: 'workspace', path: 'inline.lua' }, domain: 0, path: 'inline.lua',
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'inline.lua', location: { kind: 'workspace', path: 'inline.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'inline.lua',
 		source: { type: 'lua', resid: 'inline' } }, 'lua', '-- source');
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
 	t.after(() => inputFocus.setTarget(null));
@@ -73,8 +74,8 @@ for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} source viewport consumes only its own Find field space`, t => {
 		const code = fixture(t, variant), model = code.model;
 		const sources = {} as RuntimeSourceState;
-		const find = new EditorSearchController(code, sources), lineJump = new CodeEditorLineJump(code);
-		const rename = new RenameController(code, sources, new CrossFileRenameManager(sources));
+		const find = new EditorSearchController(code, sources.catalog), lineJump = new CodeEditorLineJump(code);
+		const rename = new RenameController(code, sources.catalog, new CrossFileRenameManager(sources.catalog));
 		const bars = new SourceInlineBars(code, find, rename, lineJump);
 		t.after(() => { find.dispose(); rename.dispose(); lineJump.dispose(); });
 		const client = { left: 0, top: 10, right: 384, bottom: 270 };

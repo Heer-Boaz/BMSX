@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { resetSemanticProjects } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
@@ -26,24 +27,24 @@ for (const modelCount of [1, 64, 256, 1024]) {
 			module_path: `module_${index}`, update_timestamp: 0, generated: false, sourceKind: 'project' as const, program_module: true,
 		};
 		registerLuaSourceRecord(registry, record);
-		editorTextModelService.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: record }, 'lua', source);
+		editorTextModelService.retain({ contextLabel: 'Profile project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: record }, 'lua', source);
 	}
 	const sources = createTestRuntimeSourceState(system, [registry, null], 0);
-	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
-	const retained = index.getRegistrations(0);
+	const index = new BehaviorRegistrationIndex(editorTextModelService, sources.catalog);
+	const retained = index.getRegistrations(TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	assert.equal(retained.length, modelCount);
 	let total = 0;
 	const retainedQueryMicroseconds = medianMilliseconds(() => {
-		for (let request = 0; request < 10000; request += 1) total += index.getRegistrations(0).length;
+		for (let request = 0; request < 10000; request += 1) total += index.getRegistrations(TEST_CARTRIDGE_CONTEXT_IDS[0]).length;
 	}) / 10;
 	assert.ok(total > 0);
-	assert.equal(index.getRegistrations(0), retained);
-	const changedModel = editorTextModelService.get({ domain: 0, path: 'module_0.lua' })!;
+	assert.equal(index.getRegistrations(TEST_CARTRIDGE_CONTEXT_IDS[0]), retained);
+	const changedModel = editorTextModelService.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'module_0.lua' })!;
 	const changedQueryMilliseconds = medianMilliseconds(() => {
 		changedModel.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edit\n' }]);
-		assert.equal(index.getRegistrations(0).length, modelCount);
+		assert.equal(index.getRegistrations(TEST_CARTRIDGE_CONTEXT_IDS[0]).length, modelCount);
 		changedModel.undo();
-		assert.equal(index.getRegistrations(0).length, modelCount);
+		assert.equal(index.getRegistrations(TEST_CARTRIDGE_CONTEXT_IDS[0]).length, modelCount);
 	});
 	console.log(JSON.stringify({ modelCount, retainedQueryMicroseconds, editAndUndoQueryMilliseconds: changedQueryMilliseconds,
 		boundary: 'retained real model service, semantic project and behavior registration index; 10000 warm reads per sample; edit+Undo includes two parses/binds/index rebuilds; no CPU or rendering' }));

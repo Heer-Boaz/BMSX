@@ -3,7 +3,6 @@ import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
 import { BT_REPARENT_SOURCE, BT_REPARENT_MODULE_SOURCE } from '../../helpers/behavior_reparent_fixture';
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { chooseBehavior } from './studio_behavior_picker';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
@@ -18,7 +17,7 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 	harness.openLuaSource('cart.lua');
 	const main = sourcePane(test).code.model, originalMain = main.buffer.getText();
 	if (imported) {
-		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+		const record = ide.sources.catalog.getContext(main.resource.contextId).luaSources.records.find(record =>
 			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 		main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length,
 			text: `local trees<const> = require('cartlib/behaviour_tree/library')\ntrees.register('fixture.reparent', require('${record.module_path}'))` }]);

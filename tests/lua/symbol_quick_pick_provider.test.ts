@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { EditorLuaSymbolEntry } from '../../ide/editor/contrib/intellisense/engine';
@@ -9,8 +10,8 @@ import type { QuickPickHighlight, QuickPickProjection } from '../../ide/workbenc
 
 function fixture(scope: 'file' | 'workspace', declarations: [string, string][]) {
 	const symbols: EditorLuaSymbolEntry[] = declarations.map(([path, source], index) => ({ name: path, path, kind: 'function',
-		resource: { domain: 0, path: source },
-		location: { path: resourceIdentityKeyFromParts(0, source), range: { startLine: index + 1, startColumn: 1, endLine: index + 1, endColumn: path.length + 1 } } }));
+		resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: source },
+		location: { path: resourceIdentityKeyFromParts(TEST_CARTRIDGE_CONTEXT_IDS[0], source), range: { startLine: index + 1, startColumn: 1, endLine: index + 1, endColumn: path.length + 1 } } }));
 	const items = buildSymbolQuickPickItems(symbols, scope);
 	return { symbols, items, provider: new SymbolQuickPickProvider(items, scope) };
 }

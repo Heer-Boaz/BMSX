@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { HostFrameSession } from '../../hosts/common/frame_session';
@@ -314,7 +315,7 @@ test('accepting here preserves an existing debugger stop and guest fault without
 	await f.settle(f.navigation.step(1, 8)); await f.settle(f.navigation.step(-1, 3));
 	f.debuggerState.source.install(f.debuggerState.sources.currentBlua32Media, [new Map([[0, 0]]), new Map(), new Map()]);
 	f.debuggerState.source.shouldStop(-1, 0);
-	f.fault.faultSnapshot = { message: 'retained fault', resource: { domain: 0, path: 'entry.lua' }, line: 1, column: 1, details: { luaStack: [] } };
+	f.fault.faultSnapshot = { message: 'retained fault', resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua' }, line: 1, column: 1, details: { luaStack: [], sources: new Map() } };
 	f.rewind.stopped = true;
 	const stop = f.debuggerState.source.stop, fault = f.fault.faultSnapshot;
 	const result = await f.settle(f.navigation.finishReview('here'));

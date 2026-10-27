@@ -508,6 +508,7 @@ class ProgramBuilder {
 		programDomain: ProgramCompileDomain,
 		public readonly traceStatements: TraceStatementSelection,
 		public readonly preloadModules: readonly string[],
+		public readonly compiledModulePaths: readonly string[],
 		public readonly types: StructTypes,
 		public readonly captureLayout?: LuaCaptureLayout,
 	) {
@@ -1079,6 +1080,7 @@ class ProgramBuilder {
 				this.bssBindingsBySymbolHandle, this.dataBindingsBySymbolHandle, this.rodataBindingsBySymbolHandle),
 			traceStatements: this.traceStatements,
 			preloadModules: this.preloadModules,
+			compiledModulePaths: this.compiledModulePaths,
 			functionDefinitionsByProto: this.functionDefinitions,
 			debugRanges: fullRanges,
 			debugInlineCallSites: fullInlineCallSites,
@@ -6201,11 +6203,14 @@ export function compileLuaChunkToProgram(
 		? 'system'
 		: 'cart';
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
+	const compiledModulePaths = new Array<string>(canonicalModules.length + 1);
+	compiledModulePaths[0] = toLuaModulePath(chunk.locations.path);
 	const sourceMaps = new Map<string, LuaSourceMap>();
 	if (options.entrySourceMap !== undefined) {
 		sourceMaps.set(options.entrySourceMap.generatedPath, options.entrySourceMap);
 	}
 	for (let index = 0; index < canonicalModules.length; index += 1) {
+		compiledModulePaths[index + 1] = canonicalModules[index].path;
 		const sourceMap = canonicalModules[index].sourceMap;
 		if (sourceMap !== undefined) {
 			sourceMaps.set(sourceMap.generatedPath, sourceMap);
@@ -6243,6 +6248,7 @@ export function compileLuaChunkToProgram(
 		programDomain,
 		options.traceStatements ?? 'erase',
 		options.preloadModules ?? [],
+		compiledModulePaths,
 		new StructTypes(frontend, moduleCompileContext),
 		options.captureLayout,
 	);

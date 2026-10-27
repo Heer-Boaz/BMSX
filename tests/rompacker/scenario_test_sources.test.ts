@@ -1,3 +1,5 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -10,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
-import { createRuntimeSourceState } from '../../ide/runtime/sources';
+
 import { createTextResource } from '../../ide/workspace/workspace';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
@@ -61,19 +63,34 @@ test('a debug cart with no packed tests can execute its first workspace-created 
 	assert.equal(index.entries.some(entry => entry.source_path?.endsWith('_assert.lua')), false);
 	assert.equal(index.entries.find(entry => entry.source_path === 'testlib/execution.lua')!.program_module, false);
 	const media = await loadRomToolingMedia(system, [cartridge, null]);
-	const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+	const sources = createLoadedTestRuntimeSourceState(media.system, media.cartridgeSlots);
 	const authoring = new OffscreenMachine(system, [cartridge, null], PSX_MACHINE_SPEC, new TestInput());
 	const models = new EditorTextModelService();
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	t.after(async () => { models.clear(); authoring.dispose(); await closeWorkspaceRecords(); });
 	const source = "return { kind = 'unit', tests = { first = function() assert(2 + 2 == 4) end } }";
-	await createTextResource(new VirtualHeadlessClock(), sources, { domain: 0, relativePath: 'first_assert.lua', contents: source });
-	const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, (system, slots, model, input) => new OffscreenMachine(system, slots, model, input));
+	const resource = await createTextResource(new VirtualHeadlessClock(), sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'first_assert.lua', contents: source });
+	models.retain(sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua' })!, 'lua',
+		'end end -- unit compilation must not rebuild an unrelated gameplay entry');
+	const installed = sources.currentBlua32Media;
+	let published: Uint8Array | null = null;
+	const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, (system, slots, model, input) => {
+		published = slots[0]!;
+		return new OffscreenMachine(system, slots, model, input);
+	});
 	t.after(() => runs.dispose());
-	const run = runs.start(runs.collection.findModuleBySourcePath(0, 'first_assert.lua').id);
+	const run = runs.start(runs.collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], 'first_assert.lua').id);
 	for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 	assert.equal(run.state, 'passed', JSON.stringify(run.items[0].failures));
 	assert.equal(authoring.runtime.machine.scheduler.currentNowCycles(), 0, 'the authoring machine did not execute');
+	assert.equal(sources.currentBlua32Media, installed);
+	assert.equal(sources.cartridgeSlots[0]!.rom.bytes, cartridge);
+	const derived = await parseCartridgeIndex(published!);
+	const suiteAsset = derived.entries.find(asset => asset.resid === resource.source.resid)!;
+	assert.equal(suiteAsset.source_path, resource.path);
+	assert.equal(suiteAsset.normalized_source_path, resource.sourceFilePath);
+	assert.equal(suiteAsset.program_module, false);
+	assert.equal(new TextDecoder().decode(published!.subarray(suiteAsset.start, suiteAsset.end)), source);
 	await writeFile(join(directory, 'first_assert.lua'), source);
 	// res/ is also a resource-scan root: assertions there must not become gameplay code.
 	await writeFile(join(resources, 'second_assert.lua'), source);

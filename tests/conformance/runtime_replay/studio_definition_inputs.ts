@@ -127,7 +127,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	}
 	check(duplicates[0] !== duplicates[1] && duplicates[0].title === duplicates[1].title
 		&& ide.editor.editorGroup.model.getLabel(duplicates[0]) !== ide.editor.editorGroup.model.getLabel(duplicates[1]), 'A04: equal titles in one source have distinct source descriptions');
-	check([...editorTextModelService.models].filter(candidate => candidate.resource.domain === model.resource.domain && candidate.resource.path === model.resource.path).length === 1,
+	check([...editorTextModelService.models].filter(candidate => candidate.resource.contextId === model.resource.contextId && candidate.resource.path === model.resource.path).length === 1,
 		'A04: every open definition and source editor uses the same resource-owned text model');
 
 	const duplicate = ide.editor.editorGroup.model.activeTab;

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { createTestCodeDocuments } from '../helpers/code_documents';
@@ -20,7 +21,7 @@ function fixture(t: TestContext, source: string, columnOffset = source.length) {
 	const record = createScenarioTestSourceRecord('inline.lua', 1, source);
 	const sources = createScenarioTestSourceState([record]);
 	const { documents, clock } = createTestCodeDocuments(t, editorTextModelService);
-	const model = editorTextModelService.retain(sources.luaResources[0], 'lua', source);
+	const model = editorTextModelService.retain(sources.catalog.luaResources[0], 'lua', source);
 	const input = new CodeEditorInput(model), view = input.context.view, position = { row: 0, column: 0 };
 	model.buffer.positionAt(columnOffset, position); view.cursorRow = position.row; view.cursorColumn = position.column;
 	const code = createTestCodeControl(t, model, documents, clock, view);
@@ -125,9 +126,9 @@ for (const [label, kind, insertion, expectedCaret] of [
 
 test('an actual empty require-path candidate inserts at a zero-width range with one complete edit and exact history', t => {
 	const source = "local m = require('')", column = source.indexOf("')"), f = fixture(t, source, column);
-	editorTextModelService.retain({ sourceFilePath: 'module/real.lua', location: { kind: 'workspace' as const, path: 'module/real.lua' }, domain: 0, path: 'module/real.lua',
+	editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'module/real.lua', location: { kind: 'workspace' as const, path: 'module/real.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'module/real.lua',
 		source: { type: 'lua', resid: 'real-module', source_path: 'module/real.lua' } }, 'lua', 'return {}');
-	registerLuaSourceRecord(f.sources.cartridgeSlots[0]!.luaSources, createScenarioTestSourceRecord('module/real.lua', 1, 'return {}'));
+	registerLuaSourceRecord(f.sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, createScenarioTestSourceRecord('module/real.lua', 1, 'return {}'));
 	const candidates = f.controller.listCompletionCandidates()!, item = candidates.filteredItems.find(item => item.insertText === 'module/real')!;
 	assert.equal(candidates.context.kind, 'module'); assert.equal(candidates.context.replaceFromColumn, column);
 	assert.equal(candidates.context.replaceToColumn, column); assert.ok(item);
@@ -200,7 +201,7 @@ test('input retirement clears the published completion before another source att
 	assert.equal(f.code.inlineEdit.active, true);
 	f.controller.clearInput();
 	assert.equal(f.controller.session, null); assert.equal(f.code.inlineEdit.active, false);
-	const other = editorTextModelService.retain({ sourceFilePath: 'other.lua', location: { kind: 'workspace' as const, path: 'other.lua' }, domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
+	const other = editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'other.lua', location: { kind: 'workspace' as const, path: 'other.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
 	const otherInput = new CodeEditorInput(other); t.after(() => otherInput.dispose());
 	f.code.attach(other, otherInput.context.view, f.documents.get(other)); f.settle();
 	assert.equal(f.controller.session, null); assert.equal(f.code.inlineEdit.active, false);
@@ -280,8 +281,8 @@ for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', '
 
 test('module completion preserves authored case and exact path replacement range', t => {
 	const source = "local m = require('art/P_tail')", f = fixture(t, source, source.indexOf('_tail'));
-	editorTextModelService.retain({ sourceFilePath: 'art/Picture.lua', location: { kind: 'workspace' as const, path: 'art/Picture.lua' }, domain: 0, path: 'art/Picture.lua', source: { type: 'lua', resid: 'picture', source_path: 'art/Picture.lua' } }, 'lua', 'return {}');
-	registerLuaSourceRecord(f.sources.cartridgeSlots[0]!.luaSources, createScenarioTestSourceRecord('art/Picture.lua', 1, 'return {}'));
+	editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'art/Picture.lua', location: { kind: 'workspace' as const, path: 'art/Picture.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'art/Picture.lua', source: { type: 'lua', resid: 'picture', source_path: 'art/Picture.lua' } }, 'lua', 'return {}');
+	registerLuaSourceRecord(f.sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, createScenarioTestSourceRecord('art/Picture.lua', 1, 'return {}'));
 	f.type('i'); f.settle();
 	const edit = f.code.inlineEdit;
 	assert.equal(edit.active, true); assert.equal(edit.preserveCase, true); assert.equal(edit.text, 'cture');
@@ -297,7 +298,7 @@ test('widget publication is stable across font replacement but retires before so
 	assert.equal(f.code.inlineEdit, edit); assert.equal(edit.active, true); assert.equal(edit.version, version);
 	assert.equal(f.code.setInlineEdit(edit.row, edit.startColumn, edit.endColumn, edit.text, edit.preserveCase), false);
 	assert.equal(edit.version, version, 'republishing identical intent cannot dirty layout');
-	const other = editorTextModelService.retain({ sourceFilePath: 'other.lua', location: { kind: 'workspace' as const, path: 'other.lua' }, domain: 0, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
+	const other = editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'other.lua', location: { kind: 'workspace' as const, path: 'other.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'local other = 1');
 	const otherInput = new CodeEditorInput(other), document = f.documents.get(other);
 	t.after(() => otherInput.dispose());
 	assert.equal(edit.active, true, 'constructing an unrelated input and document does not retire this control');

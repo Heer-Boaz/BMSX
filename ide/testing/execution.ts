@@ -7,7 +7,7 @@ import type { Table } from '../../machine/ts/machine/cpu/table';
 import { asStringId, valueString, valueToString, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
 import { readSupervisorFaultReport } from '../runtime/fault_state';
-import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import type { BuiltFixtureProgram } from './fixture_media';
 import type { ScenarioResultService, ScenarioTestResult, ScenarioRunFailure, ScenarioRunMode } from './scenario/result_service';
 import type { TestTarget } from './target';
 import { TestFailureContext } from './failure_context';
@@ -55,7 +55,7 @@ export class TestExecution implements FixtureOutput {
 
 	public constructor(
 		public readonly target: TestTarget,
-		private readonly program: BuiltTestCartridge,
+		private readonly program: BuiltFixtureProgram,
 		private readonly results: ScenarioResultService,
 		public readonly result: ScenarioTestResult,
 		private readonly budgets: TestBudgets = DEFAULT_TEST_BUDGETS,
@@ -64,7 +64,7 @@ export class TestExecution implements FixtureOutput {
 	) {
 		this.fixture = new GuestFixture(target.runtime, program);
 		this.operations = new FixtureOperations(target, target.input, this, () => this.bindExecutionHook());
-		if (mode === 'debug') this.debugger = new TestDebugger(target.runtime, program, result.test.resource.domain, () => this.bindExecutionHook());
+		if (mode === 'debug') this.debugger = new TestDebugger(target.runtime, program, () => this.bindExecutionHook());
 		this.bindExecutionHook();
 	}
 
@@ -170,7 +170,7 @@ export class TestExecution implements FixtureOutput {
 		const observation = new FsmTransitionObservation(recorder, this.target.runtime.machine.cpu.stringPool,
 			(sequence, time, tick, lane, previous, target, outcome) =>
 				this.results.appendFsmTransition(trace, sequence, time, tick, lane, previous, target, outcome));
-		const trace = this.results.beginFsmTransitionTrace(this.result, observation.instanceId, observation.machineId);
+		const trace = this.results.beginFsmTransitionTrace(this.result, observation.instanceId, observation.machineId, this.program.sourceMedia.cartridgeSlots[0]!.sourceContextId);
 		this.fsm = observation;
 	}
 	public observeActionEffects(recorder: Table): void {
@@ -178,14 +178,14 @@ export class TestExecution implements FixtureOutput {
 			trigger: (sequence, time, tick, effect, outcome) => this.results.appendActionEffectTrigger(trace, sequence, time, tick, effect, outcome),
 			activity: (sequence, time, tick, effect, kind, count) => this.results.appendActionEffectActivity(trace, sequence, time, tick, effect, kind, count),
 		});
-		const trace = this.results.beginActionEffectTrace(this.result, observation.ownerId, observation.definitionId);
+		const trace = this.results.beginActionEffectTrace(this.result, observation.ownerId, observation.definitionId, this.program.sourceMedia.cartridgeSlots[0]!.sourceContextId);
 		this.actioneffects = observation;
 	}
 
 	private failure(thread: Thread, message: string, origin: TestFailureContext['origin'] = 'failed-thread'): ScenarioRunFailure {
 		const runtime = this.target.runtime;
 		const context = new TestFailureContext(thread, origin, runtime.machine.scheduler.nowCycles,
-			runtime.frameScheduler.lastTickSequence, this.program, this.result.test.resource.domain,
+			runtime.frameScheduler.lastTickSequence, this.program,
 			!this.fixture.initialized ? 'initialize' : this.phase, message);
 		this.failures.push(context);
 		return context.failure;

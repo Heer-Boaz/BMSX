@@ -103,7 +103,7 @@ export class EditorTextModel {
 		savedSource = source, persistedBaseline: string | null = savedSource) {
 		this.history.register(this);
 		this.resourceValue = resource;
-		this.identity = { domain: resource.domain, path: resource.path };
+		this.identity = { contextId: resource.contextId, path: resource.path };
 		this.mode = mode;
 		this.language = textLanguageConfiguration(mode, resource.path);
 		this.pieceTree = new PieceTreeBuffer(source);

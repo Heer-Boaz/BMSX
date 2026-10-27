@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -11,7 +12,7 @@ import { FSM_INITIAL_SOURCE, FSM_INITIAL_MODULE_SOURCE, fsmInitialImportedSource
 import { createBehaviorEditFixture } from '../helpers/behavior_edit_fixture';
 
 function fixture(t: TestContext, source = FSM_INITIAL_SOURCE) {
-	const resource = { sourceFilePath: 'initial.lua', location: { kind: 'workspace' as const, path: 'initial.lua' }, domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'initial.lua', location: { kind: 'workspace' as const, path: 'initial.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	t.after(() => model.dispose());
 	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/fsm/library'])));
@@ -25,7 +26,7 @@ test('imported parent initial edits insert or replace in the provider and partic
 		const targets = f.view.stateMachines.initialTargets;
 		const target = [...targets.values()].find(target => target.name === 'active')!;
 		const owner = f.view.source.models.get(target.owner.file.chunk.locations.range(target.owner.table.span).path)!;
-		assert.equal(owner, f.models.get(resourceIdentityKey({ domain: 0, path: 'branch.lua' })));
+		assert.equal(owner, f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'branch.lua' })));
 		assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, owner]));
 		owner.pushEditOperations(createStateMachineInitialEdits(owner.buffer, target)); f.refresh();
 		assert.equal(f.model.version, 1); assert.equal(f.input.isDirty(), true);

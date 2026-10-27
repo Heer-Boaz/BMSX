@@ -97,6 +97,8 @@ export type Blua32DebugMetadata = {
 	staticScopes: Blua32StaticScopes;
 	traceStatements: TraceStatementSelection;
 	preloadModules: readonly string[];
+	/** Entry and canonical compilation inputs, independent of runtime function emission. */
+	compiledModulePaths: readonly string[];
 	functionIds: string[];
 	functionDisplayNames: string[];
 	functionDefinitions: ReadonlyArray<Blua32SourceRange>;

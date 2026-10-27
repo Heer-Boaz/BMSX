@@ -133,7 +133,6 @@ export function buildBlua32Image(options: CartBlua32ImageBuildOptions): BuiltBlu
 export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32Image {
 	const modulePaths = new Set<string>();
 	const modules = options.luaModules.slice();
-	const diagnosticSources = new Map<string, Blua32DiagnosticSource>();
 	const generatedSourceMaps = new Map<string, LuaSourceMap>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
@@ -184,22 +183,6 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			linkValues: generated.linkValues,
 		});
 	}
-	for (let moduleIndex = 0; moduleIndex < modules.length; moduleIndex += 1) {
-		const module = modules[moduleIndex];
-		diagnosticSources.set(module.chunk.locations.path, {
-			displayPath: module.displayPath,
-			source: module.source,
-		});
-		if (module.sourceMap !== undefined) {
-			for (let sourceIndex = 0; sourceIndex < module.sourceMap.sources.length; sourceIndex += 1) {
-				const mapped = module.sourceMap.sources[sourceIndex];
-				diagnosticSources.set(mapped.rangePath, {
-					displayPath: mapped.displayPath,
-					source: mapped.source,
-				});
-			}
-		}
-	}
 	for (let index = entryIndex; index + 1 < modules.length; index += 1) {
 		modules[index] = modules[index + 1];
 	}
@@ -209,6 +192,22 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		for (const exported of options.biosExports) moduleRoots.push(exported.path);
 	}
 	const programModules = selectLuaProgramModules(entry.chunk, modules, moduleRoots);
+	const diagnosticSources = new Map<string, Blua32DiagnosticSource>();
+	for (let moduleIndex = 0; moduleIndex <= programModules.length; moduleIndex += 1) {
+		const module = moduleIndex === 0 ? entry : programModules[moduleIndex - 1];
+		diagnosticSources.set(module.chunk.locations.path, {
+			displayPath: module.displayPath,
+			source: module.source,
+		});
+		if (module.sourceMap !== undefined) {
+			for (const mapped of module.sourceMap.sources) {
+				diagnosticSources.set(mapped.rangePath, {
+					displayPath: mapped.displayPath,
+					source: mapped.source,
+				});
+			}
+		}
+	}
 
 	if (options.domain === 'cart') {
 		const compiled = compileLuaChunkToProgram(entry.chunk, programModules, {

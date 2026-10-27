@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import * as constants from '../../ide/common/constants';
@@ -16,13 +17,13 @@ import { createTestCodeControl } from '../helpers/code_control';
 
 function fixture(t: TestContext, source = Array.from({ length: 200 }, () => 'x').join('\n')) {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'inline.lua', location: { kind: 'workspace', path: 'inline.lua' }, domain: 0, path: 'inline.lua',
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'inline.lua', location: { kind: 'workspace', path: 'inline.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'inline.lua',
 		source: { type: 'lua', resid: 'inline' } }, 'lua', source);
 	const client = { left: 0, top: 10, right: 384, bottom: 270 };
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont('tiny'), client);
 	const sources = {} as RuntimeSourceState;
-	const find = new EditorSearchController(code, sources), lineJump = new CodeEditorLineJump(code);
-	const rename = new RenameController(code, sources, new CrossFileRenameManager(sources));
+	const find = new EditorSearchController(code, sources.catalog), lineJump = new CodeEditorLineJump(code);
+	const rename = new RenameController(code, sources.catalog, new CrossFileRenameManager(sources.catalog));
 	const bars = new SourceInlineBars(code, find, rename, lineJump);
 	const layout = () => { bars.layout(client); resolveCodeAreaViewport(code); };
 	const unbind = [find.onDidChangeLayout(layout), rename.onDidChangeLayout(layout), lineJump.onDidChangeLayout(layout)];

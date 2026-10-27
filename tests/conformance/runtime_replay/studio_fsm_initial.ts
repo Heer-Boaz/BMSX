@@ -1,4 +1,3 @@
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { FSM_INITIAL_SOURCE, FSM_INITIAL_MODULE_SOURCE, fsmInitialImportedSource } from '../../helpers/fsm_initial_fixture';
 
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
@@ -19,7 +18,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 	harness.openLuaSource('cart.lua');
 	const main = sourcePane(test).code.model, originalMain = main.buffer.getText(), mainResource = main.resource;
 	if (imported) {
-		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+		const record = ide.sources.catalog.getContext(main.resource.contextId).luaSources.records.find(record =>
 			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 		main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length, text: fsmInitialImportedSource(record.module_path) }]);
 		harness.openLuaSource(record.source_path);

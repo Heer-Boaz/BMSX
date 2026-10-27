@@ -76,7 +76,7 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		private readonly sourceNavigation: EditorNavigationController, private readonly surfaces: WorkbenchSurfaceService,
 		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
 		super(scope);
-		this.source = new CapturedLuaSourceBinding(editorTextModelService, sources);
+		this.source = new CapturedLuaSourceBinding(editorTextModelService, sources.catalog);
 		this.unbindSource = this.source.onDidChange(() => this.retireContextMenu());
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.onDidOpenOverflow = lifetime => {

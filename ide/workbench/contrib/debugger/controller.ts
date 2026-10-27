@@ -8,9 +8,13 @@ import type { CodeEditorControl } from '../../../editor/ui/code_editor_control';
 import {
 	blua32SourceRangeAtPc,
 } from '../../../../toolchain/ts/rompack/blua32_symbols';
-import { blua32ToolingImageForDomain } from '../../../../toolchain/ts/rompack/blua32_media';
-import { resolveRuntimeLuaSource } from '../../../runtime/sources';
-import { focusExecutionStop } from '../../../runtime_error/navigation';
+import { toLuaModulePath } from '../../../../toolchain/ts/lua/module_path';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
+import { focusCapturedRuntimeSource, setExecutionStopHighlightForCurrentContext } from '../../../runtime_error/navigation';
+import { editorTextModelService } from '../../../editor/model/model_service';
+import { centerCursorVertically, setCursorPosition } from '../../../editor/ui/view/caret/caret';
+import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
+import type { CodeEditorPane } from '../code_editor/editor_pane';
 
 export class BreakpointController {
 	public constructor(private readonly state: RuntimeDebuggerState) {}
@@ -37,28 +41,35 @@ export class BreakpointController {
 export async function presentRuntimeDebuggerStop(
 	editor: CartEditor,
 	state: RuntimeDebuggerState,
+	catalog: WorkspaceSourceCatalog,
 ): Promise<void> {
 	state.stopPresentationPending = false;
-	const image = blua32ToolingImageForDomain(
-		state.sources.currentBlua32Media,
-		state.source.stop!.domain,
-	)!;
+	const stop = state.source.stop!, media = stop.media;
+	const image = (stop.domain === -1 ? media.system : media.cartridgeSlots[stop.domain])!;
 	const range = blua32SourceRangeAtPc(
 		image.symbols!,
 		image.layout.header.textAddress,
-		state.source.stop!.pc,
+		stop.pc,
 	)!;
-	const source = resolveRuntimeLuaSource(state.sources, {
-		domain: state.source.stop!.domain,
-		path: range.path,
-	})!;
-	const generation = await focusExecutionStop(editor, {
-		domain: source.domain,
-		path: source.record.source_path,
-	}, range.start.line, range.start.column);
-	if (generation !== editor.editorGroup.panes.openGeneration) return;
+	const source = image.sources.get(toLuaModulePath(range.path));
+	if (source === undefined) {
+		showEditorMessage('Paused without retained source text.', 'info', 1.4);
+		return;
+	}
+	const resource = {
+		contextId: image.sourceContextId,
+		path: source.displayPath,
+	};
+	const receipt = await focusCapturedRuntimeSource(editor.navigation, catalog, resource, source);
+	if (state.source.stop !== stop || receipt === undefined || receipt.generation !== editor.editorGroup.panes.openGeneration
+		|| receipt.model.version !== receipt.version || editorTextModelService.get(resource) !== receipt.model) return;
+	const code = (editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code;
+	code.view.selectionAnchor = null; clearEditorPointerSelectionState(code);
+	setCursorPosition(code, range.start.line - 1, range.start.column - 1);
+	setExecutionStopHighlightForCurrentContext(editor.editorGroup, range.start.line - 1);
+	centerCursorVertically(code);
 	showEditorMessage(
-		state.source.stop!.reason === RuntimeDebuggerStopReason.Breakpoint
+		stop.reason === RuntimeDebuggerStopReason.Breakpoint
 			? 'Paused on breakpoint'
 			: 'Paused after step',
 		'info',

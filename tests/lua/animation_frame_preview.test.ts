@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
@@ -10,7 +11,7 @@ import { AnimationFramePreview } from '../../ide/workbench/contrib/animation/fra
 import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
 
 test('only a proven sprite factory treats a native frame value as a packed image reference', t => {
-	const sources = createScenarioTestSourceState([]), rom = sources.cartridgeSlots[0]!.rom;
+	const sources = createScenarioTestSourceState([]), context = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]), rom = context.previewRom!;
 	const texture = encodeDirect16GxTexture(1, 1, new Uint8ClampedArray([255, 0, 0, 255]));
 	rom.bytes = new Uint8Array(encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount));
 	const assets: RomAsset[] = [{ resid: 'sprite', type: 'image', imgmeta: { width: 1, height: 1, texture_u: 0, texture_v: 0, gx_atlas_id: 'atlas' } },
@@ -20,14 +21,15 @@ test('only a proven sprite factory treats a native frame value as a packed image
 		} }];
 	finalizePackedRomAssets(assets);
 	rom.index.entries.push(...assets);
-	const document = buildAnimationSourceDocument({ domain: 0, path: 'animation.lua' },
-		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile("return {frames={'sprite'}}", { domain: 0, path: 'animation.lua' })], [])))!;
+	context.previewPackage.img.sprite = assets[0];
+	const document = buildAnimationSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua' },
+		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile("return {frames={'sprite'}}", { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua' })], [])))!;
 	const preview = new AnimationFramePreview(); t.after(() => preview.dispose());
-	preview.update(document, 0, 0, sources);
+	preview.update(document, 0, TEST_CARTRIDGE_CONTEXT_IDS[0], sources.catalog);
 	assert.equal(preview.bitmap, undefined, 'a timeline value is not an image even if its string matches a packed asset');
-	preview.update({ ...document, family: 'sprite' }, 0, 0, sources);
+	preview.update({ ...document, family: 'sprite' }, 0, TEST_CARTRIDGE_CONTEXT_IDS[0], sources.catalog);
 	assert.deepEqual(preview.bitmap!.image.pixels, new Uint8Array([255, 0, 0, 255]));
 	let released = false; preview.bitmap!.onDispose(() => { released = true; });
-	preview.update(document, 0, 0, sources);
+	preview.update(document, 0, TEST_CARTRIDGE_CONTEXT_IDS[0], sources.catalog);
 	assert.equal(released, true); assert.equal(preview.bitmap, undefined);
 });

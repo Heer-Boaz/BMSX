@@ -33,7 +33,7 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 			test: null,
 			depth: 0,
 			caption: root.label,
-			identity: `Cartridge ${root.domain} / ${root.label}`,
+			identity: `${root.label}`,
 			expandable: true,
 			expanded,
 			latestState: null,
@@ -51,7 +51,7 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 		for (const module of state.collection.resolveRoot(root.id)) {
 			const expanded = !pane.collapsedNodeIds.has(module.id);
 			pane.rows.push({ id: module.id, kind: 'module', root, module, test: null, depth: 1,
-				caption: captions.get(module)!, identity: `Cartridge ${root.domain} / ${module.resource.path}`,
+				caption: captions.get(module)!, identity: `${root.label} / ${module.resource.path}`,
 				expandable: true, expanded, latestState: null, text: '', fullText: '', feedbackText: '', textLeft: 0, twistieLeft: 0, twistieRight: 0 });
 			if (!expanded) continue;
 			for (const test of module.children) {

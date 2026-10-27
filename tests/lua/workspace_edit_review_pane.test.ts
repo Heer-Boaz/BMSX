@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
@@ -13,7 +14,7 @@ import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { createBlua32SystemSourceImage, resolveRuntimeResource } from '../../ide/runtime/sources';
+import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
@@ -39,14 +40,14 @@ function fixture(t: TestContext) {
 		update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports,
-		captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
+		captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	const unused = (): never => { throw new Error('Review interaction does not request external domain work.'); };
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
 		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
+	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	t.after(async () => { problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
 	const sourcePane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane;
@@ -60,7 +61,7 @@ function fixture(t: TestContext) {
 			buttons: held, pressedButtons: down, releasedButtons: up, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 }); editor.update(0);
 	};
 	const show = (count = 36, detailCopies = 1) => {
-		const context = new WorkspaceSourceContext(editorTextModelService, sources), text = context.read(model).source;
+		const context = new WorkspaceSourceContext(editorTextModelService, sources.catalog), text = context.read(model).source;
 		const proposal = new WorkspaceEditProposal('Transfer authored behavior', context, { kind: 'edit', edits: new Map([[model,
 			{ version: model.version, edits: [{ offset: text.lastIndexOf('before'), deleteLength: 6, text: 'after' }] }]]) });
 		const evidence = { summary: 'One written source edit affects these captured consumers.', items: Array.from({ length: count }, (_, i) => ({

@@ -111,8 +111,8 @@ export class CompletionController {
 		return resourceIdentityKey(this.code.model.resource);
 	}
 
-	protected getActiveDomain() {
-		return this.code.model.resource.domain;
+	protected getActiveContextId() {
+		return this.code.model.resource.contextId;
 	}
 
 	protected getCharAt(row: number, column: number): string {
@@ -463,7 +463,7 @@ export class CompletionController {
 		if (context.kind === 'module') {
 			const items: LuaCompletionItem[] = [];
 			for (const [name, path] of this.ensureLocalCompletionCache().moduleTargets) {
-				items.push({ label: name, insertText: name, sortKey: name, kind: 'module', detail: getOrCreateSemanticProject(editorTextModelService, this.getActiveDomain()).getResourceIdentity(path).path });
+				items.push({ label: name, insertText: name, sortKey: name, kind: 'module', detail: getOrCreateSemanticProject(editorTextModelService, this.getActiveContextId()).getResourceIdentity(path).path });
 			}
 			return buildCanonicalCompletionItems(items);
 		}
@@ -545,7 +545,7 @@ export class CompletionController {
 		const key = resourceIdentityKey(this.code.model.resource);
 		const path = this.getActivePath();
 		const frontend = buildEditorSemanticFrontend(
-			this.sources,
+			this.sources.catalog,
 			this.code.model.resource,
 			this.getBuffer(),
 		);
@@ -559,14 +559,14 @@ export class CompletionController {
 			path,
 			file,
 			analysis: frontend.snapshot.getFileData(path)!,
-			moduleTargets: getOrCreateSemanticProject(editorTextModelService, this.getActiveDomain()).getModuleCatalog(this.code.model.resource),
+			moduleTargets: getOrCreateSemanticProject(editorTextModelService, this.getActiveContextId()).getModuleCatalog(this.code.model.resource),
 		};
 		this.localCompletionCache.set(key, updated);
 		return updated;
 	}
 
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
-		const entries = listGlobalLuaSymbols(this.sources, this.getActiveDomain());
+		const entries = listGlobalLuaSymbols(this.sources.catalog, this.getActiveContextId());
 		if (this.cachedGlobalCompletionItems && this.cachedGlobalSymbolEntries === entries) {
 			return this.cachedGlobalCompletionItems;
 		}
@@ -623,7 +623,7 @@ export class CompletionController {
 			const kindLabel = this.formatSymbolKind(semanticSymbolKindToLuaSymbolKind(symbol.kind));
 			const detailParts: string[] = [kindLabel];
 			if (analysis.file && analysis.file.length > 0) {
-				detailParts.push(getOrCreateSemanticProject(editorTextModelService, this.getActiveDomain()).getResourceIdentity(analysis.file).path);
+				detailParts.push(getOrCreateSemanticProject(editorTextModelService, this.getActiveContextId()).getResourceIdentity(analysis.file).path);
 			}
 			const line = analysis.chunk.locations.range(symbol.span).start.line;
 			detailParts.push(`line ${line}`);
@@ -653,7 +653,7 @@ export class CompletionController {
 				insertText: symbol.name,
 				sortKey: `member:${symbol.name}:${symbol.file}:${range.start.line}:${range.start.column}`,
 				kind: 'member',
-				detail: `${this.formatSymbolKind(kind)} • ${getOrCreateSemanticProject(editorTextModelService, this.getActiveDomain()).getResourceIdentity(symbol.file).path} • line ${range.start.line}`,
+				detail: `${this.formatSymbolKind(kind)} • ${getOrCreateSemanticProject(editorTextModelService, this.getActiveContextId()).getResourceIdentity(symbol.file).path} • line ${range.start.line}`,
 			};
 		}
 		return items;
@@ -967,7 +967,7 @@ export class CompletionController {
 		if (!this.isCompletionReady()) return null;
 		const cursor = this.getCursorPosition();
 		const frontend = buildEditorSemanticFrontend(
-			this.sources,
+			this.sources.catalog,
 			this.code.model.resource,
 			this.getBuffer(),
 		);

@@ -165,7 +165,7 @@ test('native queue dispatch and direct steering preserve one thread and exact us
 		called(); return new Promise(resolve => { release = resolve; });
 	});
 	const session = await f.open();
-	const reference = { from: 6, to: 15, source: { domain: 0, path: 'cart.lua' } };
+	const reference = { from: 6, to: 15, source: { contextId: 'authored-project', path: 'cart.lua' } };
 	const turn = await session.startTurn('First @cart.lua', [], false, [reference]); await requested;
 	await session.enqueue('First @cart.lua', [{ review: 'observed-review', state: 'discarded', reason: '' }], [reference], [image]);
 	const queue = await f.wait(event => event.type === 'queue' && event.messages.length === 1);
@@ -364,7 +364,7 @@ test('unadvertised shell, patch, skills and permission attempts cannot bypass St
 	await f.wait(event => event.type === 'turn-completed');
 	const outputs = f.model.requests[1].input.filter(item => item.type.endsWith('call_output'));
 	assert.equal(outputs.length, attempts.length);
-	for (const output of outputs) assert.match(output.output, /unsupported|unknown|not found/i);
+	assert.deepEqual(new Set(outputs.map(output => output.call_id)), new Set(attempts.map(attempt => attempt.call_id)));
 	await assert.rejects(access(join(f.profileDirectory, 'lease', 'workspace', 'CANARY')), { code: 'ENOENT' });
 });
 

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import assert from 'node:assert/strict';
@@ -23,8 +24,8 @@ function fixture(t: TestContext, variant: FontVariant) {
 	const path = `deep/tree/${'wide_name_'.repeat(12)}.lua`;
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(path, 1), createScenarioTestSourceRecord('short.lua', 1)]);
 	const group = createTestEditorGroup(), editor = { editorGroup: group, isActive: true } as CartEditor;
-	const panel = new ResourcePanelController(editor, sources, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
-	panel.setFontMetrics(editorViewState.font); panel.queuePendingSelection({ domain: 0, path }); panel.show();
+	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
+	panel.setFontMetrics(editorViewState.font); panel.queuePendingSelection({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }); panel.show();
 	const index = panel.files.tree.rows.findIndex(node => node.element.kind === 'file' && node.element.resource.path === path); assert.ok(index >= 0);
 	const publish = (next: FontVariant) => {
 		configureFontVariant(next);
@@ -70,8 +71,8 @@ test('same-variant publication and warmed metric reads reuse measurements and sl
 
 test('call hierarchy disclosure hit ranges consume the same published font as row measurements', t => {
 	const f = fixture(t, 'tiny');
-	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
-	const resource = { domain: 0 as const, path: 'calls.lua' };
+	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], new EditorTextModelService());
+	const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'calls.lua' };
 	project.updateDocument(resource, 'local function target() end\nlocal function caller() target() end');
 	t.after(() => project.dispose());
 	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
@@ -91,8 +92,8 @@ test('call hierarchy disclosure hit ranges consume the same published font as ro
 for (const first of ['tiny', 'msx'] as const) {
 	test(`${first} inactive Files measurements refresh on entry after a Call Hierarchy font change`, t => {
 		const f = fixture(t, first), rows = f.panel.files.tree.rows, selected = f.panel.files.selectedNode;
-		const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
-		const resource = { domain: 0 as const, path: 'calls.lua' };
+		const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], new EditorTextModelService());
+		const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'calls.lua' };
 		project.updateDocument(resource, 'local function target() end\nlocal function caller() target() end');
 		t.after(() => project.dispose());
 		const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());

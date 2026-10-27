@@ -3,7 +3,14 @@ import { showEditorWarningBanner } from '../../../common/feedback_state';
 import { aemDocumentFormat } from '../../../../toolchain/ts/rompack/aem';
 import { createStructuredInsertionEdit, createStructuredRemovalEdit, type StructuredCollection } from '../../../language/yaml/structured_edits';
 import { editorTextModelService } from '../../../editor/model/model_service';
-import type { RuntimeResource } from '../../../common/resource';
+import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type RuntimeResource } from '../../../common/resource';
+import type { Blua32SourceImage } from '../../../runtime/sources';
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
+import { applyAemSourceRevision } from '../../../runtime/aem';
+import { getTextSnapshot } from '../../../editor/text/source_text';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resolveTextFileModel } from '../../services/working_copy/text_file_model';
 import type { EditorGroupView } from '../../services/editor/editor_group';
@@ -13,18 +20,19 @@ import { resolveTextCodeEditorInput } from '../../ui/code_tab/io';
 import { AemEditorInput } from './editor_input';
 import { aemFieldTemplates, aemSequenceTemplate, aemSequenceValueTemplate } from './schema';
 
-export async function resolveAemEditorInput(sources: RuntimeSourceState, resource: RuntimeResource): Promise<AemEditorInput> {
-	return new AemEditorInput(await resolveTextFileModel(editorTextModelService, sources, resource));
+export async function resolveAemEditorInput(catalog: WorkspaceSourceCatalog, resource: RuntimeResource): Promise<AemEditorInput> {
+	return new AemEditorInput(await resolveTextFileModel(editorTextModelService, catalog, resource));
 }
 
 export class AemEditorController {
 	public constructor(private readonly sources: RuntimeSourceState, private readonly group: EditorGroupView,
-		public readonly quickInput: QuickInputController) {}
+		public readonly quickInput: QuickInputController, private readonly guest: SuspendedGuestSession,
+		private readonly runtime: Runtime, private readonly tasks: RuntimeTaskQueue) {}
 	public open(): void {
-		this.quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', () => new TextQuickPickProvider(this.sources.resources
-			.filter(resource => resource.source.type === 'aem').map(resource => ({ label: resource.path, description: `CART ${resource.domain}`, detail: '', resource }))),
+		this.quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', () => new TextQuickPickProvider(this.sources.catalog.resources
+			.filter(resource => resource.source.type === 'aem').map(resource => ({ label: resource.path, description: this.sources.catalog.getContext(resource.contextId).projectRootPath, detail: '', resource }))),
 			item => {
-				void this.group.openResolvedEditor(resolveAemEditorInput(this.sources, item.resource))
+				void this.group.openResolvedEditor(resolveAemEditorInput(this.sources.catalog, item.resource))
 					.catch(error => showEditorWarningBanner(`Cannot open audio map: ${error instanceof Error ? error.message : String(error)}`));
 			});
 	}
@@ -32,13 +40,39 @@ export class AemEditorController {
 		const selected = input.tree.rows[input.tree.selectionIndex]?.element;
 		const position = { row: 0, column: 0 };
 		if (selected !== undefined) input.workingCopy.buffer.positionAt(selected.node.range![0], position);
-		void this.group.openResolvedEditor(resolveTextCodeEditorInput(this.sources, input.workingCopy.resource),
+		void this.group.openResolvedEditor(resolveTextCodeEditorInput(this.sources.catalog, input.workingCopy.resource),
 			{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } })
 			.catch(error => showEditorWarningBanner(`Cannot open audio source: ${error instanceof Error ? error.message : String(error)}`));
 	}
+	public apply(input: AemEditorInput): void {
+		const resource = input.workingCopy.resource;
+		const choices: Array<{ label: string; description: string; detail: string; domain: ResourceDomain; image: Blua32SourceImage }> = [];
+		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
+			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+			if (image === null || image.sourceContextId !== resource.contextId) continue;
+			choices.push({ label: `Physical ${domain}`, description: resource.path, detail: 'Apply the current source buffer to this installed attachment', domain, image });
+		}
+		this.quickInput.pick('APPLY AUDIO EVENT MAP', 'Choose the actual installed execution attachment; Save only writes source', (_origin, lifetime) => {
+			lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+			lifetime.add({ dispose: input.onWillDispose(() => this.quickInput.hide()) });
+			return new TextQuickPickProvider(choices);
+		}, async choice => {
+			const installed = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
+			if (installed !== choice.image) { input.applyStatus = 'Selected execution attachment was replaced; choose Apply again.'; return; }
+			const source = getTextSnapshot(input.workingCopy.buffer), version = input.workingCopy.version;
+			input.applying = true;
+			input.applyStatus = `Applying source v${version} to physical ${choice.domain}`;
+			try {
+				const result = await applyAemSourceRevision(this.sources, this.guest, this.runtime, this.tasks, resource, choice.domain, choice.image, source);
+				input.applyStatus = result.status === 'applied' ? `Applied source v${version} to physical ${choice.domain}`
+					: result.status === 'not-applied' ? `Not applied to physical ${choice.domain}: ${result.reason}`
+						: `Apply failed in ${result.phase}: ${result.error instanceof Error ? result.error.message : String(result.error)}`;
+			} finally { input.applying = false; }
+		});
+	}
+
 	public audioIds(input: AemEditorInput): readonly string[] {
-		const resourcePackage = input.workingCopy.resource.domain === -1 ? this.sources.systemPackage : this.sources.cartridgeSlots[input.workingCopy.resource.domain]!.package;
-		return Object.keys(resourcePackage.audio);
+		return [...this.sources.catalog.getAssetBindings(input.workingCopy.resource.contextId, 'audio').keys()];
 	}
 	public add(input: AemEditorInput): void {
 		const property = input.tree.rows[input.tree.selectionIndex]?.element ?? input.tree.roots[0].element;

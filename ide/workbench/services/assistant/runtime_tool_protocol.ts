@@ -131,13 +131,13 @@ export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeT
 export function encodeBootOperation(operation: BootOperation) {
 	const result = operation.result;
 	return { operation: operation.id, kind: operation.kind, status: operation.status,
-		capturedDocuments: operation.sourceSnapshots.map(({ domain, path, version }) => ({ domain, path, version })),
+		capturedDocuments: operation.sourceSnapshots.map(({ contextId, path, version }) => ({ contextId, path, version })),
 		result: result !== null && (result.status === 'failed' || result.status === 'rejected') ? { ...result, error: String(result.error) } : result };
 }
 
 export function encodeHotResumeOperation(operation: HotResumeOperation) {
 	const result = operation.result;
 	return { operation: operation.id, status: operation.status, applied: operation.applied,
-		capturedDocuments: operation.sourceSnapshots.map(({ domain, path, version }) => ({ domain, path, version })),
+		capturedDocuments: operation.sourceSnapshots.map(({ contextId, path, version }) => ({ contextId, path, version })),
 		result: result !== null && (result.status === 'failed' || result.status === 'rejected') ? { ...result, error: String(result.error) } : result };
 }

@@ -1,8 +1,8 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { clamp } from '../../../../machine/ts/common/clamp';
-import * as luaPipeline from '../../../runtime/lua_pipeline';
-import { SYSTEM_RESOURCE_DOMAIN, type RuntimeResource } from '../../../common/resource';
+import { readWorkspaceLuaSourceText } from '../../../workspace/files';
+import { type RuntimeResource } from '../../../common/resource';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../../machine/ts/common/text_lines';
@@ -20,7 +20,7 @@ export type ResourceViewerLayout = {
 	textCapacity: number;
 };
 
-export function buildResourceViewerContent(sources: RuntimeSourceState, resource: RuntimeResource): ResourceViewerContent {
+export function buildResourceViewerContent(catalog: WorkspaceSourceCatalog, resource: RuntimeResource): ResourceViewerContent {
 	const asset = resource.source;
 	const title = computeResourceTabTitle(resource);
 	const lines: string[] = [
@@ -35,14 +35,14 @@ export function buildResourceViewerContent(sources: RuntimeSourceState, resource
 		title,
 	};
 	let error: string = null;
-	const resourcePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemPackage : sources.cartridgeSlots[resource.domain]!.package;
+	const resourcePackage = catalog.getContext(resource.contextId).previewPackage;
 	lines.push('');
 	switch (asset.type) {
 		case 'lua': {
-			const source = luaPipeline.resourceSourceForChunk(sources, resource);
+			const source = catalog.resolveLuaSource(resource)!;
 			appendResourceViewerLine(lines, '-- Lua Source --');
 			lines.push('');
-			appendTextLines(lines, source);
+			appendTextLines(lines, readWorkspaceLuaSourceText(source.registry, source.record));
 			break;
 		}
 		case 'data': {

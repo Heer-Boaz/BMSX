@@ -1,58 +1,62 @@
 import { readWorkspaceLuaSourceText } from '../../../workspace/files';
 import { releaseWorkspaceSourceOverrides } from '../../../workspace/cache';
-import { forkRuntimeSourceState, type RuntimeSourceState } from '../../../runtime/sources';
-import { blua32MediaRequiresRebuild, buildBlua32Media, layoutBlua32MediaInstallation } from '../../../runtime/lua_pipeline';
+import { createRuntimeSourceState, type RuntimeSourceState } from '../../../runtime/sources';
+import { blua32MediaRequiresRebuild, prepareBlua32SourceBuildRequest, buildBlua32Media, layoutBlua32MediaInstallation } from '../../../runtime/lua_pipeline';
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../../../workspace/workspace';
 import type { LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
 import type { WorkspaceRecord } from '../../../workspace/records';
 import type { FixtureMedia } from '../../../testing/fixture_media';
 import type { MachineModelSpec } from '../../../../machine/ts/spec/bmsx/model';
-import type { ScenarioTestSource } from '../../../../toolchain/ts/rompack/scenario_test';
+import type { TestCartridgeSourceInput } from '../../../../toolchain/ts/rompack/test_cartridge';
+import { loadBlua32ToolingImage } from '../../../../toolchain/ts/rompack/blua32_media';
+import { CART_ROM_BASE } from '../../../../machine/ts/spec/bmsx/memory_map';
 
-/** Editable records belong to this build, never to the authoring machine or its debugger. */
+/** Capture an authored compiler namespace separately from its packaged asset bytes. */
 export async function buildFixtureMedia(
 	authoring: RuntimeSourceState,
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 	programSources: readonly LuaTextModelSourceSnapshot[],
-	slot: 0 | 1,
+	contextId: string,
 	machineModel: MachineModelSpec,
+	companionContextId: string | null,
 ): Promise<FixtureMedia> {
-	const sources = forkRuntimeSourceState(authoring);
+	const context = authoring.catalog.getContext(contextId);
+	if (context.previewRom === null) throw new Error(`Source context '${contextId}' has no admitted cartridge build inputs.`);
+	if (context.systemContextId === null) throw new Error(`Source context '${contextId}' has no BIOS build binding.`);
+	const system = authoring.catalog.getContext(context.systemContextId);
+	if (system.previewRom === null) throw new Error(`BIOS context '${system.id}' has no admitted build inputs.`);
+	const companion = companionContextId === null ? null : authoring.catalog.getContext(companionContextId);
+	if (companion !== null && companion.previewRom === null) throw new Error(`Companion context '${companion.id}' has no admitted cartridge build inputs.`);
+	const primaryRom = context.previewRom.bytes;
+	const primaryImage = loadBlua32ToolingImage(context.previewRom, CART_ROM_BASE)!;
+	// The primary image is compiled once, below, with the selected fixture. Only
+	// BIOS and an explicitly requested companion participate in dependency builds.
+	const sources = createRuntimeSourceState({ ...system.previewRom, id: 'system' },
+		[null, companion === null ? null : { ...companion.previewRom!, id: 'cart' }],
+		{ catalog: authoring.catalog.fork(), systemContextId: system.id, cartridgeContextIds: [null, companionContextId] });
 	try {
-		await applyAllWorkspaceSourceOverrides(sources, new Map(dirtyRecords));
-		applyLuaTextModelSources(sources, programSources);
+		await applyAllWorkspaceSourceOverrides(sources.catalog, new Map(dirtyRecords));
+		applyLuaTextModelSources(sources.catalog, programSources);
 		let systemRom = sources.systemRom.bytes;
-		let cartridgeIndex = sources.cartridgeSlots[slot]!.rom.index;
-		const cartridgeSlots: [Uint8Array | null, Uint8Array | null] = [
-			sources.cartridgeSlots[0] === null ? null : sources.cartridgeSlots[0].rom.bytes,
-			sources.cartridgeSlots[1] === null ? null : sources.cartridgeSlots[1].rom.bytes,
-		];
+		let companionRom = sources.cartridgeSlots[1] === null ? null : sources.cartridgeSlots[1].rom.bytes;
 		if (blua32MediaRequiresRebuild(sources)) {
 			const media = layoutBlua32MediaInstallation(sources, buildBlua32Media(sources,
-				machineModel.ramBytes,
-				{ system: sources.systemBlua32MediaDirty ? 'workspace' : null,
-					cartridgeSlots: [sources.cartridgeBlua32MediaDirty[0] ? 'workspace' : null, sources.cartridgeBlua32MediaDirty[1] ? 'workspace' : null] }, 'boot'));
+				machineModel.ramBytes, prepareBlua32SourceBuildRequest(sources), 'boot'));
 			if (media.systemLayer !== null) systemRom = media.systemLayer.bytes;
-			for (const index of [0, 1] as const) {
-				const layer = media.cartridgeLayers[index];
-				if (layer !== null) {
-					cartridgeSlots[index] = layer.bytes;
-					if (index === slot) cartridgeIndex = layer.index;
-				}
-			}
+			if (media.cartridgeLayers[1] !== null) companionRom = media.cartridgeLayers[1].bytes;
 		}
-		const registry = sources.cartridgeSlots[slot]!.luaSources;
-		const sourceOnlyModules: ScenarioTestSource[] = [];
-		for (const asset of cartridgeIndex.entries) {
-			if (asset.type !== 'lua' || asset.program_module) continue;
-			const record = registry.path2lua[asset.source_path!];
-			sourceOnlyModules.push({ sourcePath: record.source_path, source: readWorkspaceLuaSourceText(registry, record) });
-		}
-		return { systemRom, cartridgeSlots, sourceOnlyModules, machineModel, optLevel: sources.currentBlua32Media.cartridgeSlots[slot]!.symbols!.metadata.optLevel };
+		const registry = sources.catalog.getContext(contextId).luaSources;
+		const modules = new Map<string, TestCartridgeSourceInput>();
+		for (const record of registry.records) if (!record.generated) modules.set(record.module_path, {
+			assetId: record.resid, sourceFilePath: record.normalized_source_path, updateTimestamp: record.update_timestamp,
+			displayPath: record.source_path, content: { kind: 'text', text: readWorkspaceLuaSourceText(registry, record) },
+		});
+		const entry = registry.path2lua[registry.entrySourcePath];
+		return { systemRom, cartridgeSlots: [primaryRom, companionRom], sourceContexts: [system.id, contextId, companionContextId],
+			sourceSelection: { kind: 'authored', entryModulePath: entry?.module_path, modules },
+			machineModel, optLevel: primaryImage.symbols!.metadata.optLevel };
 	} finally {
-		releaseWorkspaceSourceOverrides(sources.systemLuaSources);
-		for (const cartridge of sources.cartridgeSlots) {
-			if (cartridge !== null) releaseWorkspaceSourceOverrides(cartridge.luaSources);
-		}
+		for (const context of sources.catalog.contexts.values()) releaseWorkspaceSourceOverrides(context.luaSources);
+		sources.catalog.dispose();
 	}
 }

@@ -1,8 +1,5 @@
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
-import {
-	runtimeSourceProjectRootPath,
-	type RuntimeSourceState,
-} from '../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../workspace/source_catalog';
 import type { CartEditor } from '../../cart_editor';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
@@ -15,7 +12,7 @@ import {
 
 export async function applyWorkspaceAutosavePayload(
 	editor: Pick<CartEditor, 'editorGroup' | 'editorInputSerializers' | 'setFontVariant'>,
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
 ): Promise<void> {
@@ -23,7 +20,7 @@ export async function applyWorkspaceAutosavePayload(
 	editor.editorGroup.model.clear();
 	editorTextModelService.clear();
 	editor.setFontVariant(payload.fontVariant);
-	await restoreWorkspaceDirtyModels(editorTextModelService, sources, payload.dirtyFiles, workspaceDirtyRecords);
+	await restoreWorkspaceDirtyModels(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords);
 	await editor.editorGroup.model.deserialize(payload.editorGroup, editor.editorInputSerializers);
 	const active = editor.editorGroup.model.activeTab;
 	if (active !== null) editor.editorGroup.activate(active.id);
@@ -31,15 +28,15 @@ export async function applyWorkspaceAutosavePayload(
 }
 
 export function hydrateDirtyFiles(
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	entries: PersistedDirtyEntry[],
 ): void {
 	for (const entry of entries) {
 		const model = editorTextModelService.get(entry)!;
-		const projectRootPath = runtimeSourceProjectRootPath(sources, entry.domain);
+		const projectRootPath = catalog.getContext(entry.contextId).projectRootPath;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(
 			projectRootPath,
-			entry.domain,
+			entry.contextId,
 			entry.path,
 		);
 		const record = workspaceDirtyRecords.get(dirtyPath);

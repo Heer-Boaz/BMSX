@@ -14,6 +14,7 @@ export function readBlua32CompiledSource(source: Blua32CompiledSource): string {
 	return source.content.text;
 }
 
+/** Selected diagnostic proof includes direct compiler inputs and explicitly mapped authored origins. */
 export function compiledBlua32Sources(sources: Blua32DiagnosticSourceMap): ReadonlyMap<string, Blua32CompiledSource> {
 	const compiled = new Map<string, Blua32CompiledSource>();
 	for (const [module, source] of sources) compiled.set(toLuaModulePath(module), {

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -9,7 +10,7 @@ import { UNDO_HISTORY_LIMIT } from '../../ide/common/constants';
 function fixture(t: TestContext) {
 	const service = new EditorTextModelService();
 	t.after(() => service.clear());
-	const models = ['a.lua', 'b.lua', 'c.lua'].map((path, index) => service.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path,
+	const models = ['a.lua', 'b.lua', 'c.lua'].map((path, index) => service.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path,
 		source: { type: 'lua', resid: path } }, 'lua', String(index)));
 	return { service, models, text: () => models.map(model => model.buffer.getText()),
 		plan: (selected = models): Map<EditorTextModel, EditorModelEdit> => new Map(selected.map(model => [model,

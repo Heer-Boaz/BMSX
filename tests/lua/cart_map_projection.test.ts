@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -23,7 +24,7 @@ const SOURCE = [
 function fixture(source = SOURCE, kind: 'pietious' | 'nemesis' = 'pietious') {
 	configureFontVariant('tiny');
 	const path = kind === 'pietious' ? 'res/data/castle_map.yaml' : 'res/data/nemesis_s_stage.yaml';
-	const model = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
 	const input = new CartMapInput(model, kind);
 	projectCartMap(input);
 	return { model, input };

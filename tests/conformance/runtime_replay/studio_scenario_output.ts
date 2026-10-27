@@ -1,5 +1,4 @@
 
-import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import type { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
 import { SCENARIO_RESULT_LOG_RETAIN_COUNT } from '../../../ide/testing/scenario/result_service';
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -19,7 +18,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	const { ide, press, click, frame, runPaletteCommand, cycles } = test;
 	const origin = ide.editor.editorGroup.model.activeTab;
 	// Open the canonical cartridge resource independently of test-target lifetime.
-	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: 'cart.lua' });
+	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' });
 	check(resource !== undefined, 'A05: test cancellation retains the cartridge source');
 	await ide.editor.navigation.openResource(resource!);
 	const model = sourcePane(test).code.model, original = model.buffer.getText();
@@ -35,7 +34,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	if (view.focus === 'results') await press('ShiftLeft', 'Tab');
 	await press('Home');
 	for (let n = 0; n < view.testPane.rows.indexOf(testRow); n += 1) await press('ArrowDown');
-	const run = service.beginRun(testRow.test.id, [{ test: testRow.test, source: ide.scenarioRuns.collection.findModuleBySourcePath(testRow.test.resource.domain, testRow.test.resource.path).source, sourceRevision: 1 }]);
+	const run = service.beginRun(testRow.test.id, [{ test: testRow.test, source: ide.scenarioRuns.collection.findModuleBySourcePath(testRow.test.resource.contextId, testRow.test.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 50);
 	service.appendLog(result, 51, MESSAGE);
 	service.appendLog(result, 52, 'real source message', { resource: model.resource, line: 4, column: 1 });
@@ -118,7 +117,7 @@ async function testScenarioEffectSourceChoice(
 ): Promise<void> {
 	const { ide, press, frame, runPaletteCommand } = test;
 	const service = view.resultService;
-	const trace = service.beginActionEffectTrace(result, 'fixture.actor', 'fixture.definition');
+	const trace = service.beginActionEffectTrace(result, 'fixture.actor', 'fixture.definition', test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId);
 	service.appendActionEffectActivity(trace, 1, 100, 80, 'fixture.result', 'activate', 1);
 	await frame();
 	const choose = async () => {

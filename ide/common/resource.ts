@@ -6,7 +6,7 @@ export const CARTRIDGE_RESOURCE_DOMAINS = [0, 1] as const;
 export type ResourceDomain = -1 | 0 | 1;
 
 export type ResourceIdentity = {
-	domain: ResourceDomain;
+	contextId: string;
 	path: string;
 };
 
@@ -21,6 +21,7 @@ export type RuntimeResourceLocation =
 	| { readonly kind: 'generated'; readonly path: string };
 
 export type RuntimeResource = ResourceIdentity & {
+	readonly contextLabel: string;
 	source: RuntimeResourceSource;
 	location: RuntimeResourceLocation;
 	/** Admitted WorkspaceRecordProvider address; generated resources have no source file. */
@@ -28,21 +29,21 @@ export type RuntimeResource = ResourceIdentity & {
 };
 
 export type TextResourceCreationRequest = {
-	domain: ResourceDomain;
+	contextId: string;
 	relativePath: string;
 	contents: string;
 };
 
-export function resourceIdentityKeyFromParts(domain: ResourceDomain, path: string): string {
-	return `${domain}\0${path}`;
+export function resourceIdentityKeyFromParts(contextId: string, path: string): string {
+	return `${contextId}\0${path}`;
 }
 
 export function resourceIdentityKey(resource: ResourceIdentity): string {
-	return resourceIdentityKeyFromParts(resource.domain, resource.path);
+	return resourceIdentityKeyFromParts(resource.contextId, resource.path);
 }
 
 export function resourceIdentityEquals(left: ResourceIdentity, right: ResourceIdentity): boolean {
-	return left.domain === right.domain && left.path === right.path;
+	return left.contextId === right.contextId && left.path === right.path;
 }
 
 export function resourceLocationEquals(left: RuntimeResourceLocation, right: RuntimeResourceLocation): boolean {

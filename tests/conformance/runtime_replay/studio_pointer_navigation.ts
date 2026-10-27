@@ -6,7 +6,6 @@ import { testStudioFsmInitial } from './studio_fsm_initial';
 import { testStudioFsmBookmarks } from './studio_fsm_bookmarks';
 
 import { queryDefinitionsAt } from '../../../ide/editor/contrib/definitions/query';
-import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { sourcePane, check, codePositionBounds, type StudioFixture } from './studio_fixture';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
@@ -49,7 +48,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	const { ide, frame, click, setKey, setPointerButton, movePointer, runPaletteCommand, cycles } = test;
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
-	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: spec.path })!;
+	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: spec.path })!;
 	await ide.editor.navigation.openResource(resource);
 	await frame();
 	const model = sourcePane(test).code.model;
@@ -62,7 +61,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	check(declarationOffset >= 0, `${cart}: fixture declaration exists in the authored source`);
 	const declaration = { row: 0, column: 0 };
 	model.buffer.positionAt(declarationOffset, declaration);
-	const definition = queryDefinitionsAt(ide.sources, sourcePane(test).code, useRow, useColumn)!;
+	const definition = queryDefinitionsAt(ide.sources.catalog, sourcePane(test).code, useRow, useColumn)!;
 	check(definition.definitions.length === 1 && definition.definitions[0].location.path === spec.path
 		&& definition.definitions[0].location.range.startLine === (declaration.row + 1)
 		&& definition.definitions[0].location.range.startColumn === (declaration.column + 1),

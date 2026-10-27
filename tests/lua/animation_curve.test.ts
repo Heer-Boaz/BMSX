@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
@@ -10,7 +11,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 
-const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
 const source = `return { duration_ms=100, tracks={
 	{kind='value', interpolation='cubic', path={'x'}, keys={
 		{time_ms=0,value=0,arrive_tangent=0,leave_tangent=2},
@@ -216,7 +217,7 @@ test('negative authored values and slopes survive graphical editing and source r
 return {tracks={{kind='value',interpolation='cubic',keys={
 	{time_ms=first,value=-2,arrive_tangent=slope,leave_tangent=-4},
 	{time_ms=1,value=0,arrive_tangent=-8,leave_tangent=0}}}}}`;
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
 	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const key = input.document.tracks[0].keys[0];
 	assert.equal(key.coordinate!.value, -25);
@@ -234,7 +235,7 @@ return {tracks={{kind='value',interpolation='cubic',keys={
 });
 
 test('the curve commits time and value as one native source edit and idle geometry does no projection work', () => {
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
 	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
 	authoring.editCurveKey(input, input.document.tracks[0].keys[1], 120, 'value', 200);

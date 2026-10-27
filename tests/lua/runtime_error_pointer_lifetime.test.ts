@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
@@ -13,7 +14,7 @@ function overlay(): RuntimeErrorOverlay {
 
 test('runtime error retarget/clear revoke hover before replacing the active overlay', t => {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'error.lua', location: { kind: 'workspace', path: 'error.lua' }, domain: 0, path: 'error.lua', source: { type: 'lua', resid: 'error' } }, 'lua', 'return 1');
+	const model = models.retain({ contextLabel: 'fixture-source', sourceFilePath: 'error.lua', location: { kind: 'workspace', path: 'error.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'error.lua', source: { type: 'lua', resid: 'error' } }, 'lua', 'return 1');
 	const code = createTestCodeControl(t, model, documents, clock);
 	const first = overlay(), second = overlay();
 	setActiveRuntimeErrorOverlay(code, first);

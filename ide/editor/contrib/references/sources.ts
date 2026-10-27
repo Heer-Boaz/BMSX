@@ -28,7 +28,7 @@ export function buildReferenceSources(info: ReferenceMatchInfo): ReferenceSource
 	};
 	for (const target of info.query.targets) append(target.declaration, 'definition');
 	for (const reference of info.query.references) append(reference, 'reference');
-	sources.sort((left, right) => left.resource.path.localeCompare(right.resource.path) || left.resource.domain - right.resource.domain
+	sources.sort((left, right) => left.resource.path.localeCompare(right.resource.path) || left.resource.contextId.localeCompare(right.resource.contextId)
 		|| compareSourcePosition(left.range.start.line, left.range.start.column, right.range.start.line, right.range.start.column));
 	return sources;
 }

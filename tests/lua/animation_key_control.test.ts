@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { KeyInputEvent } from '../../hosts/common/input/text';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -21,8 +22,8 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 
 test('a key beneath a coincident tangent endpoint owns the pointer gesture', t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',keys={{time_ms=0,value=0,leave_tangent=0},{time_ms=32,value=0,arrive_tangent=0,leave_tangent=0},{time_ms=100,value=0,arrive_tangent=0}}}}}";
-	const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
 	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	input.trackIndex = 0;
 	input.keys.bind(input.document.tracks[0], 0, input.document);
@@ -49,8 +50,8 @@ test('a key beneath a coincident tangent endpoint owns the pointer gesture', t =
 
 test('key capture preserves grab offset and commits only a physical drop; click, source invalidation and focus loss do not edit', t => {
 	const source = "return {duration_ms=1000,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100.25,value=1}}}}}";
-	const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
 	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	input.trackIndex = 0;
 	input.keys.bind(input.document.tracks[0], -1, input.document);
@@ -103,8 +104,8 @@ test('key capture preserves grab offset and commits only a physical drop; click,
 
 test('frame and clip axes navigate without a scalar track or a document edit', t => {
 	const source = "return {frames={'first','second'},subsequences={{start_ms=50,duration_ms=100,sequence={}}}}";
-	const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
 	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
 	const unexpected = () => { throw new Error('axis navigation does not edit or select a scalar key'); };
@@ -148,8 +149,8 @@ test('frame and clip axes navigate without a scalar track or a document edit', t
 test('tangent direction uses both pointer axes and commits one native slope without moving its key', t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='cubic',path={'x'},keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=2},{time_ms=100,value=100,arrive_tangent=2,leave_tangent=0}}}}}";
 	for (const field of ['leave', 'arrive'] as const) {
-		const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
-		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+		const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { type: 'lua' as const, resid: 'animation' } };
+		const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
 		input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 		input.trackIndex = 0;
 		const keyIndex = field === 'leave' ? 0 : 1;

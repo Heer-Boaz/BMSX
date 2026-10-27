@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -27,7 +28,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 		displayLabel: '', displayValue: '', displayValueLeft: 0 });
 	rebuildWorkbenchTreeRows(tree, row);
 	layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), (text, a, b) => editorViewState.font.measure(text.slice(a, b)), 4, 60, pane.right - 4, 250);
-	const model = new EditorTextModel({ sourceFilePath: 'source.lua', location: { kind: 'workspace' as const, path: 'source.lua' }, domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 17');
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'source.lua', location: { kind: 'workspace' as const, path: 'source.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 17');
 	const edit = new WorkbenchPropertyEdit<string>(parent, text => text, surfaces, owner, root);
 	let applied = 0;
 	const open = (sourceModel = model) => edit.open({ model: sourceModel, tree, row,
@@ -140,7 +141,7 @@ for (const writableRoundtrip of [false, true]) test(`readonly source publication
 });
 
 test('a property popup owns only its attached source readonly subscription', t => {
-	const f = fixture(t), other = new EditorTextModel({ ...f.model.resource,
+	const f = fixture(t), other = new EditorTextModel({ contextLabel: 'Fixture project', ...f.model.resource,
 		location: { kind: 'workspace', path: 'other.lua' }, path: 'other.lua', source: { type: 'lua', resid: 'other' } }, 'lua', 'return 17');
 	t.after(() => other.dispose());
 	const firstSubscribe = f.model.onDidChangeReadOnly, nextSubscribe = other.onDidChangeReadOnly;

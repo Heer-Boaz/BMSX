@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -169,7 +170,7 @@ test('source and map edits share one history, and stale projections cannot write
 	const service = new EditorTextModelService();
 	t.after(() => service.clear());
 	for (const [path, source] of [['castle_map.yaml', castleSource], ['nemesis_s_stage.yaml', stageSource]]) {
-		const model = service.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'data', resid: path } }, 'yaml', source);
+		const model = service.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'data', resid: path } }, 'yaml', source);
 		let operation: EditorModelEdit;
 		if (path === 'castle_map.yaml') {
 			const document = buildPietiousSource(source, model.version);

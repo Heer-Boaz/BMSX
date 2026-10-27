@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from './runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture, type ResourceLuaSemanticFixtureFile } from './lua_semantic_project';
 import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import assert from 'node:assert/strict';
@@ -21,7 +22,7 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 		lineHeight: editorViewState.lineHeight, editorAreaTop: editorViewState.editorAreaTop, editorAreaBottom: editorViewState.editorAreaBottom };
 	t.after(() => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, editorAreaTop: 24, editorAreaBottom: 276 });
-	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'order.lua' }, sourceFilePath: 'order.lua', domain: 0, path: 'order.lua', source: { type: 'lua', resid: 'order' } }, 'lua', source);
+	const model = new EditorTextModel({ location: { kind: 'workspace' as const, path: 'order.lua' }, contextLabel: 'Fixture project', sourceFilePath: 'order.lua', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'order.lua', source: { type: 'lua', resid: 'order' } }, 'lua', source);
 	let analysis: ResourceLuaSemanticFixtureFile;
 	const project = () => {
 		analysis = buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource);
@@ -31,7 +32,7 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
 	selectBehaviorLensDefinition(view, document.definitions[definition].rowKey);
-	const input = new BehaviorLensInput(model, view, () => assert.fail('BT-only fixtures do not run an FSM layout worker'));
+	const input = new BehaviorLensInput(model, view, new Set([model.resource.contextId]), () => assert.fail('BT-only fixtures do not run an FSM layout worker'));
 	const bounds = { left: 0, top: 24, right: 384, bottom: 276 };
 	prepareBehaviorLensLayout(view, bounds);
 	assert.ok(view.presentation.kind === 'graph');

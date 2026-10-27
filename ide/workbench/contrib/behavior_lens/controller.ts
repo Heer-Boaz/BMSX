@@ -4,7 +4,8 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
-import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
+import type { Blua32SourceImage, RuntimeSourceState } from '../../../runtime/sources';
+import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../common/resource';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { type EditorOpenOptions } from '../../ui/tab/group_model';
 import type { EditorNavigationController } from '../resources/navigation';
@@ -49,10 +50,10 @@ import { WorkspaceEditReviewInput } from '../edit_review/editor_input';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { canOpenBehaviorInspectionSource } from './inspection_source';
 import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
-import { inspectActionEffectDefinition, readActionEffectInstances } from './action_effect_runtime';
-import { inspectStateMachineDefinition, readStateMachineDefinitionStates, readStateMachineInstances, readStateMachineStates } from './state_machine_runtime';
+import { inspectActionEffectDefinition, readActionEffectInstances, type ActionEffectInstanceChoice } from './action_effect_runtime';
+import { inspectStateMachineDefinition, readStateMachineDefinitionStates, readStateMachineInstances, readStateMachineStates, type StateMachineInstanceChoice } from './state_machine_runtime';
 import { readBehaviorDefinitions, type BehaviorDefinitionChoice } from './runtime_definitions';
-import { readBehaviorTreeInstances } from './behavior_tree_runtime';
+import { readBehaviorTreeInstances, type BehaviorTreeInstanceChoice } from './behavior_tree_runtime';
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import { BehaviorRuntimeInspection, type BehaviorRuntimeSelection } from './runtime_inspection';
 
@@ -77,14 +78,14 @@ export class BehaviorLensController {
 
 	public open(kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
 		this.quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
-			() => new TextQuickPickProvider(buildBehaviorQuickPickItems(this.sources, this.documents.registrations, kind)),
+			() => new TextQuickPickProvider(buildBehaviorQuickPickItems(this.sources.catalog, this.documents.registrations, kind)),
 			item => this.openDefinition(item.registration, options));
 	}
 
 	public openDefinition(registration: BehaviorRegistrationSource, options: EditorOpenOptions = {}): BehaviorLensInput {
 		return captureNavigation(() => {
-			const resource = resolveRuntimeResource(this.sources, registration.resource)!;
-			const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
+			const resource = this.sources.catalog.resolveResource(registration.resource)!;
+			const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
 			const occurrence = luaSourceRangeToTextRange(model.buffer, registration.occurrenceRange);
 			let input: BehaviorLensInput | undefined;
 			for (const candidate of this.editorGroup.model.tabs) {
@@ -114,11 +115,11 @@ export class BehaviorLensController {
 
 	/** Source-derived input creation is independent of group admission and pane layout. */
 	public createInput(model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind']): BehaviorLensInput {
-		const project = getOrCreateSemanticProject(editorTextModelService, model.resource.domain);
+		const project = getOrCreateSemanticProject(editorTextModelService, model.resource.contextId);
 		return new BehaviorLensInput(model, createBehaviorLensViewState(this.documents.get(model), model, presentation, address => {
-			const resource = resolveRuntimeResource(this.sources, project.getResourceIdentity(address))!;
-			return resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
-		}), this.createGraphLayoutEngine);
+			const resource = this.sources.catalog.resolveResource(project.getResourceIdentity(address))!;
+			return resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
+		}), new Set(this.sources.catalog.getSourceContexts(model.resource.contextId).map(context => context.id)), this.createGraphLayoutEngine);
 	}
 
 	/** Refreshes a visible source lens when its canonical code buffer advances. */
@@ -146,7 +147,7 @@ export class BehaviorLensController {
 			model.history.applyEdits(new Map([[model, createStateMachineRetargetEdit(model, view, selection, target)]]));
 			return;
 		}
-		const context = new WorkspaceSourceContext(editorTextModelService, this.sources);
+		const context = new WorkspaceSourceContext(editorTextModelService, this.sources.catalog);
 		for (const source of view.source.models.values()) context.read(source);
 		const edit = createStateMachineRetargetEdit(model, view, selection, target);
 		const evidence = { summary: `${target.uses.length} recognized uses: ${target.literal.value} -> ${target.text}\nRecognized in ${view.resource.path}; other registration files and dynamic calls are not enumerated.`,
@@ -160,7 +161,7 @@ export class BehaviorLensController {
 		insertion: number, check: Extract<BehaviorTreeTransferCheck, { kind: 'available' }>,
 	): void {
 		const view = input.view, model = view.source.models.get(analysis.member.file.file)!;
-		const context = new WorkspaceSourceContext(editorTextModelService, this.sources);
+		const context = new WorkspaceSourceContext(editorTextModelService, this.sources.catalog);
 		for (const source of view.source.models.values()) context.read(source);
 		const edit = createBehaviorTreeTransferEdit(model, view, analysis.member, check, insertion);
 		const evidence = { summary: `${analysis.member.branch.role} -> ${check.target.role} position ${insertion + 1}\nRecognized source uses only; dynamic consumers are not enumerated.`,
@@ -178,30 +179,44 @@ export class BehaviorLensController {
 	}
 
 	public inspectRuntimeEffect(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
-		const choices = readActionEffectInstances(this.sources, this.guest, input.view.resource.domain);
-		this.quickInput.pick('GRANTED ACTIONEFFECTS', choices.available ? 'Choose a granted instance, not a source registration' : 'Runtime exports unavailable or not initialized',
+		const choices: Array<ActionEffectInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
+		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
+			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+			if (image === null || image.sourceContextId !== input.view.resource.contextId) continue;
+			for (const item of readActionEffectInstances(this.sources, this.guest, domain).items) {
+				choices.push({ ...item, domain, image, detail: `Physical ${domain} / ${item.detail}` });
+			}
+		}
+		this.quickInput.pick('GRANTED ACTIONEFFECTS', 'Choose an instance and its actual installed attachment',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
-				return new TextQuickPickProvider(choices.items);
+				return new TextQuickPickProvider(choices);
 			}, choice => {
-				this.showRuntimeInspection(input, inspector, `LIVE EFFECT / ${choice.label}`, {
+				this.showRuntimeInspection(input, inspector, choice.domain, choice.image, `LIVE EFFECT / ${choice.label}`, {
 					kind: 'action_effect', componentHashId: choice.component.hashId, effectHashId: choice.effect.hashId,
 				});
 			});
 	}
 
 	public inspectRuntimeStateMachine(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
-		const choices = readStateMachineInstances(this.sources, this.guest, input.view.resource.domain);
-		this.quickInput.pick('FSM INSTANCES', choices.available ? 'Choose a runtime instance, not a source registration' : 'Runtime exports unavailable or not initialized',
+		const choices: Array<StateMachineInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
+		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
+			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+			if (image === null || image.sourceContextId !== input.view.resource.contextId) continue;
+			for (const item of readStateMachineInstances(this.sources, this.guest, domain).items) {
+				choices.push({ ...item, domain, image, detail: `Physical ${domain} / ${item.detail}` });
+			}
+		}
+		this.quickInput.pick('FSM INSTANCES', 'Choose an instance and its actual installed attachment',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
-				return new TextQuickPickProvider(choices.items);
+				return new TextQuickPickProvider(choices);
 			}, machine => this.quickInput.pick(`STATES / ${machine.label}`, machine.detail,
 				(_origin, lifetime) => {
 					lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 					return new TextQuickPickProvider(readStateMachineStates(this.guest, machine.machine));
 				}, state => {
-					this.showRuntimeInspection(input, inspector, `LIVE FSM / ${state.label}`, {
+					this.showRuntimeInspection(input, inspector, machine.domain, machine.image, `LIVE FSM / ${state.label}`, {
 						kind: 'state_machine', componentHashId: machine.component.hashId,
 						machineHashId: machine.machine.hashId, stateHashId: state.state.hashId,
 					});
@@ -209,22 +224,29 @@ export class BehaviorLensController {
 	}
 
 	public inspectRuntimeTree(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
-		const choices = readBehaviorTreeInstances(this.sources, this.guest, input.view.resource.domain);
-		this.quickInput.pick('BT INSTANCES', choices.available ? 'Choose a runtime instance, not a source registration' : 'Runtime exports unavailable or not initialized',
+		const choices: Array<BehaviorTreeInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
+		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
+			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+			if (image === null || image.sourceContextId !== input.view.resource.contextId) continue;
+			for (const item of readBehaviorTreeInstances(this.sources, this.guest, domain).items) {
+				choices.push({ ...item, domain, image, detail: `Physical ${domain} / ${item.detail}` });
+			}
+		}
+		this.quickInput.pick('BT INSTANCES', 'Choose an instance and its actual installed attachment',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
-				return new TextQuickPickProvider(choices.items);
+				return new TextQuickPickProvider(choices);
 			}, choice => {
-				this.showRuntimeInspection(input, inspector, `LIVE BT / ${choice.label}`, {
+				this.showRuntimeInspection(input, inspector, choice.domain, choice.image, `LIVE BT / ${choice.label}`, {
 					kind: 'behavior_tree', componentHashId: choice.component.hashId,
 				});
 			});
 	}
 
-	private showRuntimeInspection(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>, title: string, selection: BehaviorRuntimeSelection): void {
-		const inspection = new BehaviorRuntimeInspection(this.sources, this.guest, this.rewind, input.view.resource.domain, selection);
+	private showRuntimeInspection(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>, domain: ResourceDomain, image: Blua32SourceImage, title: string, selection: BehaviorRuntimeSelection): void {
+		const inspection = new BehaviorRuntimeInspection(this.sources, this.guest, this.rewind, domain, image, selection);
 		const lifetime = inspector.show({ title, items: inspection.refresh()!,
-			canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
+			canOpenSource: item => canOpenBehaviorInspectionSource(this.sources.catalog, item),
 			openSource: item => this.openInspectionSource(input, item),
 		});
 		input.runtimeInspection = inspection;
@@ -234,22 +256,29 @@ export class BehaviorLensController {
 
 	public inspectRegisteredDefinitions(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const isStateMachine = input.view.presentation.kind === 'state-graph';
-		const choices = readBehaviorDefinitions(this.sources, this.guest, input.view.resource.domain,
-			isStateMachine ? 'cartlib/fsm/fsm_component' : 'cartlib/actioneffects/actioneffect_component');
+		const choices: Array<BehaviorDefinitionChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
+		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
+			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+			if (image === null || image.sourceContextId !== input.view.resource.contextId) continue;
+			for (const item of readBehaviorDefinitions(this.sources, this.guest, domain,
+				isStateMachine ? 'cartlib/fsm/fsm_component' : 'cartlib/actioneffects/actioneffect_component').items) {
+				choices.push({ ...item, domain, image, detail: `Physical ${domain}` });
+			}
+		}
 		const inspect = (choice: BehaviorDefinitionChoice): void => {
 			const lifetime = inspector.show({ title: `REGISTERED ${isStateMachine ? 'FSM' : 'EFFECT'} / ${choice.label}`,
 				items: isStateMachine ? inspectStateMachineDefinition(this.sources, this.guest, choice.definition)
 					: inspectActionEffectDefinition(this.sources, this.guest, choice.definition, choice.label),
-				canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
+				canOpenSource: item => canOpenBehaviorInspectionSource(this.sources.catalog, item),
 				openSource: item => this.openInspectionSource(input, item),
 			});
 			lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
 		};
 		this.quickInput.pick(isStateMachine ? 'REGISTERED FSMS' : 'REGISTERED ACTIONEFFECTS',
-			choices.available ? 'Published definitions, including those without instances' : 'Registry export or capture symbols unavailable',
+			'Published definitions and their actual installed attachments',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
-				return new TextQuickPickProvider(choices.items);
+				return new TextQuickPickProvider(choices);
 			}, choice => {
 				if (!isStateMachine) { inspect(choice); return; }
 				this.quickInput.pick(`LOADED STATES / ${choice.label}`, 'Definition hierarchy, not an actor instance',

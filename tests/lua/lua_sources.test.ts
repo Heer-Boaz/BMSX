@@ -1,3 +1,5 @@
+import { compiledBlua32Sources } from '../../toolchain/ts/rompack/blua32_sources';
+import { collectInstalledProgramSources } from '../../ide/runtime/program_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -19,7 +21,7 @@ import type {
 	RomAsset,
 } from '../../toolchain/ts/rompack/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
-import { buildLuaSources } from '../../ide/runtime/source_registry';
+import { buildLuaSources, captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import {
@@ -110,7 +112,7 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 		sys: 'return 3',
 	});
 
-	const registry = buildLuaSources(cartSource, activeSource, makeIndex([cartEntry]), 'cart', 'cart');
+	const registry = buildLuaSources(cartSource, activeSource, makeIndex([cartEntry]), 'cart', 'cart', []);
 	const record = registry.path2lua['cart.lua'];
 
 	assert.equal(registry.can_boot_from_source, true);
@@ -154,7 +156,7 @@ test('buildLuaSources retains source-only Lua without admitting it to the progra
 		__test_source__: 'return { kind=\'unit\', tests={ sample=function() end } }',
 	});
 
-	const registry = buildLuaSources(source, source, makeIndex([entry, testSource]), 'cart', 'cart');
+	const registry = buildLuaSources(source, source, makeIndex([entry, testSource]), 'cart', 'cart', []);
 	const retained = registry.path2lua['tests/carts/test/cart_assert.lua'];
 
 	assert.equal(registry.can_boot_from_source, true);
@@ -172,16 +174,16 @@ test('packed Scenario sources in the library tree keep their source-only role', 
 	const source = new TestRomSource([entry, scenario], {
 		main: 'module<entry>\nreturn 1', [scenario.resid]: 'return (',
 	});
-	const registry = buildLuaSources(source, source, makeIndex([entry, scenario]), 'cart', 'entry');
+	const registry = buildLuaSources(source, source, makeIndex([entry, scenario]), 'cart', 'entry', []);
 	assert.equal(registry.path2lua[testPath].sourceKind, 'source-only');
-	const selected = collectProgramSources(registry, registry.entrySourcePath, [], { kind: 'workspace' });
+	const selected = collectProgramSources(registry, registry.entrySourcePath, []);
 	assert.equal(selected.parsed.has('cartlib/example_assert'), false);
 });
 
 test('release BLua32 images do not synthesize editable Lua source records', () => {
 	const imageEntry: RomAsset = { resid: BLUA32_IMAGE_ID, type: 'code', payload_id: 'system' };
 	const source = new TestRomSource([imageEntry], {});
-	const registry = buildLuaSources(source, source, makeIndex([imageEntry]), 'system', undefined);
+	const registry = buildLuaSources(source, source, makeIndex([imageEntry]), 'system', undefined, []);
 
 	assert.equal(registry.can_boot_from_source, false);
 	assert.deepEqual(registry.records, []);
@@ -193,7 +195,7 @@ test('system source registry retains the BLua32 compile-time firmware module', (
 	const source = new TestRomSource([entry], {
 		boot: 'module<entry>\nreturn require(\'bmsx/blua32\').instruction_bytes',
 	});
-	const registry = buildLuaSources(source, source, makeIndex([entry]), 'system', 'boot');
+	const registry = buildLuaSources(source, source, makeIndex([entry]), 'system', 'boot', []);
 	const firmware = registry.module2lua[BLUA32_FIRMWARE_MODULE_PATH];
 
 	assert.equal(firmware.source_path, BLUA32_FIRMWARE_SOURCE_PATH);
@@ -242,4 +244,43 @@ test('toLuaModulePath normalizes source paths through the loader contract', () =
 	assert.equal(toLuaModulePath('carts/pietious/cart.lua'), 'cart');
 	assert.equal(toLuaModulePath('carts/pietious/room/room.lua'), 'room/room');
 	assert.equal(toLuaModulePath('carts\\pietious\\room\\room.lua'), 'room/room');
+});
+
+
+for (const entrySourcePath of ['stripped_entry', undefined]) test(`partial embedded source retains its available files without an authored entry (${entrySourcePath})`, () => {
+	const available = luaEntry('available', 'available.lua', 'cart', 1);
+	const source = new TestRomSource([available], { available: 'return 17' });
+	const registry = buildLuaSources(source, source, makeIndex([available]), 'cart', entrySourcePath, []);
+	assert.equal(registry.can_boot_from_source, false);
+	assert.equal(registry.entrySourcePath, '');
+	assert.equal(registry.module2lua.available.src, 'return 17');
+	const captured = captureInstalledLuaSources(registry, ['stripped_entry', 'available']);
+	assert.deepEqual([...captured.keys()], ['available']);
+	assert.equal(captured.get('available')!.displayPath, 'available.lua');
+});
+
+test('installed source capture joins compiler membership to available text, never packed directory flags', () => {
+	const entry = luaEntry('entry', 'entry.lua', 'cart', 1);
+	const included = { ...luaEntry('included', 'module/included.lua', 'cart', 1), program_module: false };
+	const unused = luaEntry('unused', 'unused.lua', 'cart', 1);
+	const source = new TestRomSource([entry, included, unused], { entry: 'module<entry>\nreturn 17', included: 'return 29', unused: 'return 37' });
+	const registry = buildLuaSources(source, source, makeIndex([entry, included, unused]), 'cart', 'entry', []);
+	const captured = captureInstalledLuaSources(registry, ['entry', 'module/included', 'stripped']);
+	assert.deepEqual([...captured.keys()], ['entry', 'module/included']);
+	assert.equal(captured.get('module/included')!.displayPath, 'module/included.lua');
+	assert.equal(captured.has('unused'), false);
+});
+
+test('installed compilation consumes the direct-input manifest while retaining mapped diagnostic proof', () => {
+	const sources = compiledBlua32Sources(new Map([
+		['compiler_entry', { displayPath: 'generated/entry.lua', source: 'module<entry>\nreturn 17' }],
+		['compiler_library', { displayPath: 'generated/library.lua', source: 'return 29' }],
+		['authored_origin', { displayPath: 'authored/origin.yaml', source: 'this: is: not: a: Lua: compiler: input' }],
+	]));
+	assert.equal(sources.has('authored_origin'), true);
+	const selected = collectInstalledProgramSources(sources, ['compiler_entry', 'compiler_library']);
+	assert.equal(selected.entry.path, 'compiler_entry');
+	assert.deepEqual(selected.modules.map(module => module.path), ['compiler_library']);
+	assert.equal(selected.parsed.has('authored_origin'), false);
+	assert.throws(() => collectInstalledProgramSources(sources, ['missing_compiler_input']), /no embedded source text/);
 });

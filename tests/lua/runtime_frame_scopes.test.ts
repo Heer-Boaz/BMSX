@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -26,7 +27,7 @@ verify = function() return pcall(reader) end
 return true`, 0);
 	const runtime = createTestRuntime(image.romBytes), cpu = runtime.machine.cpu;
 	const sources = createScenarioTestSourceState([]);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(sources.systemLuaSources)), cartridgeSlots: [null, null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	const guest = new SuspendedGuestSession(runtime);
 	cpu.reset(); cpu.installBootPrimitives();
 	// A pre-initialization source installation has no scope registry yet.

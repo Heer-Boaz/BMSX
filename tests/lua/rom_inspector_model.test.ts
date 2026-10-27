@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RomInspectorModel } from '../../ide/workbench/contrib/rom_inspector/model';
@@ -41,7 +43,7 @@ const modelAsset: RomAsset = {
 
 function inspector(assets: RomAsset[]): RomInspectorModel {
 	finalizePackedRomAssets(assets);
-	return new RomInspectorModel({ domain: 0, label: 'Cart 0', rom: new Uint8Array(192), header, assets });
+	return new RomInspectorModel({ domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Cart 0', rom: new Uint8Array(192), header, assets });
 }
 
 test('asset content selects every retained physical range without replacing its source context', () => {
@@ -143,7 +145,7 @@ test('held function content retains its captured image and lazy instruction inde
 	const linked = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 1 }, { firstWord: 1, wordCount: 3 },
 	] });
-	const model = new RomInspectorModel({ domain: -1, label: 'System', rom: linked.romBytes, header: parseCartHeader(linked.romBytes), assets: [] });
+	const model = new RomInspectorModel({ domain: -1, sourceContextId: TEST_SYSTEM_CONTEXT_ID, label: 'System', rom: linked.romBytes, header: parseCartHeader(linked.romBytes), assets: [] });
 	const content = new RomInspectorContentModel(model.snapshot);
 	model.setMode('code');
 	model.select(model.rows.findIndex(row => row.functionIndex === 1));
@@ -207,7 +209,7 @@ test('preview changes retain decoded pixels and collision paths until selection 
 	const removed: RomAsset = { resid: 'removed', type: 'image', op: 'delete' };
 	const entries = [systemTexture, sprite, second, removed];
 	finalizePackedRomAssets(entries);
-	const model = new RomInspectorModel({ domain: -1, label: 'System', rom, header: fixtureHeader, assets: entries });
+	const model = new RomInspectorModel({ domain: -1, sourceContextId: TEST_SYSTEM_CONTEXT_ID, label: 'System', rom, header: fixtureHeader, assets: entries });
 	const content = new RomInspectorContentModel(model.snapshot);
 	const originalBytes = rom.slice(), physical = model.inspection.sections.map(section => ({ ...section }));
 	t.after(() => content.dispose());
@@ -317,7 +319,7 @@ test('changing logical image subjects releases one bitmap but reuses the capture
 		metabuffer_start: end + index * 16, metabuffer_end: end + (index + 1) * 16,
 		imgmeta: { width: 1, height: 1, texture_u: index, texture_v: 0, gx_atlas_id: 'atlas' } }));
 	const assets = [atlas, ...images]; finalizePackedRomAssets(assets);
-	const model = new RomInspectorModel({ domain: 0, label: 'Cart 0', rom, assets,
+	const model = new RomInspectorModel({ domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Cart 0', rom, assets,
 		header: { ...header, dataLength: stream.length, metadataOffset: end, tocOffset: end + 32 } });
 	const content = new RomInspectorContentModel(model.snapshot); t.after(() => content.dispose());
 	let atlasReads = 0;
@@ -342,7 +344,7 @@ test('a generated function with an instruction source does not acquire an invent
 	const linked = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }],
 		functionIds: ['generated'], debugRanges: [instructionSource] });
 	const rom = linked.romBytes, loaded = await loadRomAssetList(rom, 'system');
-	const model = new RomInspectorModel({ domain: -1, label: 'System', rom, header: parseCartHeader(rom), assets: loaded.entries });
+	const model = new RomInspectorModel({ domain: -1, sourceContextId: TEST_SYSTEM_CONTEXT_ID, label: 'System', rom, header: parseCartHeader(rom), assets: loaded.entries });
 	model.setMode('code');
 	const row = model.functions[0];
 	assert.equal(row.kind, 'function');

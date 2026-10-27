@@ -1,8 +1,7 @@
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import type { ResourceDomain } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type {
 	BehaviorKind,
 	BehaviorRegistrationSource,
@@ -23,37 +22,37 @@ type BehaviorRegistrationGeneration = {
 
 /** Workspace-generation index for source-owned behavior registrations. */
 export class BehaviorRegistrationIndex {
-	private readonly generations = new Map<ResourceDomain, BehaviorRegistrationGeneration>();
+	private readonly generations = new Map<string, BehaviorRegistrationGeneration>();
 
-	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState) {}
+	public constructor(private readonly models: EditorTextModelService, private readonly catalog: WorkspaceSourceCatalog) {}
 
 	public resolve(
-		executionDomain: 0 | 1,
+		contextId: string,
 		behaviorKind: BehaviorKind,
 		semanticId: string,
 	): readonly BehaviorRegistrationSource[] {
-		return this.getGeneration(executionDomain).sourcesByKind.get(behaviorKind)?.get(semanticId)
+		return this.getGeneration(contextId).sourcesByKind.get(behaviorKind)?.get(semanticId)
 			|| EMPTY_REGISTRATION_SOURCES;
 	}
 
-	public getRegistrations(domain: ResourceDomain): readonly BehaviorRegistrationSource[] {
-		return this.getGeneration(domain).registrations;
+	public getRegistrations(contextId: string): readonly BehaviorRegistrationSource[] {
+		return this.getGeneration(contextId).registrations;
 	}
 
-	private getGeneration(executionDomain: ResourceDomain): BehaviorRegistrationGeneration {
-		const project = getOrCreateSemanticProject(this.models, executionDomain);
-		project.synchronizeRuntimeSources(this.sources);
+	private getGeneration(contextId: string): BehaviorRegistrationGeneration {
+		const project = getOrCreateSemanticProject(this.models, contextId);
+		project.synchronizeSources(this.catalog);
 		const snapshot = project.getSnapshot();
-		let generation = this.generations.get(executionDomain);
+		let generation = this.generations.get(contextId);
 		if (generation === undefined || generation.snapshot !== snapshot) {
-			generation = this.buildGeneration(executionDomain, snapshot);
-			this.generations.set(executionDomain, generation);
+			generation = this.buildGeneration(contextId, snapshot);
+			this.generations.set(contextId, generation);
 		}
 		return generation;
 	}
 
 	private buildGeneration(
-		executionDomain: ResourceDomain,
+		contextId: string,
 		snapshot: LuaSemanticWorkspaceSnapshot,
 	): BehaviorRegistrationGeneration {
 		const reader = new LuaSourceReader(snapshot);
@@ -62,8 +61,8 @@ export class BehaviorRegistrationIndex {
 			BehaviorKind,
 			Map<string, BehaviorRegistrationSource[]>
 		>();
-		for (const resource of this.sources.luaResources) {
-			if (resource.domain !== executionDomain) continue;
+		for (const resource of this.catalog.luaResources) {
+			if (resource.contextId !== contextId) continue;
 			const { registrations } = collectBehaviorRegistrations(resource, reader);
 			for (let registrationIndex = 0;
 				registrationIndex < registrations.length;

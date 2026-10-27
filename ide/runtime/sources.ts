@@ -1,649 +1,235 @@
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import type { StudioSourceContext } from '../../hosts/common/studio_projects';
 import type { RomToolingPackage } from '../../toolchain/ts/rompack/assets';
 import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
-import { RomSourceStack, type PackedRomSourceLayer, type RawRomSource, type RomSourceLayer } from '../../toolchain/ts/rompack/source';
+import { RomSourceStack, type PackedRomSourceLayer, type RawRomSource } from '../../toolchain/ts/rompack/source';
 import {
-	buildLuaSources,
-	captureInstalledLuaSources,
-	registerLuaSourceRecord,
-	resolveLuaSourceRecord,
-	type LuaSourceMatch,
-	type LuaSourceRecord,
-	type LuaSourceRegistry,
+	buildLuaSources, captureInstalledLuaSources,
+	type LuaSourceRoot,
 } from './source_registry';
+import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../common/resource';
+import { WorkspaceSourceCatalog } from '../workspace/source_catalog';
+import { readWorkspaceLuaSourceText } from '../workspace/files';
+import { CART_LIBRARY_ROOT } from '../../toolchain/ts/lua/source_paths';
 import {
-	CARTRIDGE_RESOURCE_DOMAINS,
-	SYSTEM_RESOURCE_DOMAIN,
-	type ResourceDomain,
-	type ResourceIdentity,
-	type RuntimeResource,
-	type RuntimeResourceLocation,
-	resourceIdentityKey,
-	resourceIdentityKeyFromParts,
-} from '../common/resource';
-import {
-	loadBlua32ToolingImage,
-	blua32StartupSourcePath,
-	type Blua32ToolingImage,
+	loadBlua32ToolingImage, type Blua32ToolingImage,
 } from '../../toolchain/ts/rompack/blua32_media';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
-import {
-	readBlua32BiosImports,
-	type Blua32BiosImports,
-} from '../../toolchain/ts/rompack/blua32_bios_imports';
+import { readBlua32BiosImports, type Blua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
-import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
-import { resolveWorkspacePath, stripProjectRootPrefix } from '../workspace/path';
+import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 
-
-export const enum Blua32GlobalRegisterFile {
-	Global = 1,
-	System = 2,
-}
+export const enum Blua32GlobalRegisterFile { Global = 1, System = 2 }
 
 type Blua32SourceIndex = {
 	readonly globalRegisterFileByName: ReadonlyMap<string, Blua32GlobalRegisterFile>;
-	readonly sourceDomain: ResourceDomain;
-	/** Canonical module keys; records retain their written resource paths. */
+	readonly sourceContextId: string;
+	/** Canonical module keys; records retain their admitted logical resource paths. */
 	readonly sources: ReadonlyMap<string, Blua32CompiledSource>;
 };
-
 export type Blua32SourceImage = Blua32ToolingImage & Blua32SourceIndex;
-export type Blua32SystemSourceImage = Blua32SourceImage & {
-	readonly biosImports: Blua32BiosImports;
-};
+export type Blua32SystemSourceImage = Blua32SourceImage & { readonly biosImports: Blua32BiosImports };
 
-/** Physical code and admitted source provenance; contains no editable document or registry. */
+/** Physical code and exact installed source provenance, without mutable authoring registries. */
 export type Blua32InstalledMedia = {
 	readonly system: Blua32SourceImage | null;
-	readonly cartridgeSlots: readonly [
-		Blua32SourceImage | null,
-		Blua32SourceImage | null,
-	];
+	readonly cartridgeSlots: readonly [Blua32SourceImage | null, Blua32SourceImage | null];
 };
-
 export type Blua32SourceMedia = Blua32InstalledMedia & { readonly system: Blua32SystemSourceImage | null };
 export type RuntimeInstalledSourceState = { readonly currentBlua32Media: Blua32InstalledMedia };
-
+export type RuntimeSourceBindings = {
+	readonly catalog: WorkspaceSourceCatalog;
+	readonly systemContextId: string;
+	readonly cartridgeContextIds: readonly [string | null, string | null];
+};
 export type RuntimeCartridgeSourceState = {
 	domain: 0 | 1;
+	contextId: string;
 	rom: RomToolingLayer<'cart'>;
 	package: RomToolingPackage;
-	luaSources: LuaSourceRegistry;
 	romSource: RawRomSource;
-	projectRootPath: string;
 	installedBlua32Sources: ReadonlyMap<string, string>;
+	installedSourceRevision: number;
 };
+export type AemSourceApplication = { readonly image: Blua32SourceImage; readonly rom: Uint8Array; installedSource: string | undefined; failed: boolean };
 
-export type AemSourceApplication = {
-	installedSource: string | undefined;
-	failed: boolean;
-};
-
-/** Authored files exist independently of an installed cooked asset. */
-export type WorkspaceTextSource = {
-	readonly domain: ResourceDomain;
-	readonly projectRootPath: string;
-	readonly source: RuntimeResource['source'] & { readonly type: 'aem' | 'data'; readonly source_path: string };
-};
-
+/** Execution attachments reference the independently retained workspace catalog. */
 export type RuntimeSourceState = {
+	catalog: WorkspaceSourceCatalog;
+	systemContextId: string;
 	systemRom: RomToolingLayer<'system'>;
 	cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null];
 	systemPackage: RomToolingPackage;
 	activePackage: RomToolingPackage;
-	systemLuaSources: LuaSourceRegistry;
-	activeLuaSources: LuaSourceRegistry;
 	systemRomSource: RawRomSource;
 	activeRomSource: RawRomSource;
-	resourceByIdentity: Map<string, RuntimeResource>;
-	resourceCatalogRevision: number;
-	luaResources: RuntimeResource[];
-	/** Loaded authoring resources, independent of the executing source domain. */
-	resources: RuntimeResource[];
-	workspaceTextSources: Map<string, WorkspaceTextSource>;
-	systemProjectRootPath: string;
+	activeContextId: string;
 	activeCartridgeSlot: ResourceDomain;
 	systemBlua32MediaDirty: boolean;
 	cartridgeBlua32MediaDirty: [boolean, boolean];
 	systemInstalledBlua32Sources: ReadonlyMap<string, string>;
+	systemSourceRevision: number;
 	aemSourceApplications: Map<string, AemSourceApplication>;
 	currentBlua32Media: Blua32SourceMedia;
 };
 
-export type RuntimeLuaSourceMatch = LuaSourceMatch & {
-	domain: ResourceDomain;
-};
+const NO_INSTALLED_SOURCE_TEXT: ReadonlyMap<string, Blua32CompiledSource> = new Map();
 
-function indexInstalledBlua32Sources(registry: LuaSourceRegistry): Map<string, string> {
-	const sourceByPath = new Map<string, string>();
-	for (let index = 0; index < registry.records.length; index += 1) {
-		const record = registry.records[index];
-		if (!record.program_module) {
-			continue;
-		}
-		sourceByPath.set(record.module_path, record.src);
+function indexInstalledBlua32Sources(compiled: ReadonlyMap<string, Blua32CompiledSource>): Map<string, string> {
+	const sources = new Map<string, string>();
+	for (const [path, record] of compiled) sources.set(path, readBlua32CompiledSource(record));
+	return sources;
+}
+
+export function indexBlua32GlobalRegisterFiles(symbols: Blua32SymbolsImage | null): ReadonlyMap<string, Blua32GlobalRegisterFile> {
+	const registers = new Map<string, Blua32GlobalRegisterFile>();
+	if (symbols !== null) {
+		for (const name of symbols.metadata.globalNames) registers.set(name, Blua32GlobalRegisterFile.Global);
+		for (const name of symbols.metadata.systemGlobalNames) registers.set(name, Blua32GlobalRegisterFile.System);
 	}
-	return sourceByPath;
+	return registers;
 }
 
-export function indexBlua32GlobalRegisterFiles(
-	symbols: Blua32SymbolsImage | null,
-): ReadonlyMap<string, Blua32GlobalRegisterFile> {
-	const globalRegisterFileByName = new Map<string, Blua32GlobalRegisterFile>();
-	if (symbols) {
-		const metadata = symbols.metadata;
-		for (let index = 0; index < metadata.globalNames.length; index += 1) {
-			globalRegisterFileByName.set(
-				metadata.globalNames[index],
-				Blua32GlobalRegisterFile.Global,
-			);
-		}
-		for (let index = 0; index < metadata.systemGlobalNames.length; index += 1) {
-			globalRegisterFileByName.set(
-				metadata.systemGlobalNames[index],
-				Blua32GlobalRegisterFile.System,
-			);
-		}
+export function createBlua32SourceImage(layout: Blua32ImageLayout, symbols: Blua32SymbolsImage | null,
+	sources: ReadonlyMap<string, Blua32CompiledSource>, sourceContextId: string): Blua32SourceImage {
+	return { layout, symbols, sources, sourceContextId, globalRegisterFileByName: indexBlua32GlobalRegisterFiles(symbols) };
+}
+
+export function createBlua32SystemSourceImage(layout: Blua32ImageLayout, symbols: Blua32SymbolsImage | null,
+	biosImports: Blua32BiosImports, sources: ReadonlyMap<string, Blua32CompiledSource>, sourceContextId: string): Blua32SystemSourceImage {
+	return { ...createBlua32SourceImage(layout, symbols, sources, sourceContextId), biosImports };
+}
+
+/** The caller explicitly selects one source seed per admitted namespace. */
+export function createLoadedProjectSourceCatalog(
+	system: { readonly admission: StudioSourceContext; readonly layer: RomToolingLayer<'system'> },
+	cartridges: readonly { readonly admission: StudioSourceContext; readonly layer: RomToolingLayer<'cart'> }[],
+): WorkspaceSourceCatalog {
+	const catalog = new WorkspaceSourceCatalog();
+	const seeds = [system, ...cartridges];
+	for (const { admission, layer } of seeds) {
+		const source = new RomSourceStack([{ id: layer.id, index: layer.index, bytes: layer.bytes }]);
+		const image = loadBlua32ToolingImage(layer, layer.id === 'system' ? SYSTEM_ROM_BASE : CART_ROM_BASE);
+		const sourceRoots: LuaSourceRoot[] = [{ path: admission.projectRoot, resourcePathPrefix: '', modulePathPrefix: '', structured: true, sourceKind: 'project' }];
+		if (layer.id === 'cart') sourceRoots.push({ path: CART_LIBRARY_ROOT, resourcePathPrefix: CART_LIBRARY_ROOT,
+			modulePathPrefix: CART_LIBRARY_ROOT, structured: false, sourceKind: 'library' });
+		const registry = buildLuaSources(source, source, layer.index, layer.id,
+			image === null || image.symbols === null ? undefined : image.symbols.metadata.compiledModulePaths[0], sourceRoots);
+		const previewPackage = { ...layer.package, img: { ...layer.package.img }, audio: { ...layer.package.audio },
+			model: { ...layer.package.model }, data: { ...layer.package.data }, bin: { ...layer.package.bin },
+			collision_shape: { ...layer.package.collision_shape }, audioevents: { ...layer.package.audioevents } };
+		catalog.admitContext({ admission, programDomain: layer.id, systemContextId: layer.id === 'cart' ? system.admission.id : null, luaSources: registry, sourceRoots,
+			dependencyContextIds: layer.id === 'cart' ? [system.admission.id] : [], previewPackage,
+			previewRom: { ...layer, package: previewPackage }, assetSources: source.list() });
 	}
-	return globalRegisterFileByName;
+	return catalog;
 }
 
-export function createBlua32SourceImage(
-	layout: Blua32ImageLayout,
-	symbols: Blua32SymbolsImage | null,
-	sources: ReadonlyMap<string, Blua32CompiledSource>,
-	sourceDomain: ResourceDomain,
-): Blua32SourceImage {
-	return {
-		layout,
-		symbols,
-		sources, sourceDomain,
-		globalRegisterFileByName: indexBlua32GlobalRegisterFiles(symbols),
-	};
-}
-
-export function createBlua32SystemSourceImage(
-	layout: Blua32ImageLayout,
-	symbols: Blua32SymbolsImage | null,
-	biosImports: Blua32BiosImports,
-	sources: ReadonlyMap<string, Blua32CompiledSource>,
-): Blua32SystemSourceImage {
-	return {
-		layout,
-		symbols,
-		biosImports,
-		sources, sourceDomain: SYSTEM_RESOURCE_DOMAIN,
-		globalRegisterFileByName: indexBlua32GlobalRegisterFiles(symbols),
-	};
-}
-
-export function createRuntimeSourceState(
-	systemLayer: RomToolingLayer<'system'>,
+/** Installs exact image provenance against existing retained source authority. */
+export function createRuntimeSourceState(systemLayer: RomToolingLayer<'system'>,
 	cartridgeLayers: readonly [RomToolingLayer<'cart'> | null, RomToolingLayer<'cart'> | null],
-): RuntimeSourceState {
+	bindings: RuntimeSourceBindings): RuntimeSourceState {
+	const { catalog, systemContextId } = bindings;
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, bytes: systemLayer.bytes }]);
 	const systemImage = loadBlua32ToolingImage(systemLayer, SYSTEM_ROM_BASE);
 	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, 'system',
-		blua32StartupSourcePath(systemImage, systemLayer.header.blua32StartupFunctionAddress));
+		systemImage === null || systemImage.symbols === null ? undefined : systemImage.symbols.metadata.compiledModulePaths[0], catalog.getContext(systemContextId).sourceRoots);
 	const cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null] = [null, null];
-	const cartridgeToolingImages: [Blua32SourceImage | null, Blua32SourceImage | null] = [null, null];
+	const images: [Blua32SourceImage | null, Blua32SourceImage | null] = [null, null];
 	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
-		const cartLayer = cartridgeLayers[slot];
-		if (cartLayer === null) {
-			continue;
-		}
-		const activeSourceLayers: RomSourceLayer[] = [
-			{ id: cartLayer.id, index: cartLayer.index, bytes: cartLayer.bytes },
-			{ id: systemLayer.id, index: systemLayer.index, bytes: systemLayer.bytes },
-		];
-		const activeRomSource = new RomSourceStack(activeSourceLayers);
-		const cartRomSource = new RomSourceStack([{ id: cartLayer.id, index: cartLayer.index, bytes: cartLayer.bytes }]);
-		const image = loadBlua32ToolingImage(cartLayer, CART_ROM_BASE);
-		const cartLuaSources = buildLuaSources(cartRomSource, activeRomSource, cartLayer.index, 'cart',
-			blua32StartupSourcePath(image, cartLayer.header.blua32StartupFunctionAddress));
-		cartridgeSlots[slot] = {
-			domain: slot,
-			rom: cartLayer,
-			package: cartLayer.package,
-			luaSources: cartLuaSources,
-			romSource: cartRomSource,
-			projectRootPath: cartLayer.index.projectRootPath,
-			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
-		};
-		cartridgeToolingImages[slot] = image
-			? createBlua32SourceImage(image.layout, image.symbols, captureInstalledLuaSources(cartLuaSources), slot)
-			: null;
+		const layer = cartridgeLayers[slot];
+		if (layer === null) continue;
+		const contextId = bindings.cartridgeContextIds[slot]!;
+		const source = new RomSourceStack([{ id: layer.id, index: layer.index, bytes: layer.bytes }]);
+		const image = loadBlua32ToolingImage(layer, CART_ROM_BASE);
+		const registry = buildLuaSources(source, source, layer.index, 'cart',
+			image === null || image.symbols === null ? undefined : image.symbols.metadata.compiledModulePaths[0], catalog.getContext(contextId).sourceRoots);
+		const compiledSources = image === null || image.symbols === null ? NO_INSTALLED_SOURCE_TEXT
+			: captureInstalledLuaSources(registry, image.symbols.metadata.compiledModulePaths);
+		const installedBlua32Sources = indexInstalledBlua32Sources(compiledSources);
+		cartridgeSlots[slot] = { domain: slot, contextId, rom: layer, package: layer.package, romSource: source,
+			installedBlua32Sources, installedSourceRevision: sourceRevisionForInstallation(catalog, contextId, image, installedBlua32Sources) };
+		images[slot] = image === null ? null : createBlua32SourceImage(image.layout, image.symbols, compiledSources, contextId);
 	}
-	const state: RuntimeSourceState = {
-		systemRom: systemLayer,
-		cartridgeSlots,
-		systemPackage: systemLayer.package,
-		activePackage: systemLayer.package,
-		systemLuaSources,
-		activeLuaSources: systemLuaSources,
-		systemRomSource: systemSource,
-		activeRomSource: systemSource,
-		resourceByIdentity: new Map(),
-		resourceCatalogRevision: 0,
-		luaResources: [],
-		resources: [],
-		workspaceTextSources: new Map(),
-		systemProjectRootPath: systemLuaSources.projectRootPath,
-		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
-		systemBlua32MediaDirty: false,
-		cartridgeBlua32MediaDirty: [false, false],
-		systemInstalledBlua32Sources: indexInstalledBlua32Sources(systemLuaSources),
+	const compiledSystemSources = systemImage === null || systemImage.symbols === null ? NO_INSTALLED_SOURCE_TEXT
+		: captureInstalledLuaSources(systemLuaSources, systemImage.symbols.metadata.compiledModulePaths);
+	const systemInstalledBlua32Sources = indexInstalledBlua32Sources(compiledSystemSources);
+	return {
+		catalog, systemContextId, systemRom: systemLayer, cartridgeSlots,
+		systemPackage: systemLayer.package, activePackage: systemLayer.package,
+		systemRomSource: systemSource, activeRomSource: systemSource,
+		activeContextId: systemContextId, activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
+		systemBlua32MediaDirty: false, cartridgeBlua32MediaDirty: [false, false],
+		systemInstalledBlua32Sources, systemSourceRevision: sourceRevisionForInstallation(catalog, systemContextId, systemImage, systemInstalledBlua32Sources),
 		aemSourceApplications: new Map(),
-		currentBlua32Media: {
-			system: systemImage
-				? createBlua32SystemSourceImage(
-					systemImage.layout,
-					systemImage.symbols,
-					readBlua32BiosImports(systemLayer.bytes),
-					captureInstalledLuaSources(systemLuaSources),
-				)
-				: null,
-			cartridgeSlots: cartridgeToolingImages,
-		},
+		currentBlua32Media: { system: systemImage === null ? null : createBlua32SystemSourceImage(
+			systemImage.layout, systemImage.symbols, readBlua32BiosImports(systemLayer.bytes),
+			compiledSystemSources, systemContextId), cartridgeSlots: images },
 	};
-	rebuildRuntimeSourceResources(state);
-	enterSystemSources(state);
-	return state;
+}
+
+function sourceRevisionForInstallation(catalog: WorkspaceSourceCatalog, contextId: string,
+	image: Blua32ToolingImage | null, installed: ReadonlyMap<string, string>): number {
+	if (image === null || image.symbols === null) return -1;
+	const context = catalog.getContext(contextId);
+	for (const path of image.symbols.metadata.compiledModulePaths) {
+		const record = context.luaSources.module2lua[path], text = installed.get(path);
+		if (record === undefined || text === undefined || !record.generated && text !== readWorkspaceLuaSourceText(context.luaSources, record)) return -1;
+	}
+	return context.programRevision;
 }
 
 export function enterSystemSources(state: RuntimeSourceState): void {
 	state.activeCartridgeSlot = SYSTEM_RESOURCE_DOMAIN;
+	state.activeContextId = state.systemContextId;
 	state.activePackage = state.systemPackage;
-	state.activeLuaSources = state.systemLuaSources;
 	state.activeRomSource = state.systemRomSource;
 }
-
 export function enterCartridgeSources(state: RuntimeSourceState, slot: 0 | 1): void {
 	const cartridge = state.cartridgeSlots[slot]!;
 	state.activeCartridgeSlot = slot;
+	state.activeContextId = cartridge.contextId;
 	state.activePackage = cartridge.package;
-	state.activeLuaSources = cartridge.luaSources;
 	state.activeRomSource = cartridge.romSource;
 }
-
-export function syncRuntimeSourceActivity(state: RuntimeSourceState, cartridgeSlot: ResourceDomain): void {
-	if (state.activeCartridgeSlot === cartridgeSlot) {
-		return;
-	}
-	if (cartridgeSlot !== SYSTEM_RESOURCE_DOMAIN) {
-		enterCartridgeSources(state, cartridgeSlot);
-		return;
-	}
-	enterSystemSources(state);
+export function syncRuntimeSourceActivity(state: RuntimeSourceState, slot: ResourceDomain): void {
+	if (state.activeCartridgeSlot === slot) return;
+	if (slot === SYSTEM_RESOURCE_DOMAIN) enterSystemSources(state); else enterCartridgeSources(state, slot);
 }
-
-export function developmentCartridgeSource(state: RuntimeSourceState): RuntimeCartridgeSourceState | null {
-	if (state.activeCartridgeSlot !== SYSTEM_RESOURCE_DOMAIN) {
-		return state.cartridgeSlots[state.activeCartridgeSlot];
-	}
-	for (let slot = 0; slot < state.cartridgeSlots.length; slot += 1) {
-		const cartridge = state.cartridgeSlots[slot];
-		if (cartridge
-			&& cartridge.rom.header.blua32ImageOffset
-			&& cartridge.luaSources.can_boot_from_source) {
-			return cartridge;
-		}
-	}
-	return null;
-}
-
 export function runtimeSourcesSupportIde(state: RuntimeSourceState): boolean {
-	const activeCartridge = state.activeCartridgeSlot !== SYSTEM_RESOURCE_DOMAIN
-		? state.cartridgeSlots[state.activeCartridgeSlot]
-		: null;
-	return state.systemLuaSources.can_boot_from_source
-		&& (!activeCartridge || activeCartridge.luaSources.can_boot_from_source);
+	const active = state.catalog.getContext(state.activeContextId);
+	return state.catalog.getContext(state.systemContextId).luaSources.can_boot_from_source && active.luaSources.can_boot_from_source;
 }
 
-export function installRuntimeRomLayers(
-	state: RuntimeSourceState,
-	systemLayer: PackedRomSourceLayer<'system'> | null,
-	cartridgeLayers: [PackedRomSourceLayer<'cart'> | null, PackedRomSourceLayer<'cart'> | null],
-): void {
+export function installRuntimeRomLayers(state: RuntimeSourceState, systemLayer: PackedRomSourceLayer<'system'> | null,
+	cartridgeLayers: [PackedRomSourceLayer<'cart'> | null, PackedRomSourceLayer<'cart'> | null]): void {
 	if (systemLayer !== null) {
 		state.systemRom.index = systemLayer.index;
 		state.systemRom.bytes = systemLayer.bytes;
 		state.systemRom.header = parseCartHeader(systemLayer.bytes);
-		state.systemRomSource = new RomSourceStack([{
-			id: systemLayer.id,
-			index: systemLayer.index,
-			bytes: systemLayer.bytes,
-		}]);
+		state.systemRomSource = new RomSourceStack([systemLayer]);
 	}
-	for (let slot = 0; slot < cartridgeLayers.length; slot += 1) {
+	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 		const layer = cartridgeLayers[slot];
-		if (layer === null) {
-			continue;
-		}
+		if (layer === null) continue;
 		const cartridge = state.cartridgeSlots[slot]!;
 		cartridge.rom.index = layer.index;
 		cartridge.rom.bytes = layer.bytes;
 		cartridge.rom.header = parseCartHeader(layer.bytes);
-		cartridge.romSource = new RomSourceStack([{
-			id: layer.id,
-			index: layer.index,
-			bytes: layer.bytes,
-		}]);
+		cartridge.romSource = new RomSourceStack([layer]);
 	}
 	state.activeRomSource = state.activeCartridgeSlot === SYSTEM_RESOURCE_DOMAIN
-		? state.systemRomSource
-		: state.cartridgeSlots[state.activeCartridgeSlot]!.romSource;
-	rebuildRuntimeSourceResources(state);
+		? state.systemRomSource : state.cartridgeSlots[state.activeCartridgeSlot]!.romSource;
 }
 
-/** A build owns mutable source records; ROM bytes and installed source maps remain immutable. */
+/** Build-owned source copies retain admission identities and exact attachment provenance. */
 export function forkRuntimeSourceState(source: RuntimeSourceState): RuntimeSourceState {
-	// Installation replaces a layer's bytes/index/header. The build owns those
-	// references while sharing the immutable backing bytes, not the mutable layer.
-	const fork = createRuntimeSourceState({ ...source.systemRom },
-		[source.cartridgeSlots[0] === null ? null : { ...source.cartridgeSlots[0].rom },
-			source.cartridgeSlots[1] === null ? null : { ...source.cartridgeSlots[1].rom }]);
-	for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
-		const registry = runtimeLuaSourceRegistry(source, domain);
-		if (registry === undefined) continue;
-		const target = runtimeLuaSourceRegistry(fork, domain)!;
-		target.records.length = 0;
-		target.path2lua = {};
-		target.module2lua = {};
-		for (const record of registry.records) registerLuaSourceRecord(target, { ...record });
-		target.entrySourcePath = registry.entrySourcePath;
-		target.can_boot_from_source = registry.can_boot_from_source;
-		target.revision = registry.revision;
-	}
-	fork.systemBlua32MediaDirty = source.systemBlua32MediaDirty;
-	fork.cartridgeBlua32MediaDirty = [...source.cartridgeBlua32MediaDirty];
-	rebuildRuntimeSourceResources(fork);
-	return fork;
-}
-
-export function runtimeLuaSourceRegistry(
-	state: RuntimeSourceState,
-	domain: ResourceDomain,
-): LuaSourceRegistry | undefined {
-	if (domain === SYSTEM_RESOURCE_DOMAIN) {
-		return state.systemLuaSources;
-	}
-	return state.cartridgeSlots[domain]?.luaSources;
-}
-
-export function runtimeSourceProjectRootPath(
-	state: RuntimeSourceState,
-	domain: ResourceDomain,
-): string {
-	return domain === SYSTEM_RESOURCE_DOMAIN
-		? state.systemProjectRootPath
-		: state.cartridgeSlots[domain]!.projectRootPath;
-}
-
-export function runtimeSourceDomainForProjectRootPath(
-	state: RuntimeSourceState,
-	projectRootPath: string,
-): ResourceDomain {
-	if (state.systemProjectRootPath === projectRootPath) {
-		return SYSTEM_RESOURCE_DOMAIN;
-	}
-	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
-		if (state.cartridgeSlots[slot]?.projectRootPath === projectRootPath) {
-			return slot;
-		}
-	}
-	throw new Error(`Project root '${projectRootPath}' is not installed.`);
-}
-
-export function runtimeLuaSourceDomain(
-	state: RuntimeSourceState,
-	registry: LuaSourceRegistry,
-): ResourceDomain {
-	if (registry === state.systemLuaSources) {
-		return SYSTEM_RESOURCE_DOMAIN;
-	}
-	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
-		if (state.cartridgeSlots[slot]?.luaSources === registry) {
-			return slot;
-		}
-	}
-	throw new Error('Lua source registry is not installed.');
-}
-
-export function resolveRuntimeLuaSource(
-	state: RuntimeSourceState,
-	identity: ResourceIdentity,
-): RuntimeLuaSourceMatch | null {
-	const registry = runtimeLuaSourceRegistry(state, identity.domain);
-	if (registry === undefined) {
-		return null;
-	}
-	const record = resolveLuaSourceRecord(registry, identity.path);
-	return record === null ? null : { domain: identity.domain, registry, record };
-}
-
-export function resolveRuntimeLuaSourceForContext(
-	state: RuntimeSourceState,
-	domain: ResourceDomain,
-	path: string,
-): RuntimeLuaSourceMatch | null {
-	const source = resolveRuntimeLuaSource(state, { domain, path });
-	if (source !== null || domain === SYSTEM_RESOURCE_DOMAIN) {
-		return source;
-	}
-	return resolveRuntimeLuaSource(state, { domain: SYSTEM_RESOURCE_DOMAIN, path });
-}
-
-export function resolveRuntimeResource(
-	state: RuntimeSourceState,
-	identity: ResourceIdentity,
-): RuntimeResource | undefined {
-	return state.resourceByIdentity.get(resourceIdentityKey(identity));
-}
-
-export function resolveRuntimeResourceForContext(
-	state: RuntimeSourceState,
-	domain: ResourceDomain,
-	path: string,
-): RuntimeResource | undefined {
-	const resource = state.resourceByIdentity.get(resourceIdentityKeyFromParts(domain, path));
-	if (resource) {
-		return resource;
-	}
-	const source = resolveRuntimeLuaSourceForContext(state, domain, path);
-	if (source) {
-		return state.resourceByIdentity.get(resourceIdentityKeyFromParts(
-			source.domain,
-			source.record.source_path,
-		));
-	}
-	if (domain === SYSTEM_RESOURCE_DOMAIN) {
-		return;
-	}
-	return state.resourceByIdentity.get(resourceIdentityKeyFromParts(SYSTEM_RESOURCE_DOMAIN, path));
-}
-
-export function registerRuntimeLuaResource(
-	state: RuntimeSourceState,
-	domain: ResourceDomain,
-	source: LuaSourceRecord,
-): RuntimeResource {
-	const key = resourceIdentityKeyFromParts(domain, source.source_path);
-	const previous = state.resourceByIdentity.get(key);
-	const location = retainLuaResourceLocation(previous?.location, source, runtimeLuaSourceRegistry(state, domain)!.projectRootPath);
-	const sourceFilePath = source.generated ? undefined : source.normalized_source_path;
-	const becameLua = previous !== undefined && previous.source.type !== 'lua';
-	const catalogChanged = previous === undefined || becameLua || previous.location !== location || previous.sourceFilePath !== sourceFilePath;
-	const resource = retainRuntimeResource(
-		previous,
-		state.resourceByIdentity,
-		key,
-		domain,
-		source.source_path,
-		source,
-		location,
-		sourceFilePath,
-	);
-	if (previous === undefined || becameLua) {
-		state.luaResources.push(resource);
-		sortRuntimeResources(state.luaResources);
-	}
-	if (previous === undefined) {
-		state.resources.push(resource);
-		sortRuntimeResources(state.resources);
-	}
-	if (catalogChanged) state.resourceCatalogRevision++;
-	return resource;
-}
-
-export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
-	const previousResources = state.resourceByIdentity;
-	const resources = new Map<string, RuntimeResource>();
-	state.resourceByIdentity = resources;
-
-	state.luaResources.length = 0;
-	for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
-		const cartridge = state.cartridgeSlots[domain];
-		if (!cartridge) {
-			continue;
-		}
-		retainLuaResources(previousResources, resources, state.luaResources, domain, cartridge.luaSources);
-		retainDataResources(previousResources, resources, domain, cartridge.romSource, cartridge.projectRootPath);
-	}
-	retainLuaResources(
-		previousResources,
-		resources,
-		state.luaResources,
-		SYSTEM_RESOURCE_DOMAIN,
-		state.systemLuaSources,
-	);
-	retainDataResources(
-		previousResources,
-		resources,
-		SYSTEM_RESOURCE_DOMAIN,
-		state.systemRomSource,
-		state.systemProjectRootPath,
-	);
-	for (const [key, authored] of state.workspaceTextSources) {
-		const registry = runtimeLuaSourceRegistry(state, authored.domain);
-		if (registry === undefined || registry.projectRootPath !== authored.projectRootPath) {
-			state.workspaceTextSources.delete(key);
-			continue;
-		}
-		if (!resources.has(key)) {
-			const previous = previousResources.get(key);
-			retainRuntimeResource(previous, resources, key, authored.domain, authored.source.source_path, authored.source,
-				retainProjectResourceLocation(previous?.location, authored.projectRootPath, authored.source.source_path),
-				resolveWorkspacePath(authored.source.source_path, authored.projectRootPath));
-		}
-	}
-	sortRuntimeResources(state.luaResources);
-	state.resources.length = 0;
-	for (const resource of resources.values()) state.resources.push(resource);
-	sortRuntimeResources(state.resources);
-	state.resourceCatalogRevision++;
-}
-
-export function registerWorkspaceTextSources(
-	state: RuntimeSourceState, domain: ResourceDomain, sources: readonly WorkspaceTextSource['source'][],
-): void {
-	const projectRootPath = runtimeLuaSourceRegistry(state, domain)!.projectRootPath;
-	for (const source of sources) {
-		state.workspaceTextSources.set(resourceIdentityKeyFromParts(domain, source.source_path), { domain, source, projectRootPath });
-	}
-	rebuildRuntimeSourceResources(state);
-}
-
-function retainProjectResourceLocation(previous: RuntimeResourceLocation | undefined, projectRootPath: string, path: string): RuntimeResourceLocation {
-	return previous?.kind === 'project' && previous.projectRootPath === projectRootPath && previous.path === path
-		? previous : { kind: 'project', projectRootPath, path };
-}
-
-function retainLuaResourceLocation(previous: RuntimeResourceLocation | undefined, source: LuaSourceRecord, projectRootPath: string): RuntimeResourceLocation {
-	if (source.generated) return previous?.kind === 'generated' && previous.path === source.source_path
-		? previous : { kind: 'generated', path: source.source_path };
-	const path = stripProjectRootPrefix(source.normalized_source_path, projectRootPath);
-	if (projectRootPath.length === 0 || path !== source.normalized_source_path) return retainProjectResourceLocation(previous, projectRootPath, path);
-	return previous?.kind === 'workspace' && previous.path === source.normalized_source_path
-		? previous : { kind: 'workspace', path: source.normalized_source_path };
-}
-
-function retainRuntimeResource(
-	retained: RuntimeResource | undefined,
-	resources: Map<string, RuntimeResource>,
-	key: string,
-	domain: ResourceDomain,
-	path: string,
-	source: RuntimeResource['source'],
-	location: RuntimeResourceLocation,
-	sourceFilePath: string | undefined,
-): RuntimeResource {
-	if (retained) {
-		retained.source = source;
-		retained.location = location;
-		retained.sourceFilePath = sourceFilePath;
-		resources.set(key, retained);
-		return retained;
-	}
-	const resource: RuntimeResource = { domain, path, source, location, sourceFilePath };
-	resources.set(key, resource);
-	return resource;
-}
-
-function retainLuaResources(
-	previousResources: ReadonlyMap<string, RuntimeResource>,
-	resources: Map<string, RuntimeResource>,
-	luaResources: RuntimeResource[],
-	domain: ResourceDomain,
-	registry: LuaSourceRegistry,
-): void {
-	for (let index = 0; index < registry.records.length; index += 1) {
-		const source = registry.records[index];
-		const key = resourceIdentityKeyFromParts(domain, source.source_path);
-		const previous = previousResources.get(key);
-		luaResources.push(retainRuntimeResource(
-			previous,
-			resources,
-			key,
-			domain,
-			source.source_path,
-			source,
-			retainLuaResourceLocation(previous?.location, source, registry.projectRootPath),
-			source.generated ? undefined : source.normalized_source_path,
-		));
-	}
-}
-
-function retainDataResources(
-	previousResources: ReadonlyMap<string, RuntimeResource>,
-	resources: Map<string, RuntimeResource>,
-	domain: ResourceDomain,
-	romSource: RawRomSource,
-	projectRootPath: string,
-): void {
-	const records = romSource.list();
-	for (let index = 0; index < records.length; index += 1) {
-		const source = records[index];
-		if ((source.type !== 'data' && source.type !== 'aem') || !source.source_path) {
-			continue;
-		}
-		const key = resourceIdentityKeyFromParts(domain, source.source_path);
-		const previous = previousResources.get(key);
-		retainRuntimeResource(
-			previous,
-			resources,
-			key,
-			domain,
-			source.source_path,
-			source,
-			retainProjectResourceLocation(previous?.location, projectRootPath, source.source_path),
-			resolveWorkspacePath(source.source_path, projectRootPath),
-		);
-	}
-}
-
-function sortRuntimeResources(resources: RuntimeResource[]): void {
-	resources.sort((left, right) => left.path.localeCompare(right.path) || left.domain - right.domain);
+	return {
+		...source, catalog: source.catalog.fork(), systemRom: { ...source.systemRom },
+		cartridgeSlots: [source.cartridgeSlots[0] === null ? null : { ...source.cartridgeSlots[0], rom: { ...source.cartridgeSlots[0].rom } },
+			source.cartridgeSlots[1] === null ? null : { ...source.cartridgeSlots[1], rom: { ...source.cartridgeSlots[1].rom } }],
+		cartridgeBlua32MediaDirty: [...source.cartridgeBlua32MediaDirty],
+		aemSourceApplications: new Map([...source.aemSourceApplications].map(([key, application]) => [key, { ...application }])),
+	};
 }

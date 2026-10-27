@@ -1,8 +1,10 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { medianMilliseconds } from '../../helpers/performance';
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { parseLuaChunkWithRecovery, type ParsedLuaChunk } from '../../../toolchain/ts/lua/analysis/parse';
 import { LuaSourceReader } from '../../../ide/language/lua/source_reader';
@@ -19,9 +21,9 @@ for (const root of process.argv.slice(2)) {
 }
 assert.ok(sources.length > 0, 'pass workspace source roots, e.g. cartlib carts/nemesis_s');
 sources.sort((a, b) => a.path.localeCompare(b.path));
-const files = sources.map(source => buildLuaFileSemanticData(source.text, source.path, source.parsed));
-const resources = files.map(file => ({ domain: 0 as const, path: file.file }));
-const snapshot = semanticSnapshot(...files);
+const resources = sources.map(source => ({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: source.path }));
+const files = sources.map((source, index) => buildResourceLuaSemanticFixtureFile(source.text, resources[index], source.parsed));
+const snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture(files, []));
 const collect = (reader: LuaSourceReader) => {
 	let count = 0;
 	for (const resource of resources) count += collectBehaviorRegistrations(resource, reader).registrations.length;
@@ -32,7 +34,7 @@ const bindingMs = medianMilliseconds(() => {
 	for (const source of sources) buildLuaFileSemanticData(source.text, source.path, source.parsed);
 });
 const snapshotAndCatalogMs = medianMilliseconds(() => {
-	assert.equal(collect(new LuaSourceReader(semanticSnapshot(...files))), registrations);
+	assert.equal(collect(new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture(files, [])))), registrations);
 });
 const catalogRebuildMs = medianMilliseconds(() => {
 	assert.equal(collect(new LuaSourceReader(snapshot)), registrations);

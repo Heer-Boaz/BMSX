@@ -56,6 +56,12 @@ invitation to substitute Home or another declaration.
   has a concrete editor container and scoped editor operations, not another
   working-copy store. BMSX adopts that ownership separation without copying
   dependency-injection containers or creating an operating-system window.
+- Godot's [EditorNode](https://github.com/godotengine/godot/blob/master/editor/editor_node.h)
+  composes the main screen separately from its
+  [dock manager](https://github.com/godotengine/godot/blob/master/editor/docks/editor_dock_manager.h).
+  Shared presentation owns floating/docked placement; the tool keeps its own
+  subject and editing state. BMSX uses that separation, not Godot's entire
+  docking implementation.
 
 Window presentation and physical input follow the existing
 [surface/window contract](workbench_windowing_design.md). Document/input
@@ -132,13 +138,13 @@ view and physical target are distinct identities:
   the authoring machine, Play and test targets. They cannot identify an authored
   asset or be restored as if they did.
 
-The current catalog/model implementation uses `(domain, path)`, with the three
-installed system/cartridge domains. That is not yet the independent source
-context representation above. The catalog/resource/model owners must produce
-and consume logical source contexts before arbitrary or uninstalled projects
-are admitted. This is a central identity change, not a renamed slot id or an
-alias at Home. Existing distinct resource contexts remain distinct during that
-change, even when their provenance paths match.
+The source catalog and canonical models use `(contextId, path)`. Physical
+system/cartridge domain numbers belong to execution attachments, never resource
+identity. The concrete loaded-project admission producer supplies authoring
+seeds separately from its installed images. Additional source-only contexts
+retain the same document, semantic, Save and recovery owners without requiring
+an installed ROM. This boundary does not itself implement project selection or
+target-free frontend startup.
 
 An execution attachment maps its installed domains to admitted source contexts
 through actual image/build provenance, including the exact installed source

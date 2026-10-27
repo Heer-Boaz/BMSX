@@ -1,5 +1,5 @@
 import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
-import type { RuntimeSourceState } from '../../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import { resolveReferenceLookup, type ReferenceLookupOptions } from '../../../../editor/contrib/references/lookup';
 import { type ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
 import type { SearchMatch } from '../../../../common/models';
@@ -58,7 +58,7 @@ export class RenameController {
 	private layoutExpression: string = '';
 	private layoutDetail = '';
 
-	public constructor(public readonly code: CodeEditorControl, private readonly sources: RuntimeSourceState,
+	public constructor(public readonly code: CodeEditorControl, private readonly catalog: WorkspaceSourceCatalog,
 		private readonly crossFileRename: CrossFileRenameManager) {
 		this.field = new TextField(code.focusTarget, { allowSpace: false, singleLine: true,
 			characterFilter: value => LuaLexer.isIdentifierPart(value.charAt(0)) });
@@ -84,7 +84,7 @@ export class RenameController {
 	}
 
 	public begin(options: RenameStartOptions, reviewGroup?: EditorGroupView): boolean {
-		const lookup = resolveReferenceLookup(this.sources, options);
+		const lookup = resolveReferenceLookup(this.catalog, options);
 		if (lookup.kind === 'error') {
 			showEditorMessage(lookup.message, 'warning', lookup.duration);
 			return false;
@@ -102,7 +102,7 @@ export class RenameController {
 			return false;
 		}
 		this.matches = info.matches;
-		this.context = new WorkspaceSourceContext(editorTextModelService, this.sources);
+		this.context = new WorkspaceSourceContext(editorTextModelService, this.catalog);
 		this.reviewGroup = reviewGroup;
 		this.info = info;
 		this.originalName = currentName;
@@ -193,7 +193,7 @@ export class RenameController {
 		let updatedMatches: number;
 		try {
 			if (this.reviewGroup !== undefined) {
-				const proposal = this.crossFileRename.proposeRename(this.context!, this.code.model.resource.domain, this.info, nextName);
+				const proposal = this.crossFileRename.proposeRename(this.context!, this.code.model.resource.contextId, this.info, nextName);
 				this.context = undefined; // Review now owns the accepted reading operation.
 				const group = this.reviewGroup;
 				this.cancel();

@@ -5,7 +5,7 @@ import type { RuntimeSourceState } from './sources';
 import { RuntimeBreakpoints, type RuntimeBreakpointBindings } from './breakpoints';
 import { SourceDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerSourceStop } from './source_debugger';
 import { RuntimeDebuggerPlanManager, type RuntimeDebuggerControlPlan, type RuntimeDebuggerExecutionContext } from './debugger_plans';
-import type { Blua32ToolingMedia } from '../../toolchain/ts/rompack/blua32_media';
+import type { Blua32InstalledMedia } from './sources';
 import type { SourceLocationPcs } from './source_breakpoints';
 export { RuntimeDebuggerResumeMode, RuntimeDebuggerStopReason } from './source_debugger';
 
@@ -31,7 +31,7 @@ export function createRuntimeDebuggerState(runtime: Runtime, sources: RuntimeSou
 	return Object.assign(state, { breakpoints, sources });
 }
 
-export function createSourceExecutionState(runtime: Runtime, media: Blua32ToolingMedia, points: SourceLocationPcs): SourceExecutionState {
+export function createSourceExecutionState(runtime: Runtime, media: Blua32InstalledMedia, points: SourceLocationPcs): SourceExecutionState {
 	let state: SourceExecutionState;
 	const executionHook: ExecutionHook = (domain, pc) => {
 		// Recorded input is a closed execution history, not admission of new live debugger intent.

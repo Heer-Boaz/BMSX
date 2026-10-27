@@ -19,7 +19,7 @@ export function handleRuntimeErrorOverlayPointerClick(
 			return;
 		case 'navigate':
 			setRuntimeErrorOverlayExpanded(overlay, false);
-			navigateToRuntimeErrorFrameTarget(pane, clickResult.frame);
+			void navigateToRuntimeErrorFrameTarget(pane, clickResult.frame, overlay.details.sources.get(clickResult.frame)!);
 			return;
 	}
 }

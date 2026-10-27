@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createPathModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
@@ -5,7 +6,6 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 import assert from 'node:assert/strict';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
-import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { test } from 'node:test';
 import { getLuaTextContext, LuaTextContext } from '../../ide/common/text';
 import { resolveModuleCompletionRange } from '../../ide/editor/contrib/suggest/completion_model';
@@ -66,7 +66,7 @@ test('completion sees a newly created module without editing the importer or reb
 		resetSemanticProjects(editorTextModelService);
 		editorTextModelService.clear();
 	});
-	const resource = (path: string) => ({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0 as const, path, source: { resid: path, type: 'lua' as const, source_path: path } });
+	const resource = (path: string) => ({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: path, type: 'lua' as const, source_path: path } });
 	const importer = editorTextModelService.retain(resource('carts/example/main.lua'), 'lua', "local m = require('authoring/')");
 	const view = createCodeEditorViewState();
 	view.cursorColumn = importer.buffer.getText().indexOf("')");
@@ -83,7 +83,7 @@ test('completion sees a newly created module without editing the importer or reb
 	assert.deepEqual(controller.listCompletionCandidates()!.filteredItems, []);
 	const path = 'carts/example/authoring/palette.lua';
 	editorTextModelService.retain(resource(path), 'lua', 'return {}');
-	registerLuaSourceRecord(sources.cartridgeSlots[0]!.luaSources, { ...createScenarioTestSourceRecord(path, 1, 'return {}'), module_path: 'authoring/palette' });
+	registerLuaSourceRecord(sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, { ...createScenarioTestSourceRecord(path, 1, 'return {}'), module_path: 'authoring/palette' });
 	const candidates = controller.listCompletionCandidates()!;
 	assert.equal(importer.version, version);
 	assert.equal(candidates.context.kind, 'module');
@@ -99,8 +99,8 @@ test('resolved require spellings do not become duplicate completion insertions o
 		createScenarioTestSourceRecord('main.lua', 1, source),
 		createScenarioTestSourceRecord('palette.lua', 1, 'return {value=42}'),
 	]);
-	const importerResource = resolveRuntimeResource(sources, { domain: 0, path: 'main.lua' })!;
-	const paletteResource = resolveRuntimeResource(sources, { domain: 0, path: 'palette.lua' })!;
+	const importerResource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' })!;
+	const paletteResource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'palette.lua' })!;
 	const importer = editorTextModelService.retain(importerResource, 'lua', source), view = createCodeEditorViewState();
 	view.cursorRow = 1; view.cursorColumn = importer.buffer.getLineContent(1).indexOf("')");
 	const { documents, clock } = createTestCodeDocuments(t, editorTextModelService);
@@ -112,7 +112,7 @@ test('resolved require spellings do not become duplicate completion insertions o
 	assert.equal(candidates.context.kind, 'module');
 	assert.deepEqual(candidates.filteredItems.map(item => item.insertText).sort(), ['main', 'palette'],
 		'inserted source paths come once from declared module_path metadata, never written aliases or opaque addresses');
-	const project = getOrCreateSemanticProject(editorTextModelService, importerResource.domain);
+	const project = getOrCreateSemanticProject(editorTextModelService, importerResource.contextId);
 	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
 	const reference = frontend.findSymbolsByPosition(resourceIdentityKey(importerResource), 3, importer.buffer.getLineContent(2).indexOf('value') + 1)!;
 	assert.ok(reference);

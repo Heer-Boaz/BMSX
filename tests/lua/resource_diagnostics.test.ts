@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
@@ -7,7 +9,6 @@ import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnos
 import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/panel/controller';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { setWorkspaceLuaSourceOverride, deleteWorkspaceLuaSourceOverride } from '../../ide/workspace/cache';
-import type { ResourceDomain } from '../../ide/common/resource';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
@@ -22,9 +23,9 @@ function fixture(t: TestContext) {
 	const sources = createTestRuntimeSourceState(registries[0], [registries[1], registries[2]], 0);
 
 	const clock = new VirtualHeadlessClock();
-	const service = new ResourceDiagnosticsService(models, sources, clock);
+	const service = new ResourceDiagnosticsService(models, sources.catalog, clock);
 	t.after(() => { service.dispose(); resetSemanticProjects(models); models.clear(); clearBackgroundTasks(); });
-	const retain = (domain: ResourceDomain, path: string, source: string) => models.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain, path,
+	const retain = (contextId: string, path: string, source: string) => models.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId, path,
 		source: { type: 'lua', resid: path } }, 'lua', source);
 	return { service, clock, retain, registries };
 }
@@ -32,8 +33,8 @@ function fixture(t: TestContext) {
 test('boot primitive globals are known only in BIOS diagnostics, not either cartridge domain', t => {
 	const { service, retain } = fixture(t);
 	const source = LUA_BOOT_PRIMITIVES.map(primitive => `local capture_${primitive.id} = ${primitive.name}`).join('\n');
-	const bios = retain(-1, 'capture.lua', source);
-	const carts = [retain(0, 'capture.lua', source), retain(1, 'capture.lua', source)];
+	const bios = retain(TEST_SYSTEM_CONTEXT_ID, 'capture.lua', source);
+	const carts = [retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'capture.lua', source), retain(TEST_CARTRIDGE_CONTEXT_IDS[1], 'capture.lua', source)];
 	service.computePending();
 	assert.equal(service.get(bios)!.status, 'ready');
 	assert.deepEqual(service.diagnostics.filter(diagnostic => diagnostic.model === bios), []);
@@ -56,12 +57,12 @@ test('boot primitive globals are known only in BIOS diagnostics, not either cart
 
 test('diagnostics cover retained resources without code inputs; unknown and unsupported coverage is not a clean result', t => {
 	const { service, retain } = fixture(t);
-	const model = retain(0, 'visual.lua', 'return missing_from_visual_source');
-	const yaml = models.retain({ sourceFilePath: 'level.yaml', location: { kind: 'workspace' as const, path: 'level.yaml' }, domain: 0, path: 'level.yaml', source: { type: 'data', resid: 'level' } }, 'yaml', 'level: one');
+	const model = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'visual.lua', 'return missing_from_visual_source');
+	const yaml = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'level.yaml', location: { kind: 'workspace' as const, path: 'level.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'level.yaml', source: { type: 'data', resid: 'level' } }, 'yaml', 'level: one');
 	assert.equal(service.get(model)!.status, 'pending');
 	assert.equal(service.get(yaml)!.status, 'unsupported');
 	assert.equal('byRow' in service.get(yaml)!, false);
-	assert.equal(models.get({ domain: 0, path: 'unopened.lua' }), undefined);
+	assert.equal(models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'unopened.lua' }), undefined);
 	service.computePending();
 	assert.deepEqual(service.coverage, { ready: 1, pending: 0, unsupported: 1, failed: 0 });
 	const diagnostic = service.diagnostics.find(item => item.message.includes('missing_from_visual_source'))!;
@@ -71,14 +72,14 @@ test('diagnostics cover retained resources without code inputs; unknown and unsu
 
 test('resource diagnostics never import matching working copies from another model owner', t => {
 	const f = fixture(t);
-	f.retain(0, 'provider.lua', 'foreign_workspace_global = 1');
+	f.retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'provider.lua', 'foreign_workspace_global = 1');
 	const ownedModels = new EditorTextModelService();
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('provider.lua', 1, 'owned_global = 1'),
 		createScenarioTestSourceRecord('reader.lua', 1, 'return owned_global')]);
 
-	const service = new ResourceDiagnosticsService(ownedModels, sources, new VirtualHeadlessClock());
+	const service = new ResourceDiagnosticsService(ownedModels, sources.catalog, new VirtualHeadlessClock());
 	t.after(() => { service.dispose(); ownedModels.clear(); });
-	const reader = ownedModels.retain(sources.luaResources.find(resource => resource.path === 'reader.lua')!, 'lua', 'return owned_global');
+	const reader = ownedModels.retain(sources.catalog.luaResources.find(resource => resource.path === 'reader.lua')!, 'lua', 'return owned_global');
 	service.computePending();
 	assert.equal(service.get(reader)!.status, 'ready');
 	assert.deepEqual(service.diagnostics, [], 'unopened dependencies belong to this workspace, not the global editor model service');
@@ -86,8 +87,8 @@ test('resource diagnostics never import matching working copies from another mod
 
 test('dependency edits invalidate same-project diagnostics even when the consumer version did not change', t => {
 	const { service, retain } = fixture(t);
-	const reader = retain(0, 'reader.lua', 'return shared.value');
-	const provider = retain(0, 'provider.lua', 'shared = { value = 1 }');
+	const reader = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'reader.lua', 'return shared.value');
+	const provider = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'provider.lua', 'shared = { value = 1 }');
 	service.computePending();
 	assert.equal(service.diagnostics.some(item => item.message.includes("'shared' is not defined")), false);
 	const first = service.get(reader);
@@ -104,7 +105,7 @@ test('dependency edits invalidate same-project diagnostics even when the consume
 
 test('unopened source discovery and registry overrides retire dependent results without a code-tab or model event', t => {
 	const { service, retain, registries } = fixture(t);
-	const reader = retain(0, 'reader.lua', 'return discovered');
+	const reader = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'reader.lua', 'return discovered');
 	const registry = registries[1];
 	service.computePending();
 	assert.ok(service.diagnostics.some(item => item.message.includes("'discovered' is not defined")));
@@ -121,7 +122,7 @@ test('unopened source discovery and registry overrides retire dependent results 
 	deleteWorkspaceLuaSourceOverride(registry, 'provider.lua');
 	service.computePending();
 	assert.deepEqual(service.diagnostics, []);
-	const provider = retain(0, 'provider.lua', 'discovered = 2');
+	const provider = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'provider.lua', 'discovered = 2');
 	service.computePending();
 	const result = service.get(reader);
 	setWorkspaceLuaSourceOverride(registry, 'provider.lua', 'older_saved_source = 1');
@@ -132,9 +133,9 @@ test('unopened source discovery and registry overrides retire dependent results 
 
 test('socket identity is retained and system source edits invalidate both dependent domains', t => {
 	const { service, retain } = fixture(t);
-	const system = retain(-1, 'globals.lua', 'shared = 1');
-	const first = retain(0, 'same.lua', 'return shared');
-	const second = retain(1, 'same.lua', 'return shared');
+	const system = retain(TEST_SYSTEM_CONTEXT_ID, 'globals.lua', 'shared = 1');
+	const first = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'same.lua', 'return shared');
+	const second = retain(TEST_CARTRIDGE_CONTEXT_IDS[1], 'same.lua', 'return shared');
 	service.computePending();
 	const oldSecond = service.get(second);
 	first.pushEditOperations([{ offset: first.buffer.length, deleteLength: 0, text: '\nend end' }]);
@@ -151,7 +152,7 @@ test('socket identity is retained and system source edits invalidate both depend
 
 test('unchanged reads and visibility transitions retain results without parsing or recomputing', t => {
 	const { service, clock, retain } = fixture(t);
-	const model = retain(0, 'stable.lua', 'return 1');
+	const model = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'stable.lua', 'return 1');
 	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
 	service.computePending();
 	const result = service.get(model), diagnostics = service.diagnostics, calls = parse.mock.callCount();
@@ -168,7 +169,7 @@ test('unchanged reads and visibility transitions retain results without parsing 
 
 test('hiding cancels queued work but keeps pending source; workspace disposal prevents late results or revived coverage', t => {
 	const { service, clock, retain } = fixture(t);
-	const model = retain(0, 'retired.lua', 'return 1');
+	const model = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'retired.lua', 'return 1');
 	service.setEnabled(true); clock.advance(200); service.setEnabled(false);
 	runBackgroundTasks(clock);
 	assert.equal(service.get(model)!.status, 'pending');
@@ -177,7 +178,7 @@ test('hiding cancels queued work but keeps pending source; workspace disposal pr
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: 'end end\n' }]);
 	clock.advance(1000);
 	service.dispose(); models.clear();
-	const reopened = retain(0, 'retired.lua', 'return 1');
+	const reopened = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'retired.lua', 'return 1');
 	runBackgroundTasks(clock); clock.advance(1000);
 	assert.equal(service.get(reopened), undefined);
 	assert.deepEqual(service.diagnostics, []);
@@ -186,12 +187,12 @@ test('hiding cancels queued work but keeps pending source; workspace disposal pr
 
 test('provider failure is explicit coverage and a later source change can be analyzed normally', t => {
 	const { service, retain } = fixture(t);
-	const model = retain(0, 'failed.lua', 'return missing_before_failure');
+	const model = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'failed.lua', 'return missing_before_failure');
 	service.computePending();
 	const ready = service.get(model)!;
 	assert.ok(ready.status === 'ready' && ready.byRow.size > 0);
 	const error = new Error('semantic query failed');
-	const method = t.mock.method(getOrCreateSemanticProject(models, 0), 'getSnapshot', () => { throw error; });
+	const method = t.mock.method(getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]), 'getSnapshot', () => { throw error; });
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- changed' }]);
 	service.computePending();
 	assert.deepEqual(service.get(model), { status: 'failed', model, version: model.version, error });
@@ -209,11 +210,11 @@ test('new retained source pending publication cannot replace the Problems semant
 	const unsubscribe = service.onDidChange(() => panel.setDiagnostics(service.diagnostics, service.coverage));
 	t.after(() => { unsubscribe(); panel.hide(); });
 	panel.show();
-	retain(0, 'cart.lua', '9return 1'); const intro = retain(0, 'intro.lua', '9return 1');
+	retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'cart.lua', '9return 1'); const intro = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'intro.lua', '9return 1');
 	service.computePending(); panel.setSelectionIndex(1);
 	assert.ok(panel.selectedDiagnostic!.model === intro);
 	const previous = panel.selectedDiagnostic;
-	retain(0, 'new.lua', 'return 1');
+	retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'new.lua', 'return 1');
 	assert.ok(service.coverage.pending > 0); assert.equal(service.diagnostics.length, 0);
 	assert.equal(panel.selectedDiagnostic, null); assert.equal(panel.focusTarget.clipboard!.copy(), null);
 	service.computePending(); const result = service.get(intro)!;
@@ -225,8 +226,8 @@ test('new retained source pending publication cannot replace the Problems semant
 
 test('canonical row indexes isolate models and are shared by independent views until source invalidation', t => {
 	const { service, retain } = fixture(t);
-	const first = retain(0, 'same.lua', 'return missing_first');
-	const second = retain(1, 'same.lua', 'return missing_second');
+	const first = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'same.lua', 'return missing_first');
+	const second = retain(TEST_CARTRIDGE_CONTEXT_IDS[1], 'same.lua', 'return missing_second');
 	service.computePending();
 	const firstResult = service.get(first)!, secondResult = service.get(second)!;
 	assert.ok(firstResult.status === 'ready' && secondResult.status === 'ready');

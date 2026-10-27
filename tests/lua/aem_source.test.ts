@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { RuntimeResource } from '../../ide/common/resource';
@@ -16,7 +17,7 @@ const documents = [
 
 function fixture(t: TestContext, format: 'yaml' | 'json', source: string) {
 	const path = `res/audio/events.aem.${format}`;
-	const resource: RuntimeResource = { sourceFilePath: resolveWorkspacePath(path, 'carts/test'), domain: 0, path, location: { kind: 'project', projectRootPath: 'carts/test', path },
+	const resource: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: resolveWorkspacePath(path, 'carts/test'), contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, location: { kind: 'project', projectRootPath: 'carts/test', path },
 		source: { type: 'aem', resid: 'events', source_path: path } };
 	const model = new EditorTextModel(resource, 'aem', source), input = new AemEditorInput(model);
 	t.after(() => { input.dispose(); model.dispose(); });

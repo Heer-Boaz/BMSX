@@ -1,6 +1,6 @@
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import { resourceIdentityKey, type RuntimeResource } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { ResourceViewerTabId } from '../../ui/tab/id';
 import type { ResourceViewerContent, ResourceViewerState } from './model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
@@ -14,11 +14,11 @@ export class ResourceViewerInput extends ReadonlyEditorInput<ResourceViewerTabId
 	public readonly view: ResourceViewerState;
 	private content: ResourceViewerContent | undefined;
 
-	public constructor(private readonly sources: RuntimeSourceState, public readonly resource: RuntimeResource) {
+	public constructor(private readonly catalog: WorkspaceSourceCatalog, public readonly resource: RuntimeResource) {
 		const title = computeResourceTabTitle(resource);
 		super(`resource:${resourceIdentityKey(resource)}`, 'resource_view', title, true);
 		const input = this;
-		this.view = { get content() { return input.content ??= buildResourceViewerContent(input.sources, input.resource); }, scroll: 0 };
+		this.view = { get content() { return input.content ??= buildResourceViewerContent(input.catalog, input.resource); }, scroll: 0 };
 		this.setLabel(title, sourceTabDescription(resource));
 	}
 

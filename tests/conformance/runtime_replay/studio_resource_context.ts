@@ -1,7 +1,6 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 
 import { buildCodeTabId } from '../../../ide/workbench/ui/tab/id';
-import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { getProblemsPanelBounds, problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
 import { resolveTextFileModel } from '../../../ide/workbench/services/working_copy/text_file_model';
 import { runBackgroundTasks } from '../../../ide/common/background_tasks';
@@ -17,7 +16,7 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	await frame();
 	await runMenuCommand('pause');
 	const actor = title(), position = cycles(), media = ide.sources.currentBlua32Media;
-	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: 'scenes/root.lua' })!;
+	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!;
 	check(ide.editor.editorGroup.model.findById(buildCodeTabId(resource)) === undefined, 'resource context: scene has never had a code input');
 	ide.editor.sceneEditor.openResource(resource);
 	await frame();
@@ -30,10 +29,10 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	check(marker !== undefined && marker.version === model.version, 'resource context: resource marker identifies exact model revision');
 	check(ide.editor.editorGroup.model.findById(buildCodeTabId(resource)) === undefined && ide.editor.editorGroup.model.activeTab === scene,
 		'resource context: analysis neither requires nor creates a code input');
-	const yaml = ide.sources.resources.find(item => item.domain === 0 && item.path.endsWith('nemesis_s_stage.yaml'))!;
-	const yamlModel = await resolveTextFileModel(editorTextModelService, ide.sources, yaml);
+	const yaml = ide.sources.catalog.resources.find(item => item.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.path.endsWith('nemesis_s_stage.yaml'))!;
+	const yamlModel = await resolveTextFileModel(editorTextModelService, ide.sources.catalog, yaml);
 	check(ide.diagnostics.get(yamlModel)!.status === 'unsupported', 'resource context: YAML is not an empty successful Lua analysis');
-	check(editorTextModelService.get({ domain: 0, path: 'scenes/hangar.lua' }) === undefined, 'resource context: unopened source is unrequested coverage');
+	check(editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/hangar.lua' }) === undefined, 'resource context: unopened source is unrequested coverage');
 	await test.runPaletteCommand('View: Problems Panel');
 	check(problemsPanel.isVisible && problemsPanel.getDiagnostics().includes(marker), 'resource context: Problems reads the visual resource result');
 	await frame();

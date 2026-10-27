@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -20,7 +21,7 @@ import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
 
 const font = new Font({ variant: 'tiny' });
 function fixture(source = BT_MEMBERSHIP_SOURCE, index = 0) {
-	const model = new EditorTextModel({ sourceFilePath: 'membership.lua', location: { kind: 'workspace' as const, path: 'membership.lua' }, domain: 0, path: 'membership.lua', source: { type: 'lua', resid: 'membership' } }, 'lua', source);
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'membership.lua', location: { kind: 'workspace' as const, path: 'membership.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'membership.lua', source: { type: 'lua', resid: 'membership' } }, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource)], ['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/result'])));
 	const document = project();
 	const definition = document.definitions[index];

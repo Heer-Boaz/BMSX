@@ -8,15 +8,14 @@ import { HostRewind } from '../../hosts/common/rewind';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { SystemOutputLog } from '../../hosts/common/system_output_log';
 import { RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
-import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
-import type { ResourceDomain } from '../common/resource';
+import type { BuiltFixtureProgram } from '../testing/fixture_media';
 import { createRuntimeFaultState, readSupervisorFaultReport } from '../runtime/fault_state';
 import { createSourceExecutionState, runtimeDebuggerExecutionRequested, willExecuteRuntimeDebuggerPlan, didExecuteRuntimeDebuggerPlan,
 	didFaultRuntimeDebuggerPlan, discardRuntimeDebuggerPlans, type SourceExecutionState } from '../runtime/debugger_state';
 import { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import { TestDebuggerSources } from '../testing/debugger_sources';
-import { createBlua32SourceImage, type Blua32InstalledMedia } from '../runtime/sources';
+import { type Blua32InstalledMedia } from '../runtime/sources';
 import { generateUuid } from '../common/uuid';
 import { RuntimeTransport } from '../runtime/transport';
 import { SuspendedGuestSession } from '../runtime/suspended_guest';
@@ -52,8 +51,8 @@ export class PlayRuntimeSession implements PlaySession {
 	private closing = false;
 	private closeOperation: Promise<void> | undefined;
 
-	public constructor(public readonly target: OffscreenMachine<PlayInput>, public readonly program: BuiltTestCartridge,
-		public readonly sourceDomain: ResourceDomain, device: HostAudioDevice,
+	public constructor(public readonly target: OffscreenMachine<PlayInput>, public readonly program: BuiltFixtureProgram,
+		device: HostAudioDevice,
 		private readonly log: LogOutput, budgets?: PlayFixtureBudgets) {
 		const runtime = target.runtime;
 		this.frames = target.frameOutput;
@@ -64,13 +63,8 @@ export class PlayRuntimeSession implements PlaySession {
 		this.tasks = new RuntimeTaskQueue(this.audio, target.presenter);
 		this.rewind = new HostRewind(runtime, target.presenter, target.presentation, this.tasks, this.audio, log);
 		this.frameSession = new HostFrameSession(runtime.timing.ufpsScaled, 0, this.rewind, this.execution);
-		const [system, cartridge, companion] = program.debugImages;
-		this.currentBlua32Media = {
-			system: createBlua32SourceImage(system.image.layout, system.image.symbols, system.sources, -1),
-			cartridgeSlots: [createBlua32SourceImage(cartridge.image.layout, cartridge.image.symbols, cartridge.sources, sourceDomain),
-				companion === null ? null : createBlua32SourceImage(companion.image.layout, companion.image.symbols, companion.sources, (sourceDomain ^ 1) as 0 | 1)],
-		};
-		this.debugSources = new TestDebuggerSources(generateUuid(), program, sourceDomain, () => {
+		this.currentBlua32Media = program.sourceMedia;
+		this.debugSources = new TestDebuggerSources(generateUuid(), program, () => {
 			if (this.ready) this.debugger.source.install(this.currentBlua32Media, this.debugSources.pcs);
 		});
 		this.debugger = createSourceExecutionState(runtime, this.currentBlua32Media, this.debugSources.pcs);
@@ -81,7 +75,7 @@ export class PlayRuntimeSession implements PlaySession {
 		this.transport = new RuntimeTransport(runtime, this.execution, this.rewind, this.navigation, () => this.ready && this.tasks.ready
 			&& !this.execution.frameStepPending && this.debugger.source.stop === undefined && !this.debugger.plans.controlActive);
 		this.evidence = new PlayEvidence(runtime, () => this.fixture.readContext());
-		this.fixture = new PlayFixture(target, target.input.fixture, program, sourceDomain, this.evidence, budgets);
+		this.fixture = new PlayFixture(target, target.input.fixture, program, this.evidence, budgets);
 		runtime.onStateRestored = origin => {
 			this.evidence.didRestore();
 			this.debuggerExecution.didReset();

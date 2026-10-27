@@ -2,7 +2,6 @@ import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { applyRuntimeSaveState, captureRuntimeSaveState, type RuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { readRuntimeLuaModuleExport } from '../../../ide/runtime/lua_inspection';
-import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, type StudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 
@@ -15,8 +14,8 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 	await reachNemesisTitle(test);
 	harness.openLuaSource('title_screen.lua'); await frame();
 	await test.runMenuCommand('pause');
-	const resource = { domain: 0 as const, path: 'cartlib/gx/vblank.lua' };
-	const source = resolveRuntimeLuaSource(ide.sources, resource)!.record.src;
+	const resource = { contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cartlib/gx/vblank.lua' };
+	const source = ide.sources.catalog.resolveLuaSource(resource)!.record.src;
 	const line = source.split('\n').findIndex(text => text.includes('halt_until_irq')) + 1;
 	check(line > 0, 'frame recovery: installed user-mode wait point');
 	ide.debugger.breakpoints.toggle(resource, line);

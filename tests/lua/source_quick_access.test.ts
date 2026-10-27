@@ -1,3 +1,5 @@
+import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import assert from 'node:assert/strict';
@@ -23,11 +25,11 @@ import type { EditorLuaSymbolEntry } from '../../ide/editor/contrib/intellisense
 import type { LuaDefinitionTarget } from '../../ide/editor/contrib/definitions/query';
 import { SOURCE_CHOICES_DEFINITIONS, SOURCE_CHOICES_USAGE } from '../fixtures/studio/source_choices';
 
-const definitionResource = { domain: 0 as const, path: 'definitions.lua' };
-const usageResource = { domain: 0 as const, path: 'usage.lua' };
+const definitionResource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' };
+const usageResource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'usage.lua' };
 
 function referenceFixture(t: TestContext) {
-	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
+	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], new EditorTextModelService());
 	project.updateDocuments([{ resource: definitionResource, source: SOURCE_CHOICES_DEFINITIONS },
 		{ resource: usageResource, source: SOURCE_CHOICES_USAGE }]);
 	t.after(() => project.dispose());
@@ -68,7 +70,7 @@ test('reference choices use workspace source identity, not the current-file high
 	assert.equal(provider.getPicks('definitions.lua').selectionIndex, 0);
 	assert.equal(provider.getPicks('no such source').selectionIndex, -1);
 	assert.equal(provider.getPicks('').selectionIndex, 3);
-	assert.equal(createReferenceQuickPickProvider(sources, { domain: 0, path: 'unrelated.lua' }, 1, 1).getPicks('').selectionIndex, 0,
+	assert.equal(createReferenceQuickPickProvider(sources, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'unrelated.lua' }, 1, 1).getPicks('').selectionIndex, 0,
 		'no containing occurrence is a valid navigation context; choose the first result');
 });
 
@@ -89,10 +91,10 @@ test('reference text and range identities come from the captured snapshot, read 
 
 test('symbol choices retain same-name declarations and match case-insensitively', () => {
 	const symbols: EditorLuaSymbolEntry[] = [
-		{ name: 'mixed_case', path: 'owner.mixed_case', kind: 'function', resource: { domain: 0, path: 'first/shared.lua' },
-			location: { path: resourceIdentityKey({ domain: 0, path: 'first/shared.lua' }), range: { startLine: 1, startColumn: 2, endLine: 1, endColumn: 10 } } },
-		{ name: 'mixed_case', path: 'owner.mixed_case', kind: 'function', resource: { domain: 0, path: 'second/shared.lua' },
-			location: { path: resourceIdentityKey({ domain: 0, path: 'second/shared.lua' }), range: { startLine: 7, startColumn: 4, endLine: 7, endColumn: 12 } } },
+		{ name: 'mixed_case', path: 'owner.mixed_case', kind: 'function', resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'first/shared.lua' },
+			location: { path: resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'first/shared.lua' }), range: { startLine: 1, startColumn: 2, endLine: 1, endColumn: 10 } } },
+		{ name: 'mixed_case', path: 'owner.mixed_case', kind: 'function', resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'second/shared.lua' },
+			location: { path: resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'second/shared.lua' }), range: { startLine: 7, startColumn: 4, endLine: 7, endColumn: 12 } } },
 	];
 	const items = buildSymbolQuickPickItems(symbols, 'workspace');
 	assert.equal(items[0].symbol, symbols[0]); assert.equal(items[1].symbol, symbols[1]);
@@ -105,8 +107,8 @@ test('symbol choices retain same-name declarations and match case-insensitively'
 
 test('definition choices keep module and declaration targets, including unqualified names', () => {
 	const targets: LuaDefinitionTarget[] = [
-		{ name: 'plain', namePath: [], kind: 'local', resource: { domain: 0, path: 'a.lua' }, location: { path: resourceIdentityKey({ domain: 0, path: 'a.lua' }), range: { startLine: 1, startColumn: 7, endLine: 1, endColumn: 11 } } },
-		{ name: 'library', namePath: ['library'], kind: 'module', resource: { domain: -1, path: 'library.lua' }, location: { path: resourceIdentityKey({ domain: -1, path: 'library.lua' }), range: { startLine: 1, startColumn: 1, endLine: 5, endColumn: 3 } } },
+		{ name: 'plain', namePath: [], kind: 'local', resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'a.lua' }, location: { path: resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'a.lua' }), range: { startLine: 1, startColumn: 7, endLine: 1, endColumn: 11 } } },
+		{ name: 'library', namePath: ['library'], kind: 'module', resource: { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'library.lua' }, location: { path: resourceIdentityKey({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'library.lua' }), range: { startLine: 1, startColumn: 1, endLine: 5, endColumn: 3 } } },
 	];
 	const items = buildDefinitionQuickPickItems(targets);
 	assert.equal(items[0].target, targets[0]); assert.equal(items[0].label, 'plain');
@@ -135,14 +137,15 @@ test('initial source choice is revealed and accepted through the shared picker w
 
 test('Lua choice subscriptions retire only the captured project and end before a replacement', t => {
 	const picker = pickerFixture(t);
+	const catalog = createScenarioTestSourceState([]).catalog;
 	const models = new EditorTextModelService();
-	const source = models.retain({ sourceFilePath: 'main.lua', location: { kind: 'workspace' as const, path: 'main.lua' }, domain: 0, path: 'main.lua', source: { resid: 'main', type: 'lua' } }, 'lua', 'return 1');
-	const other = models.retain({ sourceFilePath: 'main.lua', location: { kind: 'workspace' as const, path: 'main.lua' }, domain: 1, path: 'main.lua', source: { resid: 'main', type: 'lua' } }, 'lua', 'return 2');
-	const data = models.retain({ sourceFilePath: 'data.aem', location: { kind: 'workspace' as const, path: 'data.aem' }, domain: 0, path: 'data.aem', source: { resid: 'data', type: 'data' } }, 'aem', '{}');
+	const source = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'main.lua', location: { kind: 'workspace' as const, path: 'main.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua', source: { resid: 'main', type: 'lua' } }, 'lua', 'return 1');
+	const other = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'main.lua', location: { kind: 'workspace' as const, path: 'main.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'main.lua', source: { resid: 'main', type: 'lua' } }, 'lua', 'return 2');
+	const data = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'data.aem', location: { kind: 'workspace' as const, path: 'data.aem' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'data.aem', source: { resid: 'data', type: 'data' } }, 'aem', '{}');
 	const provider = new TextQuickPickProvider([{ label: 'symbol', description: '', detail: '' }]);
 	let invalidations = 0;
 	const open = () => picker.pick('SYMBOLS', 'Filter', (_origin, lifetime) => {
-		lifetime.add(subscribeToLuaModelChanges(models, 0, () => { invalidations += 1; picker.hide(); }));
+		lifetime.add(subscribeToLuaModelChanges(models, catalog, TEST_CARTRIDGE_CONTEXT_IDS[0], () => { invalidations += 1; picker.hide(); }));
 		return provider;
 	}, () => {});
 	open();
@@ -153,11 +156,11 @@ test('Lua choice subscriptions retire only the captured project and end before a
 	assert.equal(picker.visible, false); assert.equal(invalidations, 1);
 	picker.pick('FILES', 'Filter', () => provider, () => {}); source.undo();
 	assert.equal(picker.visible, true); assert.equal(invalidations, 1);
-	open(); models.retain({ sourceFilePath: 'base.lua', location: { kind: 'workspace' as const, path: 'base.lua' }, domain: -1, path: 'base.lua', source: { resid: 'base', type: 'lua' } }, 'lua', 'return {}');
+	open(); models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'base.lua', location: { kind: 'workspace' as const, path: 'base.lua' }, contextId: TEST_SYSTEM_CONTEXT_ID, path: 'base.lua', source: { resid: 'base', type: 'lua' } }, 'lua', 'return {}');
 	assert.equal(picker.visible, false); assert.equal(invalidations, 2);
 	open(); models.clear();
 	assert.equal(picker.visible, false); assert.equal(invalidations, 3, 'removal listener detaches during retirement');
 	open(); picker.hide();
-	models.retain({ sourceFilePath: 'next.lua', location: { kind: 'workspace' as const, path: 'next.lua' }, domain: 0, path: 'next.lua', source: { resid: 'next', type: 'lua' } }, 'lua', 'return 1');
+	models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'next.lua', location: { kind: 'workspace' as const, path: 'next.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'next.lua', source: { resid: 'next', type: 'lua' } }, 'lua', 'return 1');
 	assert.equal(invalidations, 3, 'ordinary cancellation also releases the source generation');
 });

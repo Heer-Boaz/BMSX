@@ -28,7 +28,7 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, click, frame, cycles } = test;
 	const position = cycles();
 	console.info('STUDIO: globals and source-backed views through actual workbench input');
-	const bios = ide.sources.luaResources.find(resource => resource.domain === -1 && resource.path === 'main.lua')!;
+	const bios = ide.sources.catalog.luaResources.find(resource => resource.contextId === test.ide.sources.currentBlua32Media.system!.sourceContextId && resource.path === 'main.lua')!;
 	await ide.editor.navigation.openResource(bios);
 	await press('ControlLeft', 'Home');
 	const lines = sourcePane(test).code.model.buffer.getText().split('\n');

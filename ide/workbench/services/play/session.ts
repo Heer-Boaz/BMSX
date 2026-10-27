@@ -4,8 +4,7 @@ import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import type { FrameBitmap } from '../../../../hosts/common/frame_bitmap';
 import type { MachineModelSpec } from '../../../../machine/ts/spec/bmsx/model';
-import type { BuiltTestCartridge } from '../../../../toolchain/ts/rompack/test_cartridge';
-import type { ResourceDomain } from '../../../common/resource';
+import type { BuiltFixtureProgram } from '../../../testing/fixture_media';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { SourceExecutionState } from '../../../runtime/debugger_state';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
@@ -27,8 +26,7 @@ export type PlaySessionState = PlayFixtureState | 'faulted' | 'closing';
 export interface PlaySession extends RuntimeInstalledSourceState {
 	readonly target: FixtureTarget;
 	readonly input: PlayInput;
-	readonly program: BuiltTestCartridge;
-	readonly sourceDomain: ResourceDomain;
+	readonly program: BuiltFixtureProgram;
 	readonly fixture: PlayFixture;
 	readonly evidence: PlayEvidence;
 	readonly guest: SuspendedGuestSession;
@@ -52,4 +50,4 @@ export interface PlaySession extends RuntimeInstalledSourceState {
 }
 
 export type PlaySessionFactory = (systemRom: Uint8Array, cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null],
-	machineModel: MachineModelSpec, input: PlayInput, program: BuiltTestCartridge, sourceDomain: ResourceDomain) => PlaySession;
+	machineModel: MachineModelSpec, input: PlayInput, program: BuiltFixtureProgram) => PlaySession;

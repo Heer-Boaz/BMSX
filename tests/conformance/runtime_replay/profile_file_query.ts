@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import { ContextMenuController } from '../../../ide/workbench/services/context_menu/controller';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
@@ -17,7 +18,7 @@ const menu = new ContextMenuController(inputFocus, pointerCapture);
 const picker = new QuickInputController(menu);
 const names = ['source_controller', 'workspace_query', 'state_machine', 'action_effect', 'source_index', 'code_editor', 'entry_point', 'sprite_view'];
 for (const count of [128, 1024, 8192]) {
-	const resources: RuntimeResource[] = Array.from({ length: count }, (_, index) => ({ sourceFilePath: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua`, location: { kind: 'workspace' as const, path: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua` }, domain: 0,
+	const resources: RuntimeResource[] = Array.from({ length: count }, (_, index) => ({ contextLabel: 'Profile project', sourceFilePath: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua`, location: { kind: 'workspace' as const, path: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua` }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua`, source: { type: 'lua', resid: `resource_${index}` } }));
 	const items = buildResourceQuickPickItems(resources);
 	for (const mode of ['literal', 'file'] as const) {

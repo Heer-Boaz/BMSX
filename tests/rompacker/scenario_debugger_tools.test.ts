@@ -1,3 +1,5 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { beforeEach, afterEach } from 'node:test';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
@@ -11,7 +13,7 @@ import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
-import { createRuntimeSourceState, enterCartridgeSources } from '../../ide/runtime/sources';
+import { enterCartridgeSources } from '../../ide/runtime/sources';
 import { RuntimeDebuggerResumeMode as Mode } from '../../ide/runtime/source_debugger';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
@@ -51,7 +53,7 @@ async function fixture(t: TestContext, slot: 0 | 1 = 0, optLevel: 0 | 3 = 0) {
 		cartSource: 'module<entry>\nwhile true do halt_until_irq end',
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, media.cartRom]);
-	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots), models = new EditorTextModelService();
+	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots), models = new EditorTextModelService();
 	enterCartridgeSources(sources, slot);
 	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, media.cartRom], PSX_MACHINE_SPEC, new TestInput());
 	const initial = captureRuntimeMachineState(authoring.runtime), installed = sources.currentBlua32Media;
@@ -65,10 +67,13 @@ async function fixture(t: TestContext, slot: 0 | 1 = 0, optLevel: 0 | 3 = 0) {
 		assert.ok(settled, 'bounded host driver must reach a real event, without model read polling');
 		return completion;
 	}
-	const document = models.retain(sources.luaResources.find(resource => resource.domain === slot && resource.path === PATH)!, 'lua', SOURCE);
+	const document = models.retain(sources.catalog.luaResources.find(resource => resource.contextId === TEST_CARTRIDGE_CONTEXT_IDS[slot] && resource.path === PATH)!, 'lua', SOURCE);
 	const discovery = await tools.execute('studio_list_tests', {}); assert.ok(discovery.kind === 'tests');
-	const module = discovery.data.roots[0].modules[0], scope = module.cases[0].scope;
-	return { service, tools, connection, document, models, sources, authoring, initial, installed, module, scope, settle };
+	const root = discovery.data.roots.find(root => root.contextId === document.resource.contextId)!;
+	const module = root.modules.find(module => module.resource.path === PATH)!, scope = module.cases.find(item => item.name === 'probe')!.scope;
+	const caseId = service.collection.roots.find(root => root.contextId === document.resource.contextId)!
+		.children.find(module => module.resource.path === PATH)!.children.find(item => item.caseName === 'probe')!.id;
+	return { service, tools, connection, document, models, sources, authoring, initial, installed, module, scope, caseId, settle };
 }
 
 for (const [slot, optLevel] of [[0, 0], [1, 3]] as const) test(`socket ${slot}, O${optLevel}: conversation and ordinary inspection share live stops, compiled sources and isolated execution`, async t => {
@@ -92,8 +97,8 @@ for (const [slot, optLevel] of [[0, 0], [1, 3]] as const) test(`socket ${slot}, 
 	assert.equal(services, 50, 'paused host frames service backend once, not sixteen no-op grants');
 	assert.deepEqual(captureRuntimeMachineState(runtime), paused);
 	const catalog = await tools.execute('studio_list_test_debug_sources', { run }); assert.ok(catalog.kind === 'test-debug-sources');
-	const source = catalog.data.sources.find(source => source.path === PATH)!;
-	assert.equal(source.domain, 0); assert.equal(source.sourceDomain, slot);
+	const source = catalog.data.sources.find(source => source.sourceContextId === f.module.resource.contextId && source.path === PATH)!;
+	assert.equal(source.domain, 0); assert.equal(source.sourceContextId, TEST_CARTRIDGE_CONTEXT_IDS[slot]);
 	const compiled = await tools.execute('studio_read_test_debug_source', { run, source: source.source }); assert.ok(compiled.kind === 'test-debug-source');
 	assert.equal(compiled.data.text, SOURCE);
 	const points = await tools.execute('studio_set_test_breakpoints', { run, source: source.source, lines: [7, 12] }); assert.ok(points.kind === 'test-breakpoints');
@@ -110,7 +115,7 @@ for (const [slot, optLevel] of [[0, 0], [1, 3]] as const) test(`socket ${slot}, 
 	const stack = await tools.execute('studio_read_test_stack', { stack: attached.data.stack.reference, start: 0, count: 100 }); assert.ok(stack.kind === 'test-stack');
 	assert.equal(stack.data.origin, 'stopped-thread');
 	const frame = stack.data.frames[0]; assert.ok(frame.kind === 'source');
-	assert.equal(frame.line, 4); assert.equal(frame.resource.domain, slot); assert.equal(frame.domain, 0);
+	assert.equal(frame.line, 4); assert.deepEqual(frame.resource, f.module.resource); assert.equal(frame.domain, 0);
 	const scopes = await tools.execute('studio_read_test_frame_scopes', { frame: frame.reference }); assert.ok(scopes.kind === 'test-frame-scopes');
 	const locals = await tools.execute('studio_read_test_values', { reference: scopes.data.scopes.find(scope => scope.kind === 'locals')!.reference, start: 0, count: 100 }); assert.ok(locals.kind === 'test-values');
 	assert.equal(locals.data.entries.find(entry => entry.key.display === 'amount')!.value.display, '20');
@@ -143,7 +148,7 @@ for (const [slot, optLevel] of [[0, 0], [1, 3]] as const) test(`socket ${slot}, 
 
 test('manual debug observation is read-only; request cancellation pauses only its own execution; prompt retirement cancels its run', async t => {
 	const f = await fixture(t), { service, tools, settle } = f;
-	const manual = service.start(service.collection.roots[0].children[0].children[0].id, 'debug');
+	const manual = service.start(f.caseId, 'debug');
 	const listed = await tools.execute('studio_list_test_runs', {}); assert.ok(listed.kind === 'test-runs'); const run = listed.data.runs[0].run;
 	const stop = await settle(tools.execute('studio_wait_test_debugger', { run })); assert.ok(stop.kind === 'test-debugger');
 	const debug = service.debugger!, inspection = debug.inspect();
@@ -160,7 +165,9 @@ test('manual debug observation is read-only; request cancellation pauses only it
 	await settle(service.wait(manual)); assert.equal(manual.state, 'passed');
 	const own = new WorkspaceTestTools(service, f.connection.signal); t.after(() => own.dispose());
 	const discovery = await own.execute('studio_list_tests', {}); assert.ok(discovery.kind === 'tests');
-	const started = await own.execute('studio_debug_test', { scope: discovery.data.roots[0].modules[0].cases[0].scope }); assert.ok(started.kind === 'test-run');
+	const module = discovery.data.roots.find(root => root.contextId === f.module.resource.contextId)!
+		.modules.find(module => module.resource.path === f.module.resource.path)!;
+	const started = await own.execute('studio_debug_test', { scope: module.cases.find(item => item.name === 'probe')!.scope }); assert.ok(started.kind === 'test-run');
 	const admitted = await settle(own.execute('studio_wait_test_debugger', { run: started.data.run })); assert.ok(admitted.kind === 'test-debugger');
 	const resumed = own.execute('studio_resume_test_debugger', { run: started.data.run, revision: admitted.data.revision, mode: 'continue' });
 	const paused = await own.execute('studio_pause_test_debugger', { run: started.data.run }); assert.ok(paused.kind === 'test-debugger');
@@ -177,7 +184,7 @@ test('debugger admission waits settle on cancelled preparation, failed build and
 	const waiting = tools.execute('studio_wait_test_debugger', { run: first.data.run });
 	service.cancel(service.results.liveRun!);
 	const cancelled = await waiting; assert.ok(cancelled.kind === 'test-run'); assert.equal(cancelled.data.state, 'cancelled');
-	f.models.retain(f.sources.luaResources.find(resource => resource.path === 'testlib/fixture.lua')!, 'lua', 'end end');
+	f.models.retain(f.sources.catalog.luaResources.find(resource => resource.contextId === f.module.resource.contextId && resource.path === 'testlib/fixture.lua')!, 'lua', 'end end');
 	f.document.pushEditOperations([{ offset: 0, deleteLength: 0, text: "local helper<const> = require('testlib/fixture')\n" }]);
 	const failed = await tools.execute('studio_debug_test', { scope: f.scope }); assert.ok(failed.kind === 'test-run');
 	const finished = await settle(tools.execute('studio_wait_test_debugger', { run: failed.data.run })); assert.ok(finished.kind === 'test-run'); assert.equal(finished.data.state, 'failed');

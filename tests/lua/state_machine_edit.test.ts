@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { createBehaviorEditFixture } from '../helpers/behavior_edit_fixture';
 import assert from 'node:assert/strict';
@@ -82,7 +83,7 @@ test('imported transition edits and source bookmarks belong to the literal, not 
 		const f = fixture(t, FSM_RETARGET_IMPORTED_SOURCE, 1, 'left', slot, outcome, {
 			'branch.lua': branch, 'callback.lua': FSM_RETARGET_CALLBACK_SOURCE, 'observer.lua': 'return function() return nil end',
 		});
-		const provider = f.models.get(resourceIdentityKey({ domain: 0, path: 'branch.lua' }))!, callback = f.models.get(resourceIdentityKey({ domain: 0, path: 'callback.lua' }))!;
+		const provider = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'branch.lua' }))!, callback = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'callback.lua' }))!;
 		assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.anchor, provider, callback]),
 			'only represented declarations and editable return evidence join Save/Undo, not every callback dependency');
 		assert.equal(f.model, slot === 'update' ? callback : provider);

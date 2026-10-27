@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { InputFocusService } from '../../ide/input/focus';
@@ -7,7 +9,7 @@ import { resourceIdentityKey, type ResourceDomain } from '../../ide/common/resou
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { capturedLuaSourceAtPc } from '../../ide/runtime/lua_inspection';
 import { advanceLuaSourceRevision, registerLuaSourceRecord } from '../../ide/runtime/source_registry';
-import { createBlua32SourceImage, registerRuntimeLuaResource } from '../../ide/runtime/sources';
+import { createBlua32SourceImage } from '../../ide/runtime/sources';
 import { CapturedLuaSourceBinding } from '../../ide/workbench/services/working_copy/captured_lua_source';
 import { setWorkspaceLuaSourceOverride, releaseWorkspaceSourceOverrides } from '../../ide/workspace/cache';
 import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
@@ -21,13 +23,14 @@ const linked = linkRawTestSystemBlua32({ text: new Uint8Array(8), functions: [{ 
 
 function fixture(t: TestContext, domain: ResourceDomain = 0) {
 	const record = createScenarioTestSourceRecord('src/logic.lua', 1, TEXT), sources = createScenarioTestSourceState(domain === 0 ? [record] : []);
-	if (domain === -1) registerLuaSourceRecord(sources.systemLuaSources, record);
-	const registry = domain === -1 ? sources.systemLuaSources : sources.cartridgeSlots[0]!.luaSources;
-	const resource = registerRuntimeLuaResource(sources, domain, record);
+	if (domain === -1) registerLuaSourceRecord(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, record);
+	const registry = domain === -1 ? sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources : sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources;
+	const contextId = domain === -1 ? TEST_SYSTEM_CONTEXT_ID : TEST_CARTRIDGE_CONTEXT_IDS[0];
+	const resource = sources.catalog.registerLuaResource(contextId, record);
 	const models = new EditorTextModelService();
 	const compiled: Blua32CompiledSource = { displayPath: resource.path, content: { kind: 'utf8', bytes: new TextEncoder().encode(TEXT) } };
-	const captured = createBlua32SourceImage(linked.image, linked.symbols, new Map([[toLuaModulePath(RANGE.path), compiled]]), domain);
-	const pc = linked.image.header.textAddress, binding = new CapturedLuaSourceBinding(models, sources);
+	const captured = createBlua32SourceImage(linked.image, linked.symbols, new Map([[toLuaModulePath(RANGE.path), compiled]]), contextId);
+	const pc = linked.image.header.textAddress, binding = new CapturedLuaSourceBinding(models, sources.catalog);
 	t.after(() => { binding.clear(); models.clear(); releaseWorkspaceSourceOverrides(registry); });
 	return { record, sources, registry, resource, models, compiled, captured, pc, binding };
 }
@@ -35,7 +38,7 @@ function fixture(t: TestContext, domain: ResourceDomain = 0) {
 test('captured PC uses the captured source domain and written display path, not the physical execution domain or module alias', t => {
 	for (const domain of [-1, 0] as const) {
 		const f = fixture(t, domain), location = capturedLuaSourceAtPc(f.captured, f.pc)!;
-		assert.deepEqual(location.resource, { domain, path: 'src/logic.lua' });
+		assert.deepEqual(location.resource, { contextId: f.captured.sourceContextId, path: 'src/logic.lua' });
 		assert.deepEqual(location.range, { ...RANGE, path: 'src/logic.lua' });
 		assert.equal(location.installedSource, TEXT); assert.equal(f.compiled.content.kind, 'text');
 		f.binding.bind(f.captured, f.pc); assert.equal(f.binding.status, 'available');
@@ -61,27 +64,23 @@ test('without an open model the registry publication owns source comparison, whi
 	setWorkspaceLuaSourceOverride(f.registry, f.record.source_path, TEXT);
 	f.binding.update(); assert.equal(f.binding.status, 'available');
 	const newer = createBlua32SourceImage(linked.image, linked.symbols, new Map([[toLuaModulePath(RANGE.path),
-		{ displayPath: f.resource.path, content: { kind: 'text', text: '-- different installation\n' + TEXT } } as Blua32CompiledSource]]), 0);
+		{ displayPath: f.resource.path, content: { kind: 'text', text: '-- different installation\n' + TEXT } } as Blua32CompiledSource]]), TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	f.sources.currentBlua32Media = { ...f.sources.currentBlua32Media, cartridgeSlots: [newer, null] };
 	f.binding.update(); assert.equal(f.binding.status, 'available'); assert.equal(f.binding.location, location);
 	assert.equal(location!.installedSource, TEXT, 'this target is the observed installation, not the latest installed program');
 });
 
-test('registry/catalog replacement and model retirement invalidate source generations even when source bytes remain equal', t => {
+test('catalog generations and model retirement invalidate source generations even when source bytes remain equal', t => {
 	const f = fixture(t); f.binding.bind(f.captured, f.pc);
 	let revision = f.binding.revision;
-	f.sources.resourceByIdentity = new Map(f.sources.resourceByIdentity);
-	f.binding.update(); assert.ok(f.binding.revision > revision); assert.equal(f.binding.status, 'available');
-	revision = f.binding.revision;
-	const replacement = { ...f.registry, records: [...f.registry.records], path2lua: { ...f.registry.path2lua }, module2lua: { ...f.registry.module2lua } };
-	f.sources.cartridgeSlots[0]!.luaSources = replacement;
+	f.sources.catalog.rebuildResources();
 	f.binding.update(); assert.ok(f.binding.revision > revision); assert.equal(f.binding.status, 'available');
 	const model = f.models.retain(f.resource, 'lua', '-- unsaved model\n' + TEXT);
 	f.binding.update(); assert.equal(f.binding.status, 'changed');
 	f.models.clear(); f.binding.update(); assert.equal(f.binding.status, 'available');
 	assert.equal(model.buffer.getText(), '-- unsaved model\n' + TEXT);
-	f.sources.resourceByIdentity.delete(resourceIdentityKey(f.resource)); f.binding.update(); assert.equal(f.binding.status, 'unavailable');
-	registerRuntimeLuaResource(f.sources, 0, f.record); f.binding.update(); assert.equal(f.binding.status, 'available');
+	f.sources.catalog.resourceByIdentity.delete(resourceIdentityKey(f.resource)); f.binding.update(); assert.equal(f.binding.status, 'unavailable');
+	f.sources.catalog.registerLuaResource(TEST_CARTRIDGE_CONTEXT_IDS[0], f.record); f.binding.update(); assert.equal(f.binding.status, 'available');
 });
 
 test('absent captured provenance never adopts current source, and clear releases the previous document binding', t => {
@@ -91,10 +90,10 @@ test('absent captured provenance never adopts current source, and clear releases
 	for (let frame = 0; frame < 100; frame++) f.binding.update();
 	assert.equal(f.binding.revision, revision);
 	f.binding.bind(f.captured, f.pc); assert.equal(f.binding.status, 'available');
-	f.binding.bind(createBlua32SourceImage(linked.image, null, f.captured.sources, 0), f.pc);
+	f.binding.bind(createBlua32SourceImage(linked.image, null, f.captured.sources, TEST_CARTRIDGE_CONTEXT_IDS[0]), f.pc);
 	assert.equal(f.binding.location, undefined); assert.equal(f.binding.status, 'unavailable');
 	f.binding.bind(f.captured, f.pc + 4); assert.equal(f.binding.location, undefined);
-	f.binding.bind(createBlua32SourceImage(linked.image, linked.symbols, new Map(), 0), f.pc); assert.equal(f.binding.location, undefined);
+	f.binding.bind(createBlua32SourceImage(linked.image, linked.symbols, new Map(), TEST_CARTRIDGE_CONTEXT_IDS[0]), f.pc); assert.equal(f.binding.location, undefined);
 	f.binding.bind(f.captured, undefined); assert.equal(f.binding.location, undefined);
 	f.binding.bind(null, f.pc); assert.equal(f.binding.location, undefined);
 	clear();
@@ -144,7 +143,7 @@ test('alternating captured PCs in one authored document retains its actual sourc
 	const f = fixture(t);
 	const symbols = linkRawTestSystemBlua32({ text: new Uint8Array(8), functions: [{ firstWord: 0, wordCount: 2 }],
 		debugRanges: [RANGE, { ...RANGE, start: { line: 1, column: 1 }, end: { line: 1, column: 16 } }] });
-	const image = createBlua32SourceImage(symbols.image, symbols.symbols, f.captured.sources, 0);
+	const image = createBlua32SourceImage(symbols.image, symbols.symbols, f.captured.sources, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	const added = t.mock.method(f.models, 'onDidAddModel'), removed = t.mock.method(f.models, 'onDidRemoveModel');
 	const changed = t.mock.method(f.models, 'onDidChangeContent'), clearing = t.mock.method(f.models, 'onWillClear');
 	f.binding.bind(image, image.layout.header.textAddress);
@@ -169,7 +168,7 @@ test('a real Source popup cannot execute an attempt retired by equal-text catalo
 		lifetime.add({ dispose: f.binding.onDidChange(() => menu.hide()) });
 	} });
 	assert.equal(menu.visible, true);
-	f.sources.resourceByIdentity = new Map(f.sources.resourceByIdentity);
+	f.sources.catalog.rebuildResources();
 	menu.accept();
 	assert.equal(f.binding.status, 'available', 'equal authored bytes remain navigable by a fresh attempt');
 	assert.equal(menu.visible, false); assert.equal(opened, 0);

@@ -1,11 +1,12 @@
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { EditorFont } from '../../../ide/editor/ui/view/font';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { measureTextRange } from '../../../ide/editor/common/text/layout';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { BehaviorLensInput } from '../../../ide/workbench/contrib/behavior_lens/editor_input';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
@@ -27,8 +28,8 @@ class MeasuredEditorFont extends EditorFont {
 
 for (const requirements of [1, 256, 4096]) {
 	const source = ACTIONEFFECT_SOURCE.replace("{ 'ready' }", `{ ${Array.from({ length: requirements }, (_, index) => `'tag.${index}'`).join(', ')} }`);
-	const model = new EditorTextModel({ sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0, path: 'effects.lua', source: { resid: 'effects', type: 'lua' } }, 'lua', source);
-	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'effects.lua', source: { resid: 'effects', type: 'lua' } }, 'lua', source);
+	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, model.resource)], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects'])));
 	const font = new MeasuredEditorFont('tiny');
 	editorViewState.font = font;
 	const view = createBehaviorLensViewState(document, model, 'properties', assert.fail);
@@ -37,7 +38,7 @@ for (const requirements of [1, 256, 4096]) {
 	const properties = view.presentation;
 	const definition = document.definitions[1];
 	assert.ok(properties.kind === 'properties' && definition.behaviorKind === 'action_effect');
-	const input = new BehaviorLensInput(model, view, () => assert.fail('a property projection must not construct a graph engine'));
+	const input = new BehaviorLensInput(model, view, new Set([model.resource.contextId]), () => assert.fail('a property projection must not construct a graph engine'));
 	try {
 		const projectMs = medianMilliseconds(() => projectActionEffectProperties(view, properties, definition));
 		const layoutMs = medianMilliseconds(() => {

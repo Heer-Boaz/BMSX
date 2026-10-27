@@ -46,7 +46,7 @@ export class WorkspaceToolService {
 	public open(connection: AbortSignal): WorkspaceToolContext {
 		connection.throwIfAborted();
 		const context = new WorkspaceToolContext(
-			new WorkspaceSourceTools(this.models, this.sources, this.diagnostics, connection, this.behaviors, this.saves, this.clock),
+			new WorkspaceSourceTools(this.models, this.sources.catalog, this.diagnostics, connection, this.behaviors, this.saves, this.clock, this.sources),
 			new WorkspaceTestTools(this.testRuns, connection, this.revealTestRun),
 			new WorkspaceRuntimeTools(this.inspection, this.navigation, this.capture, this.luaEvaluation, this.debuggerExecution, this.actors, this.boots, this.hotResumes, this.events, this.gte, this.gpu, connection),
 			connection, () => this.contexts.delete(context), this.openBuild);

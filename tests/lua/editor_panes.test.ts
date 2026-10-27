@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -117,12 +118,12 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 
 function codeInput(id: 'code:0\0a.lua' | 'code:0\0b.lua'): CodeEditorInput {
 	const path = id.slice('code:0\0'.length);
-	return new CodeEditorInput(new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path },
-		domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', ''));
+	return new CodeEditorInput(new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path },
+		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: path, type: 'lua' } }, 'lua', ''));
 }
 
 function resourceInput(): ResourceViewerInput {
-	return new ResourceViewerInput(createScenarioTestSourceState([]), { sourceFilePath: 'image.png', location: { kind: 'workspace' as const, path: 'image.png' }, domain: 0, path: 'image.png', source: { type: 'image', resid: 'image' } });
+	return new ResourceViewerInput(createScenarioTestSourceState([]).catalog, { contextLabel: 'Fixture project', sourceFilePath: 'image.png', location: { kind: 'workspace' as const, path: 'image.png' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'image.png', source: { type: 'image', resid: 'image' } });
 }
 
 function createEditorPanes() {
@@ -234,8 +235,8 @@ test('Build Output opens the actual request identity once, retains its document,
 
 test('closing the last tab detaches its pane before disposal and leaves the group empty', () => {
 	const harness = createEditorPanes();
-	const model = new EditorTextModel({ sourceFilePath: 'a.lua', location: { kind: 'workspace', path: 'a.lua' },
-		domain: 0, path: 'a.lua', source: { resid: 'a.lua', type: 'lua' } }, 'lua', '');
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'a.lua', location: { kind: 'workspace', path: 'a.lua' },
+		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'a.lua', source: { resid: 'a.lua', type: 'lua' } }, 'lua', '');
 	class ClosingInput extends CodeEditorInput {
 		public disposals = 0;
 		public override dispose(): void {

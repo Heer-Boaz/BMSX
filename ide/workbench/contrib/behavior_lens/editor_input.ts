@@ -31,7 +31,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 	private ownedDefinition: BehaviorSourceNode | undefined;
 
 	/** workingCopy anchors the registration; it is not necessarily an edit target. */
-	public constructor(public readonly workingCopy: EditorTextModel, public readonly view: BehaviorLensViewState, createEngine: GraphLayoutEngineFactory) {
+	public constructor(public readonly workingCopy: EditorTextModel, public readonly view: BehaviorLensViewState, sourceContexts: ReadonlySet<string>, createEngine: GraphLayoutEngineFactory) {
 		super(
 			`behavior:${nextInputId++}`,
 			'behavior_lens',
@@ -42,7 +42,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 		this.setWorkingCopies(new Set([workingCopy]));
 		this.updateDefinition();
 		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
-			if (model.mode !== 'lua' || (model.resource.domain !== view.resource.domain && model.resource.domain !== -1)) return;
+			if (model.mode !== 'lua' || !sourceContexts.has(model.resource.contextId)) return;
 			view.source.invalidate();
 			if (view.source.models.get(resourceIdentityKey(model.resource)) === model) mapBehaviorLensSourceRanges(view, model.resource, event);
 			this.invalidatePresentation();
@@ -83,11 +83,11 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 			this.setWorkingCopies(models);
 		}
 		if (definition === undefined) {
-			this.setLabel(this.definitionTitle === undefined ? 'BEHAVIOR LENS' : `${this.definitionTitle} (removed)`, sourceTabDescription(view.resource));
+			this.setLabel(this.definitionTitle === undefined ? 'BEHAVIOR LENS' : `${this.definitionTitle} (removed)`, sourceTabDescription(this.workingCopy.resource));
 			return;
 		}
 		this.definitionTitle = definition.label;
-		this.setLabel(this.definitionTitle, sourceTabDescription(view.resource, definition.occurrenceRange.start.line));
+		this.setLabel(this.definitionTitle, sourceTabDescription(this.workingCopy.resource, definition.occurrenceRange.start.line));
 	}
 
 	/** Called even for hidden inputs: no old source generation may publish or remain interactive. */

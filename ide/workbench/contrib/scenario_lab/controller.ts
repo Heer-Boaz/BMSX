@@ -1,7 +1,7 @@
 import { RuntimeDebuggerResumeMode as Mode } from '../../../runtime/source_debugger';
 import { openCompiledDebugSources } from '../debugger/compiled_sources';
 import type { PlayController } from '../play/controller';
-import type { ScenarioTestModule } from '../../../testing/scenario/test_collection';
+import type { ScenarioTestModule, ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
 import { LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
 import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense/model_lifetime';
 import { createBehaviorQuickPickItem } from '../behavior_lens/quick_access';
@@ -90,12 +90,17 @@ export class ScenarioLabController {
 		const view = this.view!;
 		switch (command) {
 			case 'scenarioLab.play': this.refreshSources(); this.play.start(this.selectedModule()!); return;
+			case 'scenarioLab.playWithCompanion': this.refreshSources(); this.play.startWithCompanion(this.selectedModule()!); return;
 			case 'scenarioLab.revealRun': this.revealRun(this.runs.results.liveRun ?? this.runs.results.runs[0]); return;
 			case 'scenarioLab.debug':
 			case 'scenarioLab.run':
+			case 'scenarioLab.debugWithCompanion':
+			case 'scenarioLab.runWithCompanion':
 			case 'scenarioLab.rerun':
 				try {
-					if (command !== 'scenarioLab.rerun') this.runSelected(view, command === 'scenarioLab.debug' ? 'debug' : 'run');
+					if (command !== 'scenarioLab.rerun') this.runSelected(view,
+						command === 'scenarioLab.debug' || command === 'scenarioLab.debugWithCompanion' ? 'debug' : 'run',
+						command === 'scenarioLab.debugWithCompanion' || command === 'scenarioLab.runWithCompanion');
 					else this.rerunLast(view);
 				} catch (error) {
 					if (!(error instanceof LuaSyntaxError) && !(error instanceof ScenarioRunAdmissionError)) throw error;
@@ -121,7 +126,7 @@ export class ScenarioLabController {
 	}
 
 	public isCommandEnabled(command: EditorScenarioLabCommandId): boolean {
-		if (command === 'scenarioLab.play') return (this.editorGroup.model.activeTab?.kind === 'scenario_lab') && !this.runs.active
+		if (command === 'scenarioLab.play' || command === 'scenarioLab.playWithCompanion') return (this.editorGroup.model.activeTab?.kind === 'scenario_lab') && !this.runs.active
 			&& this.play.service.current === undefined && this.selectedModule()?.suite?.kind === 'integration';
 		if (command === 'scenarioLab.revealRun') return this.runs.results.runs.length !== 0;
 		if (command === 'scenarioLab.cancel') return this.runs.active;
@@ -166,8 +171,8 @@ export class ScenarioLabController {
 		return tab === undefined ? new ScenarioLabInput(this.getOrCreateView()) : tab;
 	}
 
-	public openActionEffectSource(view: ScenarioLabViewState, executionDomain: 0 | 1, effectId: string): void {
-		const sources = this.behaviorRegistrations.resolve(executionDomain, 'action_effect', effectId);
+	public openActionEffectSource(view: ScenarioLabViewState, contextId: string, effectId: string): void {
+		const sources = this.behaviorRegistrations.resolve(contextId, 'action_effect', effectId);
 		if (sources.length === 1) {
 			const source = sources[0];
 			this.openSource({ resource: source.resource, line: source.range.start.line, column: source.range.start.column });
@@ -180,15 +185,15 @@ export class ScenarioLabController {
 		}
 		const quickInput = this.editor.quickInput;
 		quickInput.pick('ACTIONEFFECT SOURCES', 'Choose a definition', (_origin, lifetime) => {
-			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, executionDomain, () => quickInput.hide()));
-			return new TextQuickPickProvider(sources.map(createBehaviorQuickPickItem));
+			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, this.runs.collection.catalog, contextId, () => quickInput.hide()));
+			return new TextQuickPickProvider(sources.map(registration => createBehaviorQuickPickItem(registration, this.runs.collection.catalog.getContext(registration.resource.contextId).projectRootPath)));
 		}, item => this.openSource({ resource: item.registration.resource,
 			line: item.registration.range.start.line, column: item.registration.range.start.column }));
 	}
 
 	public openSource(location: ScenarioSourceLocation): void {
 		this.navigation.focusChunkSourceForContext(
-			location.resource.domain,
+			location.resource.contextId,
 			location.resource.path,
 			{
 				row: location.line - 1,
@@ -198,10 +203,40 @@ export class ScenarioLabController {
 		);
 	}
 
-	private runSelected(view: ScenarioLabViewState, mode: 'run' | 'debug'): void {
+	/** Ordinary commands start immediately; companion media is explicit, never inherited from installed sockets. */
+	public start(scopeId: ScenarioTestNodeId, mode: 'run' | 'debug' = 'run', companionContextId: string | null = null): void {
+		this.revealRun(this.runs.start(scopeId, mode, companionContextId));
+	}
+
+	private startWithCompanion(scopeId: ScenarioTestNodeId, mode: 'run' | 'debug'): void {
+		const catalog = this.runs.collection.catalog;
+		const scope = this.runs.collection.getNode(scopeId)!;
+		const primaryContextId = scope.kind === 'root' ? scope.contextId : scope.resource.contextId;
+		const choices: Array<{ label: string; description: string; detail: string; contextId: string | null }> = [
+			{ label: 'No companion cartridge', description: 'Primary project only', detail: '', contextId: null },
+		];
+		for (const context of catalog.contexts.values()) {
+			if (context.programDomain !== 'cart') continue;
+			choices.push({ label: context.projectRootPath, description: context.id === primaryContextId ? 'Primary project' : '',
+				detail: 'Use this project as the companion cartridge', contextId: context.id });
+		}
+		this.editor.quickInput.pick('SCENARIO FIXTURE', 'Choose a companion project', (_origin, lifetime) => {
+			lifetime.add({ dispose: catalog.onDidChange(() => this.editor.quickInput.hide()) });
+			return new TextQuickPickProvider(choices);
+		}, choice => {
+			try { this.start(scopeId, mode, choice.contextId); }
+			catch (error) {
+				if (!(error instanceof LuaSyntaxError) && !(error instanceof ScenarioRunAdmissionError)) throw error;
+				this.editor.handleRuntimeTaskError(error, 'Invalid test declaration');
+			}
+		});
+	}
+
+	private runSelected(view: ScenarioLabViewState, mode: 'run' | 'debug', withCompanion: boolean): void {
 		this.refreshSources();
 		const node = selectedScenarioTestNode(view)!;
-		this.runs.start(node.id, mode);
+		if (withCompanion) this.startWithCompanion(node.id, mode);
+		else this.start(node.id, mode);
 	}
 
 	private rerunLast(view: ScenarioLabViewState): void {
@@ -213,7 +248,7 @@ export class ScenarioLabController {
 			view.status.dirty = true;
 			return;
 		}
-		this.runs.start(scope.id, previous.mode);
+		this.revealRun(this.runs.start(scope.id, previous.mode, previous.companionContextId));
 	}
 
 	private handleRunChange(event: ScenarioRunEvent): void {

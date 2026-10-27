@@ -4,20 +4,18 @@ import {
 } from './error_format';
 import {
 	buildLuaStackFrames,
-	createLuaSourceStackTraceFrame,
 	type SourceStackTraceFrame,
 	type StackTraceFrame,
+	type CapturedLuaStack,
 } from './stack_trace';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
-import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type {
 	SuspendedGuestSession,
 	SuspendedGuestValue,
 } from './suspended_guest';
-import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
-import type { RuntimeSourceState } from './sources';
+import type { Blua32SourceImage, RuntimeSourceState } from './sources';
 import type { ResourceIdentity } from '../common/resource';
 import {
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
@@ -42,18 +40,19 @@ import {
 } from '../../machine/ts/spec/blua32/image_format';
 
 type RuntimeErrorLocation = {
-	resource: ResourceIdentity;
+	resource: ResourceIdentity | undefined;
 	line: number;
 	column: number;
 };
 
 export type RuntimeErrorDetails = {
 	luaStack: ReadonlyArray<StackTraceFrame>;
+	sources: CapturedLuaStack['sources'];
 };
 
 export type FaultSnapshot = {
 	message: string;
-	resource: ResourceIdentity;
+	resource: ResourceIdentity | undefined;
 	line: number;
 	column: number;
 	details: RuntimeErrorDetails;
@@ -61,7 +60,7 @@ export type FaultSnapshot = {
 
 export type RuntimeCpuFaultFrame = {
 	readonly executionDomainId: ExecutionDomainId;
-	readonly toolingImage: Blua32ToolingImage;
+	readonly toolingImage: Blua32SourceImage;
 	readonly functionAddress: number;
 	readonly functionIndex: number;
 	readonly codeAddress: number;
@@ -129,7 +128,7 @@ function captureRuntimeCpuFaultFrames(
 	const frames = new Array<RuntimeCpuFaultFrame>(frameDepth);
 	for (let frameIndex = 0; frameIndex < frameDepth; frameIndex += 1) {
 		const executionDomainId = cpu.readFrameExecutionDomain(frameIndex);
-		const image = blua32ToolingImageForDomain(sources.currentBlua32Media, executionDomainId);
+		const image = executionDomainId === -1 ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[executionDomainId];
 		if (!image) {
 			throw new Error('Active BLua32 frame has no tooling image.');
 		}
@@ -210,8 +209,8 @@ export function recordSupervisorFault(
 		executionDomainId,
 		pc,
 	);
-	fault.lastLuaCallStack = buildLuaStackFrames(fault.lastCpuFaultSnapshot,
-		(domain, path, line, column, name) => createLuaSourceStackTraceFrame(sources, domain, path, line, column, name));
+	const stack = buildLuaStackFrames(fault.lastCpuFaultSnapshot);
+	fault.lastLuaCallStack = stack.frames;
 	let name = 'CPU exception';
 	let message: string;
 	switch (causeCode) {
@@ -250,15 +249,12 @@ export function recordSupervisorFault(
 		};
 	} else {
 		location = {
-			resource: {
-				domain: sources.activeCartridgeSlot,
-				path: sources.activeLuaSources.entrySourcePath,
-			},
+			resource: undefined,
 			line: 0,
 			column: 0,
 		};
 	}
-	const details: RuntimeErrorDetails = { luaStack: fault.lastLuaCallStack };
+	const details: RuntimeErrorDetails = { luaStack: stack.frames, sources: stack.sources };
 	const stackText = buildErrorStackString(name, message, details.luaStack);
 	fault.faultSnapshot = {
 		message,

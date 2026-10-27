@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
@@ -376,7 +377,7 @@ test('a close reentered by the focused draft commit joins its original operation
 
 test('closing a genuine imported-effect lens considers every represented working copy before any Discard', async t => {
 	const f = await fixture(t), main = f.firstInput.workingCopy, imported = f.secondInput.workingCopy;
-	registerLuaSourceRecord(f.sources.systemLuaSources, createScenarioTestSourceRecord('cartlib/actioneffects.lua', 0, ''));
+	registerLuaSourceRecord(f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, createScenarioTestSourceRecord('cartlib/actioneffects.lua', 0, ''));
 	const registration = "local effects<const> = require('cartlib/actioneffects')\neffects.register_effect('close.fixture', require('second'))";
 	const definition = "return { period_ms = 40, blocked_tags = { 'busy' }, handler = function(owner) owner:act() end }";
 	f.first.code.focusTarget.textInput!.replaceText(0, main.buffer.length, registration);

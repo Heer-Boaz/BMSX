@@ -46,7 +46,7 @@ import {
 } from './refresh';
 import type { ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
-import type { RuntimeSourceState } from '../../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import { inputFocus } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
@@ -136,7 +136,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 
 	constructor(
 		private readonly editor: CartEditor,
-		private readonly sources: RuntimeSourceState,
+		private readonly catalog: WorkspaceSourceCatalog,
 		scrollbars: ResourcePanelScrollbars,
 		initialWidthRatio: number,
 	) {
@@ -373,7 +373,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		const previousInset = editorViewState.editorAreaLeft;
 		let reveal = false;
 		if (this.editor.isActive && this.mode === 'resources') {
-			const changed = this.files.sync(this.sources, this.filterMode);
+			const changed = this.files.sync(this.catalog, this.filterMode);
 			if (this.pendingSelectionIdentity !== null && this.selectionRevealRevision !== this.files.revision) {
 				this.selectionRevealRevision = this.files.revision;
 				reveal = this.files.reveal(this.pendingSelectionIdentity);

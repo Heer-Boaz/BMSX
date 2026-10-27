@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS, createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -17,10 +19,10 @@ import { HostAudioDevice } from '../../hosts/common/audio_device';
 import { HostAudioOutput } from '../../hosts/common/audio_output';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { DiscardingAudioSink } from '../../hosts/node/common/discarding_audio';
-import { createRuntimeSourceState } from '../../ide/runtime/sources';
-import { buildAemSourceRevision } from '../../ide/runtime/aem';
+
+import { buildAemSourceRevision, applyAemSourceRevision } from '../../ide/runtime/aem';
 import { installBlua32Revision } from '../../ide/runtime/hot_resume';
-import { buildBlua32Media, installBlua32Media, prepareBlua32MediaBoot } from '../../ide/runtime/lua_pipeline';
+import { buildBlua32Media, installBlua32Media, prepareBlua32MediaBoot, blua32InstallationNeedsRebuild } from '../../ide/runtime/lua_pipeline';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
@@ -42,7 +44,7 @@ test('new AEM sources save without applying absent guest modules or unbuilt asse
 		cartModules: [{ path: 'cartlib/aem', source: 'module<const>\nreturn {}' }],
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
-	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
+	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
 	const models = new EditorTextModelService();
 	const clock = new VirtualHeadlessClock();
 	const target = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC,
@@ -50,7 +52,7 @@ test('new AEM sources save without applying absent guest modules or unbuilt asse
 	const runtime = target.runtime;
 	const audio = new HostAudioOutput(new HostAudioDevice(new DiscardingAudioSink()), runtime.machine.audioController, runtime.timing.ufpsScaled);
 	const tasks = new RuntimeTaskQueue(audio, target.presenter);
-	const saves = new TextFileSaveService(models, clock, sources, new SuspendedGuestSession(runtime), runtime, tasks);
+	const saves = new TextFileSaveService(models, clock, sources.catalog);
 	t.after(async () => { await saves.shutdown(); models.clear(); audio.dispose(); target.dispose(); });
 	assert.equal(sources.systemInstalledBlua32Sources.has('cartlib/aem'), false);
 	assert.equal(sources.cartridgeSlots[0]!.installedBlua32Sources.has('cartlib/aem'), true);
@@ -60,15 +62,19 @@ test('new AEM sources save without applying absent guest modules or unbuilt asse
 			for (let frame = 0; frame < 100 && !runtime.machine.cpu.isCartridgeExecutionActive(); frame++) target.advanceGame(10000);
 		}
 		assert.equal(runtime.machine.cpu.activeCartridgeSlot(), domain);
-		const resource = await createTextResource(clock, sources, { domain, relativePath: 'res/data/new.aem.yaml', contents: 'events: {}\n' });
-		const model = await resolveTextFileModel(models, sources, resource);
+		const contextId = domain === -1 ? TEST_SYSTEM_CONTEXT_ID : TEST_CARTRIDGE_CONTEXT_IDS[domain];
+		const resource = await createTextResource(clock, sources.catalog, { contextId, relativePath: 'res/data/new.aem.yaml', contents: 'events: {}\n' });
+		const model = await resolveTextFileModel(models, sources.catalog, resource);
 		const source = '# authored before the first asset build\nevents: {}\n';
 		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 		const before = sources.currentBlua32Media, systemBytes = sources.systemRom.bytes, cartBytes = sources.cartridgeSlots[0]!.rom.bytes;
 		const result = await saves.save(model).completion;
 		assert.ok(result.status === 'saved');
-		assert.deepEqual(result.application, { status: 'not-applied', reason });
-		assert.equal(files.records.get(resolveWorkspacePath(resource.path, domain === -1 ? sources.systemProjectRootPath : sources.cartridgeSlots[0]!.projectRootPath))!.contents, source);
+		assert.deepEqual(result.application, { status: 'not-requested' });
+		const application = await applyAemSourceRevision(sources, new SuspendedGuestSession(runtime), runtime, tasks, resource, domain,
+			(domain === -1 ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain])!, source);
+		assert.deepEqual(application, { status: 'not-applied', reason });
+		assert.equal(files.records.get(resolveWorkspacePath(resource.path, sources.catalog.getContext(contextId).projectRootPath))!.contents, source);
 		assert.equal(model.dirty, false);
 		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
 		assert.equal(sources.aemSourceApplications.size, 0);
@@ -95,11 +101,12 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 		cartSource, systemAssets: [asset, mapAsset], cartAssets: [asset, mapAsset],
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, media.cartRom]);
-	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
+	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
 	const models = new EditorTextModelService();
 	t.after(() => models.clear());
-	const maps = [-1, 0, 1].map(domain => {
-		const resource = sources.resources.find(resource => resource.domain === domain && resource.path === 'map.yaml')!;
+	const maps = ([-1, 0, 1] as const).map(domain => {
+		const contextId = domain === -1 ? TEST_SYSTEM_CONTEXT_ID : TEST_CARTRIDGE_CONTEXT_IDS[domain];
+		const resource = sources.catalog.resources.find(resource => resource.contextId === contextId && resource.path === 'map.yaml')!;
 		const model = models.retain(resource, 'yaml', resource.source.sourcemeta!.text);
 		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
 		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# pending authored edit\r\n' }]);
@@ -114,15 +121,15 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	for (let frame = 0; frame < 100 && !runtime.machine.cpu.isCartridgeExecutionActive(); frame++) target.advanceGame(10000);
 	assert.equal(runtime.machine.cpu.isCartridgeExecutionActive(), true);
 	const guest = new SuspendedGuestSession(runtime);
-	const sourceOnly = sources.cartridgeSlots[0]!.luaSources.records.find(record => !record.program_module)!;
-	await saveLuaResourceSource(clock, sources, { domain: 0, path: sourceOnly.source_path }, 'return "pending scenario source"');
+	const sourceOnly = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources.records.find(record => !record.program_module)!;
+	await saveLuaResourceSource(clock, sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: sourceOnly.source_path }, 'return "pending scenario source"');
 	for (const edited of [-1, 0, 1] as const) {
 		// Even invalid SAVED source must be unrelated to an asset-only operation.
-		await saveLuaResourceSource(clock, sources, { domain: edited, path: 'entry.lua' }, 'end end -- pending Lua');
+		await saveLuaResourceSource(clock, sources.catalog, { contextId: edited === -1 ? TEST_SYSTEM_CONTEXT_ID : TEST_CARTRIDGE_CONTEXT_IDS[edited], path: 'entry.lua' }, 'end end -- pending Lua');
 	}
-	const resource = sources.resources.find(resource => resource.domain === domain && resource.source.type === 'aem')!;
+	const resource = sources.catalog.resources.find(resource => resource.contextId === (domain === -1 ? TEST_SYSTEM_CONTEXT_ID : TEST_CARTRIDGE_CONTEXT_IDS[domain]) && resource.source.type === 'aem')!;
 	const before = sources.currentBlua32Media;
-	const built = buildAemSourceRevision(sources, runtime, resource,
+	const built = buildAemSourceRevision(sources, runtime, resource, domain,
 		'events:\n  stop:\n    channel: music\n    rules:\n      - go:\n          stop: { fade_ms: 7 }\n');
 	assert.equal(sources.currentBlua32Media, before, 'preparation has no installation side effect');
 	assert.equal(built.revision.sourceEditDomains, 0, 'asset-only relinking does not request Lua initializers');
@@ -135,13 +142,14 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	}
 	installBlua32Revision(sources, runtime, guest, built.revision, built.relocation);
 	assert.equal(sources.systemInstalledBlua32Sources.get('entry'), systemSource);
-	assert.equal(sources.systemBlua32MediaDirty, true);
-	assert.deepEqual(sources.cartridgeBlua32MediaDirty, [true, true]);
+	assert.equal(blua32InstallationNeedsRebuild(sources, -1), true);
+	assert.equal(blua32InstallationNeedsRebuild(sources, 0), true);
+	assert.equal(blua32InstallationNeedsRebuild(sources, 1), true);
 	for (const cartridge of sources.cartridgeSlots) {
 		assert.equal(cartridge!.installedBlua32Sources.get('entry'), cartSource);
-		assert.equal(cartridge!.luaSources.path2lua['entry.lua'].src, 'end end -- pending Lua');
+		assert.equal(sources.catalog.getContext(cartridge!.contextId).luaSources.path2lua['entry.lua'].src, 'end end -- pending Lua');
 	}
-	assert.equal(sources.systemLuaSources.path2lua['entry.lua'].src, 'end end -- pending Lua');
+	assert.equal(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.path2lua['entry.lua'].src, 'end end -- pending Lua');
 	const packed = sources.cartridgeSlots[0]!.rom;
 	const packedSource = packed.index.entries.find(entry => entry.resid === sourceOnly.resid)!;
 	assert.notEqual(utf8FatalDecoder.decode(packed.bytes.subarray(packedSource.start, packedSource.end)), sourceOnly.src);
@@ -158,16 +166,18 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	assert.throws(() => buildBlua32Media(sources, PSX_MACHINE_SPEC.ramBytes,
 		{ system: null, cartridgeSlots: ['workspace', null] }, 'live'));
 	for (const domain of [-1, 0, 1] as const) {
-		await saveLuaResourceSource(clock, sources, { domain, path: 'entry.lua' }, `${domain === -1 ? systemSource : cartSource}\n-- accepted source revision`);
+		await saveLuaResourceSource(clock, sources.catalog, { contextId: domain === -1 ? TEST_SYSTEM_CONTEXT_ID : TEST_CARTRIDGE_CONTEXT_IDS[domain], path: 'entry.lua' }, `${domain === -1 ? systemSource : cartSource}\n-- accepted source revision`);
 	}
 	const program = prepareBlua32MediaBoot(sources, runtime, true)!;
 	installBlua32Media(sources, runtime, program);
 	for (const model of maps) {
-		const resource = sources.resources.find(resource => resource.domain === model.identity.domain && resource.path === model.identity.path)!;
+		const resource = sources.catalog.resources.find(resource => resource.contextId === model.identity.contextId && resource.path === model.identity.path)!;
 		assert.equal(model.resource, resource, 'program installation rebinds the existing resource to its installed asset');
 		assert.equal(resource.source.sourcemeta!.text, mapSource);
-		const layer = resource.domain === -1 ? sources.systemRom : sources.cartridgeSlots[resource.domain]!.rom;
-		assert.deepEqual(layer.bytes.subarray(resource.source.start, resource.source.end), mapBytes);
+		for (const layer of [sources.systemRom, sources.cartridgeSlots[0]!.rom, sources.cartridgeSlots[1]!.rom]) {
+			const asset = layer.index.entries.find(asset => asset.type === 'data' && asset.resid === resource.source.resid)!;
+			assert.deepEqual(layer.bytes.subarray(asset.start, asset.end), mapBytes);
+		}
 		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending', 'program-only installation preserves the original map provenance');
 		model.undo();
 		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');

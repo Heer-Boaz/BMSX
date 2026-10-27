@@ -38,7 +38,7 @@ export async function testStudioTableTransfer(test: StudioFixture): Promise<void
 		const transferred = model.buffer.getText();
 		model.buffer.positionAt(result.fieldRange.start, cursor);
 		version = model.version;
-		ide.editor.navigation.focusChunkSourceForContext(model.resource.domain, model.resource.path,
+		ide.editor.navigation.focusChunkSourceForContext(model.resource.contextId, model.resource.path,
 			{ row: cursor.row, startColumn: cursor.column, endColumn: cursor.column });
 		await frame();
 		check(sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === cursor.row

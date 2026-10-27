@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { buildLuaSourceAssetChanges } from '../../ide/runtime/source_media';
-import { collectProgramSources } from '../../ide/runtime/program_sources';
+import { collectProgramSources, collectInstalledProgramSources } from '../../ide/runtime/program_sources';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { layoutRomAssetPayloads } from '../../toolchain/ts/rompack/asset_layout';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
@@ -28,16 +28,15 @@ test('new imports admit source-only library dependencies without parsing unrelat
 		...registry.records[0], resid: path, source_path: `${path}.lua`, normalized_source_path: `${path}.lua`,
 		module_path: path, src: source, base_src: source, program_module: installed, sourceKind,
 	});
-	const selected = collectProgramSources(registry, registry.entrySourcePath, [], { kind: 'workspace' });
+	const selected = collectProgramSources(registry, registry.entrySourcePath, []);
 	assert.deepEqual(selected.modules.map(module => module.path), ['cartlib/world/world', 'cartlib/registry']);
 	assert.equal(selected.parsed.has('cartlib/unused'), false);
 	assert.equal(selected.parsed.has('example_assert'), false);
 	const changes = buildLuaSourceAssetChanges(sourceLayer(true), registry, new Map([['entry', originalSource]]), selected.parsed, undefined);
 	assert.equal(changes.assetAdditions!.find(asset => asset.resid === 'cartlib/registry')!.program_module, true);
 	assert.equal(changes.assetAdditions!.some(asset => asset.resid === 'cartlib/unused'), false);
-	const installed = collectProgramSources(registry, registry.entrySourcePath, [], {
-		kind: 'installed', sources: new Map([['entry', originalSource]]),
-	});
+	const installed = collectInstalledProgramSources(new Map([['entry', { displayPath: 'entry.lua',
+		content: { kind: 'text', text: originalSource } }]]), ['entry']);
 	assert.deepEqual(installed.modules, [], 'an installed-only rebuild must not adopt newly imported workspace modules');
 });
 
@@ -87,7 +86,7 @@ for (const included of [false, true]) {
 			buffer: encoder.encode(source), program_module: !included }]);
 		const installed = new Map([['entry', originalSource]]);
 		if (!included) installed.set(path, source);
-		const selected = collectProgramSources(registry, registry.entrySourcePath, [], { kind: 'workspace' });
+		const selected = collectProgramSources(registry, registry.entrySourcePath, []);
 		const changes = buildLuaSourceAssetChanges(layer, registry, installed, selected.parsed, undefined);
 		const published = changes.assetReplacements!.get('lua')!.get(path)!;
 		assert.equal(published.program_module, included);
@@ -100,7 +99,7 @@ for (const includeLua of [true, false]) {
 	test(`${includeLua ? 'editing' : 'adding'} Lua preserves a texture with the same asset name`, () => {
 		const layer = sourceLayer(includeLua);
 		const registry = sourceRegistry();
-		const selected = collectProgramSources(registry, registry.entrySourcePath, [], { kind: 'workspace' });
+		const selected = collectProgramSources(registry, registry.entrySourcePath, []);
 		const changes = buildLuaSourceAssetChanges(
 			layer, registry, new Map(includeLua ? [['entry', originalSource]] : []), selected.parsed, undefined,
 		);

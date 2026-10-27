@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { configureFontVariant } from '../../../ide/editor/ui/view/configuration';
 import { ProblemsPanelController } from '../../../ide/workbench/contrib/problems/panel/controller';
@@ -10,7 +11,7 @@ import { medianMilliseconds } from '../../helpers/performance';
 // Retained painter and actual GPU-quad submission only; not a browser frame or raster budget.
 for (const font of ['tiny', 'msx'] as const) for (const diagnosticCount of [0, 16, 1024]) {
 	configureFontVariant(font);
-	const model = new EditorTextModel({ sourceFilePath: 'probe.lua', location: { kind: 'workspace' as const, path: 'probe.lua' }, domain: 0, path: 'probe.lua', source: { type: 'lua', resid: 'probe' } }, 'lua', 'x');
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: 'probe.lua', location: { kind: 'workspace' as const, path: 'probe.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'probe.lua', source: { type: 'lua', resid: 'probe' } }, 'lua', 'x');
 	const diagnostics: EditorDiagnostic[] = Array.from({ length: diagnosticCount }, (_, index) => ({
 		row: index, startColumn: 0, endColumn: 1, severity: 'error', model, version: 1,
 		message: `Undefined name in authored callback ${index}; a wrapped source diagnostic.`,

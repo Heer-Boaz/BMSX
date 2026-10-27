@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -9,7 +10,14 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { compileLuaSource, parseLuaChunk } from './cpu_test_harness';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
-import { readRuntimeStackFrames } from '../../ide/runtime/stack_trace';
+import { compiledBlua32Sources, readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
+import { buildLuaStackFrames, readRuntimeStackFrames } from '../../ide/runtime/stack_trace';
+import { collectInstalledProgramSources } from '../../ide/runtime/program_sources';
+import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
+import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
+import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
@@ -27,10 +35,10 @@ function fixture(source: string, optLevel: 0 | 3, breakpoint?: number, faulting 
 		source_path: 'stack_probe.lua', normalized_source_path: 'stack_probe.lua', module_path: 'stack_probe',
 		update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	const f = createRuntimeInspectionFixture(runtime, sources);
 	if (breakpoint !== undefined) {
-		f.debuggerState.breakpoints.set({ domain: -1, path: 'stack_probe.lua' }, [breakpoint]);
+		f.debuggerState.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'stack_probe.lua' }, [breakpoint]);
 	}
 	runtime.machine.cpu.reset();
 	if (faulting) { runtime.machine.cpu.installBootPrimitives(); runToSupervisorFault(runtime); }
@@ -221,7 +229,7 @@ local function run(parameter)
 end
 return run(false)`, level);
 	// Editing the declaration cannot alter the installed scope's meaning.
-	f.sources.systemLuaSources.records[0].src = f.sources.systemLuaSources.records[0].src.replaceAll('<const>', '');
+	f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0].src = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0].src.replaceAll('<const>', '');
 	const cpu = f.runtime.machine.cpu;
 	const before = [cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
@@ -286,7 +294,7 @@ return run(42)`, level);
 
 test('installed symbols own stack/scopes despite source edits; fault diagnostics do not substitute the captured fault stack', t => {
 	const f = fixture("local x = 42\nraise_fault('retained diagnostic')\nreturn x", 0, undefined, true);
-	f.sources.systemLuaSources.records[0].src = '-- a dirty first line\nlocal x = 99\nhalt_until_irq\nreturn x';
+	f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0].src = '-- a dirty first line\nlocal x = 99\nhalt_until_irq\nreturn x';
 	recordSupervisorFault(f.fault, f.sources, f.runtime, f.guest);
 	const captured = f.fault.lastCpuFaultSnapshot;
 	f.runtime.machine.cpu.reset();
@@ -480,4 +488,63 @@ test('a debugger completion root does not invent a guest call site in its suspen
 	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('park')) as Closure);
 	assert.equal(cpu.runUntilDepth(depth, 1000), RunResult.Halted);
 	assert.equal(readRuntimeStackFrames(cpu, f.sources)[depth - 1].tracePc, suspendedPc);
+});
+
+
+test('captured stack source proof stays with its exact frame, outside transported descriptors', t => {
+	const source = 'local value = 7\nreturn value';
+	const f = fixture(source, 0, 2);
+	t.after(() => { f.presenter.dispose(); f.sources.catalog.dispose(); });
+	const captured = buildLuaStackFrames(readRuntimeStackFrames(f.runtime.machine.cpu, f.sources));
+	const frame = captured.frames.find(frame => frame.kind === 'source')!;
+	assert.ok(frame.kind === 'source');
+	const proof = captured.sources.get(frame)!;
+	assert.equal(readBlua32CompiledSource(proof), source);
+	const registry = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources;
+	registerLuaSourceRecord(registry, { ...registry.records[0], src: 'return 99' });
+	assert.equal(captured.sources.get(frame), proof);
+	assert.equal(readBlua32CompiledSource(proof), source);
+	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	for (const descriptor of inspection.readStack(0, 10).frames) {
+		assert.equal(Object.hasOwn(descriptor, 'sources'), false, 'stack transport carries locations, not the retained proof map');
+		assert.equal(Object.hasOwn(descriptor, 'content'), false, 'source bytes have their own read authority');
+	}
+});
+
+test('mapped source proof survives capture without becoming a separate compiler input', () => {
+	const originPath = 'authored/entry', generatedPath = 'generated/runtime_entry';
+	const source = 'module<entry>\nlocal value = 7\nreturn value';
+	const composition = composeLuaSource(generatedPath, [
+		{ kind: 'generated', source: '-- generated entry glue' },
+		{ kind: 'source', rangePath: originPath, displayPath: `${originPath}.lua`, source },
+	]);
+	const built = buildBlua32Image({
+		domain: 'system',
+		luaModules: [{ path: originPath, displayPath: `${originPath}.lua`, source, chunk: parseLuaChunk(source, originPath) }],
+		entryComposition: composition, generatedLuaModules: [], biosExports: [],
+		loadAddress: SYSTEM_ROM_BASE + 0x100, ramByteCount: PSX_MACHINE_SPEC.ramBytes,
+		optLevel: 0, traceStatements: 'emit',
+	});
+	const image = createBlua32SystemSourceImage(built.linked.layout, built.linked.symbols, built.linked.biosImports,
+		compiledBlua32Sources(built.diagnosticSources), TEST_SYSTEM_CONTEXT_ID);
+	const inputs = collectInstalledProgramSources(image.sources, image.symbols!.metadata.compiledModulePaths);
+	assert.deepEqual(image.symbols!.metadata.compiledModulePaths, [generatedPath]);
+	assert.equal(inputs.entry.path, generatedPath, 'the entry is the compiler input, not its remapped startup location');
+	assert.equal(inputs.entry.source, composition.source);
+	assert.deepEqual([...inputs.parsed.keys()], [generatedPath]);
+	assert.deepEqual(inputs.modules, [], 'an authored origin is not another module to compile');
+	const proof = image.sources.get(originPath)!;
+	assert.equal(readBlua32CompiledSource(proof), source);
+	const word = image.symbols!.metadata.debugRanges.findIndex(range => range?.path === originPath && range.start.line === 2);
+	assert.ok(word >= 0);
+	const tracePc = image.layout.header.textAddress + word * INSTRUCTION_BYTES;
+	const functionIndex = image.layout.functions.findIndex(fn => tracePc >= fn.codeAddress && tracePc < fn.codeAddress + fn.codeByteCount);
+	assert.ok(functionIndex >= 0);
+	const captured = buildLuaStackFrames([{ executionDomainId: -1, toolingImage: image,
+		functionAddress: image.layout.functions[functionIndex].address, functionIndex, tracePc }]);
+	const frame = captured.frames.find(frame => frame.kind === 'source')!;
+	assert.ok(frame.kind === 'source');
+	assert.deepEqual(frame.resource, { contextId: TEST_SYSTEM_CONTEXT_ID, path: `${originPath}.lua` });
+	assert.equal(frame.line, 2);
+	assert.equal(captured.sources.get(frame), proof, 'mapped locations retain the exact source record selected by the builder');
 });

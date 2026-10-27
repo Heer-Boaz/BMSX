@@ -1,6 +1,6 @@
 import { inputFocus } from '../../../input/focus';
 import type { RuntimeResource } from '../../../common/models';
-import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
+import type { ResourceIdentity } from '../../../common/resource';
 import {
 	createNavigationEntry,
 	selectNavigationHistoryEntry,
@@ -8,10 +8,8 @@ import {
 	type NavigationHistorySelection,
 } from '../../../navigation/navigation_history';
 import {
-	resolveRuntimeResource,
-	resolveRuntimeResourceForContext,
-	type RuntimeSourceState,
-} from '../../../runtime/sources';
+	type WorkspaceSourceCatalog,
+} from '../../../workspace/source_catalog';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ResourcePanelController } from './panel/controller';
 import type { ResourceEditorResolver } from '../../services/editor/resource_editor_resolver';
@@ -19,7 +17,7 @@ import type { EditorGroupView } from '../../services/editor/editor_group';
 
 export class EditorNavigationController {
 	public constructor(
-		private readonly sources: RuntimeSourceState,
+		private readonly catalog: WorkspaceSourceCatalog,
 		private readonly resourcePanel: ResourcePanelController,
 		private readonly editorResolver: ResourceEditorResolver,
 		private readonly group: EditorGroupView,
@@ -40,15 +38,15 @@ export class EditorNavigationController {
 	}
 
 	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): Promise<number | undefined> {
-		return this.openResource(resolveRuntimeResource(this.sources, identity)!, selection);
+		return this.openResource(this.catalog.resolveResource(identity)!, selection);
 	}
 
 	public focusChunkSourceForContext(
-		domain: ResourceDomain,
+		contextId: string,
 		path: string,
 		selection?: EditorTextSelection,
 	): void {
-		const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
+		const resource = this.catalog.resolveResource({ contextId, path })!;
 		void this.openResource(resource, selection);
 	}
 
@@ -85,7 +83,7 @@ export class EditorNavigationController {
 				// not turn a surviving preview into an explicit Keep Open request.
 				if (!withNavigationCaptureSuspended(() => group.activate(destination.input.id, undefined, target.selection))) return;
 			} else {
-				const input = await this.editorResolver.resolveEditorInput(resolveRuntimeResource(this.sources, destination.resource)!, destination.editorId);
+				const input = await this.editorResolver.resolveEditorInput(this.catalog.resolveResource(destination.resource)!, destination.editorId);
 				if (generation !== group.panes.openGeneration || !pending.isCurrent) {
 					input.dispose();
 					return;

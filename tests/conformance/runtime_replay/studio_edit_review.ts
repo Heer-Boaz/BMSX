@@ -1,4 +1,3 @@
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { WorkspaceSourceTools } from '../../../ide/workbench/services/assistant/source_tools';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
@@ -15,7 +14,7 @@ export async function runStudioEditReview(test: StudioFixture) {
 	await frame();
 	const main = harness.getActiveEditorDocument().model, mainTab = ide.editor.editorGroup.model.activeTab;
 	const originalMain = main.buffer.getText();
-	const record = runtimeLuaSourceRegistry(ide.sources, 0)!.records.find(record => record.program_module
+	const record = ide.sources.catalog.getContext(test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId).luaSources.records.find(record => record.program_module
 		&& !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 	harness.openLuaSource(record.source_path);
 	const provider = harness.getActiveEditorDocument().model, providerTab = ide.editor.editorGroup.model.activeTab;
@@ -96,12 +95,12 @@ async function sourceToolReview(test: StudioFixture, mainPath: string): Promise<
 	const { ide, frame, press } = test;
 	const connection = new AbortController();
 	const offer = async () => {
-		const tools = new WorkspaceSourceTools(editorTextModelService, ide.sources, ide.diagnostics, connection.signal, ide.editor.behaviorLens.documents, ide.textFileSaves, test.clock);
+		const tools = new WorkspaceSourceTools(editorTextModelService, ide.sources.catalog, ide.diagnostics, connection.signal, ide.editor.behaviorLens.documents, ide.textFileSaves, test.clock);
 		try {
 			const catalog = await tools.execute('studio_list_sources', {});
 			if (catalog.kind !== 'sources') throw new Error('source tools: catalog expected');
-			const selected = [catalog.data.find(source => source.domain === 0 && source.path === mainPath)!,
-				catalog.data.find(source => source.domain === 0 && source.path.endsWith('nemesis_s_stage.yaml'))!];
+			const selected = [catalog.data.find(source => source.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && source.path === mainPath)!,
+				catalog.data.find(source => source.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && source.path.endsWith('nemesis_s_stage.yaml'))!];
 			const tabCount = ide.editor.editorGroup.model.tabs.length;
 			const reads = await Promise.all(selected.map(source => tools.execute('studio_read_source', { resource: source.resource })));
 			const files = reads.map((read, index) => {

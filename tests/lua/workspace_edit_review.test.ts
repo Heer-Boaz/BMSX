@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -20,13 +21,13 @@ function fixture(t: TestContext) {
 	const models = new EditorTextModelService();
 	const source = createScenarioTestSourceRecord('main.lua', 1, 'return old, old');
 	const sources = createScenarioTestSourceState([source]);
-	const a = models.retain(sources.luaResources[0], 'lua', source.src);
-	const b = models.retain({ sourceFilePath: 'carts/nemesis_s/other.yaml', location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'other.yaml' }, domain: 0, path: 'other.yaml', source: { resid: 'other', type: 'data' } }, 'yaml', '# trivia\r\nvalue: old\r\n');
+	const a = models.retain(sources.catalog.luaResources[0], 'lua', source.src);
+	const b = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'carts/nemesis_s/other.yaml', location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'other.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'other.yaml', source: { resid: 'other', type: 'data' } }, 'yaml', '# trivia\r\nvalue: old\r\n');
 	const edits = new Map<EditorTextModel, EditorModelEdit>([
 		[a, { version: a.version, edits: [{ offset: 7, deleteLength: 3, text: 'new' }, { offset: 12, deleteLength: 3, text: 'new' }] }],
 		[b, { version: b.version, edits: [{ offset: 17, deleteLength: 3, text: 'new' }] }],
 	]);
-	const context = new WorkspaceSourceContext(models, sources);
+	const context = new WorkspaceSourceContext(models, sources.catalog);
 	const proposal = new WorkspaceEditProposal('Rename old to new', context, { kind: 'edit', edits });
 	t.after(() => { proposal.dispose(); models.clear(); });
 	return { models, sources, a, b, proposal, edits, context };
@@ -92,7 +93,7 @@ for (const outcome of ['applied', 'discarded', 'stale', 'conflict', 'failed'] as
 
 test('target edits and dependency edits both retire pending workspace context, even after Undo', t => {
 	const f = fixture(t);
-	const dependency = f.models.retain({ sourceFilePath: 'dep.lua', location: { kind: 'workspace' as const, path: 'dep.lua' }, domain: 0, path: 'dep.lua', source: { resid: 'dep', type: 'lua' } }, 'lua', 'x');
+	const dependency = f.models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'dep.lua', location: { kind: 'workspace' as const, path: 'dep.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'dep.lua', source: { resid: 'dep', type: 'lua' } }, 'lua', 'x');
 	dependency.pushEditOperations([{ offset: 0, deleteLength: 1, text: 'y' }]);
 	dependency.undo();
 	assert.equal(f.proposal.state, 'stale');
@@ -113,7 +114,7 @@ test('document retirement cannot be reversed by same-path/version reopening', t 
 
 test('catalog changes outside models invalidate review, while a model saving its base does not', t => {
 	const f = fixture(t);
-	const registry = f.sources.cartridgeSlots[0]!.luaSources;
+	const registry = f.sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources;
 	advanceLuaSourceRevision(registry, f.a.resource.path);
 	assert.equal(f.proposal.state, 'pending');
 	registerLuaSourceRecord(registry, createScenarioTestSourceRecord('unopened.lua', 2, 'return old'));
@@ -121,12 +122,14 @@ test('catalog changes outside models invalidate review, while a model saving its
 	assert.throws(() => f.proposal.apply(), /stale/);
 });
 
-test('replacing a socket source catalog retires an accepted proposal at apply admission', t => {
+test('removing an execution attachment does not retire source-review authority', t => {
 	const f = fixture(t);
-	f.sources.cartridgeSlots[0]!.luaSources = createScenarioTestSourceState([]).cartridgeSlots[0]!.luaSources;
-	assert.throws(() => f.proposal.apply(), /catalog was replaced/);
-	assert.equal(f.proposal.state, 'stale');
-	assert.equal(f.a.canUndo, false);
+	f.sources.cartridgeSlots[0] = null;
+	assert.equal(f.proposal.state, 'pending');
+	f.proposal.apply();
+	assert.equal(f.proposal.state, 'applied');
+	assert.equal(f.a.buffer.getText(), 'return new, new');
+	assert.equal(f.a.canUndo, true);
 });
 
 test('new read-only rights retire the proposal immediately without reviving on writable restoration', t => {
@@ -150,7 +153,7 @@ test('new read-only rights retire the proposal immediately without reviving on w
 
 test('review admission rejects foreign models and leaves its reading context with the caller', t => {
 	const f = fixture(t), other = new EditorTextModelService();
-	const context = new WorkspaceSourceContext(other, f.sources);
+	const context = new WorkspaceSourceContext(other, f.sources.catalog);
 	t.after(() => { context.dispose(); other.clear(); });
 	assert.throws(() => new WorkspaceEditProposal('Foreign', context, { kind: 'edit', edits: f.edits }), /no longer belongs to this workspace/);
 	assert.equal(context.reason, undefined);
@@ -170,7 +173,7 @@ test('a reading context starts before an asynchronous proposal, not when edits a
 
 test('workspace teardown retires contexts with no captured or retained models', t => {
 	const models = new EditorTextModelService();
-	const context = new WorkspaceSourceContext(models, createScenarioTestSourceState([]));
+	const context = new WorkspaceSourceContext(models, createScenarioTestSourceState([]).catalog);
 	t.after(() => context.dispose());
 	let retired = 0;
 	context.onDidInvalidate(() => retired++);

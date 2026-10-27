@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
@@ -28,7 +29,7 @@ machines.register('fixture.inspect', {
 
 function fixture() {
 	editorViewState.font = new EditorFont('tiny');
-	const model = new EditorTextModel({ sourceFilePath: undefined, location: { kind: 'generated' as const, path: 'source_owned.lua' }, domain: 0, path: 'source_owned.lua', source: { type: 'lua', resid: 'independent', generated: true } }, 'lua', SOURCE);
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: undefined, location: { kind: 'generated' as const, path: 'source_owned.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source_owned.lua', source: { type: 'lua', resid: 'independent', generated: true } }, 'lua', SOURCE);
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SOURCE, model.resource)], API_MODULES)));
 	const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 	view.definitionRowKey = document.definitions[0].rowKey;
@@ -41,7 +42,7 @@ test('FSM inspection keeps guards, full callback/return evidence and actual file
 	view.selection = { kind: 'node', rowKey: idle.rowKey };
 	const items = buildBehaviorInspection(view);
 	for (const item of items) if (item.source !== undefined) {
-		assert.equal(item.source!.range.path, resourceIdentityKey({ domain: 0, path: 'source_owned.lua' }));
+		assert.equal(item.source!.range.path, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source_owned.lua' }));
 		assert.equal(item.value, uppercaseOutsideStrings(readLuaSourceRange(model.buffer, item.source!.range)));
 	}
 	assert.equal(model.readOnly, true, 'read-only authored documents still support full inspection');

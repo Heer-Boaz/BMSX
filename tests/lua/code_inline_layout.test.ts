@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
@@ -10,7 +11,7 @@ import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 
 function fixture(t: TestContext, source: string, variant: FontVariant = 'tiny', width = 8) {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'inline-layout.lua', location: { kind: 'workspace' as const, path: 'inline-layout.lua' }, domain: 0, path: 'inline-layout.lua',
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'inline-layout.lua', location: { kind: 'workspace' as const, path: 'inline-layout.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'inline-layout.lua',
 		source: { type: 'lua', resid: 'inline-layout' } }, 'lua', source);
 	const font = new EditorFont(variant);
 	const widget = createTestCodeControl(t, model, documents, clock, undefined, font);

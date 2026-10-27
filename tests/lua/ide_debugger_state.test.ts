@@ -1,8 +1,8 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import {
 	createRuntimeDebuggerState,
 	resumeRuntimeDebugger,
@@ -78,7 +78,7 @@ function createDebuggerHarness(source: string, optLevel: 0 | 3): DebuggerHarness
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = {
-		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)),
+		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID),
 		cartridgeSlots: [null, null],
 	};
 	return {
@@ -90,7 +90,7 @@ function createDebuggerHarness(source: string, optLevel: 0 | 3): DebuggerHarness
 
 test('physical source-stop transitions notify presentation without coupling guest calls to authoring state', () => {
 	const { runtime, state } = createDebuggerHarness('local n = 3\nn = n + 1\nreturn n', 0);
-	state.breakpoints.set({ domain: -1, path: DEBUG_SOURCE_PATH }, [2]);
+	state.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [2]);
 	const stops: (typeof state.source.stop)[] = [], unbind = state.source.onDidChangeStop(stop => stops.push(stop));
 	runtime.machine.cpu.reset();
 	assert.equal(runtime.machine.cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
@@ -154,7 +154,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 `;
 		const { runtime, state } = createDebuggerHarness(source, optLevel);
 		const { cpu, memory, irqController } = runtime.machine;
-		const resource = { domain: -1 as const, path: DEBUG_SOURCE_PATH };
+		const resource = { contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH };
 		state.breakpoints.toggle(resource, source.split('\n').findIndex(line => line.includes('selected IRQ local')) + 1);
 		if (pauseInCall) state.breakpoints.toggle(resource, source.split('\n').findIndex(line => line.includes('nested evaluation stop')) + 1);
 		cpu.reset(); assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Yielded);
@@ -259,7 +259,7 @@ return work -- caller stop
 	const line = source.split('\n').findIndex(line => line.includes('caller stop')) + 1;
 	startAtBreakpoint(harness, line); assert.equal(stoppedSourceLine(harness), line);
 	const outerPc = state.source.stop!.pc, depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
-	state.breakpoints.toggle({ domain: -1, path: DEBUG_SOURCE_PATH }, source.split('\n').findIndex(line => line.includes('inside call')) + 1);
+	state.breakpoints.toggle({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, source.split('\n').findIndex(line => line.includes('inside call')) + 1);
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
 	const outcomes: boolean[] = [];
@@ -560,7 +560,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 	const { runtime, state } = createDebuggerHarness('return function(value)\n value = value + 1\n return value\nend', optLevel);
 	const cpu = runtime.machine.cpu, values: Value[] = [];
 	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET); cpu.readCompletionValues(values);
-	state.breakpoints.set({ domain: -1, path: DEBUG_SOURCE_PATH }, [2]);
+	state.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [2]);
 	assert.ok(state.breakpoints.bindings.pcs[0].size > 0, 'the real source has an emitted breakpoint PC');
 	let finished = 0;
 	cpu.beginCompletionClosureInExecutionDomain(-1, values[0] as Closure, [1]);
@@ -591,7 +591,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 });
 
 function startAtBreakpoint(harness: DebuggerHarness, line: number): void {
-	harness.state.breakpoints.set({ domain: SYSTEM_RESOURCE_DOMAIN, path: DEBUG_SOURCE_PATH }, [line]);
+	harness.state.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [line]);
 	harness.runtime.machine.cpu.reset();
 }
 
@@ -606,8 +606,8 @@ function resumeAndStop(
 test('runtime breakpoint state is owned by each IDE session', () => {
 	const first = createDebuggerHarness('return 1', 0).state;
 	const second = createDebuggerHarness('return 1', 0).state;
-	first.breakpoints.set({ domain: -1, path: DEBUG_SOURCE_PATH }, [1]);
-	assert.deepEqual(first.breakpoints.get({ domain: -1, path: DEBUG_SOURCE_PATH }), new Set([1]));
+	first.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [1]);
+	assert.deepEqual(first.breakpoints.get({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }), new Set([1]));
 	assert.deepEqual(second.breakpoints.serialize(), []);
 });
 
@@ -722,7 +722,7 @@ while true do halt_until_irq end
 
 for (const level of [0, 3] as const) for (const transition of ['source-install', 'hot-resume', 'reset'] as const) test(`O${level}: an evaluation cannot republish a source stop after ${transition}`, async () => {
 	const { runtime, state } = createDebuggerHarness(`operation = function() return 42 end\nlocal value = 17\nmem[${DYNAMIC_RAM_BASE}] = value\nreturn value`, level);
-	state.breakpoints.set({ domain: -1, path: DEBUG_SOURCE_PATH }, [3]);
+	state.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: DEBUG_SOURCE_PATH }, [3]);
 	const cpu = runtime.machine.cpu;
 	cpu.reset(); assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
 	const retained = state.source.stop;

@@ -1,3 +1,4 @@
+import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import { collectLuaModuleDependencyClosure } from '../../toolchain/ts/lua/compiler/module_graph';
 import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
@@ -20,27 +21,19 @@ export type ProgramSources = {
 	parsed: ReadonlyMap<string, ProgramSourceModule>;
 };
 
-export type ProgramSourceContent =
-	| { readonly kind: 'workspace' }
-	| { readonly kind: 'installed'; readonly sources: ReadonlyMap<string, string> };
-
 /** Workspace membership is not executable membership. Libraries are parsed only on demand. */
 export function collectProgramSources(
 	registry: LuaSourceRegistry,
 	entrySourcePath: string | undefined, moduleRoots: readonly string[],
-	content: ProgramSourceContent,
 ): ProgramSources {
-	const available = new Map(registry.records.filter(record => content.kind === 'workspace'
-		? record.sourceKind !== 'source-only'
-		: content.sources.has(record.module_path)).map(record => [record.module_path, record]));
+	const available = new Map(registry.records.filter(record => record.sourceKind !== 'source-only').map(record => [record.module_path, record]));
 	const parsed = new Map<string, ProgramSourceModule>();
 	const load = (path: string): ProgramSourceModule => {
 		let module = parsed.get(path);
 		if (module !== undefined) return module;
 		const record = available.get(path);
 		if (record === undefined) throw new Error(`Program module '${path}' is not available in this workspace.`);
-		const source = content.kind === 'workspace'
-			? readWorkspaceLuaSourceText(registry, record) : content.sources.get(path)!;
+		const source = readWorkspaceLuaSourceText(registry, record);
 		module = { path, sourcePath: record.source_path, source, chunk: parseLuaChunk(source, path).chunk };
 		parsed.set(path, module);
 		return module;
@@ -59,4 +52,21 @@ export function collectProgramSources(
 	for (const path of roots) included.add(path);
 	included.delete(entry.path);
 	return { entry, modules: [...available.keys()].filter(path => included.has(path)).map(load), parsed };
+}
+
+/** Relinking consumes the installed image's complete source membership and entry, not today's catalog. */
+export function collectInstalledProgramSources(
+	sources: ReadonlyMap<string, Blua32CompiledSource>, compiledModulePaths: readonly string[],
+): ProgramSources {
+	const parsed = new Map<string, ProgramSourceModule>();
+	for (const path of compiledModulePaths) {
+		const record = sources.get(path);
+		if (record === undefined) throw new Error(`Installed compiler input '${path}' has no embedded source text.`);
+		const source = readBlua32CompiledSource(record);
+		parsed.set(path, { path, sourcePath: record.displayPath, source, chunk: parseLuaChunk(source, path).chunk });
+	}
+	const entry = parsed.get(compiledModulePaths[0])!;
+	const modules: ProgramSourceModule[] = [];
+	for (const module of parsed.values()) if (module !== entry) modules.push(module);
+	return { entry, modules, parsed };
 }

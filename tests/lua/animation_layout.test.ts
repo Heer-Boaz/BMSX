@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorFont } from '../../ide/editor/ui/view/font';
@@ -8,17 +9,16 @@ import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/edit
 import { AnimationKeyControl } from '../../ide/workbench/contrib/animation/key_control';
 import { layoutAnimationEditor, measureAnimationEditor } from '../../ide/workbench/contrib/animation/layout';
 import { inputFocus } from '../../ide/input/focus';
-import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 const source = "return {duration_frames=100,clock_scale=1,tracks={{kind='value',interpolation='linear',keys={{frame=0,value=1},{frame=100,value=2}}},{kind='event',keys={{frame=50,event='other'}}}}}";
 
 function fixture(t: TestContext) {
-	const resource = { domain: 0 as const, path: 'animation.lua' };
+	const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua' };
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
-	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
-	const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
-	const input = new AnimationEditorInput(model, model.resource.domain);
+	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
+	const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!, undefined!);
+	const input = new AnimationEditorInput(model, model.resource.contextId);
 	controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 1); controller.selectProperty(input, 0);
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {});
 	const keys = new AnimationKeyControl(parent, controller, controller.authoring); keys.setInput(input);

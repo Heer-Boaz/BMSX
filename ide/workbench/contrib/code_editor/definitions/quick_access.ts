@@ -21,7 +21,7 @@ export function buildDefinitionQuickPickItems(definitions: readonly LuaDefinitio
 export function openDefinitionSearch(pane: CodeEditorPane, row: number, column: number): boolean {
 	const input = pane.input, context = input.context;
 	const resource = context.model.resource;
-	const query = queryDefinitionsAt(pane.sources, context, row, column);
+	const query = queryDefinitionsAt(pane.sources.catalog, context, row, column);
 	if (!query) {
 		showEditorMessage('Definition not found', 'warning', 1.6);
 		return false;
@@ -32,7 +32,7 @@ export function openDefinitionSearch(pane: CodeEditorPane, row: number, column: 
 	}
 	pane.code.references.clear();
 	pane.editor.quickInput.pick(`DEFINITIONS: ${query.label}`, 'Type to filter definitions', (_origin, lifetime) => {
-		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => pane.editor.quickInput.hide()));
+		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, pane.sources.catalog, resource.contextId, () => pane.editor.quickInput.hide()));
 		return new TextQuickPickProvider(buildDefinitionQuickPickItems(query.definitions));
 	}, item => navigateToLuaDefinition(pane, item.target.resource, item.target.location),
 		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));

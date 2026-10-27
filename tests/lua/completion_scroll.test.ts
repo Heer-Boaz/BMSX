@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
@@ -18,13 +19,13 @@ test('completion wheel scrolls continuously without changing selection; keyboard
 		resetSemanticProjects(editorTextModelService);
 		editorTextModelService.clear();
 	});
-	const resource = (path: string) => ({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0 as const, path, source: { resid: path, type: 'lua' as const, source_path: path } });
+	const resource = (path: string) => ({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: path, type: 'lua' as const, source_path: path } });
 	const importer = editorTextModelService.retain(resource('carts/example/main.lua'), 'lua', "local m = require('authoring/')");
 	const sources = createScenarioTestSourceState([{ ...createScenarioTestSourceRecord(importer.resource.path, 1, importer.buffer.getText()), module_path: 'main' }]);
 	for (let index = 0; index < 30; index += 1) {
 		const path = `carts/example/authoring/module_${index}.lua`;
 		editorTextModelService.retain(resource(path), 'lua', 'return {}');
-		registerLuaSourceRecord(sources.cartridgeSlots[0]!.luaSources, { ...createScenarioTestSourceRecord(path, 1, 'return {}'), module_path: `authoring/module_${index}` });
+		registerLuaSourceRecord(sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, { ...createScenarioTestSourceRecord(path, 1, 'return {}'), module_path: `authoring/module_${index}` });
 	}
 	const view = createCodeEditorViewState();
 	view.cursorColumn = importer.buffer.getText().indexOf("')");

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModelService, type ResolvedTextModelSource } from '../../ide/editor/model/model_service';
-import type { ResourceDomain, RuntimeResource } from '../../ide/common/resource';
+import type { RuntimeResource } from '../../ide/common/resource';
 
-function resource(domain: ResourceDomain = 0): RuntimeResource {
-	return { sourceFilePath: 'res/cue.aem.yaml', location: { kind: 'workspace' as const, path: 'res/cue.aem.yaml' }, domain, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem', generated: false } };
+function resource(contextId = 'first-source-context'): RuntimeResource {
+	return { contextLabel: 'Fixture project', sourceFilePath: 'res/cue.aem.yaml', location: { kind: 'workspace' as const, path: 'res/cue.aem.yaml' }, contextId, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem', generated: false } };
 }
 
 test('asynchronous source admission coalesces by resource, not filename or editor input', async () => {
@@ -13,7 +13,7 @@ test('asynchronous source admission coalesces by resource, not filename or edito
 	const source = new Promise<ResolvedTextModelSource>(resolve => { resolveSource = resolve; });
 	let reads = 0;
 	const read = () => { reads += 1; return source; };
-	const left = resource(), right = resource(1);
+	const left = resource(), right = resource('second-source-context');
 	const first = models.resolve(left, 'aem', read);
 	const second = models.resolve(left, 'aem', read);
 	const other = models.resolve(right, 'aem', read);

@@ -1,7 +1,7 @@
 import { editorTextModelService } from '../../model/model_service';
 import { getOrCreateSemanticProject } from '../intellisense/semantic/workspace/state';
 import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { CodeEditorContext } from '../../ui/code_editor_state';
 import { buildEditorSemanticFrontend } from '../intellisense/frontend';
 import { definitionLocationFromSourceRange } from '../../navigation/source_range';
@@ -24,7 +24,7 @@ export type LuaDefinitionQuery = {
 };
 
 export function queryDefinitionsAt(
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	context: CodeEditorContext,
 	row: number,
 	column: number,
@@ -33,7 +33,7 @@ export function queryDefinitionsAt(
 		return null;
 	}
 	const frontend = buildEditorSemanticFrontend(
-		sources,
+		catalog,
 		context.model.resource,
 		context.model.buffer,
 	);
@@ -41,7 +41,7 @@ export function queryDefinitionsAt(
 	if (!navigation) {
 		return null;
 	}
-	const project = getOrCreateSemanticProject(editorTextModelService, context.model.resource.domain);
+	const project = getOrCreateSemanticProject(editorTextModelService, context.model.resource.contextId);
 	const definitions = new Array<LuaDefinitionTarget>(navigation.targets.length);
 	for (let index = 0; index < navigation.targets.length; index += 1) {
 		const target = navigation.targets[index];

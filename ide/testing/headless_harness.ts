@@ -9,7 +9,6 @@ import { activateEditor } from '../workbench/overlay_modes';
 import { selectAllSingleCursor } from '../editor/editing/cursor/state';
 import { insertText } from '../editor/editing/text_editing_and_selection';
 import {
-	resolveRuntimeResourceForContext,
 	type RuntimeSourceState,
 } from '../runtime/sources';
 import type { RuntimeIdeState } from '../workbench/state';
@@ -111,11 +110,8 @@ export function createHeadlessIdeHarness(
 			ide.hotResumes, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, logOutput,
 		),
 		toggleLuaBreakpoint: (path: string, line: number) => {
-			const resource = resolveRuntimeResourceForContext(
-				ide.sources,
-				ide.sources.activeCartridgeSlot,
-				path,
-			)!;
+			const resource = (ide.sources.catalog.resolveResource({ contextId: ide.sources.activeContextId, path })
+				?? ide.sources.catalog.resolveModule(ide.sources.activeContextId, path))!;
 			ide.debugger.breakpoints.toggle(resource, line);
 		},
 		isDebuggerStopped: () => ide.debugger.source.stop !== undefined,
@@ -130,12 +126,9 @@ export function createHeadlessIdeHarness(
 				runtime,
 				audioOutput,
 			);
-			const resource = resolveRuntimeResourceForContext(
-				ide.sources,
-				ide.sources.activeCartridgeSlot,
-				path,
-			)!;
-			openLuaCodeTab(ide.editor.editorGroup, ide.sources, resource);
+			const resource = (ide.sources.catalog.resolveResource({ contextId: ide.sources.activeContextId, path })
+				?? ide.sources.catalog.resolveModule(ide.sources.activeContextId, path))!;
+			openLuaCodeTab(ide.editor.editorGroup, ide.sources.catalog, ide.sources.catalog.resolveResource(resource)!);
 		},
 		replaceActiveCodeSource: (source: string) => {
 			const code = (ide.editor.editorGroup.panes.activePane as CodeEditorPane).code;

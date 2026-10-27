@@ -1,6 +1,6 @@
-import { resourceIdentityKey, type ResourceDomain } from '../../../common/resource';
+import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { EditorInputSerializer } from '../../services/editor/editor_serialization';
 import { captureTextFileModel, resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { AnimationEditorController } from './controller';
@@ -8,8 +8,8 @@ import { AnimationEditorInput, type AnimationClient, type AnimationSourceSelecti
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 
 type AnimationSnapshot = {
-	readonly version: 2;
-	readonly projectDomain: ResourceDomain;
+	readonly version: 3;
+	readonly projectContextId: string;
 	readonly source: TextFileModelSnapshot;
 	readonly definition: TrackedTextRange | undefined;
 	readonly label: string;
@@ -28,9 +28,9 @@ type AnimationSnapshot = {
 };
 
 export class AnimationInputSerializer implements EditorInputSerializer<AnimationEditorInput> {
-	public constructor(private readonly sources: RuntimeSourceState, private readonly controller: AnimationEditorController) {}
+	public constructor(private readonly catalog: WorkspaceSourceCatalog, private readonly controller: AnimationEditorController) {}
 	public serialize(input: AnimationEditorInput): string {
-		const state: AnimationSnapshot = { version: 2, projectDomain: input.projectDomain, source: captureTextFileModel(input.workingCopy), definition: input.definitionRange, label: input.definitionLabel, consumer: input.consumerPath,
+		const state: AnimationSnapshot = { version: 3, projectContextId: input.projectContextId, source: captureTextFileModel(input.workingCopy), definition: input.definitionRange, label: input.definitionLabel, consumer: input.consumerPath,
 			dependencies: input.getWorkingCopies().filter(model => model !== input.workingCopy).map(captureTextFileModel),
 			track: input.trackSelection, key: input.keySelection, detail: input.detailSelection, scroll: input.tracks.scroll, cursor: input.keys.cursor,
 			client: input.activeClient, columnRatio: input.columnSplit.ratio, rowRatio: input.rowSplit.ratio,
@@ -39,13 +39,13 @@ export class AnimationInputSerializer implements EditorInputSerializer<Animation
 	}
 	public async deserialize(value: string): Promise<AnimationEditorInput> {
 		const state: AnimationSnapshot = JSON.parse(value);
-		if (state.version !== 2) throw new Error(`Unsupported animation editor view version '${state.version}'.`);
-		const primary = await resolveTextFileModelSnapshot(editorTextModelService, this.sources, state.source);
-		const input = new AnimationEditorInput(primary.model, state.projectDomain, state.definition, state.label, state.consumer);
+		if (state.version !== 3) throw new Error(`Unsupported animation editor view version '${state.version}'.`);
+		const primary = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
+		const input = new AnimationEditorInput(primary.model, state.projectContextId, state.definition, state.label, state.consumer);
 		if (!primary.sameSource && input.definitionRange !== undefined) input.definitionRange.end = input.definitionRange.start;
 		let sameSource = primary.sameSource;
 		for (const dependency of state.dependencies) {
-			const resolved = await resolveTextFileModelSnapshot(editorTextModelService, this.sources, dependency);
+			const resolved = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, dependency);
 			input.sourceModels.set(resourceIdentityKey(resolved.model.resource), resolved.model);
 			if (!resolved.sameSource) sameSource = false;
 		}

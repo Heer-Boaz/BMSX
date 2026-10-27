@@ -1,4 +1,6 @@
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -7,7 +9,6 @@ import { captureBehaviorSourceBookmark, copyBehaviorSourceBookmark, mapBehaviorS
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { reconcileStateMachineSourceSelection, selectStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_selection';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 
 /** Selected proof only; deliberately select the last sibling/consumer, not the best-case first. */
 for (const siblings of [32, 1024]) {
@@ -15,8 +16,8 @@ for (const siblings of [32, 1024]) {
 local callback<const> = function(owner) if owner.done then return '../active' end return '../active' end
 local branch<const> = { states = { idle = { update = callback, on = { go = '../active' } }, active = {} } }
 machines.register('profile', { states = {${Array.from({ length: siblings }, (_, index) => `lane${index}=branch`).join(',')}} })`;
-	const model = new EditorTextModel({ sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
-	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
+	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, model.resource)], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects'])));
 	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');

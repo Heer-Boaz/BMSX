@@ -9,13 +9,13 @@ import type { RomInspectorSnapshot } from './model';
 /** Capture installed packed bytes at invocation, independently of later source/media changes. */
 export function openRomInspector(group: EditorGroupView, picker: QuickInputController, sources: RuntimeSourceState): void {
 	const choices: { label: string; description: string; detail: string; snapshot: RomInspectorSnapshot }[] = [
-		{ label: 'System ROM', description: 'BIOS', detail: `${sources.systemRom.bytes.byteLength} bytes`, snapshot: { domain: SYSTEM_RESOURCE_DOMAIN, label: 'System ROM', rom: sources.systemRom.bytes, header: sources.systemRom.header, assets: sources.systemRom.index.entries } },
+		{ label: 'System ROM', description: 'BIOS', detail: `${sources.systemRom.bytes.byteLength} bytes`, snapshot: { domain: SYSTEM_RESOURCE_DOMAIN, sourceContextId: sources.systemContextId, label: 'System ROM', rom: sources.systemRom.bytes, header: sources.systemRom.header, assets: sources.systemRom.index.entries } },
 	];
 	for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
 		const cart = sources.cartridgeSlots[domain];
 		if (cart === null) continue;
 		choices.push({ label: `Cart ${domain}`, description: cart.package.cart_manifest?.title ?? '',
-			detail: `${cart.rom.bytes.byteLength} bytes`, snapshot: { domain, label: `Cart ${domain}`, rom: cart.rom.bytes, header: cart.rom.header, assets: cart.rom.index.entries } });
+			detail: `${cart.rom.bytes.byteLength} bytes`, snapshot: { domain, sourceContextId: cart.contextId, label: `Cart ${domain}`, rom: cart.rom.bytes, header: cart.rom.header, assets: cart.rom.index.entries } });
 	}
 	picker.pick('ROM INSPECTOR', 'Choose a packed image', () => new TextQuickPickProvider(choices), choice => {
 		const existing = group.model.tabs.find(input => input.kind === 'rom_inspector'

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -32,7 +33,7 @@ const SOURCE = [
 function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = SOURCE, kind: 'pietious' | 'nemesis' = 'pietious') {
 	configureFontVariant(variant);
 	const path = kind === 'pietious' ? 'res/data/castle_map.yaml' : 'res/data/nemesis_s_stage.yaml';
-	const model = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
 	const input = new CartMapInput(model, kind);
 	projectCartMap(input);
 	const bounds = { left: 23, top: 31, right: 23 + width, bottom: 277 }, surfaces = new WorkbenchSurfaceService();

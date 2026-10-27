@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import { ContextMenuController } from '../../../ide/workbench/services/context_menu/controller';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
@@ -19,12 +20,12 @@ const menu = new ContextMenuController(inputFocus, pointerCapture);
 const picker = new QuickInputController(menu);
 const accept = () => assert.fail('profiling must not accept a source choice');
 for (const fileCount of [1, 16, 128]) {
-	const project = new EditorLuaSemanticProject(0, new EditorTextModelService());
-	project.updateDocument({ domain: 0, path: 'declaration.lua' }, 'navigation_beacon = 1\n');
+	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], new EditorTextModelService());
+	project.updateDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'declaration.lua' }, 'navigation_beacon = 1\n');
 	for (let file = 0; file < fileCount; file += 1) {
-		project.updateDocument({ domain: 0, path: `file_${file}.lua` }, Array.from({ length: 8 }, (_, line) => `local value_${line} = navigation_beacon`).join('\n'));
+		project.updateDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: `file_${file}.lua` }, Array.from({ length: 8 }, (_, line) => `local value_${line} = navigation_beacon`).join('\n'));
 	}
-	const origin: ResourceIdentity = { domain: 0, path: 'file_0.lua' };
+	const origin: ResourceIdentity = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'file_0.lua' };
 	const snapshot = project.getSnapshot();
 	const query = buildLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition(resourceIdentityKey(origin), 1, 20)!;
 	assert.ok(query);

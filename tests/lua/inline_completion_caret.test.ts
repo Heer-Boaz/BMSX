@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
@@ -37,7 +38,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 			configureFontVariant(variant);
 			editorRuntimeState.uppercaseDisplay = variant === 'tiny'; colors.setIdeThemeVariant(theme);
 			const { models, documents, clock } = createTestCodeDocuments(t);
-			const model = models.retain({ sourceFilePath: 'caret.lua', location: { kind: 'workspace' as const, path: 'caret.lua' }, domain: 0, path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', source);
+			const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'caret.lua', location: { kind: 'workspace' as const, path: 'caret.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', source);
 			const view = createCodeEditorViewState(); view.cursorColumn = source.length;
 			const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font);
 			code.wordWrapEnabled = false;
@@ -88,7 +89,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 test('a suggestion clipped left of the source slice does not become a phantom caret glyph at the viewport edge', t => {
 	configureFontVariant('msx');
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'clipped.lua', location: { kind: 'workspace' as const, path: 'clipped.lua' }, domain: 0, path: 'clipped.lua', source: { type: 'lua', resid: 'clipped' } }, 'lua', 'retur + 2');
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'clipped.lua', location: { kind: 'workspace' as const, path: 'clipped.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'clipped.lua', source: { type: 'lua', resid: 'clipped' } }, 'lua', 'retur + 2');
 	const view = createCodeEditorViewState(); view.cursorColumn = 5; view.scrollLeft = editorViewState.font.measure('retur +');
 	const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font);
 	code.setInlineEdit(0, 5, 5, 'n');
@@ -109,7 +110,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 		const source = 'retur_tail + 2';
 		const { models, documents, clock } = createTestCodeDocuments(t);
-		const model = models.retain({ sourceFilePath: 'marks.lua', location: { kind: 'workspace' as const, path: 'marks.lua' }, domain: 0, path: 'marks.lua', source: { type: 'lua', resid: 'marks' } }, 'lua', source);
+		const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'marks.lua', location: { kind: 'workspace' as const, path: 'marks.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'marks.lua', source: { type: 'lua', resid: 'marks' } }, 'lua', source);
 		const view = createCodeEditorViewState(); view.cursorColumn = 5; const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font);
 		code.setInlineEdit(0, 5, 10, 'n');
 		t.after(() => { colors.setIdeThemeVariant(previousTheme);
@@ -155,7 +156,7 @@ test('horizontal scrolling past a short row does not pull its end caret back ont
 	configureFontVariant('msx');
 	const source = 'abc\n' + 'x'.repeat(30);
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'short.lua', location: { kind: 'workspace' as const, path: 'short.lua' }, domain: 0, path: 'short.lua', source: { type: 'lua', resid: 'short' } }, 'lua', source);
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'short.lua', location: { kind: 'workspace' as const, path: 'short.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'short.lua', source: { type: 'lua', resid: 'short' } }, 'lua', source);
 	const view = createCodeEditorViewState(); view.cursorColumn = 3; view.scrollLeft = editorViewState.font.measure('xxxxxxx');
 	const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font); code.wordWrapEnabled = false;
 	code.layout.ensureVisualLines(false, 0, 1);
@@ -173,7 +174,7 @@ test('an empty replacement of a source tab measures the surviving visible glyph 
 	const previousUppercase = editorRuntimeState.uppercaseDisplay;
 	configureFontVariant('msx');
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'deleted-tab.lua', location: { kind: 'workspace' as const, path: 'deleted-tab.lua' }, domain: 0, path: 'deleted-tab.lua', source: { type: 'lua', resid: 'deleted-tab' } }, 'lua', '\ta');
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'deleted-tab.lua', location: { kind: 'workspace' as const, path: 'deleted-tab.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'deleted-tab.lua', source: { type: 'lua', resid: 'deleted-tab' } }, 'lua', '\ta');
 	const code = createTestCodeControl(t, model, documents, clock, undefined, editorViewState.font);
 	code.setInlineEdit(0, 0, 1, '');
 	code.wordWrapEnabled = false;
@@ -201,7 +202,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		editorRuntimeState.uppercaseDisplay = false;
 		const source = '\tretur_tail + call()' + ' + trailing'.repeat(8);
 		const { models, documents, clock } = createTestCodeDocuments(t);
-		const model = models.retain({ sourceFilePath: 'pixels.lua', location: { kind: 'workspace' as const, path: 'pixels.lua' }, domain: 0, path: 'pixels.lua', source: { type: 'lua', resid: 'pixels' } }, 'lua', source);
+		const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'pixels.lua', location: { kind: 'workspace' as const, path: 'pixels.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'pixels.lua', source: { type: 'lua', resid: 'pixels' } }, 'lua', source);
 		const view = createCodeEditorViewState(); view.cursorColumn = 6; const code = createTestCodeControl(t, model, documents, clock, view, editorViewState.font, { left: 0, top: 10, right: 128, bottom: 78 });
 		code.wordWrapEnabled = false;
 		code.setInlineEdit(0, 6, 11, 'n');

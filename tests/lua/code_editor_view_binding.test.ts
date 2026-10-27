@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { undo as undoSource, redo as redoSource } from '../../ide/editor/editing/undo_controller';
 import { inputFocus } from '../../ide/input/focus';
 
-const resource = { sourceFilePath: 'positions.lua', location: { kind: 'workspace' as const, path: 'positions.lua' }, domain: 0 as const, path: 'positions.lua', source: { resid: 'positions.lua', type: 'lua' as const } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: 'positions.lua', location: { kind: 'workspace' as const, path: 'positions.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'positions.lua', source: { resid: 'positions.lua', type: 'lua' as const } };
 
 test('external model edits track an unattached code cursor, oriented selection and visual scroll without changing text again', t => {
 	const model = new EditorTextModel(resource, 'lua', 'header\nabcdef\ntail');

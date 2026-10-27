@@ -10,7 +10,7 @@ import { sourcePane, check, type StudioFixture } from './studio_fixture';
 export async function openRuntimeTreePicker(test: StudioFixture, expectedCount = 4): Promise<void> {
 	await test.runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	const picker = test.ide.editor.quickInput;
-	const model = editorTextModelService.get({ domain: 0, path: 'inspection_trees.lua' })!;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'inspection_trees.lua' })!;
 	const index = picker.model.list.rows.findIndex(row => {
 		const item = row.item as BehaviorQuickPickItem;
 		return item.registration.resource.path === model.resource.path
@@ -35,7 +35,7 @@ export async function openRuntimeTreePicker(test: StudioFixture, expectedCount =
 export async function openRuntimeTreeInspector(test: StudioFixture, component: 'first' | 'second' | 'bare' | 'empty') {
 	const { runtime, guest, cycles, press, frame } = test;
 	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), calls = guest.global('inspection_bt_callback_count');
-	const model = editorTextModelService.get({ domain: 0, path: 'inspection_trees.lua' })!, version = model.version;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'inspection_trees.lua' })!, version = model.version;
 	await openRuntimeTreePicker(test);
 	await test.clipboard.writeText(`inspection.bt.${component}`);
 	await press('ControlLeft', 'KeyV');
@@ -74,7 +74,7 @@ export async function testRuntimeTreeSource(test: StudioFixture): Promise<void> 
 	check(!inspector.isEnabled('propertyInspector.source'), 'runtime BT: loaded numbers have no inferred write/source target');
 	const callback = rows.findIndex(row => row.element.label === 'BLACKBOARD / callback');
 	for (let i = scalar; i < callback; i += 1) await press('ArrowDown');
-	const model = editorTextModelService.get({ domain: 0, path: 'inspection_callbacks.lua' })!;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'inspection_callbacks.lua' })!;
 	const version = model.version, source = model.buffer.getText();
 	check(inspector.isEnabled('propertyInspector.source'), 'runtime BT: blackboard callback Source enabled');
 	await test.click(inspector.actionBar.items[0].bounds, 6);

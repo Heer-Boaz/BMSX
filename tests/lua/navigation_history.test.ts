@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { inputFocus } from '../../ide/input/focus';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
@@ -13,10 +14,8 @@ import { EditorNavigationController } from '../../ide/workbench/contrib/resource
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
-import { focusExecutionStop } from '../../ide/runtime_error/navigation';
-import type { CartEditor } from '../../ide/cart_editor';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
-import type { RuntimeSourceState } from '../../ide/runtime/sources';
+import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
 import { createTestEditorGroup } from '../helpers/editor_panes';
@@ -32,10 +31,10 @@ class Location extends EditorPaneSelection {
 	public matches(other: Location): boolean { return this.value === other.value; }
 }
 function entry(owner: EditorGroupView, path: string, value: number): NavigationHistoryEntry {
-	return new NavigationHistoryEntry({ kind: 'resource', resource: { domain: 0, path }, editorId: WORKBENCH_TEXT_EDITOR_ID }, new Location(value), owner);
+	return new NavigationHistoryEntry({ kind: 'resource', resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }, editorId: WORKBENCH_TEXT_EDITOR_ID }, new Location(value), owner);
 }
 function code(path: string) {
-	const model = editorTextModelService.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
+	const model = editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: path, type: 'lua' } }, 'lua', 'local before = 1\nlocal target = before\nreturn target\n');
 	return new CodeEditorInput(model);
 }
 
@@ -196,8 +195,10 @@ test('history awaits the registered resource opener and restores a closed text i
 	const resource = reopened.workingCopy.resource;
 	let finishOpen!: () => void;
 	const openGate = new Promise<void>(resolve => { finishOpen = resolve; });
+	const catalog = new WorkspaceSourceCatalog();
+	for (const [key, value] of new Map([[resourceIdentityKey(resource), resource]])) catalog.resourceByIdentity.set(key, value);
 	const navigation = new EditorNavigationController(
-		{ resourceByIdentity: new Map([[`0\0${resource.path}`, resource]]) } as RuntimeSourceState,
+		catalog,
 		{ focusTarget: inputFocus.createTarget(), isFocused: () => false } as ResourcePanelController,
 		new ResourceEditorResolver([{
 			id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async actual => {
@@ -229,7 +230,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 	const target = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1), group);
 	navigationState.back.push(target);
 	const navigation = new EditorNavigationController(
-		{} as RuntimeSourceState, { focusTarget: inputFocus.createTarget(), isFocused: () => false } as ResourcePanelController,
+		new WorkspaceSourceCatalog(), { focusTarget: inputFocus.createTarget(), isFocused: () => false } as ResourcePanelController,
 		new ResourceEditorResolver([]), group,
 	);
 	t.after(() => { group.dispose(); });
@@ -251,8 +252,10 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 		let discarded = 0; older.onWillDispose(() => { discarded += 1; });
 		let finishOpen!: () => void;
 		const openGate = new Promise<void>(resolve => { finishOpen = resolve; });
+		const catalog = new WorkspaceSourceCatalog();
+		for (const [key, value] of new Map([[resourceIdentityKey(older.workingCopy.resource), older.workingCopy.resource]])) catalog.resourceByIdentity.set(key, value);
 		const navigation = new EditorNavigationController(
-			{ resourceByIdentity: new Map([[`0\0${older.workingCopy.resource.path}`, older.workingCopy.resource]]) } as RuntimeSourceState,
+			catalog,
 			{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 			new ResourceEditorResolver([{
 				id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async resource => {
@@ -292,29 +295,6 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 	});
 }
 
-test('a debugger continuation cannot decorate a tab chosen after its source attached', async t => {
-	configureFontVariant('tiny');
-	const group = createTestEditorGroup();
-	t.after(initializeNavigationState(group));
-	const origin = code('origin.lua'); group.openEditor(origin);
-	const stopped = code('stopped.lua'), chosen = code('chosen.lua');
-	const resource = stopped.workingCopy.resource;
-	const navigation = new EditorNavigationController(
-		{ resourceByIdentity: new Map([[`0\0${resource.path}`, resource]]) } as RuntimeSourceState,
-		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
-		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => stopped }]), group,
-	);
-	t.after(() => { group.dispose(); });
-	const pending = focusExecutionStop({ navigation, editorGroup: group } as CartEditor, resource, 2, 7);
-	await Promise.resolve(); // Source attached; the debugger's continuation is still queued.
-	assert.equal(group.model.activeTab, stopped);
-	group.openEditor(chosen);
-	assert.equal(await pending, undefined);
-	assert.equal(group.model.activeTab, chosen);
-	assert.equal(chosen.context.executionStopRow, null);
-	assert.equal(chosen.context.view.cursorRow, 0);
-});
-
 test('cancelled resolution disposes its fresh candidate without disturbing the retained same-resource input', async t => {
 	configureFontVariant('tiny');
 	const group = createTestEditorGroup();
@@ -324,7 +304,7 @@ test('cancelled resolution disposes its fresh candidate without disturbing the r
 	let retainedDisposals = 0, candidateDisposals = 0;
 	input.onWillDispose(() => { retainedDisposals++; }); candidate.onWillDispose(() => { candidateDisposals++; });
 	const navigation = new EditorNavigationController(
-		{} as RuntimeSourceState,
+		new WorkspaceSourceCatalog(),
 		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => candidate }]), group,
 	);
@@ -347,7 +327,7 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 	let finish!: () => void;
 	const gate = new Promise<void>(resolve => { finish = resolve; });
 	const navigation = new EditorNavigationController(
-		{} as RuntimeSourceState,
+		new WorkspaceSourceCatalog(),
 		{} as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async () => { await gate; return candidate; } }]),
@@ -379,7 +359,7 @@ test('async resource admission captures the departure before an in-control caret
 	let finish!: () => void;
 	const gate = new Promise<void>(resolve => { finish = resolve; });
 	const navigation = new EditorNavigationController(
-		{} as RuntimeSourceState,
+		new WorkspaceSourceCatalog(),
 		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async () => { await gate; return destination; } }]),
@@ -407,8 +387,10 @@ for (const direction of ['back', 'forward'] as const) test(`invalid focused draf
 	t.after(() => group.dispose());
 	const first = code('first.lua'), second = code('second.lua');
 	group.openEditor(first); group.openEditor(second);
+	const catalog = new WorkspaceSourceCatalog();
+	for (const [key, value] of new Map([first, second].map(input => [resourceIdentityKey(input.resource), input.workingCopy.resource]))) catalog.resourceByIdentity.set(key, value);
 	const navigation = new EditorNavigationController(
-		{ resourceByIdentity: new Map([first, second].map(input => [resourceIdentityKey(input.resource), input.workingCopy.resource])) } as RuntimeSourceState,
+		catalog,
 		{ focusTarget: inputFocus.createTarget() } as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: resource => new CodeEditorInput(editorTextModelService.get(resource)!) }]), group);
@@ -437,8 +419,10 @@ for (const direction of ['back', 'forward'] as const) test(`an invalid draft beg
 	group.openEditor(first); group.openEditor(second);
 	let blocked = false, finish!: () => void, rejectedCandidate: CodeEditorInput | undefined, retired = 0;
 	const gate = new Promise<void>(resolve => { finish = resolve; });
+	const catalog = new WorkspaceSourceCatalog();
+	for (const [key, value] of new Map([first, second].map(input => [resourceIdentityKey(input.resource), input.workingCopy.resource]))) catalog.resourceByIdentity.set(key, value);
 	const navigation = new EditorNavigationController(
-		{ resourceByIdentity: new Map([first, second].map(input => [resourceIdentityKey(input.resource), input.workingCopy.resource])) } as RuntimeSourceState,
+		catalog,
 		{ focusTarget: inputFocus.createTarget() } as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async resource => {

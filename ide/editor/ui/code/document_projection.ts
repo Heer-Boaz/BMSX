@@ -60,7 +60,7 @@ export class CodeDocumentProjection {
 		const builtins = options.getBuiltinIdentifiers();
 		this.builtinEpoch = builtins.epoch;
 		this.builtinIdentifiers = builtins.ids;
-		this.project = model.mode === 'lua' ? getOrCreateSemanticProject(models, model.identity.domain) : null;
+		this.project = model.mode === 'lua' ? getOrCreateSemanticProject(models, model.identity.contextId) : null;
 		this.unbindApplied = model.onDidApplyChanges(event => this.invalidateSource(event));
 		this.unbindContent = model.onDidChangeContent(() => {
 			if (this.fonts.size > 0) this.requestSemanticUpdate();

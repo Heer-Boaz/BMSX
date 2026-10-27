@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { EditorCommandRunner } from '../../ide/common/commands';
@@ -43,7 +44,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 		dataOffset: 512, dataLength: 1792, metadataOffset: 2304, metadataLength: 64, tocOffset: 2400, tocLength: 128,
 		blua32ImageOffset: 136, blua32ImageByteCount: 256, blua32StartupFunctionAddress: 0, blua32IrqFunctionAddress: 0,
 		blua32ExceptionFunctionAddress: 0, blua32StaticLayoutTokenLo: 0, blua32StaticLayoutTokenHi: 0, blua32DiagnosticDirectoryOffset: 0 };
-	const input = new RomInspectorInput({ domain: 0, label: 'Cart 0', header, rom: new Uint8Array(4096), assets });
+	const input = new RomInspectorInput({ domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Cart 0', header, rom: new Uint8Array(4096), assets });
 	Object.assign(input.layout, { ...area, bottom: 260, font: editorViewState.font, rowHeight: editorViewState.lineHeight });
 	const surfaces = new WorkbenchSurfaceService(), origin = inputFocus.createTarget(), unrelated = inputFocus.createTarget();
 	origin.bindKeyboard(() => {}); unrelated.bindKeyboard(() => {});

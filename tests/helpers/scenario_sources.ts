@@ -2,7 +2,7 @@ import type {
 	LuaSourceRecord,
 	LuaSourceRegistry,
 } from '../../ide/runtime/source_registry';
-import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
+import { createLuaSourceRegistry, registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import { createTestRuntimeSourceState } from './runtime_sources';
@@ -11,15 +11,7 @@ function scenarioSourceRegistry(
 	projectRootPath: string,
 	records: readonly LuaSourceRecord[],
 ): LuaSourceRegistry {
-	const registry: LuaSourceRegistry = {
-		records: [],
-		path2lua: {},
-		module2lua: {},
-		entrySourcePath: '',
-		projectRootPath,
-		can_boot_from_source: false,
-		revision: 0,
-	};
+	const registry = createLuaSourceRegistry(projectRootPath, '');
 	for (let index = 0; index < records.length; index += 1) {
 		registerLuaSourceRecord(registry, records[index]);
 	}

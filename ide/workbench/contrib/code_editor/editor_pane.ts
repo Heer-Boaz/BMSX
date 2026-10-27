@@ -101,12 +101,12 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		super();
 		const code = this.code = new CodeEditorControl(scope, editorViewState.font, clock);
 		this.completion = new EditorCompletionController(code, sources, guest, fault, runtime);
-		this.find = new EditorSearchController(code, sources);
+		this.find = new EditorSearchController(code, sources.catalog);
 		this.lineJump = new CodeEditorLineJump(code);
-		this.rename = new RenameController(code, sources, editor.crossFileRename);
+		this.rename = new RenameController(code, sources.catalog, editor.crossFileRename);
 		this.hover = new CodeEditorHoverController(code, sources, guest, fault, runtime);
 		this.bars = new SourceInlineBars(code, this.find, this.rename, this.lineJump);
-		this.navigation = new EditorNavigationController(sources, editor.resourcePanel, editor.resourceEditors, group);
+		this.navigation = new EditorNavigationController(sources.catalog, editor.resourcePanel, editor.resourceEditors, group);
 		code.focusTarget.canFocus = () => this.hasInput && code.geometry.cachedContentWidth > 0
 			&& code.geometry.clientBounds.left < code.geometry.clientBounds.right
 			&& code.geometry.clientBounds.top < code.geometry.clientBounds.bottom;

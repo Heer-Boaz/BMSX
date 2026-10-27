@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import { ContextMenuController } from '../../../ide/workbench/services/context_menu/controller';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
@@ -19,7 +20,7 @@ const picker = new QuickInputController(menu);
 const names = ['spawn_enemy', 'update_scene', 'before_enter', 'apply_effect', 'start_timeline', 'select_target', 'execute_task', 'dispatch_event'];
 for (const count of [128, 1024, 8192]) {
 	const symbols: EditorLuaSymbolEntry[] = Array.from({ length: count }, (_, index) => {
-		const resource = { domain: 0 as const, path: `workspace/controller_${index % 16}/actor_${index}.lua` };
+		const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: `workspace/controller_${index % 16}/actor_${index}.lua` };
 		return { name: names[index % names.length], resource,
 		path: `actor_${index}.${names[index % names.length]}`, kind: 'function',
 		location: { path: resourceIdentityKey(resource),

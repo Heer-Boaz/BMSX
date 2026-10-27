@@ -2,8 +2,7 @@ import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import { asStringId, valueString, valueToString, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
-import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
-import type { ResourceDomain } from '../common/resource';
+import type { BuiltFixtureProgram } from './fixture_media';
 import { readSupervisorFaultReport } from '../runtime/fault_state';
 import { TestFailureContext } from './failure_context';
 import { DEFAULT_FIXTURE_BUDGETS, type FixtureBudgets } from './fixture_budgets';
@@ -39,8 +38,8 @@ export class PlayFixture {
 	private readonly hook: ExecutionHook = (domain, pc) => !this.fixture.initialized
 		? this.fixture.observeInitialization(domain, pc) : this.operations.shouldStopAtPublication();
 
-	public constructor(public readonly target: FixtureTarget, private readonly input: TestInput, public readonly program: BuiltTestCartridge,
-		private readonly sourceDomain: ResourceDomain, output: FixtureOutput,
+	public constructor(public readonly target: FixtureTarget, private readonly input: TestInput, public readonly program: BuiltFixtureProgram,
+		output: FixtureOutput,
 		private readonly budgets: PlayFixtureBudgets = DEFAULT_PLAY_FIXTURE_BUDGETS) {
 		if (program.suite.kind !== 'integration') throw new Error('Play requires an integration fixture.');
 		this.fixture = new GuestFixture(target.runtime, program);
@@ -130,7 +129,7 @@ export class PlayFixture {
 	private recordFailure(thread: Thread, message: string, origin: TestFailureContext['origin']): void {
 		const runtime = this.target.runtime;
 		this.failures.push(new TestFailureContext(thread, origin, runtime.machine.scheduler.nowCycles,
-			runtime.frameScheduler.lastTickSequence, this.program, this.sourceDomain, !this.fixture.initialized ? 'initialize' : this.phase, message));
+			runtime.frameScheduler.lastTickSequence, this.program, !this.fixture.initialized ? 'initialize' : this.phase, message));
 	}
 	private quarantine(message: string): void {
 		this.recordFailure(this.target.runtime.machine.cpu.activeThread, message, 'quarantined-cpu'); this.finish();

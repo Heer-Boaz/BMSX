@@ -18,8 +18,8 @@ local effect<const> = {cooldown_ms=10,required_tags={'active'}}
 bt.register('tree.${index}',tree)
 fx.register_effect('effect.${index}',effect)`).join('\n');
 	const models = new EditorTextModelService(), sources = createScenarioTestSourceState([createScenarioTestSourceRecord('profile.lua', 1, source)]);
-	const context = new WorkspaceSourceContext(models, sources), documents = new BehaviorSourceDocuments(models, sources);
-	const tools = new WorkspaceBehaviorTools('profile', context, sources, documents);
+	const context = new WorkspaceSourceContext(models, sources.catalog), documents = new BehaviorSourceDocuments(models, sources.catalog);
+	const tools = new WorkspaceBehaviorTools('profile', context, sources.catalog, documents);
 	const started = performance.now();
 	const catalog = tools.execute('studio_list_behaviors', {}); assert.ok(catalog.kind === 'behaviors');
 	const listed = performance.now();

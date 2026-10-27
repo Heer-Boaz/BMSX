@@ -57,18 +57,18 @@ class TranscriptProducer extends AssistantConversation {
 function fixture(t: TestContext) {
 	const models = new EditorTextModelService(), clock = new VirtualHeadlessClock();
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return old\n')]);
-	const model = models.retain(sources.luaResources[0], 'lua', 'return old\n');
+	const model = models.retain(sources.catalog.luaResources[0], 'lua', 'return old\n');
 	const image = linkTestSystemBlua32(compileLuaSource('return nil', 'toolbar', 0));
 	const runtime = createTestRuntime(image.romBytes); runtime.machine.cpu.reset();
 	const guest = new SuspendedGuestSession(runtime), f = createRuntimeInspectionFixture(runtime, sources, guest, models);
-	const diagnostics = new ResourceDiagnosticsService(models, sources, clock);
+	const diagnostics = new ResourceDiagnosticsService(models, sources.catalog, clock);
 	const runs = new ScenarioRunService(models, sources, new Map(), runtime.model, () => assert.fail('no target creation'));
-	const saves = new TextFileSaveService(models, clock, sources, guest, runtime, f.tasks);
+	const saves = new TextFileSaveService(models, clock, sources.catalog);
 	const tools = new WorkspaceToolService(models, sources, diagnostics, runs, f.inspection, f.frameNavigation, f.gameCapture,
-		f.luaEvaluation, f.debuggerExecution, f.actorExecution, new BehaviorSourceDocuments(models, sources), saves, f.boots,
+		f.luaEvaluation, f.debuggerExecution, f.actorExecution, new BehaviorSourceDocuments(models, sources.catalog), saves, f.boots,
 		f.hotResumes, f.events, f.gteHistory, f.gpuHistory, clock);
 	const conversation = new TranscriptProducer(models, sources, tools), input = new AssistantInput(conversation);
-	const proposal = (title: string) => new WorkspaceEditProposal(title, new WorkspaceSourceContext(models, sources), {
+	const proposal = (title: string) => new WorkspaceEditProposal(title, new WorkspaceSourceContext(models, sources.catalog), {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 0, deleteLength: 0, text: '-- proposal\n' }] }]]),
 	});
 	t.after(async () => { input.dispose(); conversation.dispose(); tools.dispose(); await saves.shutdown(); await f.boots.shutdown();

@@ -36,7 +36,7 @@ export async function testEmptyDefinitionCatalog(test: StudioFixture): Promise<v
 export async function openRegisteredDefinition(test: StudioFixture, kind: 'effect' | 'fsm', id: string, stateId = id) {
 	const { guest, runtime, cycles, press } = test;
 	const time = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('inspection_fsm_callback_count');
-	const model = editorTextModelService.get({ domain: 0, path: 'cart.lua' })!, version = model.version;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!, version = model.version;
 	await openRegisteredDefinitionPicker(test, kind);
 	const picker = test.ide.editor.quickInput;
 	let index = picker.model.list.rows.findIndex(row => row.item.label === id);

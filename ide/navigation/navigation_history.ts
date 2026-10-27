@@ -111,7 +111,7 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 	if (left.kind === 'input') {
 		if (right.kind !== 'input' || left.input !== right.input) return false;
 	} else if (right.kind !== 'resource' || left.editorId !== right.editorId
-		|| left.resource.domain !== right.resource.domain || left.resource.path !== right.resource.path) return false;
+		|| left.resource.contextId !== right.resource.contextId || left.resource.path !== right.resource.path) return false;
 	return a.selection === undefined ? b.selection === undefined
 		: b.selection !== undefined && a.selection.matches(b.selection);
 }

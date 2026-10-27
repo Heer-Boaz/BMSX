@@ -1,6 +1,5 @@
 import { sourcePane } from './studio_fixture';
 import { check, type StudioFixture } from './studio_fixture';
-import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 
 /** Actual commands, firmware and debugger; automated evidence, not UI-only authoring. */
@@ -11,7 +10,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	const initial = await startup.completion;
 	check(initial.status === 'rejected' && initial.reset && !initial.installed && ide.editor.isActive,
 		'boot: source rejection has explicit evidence and an inspectable, held machine');
-	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: 'title_screen.lua' })!;
+	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'title_screen.lua' })!;
 	await ide.editor.navigation.openResource(resource);
 	await frame();
 	await test.capture?.('startup-rejected');

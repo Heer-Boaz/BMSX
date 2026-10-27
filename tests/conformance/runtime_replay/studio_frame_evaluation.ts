@@ -1,11 +1,10 @@
-import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Shared BIOS evaluator at a real retained IRQ stop, without a second terminal. */
 export async function testStudioPinnedFrameEvaluation(test: StudioFixture, whileStopped?: () => Promise<void>): Promise<void> {
 	const { ide, runtime, until, frame, cycles } = test;
-	const resource = { domain: 0 as const, path: 'cartlib/irq.lua' };
-	const source = resolveRuntimeLuaSource(ide.sources, resource)!.record.src;
+	const resource = { contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cartlib/irq.lua' };
+	const source = ide.sources.catalog.resolveLuaSource(resource)!.record.src;
 	const line = source.split('\n').findIndex(text => text.includes('local pending = flags')) + 1;
 	check(line > 0, 'frame admission: installed cartridge IRQ source exists');
 	ide.debugger.breakpoints.toggle(resource, line);

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -11,7 +12,7 @@ import { createFsmStatePath, parseFsmStatePath } from '../../toolchain/ts/cartli
 import { FSM_RETARGET_PATH_CASES, FSM_RETARGET_PATH_SOURCE, FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
 
 function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
-	const resource = { sourceFilePath: 'retarget.lua', location: { kind: 'workspace' as const, path: 'retarget.lua' }, domain: 0 as const, path: 'retarget.lua', source: { type: 'lua' as const, resid: 'retarget' } };
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'retarget.lua', location: { kind: 'workspace' as const, path: 'retarget.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'retarget.lua', source: { type: 'lua' as const, resid: 'retarget' } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	t.after(() => model.dispose());
 	const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/fsm/library'])));

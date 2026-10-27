@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_FAULT, SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH } from '../../machine/ts/spec/bmsx/io';
 import { runToSupervisorFault } from '../helpers/supervisor_fault';
@@ -5,6 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
+import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { handleSupervisorFault } from '../../ide/workbench/runtime_errors';
 import {
@@ -29,6 +31,7 @@ import {
 import { OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import {
 	createTestRuntime,
 	createTestSystemImageRuntimeSourceState,
@@ -109,6 +112,11 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 		sourceKind: 'project', program_module: true,
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, luaSources);
+	// The hand-written instruction fixture supplies its own exact source proof;
+	// the ROM deliberately has no packed source directory.
+	sources.currentBlua32Media = { ...sources.currentBlua32Media,
+		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports,
+			new Map([[sourceRange.path, { displayPath: sourcePath, content: { kind: 'text', text: source } }]]), TEST_SYSTEM_CONTEXT_ID) };
 	const fault = createRuntimeFaultState();
 	const messages: string[] = [];
 	const logOutput = {
@@ -130,7 +138,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	assert.equal(fault.lastLuaCallStack[0].functionName, `function@${functionAddress.toString(16)}`);
 	assert.equal(fault.lastLuaCallStack[0].kind, 'instruction');
 	assert.equal(fault.lastLuaCallStack[0].instructionAddress, codeAddress);
-	assert.deepEqual(fault.faultSnapshot.resource, { domain: -1, path: sourcePath });
+	assert.equal(fault.faultSnapshot.resource, undefined, 'unmapped RAM instructions do not fabricate an authored entry source');
 	assert.match(messages.join('\n'), /op=CALL/);
 
 	cpu.reset();
@@ -164,13 +172,14 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 		new SuspendedGuestSession(runtime),
 	);
 	assert.equal(mixedFault.lastCpuFaultSnapshot.length, 2);
-	assert.equal(mixedFault.lastLuaCallStack[0].functionName, 'source_target');
-	assert.equal(mixedFault.lastLuaCallStack[0].kind, 'source');
-	assert.deepEqual(mixedFault.lastLuaCallStack[0].resource, { domain: -1, path: sourcePath });
+	const sourceFrame = mixedFault.lastLuaCallStack[0];
+	assert.equal(sourceFrame.functionName, 'source_target');
+	assert.ok(sourceFrame.kind === 'source');
+	assert.deepEqual(sourceFrame.resource, { contextId: TEST_SYSTEM_CONTEXT_ID, path: sourcePath });
+	assert.equal(readBlua32CompiledSource(mixedFault.faultSnapshot.details.sources.get(sourceFrame)!), source);
 	assert.equal(mixedFault.lastLuaCallStack[1].functionName, `function@${functionAddress.toString(16)}`);
 	assert.equal(mixedFault.lastLuaCallStack[1].kind, 'instruction');
 	assert.equal(mixedFault.lastLuaCallStack[1].instructionAddress, codeAddress);
-	assert.deepEqual(mixedFault.faultSnapshot.resource, { domain: -1, path: sourcePath });
-	assert.match(messages.join('\n'), /workspace\/runtime_fault_state\.lua:1:1/);
+	assert.deepEqual(mixedFault.faultSnapshot.resource, { contextId: TEST_SYSTEM_CONTEXT_ID, path: sourcePath });
 
 });

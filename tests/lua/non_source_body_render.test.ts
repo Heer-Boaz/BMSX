@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as colors from '../../ide/common/constants';
@@ -6,7 +7,6 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus } from '../../ide/input/focus';
 import { api } from '../../ide/runtime/overlay_api';
-import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { AnimationEditorController } from '../../ide/workbench/contrib/animation/controller';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
@@ -27,12 +27,12 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 	test(`${variant}/${theme} animation labels and retained curve evidence use their actual non-source body pair`, t => {
 		const previousFont = editorViewState.font, previousTheme = colors.getActiveIdeThemeVariant();
 		configureFontVariant(variant); colors.setIdeThemeVariant(theme);
-		const resource = { domain: 0 as const, path: 'body.lua', source: { type: 'lua' as const, resid: 'body.lua' } };
+		const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'body.lua', source: { type: 'lua' as const, resid: 'body.lua' } };
 		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
-		const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
-		const input = new AnimationEditorInput(model, model.resource.domain);
+		const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
+		const input = new AnimationEditorInput(model, model.resource.contextId);
 		// These deferred authoring services are not used by source projection, layout or this read-only renderer.
-		const controller = new AnimationEditorController(sources, undefined!, undefined!, undefined!);
+		const controller = new AnimationEditorController(sources.catalog, undefined!, undefined!, undefined!);
 		controller.refresh(input); controller.selectTrack(input, 1); controller.selectKey(input, 0);
 		const keys = new AnimationKeyControl(inputFocus.createTarget(), controller, controller.authoring); keys.setInput(input);
 		t.after(() => {

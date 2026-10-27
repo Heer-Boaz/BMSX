@@ -104,6 +104,7 @@ function makeMetadata(
 		optLevel: 0,
 		traceStatements: 'erase',
 		preloadModules: [],
+		compiledModulePaths: [],
 		debugRanges: new Array(instructionCount).fill(null),
 		debugInlineCallSites: new Array(instructionCount).fill([]),
 		protoIds,

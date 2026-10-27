@@ -33,15 +33,11 @@ import {
 	syncWorkspaceSessionRemotely,
 } from './autosave';
 import type { CartEditor } from '../../cart_editor';
-import {
-	resolveRuntimeLuaSource,
-	resolveRuntimeResource,
-	runtimeSourceProjectRootPath,
-	type RuntimeSourceState,
-} from '../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../workspace/source_catalog';
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import {
 	WorkspaceAutosaveChange,
+	deserializeWorkspaceAutosavePayload,
 	type WorkspaceAutosavePayload,
 } from './models';
 import { editorTextModelService } from '../../editor/model/model_service';
@@ -49,7 +45,7 @@ import { loadWorkspaceDirtySources, workspaceRecoveryRecordPath } from '../../wo
 
 const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
 let editor: CartEditor = null;
-let sources: RuntimeSourceState = null;
+let catalog: WorkspaceSourceCatalog = null;
 let debuggerState: RuntimeBreakpointState = null;
 let storage: KeyValueStorage = null;
 let clock: HostClock = null;
@@ -93,7 +89,7 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 			workspaceState.pendingChanges = WorkspaceAutosaveChange.None;
 			workspaceDirtyRecords.clear();
 			editor = null;
-			sources = null;
+			catalog = null;
 			debuggerState = null;
 			storage = null;
 			clock = null;
@@ -123,7 +119,7 @@ export async function initializeWorkspaceStorage(
 	workspaceClock: HostClock,
 	context: StudioSourceContext,
 	recoverySessionId: string,
-	runtimeSources: RuntimeSourceState,
+	sourceCatalog: WorkspaceSourceCatalog,
 	workspaceFiles: WorkspaceRecordProvider,
 	workspaceLogOutput: LogOutput,
 ): Promise<WorkspaceAutosavePayload | null> {
@@ -144,7 +140,7 @@ export async function initializeWorkspaceStorage(
 		WORKSPACE_STATE_FILE,
 	);
 	const localRecord = readLocalWorkspaceRecord(storage, projectRootPath, statePath);
-	const localPayload: WorkspaceAutosavePayload | null = localRecord === null ? null : JSON.parse(localRecord.contents);
+	const localPayload: WorkspaceAutosavePayload | null = localRecord === null ? null : deserializeWorkspaceAutosavePayload(localRecord.contents);
 	let remoteRecord: WorkspaceRecord | null = null;
 	let providerRead = false;
 	try {
@@ -155,20 +151,20 @@ export async function initializeWorkspaceStorage(
 		logOutput.log(LogLevel.Warn, `[WorkspaceStorage] ${message}`);
 		showEditorWarningBanner(message, 5.0);
 	}
-	const remotePayload: WorkspaceAutosavePayload | null = remoteRecord === null ? null : JSON.parse(remoteRecord.contents);
+	const remotePayload: WorkspaceAutosavePayload | null = remoteRecord === null ? null : deserializeWorkspaceAutosavePayload(remoteRecord.contents);
 	const record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
 	const payload = record === null ? null : record === remoteRecord ? remotePayload : localPayload;
 	// An incomplete generation is an error, not permission to discard unsaved edits or rewrite the manifest.
-	const generationDirtyRecords = payload ? await loadWorkspaceDirtySources(runtimeSources, payload.dirtyFiles,
+	const generationDirtyRecords = payload ? await loadWorkspaceDirtySources(sourceCatalog, payload.dirtyFiles,
 		(root, path) => readWorkspaceRecordVersion(storage, root, path), recoveryIdentity) : new Map<string, WorkspaceRecord>();
 	const replacedLocalPayload = record === remoteRecord && localRecord ? localPayload : null;
 	const obsoleteLocalDirtyRecords: Array<readonly [string, string]> = [];
 	if (replacedLocalPayload) {
 		for (const entry of replacedLocalPayload.dirtyFiles) {
-			const dirtyProjectRootPath = runtimeSourceProjectRootPath(runtimeSources, entry.domain);
+			const dirtyProjectRootPath = sourceCatalog.getContext(entry.contextId).projectRootPath;
 			const dirtyPath = buildWorkspaceDirtyEntryPath(
 				dirtyProjectRootPath,
-				entry.domain,
+				entry.contextId,
 				entry.path,
 			);
 			if (generationDirtyRecords.get(dirtyPath)?.updatedAt === entry.updatedAt) {
@@ -176,7 +172,7 @@ export async function initializeWorkspaceStorage(
 			}
 			obsoleteLocalDirtyRecords.push([
 				dirtyProjectRootPath,
-				workspaceRecoveryRecordPath(runtimeSources, entry, recoveryIdentity),
+				workspaceRecoveryRecordPath(sourceCatalog, entry, recoveryIdentity),
 			]);
 		}
 	}
@@ -220,7 +216,7 @@ export async function initializeWorkspaceStorage(
 
 export async function restoreWorkspaceStorageSession(
 	workspaceEditor: CartEditor,
-	runtimeSources: RuntimeSourceState,
+	sourceCatalog: WorkspaceSourceCatalog,
 	runtimeDebuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload | null,
 	rejectedDirtyPaths: ReadonlySet<string>,
@@ -229,21 +225,21 @@ export async function restoreWorkspaceStorageSession(
 	if (payload && payload.dirtyFiles.length !== 0) {
 		const dirtyFiles = [];
 		for (const entry of payload.dirtyFiles) {
-			const root = runtimeSourceProjectRootPath(runtimeSources, entry.domain);
+			const root = sourceCatalog.getContext(entry.contextId).projectRootPath;
 			const dirtyPath = buildWorkspaceDirtyEntryPath(
 				root,
-				entry.domain,
+				entry.contextId,
 				entry.path,
 			);
 			if (!rejectedDirtyPaths.has(dirtyPath)) {
 				// Lua already chose ROM/file/draft before compilation; reuse that decision.
-				if (resolveRuntimeLuaSource(runtimeSources, entry) !== null) {
+				if (sourceCatalog.resolveLuaSource(entry) !== null) {
 					dirtyFiles.push(entry);
 					continue;
 				}
 				// Save can complete before recovery cleanup. Admit the checkpoint only
 				// against the same canonical record used to initialize its working copy.
-				const canonical = await loadWorkspaceSourceFile(resolveRuntimeResource(runtimeSources, entry)!.sourceFilePath!);
+				const canonical = await loadWorkspaceSourceFile(sourceCatalog.resolveResource(entry)!.sourceFilePath!);
 				if (canonical === null || entry.updatedAt >= canonical.updatedAt) dirtyFiles.push(entry);
 			}
 		}
@@ -253,13 +249,13 @@ export async function restoreWorkspaceStorageSession(
 	if (restorePayload) {
 		await applyWorkspaceAutosavePayload(
 			workspaceEditor,
-			runtimeSources,
+			sourceCatalog,
 			runtimeDebuggerState,
 			restorePayload,
 		);
 	}
 	editor = workspaceEditor;
-	sources = runtimeSources;
+	catalog = sourceCatalog;
 	debuggerState = runtimeDebuggerState;
 	unsubscribeEditorGroup = editor.editorGroup.model.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
 	unsubscribeEditorPane = editor.editorGroup.panes.onDidClearEditor(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
@@ -315,7 +311,7 @@ export function runWorkspaceAutosaveTick(): Promise<void> | void {
 			storage,
 			clock,
 			editor,
-			sources,
+			catalog,
 			debuggerState,
 			changes,
 		);
@@ -341,7 +337,7 @@ async function syncWorkspaceAutosave(): Promise<void> {
 	try {
 		const targetRevision = workspaceState.localRevision;
 		const generation = workspaceState.localGeneration;
-		await syncWorkspaceSessionRemotely(sources, generation);
+		await syncWorkspaceSessionRemotely(catalog, generation);
 		workspaceState.remotePayload = generation.payload;
 		workspaceState.remoteDirtyRecords = generation.dirtyRecords;
 		workspaceState.remoteRevision = targetRevision;
@@ -374,7 +370,7 @@ function commitRequestedWorkspaceSessionLocally(): void {
 		storage,
 		clock,
 		editor,
-		sources,
+		catalog,
 		debuggerState,
 		workspaceState.pendingChanges,
 	);

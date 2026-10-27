@@ -23,11 +23,14 @@ async function main(): Promise<void> {
 	const { captureRuntimeSaveState, applyRuntimeSaveState } = await import('../../../machine/ts/machine/runtime/save_state');
 	const { formatValueSnapshot } = await import('../../../ide/runtime/value_snapshot');
 	const { RuntimeEventHistory } = await import('../../../ide/runtime/event_history');
-	const { createRuntimeSourceState } = await import('../../../ide/runtime/sources');
+	const { createRuntimeSourceState, createLoadedProjectSourceCatalog } = await import('../../../ide/runtime/sources');
 	const { loadRomToolingMedia } = await import('../../../toolchain/ts/rompack/media');
 	const system = readFileSync(systemPath), cart = readFileSync(cartPath);
 	const media = await loadRomToolingMedia(system, [cart, null]);
-	const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+	const systemContext = { id: 'event-profile-system', projectRoot: media.system.index.projectRootPath };
+	const primaryContext = { id: 'event-profile-primary', projectRoot: media.cartridgeSlots[0]!.index.projectRootPath };
+	const catalog = createLoadedProjectSourceCatalog({ admission: systemContext, layer: media.system }, [{ admission: primaryContext, layer: media.cartridgeSlots[0]! }]);
+	const sources = createRuntimeSourceState(media.system, media.cartridgeSlots, { catalog, systemContextId: systemContext.id, cartridgeContextIds: [primaryContext.id, null] });
 	let inputTick = 0;
 	const input = {
 		sampleInputControllerSnapshot(snapshot: import('../../../machine/ts/machine/devices/input/contracts').InputControllerSnapshot): void {

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { formatByteSize } from '../../machine/ts/common/byte_hex_string';
@@ -60,7 +61,7 @@ function fixture(t: TestContext) {
 		{ resid: 'metadata-only', type: 'image', metabuffer_start: 4096, metabuffer_end: 4128 },
 		{ resid: 'deleted', type: 'image', op: 'delete' });
 	finalizePackedRomAssets(assets);
-	const input = new RomInspectorInput({ domain: 0, label: 'Cart 0', rom: new Uint8Array(8192), header, assets });
+	const input = new RomInspectorInput({ domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Cart 0', rom: new Uint8Array(8192), header, assets });
 	const presentation = new RomInspectorPresentation();
 	const filter = new TextField(), filterViewport = new SingleLineFieldViewport(), overlay = createHostOverlayFixture(640, 288);
 	const layout = (variant: 'tiny' | 'msx' = 'tiny', width = 384, left = 0) => {

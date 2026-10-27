@@ -59,15 +59,22 @@ export class LuaProgramRuntimeProjection {
 	public refresh(input: LuaProgramInput, reconcileBookmark = false): void {
 		if (!reconcileBookmark && (!input.liveVisible || !input.liveDirty)) return;
 		input.liveDirty = false;
-		const identity = input.instance;
-		if (identity === undefined) { input.status = 'Choose a live instance. Authored programs are not runtime contexts.'; return; }
+		const identity = input.instance, domain = input.runtimeDomain;
+		if (domain !== undefined && (domain === -1 ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain]) !== input.runtimeImage) {
+			input.instance = undefined;
+			input.live.roots.length = 0;
+			rebuildWorkbenchTreeRows(input.live, null);
+			input.status = 'Selected execution attachment was replaced. Choose a live instance again.';
+			return;
+		}
+		if (identity === undefined || domain === undefined) { input.status = 'Choose a live instance. Authored programs are not runtime contexts.'; return; }
 		let instance: Table | undefined;
 		if (input.programKind === 'progression') {
-			const runtimes = progressionRuntimes(this.sources, this.guest, input.workingCopy.resource.domain);
+			const runtimes = progressionRuntimes(this.sources, this.guest, domain);
 			if (runtimes !== undefined) this.guest.visitTableEntries(runtimes, (ctx, rt) => {
 				if (this.guest.matchesIdentity(ctx, identity)) instance = rt as Table;
 			});
-		} else visitRuntimeComponents(this.sources, this.guest, input.workingCopy.resource.domain,
+		} else visitRuntimeComponents(this.sources, this.guest, domain,
 			'cartlib/input/actioneffect/actioneffect_component', component => { if (this.guest.matchesIdentity(component, identity)) instance = component; });
 		if (instance === undefined) {
 			input.instance = undefined;

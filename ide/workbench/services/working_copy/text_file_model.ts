@@ -1,7 +1,7 @@
 import type { ResourceIdentity, RuntimeResource } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorDocumentMode, EditorTextModel } from '../../../editor/model/text_model';
-import { resolveRuntimeLuaSource, resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { loadWorkspaceSourceFile, readWorkspaceLuaSourceText } from '../../../workspace/files';
 import { getTextSnapshotFingerprint, type TextSnapshotFingerprint } from '../../../editor/text/source_text';
 import { workspaceCanonicalSourceCache } from '../../../workspace/cache';
@@ -18,13 +18,13 @@ export function captureTextFileModel(model: EditorTextModel): TextFileModelSnaps
 
 /** Working copies have already admitted any recovered dirty record before views resolve. */
 export async function resolveTextFileModelSnapshot(
-	models: EditorTextModelService, sources: RuntimeSourceState, snapshot: TextFileModelSnapshot,
+	models: EditorTextModelService, catalog: WorkspaceSourceCatalog, snapshot: TextFileModelSnapshot,
 ): Promise<{ model: EditorTextModel; sameSource: boolean }> {
-	const resource = resolveRuntimeResource(sources, snapshot.resource);
+	const resource = catalog.resolveResource(snapshot.resource);
 	if (!resource) {
-		throw new Error(`Workspace resource '${snapshot.resource.path}' is not installed for domain '${snapshot.resource.domain}'.`);
+		throw new Error(`Workspace resource '${snapshot.resource.path}' is not admitted in source context '${snapshot.resource.contextId}'.`);
 	}
-	const model = await resolveTextFileModel(models, sources, resource);
+	const model = await resolveTextFileModel(models, catalog, resource);
 	const fingerprint = getTextSnapshotFingerprint(model.buffer);
 	return { model, sameSource: fingerprint.length === snapshot.fingerprint.length && fingerprint.hash === snapshot.fingerprint.hash };
 }
@@ -41,10 +41,10 @@ export function textFileMode(resource: RuntimeResource): EditorDocumentMode | un
 /** Lua's effective compilation source and persisted baseline remain distinct in its working copy. */
 export function resolveLuaTextFileModel(
 	models: EditorTextModelService,
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	resource: RuntimeResource,
 ): EditorTextModel {
-	const source = resolveRuntimeLuaSource(sources, resource);
+	const source = catalog.resolveLuaSource(resource);
 	if (!source) throw new Error(`Missing Lua source for '${resource.path}'.`);
 	const canonical = resource.sourceFilePath === undefined ? undefined : workspaceCanonicalSourceCache.get(resource.sourceFilePath);
 	const savedSource = canonical === undefined ? source.record.base_src : canonical.contents;
@@ -55,13 +55,13 @@ export function resolveLuaTextFileModel(
 /** Source admission for editable source formats; no view/group side effects. */
 export function resolveTextFileModel(
 	models: EditorTextModelService,
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	resource: RuntimeResource,
 ): EditorTextModel | Promise<EditorTextModel> {
 	const mode = textFileMode(resource);
 	switch (mode) {
 		case 'lua':
-			return resolveLuaTextFileModel(models, sources, resource);
+			return resolveLuaTextFileModel(models, catalog, resource);
 		case 'yaml':
 		case 'aem': {
 			// Data stays in its authored YAML; never reconstruct it from cooked assets.

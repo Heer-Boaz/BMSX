@@ -1,7 +1,4 @@
-import {
-	runtimeSourceProjectRootPath,
-	type RuntimeSourceState,
-} from '../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../workspace/source_catalog';
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { captureWorkspaceDirtySources } from '../services/working_copy/source_recovery';
@@ -37,7 +34,7 @@ export function commitWorkspaceSessionLocally(
 	storage: KeyValueStorage,
 	clock: HostClock,
 	editor: CartEditor,
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	debuggerState: RuntimeBreakpointState,
 	changes: WorkspaceAutosaveChange,
 ): WorkspaceSessionGeneration {
@@ -48,9 +45,9 @@ export function commitWorkspaceSessionLocally(
 	let dirtyFiles: PersistedDirtyEntry[];
 	let generationDirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
 	if (rebuildDirtyFiles) {
-		const generation = captureWorkspaceDirtySources(editorTextModelService, sources, clock, workspaceDirtyRecords,
+		const generation = captureWorkspaceDirtySources(editorTextModelService, catalog, clock, workspaceDirtyRecords,
 			(root, entry, record) => writeLocalWorkspaceRecord(storage, root,
-				workspaceRecoveryRecordPath(sources, entry, recoveryIdentity), record));
+				workspaceRecoveryRecordPath(catalog, entry, recoveryIdentity), record));
 		dirtyFiles = generation.dirtyFiles;
 		generationDirtyRecords = generation.dirtyRecords;
 		for (const [path, record] of generation.dirtyRecords) workspaceDirtyRecords.set(path, record);
@@ -76,6 +73,7 @@ export function commitWorkspaceSessionLocally(
 		return previousGeneration;
 	}
 	const payload: WorkspaceAutosavePayload = {
+		version: 2,
 		dirtyFiles,
 		editorGroup,
 		breakpoints,
@@ -101,10 +99,10 @@ export function commitWorkspaceSessionLocally(
 
 	if (rebuildDirtyFiles && previousGeneration) {
 		for (const entry of previousGeneration.payload.dirtyFiles) {
-			const projectRootPath = runtimeSourceProjectRootPath(sources, entry.domain);
+			const projectRootPath = catalog.getContext(entry.contextId).projectRootPath;
 			const dirtyPath = buildWorkspaceDirtyEntryPath(
 				projectRootPath,
-				entry.domain,
+				entry.contextId,
 				entry.path,
 			);
 			const currentRecord = generationDirtyRecords.get(dirtyPath);
@@ -114,7 +112,7 @@ export function commitWorkspaceSessionLocally(
 			deleteLocalWorkspaceRecord(
 				storage,
 				projectRootPath,
-				workspaceRecoveryRecordPath(sources, entry, recoveryIdentity),
+				workspaceRecoveryRecordPath(catalog, entry, recoveryIdentity),
 			);
 			if (!currentRecord) {
 				workspaceDirtyRecords.delete(dirtyPath);
@@ -125,14 +123,14 @@ export function commitWorkspaceSessionLocally(
 }
 
 export async function syncWorkspaceSessionRemotely(
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	generation: WorkspaceSessionGeneration,
 ): Promise<void> {
 	const context = workspaceState.context;
 	const recoveryIdentity = workspaceState.recoveryIdentity;
 	const dirtyRecordsChanged = workspaceState.remoteDirtyRecords !== generation.dirtyRecords;
 	if (dirtyRecordsChanged) {
-		await publishWorkspaceDirtySources(sources, generation.payload.dirtyFiles, generation.dirtyRecords,
+		await publishWorkspaceDirtySources(catalog, generation.payload.dirtyFiles, generation.dirtyRecords,
 			workspaceState.remotePayload?.dirtyFiles ?? [], recoveryIdentity);
 	}
 
@@ -146,6 +144,6 @@ export async function syncWorkspaceSessionRemotely(
 	await workspaceRecords.write(statePath, generation.stateRecord);
 
 	if (dirtyRecordsChanged) {
-		await pruneWorkspaceDirtySources(sources, workspaceState.remotePayload?.dirtyFiles ?? [], generation.payload.dirtyFiles, recoveryIdentity);
+		await pruneWorkspaceDirtySources(catalog, workspaceState.remotePayload?.dirtyFiles ?? [], generation.payload.dirtyFiles, recoveryIdentity);
 	}
 }

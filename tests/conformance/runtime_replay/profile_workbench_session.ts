@@ -1,8 +1,10 @@
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import { AnimationInputSerializer } from '../../../ide/workbench/contrib/animation/editor_serializer';
 import { CartMapInputSerializer } from '../../../ide/workbench/contrib/cart_maps/editor_serializer';
 import { LuaProgramInputSerializer } from '../../../ide/workbench/contrib/lua_program/editor_serializer';
 import { AemEditorInputSerializer } from '../../../ide/workbench/contrib/aem/editor_serializer';
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { medianMilliseconds } from '../../helpers/performance';
@@ -15,7 +17,6 @@ import { BehaviorLensInput } from '../../../ide/workbench/contrib/behavior_lens/
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { selectBehaviorLensDefinition } from '../../../ide/workbench/contrib/behavior_lens/layout';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { EditorTabGroupModel } from '../../../ide/workbench/ui/tab/group_model';
 import type { EditorInputSerializers } from '../../../ide/workbench/services/editor/editor_serialization';
 import { CodeEditorInputSerializer } from '../../../ide/workbench/contrib/code_editor/editor_serializer';
@@ -54,17 +55,17 @@ for (const documents of [4, 32, 128]) {
 	let sourceReads = 0;
 	const codeInputs: CodeEditorInput[] = [];
 	for (let index = 0; index < documents; index += 1) {
-		const resource = { sourceFilePath: `workspace/definition_${index}.lua`, location: { kind: 'workspace' as const, path: `workspace/definition_${index}.lua` }, domain: 0 as const, path: `workspace/definition_${index}.lua`, source: { type: 'lua' as const, resid: `definition_${index}` } };
+		const resource = { contextLabel: 'Profile project', sourceFilePath: `workspace/definition_${index}.lua`, location: { kind: 'workspace' as const, path: `workspace/definition_${index}.lua` }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: `workspace/definition_${index}.lua`, source: { type: 'lua' as const, resid: `definition_${index}` } };
 		const model = new EditorTextModel(resource, 'lua', source);
 		const readText = model.buffer.getText.bind(model.buffer);
 		model.buffer.getText = () => { sourceReads += 1; return readText(); };
 		const code = new CodeEditorInput(model);
 		codeInputs.push(code); group.add(code);
-		const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
+		const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects'])));
 		for (const definition of document.definitions) {
 			const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 			selectBehaviorLensDefinition(view, definition.rowKey);
-			group.add(new BehaviorLensInput(model, view, () => assert.fail('capture must not create a graph worker')));
+			group.add(new BehaviorLensInput(model, view, new Set([model.resource.contextId]), () => assert.fail('capture must not create a graph worker')));
 		}
 	}
 	group.activate(group.tabs[1]);

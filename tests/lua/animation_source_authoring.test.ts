@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -14,10 +15,10 @@ import { createLuaTableFieldNumberEdits } from '../../ide/language/lua/source_ed
 import { createLuaTableFieldsInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { newLuaSource } from '../../ide/workbench/contrib/resources/create/source_templates';
 
-const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { resid: 'animation.lua', type: 'lua' as const } };
 function project(source: string, imports: readonly { path: string; source: string }[] = []) {
 	return buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource),
-		...imports.map(item => buildResourceLuaSemanticFixtureFile(item.source, { domain: resource.domain, path: item.path }))], [])));
+		...imports.map(item => buildResourceLuaSemanticFixtureFile(item.source, { contextId: resource.contextId, path: item.path }))], [])));
 }
 
 test('track captions preserve authored names, callback references and real property bindings without invented targets', () => {
@@ -70,8 +71,8 @@ test('imported key definitions retain their authored owner and coordinate domain
 		source: "return {{kind='value',interpolation='linear',path={'visual','offset_x'},keys={{time_ms=100,value=20},{time_ms=0,value=0}}}}" }])!;
 	const track = document.tracks[0];
 	assert.equal(document.root.file.file, resourceIdentityKey(resource));
-	assert.equal(track.source!.file.file, resourceIdentityKey({ domain: 0, path: 'tracks.lua' }));
-	assert.equal(track.keys[0].source!.file.file, resourceIdentityKey({ domain: 0, path: 'tracks.lua' }));
+	assert.equal(track.source!.file.file, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'tracks.lua' }));
+	assert.equal(track.keys[0].source!.file.file, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'tracks.lua' }));
 	assert.equal(track.unit, 'time_ms');
 	assert.deepEqual(track.keys.map(key => key.coordinate!.value), [100, 0]);
 	const viewport = new AnimationKeyViewport();

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
@@ -23,15 +24,15 @@ async function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return 1\n')]);
 	const models = new EditorTextModelService(), storage = new MemoryStorage(), clock = new VirtualHeadlessClock();
 	const f = createRuntimeInspectionFixture(createTestRuntime(createTestRuntimeRomPayload()), sources);
-	const guest = f.guest, diagnostics = new ResourceDiagnosticsService(models, sources, clock);
-	const saves = new TextFileSaveService(models, clock, sources, guest, f.runtime, f.tasks);
-	const model = models.retain(sources.luaResources[0], 'lua', 'return 1\n');
-	const yaml: RuntimeResource = { sourceFilePath: 'carts/nemesis_s/res/data/probe.yaml', location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'res/data/probe.yaml' }, domain: 0, path: 'res/data/probe.yaml', source: { type: 'data', resid: 'probe' } };
-	sources.resourceByIdentity.set(resourceIdentityKey(yaml), yaml);
+	const diagnostics = new ResourceDiagnosticsService(models, sources.catalog, clock);
+	const saves = new TextFileSaveService(models, clock, sources.catalog);
+	const model = models.retain(sources.catalog.luaResources[0], 'lua', 'return 1\n');
+	const yaml: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: 'carts/nemesis_s/res/data/probe.yaml', location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'res/data/probe.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/data/probe.yaml', source: { type: 'data', resid: 'probe' } };
+	sources.catalog.resourceByIdentity.set(resourceIdentityKey(yaml), yaml);
 	const data = models.retain(yaml, 'yaml', '# canonical 🐉\r\nvalue: 1\r\n');
 	const tools = () => {
-		const result = new WorkspaceSourceTools(models, sources, diagnostics, new AbortController().signal,
-			new BehaviorSourceDocuments(models, sources), saves, new VirtualHeadlessClock());
+		const result = new WorkspaceSourceTools(models, sources.catalog, diagnostics, new AbortController().signal,
+			new BehaviorSourceDocuments(models, sources.catalog), saves, new VirtualHeadlessClock(), sources);
 		t.after(() => result.dispose()); return result;
 	};
 	const read = async (tools: WorkspaceSourceTools, path = 'cart.lua') => {
@@ -66,7 +67,8 @@ test('source Save uses the ordinary owner and reports local persistence separate
 	assert.equal(f.runtime.machine.scheduler.currentNowCycles(), cycles); assert.equal(f.sources.currentBlua32Media, media);
 	const status = await tools.execute('studio_read_source_status', { receipt: data.receipt });
 	if (status.kind !== 'source-status') assert.fail();
-	assert.equal(status.data.runtime, 'untracked'); assert.equal(status.data.latestSave!.matchesCurrentSource, true);
+	assert.equal(status.data.runtime, 'pending');
+	assert.deepEqual(status.data.installations, [{ domain: 0, status: 'pending' }]); assert.equal(status.data.latestSave!.matchesCurrentSource, true);
 	assert.equal(status.data.latestSave!.operation, f.saves.latestOperation(f.data)!.id);
 });
 
@@ -108,7 +110,7 @@ test('Save rejects unread, expired, read-only and cancelled authority before IO;
 	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } });
 	await assert.rejects(tools.execute('studio_save_source', { receipt: read.receipt }), /read-only/);
 	assert.equal(f.saves.latestOperation(f.model), undefined);
-	f.model.refreshResource(f.sources.luaResources[0]);
+	f.model.refreshResource(f.sources.catalog.luaResources[0]);
 	const proposal = await tools.execute('studio_propose_edits', { title: 'Review', files: [{ receipt: read.receipt,
 		edits: [{ offset: 7, deleteLength: 1, expectedText: '1', text: '2' }] }] });
 	if (proposal.kind !== 'proposal') assert.fail();
@@ -139,10 +141,10 @@ test('project write failure and AEM build failure remain distinct textual wire o
 		},
 	});
 	rejectWrite = true;
-	const resource: RuntimeResource = { sourceFilePath: 'carts/nemesis_s/res/probe.aem.yaml',
-		location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'res/probe.aem.yaml' }, domain: 0,
+	const resource: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: 'carts/nemesis_s/res/probe.aem.yaml',
+		location: { kind: 'project', projectRootPath: 'carts/nemesis_s', path: 'res/probe.aem.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path: 'res/probe.aem.yaml', source: { type: 'aem', resid: 'probe' } };
-	f.sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
+	f.sources.catalog.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const model = f.models.retain(resource, 'aem', '{}');
 	model.pushEditOperations([{ offset: 0, deleteLength: 2, text: 'not: [valid' }]);
 	const tools = f.tools(), read = await f.read(tools, resource.path);
@@ -155,15 +157,15 @@ test('project write failure and AEM build failure remain distinct textual wire o
 	assert.equal(f.sources.aemSourceApplications.size, 0);
 	rejectWrite = false;
 	const retry = await tools.execute('studio_save_source', { receipt: read.receipt });
-	if (retry.kind !== 'source-save' || retry.data.status !== 'saved' || retry.data.application.status !== 'failed') assert.fail(`expected saved source and rejected AEM: ${JSON.stringify(retry)}`);
+	if (retry.kind !== 'source-save' || retry.data.status !== 'saved') assert.fail('expected source Save acknowledgement');
 	assert.equal(retry.data.persistence.status, 'workspace');
-	assert.equal(retry.data.application.phase, 'build'); assert.match(retry.data.application.error, /flow collection/);
+	assert.equal(retry.data.application.status, 'not-requested');
 	assert.equal(persisted.get(`carts/nemesis_s/${resource.path}`), read.source);
 	assert.equal(model.lastSavedSource, read.source);
 	assert.equal(model.dirty, false);
 	assert.equal(f.sources.currentBlua32Media, media);
 	assert.equal(cartridge.package.audioevents.probe, installedEventMap);
-	assert.equal(f.sources.aemSourceApplications.get(resourceIdentityKey(resource))!.failed, true);
+	assert.equal(f.sources.aemSourceApplications.size, 0, 'Save does not compile or apply malformed AEM source');
 	assert.equal(f.tasks.failure, undefined);
 });
 

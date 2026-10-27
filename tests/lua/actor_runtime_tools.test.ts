@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
@@ -85,7 +86,7 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 	const image = linkTestSystemBlua32(compiled), runtime = createTestRuntime(image.romBytes);
 	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', projectRootPath: '', can_boot_from_source: false, revision: 0 };
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	runtime.machine.cpu.reset();
 	if (run) runtime.machine.cpu.runUntilDepth(0, 100_000);
 	const f = createRuntimeInspectionFixture(runtime, sources);
@@ -104,7 +105,7 @@ for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} st
 	configureFontVariant('tiny');
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
 	const f = fixture(ENTRY, true, WORLD_SOURCE, [], quickInput);
-	const model = new EditorTextModel({ sourceFilePath: 'draft.lua', domain: -1, path: 'draft.lua', location: { kind: 'workspace', path: 'draft.lua' },
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'draft.lua', contextId: TEST_SYSTEM_CONTEXT_ID, path: 'draft.lua', location: { kind: 'workspace', path: 'draft.lua' },
 		source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
 	const current = new CodeEditorInput(model);
 	f.group.openEditor(current);

@@ -15,6 +15,7 @@ import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import { buildRomBlua32Tail } from '../../scripts/rompacker/rombuilder';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
+import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -46,6 +47,10 @@ return function(value) return value + delta.amount end`],
 			biosExports: [{ path: 'public', exportPathKey: '' }],
 		});
 		assert.ok(!system.object.sections.rodata.moduleExports.some(entry => entry.path === 'unused'));
+		assert.deepEqual(system.linked.symbols.metadata.compiledModulePaths, ['entry', 'dependency', 'public']);
+		assert.equal(system.linked.symbols.moduleFunctions.some(module => module.path === 'dependency'), false,
+			'a const input remains recorded even though it emits no module function');
+		assert.deepEqual([...system.diagnosticSources.keys()], ['entry', 'public', 'dependency']);
 		const cartSource = `module<entry>
 local operation<const> = require('public')
 return operation(35)`;
@@ -67,6 +72,34 @@ return operation(35)`;
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
 	});
 }
+
+test('selected source-map origins remain available without admitting unrelated compiler inputs', () => {
+	const entrySource = "module<entry>\nlocal values<const> = require('used')\nreturn values.answer";
+	const used = composeLuaSource('used', [{ kind: 'source', rangePath: 'authored/used',
+		displayPath: 'authored/used.lua', source: 'module<const>\nreturn { answer = 17 }' }]);
+	const unused = composeLuaSource('unused', [{ kind: 'source', rangePath: 'authored/unused',
+		displayPath: 'authored/unused.lua', source: 'module<const>\nreturn { answer = 29 }' }]);
+	const built = buildBlua32Image({
+		luaModules: [
+			{ path: 'entry', displayPath: 'entry.lua', source: entrySource, chunk: parseLuaChunk(entrySource, 'entry') },
+			...[used, unused].map(composed => ({ path: composed.sourceMap.generatedPath,
+				displayPath: `${composed.sourceMap.generatedPath}.lua`, source: composed.source,
+				chunk: parseLuaChunk(composed.source, composed.sourceMap.generatedPath), sourceMap: composed.sourceMap })),
+		],
+		generatedLuaModules: [],
+		loadAddress: SYSTEM_ROM_BASE + 0x100,
+		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
+		optLevel: 3,
+		traceStatements: 'erase',
+		domain: 'system',
+		biosExports: [],
+	});
+	assert.deepEqual(built.linked.symbols.metadata.compiledModulePaths, ['entry', 'used']);
+	assert.deepEqual([...built.diagnosticSources.keys()], ['entry', 'used', 'authored/used']);
+	assert.deepEqual(built.diagnosticSources.get('authored/used'), {
+		displayPath: 'authored/used.lua', source: 'module<const>\nreturn { answer = 17 }',
+	});
+});
 
 test('BLua32 image rejects a cart Lua module that collides with generated asset symbols', () => {
 	const entrySource = 'module<entry>\nreturn true';

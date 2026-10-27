@@ -1,8 +1,9 @@
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import type { LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import { LuaSourceReader } from '../../../ide/language/lua/source_reader';
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { buildActionEffectBody } from '../../../ide/workbench/contrib/behavior_lens/action_effect';
 import { installBehaviorLensDocument } from '../../../ide/workbench/contrib/behavior_lens/layout';
@@ -16,9 +17,9 @@ import { medianMilliseconds } from '../../helpers/performance';
 for (const registrations of [24, 1024]) {
 	const source = ACTIONEFFECT_SOURCE.slice(0, ACTIONEFFECT_SOURCE.indexOf('effects.register_effect'))
 		+ Array.from({ length: registrations }, (_, index) => `effects.register_effect('profile.${index}', blueprint)`).join('\n');
-	const resource = { sourceFilePath: 'effect_profile.lua', location: { kind: 'workspace' as const, path: 'effect_profile.lua' }, domain: 0 as const, path: 'effect_profile.lua', source: { resid: 'effect_profile', type: 'lua' as const } };
-	const semantic = buildLuaFileSemanticData(source, resource.path);
-	const snapshot = semanticSnapshot(semantic);
+	const resource = { contextLabel: 'Profile project', sourceFilePath: 'effect_profile.lua', location: { kind: 'workspace' as const, path: 'effect_profile.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'effect_profile.lua', source: { resid: 'effect_profile', type: 'lua' as const } };
+	const semantic = buildResourceLuaSemanticFixtureFile(source, resource);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([semantic], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects']));
 	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, snapshot); });
 	const document = buildBehaviorSourceDocument(resource, snapshot);
 	const model = new EditorTextModel(resource, 'lua', source);

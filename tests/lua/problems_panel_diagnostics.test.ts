@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { EditorCommandRunner } from '../../ide/common/commands';
@@ -40,8 +41,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) 
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	controller.attach(surfaces, owner, area, commands); controller.show();
 	const feedback: WorkbenchSurface = attachments.mock.calls.at(-1)!.result;
-	const models = [new EditorTextModel({ sourceFilePath: 'scenes/intro.lua', location: { kind: 'workspace' as const, path: 'scenes/intro.lua' }, domain: 0, path: 'scenes/intro.lua', source: { type: 'lua', resid: 'intro' } }, 'lua', source),
-		new EditorTextModel({ sourceFilePath: 'scenes/cart.lua', location: { kind: 'workspace' as const, path: 'scenes/cart.lua' }, domain: 1, path: 'scenes/cart.lua', source: { type: 'lua', resid: 'cart' } }, 'lua', source)];
+	const models = [new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'scenes/intro.lua', location: { kind: 'workspace' as const, path: 'scenes/intro.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scenes/intro.lua', source: { type: 'lua', resid: 'intro' } }, 'lua', source),
+		new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'scenes/cart.lua', location: { kind: 'workspace' as const, path: 'scenes/cart.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'scenes/cart.lua', source: { type: 'lua', resid: 'cart' } }, 'lua', source)];
 	controller.setDiagnostics(models.map(model => diagnostic(model)), { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	controller.setSelectionIndex(-1);
 	const unbind = controller.focusTarget.bindKeyboard(event => controller.handleKeyboard(event, group));
@@ -102,7 +103,7 @@ test('narrow measured labels preserve line/column and expose full path/message t
 	f.controller.setDiagnostics([long], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); f.controller.setFocused(true);
 	f.press('Home'); const painted = f.paint(), item = f.controller.getItemLayout(0);
 	assert.ok(item.location.endsWith(':14:6')); assert.ok(editorViewState.font.measure(item.location) <= f.controller.resolveAvailableWidth(f.bounds));
-	assert.equal(item.feedback, `CART 0 / scenes/intro.lua:14:6\n${long.message}`);
+	assert.equal(item.feedback, `${model.resource.contextLabel} / scenes/intro.lua:14:6\n${long.message}`);
 	assert.equal(f.controller.focusTarget.clipboard!.copy(), item.feedback, 'copy retains the complete message beyond the visible tooltip height');
 	assert.ok(painted.some(run => String(run.items).includes('scenes/intro.lua')));
 	assert.equal(f.group.panes.activePane, null);
@@ -121,7 +122,7 @@ test('an empty owned diagnostic message remains empty while its resource locatio
 	f.controller.setDiagnostics([empty], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); f.paint();
 	const item = f.controller.getItemLayout(0);
 	assert.equal(item.message, ''); assert.deepEqual(item.lines, ['']); assert.equal(item.location, 'intro.lua:14:6');
-	assert.equal(f.controller.focusTarget.clipboard!.copy(), 'CART 0 / scenes/intro.lua:14:6\n');
+	assert.equal(f.controller.focusTarget.clipboard!.copy(), `${f.models[0].resource.contextLabel} / scenes/intro.lua:14:6\n`);
 	assert.equal(item.height, editorViewState.lineHeight * 2);
 });
 
@@ -165,12 +166,12 @@ test('automatic height stops materializing additional diagnostics at its existin
 });
 
 test('qualified feedback distinguishes duplicate basenames and retires on replacement, modality, hide and detach', t => {
-	const f = fixture(t), duplicate = new EditorTextModel({ sourceFilePath: 'other/intro.lua', location: { kind: 'workspace' as const, path: 'other/intro.lua' }, domain: 1, path: 'other/intro.lua', source: { type: 'lua', resid: 'other' } }, 'lua', source);
+	const f = fixture(t), duplicate = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'other/intro.lua', location: { kind: 'workspace' as const, path: 'other/intro.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'other/intro.lua', source: { type: 'lua', resid: 'other' } }, 'lua', source);
 	t.after(() => duplicate.dispose());
 	f.controller.setDiagnostics([diagnostic(f.models[0]), diagnostic(duplicate)], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	f.controller.setFocused(true); f.press('Home'); f.paint();
-	assert.ok(f.controller.getItemLayout(0).feedback.startsWith('CART 0 / scenes/intro.lua:14:6'));
-	f.press('ArrowDown'); f.paint(); assert.ok(f.controller.getItemLayout(1).feedback.startsWith('CART 1 / other/intro.lua:14:6'));
+	assert.ok(f.controller.getItemLayout(0).feedback.startsWith(`${f.models[0].resource.contextLabel} / scenes/intro.lua:14:6`));
+	f.press('ArrowDown'); f.paint(); assert.ok(f.controller.getItemLayout(1).feedback.startsWith(`${duplicate.resource.contextLabel} / other/intro.lua:14:6`));
 	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('modal'), getBounds: () => f.area,
 		getClip: () => f.area, isVisible: () => true, draw() {} });
 	assert.equal(f.paint().some(run => String(run.items).includes('other/intro.lua')), false); modal.dispose();
@@ -205,8 +206,8 @@ test('new row heights govern Home/End/Page and wheel hit geometry without changi
 test('Enter preserves the diagnostic model/version and exact source selection rather than the displayed basename', t => {
 	const f = fixture(t); editorTextModelService.clear(); f.group.model.clear();
 	t.after(initializeNavigationState(f.group));
-	const a = editorTextModelService.retain({ sourceFilePath: 'a/shared.lua', location: { kind: 'workspace' as const, path: 'a/shared.lua' }, domain: 0, path: 'a/shared.lua', source: { type: 'lua', resid: 'a' } }, 'lua', source);
-	const b = editorTextModelService.retain({ sourceFilePath: 'b/shared.lua', location: { kind: 'workspace' as const, path: 'b/shared.lua' }, domain: 1, path: 'b/shared.lua', source: { type: 'lua', resid: 'b' } }, 'lua', source);
+	const a = editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'a/shared.lua', location: { kind: 'workspace' as const, path: 'a/shared.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'a/shared.lua', source: { type: 'lua', resid: 'a' } }, 'lua', source);
+	const b = editorTextModelService.retain({ contextLabel: 'Fixture project', sourceFilePath: 'b/shared.lua', location: { kind: 'workspace' as const, path: 'b/shared.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'b/shared.lua', source: { type: 'lua', resid: 'b' } }, 'lua', source);
 	t.after(() => { f.group.model.clear(); resetNavigationHistoryState(); editorTextModelService.clear(); });
 	f.controller.setDiagnostics([diagnostic(a), diagnostic(b, 7, 3)], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	f.controller.setFocused(true); f.paint(); f.press('End'); f.press('Enter');

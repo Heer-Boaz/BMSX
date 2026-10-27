@@ -10,7 +10,8 @@ import type { AssistantConnectionFactory } from '../../../hosts/common/assistant
 import { HttpWorkspaceRecordProvider } from '../../../ide/browser/workspace_records';
 import { loadRomToolingMedia } from '../../../toolchain/ts/rompack/media';
 import { stripProjectRootPrefix } from '../../../ide/workspace/path';
-import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
+import { createLoadedProjectSourceCatalog } from '../../../ide/runtime/sources';
+import { TEST_STUDIO_SYSTEM_CONTEXT_ID, TEST_STUDIO_CARTRIDGE_CONTEXT_ID } from '../../helpers/studio_source_contexts';
 import { getCodeAreaBounds, resolveTextPositionBounds } from '../../../ide/editor/ui/view/view';
 import { BrowserGraphLayoutEngine } from '../../../ide/browser/graph_layout';
 import type { RectBounds } from '../../../machine/ts/common/rect';
@@ -100,9 +101,11 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const browserClipboard = nativeClipboard ? new BrowserClipboard() : undefined;
 	const clipboard = nativeClipboard ? browserClipboard! : new HeadlessClipboard();
 	const media = await loadRomToolingMedia(bios, [cart, null]);
-	const context = { id: 'runtime-replay-source-context', projectRoot: media.cartridgeSlots[0]!.index.projectRootPath };
+	const context = { id: TEST_STUDIO_CARTRIDGE_CONTEXT_ID, projectRoot: media.cartridgeSlots[0]!.index.projectRootPath };
+	const system = { id: TEST_STUDIO_SYSTEM_CONTEXT_ID, projectRoot: media.system.index.projectRootPath };
+	const catalog = createLoadedProjectSourceCatalog({ admission: system, layer: media.system }, [{ admission: context, layer: media.cartridgeSlots[0]! }]);
 	const ide = await prepareWorkbenchRuntime(media, runtime, presenter, screen, encodePngImage, decodeImage, display, input,
-		audio, tasks, execution, rewind, menu, localStorage, context, 'runtime-replay-session', new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
+		audio, tasks, execution, rewind, menu, localStorage, context, { catalog, systemContextId: system.id, cartridgeContextIds: [context.id, null] }, 'runtime-replay-session', new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
 	const remote = new RemoteInput(input, clock, input.dispatchEditingKey.bind(input),
 		event => ide.editor.dispatchPointer(event), event => ide.editor.dispatchWheel(event));
 	let textInput: BrowserTextInput | undefined;
@@ -290,7 +293,7 @@ export function sourcePane(test: Pick<StudioFixture, 'ide'>): CodeEditorPane | u
 
 /** Shared product file-creation flow; callers author bytes and choose Save/Reboot themselves. */
 export async function createStudioLuaSource(test: StudioFixture, path: string, source: string) {
-	const root = runtimeSourceProjectRootPath(test.ide.sources, test.ide.editor.editorGroup.model.activeTab.resource!.domain);
+	const root = test.ide.sources.catalog.getContext(test.ide.editor.editorGroup.model.activeTab.resource!.contextId).projectRootPath;
 	await test.press('ControlLeft', 'KeyN');
 	await test.press('ControlLeft', 'KeyA');
 	await test.clipboard.writeText(stripProjectRootPrefix(path, root));

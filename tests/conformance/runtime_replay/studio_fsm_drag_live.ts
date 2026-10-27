@@ -1,4 +1,3 @@
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { FSM_RETARGET_CART_SOURCE, FSM_RETARGET_CART_CALLBACK_SOURCE, fsmRetargetImportedCartSource } from '../../helpers/fsm_retarget_fixture';
 import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
@@ -18,7 +17,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	const main = harness.getActiveEditorDocument().model;
 	let cartSource = FSM_RETARGET_CART_SOURCE;
 	if (imported) {
-		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+		const record = ide.sources.catalog.getContext(main.resource.contextId).luaSources.records.find(record =>
 			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 		cartSource = fsmRetargetImportedCartSource(record.module_path);
 		harness.openLuaSource(record.source_path);

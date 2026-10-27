@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -13,8 +14,8 @@ import { buildLuaSemanticWorkspaceSnapshot, LuaSemanticWorkspace } from '../../t
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 
 function luaResource(path: string): RuntimeResource {
-	return { sourceFilePath: path, location: { kind: 'workspace' as const, path },
-		domain: 0,
+	return { contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path },
+		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path,
 		source: {
 			resid: path,
@@ -31,25 +32,25 @@ local publish = scenes['register']
 publish('room', { objects = {} })
 `;
 	const path = 'room.lua';
-	const analysis = buildResourceLuaSemanticFixtureFile(source, { domain: 0, path });
-	assert.equal(hasSceneSourceDefinitions({ domain: 0, path }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], ['cartlib/world/scene_library']))), true);
-	const document = buildSceneSourceDocument({ domain: 0, path }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], ['cartlib/world/scene_library'])));
+	const analysis = buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path });
+	assert.equal(hasSceneSourceDefinitions({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], ['cartlib/world/scene_library']))), true);
+	const document = buildSceneSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], ['cartlib/world/scene_library'])));
 	assert.deepEqual(document.scenes.map(scene => scene.id.kind), [LuaSyntaxKind.StringLiteralExpression]);
-	const changed = buildResourceLuaSemanticFixtureFile(source + '\nlocal function replace() scenes = replacement end', { domain: 0, path });
-	assert.equal(hasSceneSourceDefinitions({ domain: 0, path }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([changed], ['cartlib/world/scene_library']))), false);
-	assert.equal(buildSceneSourceDocument({ domain: 0, path }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([changed], ['cartlib/world/scene_library']))).scenes.length, 0);
+	const changed = buildResourceLuaSemanticFixtureFile(source + '\nlocal function replace() scenes = replacement end', { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path });
+	assert.equal(hasSceneSourceDefinitions({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([changed], ['cartlib/world/scene_library']))), false);
+	assert.equal(buildSceneSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([changed], ['cartlib/world/scene_library']))).scenes.length, 0);
 });
 
 test('scene projection follows API providers but retains unchanged content across workspace generations', () => {
-	const resource = { domain: 0, path: 'room.lua' } as const;
+	const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'room.lua' } as const;
 	const source = `local publish = require('bridge')
 publish('room', { objects = { { member_id = 'hero', definition_id = 'player' } } })
 publish('other', { objects = {} })`;
 	const main = buildResourceLuaSemanticFixtureFile(source, resource);
 	const bridge = "return require('cartlib/world/scene_library').register";
 	const [files, bindings] = createResourceModuleProjectFixture([main,
-		buildResourceLuaSemanticFixtureFile(bridge, { domain: 0, path: 'bridge.lua' }),
-		buildResourceLuaSemanticFixtureFile('return false', { domain: 0, path: 'unrelated.lua' }),
+		buildResourceLuaSemanticFixtureFile(bridge, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'bridge.lua' }),
+		buildResourceLuaSemanticFixtureFile('return false', { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'unrelated.lua' }),
 	], ['cartlib/world/scene_library']);
 	const workspace = new LuaSemanticWorkspace(bindings);
 	workspace.updateFiles(files.map(file => file.analysis!));
@@ -57,18 +58,18 @@ publish('other', { objects = {} })`;
 	assert.equal(hasSceneSourceDefinitions(resource, snapshot), true);
 	const document = buildSceneSourceDocument(resource, snapshot);
 	assert.equal(document.scenes.length, 2);
-	workspace.updateFiles([buildResourceLuaSemanticFixtureFile('return {}', { domain: 0, path: 'unrelated.lua' })]);
+	workspace.updateFiles([buildResourceLuaSemanticFixtureFile('return {}', { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'unrelated.lua' })]);
 	snapshot = workspace.getSnapshot();
 	assert.equal(buildSceneSourceDocument(resource, snapshot, document), document, 'no false projection change to reset an active draft');
-	workspace.updateFiles([buildResourceLuaSemanticFixtureFile('-- annotation\n' + bridge, { domain: 0, path: 'bridge.lua' })]);
+	workspace.updateFiles([buildResourceLuaSemanticFixtureFile('-- annotation\n' + bridge, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'bridge.lua' })]);
 	assert.equal(buildSceneSourceDocument(resource, workspace.getSnapshot(), document), document, 'equivalent provider edit retains projection');
-	workspace.updateFiles([buildResourceLuaSemanticFixtureFile('return replacement', { domain: 0, path: 'bridge.lua' })]);
+	workspace.updateFiles([buildResourceLuaSemanticFixtureFile('return replacement', { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'bridge.lua' })]);
 	snapshot = workspace.getSnapshot();
 	assert.equal(hasSceneSourceDefinitions(resource, snapshot), false);
 	const revoked = buildSceneSourceDocument(resource, snapshot, document);
 	assert.equal(revoked.scenes.length, 0);
 	assert.equal(revoked.analysis, main, 'revocation does not require rebinding the consumer');
-	workspace.updateFiles([buildResourceLuaSemanticFixtureFile(bridge, { domain: 0, path: 'bridge.lua' })]);
+	workspace.updateFiles([buildResourceLuaSemanticFixtureFile(bridge, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'bridge.lua' })]);
 	const restored = buildSceneSourceDocument(resource, workspace.getSnapshot(), revoked);
 	assert.equal(restored.scenes.length, 2);
 	assert.equal(restored.scenes[0].range, document.scenes[0].range);
@@ -82,8 +83,8 @@ test('scene source adapter projects the real Nemesis root without executing Lua'
 	const path = 'carts/nemesis_s/scenes/root.lua';
 	const source = readFileSync(path, 'utf8');
 	const document = buildSceneSourceDocument(
-		{ domain: 0, path },
-		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { domain: 0, path })], ['cartlib/world/scene_library'])),
+		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path },
+		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })], ['cartlib/world/scene_library'])),
 	);
 
 	assert.equal(document.scenes.length, 1);
@@ -112,7 +113,7 @@ test('scene projection retains empty and keyed-only definitions as distinct sour
 		+ "scenes.register('same', { objects = {} })\n"
 		+ "scenes.register('same', { objects = { [1] = make_member() } })\n"
 		+ "scenes.register('same', { objects = { make_member() } })";
-	const document = buildSceneSourceDocument({ domain: 0, path: 'scene.lua' }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { domain: 0, path: 'scene.lua' })], ['cartlib/world/scene_library'])));
+	const document = buildSceneSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' }, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })], ['cartlib/world/scene_library'])));
 	assert.equal(document.scenes.length, 3);
 	assert.deepEqual(document.scenes.map(scene => scene.objects.length), [0, 0, 1]);
 	assert.deepEqual(document.scenes.map(scene => scene.resolution), ['complete', 'partial', 'partial']);
@@ -128,13 +129,13 @@ test('scene member moves use the retained parent table and preserve neighbouring
 	const footer = "} })\nscenes.register('other', { objects = { { member_id = 'same', definition_id = 'three' } } })";
 	const source = header + first + second + footer;
 	const model = new EditorTextModel(luaResource(path), 'lua', source);
-	const document = buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { domain: 0, path })], ['cartlib/world/scene_library'])));
+	const document = buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })], ['cartlib/world/scene_library'])));
 	assert.equal(document.scenes.length, 2);
 	assert.equal(document.scenes[0].resolution, 'complete');
 	assert.equal(document.scenes[1].objects.length, 1);
 	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, document.analysis.chunk, document.scenes[0].objectsTable, 1, 0));
 	assert.equal(model.buffer.getText(), header + second + first + footer);
-	const moved = buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), { domain: 0, path })], ['cartlib/world/scene_library'])));
+	const moved = buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })], ['cartlib/world/scene_library'])));
 	assert.deepEqual(moved.scenes.map(scene => scene.objects.map(object =>
 		object.kind === 'object' ? readLuaSourceRange(model.buffer, moved.analysis.chunk.locations.range(object.definitionId.span)) : 'dynamic',
 	)), [["'two'", "'one'"], ["'three'"]]);
@@ -147,8 +148,8 @@ test('scene position edit changes the canonical Nemesis source through its text 
 	const source = readFileSync(path, 'utf8');
 	const model = new EditorTextModel(luaResource(path), 'lua', source);
 	const document = buildSceneSourceDocument(
-		{ domain: 0, path },
-		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { domain: 0, path })], ['cartlib/world/scene_library'])),
+		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path },
+		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })], ['cartlib/world/scene_library'])),
 	);
 	const object = document.scenes[0].objects[0];
 	assert.equal(object.kind, 'object');
@@ -161,8 +162,8 @@ test('scene position edit changes the canonical Nemesis source through its text 
 	const changed = source.replace('pos = { x = 0, y = 0, z = 0 }', 'pos = { x = 65536, y = 0, z = 0 }');
 	assert.equal(model.buffer.getText(), changed);
 	const reparsed = buildSceneSourceDocument(
-		{ domain: 0, path },
-		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(changed, { domain: 0, path })], ['cartlib/world/scene_library'])),
+		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path },
+		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(changed, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })], ['cartlib/world/scene_library'])),
 	);
 	const reparsedObject = reparsed.scenes[0].objects[0];
 	assert.equal(reparsedObject.kind, 'object');
@@ -193,8 +194,8 @@ test('scene source adapter accepts direct definitions through unchanged local mo
 		'return shadowed',
 	].join('\n');
 	const document = buildSceneSourceDocument(
-		{ domain: 1, path: 'scene.lua' },
-		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { domain: 1, path: 'scene.lua' })], ['cartlib/world/scene_library'])),
+		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'scene.lua' },
+		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'scene.lua' })], ['cartlib/world/scene_library'])),
 	);
 
 	assert.equal(document.scenes.length, 2);
@@ -217,8 +218,8 @@ test('scene members retain complete parser fields for source-only removal and do
 		+ "scenes.register('root', { objects = {\n\t-- before\n\t" + member
 		+ " -- exterior , ;\n\t; -- after\n\tbuild_object(),\n} })";
 	const model = new EditorTextModel(luaResource(path), 'lua', source);
-	const parsed = parseLuaChunkWithRecovery(source, resourceIdentityKeyFromParts(0, path));
-	const document = buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { domain: 0, path }, parsed)], ['cartlib/world/scene_library'])));
+	const parsed = parseLuaChunkWithRecovery(source, resourceIdentityKeyFromParts(TEST_CARTRIDGE_CONTEXT_IDS[0], path));
+	const document = buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }, parsed)], ['cartlib/world/scene_library'])));
 	const [direct, dynamic] = document.scenes[0].objects;
 	assert.equal(direct.kind, 'object');
 	assert.equal(readLuaSourceRange(model.buffer, document.analysis.chunk.locations.range(direct.field.span)), member);

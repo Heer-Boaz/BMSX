@@ -1,3 +1,5 @@
+import { createBlua32SourceImage } from '../../ide/runtime/sources';
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readLE32 } from '../../machine/ts/common/endian';
@@ -105,7 +107,7 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: packed firmware scop
 								: { kind: 'slot', location: live ? { inStack: (flags & D.BLUA32_DIAGNOSTIC_BINDING_UPVALUE) === 0, index: field(slot, D.BLUA32_DIAGNOSTIC_BINDING_INDEX_OFFSET) } : null }),
 					});
 				}
-				const scopes = runtimeLuaFrameScopes({ executionDomainId: -1, toolingImage: { layout: linked.image, symbols: linked.symbols },
+				const scopes = runtimeLuaFrameScopes({ executionDomainId: -1, toolingImage: createBlua32SourceImage(linked.image, linked.symbols, new Map(), TEST_SYSTEM_CONTEXT_ID),
 					functionAddress: fn.address, functionIndex, tracePc: pc }, depth);
 				const expected = new Map<string, unknown>();
 				for (const scope of [scopes[1], scopes[0], scopes[2]]) {

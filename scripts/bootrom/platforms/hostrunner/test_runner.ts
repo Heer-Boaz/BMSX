@@ -2,7 +2,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { setImmediate } from 'node:timers/promises';
 import { performance } from 'node:perf_hooks';
-import { createRuntimeSourceState } from '../../../../ide/runtime/sources';
+import { createLoadedProjectSourceCatalog } from '../../../../ide/runtime/sources';
+import { WorkspaceProjects } from '../../../../hosts/node/workspace/projects';
+import type { StudioSourceContext } from '../../../../hosts/common/studio_projects';
 import { ScenarioTestCollection } from '../../../../ide/testing/scenario/test_collection';
 import { ScenarioResultService } from '../../../../ide/testing/scenario/result_service';
 import { TestRun } from '../../../../ide/testing/run';
@@ -13,12 +15,26 @@ import { OffscreenMachine } from '../../../../hosts/common/offscreen_machine';
 import { deriveHeadlessCaptureOutputDir } from '../headless_capture';
 
 /** The CLI and Studio drive the same isolated run owner, not separate guest protocols. */
-export async function runGuestTests(systemRom: Uint8Array, cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null], testPath: string, ttlMs: number, caseName?: string): Promise<void> {
+export async function runGuestTests(systemRom: Uint8Array, cartridgeSlots: readonly [Uint8Array, Uint8Array | null], testPath: string, ttlMs: number, caseName?: string): Promise<void> {
 	const sourcePath = path.relative(process.cwd(), path.resolve(testPath)).split(path.sep).join('/');
 	const source = await readFile(testPath, 'utf8');
 	const media = await loadRomToolingMedia(systemRom, cartridgeSlots);
-	const collection = new ScenarioTestCollection(createRuntimeSourceState(media.system, media.cartridgeSlots));
-	const module = collection.findModuleBySourcePath(0, sourcePath);
+	const projects = new WorkspaceProjects(process.cwd(), path.join(process.cwd(), '.bmsx/studio'));
+	let systemContext: StudioSourceContext, primaryContext: StudioSourceContext, companionContext: StudioSourceContext | null;
+	try {
+		[systemContext, primaryContext, companionContext] = await Promise.all([
+			projects.resolveSource(media.system.index.projectRootPath),
+			projects.resolveSource(media.cartridgeSlots[0]!.index.projectRootPath),
+			media.cartridgeSlots[1] === null ? null : projects.resolveSource(media.cartridgeSlots[1].index.projectRootPath),
+		]);
+	} finally { await projects.close(); }
+	const contexts = [{ admission: primaryContext, layer: media.cartridgeSlots[0]! }];
+	if (companionContext !== null && companionContext.id !== primaryContext.id) {
+		contexts.push({ admission: companionContext, layer: media.cartridgeSlots[1]! });
+	}
+	const catalog = createLoadedProjectSourceCatalog({ admission: systemContext, layer: media.system }, contexts);
+	const collection = new ScenarioTestCollection(catalog);
+	const module = collection.findModuleBySourcePath(primaryContext.id, sourcePath);
 	collection.updateSource(module, source, 0);
 	const cases = collection.resolveNode(module);
 	const selected = caseName === undefined ? cases : cases.filter(test => test.caseName === caseName);
@@ -29,7 +45,10 @@ export async function runGuestTests(systemRom: Uint8Array, cartridgeSlots: reado
 	const writes: Promise<void>[] = [];
 	let captureIndex = 0;
 	const outputDir = deriveHeadlessCaptureOutputDir(testPath);
-	const run = new TestRun(result, { systemRom, cartridgeSlots, machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results,
+	const run = new TestRun(result, { systemRom, cartridgeSlots,
+		sourceContexts: [systemContext.id, primaryContext.id, companionContext === null ? null : companionContext.id],
+		sourceSelection: { kind: 'packaged' },
+		machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results,
 		(systemRom, cartridgeSlots, model, input) => new OffscreenMachine(systemRom, cartridgeSlots, model, input), () => {}, undefined,
 		(target, label) => {
 			const frame = target.backend.latestPresentedFrame!;
@@ -62,6 +81,7 @@ export async function runGuestTests(systemRom: Uint8Array, cartridgeSlots: reado
 		if (result.state !== 'passed') throw new Error(`${result.failedCount} failed, ${result.passedCount} passed, ${result.skippedCount} skipped`);
 	} finally {
 		run.dispose();
+		catalog.dispose();
 		await Promise.all(writes);
 	}
 }

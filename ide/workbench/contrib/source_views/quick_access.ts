@@ -1,8 +1,8 @@
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import type { ResourceDomain, ResourceIdentity, RuntimeResource } from '../../../common/resource';
+import type { ResourceIdentity, RuntimeResource } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { TextEditorInput } from '../../common/editor_input';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { EditorGroupView } from '../../services/editor/editor_group';
@@ -22,32 +22,32 @@ export type SourceViewContribution = {
  */
 export function openSourceView(
 	group: EditorGroupView,
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	picker: QuickInputController,
 	view: SourceViewContribution,
 ): void {
-	const snapshots = new Map<ResourceDomain, LuaSemanticWorkspaceSnapshot>();
-	const snapshotFor = (domain: ResourceDomain): LuaSemanticWorkspaceSnapshot => {
-		let snapshot = snapshots.get(domain);
+	const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
+	const snapshotFor = (contextId: string): LuaSemanticWorkspaceSnapshot => {
+		let snapshot = snapshots.get(contextId);
 		if (snapshot === undefined) {
-			const project = getOrCreateSemanticProject(editorTextModelService, domain);
-			project.synchronizeRuntimeSources(sources);
+			const project = getOrCreateSemanticProject(editorTextModelService, contextId);
+			project.synchronizeSources(catalog);
 			snapshot = project.getSnapshot();
-			snapshots.set(domain, snapshot);
+			snapshots.set(contextId, snapshot);
 		}
 		return snapshot;
 	};
 	const active = group.model.activeTab;
 	if (active instanceof TextEditorInput && active.workingCopy.mode === 'lua') {
 		const resource = active.workingCopy.resource;
-		if (view.accepts(resource, snapshotFor(resource.domain))) {
+		if (view.accepts(resource, snapshotFor(resource.contextId))) {
 			view.openResource(resource);
 			return;
 		}
 	}
 	const resources: RuntimeResource[] = [];
-	for (const resource of sources.luaResources) {
-		if (view.accepts(resource, snapshotFor(resource.domain))) resources.push(resource);
+	for (const resource of catalog.luaResources) {
+		if (view.accepts(resource, snapshotFor(resource.contextId))) resources.push(resource);
 	}
 	picker.pick(view.title, 'Choose a source document', () => new FileQuickPickProvider(buildResourceQuickPickItems(resources)),
 		item => view.openResource(item.resource));

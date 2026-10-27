@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ElkNode } from 'elkjs/lib/elk-api';
@@ -141,7 +142,7 @@ test('engine construction failure is a failed generation rather than unhandled r
 
 test('closing an input ends its work and subscription, not the canonical working copy or undo history', async () => {
 	const models = new EditorTextModelService();
-	const resource = { sourceFilePath: 'layout.lua', location: { kind: 'workspace' as const, path: 'layout.lua' }, domain: 0, path: 'layout.lua', source: { resid: 'layout', type: 'lua' } } as const;
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'layout.lua', location: { kind: 'workspace' as const, path: 'layout.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'layout.lua', source: { resid: 'layout', type: 'lua' } } as const;
 	const model = models.retain(resource, 'lua', 'original');
 	const engine = new ControlledEngine();
 	const input = new GraphLayoutTestInput<Model>(model, () => engine);
@@ -169,8 +170,8 @@ test('closing an input ends its work and subscription, not the canonical working
 
 test('tab changes preserve input work; group reset disposes all retained inputs exactly once', async () => {
 	const engines = [new ControlledEngine(), new ControlledEngine()];
-	const inputs = engines.map((engine, index) => new GraphLayoutTestInput<Model>(new EditorTextModel({ sourceFilePath: `${index}.lua`, location: { kind: 'workspace' as const, path: `${index}.lua` },
-		domain: 0, path: `${index}.lua`, source: { resid: `${index}`, type: 'lua' },
+	const inputs = engines.map((engine, index) => new GraphLayoutTestInput<Model>(new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: `${index}.lua`, location: { kind: 'workspace' as const, path: `${index}.lua` },
+		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: `${index}.lua`, source: { resid: `${index}`, type: 'lua' },
 	}, 'lua', ''), () => engine));
 	const group = new EditorTabGroupModel();
 	group.initialize(inputs[0]); group.add(inputs[1]);

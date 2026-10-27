@@ -2,6 +2,7 @@ import type { CodeEditorContext } from '../../ui/code_editor_state';
 import type { CodeEditorControl } from '../../ui/code_editor_control';
 import { resetBlinkState } from '../../ui/view/caret/blink';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { editorTextModelService } from '../../model/model_service';
 import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
@@ -14,7 +15,6 @@ import {
 } from '../../../runtime/suspended_guest';
 import { listLuaBuiltinDescriptors } from '../../../runtime/lua_builtins';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import { resolveRuntimeLuaSourceForContext } from '../../../runtime/sources';
 import { readRuntimeLuaValue } from '../../../runtime/lua_inspection';
 import type { LuaDefinitionLocation, LuaMemberCompletion, LuaSymbolEntry } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
@@ -27,7 +27,6 @@ import { semanticSymbolKindToLuaSymbolKind } from '../../../../toolchain/ts/lua/
 import { getLuaTextContext, LuaTextContext } from '../../../common/text';
 import type { EditorContextToken, LuaCompletionItem } from '../../../common/models';
 import {
-	type ResourceDomain,
 	type ResourceIdentity,
 	resourceIdentityKey,
 } from '../../../common/resource';
@@ -56,7 +55,9 @@ export function buildMemberCompletionItems(
 	line: number,
 	column: number,
 ): LuaCompletionItem[] {
-	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, chain, line, column);
+	const frameDepth = runtime.machine.cpu.getFrameDepth();
+	if (frameDepth === 0) return [];
+	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, runtime.machine.cpu.readFrameExecutionDomain(frameDepth - 1), chain, line, column);
 	if (resolved.kind !== 'value' || guest.kind(resolved.value) !== SuspendedGuestValueKind.Table) return [];
 	const response = buildSuspendedGuestTableMemberCompletionEntries(guest, resolved.value, operator);
 	if (response.length === 0) {
@@ -239,7 +240,7 @@ type ContextMenuTokenMatch = {
 };
 
 function findContextMenuTokenMatch(code: CodeEditorControl,row: number, column: number, buffer: TextBuffer): ContextMenuTokenMatch {
-	const chunk = getOrCreateSemanticProject(editorTextModelService, code.model.resource.domain)
+	const chunk = getOrCreateSemanticProject(editorTextModelService, code.model.resource.contextId)
 		.analyzeDocument(code.model.identity, buffer).chunk;
 	const { tokens, locations } = chunk;
 	const targetLine = row + 1;
@@ -411,7 +412,7 @@ export function refreshGotoHoverHighlight(code: CodeEditorControl,
 			code.gotoHoverHighlight = null;
 			return;
 	}
-	const query = queryDefinitionsAt(sources, code, row, column);
+	const query = queryDefinitionsAt(sources.catalog, code, row, column);
 	if (!query) {
 		code.gotoHoverHighlight = null;
 		return;
@@ -454,7 +455,9 @@ export function inspectLuaRuntimeExpression(
 ): LuaRuntimeInspection | null {
 	const chain = parseLuaIdentifierChain(expression);
 	if (chain === null) return null;
-	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, chain, line, column);
+	const frameDepth = runtime.machine.cpu.getFrameDepth();
+	if (frameDepth === 0) return { expression, lines: [RUNTIME_UNAVAILABLE_LABELS.not_loaded], valueType: 'unknown', state: 'unavailable' };
+	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, identity, runtime.machine.cpu.readFrameExecutionDomain(frameDepth - 1), chain, line, column);
 	if (resolved.kind === 'unavailable') {
 		return { expression, lines: [RUNTIME_UNAVAILABLE_LABELS[resolved.reason]], valueType: 'unknown', state: 'unavailable' };
 	}
@@ -470,14 +473,14 @@ const RUNTIME_UNAVAILABLE_LABELS = {
 	not_a_table: 'unavailable: member parent is not a table',
 } as const;
 
-export function listLuaSymbols(sources: RuntimeSourceState, domain: ResourceDomain, path: string): EditorLuaSymbolEntry[] {
-	const source = resolveRuntimeLuaSourceForContext(sources, domain, path);
+export function listLuaSymbols(catalog: WorkspaceSourceCatalog, contextId: string, path: string): EditorLuaSymbolEntry[] {
+	const source = catalog.resolveLuaSource({ contextId, path });
 	if (!source) {
 		return [];
 	}
-	const project = getOrCreateSemanticProject(editorTextModelService, domain);
-	project.synchronizeRuntimeSources(sources);
-	const analysis = project.getFileData({ domain: source.domain, path: source.record.source_path });
+	const project = getOrCreateSemanticProject(editorTextModelService, contextId);
+	project.synchronizeSources(catalog);
+	const analysis = project.getFileData({ contextId, path: source.record.source_path });
 	if (!analysis) {
 		return [];
 	}
@@ -507,9 +510,9 @@ export function listLuaSymbols(sources: RuntimeSourceState, domain: ResourceDoma
 	return symbols;
 }
 
-export function listGlobalLuaSymbols(sources: RuntimeSourceState, domain: ResourceDomain): EditorLuaSymbolEntry[] {
-	const project = getOrCreateSemanticProject(editorTextModelService, domain);
-	project.synchronizeRuntimeSources(sources);
+export function listGlobalLuaSymbols(catalog: WorkspaceSourceCatalog, contextId: string): EditorLuaSymbolEntry[] {
+	const project = getOrCreateSemanticProject(editorTextModelService, contextId);
+	project.synchronizeSources(catalog);
 	const snapshot = project.getSnapshot();
 	const cached = globalSymbolsCache.get(snapshot);
 	if (cached) {
@@ -546,28 +549,24 @@ export function listGlobalLuaSymbols(sources: RuntimeSourceState, domain: Resour
 }
 
 export function findStaticDefinitionLocation(
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	usageRow: number,
 	usageColumn: number,
 	path: string,
 	activeContext: CodeEditorContext,
 ): LuaDefinitionLocation {
-	const source = resolveRuntimeLuaSourceForContext(
-		sources,
-		activeContext.model.resource.domain,
-		path,
-	);
+	const source = catalog.resolveLuaSource({ contextId: activeContext.model.resource.contextId, path });
 	if (!source) {
 		return null;
 	}
 	const sourcePath = source.record.source_path;
-	const project = getOrCreateSemanticProject(editorTextModelService, activeContext.model.resource.domain);
-	project.synchronizeRuntimeSources(sources);
+	const project = getOrCreateSemanticProject(editorTextModelService, activeContext.model.resource.contextId);
+	project.synchronizeSources(catalog);
 	if (activeContext.model.resource.path === sourcePath) {
 		project.analyzeDocument(activeContext.model.identity, activeContext.model.buffer);
 	}
-	const frontend = createEditorSemanticFrontend(project.getSnapshot(), activeContext.model.resource.domain);
-	const symbols = frontend.findSymbolsByPosition(resourceIdentityKey({ domain: source.domain, path: sourcePath }), usageRow, usageColumn);
+	const frontend = createEditorSemanticFrontend(project.getSnapshot(), catalog.getContext(activeContext.model.resource.contextId).programDomain);
+	const symbols = frontend.findSymbolsByPosition(resourceIdentityKey({ contextId: activeContext.model.resource.contextId, path: sourcePath }), usageRow, usageColumn);
 	return symbols && symbols.targets.length === 1
 		? definitionLocationFromSourceRange(symbols.targets[0].range)
 		: null;

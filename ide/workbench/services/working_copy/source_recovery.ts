@@ -2,7 +2,7 @@ import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import { LogLevel, type LogOutput } from '../../../../hosts/common/log';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { getTextSnapshot } from '../../../editor/text/source_text';
-import { resolveRuntimeResource, runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { buildWorkspaceDirtyEntryPath } from '../../../workspace/files';
 import { joinWorkspacePaths } from '../../../workspace/path';
 import { createWorkspaceRecord, WORKSPACE_METADATA_DIR, workspaceRecords, type WorkspaceRecord } from '../../../workspace/records';
@@ -11,20 +11,20 @@ import { resolveTextFileModel, textFileMode } from './text_file_model';
 
 export type WorkingCopyRecoveryEntry = PersistedDirtyEntry & { savedSource: string; persistedBaseline: string | null };
 
-export function captureWorkspaceDirtySources(models: EditorTextModelService, sources: RuntimeSourceState,
+export function captureWorkspaceDirtySources(models: EditorTextModelService, catalog: WorkspaceSourceCatalog,
 	clock: HostClock, previous: ReadonlyMap<string, WorkspaceRecord>,
 	write?: (projectRoot: string, entry: PersistedDirtyEntry, record: WorkspaceRecord) => void,
 ): { dirtyFiles: WorkingCopyRecoveryEntry[]; dirtyRecords: Map<string, WorkspaceRecord> } {
 	const dirtyFiles: WorkingCopyRecoveryEntry[] = [], dirtyRecords = new Map<string, WorkspaceRecord>();
 	for (const model of models.models) {
 		if (!model.dirty) continue;
-		const resource = model.resource, root = runtimeSourceProjectRootPath(sources, resource.domain);
-		const path = buildWorkspaceDirtyEntryPath(root, resource.domain, resource.path);
+		const resource = model.resource, root = catalog.getContext(resource.contextId).projectRootPath;
+		const path = buildWorkspaceDirtyEntryPath(root, resource.contextId, resource.path);
 		const text = getTextSnapshot(model.buffer);
 		const previousRecord = previous.get(path);
 		const record = previousRecord === undefined || previousRecord.contents !== text
 			? createWorkspaceRecord(clock, text) : previousRecord;
-		const entry = { domain: resource.domain, path: resource.path, updatedAt: record.updatedAt,
+		const entry = { contextId: resource.contextId, path: resource.path, updatedAt: record.updatedAt,
 			savedSource: model.lastSavedSource, persistedBaseline: model.persistedBaseline };
 		if (record !== previousRecord) write?.(root, entry, record);
 		dirtyFiles.push(entry);
@@ -33,20 +33,20 @@ export function captureWorkspaceDirtySources(models: EditorTextModelService, sou
 	return { dirtyFiles, dirtyRecords };
 }
 
-export async function restoreWorkspaceDirtyModels(models: EditorTextModelService, sources: RuntimeSourceState,
+export async function restoreWorkspaceDirtyModels(models: EditorTextModelService, catalog: WorkspaceSourceCatalog,
 	entries: readonly PersistedDirtyEntry[], records: ReadonlyMap<string, WorkspaceRecord>): Promise<void> {
 	for (const entry of entries) {
-		const resource = resolveRuntimeResource(sources, entry);
-		if (!resource) throw new Error(`Recovered source '${entry.path}' is not in domain '${entry.domain}'.`);
-		const model = await resolveTextFileModel(models, sources, resource);
-		const path = buildWorkspaceDirtyEntryPath(runtimeSourceProjectRootPath(sources, entry.domain), entry.domain, entry.path);
+		const resource = catalog.resolveResource(entry);
+		if (!resource) throw new Error(`Recovered source '${entry.path}' is not admitted in source context '${entry.contextId}'.`);
+		const model = await resolveTextFileModel(models, catalog, resource);
+		const path = buildWorkspaceDirtyEntryPath(catalog.getContext(entry.contextId).projectRootPath, entry.contextId, entry.path);
 		model.restoreDirtySource(records.get(path)!.contents);
 	}
 }
 
 type RecoveryOptions = {
 	identity: string; sourceContextId: string; projectRootPath: string; models: EditorTextModelService;
-	sources: RuntimeSourceState; clock: HostClock; logOutput: LogOutput;
+	catalog: WorkspaceSourceCatalog; clock: HostClock; logOutput: LogOutput;
 };
 
 /** An isolated Studio's source-only recovery; never reads or writes the frontend session/layout. */
@@ -69,8 +69,10 @@ export class WorkspaceSourceRecovery {
 	public async initialize(): Promise<ReadonlyMap<string, WorkspaceRecord>> {
 		const state = await workspaceRecords.read(this.statePath);
 		if (state !== null) {
-			this.entries = JSON.parse(state.contents).dirtyFiles;
-			const loaded = await loadWorkspaceDirtySources(this.options.sources, this.entries, async (_root, path) => {
+			const manifest: { readonly version: 2; readonly dirtyFiles: WorkingCopyRecoveryEntry[] } = JSON.parse(state.contents);
+			if (manifest.version !== 2) throw new Error(`Unsupported source recovery version '${manifest.version}'.`);
+			this.entries = manifest.dirtyFiles;
+			const loaded = await loadWorkspaceDirtySources(this.options.catalog, this.entries, async (_root, path) => {
 				const record = await workspaceRecords.read(path);
 				if (record === null) throw new Error(`Incomplete source recovery: missing '${path}'.`);
 				return record;
@@ -80,14 +82,14 @@ export class WorkspaceSourceRecovery {
 		return this.records;
 	}
 	public async restoreModels(): Promise<void> {
-		const { models, sources } = this.options;
+		const { models, catalog } = this.options;
 		for (const entry of this.entries) {
-			const resource = resolveRuntimeResource(sources, entry);
-			if (!resource) throw new Error(`Recovered source '${entry.path}' is not in domain '${entry.domain}'.`);
+			const resource = catalog.resolveResource(entry);
+			if (!resource) throw new Error(`Recovered source '${entry.path}' is not admitted in source context '${entry.contextId}'.`);
 			const mode = textFileMode(resource);
 			if (mode === undefined) throw new Error(`Recovered resource '${entry.path}' has no text model.`);
 			const model = models.retain(resource, mode, entry.savedSource, entry.savedSource, entry.persistedBaseline);
-			const path = buildWorkspaceDirtyEntryPath(runtimeSourceProjectRootPath(sources, entry.domain), entry.domain, entry.path);
+			const path = buildWorkspaceDirtyEntryPath(catalog.getContext(entry.contextId).projectRootPath, entry.contextId, entry.path);
 			model.restoreDirtySource(this.records.get(path)!.contents);
 		}
 	}
@@ -108,11 +110,11 @@ export class WorkspaceSourceRecovery {
 		const revision = this.revision;
 		this.pending = this.pending.catch(() => undefined).then(async () => {
 			if (revision === this.publishedRevision) return;
-			const { models, sources, clock } = this.options;
-			const generation = captureWorkspaceDirtySources(models, sources, clock, this.records);
-			await publishWorkspaceDirtySources(sources, generation.dirtyFiles, generation.dirtyRecords, this.entries, this.identity);
-			await workspaceRecords.write(this.statePath, createWorkspaceRecord(clock, JSON.stringify({ dirtyFiles: generation.dirtyFiles })));
-			await pruneWorkspaceDirtySources(sources, this.entries, generation.dirtyFiles, this.identity);
+			const { models, catalog, clock } = this.options;
+			const generation = captureWorkspaceDirtySources(models, catalog, clock, this.records);
+			await publishWorkspaceDirtySources(catalog, generation.dirtyFiles, generation.dirtyRecords, this.entries, this.identity);
+			await workspaceRecords.write(this.statePath, createWorkspaceRecord(clock, JSON.stringify({ version: 2, dirtyFiles: generation.dirtyFiles })));
+			await pruneWorkspaceDirtySources(catalog, this.entries, generation.dirtyFiles, this.identity);
 			this.entries = generation.dirtyFiles;
 			this.records.clear();
 			for (const [path, record] of generation.dirtyRecords) this.records.set(path, record);
@@ -134,7 +136,7 @@ export class WorkspaceSourceRecovery {
 		this.stop(); this.stopped = true;
 		await this.pending;
 		await workspaceRecords.delete(this.statePath);
-		await pruneWorkspaceDirtySources(this.options.sources, this.entries, [], this.identity);
+		await pruneWorkspaceDirtySources(this.options.catalog, this.entries, [], this.identity);
 		this.entries = []; this.records.clear();
 	}
 }

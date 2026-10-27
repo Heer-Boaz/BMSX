@@ -12,7 +12,7 @@ import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { createRuntimeSourceState } from '../runtime/sources';
+import { createRuntimeSourceState, type RuntimeSourceBindings } from '../runtime/sources';
 import type { RuntimeIdeState } from './state';
 import type { RomToolingMedia } from '../../toolchain/ts/rompack/media';
 import * as workbenchMode from './mode';
@@ -44,6 +44,7 @@ export async function prepareWorkbenchRuntime(
 	hostMenu: HostOverlayMenu,
 	storage: KeyValueStorage,
 	workspaceContext: StudioSourceContext,
+	sourceBindings: RuntimeSourceBindings,
 	recoverySessionId: string,
 	workspaceFiles: WorkspaceRecordProvider,
 	clock: HostClock,
@@ -59,6 +60,7 @@ export async function prepareWorkbenchRuntime(
 	const sources = createRuntimeSourceState(
 		media.system,
 		media.cartridgeSlots,
+		sourceBindings,
 	);
 	const viewport = presenter.viewportSize;
 	const ide = await workbenchMode.initializeIdeFeatures(
@@ -85,8 +87,8 @@ export async function prepareWorkbenchRuntime(
 		sources,
 		createGraphLayoutEngine,
 		(systemRom, cartridgeSlots, model, input) => new OffscreenMachine(systemRom, cartridgeSlots, model, input),
-		(systemRom, cartridgeSlots, model, input, program, domain) => new PlayRuntimeSession(
-			new OffscreenMachine(systemRom, cartridgeSlots, model, input), program, domain, audioOutput.device, logOutput),
+		(systemRom, cartridgeSlots, model, input, program) => new PlayRuntimeSession(
+			new OffscreenMachine(systemRom, cartridgeSlots, model, input), program, audioOutput.device, logOutput),
 		connectAssistant,
 		observeConversation,
 	);

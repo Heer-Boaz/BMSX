@@ -1,10 +1,9 @@
+import { finalizePackedRomAssets } from '../../toolchain/ts/rompack/assets';
+import { installRuntimeRomLayers } from '../../ide/runtime/sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import type { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -52,13 +51,7 @@ async function fixture(t: TestContext) {
 	const lua = createScenarioTestSourceRecord(`${root}/tests/save.lua`, 1, 'return true', `${root}/tests/save.lua`);
 	const sources = createScenarioTestSourceState([lua]);
 	const models = new EditorTextModelService();
-	let readbackFailure: Error | undefined;
-	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
-		{ backend: { async finishGxGpuReadbacks() { if (readbackFailure) throw readbackFailure; } } } as VideoPresenter);
-	// AEM tests exercise installation admission and parser rejection, not guest
-	// execution. Other source Saves do not consult the machine or compiler.
-	const runtime = { machine: { cpu: { activeCartridgeSlot: () => sources.activeCartridgeSlot } } } as Runtime;
-	const saves = new TextFileSaveService(models, clock, sources, null, runtime, tasks);
+	const saves = new TextFileSaveService(models, clock, sources.catalog);
 	await openWorkspaceRecords(files);
 	t.after(async () => {
 		await saves.shutdown();
@@ -66,10 +59,9 @@ async function fixture(t: TestContext) {
 		await closeWorkspaceRecords();
 		clearWorkspaceSourceCaches();
 	});
-	const yaml = (path = 'res/data/save.yaml') => models.retain({ sourceFilePath: resolveWorkspacePath(path, root), location: { kind: 'project', projectRootPath: root, path }, domain: 0, path,
+	const yaml = (path = 'res/data/save.yaml') => models.retain({ contextLabel: 'Fixture project', sourceFilePath: resolveWorkspacePath(path, root), location: { kind: 'project', projectRootPath: root, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path,
 		source: { resid: path, type: 'data' } }, 'yaml', '# untouched\nvalue: 1\n');
-	return { saves, models, storage, files, clock, root, yaml, sources, lua, tasks,
-		failReadback(error: Error) { readbackFailure = error; } };
+	return { saves, models, storage, files, clock, root, yaml, sources, lua };
 }
 
 function setSource(model: EditorTextModel, source: string): void {
@@ -78,7 +70,7 @@ function setSource(model: EditorTextModel, source: string): void {
 
 for (const mode of ['yaml', 'aem'] as const) test(`${mode} Save writes its admitted file address rather than the cartridge root`, async t => {
 	const f = await fixture(t), sourceFilePath = `shared/authoring/save.${mode}`;
-	const model = f.models.retain({ domain: 0, path: 'res/save.yaml', sourceFilePath,
+	const model = f.models.retain({ contextLabel: 'Fixture project', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/save.yaml', sourceFilePath,
 		location: { kind: 'workspace', path: sourceFilePath }, source: { type: mode === 'aem' ? 'aem' : 'data', resid: 'save' } },
 		mode, 'value: original\n');
 	setSource(model, 'value: saved\n');
@@ -242,7 +234,7 @@ test('a failed write keeps source dirty and cannot be replayed by reading; only 
 });
 
 test('failed Lua save cannot promote the source catalog or its saved baseline', async t => {
-	const f = await fixture(t), model = f.models.retain(f.sources.luaResources[0], 'lua', f.lua.src);
+	const f = await fixture(t), model = f.models.retain(f.sources.catalog.luaResources[0], 'lua', f.lua.src);
 	setSource(model, 'return false'); f.files.failure = new Error('write denied');
 	assert.equal((await f.saves.save(model).completion).status, 'failed');
 	assert.equal(f.lua.src, 'return true'); assert.equal(f.lua.base_src, 'return true'); assert.equal(model.dirty, true);
@@ -273,7 +265,8 @@ test('Save command reports a write failure as an error, with the unsaved source 
 test('YAML Save feedback distinguishes installed equality, a pending asset build and unavailable source provenance', async t => {
 	const f = await fixture(t), model = f.yaml();
 	const original = model.buffer.getText(), media = f.sources.currentBlua32Media;
-	model.resource.source.sourcemeta = { text: original };
+	const installed = [{ ...model.resource.source, sourcemeta: { text: original } }]; finalizePackedRomAssets(installed);
+	f.sources.cartridgeSlots[0]!.rom.index.entries.push(...installed);
 	assert.equal((await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources)).status, 'saved');
 	assert.equal(editorFeedbackState.message.kind, 'success');
 	setSource(model, 'value: 2\n');
@@ -281,9 +274,12 @@ test('YAML Save feedback distinguishes installed equality, a pending asset build
 	assert.equal(editorFeedbackState.message.kind, 'warning');
 	assert.equal(model.dirty, false);
 	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'pending');
-	assert.equal(model.resource.source.sourcemeta.text, original);
+	assert.equal(installed[0].sourcemeta.text, original);
 	assert.equal(f.sources.currentBlua32Media, media, 'Save and its presentation cannot install data');
-	model.resource.source = { type: 'data', resid: model.resource.source.resid };
+	const assets = [{ type: 'data' as const, resid: model.resource.source.resid }]; finalizePackedRomAssets(assets);
+	const layer = f.sources.cartridgeSlots[0]!.rom;
+	installRuntimeRomLayers(f.sources, null, [{ id: 'cart', bytes: new Uint8Array(layer.bytes),
+		index: { ...layer.index, entries: assets } }, null]);
 	await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
 	assert.equal(editorFeedbackState.message.kind, 'warning');
 	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'untracked');
@@ -291,7 +287,8 @@ test('YAML Save feedback distinguishes installed equality, a pending asset build
 
 test('YAML Save retains the captured write and current source status when typing overtakes it', async t => {
 	const f = await fixture(t), model = f.yaml(), original = model.buffer.getText();
-	model.resource.source.sourcemeta = { text: original };
+	const installed = [{ ...model.resource.source, sourcemeta: { text: original } }]; finalizePackedRomAssets(installed);
+	f.sources.cartridgeSlots[0]!.rom.index.entries.push(...installed);
 	setSource(model, 'value: 2\n'); f.files.delayed = true;
 	const saving = saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
 	await setImmediate();
@@ -313,27 +310,25 @@ test('recovery storage cannot turn an acknowledged canonical write into a failed
 	assert.equal(model.dirty, false);
 });
 
-test('AEM build rejection reports saved source separately and does not poison the runtime queue', async t => {
+test('AEM Save persists malformed authored text without entering an installation operation', async t => {
 	const f = await fixture(t);
 	const cartridge = f.sources.cartridgeSlots[0]!;
 	cartridge.installedBlua32Sources = new Map([['cartlib/aem', 'return {}']]);
 	const installedEventMap = {};
 	cartridge.package.audioevents.cue = installedEventMap;
 	const media = f.sources.currentBlua32Media;
-	const model = f.models.retain({ sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	const model = f.models.retain({ contextLabel: 'Fixture project', sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, '[');
 	const result = await f.saves.save(model).completion;
-	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail(`expected saved source and rejected AEM: ${JSON.stringify(result)}`);
-	assert.equal(result.application.phase, 'build');
-	assert.match(String(result.application.error), /flow collection/);
+	if (result.status !== 'saved') assert.fail('expected source Save acknowledgement');
+	assert.equal(result.application.status, 'not-requested');
 	assert.deepEqual(result.persistence, { status: 'workspace' });
 	assert.equal(f.files.records.get(`${f.root}/${model.resource.path}`)!.contents, '[');
 	assert.equal(model.lastSavedSource, '[');
 	assert.equal(model.dirty, false);
 	assert.equal(f.sources.currentBlua32Media, media);
 	assert.equal(cartridge.package.audioevents.cue, installedEventMap);
-	assert.equal(f.tasks.ready, true);
-	assert.equal(f.sources.aemSourceApplications.get('0\0res/cue.aem.yaml')!.failed, true);
+	assert.equal(f.sources.aemSourceApplications.size, 0);
 });
 
 for (const reason of ['module-not-installed', 'asset-not-installed'] as const) {
@@ -345,13 +340,13 @@ for (const reason of ['module-not-installed', 'asset-not-installed'] as const) {
 		} else {
 			cartridge.installedBlua32Sources = new Map([['cartlib/aem', 'return {}']]);
 		}
-		const model = f.models.retain({ sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+		const model = f.models.retain({ contextLabel: 'Fixture project', sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 		setSource(model, '[');
 		const media = f.sources.currentBlua32Media;
 		const installedEventMap = cartridge.package.audioevents.cue;
 		const result = await f.saves.save(model).completion;
 		if (result.status !== 'saved') assert.fail('expected saved source');
-		assert.deepEqual(result.application, { status: 'not-applied', reason });
+		assert.deepEqual(result.application, { status: 'not-requested' });
 		assert.deepEqual(result.persistence, { status: 'workspace' });
 		assert.equal(f.files.records.get(`${f.root}/${model.resource.path}`)!.contents, '[');
 		assert.equal(model.lastSavedSource, '[');
@@ -359,44 +354,29 @@ for (const reason of ['module-not-installed', 'asset-not-installed'] as const) {
 		assert.equal(f.sources.currentBlua32Media, media);
 		assert.equal(cartridge.package.audioevents.cue, installedEventMap);
 		assert.equal(f.sources.aemSourceApplications.size, 0);
-		assert.equal(f.tasks.ready, true);
 	});
 }
 
 test('inactive AEM saves source without attempting another domain\'s build or guest reload', async t => {
 	const f = await fixture(t);
 	f.sources.activeCartridgeSlot = -1;
-	const model = f.models.retain({ sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	const model = f.models.retain({ contextLabel: 'Fixture project', sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, '[');
 	const media = f.sources.currentBlua32Media;
 	const result = await f.saves.save(model).completion;
 	assert.equal(result.status, 'saved');
 	if (result.status !== 'saved') assert.fail();
-	assert.deepEqual(result.application, { status: 'not-applied', reason: 'inactive-domain' });
+	assert.deepEqual(result.application, { status: 'not-requested' });
 	assert.equal(f.files.records.get(`${f.root}/${model.resource.path}`)!.contents, '[');
 	assert.equal(model.dirty, false);
 	assert.equal(f.sources.currentBlua32Media, media);
 	assert.equal(f.sources.aemSourceApplications.size, 0);
-	assert.equal(f.tasks.ready, true);
 });
 
-test('runtime synchronization failure cannot be reported as a failed source write or an applied asset', async t => {
-	const f = await fixture(t);
-	const model = f.models.retain({ sourceFilePath: resolveWorkspacePath('res/cue.aem.yaml', f.root), location: { kind: 'project', projectRootPath: f.root, path: 'res/cue.aem.yaml' }, domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
-	setSource(model, 'events: {}');
-	const error = new Error('readback failed');
-	f.failReadback(error);
-	const result = await f.saves.save(model).completion;
-	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail('expected runtime failure after source save');
-	assert.equal(result.application.phase, 'runtime');
-	assert.equal(result.application.error, error);
-	assert.equal(model.dirty, false);
-	assert.equal(f.tasks.ready, false);
-});
 
 test('source-only Lua uses its catalog owner and publishes one model-service save event', async t => {
 	const f = await fixture(t);
-	const model = f.models.retain(f.sources.luaResources[0], 'lua', f.lua.src);
+	const model = f.models.retain(f.sources.catalog.luaResources[0], 'lua', f.lua.src);
 	setSource(model, 'return false');
 	const saved: EditorTextModel[] = [];
 	const dispose = f.models.onDidSaveModel(model => saved.push(model));

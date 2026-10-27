@@ -16,14 +16,14 @@ for (const count of [16, 256, 4096]) {
 	const models = new EditorTextModelService();
 	const source = createScenarioTestSourceRecord('review.lua', 1, 'return old\n'.repeat(count));
 	const sources = createScenarioTestSourceState([source]);
-	const model = models.retain(sources.luaResources[0], 'lua', source.src);
+	const model = models.retain(sources.catalog.luaResources[0], 'lua', source.src);
 	const edit = { version: model.version, edits: Array.from({ length: count }, (_, index) => ({ offset: index * 11 + 7, deleteLength: 3, text: 'new_name' })) };
 	const edits = new Map([[model, edit]]);
 	const preparation: number[] = [], projection: number[] = [];
 	let rows = 0;
 	for (let sample = 0; sample < 30; sample++) {
 		const start = performance.now();
-		const proposal = new WorkspaceEditProposal('Rename old to new_name', new WorkspaceSourceContext(models, sources), { kind: 'edit', edits });
+		const proposal = new WorkspaceEditProposal('Rename old to new_name', new WorkspaceSourceContext(models, sources.catalog), { kind: 'edit', edits });
 		const prepared = performance.now();
 		const input = new WorkspaceEditReviewInput(proposal);
 		layoutEditReviewRows(input, 376, measureTextRange);

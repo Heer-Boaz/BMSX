@@ -9,6 +9,7 @@ import { ROM_CATEGORIES, romAssetCategory, romInspectionSectionCategory, type Ro
 
 export type RomInspectorSnapshot = {
 	readonly domain: ResourceDomain;
+	readonly sourceContextId: string;
 	readonly label: string;
 	readonly rom: Uint8Array;
 	readonly header: CartRomHeader;

@@ -8,7 +8,6 @@ import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/edi
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 import { testStudioPointerHover } from './studio_pointer_hover';
-import { resolveRuntimeResource, runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 
 export async function runStudioSceneViewport(test: StudioFixture) {
 	await test.until(() => test.ide.sources.activeCartridgeSlot === 0, 'scene viewport: cartridge execution starts');
@@ -24,12 +23,12 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	ide.editor.setFontVariant('tiny');
 	// Open actual workspace inputs until the tab-bar owner publishes horizontal overflow.
 	// Their contents and names are irrelevant to this form fixture.
-	for (const resource of ide.sources.luaResources) {
-		if (resource.domain !== 0) continue;
+	for (const resource of ide.sources.catalog.luaResources) {
+		if (resource.contextId !== test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId) continue;
 		await ide.editor.navigation.openResource(resource); await frame(); await frame();
 		if (ide.editor.editorGroup.tabStrip.scrollbar.isVisible()) break;
 	}
-	await ide.editor.navigation.openResource(resolveRuntimeResource(ide.sources, { domain: 0, path: 'scenes/root.lua' })!);
+	await ide.editor.navigation.openResource(ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!);
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: SCENE_VIEWPORT_SOURCE }]);
@@ -41,9 +40,9 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	const [x, y, z] = pane.controls;
 	check(scene.properties[0].value === 11 && scene.properties[2].value === 33, 'A02: independent fixture is selected');
 	// Reuse a real workspace input as transport, not its game implementation.
-	const record = runtimeLuaSourceRegistry(ide.sources, model.resource.domain)!.records.find(record =>
+	const record = ide.sources.catalog.getContext(model.resource.contextId).luaSources.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== model.resource.path && !record.module_path.startsWith('cartlib/'))!;
-	await ide.editor.navigation.openResource(resolveRuntimeResource(ide.sources, { domain: model.resource.domain, path: record.source_path })!);
+	await ide.editor.navigation.openResource(ide.sources.catalog.resolveResource({ contextId: model.resource.contextId, path: record.source_path })!);
 	const provider = harness.getActiveEditorDocument().model;
 	const originalProvider = provider.buffer.getText();
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: "return require('cartlib/world/scene_library')" }]);

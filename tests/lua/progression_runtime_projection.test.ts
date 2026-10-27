@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -42,14 +43,15 @@ function fixture(optLevel: 0 | 3, source = ENTRY) {
 		{sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() {return false;}, applyInputControllerVibrationEffect() {}});
 	const registry = (): LuaSourceRegistry => ({ records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', projectRootPath: 'test', can_boot_from_source: false, revision: 0 });
 	const sources = createTestRuntimeSourceState(registry(), [registry(), null], 0);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports, captureInstalledLuaSources(sources.systemLuaSources)),
-		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols, captureInstalledLuaSources(sources.cartridgeSlots[0]!.luaSources), 0), null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports, captureInstalledLuaSources(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, images.systemSymbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID),
+		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols, captureInstalledLuaSources(sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, images.cartSymbols!.metadata.compiledModulePaths), TEST_CARTRIDGE_CONTEXT_IDS[0]), null] };
 	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
 	runtime.machine.cpu.runUntilDepth(0, 1_000_000);
 	const guest = new SuspendedGuestSession(runtime);
-	const model = new EditorTextModel({ sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, domain: 0, path: 'entry.lua', source: {type: 'lua', resid: 'entry'} }, 'lua', source);
+	const model = new EditorTextModel({ contextLabel: 'fixture-source', sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua', source: {type: 'lua', resid: 'entry'} }, 'lua', source);
 	const input = new LuaProgramInput(model, 'progression', {start: 0, end: source.length}, guest);
 	input.liveVisible = true;
+	input.runtimeDomain = 0; input.runtimeImage = sources.currentBlua32Media.cartridgeSlots[0]!;
 	const choices = readProgramInstances(sources, guest, 0, 'progression');
 	input.instance = choices.find(item => item.identity.tag === ValueTag.Number)!.identity;
 	const projection = new LuaProgramRuntimeProjection(sources, guest);

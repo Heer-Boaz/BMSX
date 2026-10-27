@@ -40,8 +40,8 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	const { ide, harness, runtime, tasks, until, press, click, frame, runMenuCommand, cycles, title, guest } = test;
 	harness.openLuaSource('scenes/root.lua');
 	const model = harness.getActiveEditorDocument().model;
-	const project = getOrCreateSemanticProject(editorTextModelService, model.resource.domain);
-	project.synchronizeRuntimeSources(ide.sources);
+	const project = getOrCreateSemanticProject(editorTextModelService, model.resource.contextId);
+	project.synchronizeSources(ide.sources.catalog);
 	const titlePositionField = () => {
 		const document = buildSceneSourceDocument(model.resource, project.getSnapshot());
 		check(document.scenes.length === 1 && document.scenes[0].objects.length === 4, 'scene: actual Nemesis root assembly');

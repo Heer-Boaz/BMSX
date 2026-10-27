@@ -1,7 +1,7 @@
 # Studio source-save acknowledgements
 
-Implemented; ownership corrected 2026-09-29. Shared by ordinary commands and
-assistant tools, independent of an agent or server.
+Ordinary commands and assistant tools share the same source-write owner,
+independently of an agent or server.
 
 ## Canonical files and recovery are different authorities
 
@@ -32,15 +32,19 @@ or scheduling a reconnect loop. Another mutation or explicit checkpoint can try
 again. Corrupt JSON or a missing referenced generation is an error: recovery
 records are not deleted, pruned or silently replaced with an older generation.
 
-Lua/YAML Save does not execute or install code. After canonical persistence,
-AEM's serialized runtime task admits build/install and `reload_from_rom` only
-when the resource's domain is executing. An inactive domain returns
-`not-applied: inactive-domain`, without media mutation or invoking guest globals;
-the file is still saved. An explicit later Save can request application. Build
-and runtime failures are also reported separately from source persistence.
-Packaged authored metadata supplies the initial AEM installation baseline, not
-the workspace file; a saved edit can therefore remain pending after reload.
-Authored bytes are never reconstructed from cooked assets.
+Lua, YAML and AEM Save persist authored text without building, executing or
+installing it. AEM's explicit Apply operation selects a physical installation
+and retains its exact image through queued build/runtime work. It relinks from
+that installation's captured Lua sources, not pending authoring documents.
+Build/runtime failures belong to that operation; they cannot turn an acknowledged
+source write into a failed Save. Packaged source metadata supplies the initial
+asset baseline. Authored bytes are never reconstructed from cooked assets.
+
+Source-status observations retain one result per corresponding installation.
+Aggregate `applied` means every corresponding installation matches the authored
+text; matching the context identity alone does not prove source equality.
+A missing asset is pending, while an installed asset without source metadata is
+untracked. An asset-only installation does not require a compiled code image.
 
 The [standalone composition](studio_standalone.md) selects browser files before
 starting the workbench, not after a network error. Browser quota failure follows
@@ -54,35 +58,3 @@ VS Code separates [working-copy backups](https://github.com/microsoft/vscode/blo
 from [provider writes and exact-version Save success/failure](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/workingCopy/common/storedFileWorkingCopy.ts).
 BMSX adopts that ownership, not the full DI/service surface or compatibility
 fallbacks. No new machine representation or frame-time work is involved.
-
-## Validation
-
-- Changed-file unit/integration bundle: **206/206**. It covers source ownership,
-  delayed writes, shutdown, Lua/YAML/AEM acknowledgement, independent failures,
-  explicit retry, backups, tool receipts, Hot Resume and Scenario Lab.
-- Standalone Chromium product: **2/2**. Terminal, source creation, Save, reload,
-  offline editing, absent assistant services and actual IndexedDB quota denial.
-- Existing `--studio-source-saves` workflow: **software, WebGL2 and WebGPU pass**.
-  It runs Nemesis and Ctrl+S against the actual product file API in a disposable
-  workspace. Injected HTTP 503 responses reject PUTs; reads verify the project
-  bytes remain unchanged, the document stays dirty and only explicit retry writes
-  later edits. AEM runs only after a successful write.
-- Existing server/history/MCP product bundle: **15/15**; assistant HTTP: **12/12**.
-- Product typechecks and strict boundary audit pass. The broad tests-project
-  typecheck has the same **98** diagnostics as HEAD, with no additions. Full Lua:
-  **2843 passed, 1 skipped, 2 failed**; both menu-order failures reproduce against
-  HEAD (`editor_context_menu` and `workbench_context_menu`), independently of this
-  storage revision. They are not counted as successful validation.
-- Screenshots were inspected for both browser quota failure and HTTP failures,
-  dirty tabs, successful retries and standalone service availability. No exact
-  text/row layout contracts were added. The conformance workflow uses source
-  harness input and UI commands; it is not a claim of UI-only authoring.
-
-Reproduction (requires debug BIOS/Nemesis ROMs, graph worker and Playwright):
-
-```sh
-npm run test:studio-standalone
-node tests/conformance/runtime_replay/browser.mjs --studio-source-saves \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/source-saves.png
-npm run audit:architecture-boundaries:strict
-```

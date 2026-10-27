@@ -1,4 +1,3 @@
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -10,7 +9,7 @@ export async function testStudioBehaviorImports(test: StudioFixture): Promise<vo
 	harness.openLuaSource('cart.lua');
 	const main = harness.getActiveEditorDocument().model;
 	const originalMain = main.buffer.getText();
-	const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+	const record = ide.sources.catalog.getContext(main.resource.contextId).luaSources.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 	harness.openLuaSource(record.source_path);
 	const providerTab = ide.editor.editorGroup.model.activeTab;

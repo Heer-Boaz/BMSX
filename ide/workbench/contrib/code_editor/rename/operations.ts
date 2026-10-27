@@ -2,13 +2,12 @@ import type { SearchMatch } from '../../../../common/models';
 import type { ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
 import type { LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/index';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { resolveRuntimeResource, type RuntimeSourceState } from '../../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
 import { updateDesiredColumn, ensureCursorVisible } from '../../../../editor/ui/view/caret/caret';
 import { resetBlinkState } from '../../../../editor/ui/view/caret/blink';
 import { captureCodeEditorSelectionSnapshot, codeEditorEditState } from '../../../../editor/ui/code_editor_state';
 import type { CodeEditorControl } from '../../../../editor/ui/code_editor_control';
-import type { ResourceDomain } from '../../../../common/resource';
 import type { EditorModelEdit, EditorTextModel } from '../../../../editor/model/text_model';
 import { editorTextModelService } from '../../../../editor/model/model_service';
 import { EditorWorkspaceEditConflict } from '../../../../editor/model/undo_redo_service';
@@ -29,7 +28,7 @@ export function commitRename(
 	info: ReferenceMatchInfo,
 ): number {
 	const model = code.model;
-	const edits = crossFileRename.prepareRename(model.resource.domain, info, newName);
+	const edits = crossFileRename.prepareRename(model.resource.contextId, info, newName);
 	const focused = matches[clamp(activeIndex, 0, matches.length - 1)];
 	const focusedOffset = model.buffer.offsetAt(focused.row, focused.start);
 	const before = captureCodeEditorSelectionSnapshot(code.view);
@@ -55,17 +54,17 @@ export function commitRename(
 
 /** Resolve all authored references first; one shared workspace history owns the mutation. */
 export class CrossFileRenameManager {
-	public constructor(private readonly sources: RuntimeSourceState) {}
+	public constructor(private readonly catalog: WorkspaceSourceCatalog) {}
 
-	public proposeRename(context: WorkspaceSourceContext, domain: ResourceDomain, info: ReferenceMatchInfo, newName: string): WorkspaceEditProposal {
+	public proposeRename(context: WorkspaceSourceContext, contextId: string, info: ReferenceMatchInfo, newName: string): WorkspaceEditProposal {
 		context.assertCurrent();
 		return new WorkspaceEditProposal(`Rename ${info.expression} to ${newName}`, context,
-			{ kind: 'edit', edits: this.prepareRename(domain, info, newName) });
+			{ kind: 'edit', edits: this.prepareRename(contextId, info, newName) });
 	}
 
-	public prepareRename(domain: ResourceDomain, info: ReferenceMatchInfo, newName: string): Map<EditorTextModel, EditorModelEdit> {
-		const project = getOrCreateSemanticProject(editorTextModelService, domain);
-		project.synchronizeRuntimeSources(this.sources);
+	public prepareRename(contextId: string, info: ReferenceMatchInfo, newName: string): Map<EditorTextModel, EditorModelEdit> {
+		const project = getOrCreateSemanticProject(editorTextModelService, contextId);
+		project.synchronizeSources(this.catalog);
 		const currentSnapshot = project.getSnapshot();
 		const ranges = new Map<string, LuaSourceRange[]>();
 		const add = (range: LuaSourceRange): void => {
@@ -77,8 +76,8 @@ export class CrossFileRenameManager {
 		for (const reference of info.query.references) add(info.snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span));
 		const result = new Map<EditorTextModel, EditorModelEdit>();
 		for (const [path, locations] of ranges) {
-			const resource = resolveRuntimeResource(this.sources, project.getResourceIdentity(path))!;
-			const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
+			const resource = this.catalog.resolveResource(project.getResourceIdentity(path))!;
+			const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
 			if (currentSnapshot !== info.snapshot || getTextSnapshot(model.buffer) !== info.snapshot.getFileData(path)!.source) {
 				throw new EditorWorkspaceEditConflict(model);
 			}

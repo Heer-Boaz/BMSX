@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
@@ -22,16 +24,16 @@ import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 function fixture(t: TestContext, files: Record<string, string>, apiModules: readonly string[], generated: string[] = []) {
 	const records = Object.entries(files).map(([path, source]) => ({ ...createScenarioTestSourceRecord(path, 1, source), generated: generated.includes(path) }));
 	const sources = createScenarioTestSourceState(records), models = new EditorTextModelService();
-	for (const module of apiModules) registerLuaSourceRecord(sources.systemLuaSources, createScenarioTestSourceRecord(`${module}.lua`, 0, ''));
-	const documents = new BehaviorSourceDocuments(models, sources), connection = new AbortController();
+	for (const module of apiModules) registerLuaSourceRecord(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, createScenarioTestSourceRecord(`${module}.lua`, 0, ''));
+	const documents = new BehaviorSourceDocuments(models, sources.catalog), connection = new AbortController();
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const guest = new SuspendedGuestSession(runtime);
-	const diagnostics = new ResourceDiagnosticsService(models, sources, new VirtualHeadlessClock());
-	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
-	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, guest, runtime, tasks);
+	const diagnostics = new ResourceDiagnosticsService(models, sources.catalog, new VirtualHeadlessClock());
+	const { presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
+	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources.catalog);
 	t.after(async () => { await saves.shutdown(); presenter.dispose(); });
 	const tools = () => {
-		const result = new WorkspaceSourceTools(models, sources, diagnostics, connection.signal, documents, saves, new VirtualHeadlessClock());
+		const result = new WorkspaceSourceTools(models, sources.catalog, diagnostics, connection.signal, documents, saves, new VirtualHeadlessClock(), sources);
 		t.after(() => result.dispose()); return result;
 	};
 	t.after(() => { connection.abort(); diagnostics.dispose(); models.clear(); });
@@ -53,16 +55,16 @@ fsm.register('one', {initial='idle',states={idle={},active={}}})
 fsm.register('one', {states={other={}}})
 fsm.register(unknown_id(), make_definition())`;
 	const f = fixture(t, { 'cart.lua': source }, ['cartlib/fsm/library']);
-	const model = f.models.retain(f.sources.luaResources.find(resource => resource.domain === 0 && resource.path === 'cart.lua')!, 'lua', source);
+	const model = f.models.retain(f.sources.catalog.luaResources.find(resource => resource.contextId === TEST_CARTRIDGE_CONTEXT_IDS[0] && resource.path === 'cart.lua')!, 'lua', source);
 	model.pushEditOperations([{ offset: source.indexOf("'one'"), deleteLength: 5, text: "'dirty'" }]);
 	const tools = f.tools(), catalog = await list(tools);
 	assert.deepEqual(catalog.map(item => item.semanticId), ['dirty', 'one', null]);
 	assert.equal(new Set(catalog.map(item => item.behavior)).size, 3);
-	assert.deepEqual(Object.keys(catalog[0].resource).sort(), ['domain', 'path']);
+	assert.deepEqual(Object.keys(catalog[0].resource).sort(), ['contextId', 'path']);
 	assert.equal(editorTextModelService.get(model.identity), undefined);
 	const data = await read(tools, catalog[0].behavior), document = f.documents.get(model);
 	assert.equal(data.syntaxComplete, true);
-	assert.deepEqual(data.sources, [{ file: resourceIdentityKey(model.identity), domain: 0, path: 'cart.lua', version: model.version, readOnly: false }]);
+	assert.deepEqual(data.sources, [{ file: resourceIdentityKey(model.identity), contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'cart.lua', version: model.version, readOnly: false }]);
 	assert.equal(data.nodes[0].label, document.definitions[0].label);
 	assert.equal(data.nodes.filter(node => node.actions.includes('fsm.set_initial')).length, 1);
 	assert.equal(data.entries[0].target.kind, 'state');
@@ -91,7 +93,7 @@ idle={on={go='../active'}}, active={update=function() return '../idle' end}
 	const documents = t.mock.method(f.documents, 'get');
 	const catalog = await list(tools), data = await read(tools, catalog[1].behavior);
 	const state = data.nodes.find(node => node.kind === 'state' && node.actions.includes('fsm.set_initial'))!;
-	assert.equal(state.authoredRange.path, resourceIdentityKeyFromParts(0, 'body.lua'));
+	assert.equal(state.authoredRange.path, resourceIdentityKeyFromParts(TEST_CARTRIDGE_CONTEXT_IDS[0], 'body.lua'));
 	assert.equal(data.transitions.length, 2);
 	for (const transition of data.transitions) {
 		assert.ok(data.nodes.some(node => node.node === transition.origin));
@@ -100,10 +102,10 @@ idle={on={go='../active'}}, active={update=function() return '../idle' end}
 			assert.equal(outcome.target.kind, 'path');
 			const target = outcome.target;
 			if (target.kind === 'path') assert.ok(data.nodes.some(node => node.node === target.target));
-			assert.equal(outcome.range.path, resourceIdentityKeyFromParts(0, 'body.lua'));
+			assert.equal(outcome.range.path, resourceIdentityKeyFromParts(TEST_CARTRIDGE_CONTEXT_IDS[0], 'body.lua'));
 		}
 	}
-	const main = f.models.get({ domain: 0, path: 'cart.lua' })!, owner = f.models.get({ domain: 0, path: 'body.lua' })!;
+	const main = f.models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'cart.lua' })!, owner = f.models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'body.lua' })!;
 	assert.equal(f.documents.get(main), documents.mock.calls[0].result, 'retaining imported models preserves the shared semantic generation');
 	const result = await tools.execute('studio_propose_fsm_initial', { state: state.node });
 	assert.ok(result.kind === 'proposal'); t.after(() => result.proposal.dispose());
@@ -123,7 +125,7 @@ test('missing FSM initial is inserted from proven membership, while unknown, gen
 	const f = fixture(t, { 'cart.lua': register('{states={a={}, b={}}}') }, ['cartlib/fsm/library']), tools = f.tools();
 	const data = await read(tools, (await list(tools))[0].behavior), node = data.nodes.find(node => node.kind === 'state')!;
 	const result = await tools.execute('studio_propose_fsm_initial', { state: node.node }); assert.ok(result.kind === 'proposal');
-	result.proposal.apply(); assert.match(f.models.get({ domain: 0, path: 'cart.lua' })!.buffer.getText(), /initial = 'a'/);
+	result.proposal.apply(); assert.match(f.models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'cart.lua' })!.buffer.getText(), /initial = 'a'/);
 	for (const source of [register('{initial=choose(),states={a={}}}'), register('{states={[key]={},a={}}}'), register('{states={a={}}}') + '\nlocal broken =']) {
 		const g = fixture(t, { 'cart.lua': source }, ['cartlib/fsm/library']), next = g.tools();
 		assert.ok((await read(next, (await list(next))[0].behavior)).nodes.every(node => node.actions.length === 0));
@@ -140,7 +142,7 @@ for (const operation of ['remove', 'duplicate', 'move_up', 'move_down'] as const
 	const line = BT_ORDER_SOURCE.slice(0, BT_ORDER_SOURCE.indexOf('nested;')).split('\n').length;
 	const node = data.nodes.find(node => node.actions.includes(`bt.${operation}`) && node.occurrenceRange.start.line === line)!;
 	assert.ok(node);
-	const model = f.models.get({ domain: 0, path: 'tree.lua' })!, document = f.documents.get(model), definition = document.definitions[0];
+	const model = f.models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'tree.lua' })!, document = f.documents.get(model), definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'behavior_tree');
 	const members = indexBehaviorTreeMembers(definition);
 	assert.equal(indexBehaviorTreeMembers(definition), members);
@@ -162,7 +164,7 @@ effects.register_effect('fx', {cooldown_ms=(--[[keep]] duration), required_tags=
 	const data = await read(tools, (await list(tools))[0].behavior);
 	const property = data.nodes.find(node => node.write?.expression.includes('duration'))!;
 	assert.ok(property.actions.includes('effect.set_value'));
-	const model = f.models.get({ domain: 0, path: 'effect.lua' })!, definition = f.documents.get(model).definitions[0];
+	const model = f.models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'effect.lua' })!, definition = f.documents.get(model).definitions[0];
 	assert.ok(definition.behaviorKind === 'action_effect');
 	const writes = indexActionEffectWrites(definition);
 	assert.equal(writes, indexActionEffectWrites(definition));
@@ -189,12 +191,12 @@ test('foreign, unadmitted and expired semantic references cannot be refreshed or
 	await assert.rejects(tools.execute('studio_propose_bt_child_edit', { child: node.node, operation: 'remove' }), /does not admit/);
 	await assert.rejects(tools.execute('studio_propose_bt_child_edit', { child: node.node, operation: 'execute' }), /listed operation/);
 	await assert.rejects(tools.execute('studio_read_behavior', { behavior: catalog[0].behavior, surprise: true }));
-	const resource = f.sources.luaResources.find(resource => resource.path === 'other.lua')!, dependency = f.models.retain(resource, 'lua', 'return 1');
+	const resource = f.sources.catalog.luaResources.find(resource => resource.path === 'other.lua')!, dependency = f.models.retain(resource, 'lua', 'return 1');
 	dependency.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 	await assert.rejects(tools.execute('studio_propose_fsm_initial', { state: node.node }), /Source changed/);
 	dependency.undo();
 	await assert.rejects(tools.execute('studio_read_behavior', { behavior: catalog[0].behavior }), /Source changed/);
-	assert.equal(f.models.get({ domain: 0, path: 'cart.lua' })!.canUndo, false);
+	assert.equal(f.models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'cart.lua' })!.canUndo, false);
 });
 
 test('semantic proposals share disconnect and dependency-change retirement with textual reviews', async t => {
@@ -204,8 +206,8 @@ test('semantic proposals share disconnect and dependency-change retirement with 
 		const result = await tools.execute('studio_propose_fsm_initial', { state: data.nodes.find(node => node.actions.length !== 0)!.node });
 		assert.ok(result.kind === 'proposal');
 		if (disconnect) f.connection.abort();
-		else f.models.retain(f.sources.luaResources.find(resource => resource.path === 'other.lua')!, 'lua', 'return 1').pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
+		else f.models.retain(f.sources.catalog.luaResources.find(resource => resource.path === 'other.lua')!, 'lua', 'return 1').pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 		assert.equal(result.proposal.state, 'stale'); assert.throws(() => result.proposal.apply(), /stale/);
-		assert.equal(f.models.get({ domain: 0, path: 'cart.lua' })!.canUndo, false);
+		assert.equal(f.models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'cart.lua' })!.canUndo, false);
 	}
 });

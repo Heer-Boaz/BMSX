@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { createBehaviorEditFixture } from '../helpers/behavior_edit_fixture';
 import assert from 'node:assert/strict';
@@ -109,21 +110,21 @@ test('imported callback drag admission checks the actual return owner and invali
 	const imports = { 'branch.lua': FSM_RETARGET_BRANCH_SOURCE, 'callback.lua': FSM_RETARGET_CALLBACK_SOURCE };
 	for (const path of ['drag.lua', 'branch.lua', 'callback.lua']) {
 		const f = fixture(t, FSM_RETARGET_IMPORTED_SOURCE, imports);
-		const owner = f.models.get(resourceIdentityKey({ domain: 0, path: 'callback.lua' }))!;
+		const owner = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'callback.lua' }))!;
 		f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } });
 		assert.equal(stateMachineConnectionEnds(f.view, f.edge), 'target', 'a read-only anchor is not the write target');
 		const session = f.begin(); f.hover(session, 'other');
 		assert.equal(session.feedback.accepted, true);
 		session.drop(); assert.equal(f.drops[0][1].file.chunk.locations.range(f.drops[0][1].literal.span).path, resourceIdentityKey(owner.resource));
 		assert.equal(f.drops[0][1].uses.length, 3);
-		const affected = f.models.get(resourceIdentityKey({ domain: 0, path }))!;
+		const affected = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }))!;
 		affected.refreshResource({ ...affected.resource, source: { ...affected.resource.source, generated: false } });
 		affected.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dependency edit\n' }]);
 		assert.equal(session.isCurrent(), false, path);
 		assert.equal(stateMachineConnectionEnds(f.view, f.edge), undefined, path);
 	}
 	const f = fixture(t, FSM_RETARGET_IMPORTED_SOURCE, imports);
-	const session = f.begin(), owner = f.models.get(resourceIdentityKey({ domain: 0, path: 'callback.lua' }))!;
+	const session = f.begin(), owner = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'callback.lua' }))!;
 	owner.refreshResource({ ...owner.resource, source: { ...owner.resource.source, generated: true } });
 	assert.equal(session.isCurrent(), false);
 	assert.equal(stateMachineConnectionEnds(f.view, f.edge), undefined);

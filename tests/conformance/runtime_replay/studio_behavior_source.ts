@@ -93,7 +93,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	await click(graph.actionBar.items[0].bounds, 6);
 	check(sourcePane(test).code.view.cursorRow === sourceRow + 1 && sourcePane(test).code.view.cursorColumn === sourceColumn
 		&& !hasSelection(sourcePane(test).code), 'source graph: Source uses the new generation, including the UTF-16 insertion');
-	const parsed = getOrCreateSemanticProject(editorTextModelService, model.resource.domain).getFileData(model.resource)!.chunk;
+	const parsed = getOrCreateSemanticProject(editorTextModelService, model.resource.contextId).getFileData(model.resource)!.chunk;
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.locations, parsed.tokens, nextEntries[2].field));
 	await test.clickTab(lens.id);
 	check(view.selection === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');

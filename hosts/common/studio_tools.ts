@@ -17,7 +17,7 @@ export type StudioHeadlessStartResult = { requestId: string } & (
 	| { status: 'closed'; session: string }
 );
 export type StudioHeadlessCloseResult = { status: 'closed' }
-	| { status: 'dirty'; resources: readonly { domain: -1 | 0 | 1; path: string }[] };
+	| { status: 'dirty'; resources: readonly { contextId: string; path: string }[] };
 export type StudioToolDefinition = { name: string; description: string;
 	inputSchema: { type: string; properties: Record<string, unknown>; required: readonly string[]; additionalProperties: boolean } };
 

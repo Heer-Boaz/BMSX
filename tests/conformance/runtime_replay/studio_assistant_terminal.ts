@@ -1,7 +1,6 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { showEditorMessage } from '../../../ide/common/feedback_state';
-import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -22,8 +21,8 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	const conversation = ide.editor.assistant, terminal = ide.luaEvaluation;
 	await test.runMenuCommand('pause');
-	const repl = { domain: -1 as const, path: 'shell/repl.lua' };
-	const line = resolveRuntimeLuaSource(ide.sources, repl)!.record.src.split('\n').findIndex(text => text.includes('return protect(chunk)')) + 1;
+	const repl = { contextId: test.ide.sources.currentBlua32Media.system!.sourceContextId, path: 'shell/repl.lua' };
+	const line = ide.sources.catalog.resolveLuaSource(repl)!.record.src.split('\n').findIndex(text => text.includes('return protect(chunk)')) + 1;
 	check(line > 0, 'installed firmware has the protected invocation breakpoint');
 	ide.debugger.breakpoints.toggle(repl, line);
 	await submitAssistantText(test, 'Execute Lua, continue after the breakpoint, inspect the result and test errors without changing cart source.');

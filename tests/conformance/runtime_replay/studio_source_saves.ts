@@ -2,7 +2,6 @@ import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { workspaceRecords } from '../../../ide/workspace/records';
 import { resolveWorkspacePath } from '../../../ide/workspace/path';
-import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
 import { check, type StudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 
@@ -20,7 +19,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	await frame();
 	await runMenuCommand('pause');
 	const model = harness.getActiveEditorDocument().model;
-	const root = runtimeSourceProjectRootPath(ide.sources, model.resource.domain);
+	const root = ide.sources.catalog.getContext(model.resource.contextId).projectRootPath;
 	const path = resolveWorkspacePath(model.resource.path, root);
 	const source = model.buffer.getText();
 	const actor = title(), position = cycles(), media = ide.sources.currentBlua32Media;
@@ -54,7 +53,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	await test.capture?.('lua-project-saved');
 
 	for (const kind of ['yaml', 'aem'] as const) {
-		const resource = ide.sources.resources.find(resource => resource.domain === 0 && (kind === 'aem'
+		const resource = ide.sources.catalog.resources.find(resource => resource.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && (kind === 'aem'
 			? resource.source.type === 'aem'
 			: resource.source.type === 'data' && resource.path.endsWith('nemesis_s_stage.yaml')))!;
 		await ide.editor.navigation.openResource(resource);
@@ -93,34 +92,38 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 		await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved', `source saves: ${kind} retry is acknowledged`);
 		check((await files.read(resourcePath))!.contents === document.buffer.getText(), `source saves: ${kind} explicit retry persists exact authored source`);
 		if (kind === 'aem') {
-			check(getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: AEM applies after successful persistence');
+			const saved = ide.textFileSaves.latestOperation(document)!.result!;
+			check(saved.status === 'saved' && saved.application.status === 'not-requested', 'source saves: persistence never requests runtime application');
+			check(ide.sources.currentBlua32Media === media, 'source saves: saving AEM preserves the installed generation');
+			await ide.editor.navigation.openResource(resource); await frame();
+			const aem = ide.editor.editorGroup.model.activeTab;
+			if (aem.kind !== 'aem_editor') throw new Error('source saves: explicit Apply belongs to the actual AEM input');
+			await test.runPaletteCommand('Audio Events: Apply to Installed Attachment'); await press('Enter');
+			await until(() => !aem.applying && getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: explicit named attachment Apply succeeds');
 			check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === source
 				&& ide.sources.cartridgeBlua32MediaDirty[0] && getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending',
-				'AEM Save relinks the installed Lua; independently saved code stays pending');
+				'Explicit AEM Apply relinks installed Lua without installing separately saved code');
 			const validSource = document.buffer.getText(), installedMedia = ide.sources.currentBlua32Media;
 			const invalidSource = 'events: [';
 			document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: invalidSource }]);
 			await press('ControlLeft', 'KeyS');
-			await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved',
-				'source saves: invalid installed AEM source is persisted independently of its build');
+			await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved', 'source saves: invalid source persists independently of runtime build');
 			const rejected = ide.textFileSaves.latestOperation(document)!.result!;
-			check(rejected.status === 'saved' && rejected.snapshot.source === invalidSource
-				&& rejected.application.status === 'failed' && rejected.application.phase === 'build',
-				'source saves: real installed AEM reports build rejection, not skipped application or failed persistence');
-			check(!document.dirty && (await files.read(resourcePath))!.contents === invalidSource,
-				'source saves: invalid authored text is still the exact acknowledged canonical source');
-			check(tasks.ready && tasks.failure === undefined && ide.sources.currentBlua32Media === installedMedia
-				&& getTextFileRuntimeSourceStatus(ide.sources, document) === 'failed',
-				'source saves: rejected authoring leaves installed media and the runtime queue intact');
+			check(rejected.status === 'saved' && rejected.snapshot.source === invalidSource && rejected.application.status === 'not-requested',
+				'source saves: invalid text is acknowledged without an implicit runtime build');
+			check(!document.dirty && (await files.read(resourcePath))!.contents === invalidSource && ide.sources.currentBlua32Media === installedMedia,
+				'source saves: exact authored bytes persist while the installed image stays unchanged');
+			await test.runPaletteCommand('Audio Events: Apply to Installed Attachment'); await press('Enter');
+			await until(() => !aem.applying && getTextFileRuntimeSourceStatus(ide.sources, document) === 'failed', 'source saves: explicit Apply rejects invalid AEM');
+			check(tasks.ready && tasks.failure === undefined && ide.sources.currentBlua32Media === installedMedia,
+				'source saves: rejected Apply leaves installed media and the runtime queue intact');
 			await frame(); await test.capture?.('aem-build-rejected-source-saved');
 			document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: validSource }]);
 			await press('ControlLeft', 'KeyS');
-			await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved',
-				'source saves: correcting the AEM source applies through the same healthy queue');
-			const corrected = ide.textFileSaves.latestOperation(document)!.result!;
-			check(corrected.status === 'saved' && corrected.snapshot.source === validSource
-				&& corrected.application.status === 'applied' && !document.dirty && tasks.ready,
-				'source saves: a subsequent valid revision persists and applies successfully');
+			await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved', 'source saves: correction persists through the same source owner');
+			await test.runPaletteCommand('Audio Events: Apply to Installed Attachment'); await press('Enter');
+			await until(() => !aem.applying && getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: corrected explicit Apply succeeds');
+			check(!document.dirty && tasks.ready, 'source saves: persistence and explicit application finish independently');
 		}
 		await frame(); await test.capture?.(`${kind}-project-saved`);
 	}

@@ -51,7 +51,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 		this.focusTarget.registerCommand('play.details', { isEnabled: () => true, run: () => {
 			this.details.show({ title: 'Play session', items: describePlaySession(this.input.handle),
 				canOpenSource: item => item.location !== undefined,
-				openSource: item => navigation.focusChunkSourceForContext(item.location!.resource.domain, item.location!.resource.path,
+				openSource: item => navigation.focusChunkSourceForContext(item.location!.resource.contextId, item.location!.resource.path,
 					{ row: item.location!.line - 1, startColumn: item.location!.column - 1, endColumn: item.location!.column - 1 }),
 			});
 		} });

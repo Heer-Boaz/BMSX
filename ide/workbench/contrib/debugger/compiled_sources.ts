@@ -7,7 +7,7 @@ export function openCompiledDebugSources(quickInput: QuickInputController, sourc
 	quickInput.pick('COMPILED SOURCES', 'Choose a source to read and toggle a breakpoint', (_origin, lifetime) => {
 		lifetime.add({ dispose: onDidRetire(() => quickInput.hide()) });
 		return new TextQuickPickProvider(sources.catalog.map(source => ({ ...source, label: source.path,
-			description: `Physical ${source.domain} / authored ${source.sourceDomain}`, detail: source.symbols ? 'Compiled symbols' : 'No symbols' })));
+			description: `Physical ${source.domain} / authored ${source.sourceContextId}`, detail: source.symbols ? 'Compiled symbols' : 'No symbols' })));
 	}, source => {
 		const compiled = sources.read(source.source), points = new Map(compiled.breakpoints.map(point => [point.line, point]));
 		quickInput.pick(`SOURCE / ${source.path}`, 'Select a compiled line to toggle its breakpoint; blank lines stay unbound', (_origin, lifetime) => {

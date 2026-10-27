@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -77,7 +78,7 @@ test('an observed empty document disables copying and has no diagnostic channel'
 
 test('document Find belongs to the document/query leaf and cannot mutate a resource working copy', async t => {
 	const f = await fixture(t);
-	const source = new EditorTextModel({ sourceFilePath: 'owned.lua', location: { kind: 'workspace' as const, path: 'owned.lua' }, domain: 0, path: 'owned.lua', source: { type: 'lua', resid: 'owned' } }, 'lua', 'return 1');
+	const source = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'owned.lua', location: { kind: 'workspace' as const, path: 'owned.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'owned.lua', source: { type: 'lua', resid: 'owned' } }, 'lua', 'return 1');
 	t.after(() => source.dispose());
 	source.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 	const text = source.buffer.getText(), version = source.version, dirty = source.dirty;

@@ -222,7 +222,7 @@ test('two inputs on the same behavior registration consume only their own explic
 	const f = fixture(t);
 	const otherView = createBehaviorLensViewState(f.view.document, f.model, 'graph', assert.fail);
 	selectBehaviorLensDefinition(otherView, otherView.document.definitions[1].rowKey);
-	const sibling = new BehaviorLensInput(f.model, otherView, () => assert.fail('focused source correspondence does not need a worker'));
+	const sibling = new BehaviorLensInput(f.model, otherView, new Set([f.model.resource.contextId]), () => assert.fail('focused source correspondence does not need a worker'));
 	const bounds = { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom };
 	prepareBehaviorLensLayout(otherView, bounds);
 	assert.ok(otherView.presentation.kind === 'graph');

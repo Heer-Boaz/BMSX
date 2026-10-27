@@ -296,8 +296,8 @@ test('warm focused reveal through a fractional-row viewport does not remateriali
 
 test('only an explicitly selected proposal message invokes the real source Review callback', t => {
 	const f = fixture(t, 'tiny', 384, 'light', true), models = new EditorTextModelService(), source = 'return before\n';
-	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('review.lua', 1, source)]), model = models.retain(sources.luaResources[0], 'lua', source);
-	const proposal = new WorkspaceEditProposal('Review source', new WorkspaceSourceContext(models, sources), {
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('review.lua', 1, source)]), model = models.retain(sources.catalog.luaResources[0], 'lua', source);
+	const proposal = new WorkspaceEditProposal('Review source', new WorkspaceSourceContext(models, sources.catalog), {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 7, deleteLength: 6, text: 'after' }] }]]),
 	});
 	t.after(() => { proposal.dispose(); models.clear(); });

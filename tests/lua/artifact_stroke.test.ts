@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { api } from '../../ide/runtime/overlay_api';
@@ -99,7 +100,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 	const previousFont = editorViewState.font, previousHeight = editorViewState.lineHeight, previousTheme = colors.getActiveIdeThemeVariant();
 	const font = new EditorFont(variant); editorViewState.font = font; editorViewState.lineHeight = font.lineHeight; colors.setIdeThemeVariant(theme);
 	const assets: RomAsset[] = [{ resid: 'one-byte', type: 'bin', start: 128, end: 129 }]; finalizePackedRomAssets(assets);
-	const input = new RomInspectorInput({ domain: 0, label: 'Captured ROM', rom: new Uint8Array(512), header, assets });
+	const input = new RomInspectorInput({ domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Captured ROM', rom: new Uint8Array(512), header, assets });
 	t.after(() => { input.dispose(); editorViewState.font = previousFont; editorViewState.lineHeight = previousHeight; colors.setIdeThemeVariant(previousTheme); });
 	input.model.setMode('assets'); input.model.select(input.model.rows.findIndex(row => row.asset === assets[0]));
 	Object.assign(input.layout, { left: 0, top: 10, right: 128, bottom: 120, rowHeight: font.lineHeight, font });
@@ -132,7 +133,7 @@ test('captured image collision renders both its decoded bounding box and all act
 			imgmeta: { width: 2, height: 2, texture_u: 0, texture_v: 0 } },
 	];
 	finalizePackedRomAssets(assets);
-	const input = new RomInspectorInput({ domain: 0, label: 'Captured image', rom, assets,
+	const input = new RomInspectorInput({ domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Captured image', rom, assets,
 		header: { ...header, dataLength: collisionEnd - 72, metadataOffset: collisionEnd, metadataLength: 16, tocOffset: rom.length } });
 	t.after(() => input.dispose());
 	input.model.select(input.model.rows.findIndex(row => row.asset === assets[1]));

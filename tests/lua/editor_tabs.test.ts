@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -37,7 +38,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	let font = new EditorFont(variant);
 	const setFont = (variant: 'tiny' | 'msx') => { font = new EditorFont(variant); };
 	const add = (label: string, preview = false) => {
-		const model = new EditorTextModel({ sourceFilePath: label + '.lua', location: { kind: 'workspace' as const, path: label + '.lua' }, domain: 0, path: label + '.lua', source: { type: 'lua', resid: label } }, 'lua', 'return {}');
+		const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: label + '.lua', location: { kind: 'workspace' as const, path: label + '.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: label + '.lua', source: { type: 'lua', resid: label } }, 'lua', 'return {}');
 		models.push(model);
 		const input = new SceneEditorInput(model); input.setLabel(label, model.resource.path);
 		group.add(input, { pinned: !preview }); group.activate(input);

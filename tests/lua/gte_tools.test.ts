@@ -1,3 +1,5 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { createBlua32SourceImage } from '../../ide/runtime/sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -38,6 +40,11 @@ return true`;
 function fixture(t: TestContext, program = PROGRAM) {
 	const { images } = createCartlibProgramHarness(program);
 	const { runtime, sources, cpu } = eventHistoryRuntime(images);
+	// Exact input to the compiled entry, captured independently of any authored model.
+	sources.currentBlua32Media = { ...sources.currentBlua32Media, cartridgeSlots: [
+		createBlua32SourceImage(images.cartImage, images.cartSymbols, new Map([['entry',
+			{ displayPath: 'entry.lua', content: { kind: 'text', text: program } }]]), TEST_CARTRIDGE_CONTEXT_IDS[0]), null,
+	] };
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
@@ -112,7 +119,8 @@ test('GTE tools return detached actual raw words and source descriptors without 
 	assert.equal(first.source!.domain, captured.domain);
 	assert.equal(first.source!.pc, captured.pc);
 	assert.equal(first.source!.symbols, true);
-	assert.ok(first.source!.location!.path.length > 0);
+	assert.equal(first.source!.location!.path, 'entry.lua');
+	assert.equal(first.source!.location!.contextId, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	assert.equal(Object.hasOwn(first, 'image'), false);
 	assert.equal(Object.hasOwn(first.source!, 'layout'), false);
 	assert.equal(JSON.stringify(first).includes('textBytes'), false);

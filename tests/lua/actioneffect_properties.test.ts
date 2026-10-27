@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -29,16 +30,16 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 
 function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Record<string, string>> = {}) {
 	configureFontVariant('tiny');
-	const resource = { sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'effects.lua', location: { kind: 'workspace' as const, path: 'effects.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 	const service = new EditorTextModelService();
 	const model = service.retain(resource, 'lua', source);
 	const models = new Map([[resourceIdentityKey(resource), model]]);
-	for (const [path, text] of Object.entries(imports)) models.set(resourceIdentityKey({ domain: 0, path }), service.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path,
+	for (const [path, text] of Object.entries(imports)) models.set(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }), service.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path,
 		source: { type: 'lua', resid: path } }, 'lua', text));
 	const document = () => buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([...[...models.values()]
 		.map(model => buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource))], ['cartlib/actioneffects'])));
 	const view = createBehaviorLensViewState(document(), model, 'properties', path => models.get(path)!);
-	const input = new BehaviorLensInput(model, view, () => assert.fail('property inputs must not construct a graph-layout engine'));
+	const input = new BehaviorLensInput(model, view, new Set([model.resource.contextId]), () => assert.fail('property inputs must not construct a graph-layout engine'));
 	input.onWillDispose(() => service.clear());
 	service.onDidChangeContent((model, event) => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });
 	selectBehaviorLensDefinition(view, view.document.definitions[chosen].rowKey);
@@ -88,7 +89,7 @@ fx.register_effect('other', require('other'))`;
 	const f = fixture(root, 0, { 'blueprint.lua': blueprint, 'tags.lua': "return { 'busy' }",
 		'other.lua': 'return { period_ms = 99 }', 'callback.lua': 'return function() error("not evaluated") end' });
 	const { edit, openProperty } = propertyEditFixture(t, f);
-	const provider = f.models.get(resourceIdentityKey({ domain: 0, path: 'blueprint.lua' }))!, tags = f.models.get(resourceIdentityKey({ domain: 0, path: 'tags.lua' }))!, other = f.models.get(resourceIdentityKey({ domain: 0, path: 'other.lua' }))!;
+	const provider = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'blueprint.lua' }))!, tags = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'tags.lua' }))!, other = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'other.lua' }))!;
 	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } });
 	assert.equal(f.input.readOnly, false, 'a read-only registration does not make a writable provider read-only');
 	assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, provider, tags]));

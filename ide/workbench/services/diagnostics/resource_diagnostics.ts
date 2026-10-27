@@ -1,13 +1,10 @@
 import { EMPTY_DIAGNOSTICS_BY_ROW, type EditorDiagnosticsByRow } from '../../../editor/contrib/diagnostics/model';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import { enqueueBackgroundTask, type BackgroundTask } from '../../../common/background_tasks';
 import type { EditorDiagnostic } from '../../../common/models';
-import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import { runtimeLuaSourceRegistry } from '../../../runtime/sources';
-import { onDidChangeLuaSourceRegistry } from '../../../runtime/source_registry';
 import { computeResourceDiagnostics } from './lua';
 
 export type ResourceDiagnostics = { readonly model: EditorTextModel; readonly version: number } & (
@@ -43,32 +40,27 @@ export class ResourceDiagnosticsService {
 
 	public constructor(
 		private readonly models: EditorTextModelService,
-		private readonly sources: RuntimeSourceState,
+		private readonly catalog: WorkspaceSourceCatalog,
 		private readonly clock: HostClock,
 	) {
 		this.subscriptions = [
 			models.onDidAddModel(model => { this.add(model); this.publish(); this.schedule(); }),
 			models.onDidApplyChanges(model => {
-				if (model.mode === 'lua') this.invalidateDomain(model.identity.domain);
+				if (model.mode === 'lua') this.invalidateContext(model.identity.contextId);
 				else this.entries.set(model, { model, version: model.version, status: 'unsupported' });
 			}),
 			models.onDidChangeContent(() => { this.publish(); this.schedule(); }),
 			models.onDidRemoveModel(model => {
 				this.entries.delete(model); this.dirty.delete(model);
-				if (model.mode === 'lua') this.invalidateDomain(model.identity.domain);
+				if (model.mode === 'lua') this.invalidateContext(model.identity.contextId);
 				this.publish(); this.schedule();
 			}),
 		];
-		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
-			const registry = runtimeLuaSourceRegistry(sources, domain);
-			if (registry === undefined) continue; // Empty cartridge socket.
-			this.subscriptions.push(onDidChangeLuaSourceRegistry(registry, path => {
-				// A retained working copy, not its saved/installed base, owns the newer source.
-				if (path !== undefined && models.get({ domain, path }) !== undefined) return;
-				this.invalidateDomain(domain);
-				this.publish(); this.schedule();
-			}));
-		}
+		this.subscriptions.push(catalog.onDidChange((contextId, path) => {
+			if (path !== undefined && models.get({ contextId, path }) !== undefined) return;
+			this.invalidateContext(contextId);
+			this.publish(); this.schedule();
+		}));
 		for (const model of models.models) {
 			this.entries.set(model, { model, version: model.version, status: model.mode === 'lua' ? 'pending' : 'unsupported' });
 			if (model.mode === 'lua') this.dirty.add(model);
@@ -88,14 +80,14 @@ export class ResourceDiagnosticsService {
 
 	private add(model: EditorTextModel): void {
 		this.entries.set(model, { model, version: model.version, status: model.mode === 'lua' ? 'pending' : 'unsupported' });
-		if (model.mode === 'lua') this.invalidateDomain(model.identity.domain);
+		if (model.mode === 'lua') this.invalidateContext(model.identity.contextId);
 	}
 
-	private invalidateDomain(domain: ResourceDomain): void {
+	private invalidateContext(contextId: string): void {
 		// Lua files may publish globals, not just imports. Revalidate retained
 		// consumers in the affected project; the semantic owner reuses syntax.
 		for (const [model, entry] of this.entries) {
-			if (model.mode !== 'lua' || domain !== SYSTEM_RESOURCE_DOMAIN && model.identity.domain !== domain) continue;
+			if (model.mode !== 'lua' || !this.catalog.getSourceContexts(model.identity.contextId).some(context => context.id === contextId)) continue;
 			if (entry.status !== 'pending' || entry.version !== model.version) {
 				this.entries.set(model, { model, version: model.version, status: 'pending' });
 			}
@@ -137,7 +129,7 @@ export class ResourceDiagnosticsService {
 		const batch = [...this.dirty];
 		this.dirty.clear();
 		try {
-			const diagnostics = computeResourceDiagnostics(this.models, this.sources, batch);
+			const diagnostics = computeResourceDiagnostics(this.models, this.catalog, batch);
 			const byModel = new Map<EditorTextModel, { diagnostics: EditorDiagnostic[]; byRow: Map<number, EditorDiagnostic[]> }>();
 			for (const diagnostic of diagnostics) {
 				let result = byModel.get(diagnostic.model);

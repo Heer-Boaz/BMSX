@@ -21,8 +21,8 @@ export function executeEditorSearchCommand(editor: CartEditor, sources: RuntimeS
 			showCommandPalette(editor.quickInput, editor.commands);
 			return;
 		case 'resourceSearch': {
-			const navigation = new EditorNavigationController(sources, editor.resourcePanel, editor.resourceEditors, group);
-			editor.quickInput.pick('GO TO FILE', 'Type a file name or path', () => new FileQuickPickProvider(buildResourceQuickPickItems(sources.resources)),
+			const navigation = new EditorNavigationController(sources.catalog, editor.resourcePanel, editor.resourceEditors, group);
+			editor.quickInput.pick('GO TO FILE', 'Type a file name or path', () => new FileQuickPickProvider(buildResourceQuickPickItems(sources.catalog.resources)),
 				item => { void navigation.openResource(item.resource); },
 			lifetime => lifetime.add({ dispose: group.onWillDispose(() => editor.quickInput.hide()) }));
 			return;

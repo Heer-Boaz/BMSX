@@ -9,6 +9,7 @@ import type { ScenarioRunService } from '../../services/testing/scenario_runs';
 import { openHostError } from '../host_error/editor_input';
 import { openCompiledDebugSources } from '../debugger/compiled_sources';
 import { PlayEditorInput } from './editor_input';
+import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 
 /** Contribution commands select a captured session; no retargeting of authoring state. */
 export class PlayController {
@@ -19,11 +20,28 @@ export class PlayController {
 		this.unbind = service.onDidChange(event => this.didChange(event));
 	}
 	public dispose(): void { this.unbind(); this.actors?.controller.dispose(); this.actors = undefined; }
-	public start(module: ScenarioTestModule): void {
-		const handle = this.service.start(module), input = this.editor.editorGroup.model.findById('play-session');
+	public start(module: ScenarioTestModule, companionContextId: string | null = null): void {
+		const handle = this.service.start(module, companionContextId), input = this.editor.editorGroup.model.findById('play-session');
 		if (input !== undefined) { input.handle = handle; this.editor.editorGroup.openEditor(input); }
 		else this.editor.editorGroup.openEditor(new PlayEditorInput(handle, this.service));
 	}
+
+	public startWithCompanion(module: ScenarioTestModule): void {
+		const catalog = this.sources.catalog;
+		const choices: Array<{ label: string; description: string; detail: string; contextId: string | null }> = [
+			{ label: 'No companion cartridge', description: 'Primary project only', detail: '', contextId: null },
+		];
+		for (const context of catalog.contexts.values()) {
+			if (context.programDomain !== 'cart') continue;
+			choices.push({ label: context.projectRootPath, description: context.id === module.resource.contextId ? 'Primary project' : '',
+				detail: 'Use this project as the companion cartridge', contextId: context.id });
+		}
+		this.editor.quickInput.pick('PLAY FIXTURE', `Primary: ${module.resource.path}; choose a companion project`, (_origin, lifetime) => {
+			lifetime.add({ dispose: catalog.onDidChange(() => this.editor.quickInput.hide()) });
+			return new TextQuickPickProvider(choices);
+		}, choice => this.start(module, choice.contextId));
+	}
+
 	public isCommandEnabled(command: EditorPlayCommandId): boolean {
 		const handle = this.service.current;
 		if (handle === undefined) return false;
@@ -60,7 +78,7 @@ export class PlayController {
 				const next = this.service.reset(handle, this.currentModule()!), input = this.editor.editorGroup.model.findById('play-session')!;
 				input.handle = next; this.editor.editorGroup.openEditor(input); return;
 			}
-			case 'play.source': this.editor.navigation.focusChunkSourceForContext(handle.module.domain, handle.module.path); return;
+			case 'play.source': this.editor.navigation.focusChunkSourceForContext(handle.module.contextId, handle.module.path); return;
 			case 'play.breakpoints':
 				openCompiledDebugSources(this.editor.quickInput, handle.session!.debugSources,
 					listener => this.service.onDidChange(event => { if (event.handle === handle && handle.session?.ready !== true) listener(); }),
@@ -73,7 +91,7 @@ export class PlayController {
 	}
 	private currentModule(): ScenarioTestModule | undefined {
 		const handle = this.service.current!;
-		return this.runs.collection.roots.find(root => root.domain === handle.module.domain)?.children
+		return this.runs.collection.roots.find(root => root.contextId === handle.module.contextId)?.children
 			.find(module => module.resource.path === handle.module.path && module.suite?.kind === 'integration');
 	}
 	private didChange(event: PlayEvent): void {

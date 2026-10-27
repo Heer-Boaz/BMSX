@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { setImmediate } from 'node:timers/promises';
 import { loadRomToolingMedia } from '../../../toolchain/ts/rompack/media';
-import { createRuntimeSourceState } from '../../../ide/runtime/sources';
+import { createLoadedProjectSourceCatalog } from '../../../ide/runtime/sources';
 import { ScenarioTestCollection } from '../../../ide/testing/scenario/test_collection';
 import { ScenarioResultService } from '../../../ide/testing/scenario/result_service';
 import { OffscreenMachine } from '../../../hosts/common/offscreen_machine';
@@ -14,8 +14,11 @@ async function main(): Promise<void> {
 	const systemRom = await readFile('dist/system/bmsx-bios.debug.rom');
 	const cartridge = await readFile('dist/emptycart.debug.rom');
 	const media = await loadRomToolingMedia(systemRom, [cartridge, null]);
-	const collection = new ScenarioTestCollection(createRuntimeSourceState(media.system, media.cartridgeSlots));
-	const module = collection.findModuleBySourcePath(0, 'tests/carts/emptycart/bios_runtime_assert.lua');
+	const systemContext = { id: 'guest-profile-system', projectRoot: media.system.index.projectRootPath };
+	const primaryContext = { id: 'guest-profile-primary', projectRoot: media.cartridgeSlots[0]!.index.projectRootPath };
+	const catalog = createLoadedProjectSourceCatalog({ admission: systemContext, layer: media.system }, [{ admission: primaryContext, layer: media.cartridgeSlots[0]! }]);
+	const collection = new ScenarioTestCollection(catalog);
+	const module = collection.findModuleBySourcePath(primaryContext.id, 'tests/carts/emptycart/bios_runtime_assert.lua');
 	const cases = Array.from({ length: 24 }, (_, index) =>
 		`case_${index} = function() ${index % 4 === 3 ? "error('retained')" : 'assert(1 + 1 == 2)'} end`);
 	const source = `return { kind = 'unit', tests = { ${cases.join(',')} } }`;
@@ -23,7 +26,7 @@ async function main(): Promise<void> {
 	const sources = collection.resolveNode(module).map(test => ({ test, source, sourceRevision: 1 }));
 	const results = new ScenarioResultService();
 	const result = results.beginRun(module.id, sources);
-	const run = new TestRun(result, { systemRom, cartridgeSlots: [cartridge, null], machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results,
+	const run = new TestRun(result, { systemRom, cartridgeSlots: [cartridge, null], sourceSelection: { kind: 'packaged' }, machineModel: PSX_MACHINE_SPEC, optLevel: 3, sourceContexts: [systemContext.id, primaryContext.id, null] }, results,
 		(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input), () => {});
 	let peakRss = 0;
 	const records: { ms: number; bootCycles: number; cycles: number; rss: number }[] = [];

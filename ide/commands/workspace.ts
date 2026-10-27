@@ -13,7 +13,7 @@ import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
 import type { CartEditor } from '../cart_editor';
-import type { RuntimeSourceState } from '../runtime/sources';
+import type { Blua32SourceImage, RuntimeSourceState } from '../runtime/sources';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { EditorActionRequest } from './action_request';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
@@ -62,7 +62,7 @@ export function executeEditorWorkspaceCommand(
 ): void {
 	switch (command) {
 		case 'createResource':
-			openCreateResourcePrompt(editor, sources, clock);
+			openCreateResourcePrompt(editor, sources.catalog, clock);
 			return;
 		case 'save': {
 			const activeInput = group.model.activeTab;
@@ -88,20 +88,25 @@ export function executeEditorWorkspaceCommand(
 				performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, audioOutput, logOutput, request);
 			};
 			if (command === 'runCurrentFile' || command === 'runProject') {
-				const resource = group.model.activeTab?.resource;
-				if (resource && resource.domain !== -1
-					&& (command === 'runCurrentFile' || sources.cartridgeSlots[resource.domain]!.luaSources.can_boot_from_source)) {
-					requestAction({ action: 'run', entry: command === 'runCurrentFile'
-						? { domain: resource.domain, sourcePath: resource.path }
-						: { domain: resource.domain } });
-					return;
+				const input = group.model.activeTab, resource = input?.resource;
+				const projects: Array<{ domain: 0 | 1; image: Blua32SourceImage; label: string; description: string; detail: string }> = [];
+				for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
+					const image = sources.currentBlua32Media.cartridgeSlots[domain];
+					if (image === null || resource !== undefined && image.sourceContextId !== resource.contextId) continue;
+					const context = sources.catalog.getContext(image.sourceContextId);
+					if (command === 'runProject' && !context.luaSources.can_boot_from_source) continue;
+					projects.push({ domain, image, label: context.projectRootPath, description: `Physical ${domain}`,
+						detail: command === 'runCurrentFile' ? resource!.path : 'Run this installed source context' });
 				}
-				const projects = CARTRIDGE_RESOURCE_DOMAINS
-					.filter(domain => sources.cartridgeSlots[domain]?.luaSources.can_boot_from_source)
-					.map(domain => ({ domain, label: sources.cartridgeSlots[domain]!.projectRootPath,
-						description: `CART ${domain}`, detail: '' }));
-				editor.quickInput.pick('RUN PROJECT', 'Choose project', () => new TextQuickPickProvider(projects),
-					project => requestAction({ action: 'run', entry: { domain: project.domain } }));
+				editor.quickInput.pick(command === 'runCurrentFile' ? 'RUN CURRENT FILE' : 'RUN PROJECT', 'Choose the actual installed execution attachment', (_origin, lifetime) => {
+					lifetime.add({ dispose: group.onWillDispose(() => editor.quickInput.hide()) });
+					if (input !== undefined) lifetime.add({ dispose: input.onWillDispose(() => editor.quickInput.hide()) });
+					return new TextQuickPickProvider(projects);
+				}, project => {
+					if (sources.currentBlua32Media.cartridgeSlots[project.domain] !== project.image) return;
+					requestAction({ action: 'run', expectedImage: project.image, entry: command === 'runCurrentFile'
+						? { domain: project.domain, sourcePath: resource!.path } : { domain: project.domain } });
+				});
 				return;
 			}
 			requestAction({ action: command });

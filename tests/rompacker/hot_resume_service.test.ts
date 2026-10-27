@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS, createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { beforeEach, afterEach } from 'node:test';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
@@ -19,7 +20,7 @@ import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
-import { createRuntimeSourceState } from '../../ide/runtime/sources';
+
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans, willExecuteRuntimeDebuggerPlan, didExecuteRuntimeDebuggerPlan } from '../../ide/runtime/debugger_state';
@@ -34,7 +35,7 @@ async function fixture(t: TestContext, init = '') {
 		systemSource: 'module<entry>\ncop0.exec = mem[0x10000028]', systemModules: [], cartSource: source,
 	});
 	const decoded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
-	const sources = createRuntimeSourceState(decoded.system, decoded.cartridgeSlots);
+	const sources = createLoadedTestRuntimeSourceState(decoded.system, decoded.cartridgeSlots);
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const target = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC, input);
 	const runtime = target.runtime, cpu = runtime.machine.cpu;
@@ -48,7 +49,7 @@ async function fixture(t: TestContext, init = '') {
 	const models = new EditorTextModelService();
 	const service = new HotResumeService(models, sources, guest, createRuntimeFaultState(), debuggerState,
 		input, runtime, tasks, execution, new Map());
-	const model = models.retain({ sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
+	const model = models.retain({ contextLabel: 'fixture-source', sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
 	// Same resource/version in a different document owner must not enter this build.
 	editorTextModelService.retain(model.resource, 'lua', 'end end -- foreign workspace');
 	t.after(async () => {

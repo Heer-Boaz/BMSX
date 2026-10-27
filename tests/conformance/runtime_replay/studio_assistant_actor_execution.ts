@@ -32,11 +32,11 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant required');
 	const conversation = ide.editor.assistant;
 	const probeLine = ACTOR_EXECUTION_SOURCE.split('\n').findIndex(line => line.includes('return self.id, nil')) + 1;
-	ide.debugger.breakpoints.set({ domain: 0, path: 'cart.lua' }, [probeLine]);
+	ide.debugger.breakpoints.set({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' }, [probeLine]);
 	await submitAssistantText(test, 'Discover and execute live actor actions and a stored method. Inspect their actual results; do not install source.');
 	await until(() => service.active?.status === 'paused' && ide.debugger.source.stop !== undefined, 'Actor execution: actual stored-method breakpoint');
 	check(service.active!.invoked && service.active!.result === undefined, 'a breakpoint retains the actual Actor call');
-	ide.debugger.breakpoints.set({ domain: 0, path: 'cart.lua' }, []);
+	ide.debugger.breakpoints.set({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' }, []);
 	await until(() => conversation.state === 'ready', 'Actor execution: model continues and reads live state');
 	check(guest.readStringMember(guest.global('actor_tool_first'), 'x') === 17 && guest.readStringMember(guest.global('actor_tool_second'), 'x') === 40,
 		'only the actual requested actor moved');
@@ -84,12 +84,12 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	check(guest.readStringMember(lab.runtime.roots[0].value, 'x') === 124 && guest.readStringMember(lab.runtime.roots[0].value, 'y') === 457
 		&& guest.readStringMember(guest.global('actor_tool_first'), 'x') === 17, 'ordinary action picker executes the shared catalog on its own target');
 	const eventLine = ACTOR_EXECUTION_SOURCE.split('\n').findIndex(line => line.includes('on_probe = function')) + 1;
-	ide.debugger.breakpoints.set({ domain: 0, path: 'cart.lua' }, [eventLine]);
+	ide.debugger.breakpoints.set({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' }, [eventLine]);
 	await runPaletteCommand('Actor Lab: Emit Event');
 	await test.clipboard.writeText('probe_event'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('{ value = 77 }'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.paused && ide.debugger.source.stop !== undefined, 'Actor execution: ordinary event reaches its breakpoint');
-	ide.debugger.breakpoints.set({ domain: 0, path: 'cart.lua' }, []);
+	ide.debugger.breakpoints.set({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' }, []);
 	await test.runMenuCommand('debugEvaluation');
 	check(ide.debugger.source.stop === undefined, 'Run > Continue Lua Call must resume an actual source stop, not just clear control suspension');
 	await until(() => service.active === undefined && test.tasks.ready && !ide.debugger.plans.mutationActive, 'Actor execution: ordinary event returns');

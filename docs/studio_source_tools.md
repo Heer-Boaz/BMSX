@@ -12,7 +12,8 @@ client of this capability, not a second document/history implementation.
   invocation. Any intervening model/dependency/catalog change retires that
   authority, even before the first read and even if ordinary Undo restores bytes.
 - `studio_list_sources` enumerates authored text resources without reading files
-  or opening views. `textFileMode` belongs to the shared text-file admission
+  or opening views. Each descriptor names its admitted `contextId` and resource
+  path, independently of physical system/cartridge domains. `textFileMode` belongs to the shared text-file admission
   owner; binary/cooked assets have no source-writing capability.
 - `studio_read_source` resolves through the explicit `EditorTextModelService`.
   Existing unsaved models win; unopened Lua, YAML and AEM use the ordinary source
@@ -57,7 +58,7 @@ client of this capability, not a second document/history implementation.
   reading contexts on interruption or prompt completion.
 - `studio_save_source` uses the same `TextFileSaveService` as ordinary Ctrl+S.
   It accepts only the exact current receipt's model. Local persistence, project
-  provider acknowledgement and format-specific application remain distinct.
+  provider acknowledgement and explicitly requested installation remain distinct.
   Admitted writes finish even when a prompt is retired; no cancelled reply is
   sent to a newer conversation. Later typing stays dirty.
 - `studio_read_source_status` reads dirty state, the shared installed-source

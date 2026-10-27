@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import assert from 'node:assert/strict';
@@ -6,20 +7,20 @@ import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/backg
 import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { insertValue, selectAll, getCursorOffset, selectedText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
-import type { RuntimeSourceState } from '../../ide/runtime/sources';
+import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
 import { handleSearchInput } from '../../ide/input/quick_input/search/input';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} query Home and Shift-End retain text editing even with results`, t => {
-	const sources = {} as RuntimeSourceState;
+	const catalog = new WorkspaceSourceCatalog();
 
 	const source = 'local needle = 1\nreturn needle';
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'query.lua', location: { kind: 'workspace' as const, path: 'query.lua' }, domain: 0, path: 'query.lua', source: { resid: 'query', type: 'lua' } }, 'lua', source);
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'query.lua', location: { kind: 'workspace' as const, path: 'query.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'query.lua', source: { resid: 'query', type: 'lua' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
-	const search = new EditorSearchController(code, sources);
+	const search = new EditorSearchController(code, catalog);
 	t.after(() => { search.dispose(); inputFocus.setTarget(null); code.detach();  clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true); search.openSearch(false); runBackgroundTasks(clock);
 	assert.equal(search.state.matches.length, 2);
@@ -37,10 +38,10 @@ for (const scope of ['local', 'global'] as const) {
 	test(`${scope} Find cancels before detach; clearing its retained field cannot access the old editor`, t => {
 
 		const { models, documents, clock } = createTestCodeDocuments(t);
-		const model = models.retain({ sourceFilePath: 'find.lua', location: { kind: 'workspace' as const, path: 'find.lua' }, domain: 0, path: 'find.lua', source: { resid: 'find', type: 'lua' } }, 'lua', 'needle');
+		const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'find.lua', location: { kind: 'workspace' as const, path: 'find.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'find.lua', source: { resid: 'find', type: 'lua' } }, 'lua', 'needle');
 		const view = createCodeEditorViewState();
 		const code = createTestCodeControl(t, model, documents, clock, view);
-		const search = new EditorSearchController(code, { luaResources: [] } as unknown as RuntimeSourceState);
+		const search = new EditorSearchController(code, new WorkspaceSourceCatalog());
 		t.after(() => {
 			search.dispose();
 			inputFocus.setTarget(null);
@@ -72,10 +73,10 @@ for (const scope of ['local', 'global'] as const) {
 test('Find seeds from the source selection before applying query effects, including repeated opening', t => {
 
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'selection.lua', location: { kind: 'workspace' as const, path: 'selection.lua' }, domain: 0, path: 'selection.lua', source: { resid: 'selection', type: 'lua' } }, 'lua', 'first second');
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'selection.lua', location: { kind: 'workspace' as const, path: 'selection.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'selection.lua', source: { resid: 'selection', type: 'lua' } }, 'lua', 'first second');
 	const view = createCodeEditorViewState();
 	const code = createTestCodeControl(t, model, documents, clock, view);
-	const search = new EditorSearchController(code, {} as RuntimeSourceState);
+	const search = new EditorSearchController(code, new WorkspaceSourceCatalog());
 	t.after(() => {
 		search.dispose();
 		inputFocus.setTarget(null);
@@ -98,9 +99,9 @@ test('Find seeds from the source selection before applying query effects, includ
 test('Find field edits and Undo rebind on opening; leaving an empty Find ends the session', t => {
 
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'edits.lua', location: { kind: 'workspace' as const, path: 'edits.lua' }, domain: 0, path: 'edits.lua', source: { resid: 'edits', type: 'lua' } }, 'lua', 'first second');
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'edits.lua', location: { kind: 'workspace' as const, path: 'edits.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'edits.lua', source: { resid: 'edits', type: 'lua' } }, 'lua', 'first second');
 	const code = createTestCodeControl(t, model, documents, clock);
-	const search = new EditorSearchController(code, {} as RuntimeSourceState);
+	const search = new EditorSearchController(code, new WorkspaceSourceCatalog());
 	t.after(() => {
 		search.dispose();
 		inputFocus.setTarget(null);

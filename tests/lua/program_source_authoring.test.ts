@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -20,11 +21,11 @@ import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavio
 import { programEntryTemplate, programFieldTemplates } from '../../ide/workbench/contrib/lua_program/schema';
 
 function project(source: string, imports: readonly { path: string; source: string }[] = []) {
-	const file = buildResourceLuaSemanticFixtureFile(source, { domain: 0, path: 'entry.lua' });
-	const files = [file, ...imports.map(item => buildResourceLuaSemanticFixtureFile(item.source, { domain: 0, path: item.path }))];
+	const file = buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua' });
+	const files = [file, ...imports.map(item => buildResourceLuaSemanticFixtureFile(item.source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: item.path }))];
 	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture(files,
 		['cartlib/progression', 'cartlib/input/actioneffect/actioneffect_component', 'cartlib/actioneffects']));
-	const models = new Map(files.map(file => [file.file, new EditorTextModel({ sourceFilePath: file.resource.path,
+	const models = new Map(files.map(file => [file.file, new EditorTextModel({ contextLabel: 'fixture-source', sourceFilePath: file.resource.path,
 		location: { kind: 'workspace' as const, path: file.resource.path }, ...file.resource,
 		source: { resid: file.resource.path, type: 'lua' } }, 'lua', file.source)]));
 	const occurrence = collectLuaPrograms(file.resource, snapshot)[0];
@@ -35,7 +36,7 @@ function project(source: string, imports: readonly { path: string; source: strin
 
 test('program source recognition resolves cartlib imports and reexports rather than same-named functions', () => {
 	const f = project("local compile = require('bridge'); local fake = { compile_program = function() end }; compile({rules={},filters={},handlers={}}); fake.compile_program({})", [{ path: 'bridge.lua', source: "return require('cartlib/progression').compile_program" }]);
-	assert.equal(collectLuaPrograms({ domain: 0, path: 'entry.lua' }, f.snapshot).length, 1);
+	assert.equal(collectLuaPrograms({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua' }, f.snapshot).length, 1);
 	assert.equal(f.occurrence.kind, 'progression');
 	assert.equal(f.tree.rows.length, 4);
 });
@@ -43,9 +44,9 @@ test('program source recognition resolves cartlib imports and reexports rather t
 test('imported authored tables stay attached to their original shared models', () => {
 	const f = project("local p = require('cartlib/progression'); local spec = require('spec'); p.compile_program(spec)", [{ path: 'spec.lua', source: "return { rules = { {id='r', on='hit', set={{key='done',value=true}}} }, filters={}, handlers={} }" }]);
 	const property = f.tree.rows.find(row => row.element.key === '["rules",1,"on"]')!.element;
-	assert.equal(property.file.file, resourceIdentityKey({ domain: 0, path: 'spec.lua' }));
+	assert.equal(property.file.file, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'spec.lua' }));
 	assert.ok(property.container!.structural);
-	const model = f.models.get(resourceIdentityKey({ domain: 0, path: 'spec.lua' }))!, before = model.buffer.getText();
+	const model = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'spec.lua' }))!, before = model.buffer.getText();
 	model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, property.file.chunk, property.container!.table, property.container!.table.fields.length, ['apply_once = true']));
 	assert.ok(model.buffer.getText().includes('apply_once = true'));
 	model.history.undo(model);
@@ -142,7 +143,7 @@ test('new modules are canonical source recognized by their actual editors', () =
 		assert.equal(project(source).occurrence.kind, kind);
 	}
 	const effect = newLuaSource('action_effect', 'effects/chime.lua');
-	const file = buildResourceLuaSemanticFixtureFile(effect, { domain: 0, path: 'effects/chime.lua' });
+	const file = buildResourceLuaSemanticFixtureFile(effect, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'effects/chime.lua' });
 	const definition = buildBehaviorSourceDocument(file.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file], ['cartlib/actioneffects']))).definitions[0];
 	assert.equal(definition.behaviorKind, 'action_effect');
 });

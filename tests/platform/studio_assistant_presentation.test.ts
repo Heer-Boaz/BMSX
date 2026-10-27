@@ -20,7 +20,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		return [call('studio_list_sources', {})];
 	}, body => {
 		const selected = references[0].source;
-		const resource = outputs(body)[0].find(resource => resource.domain === selected.domain && resource.path === selected.path);
+		const resource = outputs(body)[0].find(resource => resource.contextId === selected.contextId && resource.path === selected.path);
 		return [call('studio_read_source', { resource: resource.resource })];
 	}, [{ type: 'message', id: 'markdown-message', role: 'assistant', content: [{ type: 'output_text', text: markdown }] }],
 		() => { started(); return CODEX_FIXTURE_WAIT; }]);

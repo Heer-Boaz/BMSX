@@ -1,6 +1,6 @@
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { ResourceDomain } from '../../../common/resource';
-import type { RuntimeInstalledSourceState } from '../../../runtime/sources';
+import type { Blua32SourceImage, RuntimeInstalledSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import { findActionEffectInstance, inspectActionEffectInstance, type ActionEffectInstance } from './action_effect_runtime';
@@ -32,7 +32,7 @@ export class BehaviorRuntimeInspection {
 	private readonly properties: BehaviorRuntimeProperties;
 
 	public constructor(private readonly sources: RuntimeInstalledSourceState, private readonly guest: SuspendedGuestSession,
-		private readonly rewind: HostRewind, private readonly domain: ResourceDomain, private selection: BehaviorRuntimeSelection | undefined) {
+		private readonly rewind: HostRewind, private readonly domain: ResourceDomain, private readonly image: Blua32SourceImage, private selection: BehaviorRuntimeSelection | undefined) {
 		this.historical = rewind.active;
 		this.properties = new BehaviorRuntimeProperties(sources, guest);
 		this.unbindInvalidation = guest.onDidInvalidate(reason => {
@@ -76,6 +76,8 @@ export class BehaviorRuntimeInspection {
 	}
 
 	private resolve(): ResolvedBehavior | undefined {
+		const installed = this.domain === -1 ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[this.domain];
+		if (installed !== this.image) return undefined;
 		const selection = this.selection;
 		if (selection === undefined) return undefined;
 		switch (selection.kind) {

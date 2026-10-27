@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { EditorCommandRunner } from '../../ide/common/commands';
@@ -9,7 +11,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { api } from '../../ide/runtime/overlay_api';
-import { resolveRuntimeResourceForContext } from '../../ide/runtime/sources';
+import type { ResourceIdentity } from '../../ide/common/resource';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import { RomInspectorPane } from '../../ide/workbench/contrib/rom_inspector/editor_pane';
 import type { RomInspectorSnapshot } from '../../ide/workbench/contrib/rom_inspector/model';
@@ -52,7 +54,7 @@ function imageSnapshot(): RomInspectorSnapshot {
 		{ resid: 'b-data', type: 'bin', source_path: 'b.lua', start: end, end: end + 1024 },
 	];
 	finalizePackedRomAssets(assets);
-	return { domain: 0, label: 'Captured cartridge', rom, assets, header: {
+	return { domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Captured cartridge', rom, assets, header: {
 		headerSize: 72, manifestOffset: 72, manifestLength: 0, dataOffset: 72, dataLength: end + 1024 - 72,
 		metadataOffset: end + 1024, metadataLength: 32, tocOffset: end + 1056, tocLength: 32,
 		blua32ImageOffset: 0, blua32ImageByteCount: 0, blua32StartupFunctionAddress: 0, blua32IrqFunctionAddress: 0,
@@ -69,8 +71,8 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('a.lua', 1), createScenarioTestSourceRecord('b.lua', 2)]);
-	const opened: { domain: number; path: string }[] = [];
-	const navigation = { openResource: async (resource: { domain: number; path: string }) => { opened.push(resource); return 1; } } as EditorNavigationController;
+	const opened: ResourceIdentity[] = [];
+	const navigation = { openResource: async (resource: ResourceIdentity) => { opened.push(resource); return 1; } } as EditorNavigationController;
 	const pane = new RomInspectorPane(commands, sources, navigation, quickInput, contextMenu, surfaces, owner, area, inputFocus.workbenchScope);
 	t.after(() => { pane.clearInput(); pane.dispose(); quickInput.dispose(); contextMenu.dispose(); inputFocus.setTarget(null);
 		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose(); input.dispose();  });
@@ -123,8 +125,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	inputFocus.workbenchScope.commands = commands; origin.focus();
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('a.lua', 1), createScenarioTestSourceRecord('b.lua', 2)]);
-	const opened: { domain: number; path: string }[] = [];
-	const navigation = { openResource: async (resource: { domain: number; path: string }) => { opened.push(resource); return 1; } } as EditorNavigationController;
+	const opened: ResourceIdentity[] = [];
+	const navigation = { openResource: async (resource: ResourceIdentity) => { opened.push(resource); return 1; } } as EditorNavigationController;
 	const createReader = () => new RomEntryInspectorWindow(input, commands, sources, navigation, quickInput, contextMenu, surfaces, owner, origin, area);
 	let reader = createReader();
 	const overlay = createHostOverlayFixture(384, 288);
@@ -174,9 +176,9 @@ test('Hold and Follow bind exact shown identities, including an empty catalog, a
 	f.reader.execute('romInspector.hold'); f.select('b-data');
 	assert.equal(f.input.readerHeld, true); assert.equal(f.input.reader.subject, held);
 	f.reader.execute('romInspector.source');
-	assert.equal(f.opened[0], resolveRuntimeResourceForContext(f.sources, 0, 'a.lua'));
+	assert.equal(f.opened[0], f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'a.lua' }));
 	f.reader.execute('romInspector.hold'); assert.equal(f.input.reader.subject, f.input.model.selection);
-	f.reader.execute('romInspector.source'); assert.equal(f.opened[1], resolveRuntimeResourceForContext(f.sources, 0, 'b.lua'));
+	f.reader.execute('romInspector.source'); assert.equal(f.opened[1], f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'b.lua' }));
 	f.input.model.filter = 'no matching asset'; f.input.model.project(); f.reader.update();
 	assert.equal(f.input.reader.subject, undefined); assert.ok(f.draw().glyphs.some(glyph => glyph.items === 'No entry selected'));
 	f.reader.window.hide(); f.input.model.filter = ''; f.input.model.project(); f.reader.update();
@@ -226,7 +228,7 @@ test('a held function paints its captured disassembly after the catalog changes 
 	const text = new Uint8Array(3 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0, 0); writeInstruction(text, 1, OpCode.MOV, 1, 2, 0, 0); writeInstruction(text, 2, OpCode.RET, 0, 0, 0, 0);
 	const linked = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3 }] });
-	const f = fixture(t, 'msx', 'dark', { domain: -1, label: 'System capture', rom: linked.romBytes, header: parseCartHeader(linked.romBytes), assets: [] });
+	const f = fixture(t, 'msx', 'dark', { domain: -1, sourceContextId: TEST_SYSTEM_CONTEXT_ID, label: 'System capture', rom: linked.romBytes, header: parseCartHeader(linked.romBytes), assets: [] });
 	f.input.model.setMode('code'); f.reader.show(); f.reader.execute('romInspector.hold');
 	const subject = f.input.reader.subject, lines = f.reader.presentation.lines.slice();
 	assert.equal(subject!.kind, 'function'); assert.equal(lines.length, 2); assert.ok(lines.some(line => /MOV/.test(line)));

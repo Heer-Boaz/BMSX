@@ -25,7 +25,8 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { loadRomToolingMedia } from '../../../toolchain/ts/rompack/media';
 import { IdeMicrotaskQueue } from '../../../ide/common/microtask_queue';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
-import { createRuntimeSourceState } from '../../../ide/runtime/sources';
+import { createRuntimeSourceState, createLoadedProjectSourceCatalog } from '../../../ide/runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../ide/workspace/source_catalog';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../../ide/workspace/records';
 import { WorkspaceSourceRecovery } from '../../../ide/workbench/services/working_copy/source_recovery';
 import { applyAllWorkspaceSourceOverrides, discoverWorkspaceSources } from '../../../ide/workspace/workspace';
@@ -51,6 +52,7 @@ class HeadlessStudioRuntime {
 	private readonly log = new ConsoleLogOutput();
 	private readonly systemOutput = new SystemOutputLog();
 	private workbench: StudioWorkbench | undefined;
+	private catalog: WorkspaceSourceCatalog | undefined;
 	private recovery: WorkspaceSourceRecovery | undefined;
 	private requests: StudioToolRequests | undefined;
 	private frameLoop: { stop(): void } | undefined;
@@ -73,14 +75,18 @@ class HeadlessStudioRuntime {
 	public async initialize(options: HeadlessStudioOptions, systemRom: Uint8Array,
 		cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null]): Promise<void> {
 		const media = await loadRomToolingMedia(systemRom, cartridgeSlots);
-		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+		const catalog = createLoadedProjectSourceCatalog({ admission: options.project.system, layer: media.system },
+			[{ admission: options.project.cartridge, layer: media.cartridgeSlots[0]! }]);
+		this.catalog = catalog;
+		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots, { catalog,
+			systemContextId: options.project.system.id, cartridgeContextIds: [options.project.cartridge.id, null] });
 		await openWorkspaceRecords(new WorkerWorkspaceRecordProvider(parentPort!));
 		this.recovery = new WorkspaceSourceRecovery({ identity: options.recoveryIdentity, sourceContextId: options.project.cartridge.id,
 			projectRootPath: options.project.cartridge.projectRoot,
-			models: editorTextModelService, sources, clock: this.clock, logOutput: this.log });
+			models: editorTextModelService, catalog, clock: this.clock, logOutput: this.log });
 		const workspaceDirtyRecords = await this.recovery.initialize();
-		const observed = await discoverWorkspaceSources(sources);
-		await applyAllWorkspaceSourceOverrides(sources, workspaceDirtyRecords, observed);
+		const observed = await discoverWorkspaceSources(catalog);
+		await applyAllWorkspaceSourceOverrides(catalog, workspaceDirtyRecords, observed);
 		await this.recovery.restoreModels();
 		this.workbench = new StudioWorkbench({ runtime: this.runtime, input: this.input, audioOutput: this.audioOutput,
 			runtimeTasks: this.tasks, execution: this.execution, rewind: this.rewind, clock: this.clock,
@@ -88,8 +94,8 @@ class HeadlessStudioRuntime {
 			workspaceDirtyRecords,
 			gameCapture: new GameCaptureService(this.presenter, this.presentation, this.tasks, encodePngImage),
 			createTestTarget: (system, slots, model, input) => new OffscreenMachine(system, slots, model, input),
-			createPlaySession: (system, slots, model, input, program, domain) => new PlayRuntimeSession(
-				new OffscreenMachine(system, slots, model, input), program, domain, this.audioOutput.device, this.log) });
+			createPlaySession: (system, slots, model, input, program) => new PlayRuntimeSession(
+				new OffscreenMachine(system, slots, model, input), program, this.audioOutput.device, this.log) });
 		const boot = this.workbench.boots.start('installed').result!;
 		if (boot.status === 'failed' || boot.status === 'rejected') throw boot.error;
 		this.systemOutput.flush(this.runtime, this.log);
@@ -115,9 +121,9 @@ class HeadlessStudioRuntime {
 			case 'cancel': this.requests!.cancel(message.request); break;
 			case 'release': this.requests!.release(message.context); break;
 			case 'close': {
-				const dirty: { domain: -1 | 0 | 1; path: string }[] = [];
+				const dirty: { contextId: string; path: string }[] = [];
 				for (const model of editorTextModelService.models) {
-					if (model.dirty) dirty.push({ domain: model.identity.domain, path: model.identity.path });
+					if (model.dirty) dirty.push({ contextId: model.identity.contextId, path: model.identity.path });
 				}
 				if (dirty.length !== 0 && !message.discardUnsaved) {
 					this.reply({ type: 'closed', request: message.request, result: { status: 'dirty', resources: dirty } });
@@ -156,6 +162,7 @@ class HeadlessStudioRuntime {
 					try { await closeWorkspaceRecords(); }
 					finally {
 						editorTextModelService.clear();
+						this.catalog?.dispose();
 						this.input.dispose();
 						this.audioOutput.dispose();
 						this.presenter.dispose();

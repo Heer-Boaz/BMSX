@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -99,7 +100,7 @@ function fixture(worldSource = WORLD) {
 		update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true,
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	cpu.reset(); cpu.installBootPrimitives(); const beforeBirth = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), details = new ActorDetails(sources, guest);
 	const world = runtimeWorld(sources, guest, -1)!;
@@ -615,7 +616,7 @@ test('pinned callbacks reuse current loaded source mappings and clear them when 
 	const pin = f.details.watches.add(target, 'ordinary', f.details.items.find(item => item.label === 'callback')!);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const source = pin.item.source;
-	assert.ok(source !== undefined); assert.equal(source.resource.domain, -1);
+	assert.ok(source !== undefined); assert.equal(source.resource.contextId, TEST_SYSTEM_CONTEXT_ID);
 	for (let frame = 0; frame < 100; frame++) {
 		f.invalidate(); f.update(); f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 		assert.strictEqual(pin.item.source, source);

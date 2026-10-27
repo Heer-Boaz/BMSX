@@ -1,4 +1,6 @@
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { resourceIdentityKey } from '../../../ide/common/resource';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
@@ -15,7 +17,6 @@ import { beginStateMachineDrag, stateMachineConnectionEnds, type StateMachineRet
 import { stateMachineRetargetImpacts } from '../../../ide/workbench/contrib/behavior_lens/state_machine_review';
 import { createStateMachineRetargetEdit } from '../../../ide/workbench/contrib/behavior_lens/state_machine_edit';
 import { BehaviorLensInput } from '../../../ide/workbench/contrib/behavior_lens/editor_input';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { medianMilliseconds } from '../../helpers/performance';
 import { WorkspaceEditProposal } from '../../../ide/workbench/services/working_copy/workspace_edit';
 import { WorkspaceSourceContext } from '../../../ide/workbench/services/working_copy/source_context';
@@ -33,16 +34,16 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('profile.lua', 1, source),
 			createScenarioTestSourceRecord('provider.lua', 1, providerSource)]);
 		const models = new EditorTextModelService();
-		const model = models.retain(sources.luaResources.find(resource => resource.path === 'profile.lua')!, 'lua', source);
-		const provider = models.retain(sources.luaResources.find(resource => resource.path === 'provider.lua')!, 'lua', providerSource);
-		const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path),
-			buildLuaFileSemanticData(provider.buffer.getText(), provider.resource.path)));
+		const model = models.retain(sources.catalog.luaResources.find(resource => resource.path === 'profile.lua')!, 'lua', source);
+		const provider = models.retain(sources.catalog.luaResources.find(resource => resource.path === 'provider.lua')!, 'lua', providerSource);
+		const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, model.resource),
+			buildResourceLuaSemanticFixtureFile(provider.buffer.getText(), provider.resource)], ['cartlib/fsm/library'])));
 		editorViewState.font = new EditorFont('tiny');
 		const font = editorViewState.font.renderFont();
-		const view = createBehaviorLensViewState(document, model, 'state-graph', path => { assert.equal(path, provider.resource.path); return provider; });
+		const view = createBehaviorLensViewState(document, model, 'state-graph', path => { assert.equal(path, resourceIdentityKey(provider.resource)); return provider; });
 		selectBehaviorLensDefinition(view, document.definitions[0].rowKey);
 		const graph = view.presentation; assert.ok(graph.kind === 'state-graph');
-		const input = new BehaviorLensInput(model, view, () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
+		const input = new BehaviorLensInput(model, view, new Set([model.resource.contextId]), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 		try {
 			input.updatePresentation(font); await input.graphLayout.settled; input.updatePresentation(font);
 			const viewport = graph.viewport;
@@ -78,7 +79,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 			let reviewRows = 0;
 			const reviewPreparationProjectionMicroseconds = medianMilliseconds(() => {
 				for (let i = 0; i < 10; i += 1) {
-					const context = new WorkspaceSourceContext(models, sources);
+					const context = new WorkspaceSourceContext(models, sources.catalog);
 					for (const source of view.source.models.values()) context.read(source);
 					const edit = createStateMachineRetargetEdit(targetModel, view, selection, target);
 					const evidence = { summary: `${target.uses.length} RECOGNIZED USES: ${target.literal.value} -> ${target.text}`,

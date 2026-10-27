@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -10,7 +11,7 @@ import { walkLuaAst } from '../../toolchain/ts/lua/syntax/ast/traversal';
 import { runCompiledLua } from './cpu_test_harness';
 
 const path = 'relocation.lua';
-const resource = { sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0 as const, path, source: { type: 'lua' as const, resid: 'relocation' } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua' as const, resid: 'relocation' } };
 
 function fixture(source: string, from = 0, to = 1, index = 0) {
 	const file = buildLuaFileSemanticData(source, path);

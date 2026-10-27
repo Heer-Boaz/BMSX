@@ -13,7 +13,7 @@ import { sourcePositionInRange } from '../../toolchain/ts/lua/semantic/source_ra
 import { sourceRangesEqual, type SourceRange } from '../../toolchain/ts/lua/source_range';
 import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
-import { Blua32GlobalRegisterFile, resolveRuntimeLuaSource, type Blua32SourceImage, type RuntimeSourceState, type RuntimeInstalledSourceState } from './sources';
+import { Blua32GlobalRegisterFile, type Blua32SourceImage, type RuntimeSourceState, type RuntimeInstalledSourceState } from './sources';
 import { readBlua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import type { SuspendedGuestRead, SuspendedGuestSession, SuspendedGuestValue, RuntimeFunctionLocationBuffer } from './suspended_guest';
 import type { RuntimeStackFrame } from './stack_trace';
@@ -139,7 +139,7 @@ export function capturedLuaSourceAtPc(image: Blua32SourceImage, pc: number): Cap
 	if (range === null) return undefined;
 	const source = image.sources.get(toLuaModulePath(range.path));
 	if (source === undefined) return undefined;
-	return { resource: { domain: image.sourceDomain, path: source.displayPath },
+	return { resource: { contextId: image.sourceContextId, path: source.displayPath },
 		range: { path: source.displayPath, start: range.start, end: range.end }, installedSource: readBlua32CompiledSource(source) };
 }
 
@@ -184,7 +184,7 @@ export function runtimeLuaFunctionSource(sources: RuntimeInstalledSourceState, g
 	const definition = image.symbols.metadata.functionDefinitions[index];
 	if (definition === null) return undefined;
 	const record = image.sources.get(toLuaModulePath(definition.path))!;
-	return { executionDomain: domain, resource: { domain: image.sourceDomain, path: record.displayPath }, range: { ...definition, path: record.displayPath },
+	return { executionDomain: domain, resource: { contextId: image.sourceContextId, path: record.displayPath }, range: { ...definition, path: record.displayPath },
 		installedSource: readBlua32CompiledSource(record) };
 }
 
@@ -217,12 +217,14 @@ export function readRuntimeLuaValue(
 	guest: SuspendedGuestSession,
 	analysis: FileSemanticData,
 	identity: ResourceIdentity,
+	domain: ResourceDomain,
 	parts: readonly string[],
 	line: number,
 	column: number,
 ): RuntimeLuaInspectionValue {
-	const domain = identity.domain;
-	const record = resolveRuntimeLuaSource(sources, identity)!.record;
+	const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
+	if (image === null || image.sourceContextId !== identity.contextId) return NOT_LOADED;
+	const record = sources.catalog.resolveLuaSource(identity)!.record;
 	const installed = domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemInstalledBlua32Sources : sources.cartridgeSlots[domain]!.installedBlua32Sources;
 	const installedSource = installed.get(record.module_path);

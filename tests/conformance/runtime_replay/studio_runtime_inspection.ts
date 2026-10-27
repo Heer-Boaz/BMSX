@@ -1,7 +1,6 @@
 import { RUNTIME_INSPECTION_CALLBACKS_SOURCE, RUNTIME_INSPECTION_CART_SOURCE } from '../../helpers/runtime_inspection_fixture';
 import { RUNTIME_INSPECTION_TREES_SOURCE } from '../../helpers/runtime_inspection_bt_fixture';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { sourcePane, check, codePositionBounds, createStudioLuaSource, type StudioFixture } from './studio_fixture';
 import * as constants from '../../../ide/common/constants';
@@ -86,17 +85,17 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await testRuntimeTreeSource(test);
 	const initialInspector = await openRuntimeEffectInspector(test, 'second', 20);
 
-	const library = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/actioneffects/actioneffect_component'];
+	const library = ide.sources.catalog.getContext(test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId).luaSources.module2lua['cartlib/actioneffects/actioneffect_component'];
 	const rebindLine = library.src.split('\n').findIndex(line => line.includes('effect.definition = definition')) + 1;
 	harness.toggleLuaBreakpoint(library.source_path, rebindLine);
-	const fsmLibrary = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/fsm/fsm'];
+	const fsmLibrary = ide.sources.catalog.getContext(test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId).luaSources.module2lua['cartlib/fsm/fsm'];
 	// The constructor uses the same assignment; select the one after the actual rebind owner.
 	const fsmLines = fsmLibrary.src.split('\n');
 	const fsmRebindStart = fsmLines.findIndex(line => line.startsWith('rebind_definition_tree = function'));
 	const fsmRebindStop = fsmLines.findIndex((line, index) => index > fsmRebindStart && line.includes('self.frame_evaluator = definition.frame_evaluator')) + 1;
 	check(fsmRebindStop > fsmRebindStart, 'inspection: actual FSM rebind assignment exists');
 	harness.toggleLuaBreakpoint(fsmLibrary.source_path, fsmRebindStop);
-	const btLibrary = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/behaviour_tree/bt_component'];
+	const btLibrary = ide.sources.catalog.getContext(test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId).luaSources.module2lua['cartlib/behaviour_tree/bt_component'];
 	const btRebindStop = btLibrary.src.split('\n').findIndex(line => line.includes('self.evaluate = program.evaluate')) + 1;
 	harness.toggleLuaBreakpoint(btLibrary.source_path, btRebindStop);
 	const media = ide.sources.currentBlua32Media;
@@ -134,7 +133,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await inspectRuntimeTreeBlackboard(test, 'first');
 	await inspectRuntimeTreeBlackboard(test, 'second');
 	harness.toggleLuaBreakpoint(btLibrary.source_path, btRebindStop);
-	const blackboard = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/behaviour_tree/blackboard'];
+	const blackboard = ide.sources.catalog.getContext(test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId).luaSources.module2lua['cartlib/behaviour_tree/blackboard'];
 	const layoutWrite = blackboard.src.split('\n').findIndex(line => line.includes('self._layout = layout')) + 1;
 	const valuesWrite = blackboard.src.split('\n').findIndex(line => line.includes('self._values = values')) + 1;
 	harness.toggleLuaBreakpoint(blackboard.source_path, layoutWrite);

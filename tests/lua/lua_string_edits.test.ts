@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
@@ -24,7 +25,7 @@ test('Lua string emission round-trips bytes, delimiters and Unicode through the 
 test('a string-value edit preserves grouping and all exterior trivia in one Undo element', t => {
 	for (const original of ["'old'", '"old"', '[==[old]==]', 'nil', 'false', 'true', '7']) {
 		const source = `return ( --[[before]]\n ${original} --[[after]]\n)`;
-		const model = new EditorTextModel({ sourceFilePath: 'value.lua', location: { kind: 'workspace' as const, path: 'value.lua' }, domain: 0, path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', source);
+		const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'value.lua', location: { kind: 'workspace' as const, path: 'value.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', source);
 		t.after(() => model.dispose());
 		const file = buildLuaFileSemanticData(source, 'value.lua');
 		const statement = file.chunk.body.get(0)!;

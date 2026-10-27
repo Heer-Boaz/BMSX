@@ -1,12 +1,12 @@
 import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import type { RuntimeResource, ResourceDomain } from '../../../common/resource';
+import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type RuntimeResource } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { luaSourceRangeToTextRange, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
-import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
+import type { Blua32SourceImage, RuntimeSourceState } from '../../../runtime/sources';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { EditorNavigationController } from '../resources/navigation';
@@ -15,7 +15,7 @@ import type { QuickInputController } from '../../services/quick_input/controller
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { collectLuaPrograms, projectLuaProgram, type LuaProgramKind, type LuaProgramOccurrence } from './source';
 import { LuaProgramInput } from './editor_input';
-import { LuaProgramRuntimeProjection, readProgramInstances } from './runtime';
+import { LuaProgramRuntimeProjection, readProgramInstances, type ProgramInstanceChoice } from './runtime';
 import { programFieldTemplates, programEntryTemplate } from './schema';
 import type { HostRewind } from '../../../../hosts/common/rewind';
 
@@ -27,13 +27,13 @@ export class LuaProgramController {
 		private readonly rewind: HostRewind) {}
 	public open(kind: LuaProgramKind): void {
 		const choices: { label: string; description: string; detail: string; occurrence: LuaProgramOccurrence }[] = [];
-		const snapshots = new Map<ResourceDomain, LuaSemanticWorkspaceSnapshot>();
-		for (const resource of this.sources.luaResources) {
-			let snapshot = snapshots.get(resource.domain);
+		const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
+		for (const resource of this.sources.catalog.luaResources) {
+			let snapshot = snapshots.get(resource.contextId);
 			if (snapshot === undefined) {
-				const project = getOrCreateSemanticProject(editorTextModelService, resource.domain);
-				project.synchronizeRuntimeSources(this.sources);
-				snapshot = project.getSnapshot(); snapshots.set(resource.domain, snapshot);
+				const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId);
+				project.synchronizeSources(this.sources.catalog);
+				snapshot = project.getSnapshot(); snapshots.set(resource.contextId, snapshot);
 			}
 			for (const occurrence of collectLuaPrograms(resource, snapshot)) {
 				if (occurrence.kind !== kind) continue;
@@ -45,14 +45,14 @@ export class LuaProgramController {
 			() => new TextQuickPickProvider(choices), item => this.openOccurrence(item.occurrence));
 	}
 	public openResource(resource: RuntimeResource, kind: LuaProgramKind): void {
-		const project = getOrCreateSemanticProject(editorTextModelService, resource.domain);
-		project.synchronizeRuntimeSources(this.sources);
+		const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId);
+		project.synchronizeSources(this.sources.catalog);
 		const occurrence = collectLuaPrograms(resource, project.getSnapshot()).find(item => item.kind === kind)!;
 		this.openOccurrence(occurrence);
 	}
 	public openOccurrence(occurrence: LuaProgramOccurrence): LuaProgramInput {
-		const resource = resolveRuntimeResource(this.sources, occurrence.resource)!;
-		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
+		const resource = this.sources.catalog.resolveResource(occurrence.resource)!;
+		const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
 		const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
 		let input = this.group.model.tabs.find((input): input is LuaProgramInput => input.kind === 'lua_program'
 			&& input.workingCopy === model && input.programKind === occurrence.kind && input.occurrenceRange.start === span.start && input.occurrenceRange.end === span.end);
@@ -77,8 +77,8 @@ export class LuaProgramController {
 	}
 	public resolveRuntime(input: LuaProgramInput): void { this.projections.get(input)!.resolve(input); }
 	public refresh(input: LuaProgramInput): void {
-		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.domain);
-		project.synchronizeRuntimeSources(this.sources);
+		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.contextId);
+		project.synchronizeSources(this.sources.catalog);
 		const snapshot = project.getSnapshot();
 		if (input.sourceRevision === snapshot.revision) return;
 		input.sourceRevision = snapshot.revision;
@@ -97,8 +97,8 @@ export class LuaProgramController {
 		projectLuaProgram(input.tree, input.occurrence, reader, file => {
 			let model = input.sourceModels.get(file.file);
 			if (model === undefined) {
-				const resource = resolveRuntimeResource(this.sources, project.getResourceIdentity(file.file))!;
-				model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
+				const resource = this.sources.catalog.resolveResource(project.getResourceIdentity(file.file))!;
+				model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
 				input.sourceModels.set(file.file, model);
 			}
 			return model;
@@ -117,11 +117,19 @@ export class LuaProgramController {
 	}
 	public chooseInstance(input: LuaProgramInput): void {
 		input.running = false;
+		const choices: Array<ProgramInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
+		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
+			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+			if (image === null || image.sourceContextId !== input.workingCopy.resource.contextId) continue;
+			for (const item of readProgramInstances(this.sources, this.guest, domain, input.programKind)) {
+				choices.push({ ...item, domain, image, detail: `Physical ${domain} / ${item.detail}` });
+			}
+		}
 		this.quickInput.pick('LIVE PROGRAM INSTANCE', 'Actual mounted contexts / components; no source-ID guess', (_origin, lifetime) => {
 			lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
-			return new TextQuickPickProvider(readProgramInstances(this.sources, this.guest, input.workingCopy.resource.domain, input.programKind));
+			return new TextQuickPickProvider(choices);
 		}, item => {
-			input.instance = item.identity; input.instanceLabel = item.label;
+			input.instance = item.identity; input.instanceLabel = item.label; input.runtimeDomain = item.domain; input.runtimeImage = item.image;
 			input.programHashId = 0; input.stateHashId = 0; input.stateRevision = -1;
 			input.liveVisible = true; input.liveDirty = true;
 		});

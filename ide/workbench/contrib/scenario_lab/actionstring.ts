@@ -1,6 +1,5 @@
 import type { HostClock } from '../../../../hosts/common/clock';
-import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { ResourceDomain } from '../../../common/resource';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { showEditorWarningBanner } from '../../../common/feedback_state';
 import { createTextResource } from '../../../workspace/workspace';
 import { quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_literal';
@@ -11,23 +10,23 @@ import type { ScenarioLabController } from './controller';
 
 /** Authored, rerunnable input experiments use Scenario Lab's isolated machine and real cartlib parser. */
 export class ActionStringTester {
-	public constructor(private readonly sources: RuntimeSourceState, private readonly clock: HostClock,
+	public constructor(private readonly catalog: WorkspaceSourceCatalog, private readonly clock: HostClock,
 		private readonly quickInput: QuickInputController, private readonly runs: ScenarioRunService, private readonly lab: ScenarioLabController) {}
-	public canStart(domain: ResourceDomain): boolean { return domain !== -1 && !this.runs.active; }
-	public open(domain: ResourceDomain, pattern = ''): void {
-		if (domain === -1) throw new Error('Input experiments require a cartridge project.');
+	public canStart(contextId: string): boolean { return this.catalog.getContext(contextId).programDomain === 'cart' && !this.runs.active; }
+	public open(contextId: string, pattern = ''): void {
+		if (this.catalog.getContext(contextId).programDomain !== 'cart') throw new Error('Input experiments require a cartridge project.');
 		this.quickInput.input('TEST ACTIONSTRING', "Uses the cart's real player mappings; no replacement bindings", pattern, async text => text, expression => {
 			this.quickInput.input('INPUT EXPERIMENT', 'Lua: player, clock.frame / clock.gameplay, steps; optional verify(t, index, match) for cart assertions',
 				"{ player = 1, clock = clock.frame, steps = { { key = 'KeyX', down = true, expect = true, max_ticks = 30 }, { key = 'KeyX', down = false, expect = false, max_ticks = 30 } } }",
 				async text => validateLuaTableFieldExpression(text), experiment => {
 					this.quickInput.input('SCENARIO SOURCE', 'Creates a reusable test; no changes to the authoring runtime', 'tests/actionstring_assert.lua', async relativePath => {
-						const resource = await createTextResource(this.clock, this.sources, { domain, relativePath,
+						const resource = await createTextResource(this.clock, this.catalog, { contextId, relativePath,
 							contents: actionStringScenarioSource(expression, experiment) });
 						return resource;
 					}, resource => {
 						this.runs.refreshSources();
-						const module = this.runs.collection.findModuleBySourcePath(domain, resource.path);
-						try { this.lab.revealRun(this.runs.start(module.id)); }
+						const module = this.runs.collection.findModuleBySourcePath(contextId, resource.path);
+						try { this.lab.start(module.id); }
 						catch (error) {
 							if (!(error instanceof ScenarioRunAdmissionError)) throw error;
 							showEditorWarningBanner(`${error.message} The scenario source was created and can be run from Scenario Lab.`);

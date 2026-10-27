@@ -1,3 +1,4 @@
+import { TEST_STUDIO_CARTRIDGE_CONTEXT_ID } from '../helpers/studio_source_contexts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -12,7 +13,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const read = (phase: string) => [
 		[call(`list-${phase}`, 'studio_list_sources', {})],
 		(body: Body) => ['cart.lua', 'res/data/nemesis_s_stage.yaml'].map((path, index) => call(`read-${phase}-${index}`, 'studio_read_source',
-			{ resource: output(body, `list-${phase}`).find(resource => resource.domain === 0 && resource.path === path).resource })),
+			{ resource: output(body, `list-${phase}`).find(resource => resource.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && resource.path === path).resource })),
 		(body: Body) => [0, 1].map(index => call(`status-${phase}-${index}`, 'studio_read_source_status', { receipt: output(body, `read-${phase}-${index}`).receipt })),
 	];
 	const model = await createCodexModelFixture(t, [

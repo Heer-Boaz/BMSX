@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { inputFocus } from '../../ide/input/focus';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
@@ -12,7 +13,7 @@ import { buildResourceQuickPickItems } from '../../ide/workbench/contrib/resourc
 import { FileQuickPickProvider } from '../../ide/workbench/services/quick_input/file_provider';
 
 function fixture(paths: string[]) {
-	const resources: RuntimeResource[] = paths.map(path => ({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }));
+	const resources: RuntimeResource[] = paths.map(path => ({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: path, type: 'lua' } }));
 	const items = buildResourceQuickPickItems(resources);
 	return { resources, items, provider: new FileQuickPickProvider(items) };
 }
@@ -87,8 +88,8 @@ test('file queries have no path/pattern cutoff and reuse result records across s
 test('same-path files from two sockets retain distinct original resources through shared picker acceptance', t => {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const resources: RuntimeResource[] = [0, 1].map(domain => ({ sourceFilePath: 'shared/source.lua', location: { kind: 'workspace' as const, path: 'shared/source.lua' }, domain: domain as 0 | 1, path: 'shared/source.lua',
-		source: { resid: `module_${domain}`, type: 'lua' } }));
+	const resources: RuntimeResource[] = TEST_CARTRIDGE_CONTEXT_IDS.map(contextId => ({ contextLabel: 'Fixture project', sourceFilePath: 'shared/source.lua', location: { kind: 'workspace' as const, path: 'shared/source.lua' }, contextId, path: 'shared/source.lua',
+		source: { resid: `module_${contextId}`, type: 'lua' } }));
 	const items = buildResourceQuickPickItems(resources);
 	const provider = new FileQuickPickProvider(items);
 	const menu = new ContextMenuController(inputFocus, pointerCapture);

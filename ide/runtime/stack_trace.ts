@@ -3,16 +3,14 @@ import {
 	blua32InlineCallSitesAtPc,
 	blua32SourceRangeAtPc,
 } from '../../toolchain/ts/rompack/blua32_symbols';
-import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
-import {
-	resolveRuntimeLuaSource,
-	type RuntimeSourceState,
-} from './sources';
-import type { ResourceDomain, ResourceIdentity } from '../common/resource';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
+import type { Blua32SourceImage, RuntimeSourceState } from './sources';
+import type { ResourceIdentity } from '../common/resource';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
+import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 
 export type SourceStackTraceFrame = {
 	readonly kind: 'source';
@@ -32,35 +30,9 @@ export type InstructionStackTraceFrame = {
 
 export type StackTraceFrame = SourceStackTraceFrame | InstructionStackTraceFrame;
 
-export function createLuaSourceStackTraceFrame(
-	sources: RuntimeSourceState,
-	domain: ResourceDomain,
-	source: string,
-	line: number,
-	column: number,
-	functionName: string,
-): SourceStackTraceFrame {
-	const sourceRecord = resolveRuntimeLuaSource(sources, {
-		domain,
-		path: source,
-	})!.record;
-	const resource = {
-		domain,
-		path: sourceRecord.source_path,
-	};
-	return {
-		kind: 'source',
-		resource,
-		functionName,
-		line,
-		column,
-		workspacePath: sourceRecord.normalized_source_path,
-	};
-}
-
 export type RuntimeStackFrame = {
 	readonly executionDomainId: ExecutionDomainId;
-	readonly toolingImage: Blua32ToolingImage;
+	readonly toolingImage: Blua32SourceImage;
 	readonly functionAddress: number;
 	readonly functionIndex: number;
 	readonly tracePc: number;
@@ -77,7 +49,7 @@ export function readRuntimeStackFrames(cpu: CPU, sources: RuntimeSourceState): R
 	const frames = new Array<RuntimeStackFrame>(depth);
 	for (let index = 0; index < depth; index++) {
 		const executionDomainId = cpu.readFrameExecutionDomain(index);
-		const toolingImage = blua32ToolingImageForDomain(sources.currentBlua32Media, executionDomainId)!;
+		const toolingImage = (executionDomainId === -1 ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[executionDomainId])!;
 		const functionAddress = cpu.readFrameFunctionAddress(index);
 		frames[index] = { executionDomainId, toolingImage, functionAddress,
 			functionIndex: blua32FunctionIndexAtAddress(toolingImage.layout, functionAddress),
@@ -87,11 +59,31 @@ export function readRuntimeStackFrames(cpu: CPU, sources: RuntimeSourceState): R
 	return frames;
 }
 
-export function buildLuaStackFrames(
-	faultFrames: readonly RuntimeStackFrame[],
-	createSourceFrame: (domain: ResourceDomain, source: string, line: number, column: number, functionName: string) => SourceStackTraceFrame,
-): RuntimeStackTraceFrame[] {
+export type CapturedLuaStack = {
+	readonly frames: RuntimeStackTraceFrame[];
+	readonly sources: ReadonlyMap<SourceStackTraceFrame, Blua32CompiledSource>;
+};
+
+/** Plain frame descriptors and their exact installed source proof share one capture owner. */
+export function buildLuaStackFrames(faultFrames: readonly RuntimeStackFrame[]): CapturedLuaStack {
 	const frames: RuntimeStackTraceFrame[] = [];
+	const sources = new Map<SourceStackTraceFrame, Blua32CompiledSource>();
+	const appendSourceFrame = (image: Blua32SourceImage, range: SourceRange,
+		functionName: string, physicalFrameIndex: number, inlineDepth: number): void => {
+		const record = image.sources.get(toLuaModulePath(range.path));
+		if (record === undefined) {
+			// Symbols without retained source bytes identify instructions, not an authored file.
+			const physical = faultFrames[physicalFrameIndex];
+			frames.push({ kind: 'instruction', executionDomainId: physical.executionDomainId,
+				instructionAddress: physical.tracePc, functionName, physicalFrameIndex, inlineDepth });
+			return;
+		}
+		const frame = { kind: 'source' as const, resource: { contextId: image.sourceContextId, path: record.displayPath },
+			line: range.start.line, column: range.start.column, functionName, workspacePath: record.displayPath,
+			physicalFrameIndex, inlineDepth };
+		frames.push(frame);
+		sources.set(frame, record);
+	};
 	for (let index = faultFrames.length - 1; index >= 0; index -= 1) {
 		const entry = faultFrames[index];
 		const image = entry.toolingImage;
@@ -118,22 +110,11 @@ export function buildLuaStackFrames(
 				const inlineRange = inlineIndex === inlineCallSites.length - 1
 					? range
 					: inlineCallSites[inlineIndex + 1].callRange;
-				frames.push({ physicalFrameIndex: index, inlineDepth: inlineIndex + 1, ...createSourceFrame(
-					entry.executionDomainId,
-					inlineRange.path,
-					inlineRange.start.line,
-					inlineRange.start.column,
-					blua32FunctionDisplayNameById(symbols, inlineCallSites[inlineIndex].calleeFunctionId),
-				) });
+				appendSourceFrame(image, inlineRange,
+					blua32FunctionDisplayNameById(symbols, inlineCallSites[inlineIndex].calleeFunctionId), index, inlineIndex + 1);
 			}
 			const physicalRange = inlineCallSites.length === 0 ? range : inlineCallSites[0].callRange;
-			frames.push({ physicalFrameIndex: index, inlineDepth: 0, ...createSourceFrame(
-				entry.executionDomainId,
-				physicalRange.path,
-				physicalRange.start.line,
-				physicalRange.start.column,
-				physicalFunctionName,
-			) });
+			appendSourceFrame(image, physicalRange, physicalFunctionName, index, 0);
 		} else {
 			frames.push({
 				physicalFrameIndex: index, inlineDepth: 0,
@@ -144,5 +125,5 @@ export function buildLuaStackFrames(
 			});
 		}
 	}
-	return frames;
+	return { frames, sources };
 }

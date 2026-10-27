@@ -20,7 +20,6 @@ import { BT_TRANSFER_SOURCE } from '../../helpers/behavior_transfer_fixture';
 import { SCENE_VIEWPORT_SOURCE } from '../../fixtures/studio/scene_viewport';
 import { WORKBENCH_RESOURCE_VIEWER_ID } from '../../../ide/workbench/contrib/resources/editor_input';
 import { WORKBENCH_TEXT_EDITOR_ID } from '../../../ide/workbench/contrib/code_editor/editor_input';
-import { resolveRuntimeResourceForContext } from '../../../ide/runtime/sources';
 import type { SerializedEditorGroup } from '../../../ide/workbench/services/editor/editor_serialization';
 import { selectScenarioLabTestRow, toggleScenarioLabTestRow } from '../../../ide/workbench/contrib/scenario_lab/navigation';
 import { readLocalWorkspaceRecord, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE } from '../../../ide/workspace/records';
@@ -84,7 +83,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	selectScenarioLabTestRow(scenario.view, 0);
 	toggleScenarioLabTestRow(scenario.view, 0);
 	// An explicit source viewer and clean preview exercise non-working-copy and clean state.
-	const resource = resolveRuntimeResourceForContext(ide.sources, 0, 'constants')!;
+	const resource = ide.sources.catalog.resolveResource(ide.sources.catalog.resolveModule(ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, 'constants')!)!;
 	const viewer = await ide.editor.resourceEditors.resolveEditorInput(resource, WORKBENCH_RESOURCE_VIEWER_ID);
 	ide.editor.editorGroup.openEditor(viewer); await test.frame();
 	if (viewer.kind !== 'resource_view') throw new Error('session: source viewer required');

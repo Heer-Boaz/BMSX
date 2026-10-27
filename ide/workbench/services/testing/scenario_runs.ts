@@ -36,7 +36,7 @@ export class ScenarioRunService {
 		private readonly model: MachineModelSpec,
 		private readonly createTarget: TestTargetFactory,
 	) {
-		this.collection = new ScenarioTestCollection(sources);
+		this.collection = new ScenarioTestCollection(sources.catalog);
 		const changed = (model: EditorTextModel) => {
 			if (model.mode === 'lua' && isScenarioTestAsset(model.resource.source)) this.sourcesDirty = true;
 		};
@@ -56,14 +56,14 @@ export class ScenarioRunService {
 		const membershipChanged = this.collection.refresh();
 		if (!this.sourcesDirty && !membershipChanged) return;
 		for (const root of this.collection.roots) for (const module of root.children) {
-			const snapshot = captureCurrentLuaSource(this.models, this.sources, module.resource);
+			const snapshot = captureCurrentLuaSource(this.models, this.sources.catalog, module.resource);
 			this.collection.updateSource(module, snapshot.source, snapshot.revision);
 		}
 		this.sourcesDirty = false;
 	}
 
 	/** Resolve the selection and capture all working copies before any asynchronous build. */
-	public start(scopeId: ScenarioTestNodeId, mode: ScenarioRunMode = 'run'): ScenarioRun {
+	public start(scopeId: ScenarioTestNodeId, mode: ScenarioRunMode = 'run', companionContextId: string | null = null): ScenarioRun {
 		if (this.closed) throw new ScenarioRunAdmissionError('The workspace test service has closed.');
 		if (this.active) throw new ScenarioRunAdmissionError('A test run is already active.');
 		this.refreshSources();
@@ -76,10 +76,10 @@ export class ScenarioRunService {
 			const module = this.collection.getNode(test.parentId) as ScenarioTestModule;
 			return { test, source: module.source, sourceRevision: module.sourceTimestamp };
 		});
-		const programSources = captureLuaTextModelSources(this.models, this.sources, true);
+		const programSources = captureLuaTextModelSources(this.models, this.sources.catalog, true);
 		this.session?.dispose();
 		this.session = null;
-		const run = this.results.beginRun(scopeId, tests, mode);
+		const run = this.results.beginRun(scopeId, tests, mode, companionContextId);
 		this.preparing = run;
 		this.emit({ type: 'started', run });
 		void this.prepare(run, programSources);
@@ -89,7 +89,7 @@ export class ScenarioRunService {
 	private async prepare(run: ScenarioRun, programSources: readonly LuaTextModelSourceSnapshot[]): Promise<void> {
 		try {
 			const media = await buildFixtureMedia(this.sources, this.dirtyRecords, programSources,
-				run.items[0].test.resource.domain, this.model);
+				run.items[0].test.resource.contextId, this.model, run.companionContextId);
 			if (this.preparing !== run) return; // Cancelled while the workspace build was pending.
 			this.session = new TestRun(run, media, this.results, this.createTarget, () => this.emit({ type: 'complete', run }),
 				undefined, undefined, debug => this.emit({ type: 'debugger', run, debugger: debug }));
@@ -98,7 +98,7 @@ export class ScenarioRunService {
 		} catch (error) {
 			if (this.preparing !== run) return;
 			const result = this.results.startItem(run, 0, 0);
-			this.results.fail(result, 0, scenarioFailureFromError(this.sources, result.test.resource.domain, 'prepare', error), null);
+			this.results.fail(result, 0, scenarioFailureFromError(this.sources, result.test.resource.contextId, 'prepare', error), null);
 			this.results.failRun(run);
 			this.preparing = null;
 			this.emit({ type: 'error', run, error });

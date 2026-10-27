@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
@@ -97,7 +98,7 @@ for (const enabledAtAccept of [true, false]) test(`Palette retains the actual pr
 test('popup origins and cancellation belong to the containing scope after an inline edit ends on blur', t => {
 	const picker = createPicker(t);
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const model = new EditorTextModel({ sourceFilePath: 'value.lua', location: { kind: 'workspace' as const, path: 'value.lua' }, domain: 0, path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', 'return 20');
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'value.lua', location: { kind: 'workspace' as const, path: 'value.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', 'return 20');
 	const parent = inputFocus.createTarget();
 	parent.registerCommand('undo', { isEnabled: () => model.history.canUndo(model), run: () => model.undo() });
 	const surfaces = new WorkbenchSurfaceService(), area = { left: 0, top: 24, right: 384, bottom: 274 };
@@ -144,7 +145,7 @@ test('popup origins and cancellation belong to the containing scope after an inl
 test('a field context menu keeps its actual local history and clipboard despite a separate pane action context', t => {
 	const picker = createPicker(t), parent = inputFocus.createTarget(), field = new TextField(parent);
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const model = new EditorTextModel({ sourceFilePath: 'document.lua', location: { kind: 'workspace' as const, path: 'document.lua' }, domain: 0, path: 'document.lua', source: { type: 'lua', resid: 'document' } }, 'lua', 'return 1');
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'document.lua', location: { kind: 'workspace' as const, path: 'document.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'document.lua', source: { type: 'lua', resid: 'document' } }, 'lua', 'return 1');
 	model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 	parent.registerCommand('undo', { isEnabled: () => model.canUndo, run: () => model.undo() });
 	parent.clipboard = { readOnly: true, copy: () => model.buffer.getText() };
@@ -175,7 +176,7 @@ test('a field context menu keeps its actual local history and clipboard despite 
 
 test('source-bound quick input cancels its snapshot on content change and releases the subscription', t => {
 	const picker = createPicker(t);
-	const model = new EditorTextModel({ sourceFilePath: 'proof.lua', location: { kind: 'workspace' as const, path: 'proof.lua' }, domain: 0, path: 'proof.lua', source: { resid: 'proof', type: 'lua' } }, 'lua', 'return 1');
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'proof.lua', location: { kind: 'workspace' as const, path: 'proof.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'proof.lua', source: { resid: 'proof', type: 'lua' } }, 'lua', 'return 1');
 	const origin = inputFocus.createTarget();
 	origin.focus();
 	let invalidations = 0;
@@ -406,7 +407,7 @@ test('terminal controller disposal cannot reopen a surface from retiring session
 
 test('source lifetime initialization precedes blur publication and cancels an opening input to its invoker', t => {
 	const picker = createPicker(t), origin = inputFocus.createTarget();
-	const model = new EditorTextModel({ sourceFilePath: 'draft.lua', location: { kind: 'workspace' as const, path: 'draft.lua' }, domain: 0, path: 'draft.lua', source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'draft.lua', location: { kind: 'workspace' as const, path: 'draft.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'draft.lua', source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
 	t.after(() => model.dispose());
 	let initialized = false, invalidations = 0;
 	origin.focus();
@@ -431,7 +432,7 @@ test('source lifetime initialization precedes blur publication and cancels an op
 
 test('an input source lifetime also precedes publication from the previous session disposal', t => {
 	const picker = createPicker(t), origin = inputFocus.createTarget();
-	const model = new EditorTextModel({ sourceFilePath: 'source.lua', location: { kind: 'workspace' as const, path: 'source.lua' }, domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 1');
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'source.lua', location: { kind: 'workspace' as const, path: 'source.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', 'return 1');
 	t.after(() => model.dispose()); origin.focus();
 	let previous!: DisposableStore, lifetime!: DisposableStore;
 	picker.input('Old', '', '', async value => value, () => {}, owner => {

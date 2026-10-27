@@ -18,6 +18,7 @@ import type {
 	ScenarioLabViewState,
 } from './view_model';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
 function createScenarioLabPaneState<Row>(): ScenarioLabPaneState<Row> {
 	return {
@@ -60,7 +61,7 @@ export function createScenarioLabViewState(
 		split: new WorkbenchSplitView(5 / 12),
 		splitRevision: -1,
 		layout: createScenarioLabLayout(),
-		actionBar: createWorkbenchActionBar('scenarioLab.title', true),
+		actionBar: createWorkbenchActionBar('scenarioLab.title', true, WORKBENCH_MENUS['scenarioLab.context']),
 		status: {
 			info: '',
 			renderedInfo: '',

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
@@ -21,12 +22,12 @@ import { BEHAVIOR_SOURCE_FIXTURE } from '../helpers/behavior_source_fixture';
 const API_MODULES = ['cartlib/fsm/library','cartlib/behaviour_tree/library','cartlib/actioneffects'];
 
 function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
-	const model = new EditorTextModel({ sourceFilePath: 'behavior_fixture.lua', location: { kind: 'workspace' as const, path: 'behavior_fixture.lua' }, domain: 0, path: 'behavior_fixture.lua',
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'behavior_fixture.lua', location: { kind: 'workspace' as const, path: 'behavior_fixture.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'behavior_fixture.lua',
 		source: { resid: 'behavior_fixture', type: 'lua', source_path: 'behavior_fixture.lua', generated: false },
 	}, 'lua', source);
 	let analysis = buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], API_MODULES)));
-	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline', assert.fail), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
+	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline', assert.fail), new Set([model.resource.contextId]), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(input.view, model.resource, event));
 	assert.ok(input.view.presentation.kind === 'outline');
 	return { model, input, get analysis() { return analysis; }, view: input.view, outline: input.view.presentation, refresh() {

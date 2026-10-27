@@ -1,4 +1,6 @@
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
@@ -10,7 +12,6 @@ import { EditorFont } from '../../../ide/editor/ui/view/font';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { NodeGraphLayoutEngine } from '../../../ide/node/graph_layout';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { selectBehaviorLensDefinition } from '../../../ide/workbench/contrib/behavior_lens/layout';
@@ -29,15 +30,15 @@ async function main() {
 local step<const> = function(actor) if actor.a then return '../active' end if actor.b then return '../active' end return nil end
 local shared<const> = { initial = 'idle', states = { idle = { update = step }, active = { on = { reset = '../idle' } } } }
 fsm.register('profile', { initial = 'lane0', states = { ${Array.from({ length: copies }, (_, index) => `lane${index} = shared`).join(',')} } })`;
-		const model = new EditorTextModel({ sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0, path: 'profile.lua', source: { resid: 'profile', type: 'lua' } }, 'lua', source);
-		const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
+		const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'profile.lua', source: { resid: 'profile', type: 'lua' } }, 'lua', source);
+		const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, model.resource)], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects'])));
 		editorViewState.font = new EditorFont('tiny');
 		const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 		selectBehaviorLensDefinition(view, document.definitions[0].rowKey);
 		const graph = view.presentation;
 		assert.ok(graph.kind === 'state-graph');
 		const font = new MeasuredFont({ variant: 'tiny' });
-		const input = new BehaviorLensInput(model, view, () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
+		const input = new BehaviorLensInput(model, view, new Set([model.resource.contextId]), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 		try {
 			const samples: number[] = [];
 			for (let index = 0; index < 6; index += 1) {

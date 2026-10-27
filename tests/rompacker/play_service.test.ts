@@ -1,3 +1,5 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -11,7 +13,7 @@ import { DiscardingAudioSink } from '../../hosts/node/common/discarding_audio';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
-import { createRuntimeSourceState } from '../../ide/runtime/sources';
+
 import { TestInput } from '../../ide/testing/input';
 import { PlayRuntimeSession } from '../../ide/workbench/play_runtime';
 import { PlayService } from '../../ide/workbench/services/play/service';
@@ -47,21 +49,21 @@ while true do game.updates=game.updates+1; mem[${gxGpuPcrtcRegisterAddress(GX_GP
 		cartModules: [{ path: 'game', source: 'return { updates=0 }' }],
 	});
 	const tooling = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
-	const sources = createRuntimeSourceState(tooling.system, tooling.cartridgeSlots), models = new EditorTextModelService();
+	const sources = createLoadedTestRuntimeSourceState(tooling.system, tooling.cartridgeSlots), models = new EditorTextModelService();
 	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1), device = new HostAudioDevice(new DiscardingAudioSink());
 	const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, () => assert.fail('Play does not construct a TestRun target'));
 	const sessions: PlayRuntimeSession[] = [];
-	const service = new PlayService(models, sources, new Map(), PSX_MACHINE_SPEC, input, (system, slots, model, channel, program, domain) => {
-		const session = new PlayRuntimeSession(new OffscreenMachine(system, slots, model, channel), program, domain, device, { log() {} });
+	const service = new PlayService(models, sources, new Map(), PSX_MACHINE_SPEC, input, (system, slots, model, channel, program) => {
+		const session = new PlayRuntimeSession(new OffscreenMachine(system, slots, model, channel), program, device, { log() {} });
 		sessions.push(session); return session;
 	});
-	const module = runs.collection.findModuleBySourcePath(0, PATH), model = models.retain(sources.luaResources.find(resource => resource.path === PATH)!, 'lua', SCENE);
+	const module = runs.collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], PATH), model = models.retain(sources.catalog.luaResources.find(resource => resource.path === PATH)!, 'lua', SCENE);
 	const advance = async () => { service.advance(1000 / 60, true); await service.current?.session?.tasks.join(); await setImmediate(); };
 	const ready = async () => {
 		await service.current!.preparation;
 		for (let grant = 0; service.current!.state !== 'ready' && grant < 2000; grant++) await advance();
-		assert.equal(service.current!.state, 'ready');
+		assert.equal(service.current!.state, 'ready', service.current!.failure?.error instanceof Error ? service.current!.failure.error.message : undefined);
 	};
 	t.after(async () => {
 		await service.dispose(); runs.dispose(); models.clear(); authoring.dispose(); input.dispose();
@@ -114,11 +116,12 @@ test('closing preparation cannot create a late world; model clear closes the act
 
 for (const optLevel of [0, 3] as const) test(`O${optLevel}: new authored fixtures admit alongside an empty project file`, async t => {
 	const f = await fixture(t, optLevel), clock = new VirtualHeadlessClock();
-	await createTextResource(clock, f.sources, { domain: 0, relativePath: 'empty.lua', contents: '' });
-	const resource = await createTextResource(clock, f.sources, { domain: 0,
+	await createTextResource(clock, f.sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'empty.lua', contents: '' });
+	await createTextResource(clock, f.sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], relativePath: 'unrelated.lua', contents: 'end end -- unused program' });
+	const resource = await createTextResource(clock, f.sources.catalog, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		relativePath: 'tests/created_assert.lua', contents: SCENE.replace('12', '78') });
 	f.runs.refreshSources();
-	const module = f.runs.collection.findModuleBySourcePath(0, resource.path);
+	const module = f.runs.collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], resource.path);
 	const original = f.sources.currentBlua32Media;
 	const accepted = f.service.start(module);
 	await f.ready();

@@ -2,7 +2,7 @@ import type { ResourceIdentity } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModelSnapshot } from '../../../editor/model/text_model';
 import { getTextSnapshot } from '../../../editor/text/source_text';
-import { resolveRuntimeLuaSource, type RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { readWorkspaceLuaSourceText } from '../../../workspace/files';
 
 export type LuaTextModelSourceSnapshot = ResourceIdentity & EditorTextModelSnapshot;
@@ -13,12 +13,12 @@ export type CurrentLuaSourceSnapshot = {
 };
 
 /** Reads the retained document, including source-only tests, or its workspace record. */
-export function captureCurrentLuaSource(models: EditorTextModelService, sources: RuntimeSourceState, resource: ResourceIdentity): CurrentLuaSourceSnapshot {
+export function captureCurrentLuaSource(models: EditorTextModelService, catalog: WorkspaceSourceCatalog, resource: ResourceIdentity): CurrentLuaSourceSnapshot {
 	const model = models.get(resource);
 	if (model !== undefined) {
 		return { source: getTextSnapshot(model.buffer), revision: model.version };
 	}
-	const match = resolveRuntimeLuaSource(sources, resource)!;
+	const match = catalog.resolveLuaSource(resource)!;
 	return {
 		source: readWorkspaceLuaSourceText(match.registry, match.record),
 		revision: match.record.update_timestamp,
@@ -26,15 +26,15 @@ export function captureCurrentLuaSource(models: EditorTextModelService, sources:
 }
 
 /** Pins all retained program documents before asynchronous workspace/build work. */
-export function captureLuaTextModelSources(models: EditorTextModelService, sources: RuntimeSourceState, includeSourceOnly = false): LuaTextModelSourceSnapshot[] {
+export function captureLuaTextModelSources(models: EditorTextModelService, catalog: WorkspaceSourceCatalog, includeSourceOnly = false): LuaTextModelSourceSnapshot[] {
 	const snapshots: LuaTextModelSourceSnapshot[] = [];
 	for (const model of models.models) {
 		if (model.mode !== 'lua' || model.readOnly) {
 			continue;
 		}
-		const record = resolveRuntimeLuaSource(sources, model.resource)!.record;
+		const record = catalog.resolveLuaSource(model.resource)!.record;
 		if (!includeSourceOnly && record.sourceKind === 'source-only') continue;
-		snapshots.push({ ...model.createSnapshot(), domain: model.resource.domain, path: model.resource.path });
+		snapshots.push({ ...model.createSnapshot(), contextId: model.resource.contextId, path: model.resource.path });
 	}
 	return snapshots;
 }

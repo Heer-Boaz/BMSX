@@ -1,7 +1,7 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { registerWorkspaceTextSources, resolveRuntimeResource } from '../../ide/runtime/sources';
 import { AemEditorController } from '../../ide/workbench/contrib/aem/controller';
 import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
@@ -13,11 +13,11 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 
 test('a superseded audio Source opening retires only its fresh candidate, not retained views of the same working copy', async t => {
 	const sources = createScenarioTestSourceState([]), group = createTestEditorGroup();
-	registerWorkspaceTextSources(sources, 0, [{ type: 'aem', resid: 'candidate-audio', source_path: 'candidate_audio.aem' }]);
-	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'candidate_audio.aem' })!;
+	sources.catalog.registerTextSources(TEST_CARTRIDGE_CONTEXT_IDS[0], [{ type: 'aem', resid: 'candidate-audio', source_path: 'candidate_audio.aem' }]);
+	const resource = sources.catalog.resolveResource( { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'candidate_audio.aem' })!;
 	const model = editorTextModelService.retain(resource, 'aem', 'events: {}\n');
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '# edited\n' }]);
-	const retained = await resolveTextCodeEditorInput(sources, resource), sibling = await resolveTextCodeEditorInput(sources, resource);
+	const retained = await resolveTextCodeEditorInput(sources.catalog, resource), sibling = await resolveTextCodeEditorInput(sources.catalog, resource);
 	const siblingGroup = new EditorTabGroupModel(), audio = new AemEditorInput(model);
 	group.model.add(retained); group.model.activate(retained); siblingGroup.initialize(sibling);
 	t.after(() => {
@@ -30,7 +30,7 @@ test('a superseded audio Source opening retires only its fresh candidate, not re
 	t.mock.method(CodeEditorInput.prototype, 'dispose', function (this: CodeEditorInput): void {
 		discarded.push(this); dispose.call(this);
 	});
-	new AemEditorController(sources, group, null!).openSource(audio);
+	new AemEditorController(sources, group, null!, null!, null!, null!).openSource(audio);
 	group.panes.beginOpen();
 	await new Promise<void>(resolve => setImmediate(resolve));
 	assert.equal(discarded.length, 1);
@@ -58,8 +58,8 @@ test('a superseded audio Source opening retires only its fresh candidate, not re
 test('Source factories and serialization produce group-local views while sharing the admitted dirty model', async t => {
 	const source = 'local value = 1\nreturn value';
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('candidate_shared.lua', 1, source)]);
-	const resource = sources.luaResources[0];
-	const first = resolveLuaCodeEditorInput(sources, resource), second = await resolveTextCodeEditorInput(sources, resource);
+	const resource = sources.catalog.luaResources[0];
+	const first = resolveLuaCodeEditorInput(sources.catalog, resource), second = await resolveTextCodeEditorInput(sources.catalog, resource);
 	const firstGroup = new EditorTabGroupModel(), secondGroup = new EditorTabGroupModel();
 	firstGroup.initialize(first); secondGroup.initialize(second);
 	t.after(() => { firstGroup.clear(); secondGroup.clear(); editorTextModelService.clear(); });
@@ -70,7 +70,7 @@ test('Source factories and serialization produce group-local views while sharing
 	const firstView = first.context.view, secondView = second.context.view;
 	firstView.cursorRow = 1; firstView.cursorColumn = 2; firstView.scrollRow = 1.25; firstView.scrollLeft = 19.75;
 	secondView.cursorRow = 1; secondView.cursorColumn = 7; secondView.scrollRow = 3.5; secondView.scrollLeft = 41.25;
-	const serializer = new CodeEditorInputSerializer(sources);
+	const serializer = new CodeEditorInputSerializer(sources.catalog);
 	const firstState = serializer.serialize(first), secondState = serializer.serialize(second);
 	firstGroup.clear(); secondGroup.clear();
 	assert.equal(model.dirty, true); assert.equal(model.canUndo, true);
@@ -93,10 +93,10 @@ test('Source factories and serialization produce group-local views while sharing
 
 for (const matchingSource of [true, false]) test(`Source deserialization admits ${matchingSource ? 'persisted view state' : 'fresh default state'} before any group memento`, async t => {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('candidate_initialization.lua', 1, 'local value = 1')]);
-	const resource = sources.luaResources[0], original = resolveLuaCodeEditorInput(sources, resource);
+	const resource = sources.catalog.luaResources[0], original = resolveLuaCodeEditorInput(sources.catalog, resource);
 	const model = original.workingCopy;
 	original.context.view.cursorColumn = 7; original.context.view.scrollRow = 2.5; original.context.view.scrollLeft = 19.75;
-	const serializer = new CodeEditorInputSerializer(sources), serialized = serializer.serialize(original);
+	const serializer = new CodeEditorInputSerializer(sources.catalog), serialized = serializer.serialize(original);
 	original.dispose();
 	if (!matchingSource) model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed\n' }]);
 	const restored = await serializer.deserialize(serialized);

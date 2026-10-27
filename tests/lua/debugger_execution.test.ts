@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -23,7 +24,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 
-const RESOURCE = { domain: -1 as const, path: 'debugger_probe.lua' };
+const RESOURCE = { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'debugger_probe.lua' };
 const SOURCE = `local output = {}
 local child<const> = function(value)
 	output[1] = value
@@ -48,7 +49,7 @@ function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: 
 		update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.systemInstalledBlua32Sources = new Map([['debugger_probe', source]]);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	const f = createRuntimeInspectionFixture(runtime, sources);
 	const state = f.debuggerState, owner = f.debuggerExecution, cpu = runtime.machine.cpu;
 	cpu.reset(); f.execution.setPauseReason(HostPauseReason.Workbench, true);
@@ -96,8 +97,8 @@ test('breakpoints have real bindings, deterministic persistence and shared chang
 	assert.ok(model.read(RESOURCE)[1].locations.length > 0);
 	const bindings = model.bindings;
 	model.set(RESOURCE, [6, 8]); assert.equal(model.bindings, bindings); assert.equal(changed, 1, 'same set does not rebind or autosave');
-	model.set({ domain: 1, path: 'absent.lua' }, [2]);
-	assert.equal(model.read({ domain: 1, path: 'absent.lua' })[0].status, 'image-unavailable');
+	model.set({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'absent.lua' }, [2]);
+	assert.equal(model.read({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'absent.lua' })[0].status, 'image-unavailable');
 	const saved = model.serialize(); model.restore(saved); assert.deepEqual(model.serialize(), saved);
 	assert.equal(model.toggle(RESOURCE, 8), false); assert.deepEqual([...model.get(RESOURCE)], [6]);
 	assert.equal(changed, 3); detach();
@@ -105,15 +106,17 @@ test('breakpoints have real bindings, deterministic persistence and shared chang
 
 test('installed debug-source handles never read dirty source and expire with code installation', t => {
 	const f = fixture(t), sources = new DebuggerSourceContext(f.state);
-	f.sources.systemLuaSources.records[0].src = '-- dirty\n' + SOURCE;
-	f.sources.systemLuaSources.records[0].source_path = 'renamed.lua';
+	f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0].src = '-- dirty\n' + SOURCE;
+	f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0].source_path = 'renamed.lua';
 	const handle = sources.list()[0].source;
 	assert.equal(sources.read(handle).text, SOURCE);
 	assert.equal(sources.read(handle).path, RESOURCE.path);
 	assert.equal(sources.setBreakpoints(handle, [8]).breakpoints[0].status, 'bound');
-	f.sources.currentBlua32Media = { ...f.sources.currentBlua32Media, system: createBlua32SystemSourceImage(f.image.image, f.image.symbols, f.image.biosImports, f.sources.currentBlua32Media.system!.sources) };
+	f.sources.currentBlua32Media = { ...f.sources.currentBlua32Media, system: createBlua32SystemSourceImage(f.image.image, f.image.symbols, f.image.biosImports, f.sources.currentBlua32Media.system!.sources, TEST_SYSTEM_CONTEXT_ID) };
+	f.state.breakpoints.rebind();
 	assert.throws(() => sources.read(handle), /expired/); assert.throws(() => sources.setBreakpoints(handle, []), /expired/);
-	assert.deepEqual([...f.state.breakpoints.get(RESOURCE)], [8]);
+	assert.deepEqual(f.state.breakpoints.readInstallation(RESOURCE, -1), [], 'compiled requests retire with the old image');
+	assert.deepEqual([...f.state.breakpoints.get(RESOURCE)], [], 'an installed handle does not write authored gutter requests');
 	sources.dispose(); assert.throws(() => sources.read(handle), /does not belong/);
 });
 
@@ -205,7 +208,7 @@ test('conversation lifecycle cancels its own execution and keeps persistent brea
 	const pending = tools.execute('studio_resume_debugger', { target: f.inspection.target, mode: 'continue' });
 	lifetime.abort(); f.owner.afterHostFrame();
 	assert.equal(((await pending).data as Awaited<SourceExecutionOperation['completion']>).reason, 'cancelled');
-	assert.deepEqual([...f.state.breakpoints.get(RESOURCE)], [8]); assert.equal(f.execution.userPaused, true);
+	assert.deepEqual(f.state.breakpoints.readInstallation(RESOURCE, -1).map(point => point.line), [8]); assert.equal(f.execution.userPaused, true);
 	assert.throws(() => decodeDebuggerToolRequest('studio_set_breakpoints', { source, lines: [1, 1] }), /distinct/);
 	assert.throws(() => decodeDebuggerToolRequest('studio_resume_debugger', { target: 'x', mode: 'instruction' }), /continue\/into\/over\/out/);
 });

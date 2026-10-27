@@ -17,7 +17,7 @@ import {
 	type ResourceDomain,
 	type RuntimeResource,
 } from '../common/resource';
-import type { RuntimeSourceState } from './sources';
+import type { Blua32SourceImage, RuntimeSourceState } from './sources';
 import {
 	buildBlua32Revision,
 	installBlua32Revision,
@@ -27,6 +27,7 @@ import { buildHotResumeRelocation } from './hot_resume_relocation';
 
 export type BuiltAemSourceRevision = {
 	resource: RuntimeResource;
+	domain: ResourceDomain;
 	source: string;
 	eventMap: Record<string, unknown>;
 	revision: BuiltBlua32Revision;
@@ -35,7 +36,7 @@ export type BuiltAemSourceRevision = {
 
 export type AemSourceApplyResult =
 	| { readonly status: 'applied' }
-	| { readonly status: 'not-applied'; readonly reason: 'inactive-domain' | 'module-not-installed' | 'asset-not-installed' }
+	| { readonly status: 'not-applied'; readonly reason: 'inactive-domain' | 'installation-replaced' | 'context-not-installed' | 'module-not-installed' | 'asset-not-installed' }
 	| { readonly status: 'failed'; readonly phase: 'build' | 'runtime'; readonly error: unknown };
 
 /** Apply one accepted source snapshot; rejected authoring never enters machine mutation. */
@@ -45,41 +46,52 @@ export async function applyAemSourceRevision(
 	runtime: Runtime,
 	runtimeTasks: RuntimeTaskQueue,
 	resource: RuntimeResource,
+	domain: ResourceDomain,
+	expectedImage: Blua32SourceImage,
 	source: string,
 ): Promise<AemSourceApplyResult> {
 	let result: AemSourceApplyResult;
 	await runtimeTasks.schedule(() => {
+		const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
+		if (image !== expectedImage) {
+			result = { status: 'not-applied', reason: 'installation-replaced' };
+			return;
+		}
+		if (image.sourceContextId !== resource.contextId) {
+			result = { status: 'not-applied', reason: 'context-not-installed' };
+			return;
+		}
 		// Authoring spans every installed ROM; reload_from_rom belongs to the
 		// currently executing domain. Do not install media or invoke another
 		// cartridge's globals while the BIOS (or a different cartridge) runs.
-		if (runtime.machine.cpu.activeCartridgeSlot() !== resource.domain) {
+		if (runtime.machine.cpu.activeCartridgeSlot() !== domain) {
 			result = { status: 'not-applied', reason: 'inactive-domain' };
 			return;
 		}
-		const installedSources = resource.domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemInstalledBlua32Sources
-			: sources.cartridgeSlots[resource.domain]!.installedBlua32Sources;
+		const installedSources = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemInstalledBlua32Sources
+			: sources.cartridgeSlots[domain]!.installedBlua32Sources;
 		if (!installedSources.has('cartlib/aem')) {
 			result = { status: 'not-applied', reason: 'module-not-installed' };
 			return;
 		}
-		const installedPackage = resource.domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemPackage
-			: sources.cartridgeSlots[resource.domain]!.package;
+		const installedPackage = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemPackage
+			: sources.cartridgeSlots[domain]!.package;
 		if (installedPackage.audioevents[resource.source.resid] === undefined) {
 			result = { status: 'not-applied', reason: 'asset-not-installed' };
 			return;
 		}
 		let built: BuiltAemSourceRevision;
 		try {
-			built = buildAemSourceRevision(sources, runtime, resource, source);
+			built = buildAemSourceRevision(sources, runtime, resource, domain, source);
 		} catch (error) {
-			recordAemSourceApplyFailure(sources, resource);
+			recordAemSourceApplyFailure(sources, resource, domain);
 			result = { status: 'failed', phase: 'build', error };
 			return;
 		}
 		installAemSourceRevision(sources, guest, runtime, built);
 		result = { status: 'applied' };
 	}, error => {
-		recordAemSourceApplyFailure(sources, resource);
+		recordAemSourceApplyFailure(sources, resource, domain);
 		result = { status: 'failed', phase: 'runtime', error };
 	});
 	return result;
@@ -103,21 +115,22 @@ export function buildAemSourceRevision(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
 	resource: RuntimeResource,
+	domain: ResourceDomain,
 	source: string,
 ): BuiltAemSourceRevision {
 	const assetId = resource.source.resid;
 	const doc = parseStructuredTextDocument(source, aemDocumentFormat(resource.path), `AEM file '${resource.path}'`);
-	const lookup = buildRuntimeAemValidationLookup(sources, resource.domain);
+	const lookup = buildRuntimeAemValidationLookup(sources, domain);
 	assertValidAemDocument(doc, lookup, resource.path);
 	const eventMap = buildAemEventMap(doc, lookup);
 	const assetEdits: [RomAssetEdit[], RomAssetEdit[], RomAssetEdit[]] = [[], [], []];
-	assetEdits[resource.domain + 1].push(['aem', assetId, encodeBinary(eventMap)]);
+	assetEdits[domain + 1].push(['aem', assetId, encodeBinary(eventMap)]);
 	const revision = buildBlua32Revision(
 		sources,
 		runtime,
 		{
-			system: resource.domain === SYSTEM_RESOURCE_DOMAIN ? 'installed' : null,
-			cartridgeSlots: [resource.domain === 0 ? 'installed' : null, resource.domain === 1 ? 'installed' : null],
+			system: domain === SYSTEM_RESOURCE_DOMAIN ? 'installed' : null,
+			cartridgeSlots: [domain === 0 ? 'installed' : null, domain === 1 ? 'installed' : null],
 		},
 		assetEdits,
 	);
@@ -126,7 +139,7 @@ export function buildAemSourceRevision(
 		revision.revisions,
 		runtime.machine.cpu.getFrameDepth(),
 	);
-	return { resource, source, eventMap, revision, relocation };
+	return { resource, domain, source, eventMap, revision, relocation };
 }
 
 export function installAemSourceRevision(
@@ -135,14 +148,25 @@ export function installAemSourceRevision(
 	runtime: Runtime,
 	built: BuiltAemSourceRevision,
 ): void {
-	const { resource, source, eventMap } = built;
+	const { resource, domain, source, eventMap } = built;
 	const assetId = resource.source.resid;
 	installBlua32Revision(sources, runtime, guest, built.revision, built.relocation);
-	const runtimePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN
+	const runtimePackage = domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemPackage
-		: sources.cartridgeSlots[resource.domain]!.package;
-	runtimePackage.audioevents[assetId] = eventMap;
-	sources.aemSourceApplications.set(resourceIdentityKey(resource), {
+		: sources.cartridgeSlots[domain]!.package;
+	const installedPackage = { ...runtimePackage, audioevents: { ...runtimePackage.audioevents, [assetId]: eventMap } };
+	if (domain === SYSTEM_RESOURCE_DOMAIN) {
+		sources.systemPackage = installedPackage;
+		sources.systemRom.package = installedPackage;
+	} else {
+		const installed = sources.cartridgeSlots[domain]!;
+		installed.package = installedPackage;
+		installed.rom.package = installedPackage;
+	}
+	if (sources.activeCartridgeSlot === domain) sources.activePackage = installedPackage;
+	sources.aemSourceApplications.set(`${domain}\0${resourceIdentityKey(resource)}`, {
+		image: (domain === -1 ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain])!,
+		rom: domain === -1 ? sources.systemRom.bytes : sources.cartridgeSlots[domain]!.rom.bytes,
 		installedSource: source,
 		failed: false,
 	});
@@ -154,11 +178,13 @@ export function installAemSourceRevision(
 	);
 }
 
-export function recordAemSourceApplyFailure(sources: RuntimeSourceState, resource: RuntimeResource): void {
-	const key = resourceIdentityKey(resource);
+export function recordAemSourceApplyFailure(sources: RuntimeSourceState, resource: RuntimeResource, domain: ResourceDomain): void {
+	const key = `${domain}\0${resourceIdentityKey(resource)}`;
+	const image = (domain === -1 ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain])!;
+	const rom = domain === -1 ? sources.systemRom.bytes : sources.cartridgeSlots[domain]!.rom.bytes;
 	const application = sources.aemSourceApplications.get(key);
-	if (application === undefined) {
-		sources.aemSourceApplications.set(key, { installedSource: undefined, failed: true });
+	if (application === undefined || application.image !== image || application.rom !== rom) {
+		sources.aemSourceApplications.set(key, { image, rom, installedSource: undefined, failed: true });
 	} else {
 		application.failed = true;
 	}

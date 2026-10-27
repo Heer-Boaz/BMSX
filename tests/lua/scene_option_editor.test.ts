@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -31,7 +32,7 @@ scenes.register('room', { objects = {
 
 function fixture(source = SOURCE) {
 	configureFontVariant('tiny');
-	const model = new EditorTextModel({ sourceFilePath: 'room.lua', location: { kind: 'workspace' as const, path: 'room.lua' }, domain: 0, path: 'room.lua', source: { resid: 'room', type: 'lua' } }, 'lua', source);
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'room.lua', location: { kind: 'workspace' as const, path: 'room.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'room.lua', source: { resid: 'room', type: 'lua' } }, 'lua', source);
 	const input = new SceneEditorInput(model);
 	let boundSource = '';
 	const refresh = () => {

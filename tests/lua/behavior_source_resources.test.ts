@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
@@ -31,8 +32,8 @@ const PROVIDER = "-- 🐉 different UTF-16 offsets\r\nreturn function(owner)\r\n
 /** Consumer fixture: join real parsed binding/body occurrences, not a claim about the current recognizer. */
 function fixture() {
 	editorViewState.font = new EditorFont('tiny');
-	const main = new EditorTextModel({ sourceFilePath: 'main.lua', location: { kind: 'workspace' as const, path: 'main.lua' }, domain: 0, path: 'main.lua', source: { type: 'lua', resid: 'main' } }, 'lua', MAIN);
-	const provider = new EditorTextModel({ sourceFilePath: 'provider.lua', location: { kind: 'workspace' as const, path: 'provider.lua' }, domain: 0, path: 'provider.lua', source: { type: 'lua', resid: 'provider' } }, 'lua', PROVIDER);
+	const main = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'main.lua', location: { kind: 'workspace' as const, path: 'main.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua', source: { type: 'lua', resid: 'main' } }, 'lua', MAIN);
+	const provider = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'provider.lua', location: { kind: 'workspace' as const, path: 'provider.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'provider.lua', source: { type: 'lua', resid: 'provider' } }, 'lua', PROVIDER);
 	const models = new Map([[resourceIdentityKey(main.resource), main], [resourceIdentityKey(provider.resource), provider]]);
 	function project(dependencyModel = provider): BehaviorSourceDocument {
 		const analysis = buildResourceLuaSemanticFixtureFile(main.buffer.getText(), main.resource);
@@ -55,7 +56,7 @@ function fixture() {
 			children: [...definition.children, providerNode], transitions: [transition] }] };
 	}
 	const view = createBehaviorLensViewState(project(), main, 'outline', path => models.get(path)!);
-	const input = new BehaviorLensInput(main, view, assert.fail);
+	const input = new BehaviorLensInput(main, view, new Set([main.resource.contextId]), assert.fail);
 	for (const model of models.values()) model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.identity, event));
 	view.definitionRowKey = view.document.definitions[0].rowKey;
 	function chooseReturn() {
@@ -122,7 +123,7 @@ test('navigation copies map provider edits while hidden and release those subscr
 	history.dispose();
 	f.provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- after release\n' }]);
 	assert.equal(captured.tracked.callback.start, before + 10, 'disposed navigation owns no live markers');
-	assert.deepEqual(Object.keys(captured.tracked.callback.resource).sort(), ['domain', 'path'], 'history never serializes ROM asset metadata');
+	assert.deepEqual(Object.keys(captured.tracked.callback.resource).sort(), ['contextId', 'path'], 'history never serializes ROM asset metadata');
 });
 
 test('equal coordinates in another file or socket do not identify the same source', t => {
@@ -138,7 +139,7 @@ test('equal coordinates in another file or socket do not identify the same sourc
 	const expression = dependency.chunk.body.get(0)!;
 	assert.ok(expression.kind === LuaSyntaxKind.ReturnStatement);
 	const location = luaSourceRangeToTextLocation(f.models, dependency.chunk.locations.range(expression.span));
-	assert.equal(trackedTextLocationsEqual(location, { ...location, resource: { domain: 1, path: location.resource.path } }), false);
+	assert.equal(trackedTextLocationsEqual(location, { ...location, resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: location.resource.path } }), false);
 });
 
 test('source correspondence does not transfer a selection to an equal-offset foreign replacement', t => {
@@ -160,7 +161,7 @@ test('source correspondence does not transfer a selection to an equal-offset for
 test('a same-path source from another resource domain cannot inherit the previous occurrence', t => {
 	const f = fixture(); t.after(() => f.dispose());
 	f.view.selection = { kind: 'node', rowKey: 'provider-return' };
-	const systemProvider = new EditorTextModel({ sourceFilePath: f.provider.identity.path, location: { kind: 'workspace' as const, path: f.provider.identity.path }, domain: -1, path: f.provider.identity.path,
+	const systemProvider = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: f.provider.identity.path, location: { kind: 'workspace' as const, path: f.provider.identity.path }, contextId: TEST_SYSTEM_CONTEXT_ID, path: f.provider.identity.path,
 		source: { type: 'lua', resid: 'system-provider' } }, 'lua', PROVIDER);
 	f.models.set(resourceIdentityKey(systemProvider.resource), systemProvider);
 	installBehaviorLensDocument(f.view, f.project(systemProvider));

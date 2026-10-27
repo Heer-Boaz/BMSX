@@ -1,3 +1,4 @@
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { DisposableStore } from '../../../common/lifecycle';
 import { resourceIdentityKey, type RuntimeResource } from '../../../common/resource';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -5,7 +6,7 @@ import type { EditorTextModelService } from '../../../editor/model/model_service
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import { capturedLuaSourceAtPc, type CapturedLuaSourceLocation } from '../../../runtime/lua_inspection';
 import { onDidChangeLuaSourceRegistry, resolveLuaSourceRecord, type LuaSourceRegistry } from '../../../runtime/source_registry';
-import { runtimeLuaSourceRegistry, type Blua32SourceImage, type RuntimeSourceState } from '../../../runtime/sources';
+import { type Blua32SourceImage } from '../../../runtime/sources';
 import { readWorkspaceLuaSourceText } from '../../../workspace/files';
 
 export type CapturedLuaSourceStatus = 'available' | 'changed' | 'unavailable';
@@ -18,7 +19,8 @@ export class CapturedLuaSourceBinding {
 	private image: Blua32SourceImage | null = null;
 	private pc: number | undefined;
 	private resourceKey = '';
-	private catalog: RuntimeSourceState['resourceByIdentity'] | undefined;
+	private catalog: WorkspaceSourceCatalog['resourceByIdentity'] | undefined;
+	private catalogRevision = -1;
 	private resource: RuntimeResource | undefined;
 	private model: EditorTextModel | undefined;
 	private modelVersion = -1;
@@ -27,7 +29,7 @@ export class CapturedLuaSourceBinding {
 	private lifetime: DisposableStore | undefined;
 	private readonly listeners = new Set<() => void>();
 
-	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState) {}
+	public constructor(private readonly models: EditorTextModelService, private readonly sourceCatalog: WorkspaceSourceCatalog) {}
 
 	public onDidChange(listener: () => void): () => void {
 		this.listeners.add(listener);
@@ -98,11 +100,12 @@ export class CapturedLuaSourceBinding {
 	public update(): boolean {
 		const location = this.location;
 		if (location === undefined) return false;
-		const catalog = this.sources.resourceByIdentity, resource = catalog.get(this.resourceKey);
+		const catalog = this.sourceCatalog.resourceByIdentity, resource = catalog.get(this.resourceKey);
 		const model = this.models.get(location.resource), modelVersion = model === undefined ? -1 : model.version;
-		const registry = runtimeLuaSourceRegistry(this.sources, location.resource.domain), registryRevision = registry === undefined ? -1 : registry.revision;
-		if (this.catalog === catalog && this.resource === resource && this.model === model && this.modelVersion === modelVersion
+		const registry = this.sourceCatalog.contexts.get(location.resource.contextId)?.luaSources, registryRevision = registry === undefined ? -1 : registry.revision;
+		if (this.catalogRevision === this.sourceCatalog.revision && this.catalog === catalog && this.resource === resource && this.model === model && this.modelVersion === modelVersion
 			&& this.registry === registry && this.registryRevision === registryRevision) return false;
+		this.catalogRevision = this.sourceCatalog.revision;
 		this.catalog = catalog; this.resource = resource; this.model = model; this.modelVersion = modelVersion;
 		this.registry = registry; this.registryRevision = registryRevision;
 		this.observeRegistry();

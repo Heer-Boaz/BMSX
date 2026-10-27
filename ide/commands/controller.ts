@@ -29,7 +29,7 @@ import { TextEditorInput } from '../workbench/common/editor_input';
 import type { TextFileSaveService } from '../workbench/services/working_copy/text_file_save';
 import { saveTextFileFromCommand } from './source_save';
 import type { EditorTextModel } from '../editor/model/text_model';
-import { resolveRuntimeLuaSource, type RuntimeSourceState } from '../runtime/sources';
+import { type RuntimeSourceState } from '../runtime/sources';
 import type { ScenarioRunService } from '../workbench/services/testing/scenario_runs';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
@@ -43,7 +43,10 @@ import { deactivateEditor } from '../workbench/overlay_modes';
 import { inputFocus, type InputFocusTarget } from '../input/focus';
 import { showServerConnection } from '../workbench/contrib/server/connection';
 import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
-import { getTextFileRuntimeSourceStatus } from '../workbench/services/working_copy/runtime_source_status';
+import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../common/resource';
+import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
+import type { Blua32SourceImage } from '../runtime/sources';
+import { getTextFileRuntimeSourceInstallations } from '../workbench/services/working_copy/runtime_source_status';
 
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
@@ -51,6 +54,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'tabs.next', 'tabs.previous',
 	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
 	'scenarioLab.play', 'play.reset', 'play.source',
+	'scenarioLab.runWithCompanion', 'scenarioLab.debugWithCompanion', 'scenarioLab.playWithCompanion',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
@@ -60,7 +64,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.fit', 'animation.snap',
 	'animation.edit', 'animation.remove', 'animation.source', 'animation.producerSource',
 	'animation.tracks', 'animation.keys', 'animation.details',
-	'aem', 'aem.create', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.testEvent',
+	'aem', 'aem.create', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.apply', 'aem.testEvent',
 	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
 	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
 	'behaviorLens.addProperty', 'behaviorLens.removeProperty',
@@ -152,23 +156,57 @@ export class IdeCommandController {
 				return;
 			case 'aem.testEvent': {
 				const input = group.model.activeTab!;
-				if (input.kind === 'aem_editor') {
-					const property = input.tree.rows[input.tree.selectionIndex].element;
-					this.editor.actorLab.auditionEvent(input.workingCopy.resource.domain, property.path[1] as string);
-				}
+				if (input.kind !== 'aem_editor') return;
+				const property = input.tree.rows[input.tree.selectionIndex].element, event = property.path[1] as string;
+				const choices = getTextFileRuntimeSourceInstallations(this.sources, input.workingCopy)
+					.filter(installation => installation.status === 'applied' && this.editor.actorLab.canInteract(installation.domain))
+					.map(installation => ({ ...installation, label: `Physical ${installation.domain}`, description: input.workingCopy.resource.contextLabel, detail: event }));
+				this.editor.quickInput.pick('AUDITION APPLIED EVENT', 'Choose the actual installed attachment', (_origin, lifetime) => {
+					lifetime.add({ dispose: input.onWillDispose(() => this.editor.quickInput.hide()) });
+					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.editor.quickInput.hide()) });
+					return new TextQuickPickProvider(choices);
+				}, choice => {
+					const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
+					if (image === choice.image) this.editor.actorLab.auditionEvent(choice.domain, event);
+				});
 				return;
 			}
-			case 'input.testActionString': this.editor.actionStrings.open(this.sources.activeCartridgeSlot); return;
-			case 'behaviorLens.testEffect': { const input = group.model.activeTab!; if (input.kind === 'behavior_lens') this.editor.actorLab.testEffect(input.workingCopy.resource.domain); return; }
-			case 'progression.createProgram': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'progression'); return;
-			case 'aem.create': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'aem'); return;
-			case 'animation.createSprite': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'sprite_animation'); return;
-			case 'animation.create': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'animation'); return;
-			case 'input.createBindings': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'input'); return;
-			case 'behaviorLens.createEffect': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'action_effect'); return;
+			case 'input.testActionString': {
+				const resource = group.model.activeTab?.resource;
+				if (resource !== undefined && this.editor.actionStrings.canStart(resource.contextId)) { this.editor.actionStrings.open(resource.contextId); return; }
+				const contexts = [...this.sources.catalog.contexts.values()].filter(context => this.editor.actionStrings.canStart(context.id));
+				this.editor.quickInput.pick('INPUT EXPERIMENT PROJECT', 'Choose the authored project', () => new TextQuickPickProvider(contexts.map(context => ({
+					label: context.projectRootPath, description: context.programDomain, detail: '', contextId: context.id,
+				}))), item => this.editor.actionStrings.open(item.contextId));
+				return;
+			}
+			case 'behaviorLens.testEffect': {
+				const input = group.model.activeTab!;
+				if (input.kind !== 'behavior_lens') return;
+				const choices: Array<{ domain: ResourceDomain; image: Blua32SourceImage; label: string; description: string; detail: string }> = [];
+				for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
+					const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+					if (image === null || image.sourceContextId !== input.workingCopy.resource.contextId || !this.editor.actorLab.canInteract(domain)) continue;
+					choices.push({ domain, image, label: `Physical ${domain}`, description: input.workingCopy.resource.contextLabel, detail: 'Choose a granted runtime effect on this attachment' });
+				}
+				this.editor.quickInput.pick('TEST GRANTED EFFECT', 'Choose the actual installed attachment', (_origin, lifetime) => {
+					lifetime.add({ dispose: input.onWillDispose(() => this.editor.quickInput.hide()) });
+					return new TextQuickPickProvider(choices);
+				}, choice => {
+					const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
+					if (image === choice.image) this.editor.actorLab.testEffect(choice.domain);
+				});
+				return;
+			}
+			case 'progression.createProgram': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'progression'); return;
+			case 'aem.create': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'aem'); return;
+			case 'animation.createSprite': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'sprite_animation'); return;
+			case 'animation.create': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'animation'); return;
+			case 'input.createBindings': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'input'); return;
+			case 'behaviorLens.createEffect': openCreateResourcePrompt(this.editor, this.sources.catalog, this.clock, 'action_effect'); return;
 			case 'builds.start': void chooseBuild(this.editor); return;
 			case 'projects.createCartridge': createCartridge(this.editor); return;
-			case 'resources.import': importCartridgeFiles(this.editor, this.sources); return;
+			case 'resources.import': importCartridgeFiles(this.editor, this.sources.catalog); return;
 			case 'builds.jobs': showBuildJobs(this.editor); return;
 			case 'server.connection':
 				showServerConnection(this.editor);
@@ -236,6 +274,9 @@ export class IdeCommandController {
 				return;
 			case 'scenarioLab.debug':
 			case 'scenarioLab.play':
+			case 'scenarioLab.debugWithCompanion':
+			case 'scenarioLab.playWithCompanion':
+			case 'scenarioLab.runWithCompanion':
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
 			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
 			case 'scenarioLab.run':
@@ -286,6 +327,7 @@ export class IdeCommandController {
 		workingCopies: readonly EditorTextModel[],
 		saveBeforeAction: boolean,
 	): Promise<boolean> {
+		if (request.action === 'run' && this.sources.currentBlua32Media.cartridgeSlots[request.entry.domain] !== request.expectedImage) return false;
 		if (saveBeforeAction) {
 			for (let index = 0; index < workingCopies.length; index += 1) {
 				const result = await saveTextFileFromCommand(this.textFileSaves, workingCopies[index], this.editor, this.sources);
@@ -294,6 +336,7 @@ export class IdeCommandController {
 				}
 			}
 		}
+		if (request.action === 'run' && this.sources.currentBlua32Media.cartridgeSlots[request.entry.domain] !== request.expectedImage) return false;
 		return performEditorAction(
 			this.editor,
 			this.hotResumes,
@@ -331,13 +374,14 @@ export class IdeCommandController {
 				return this.boots.acceptingRequests;
 			case 'runCurrentFile': {
 				const resource = group.model.activeTab?.resource;
-				if (!this.boots.acceptingRequests || !this.runtimeTasks.ready || !resource || resource.domain === -1) return false;
-				const source = resolveRuntimeLuaSource(this.sources, resource);
+				if (!this.boots.acceptingRequests || !this.runtimeTasks.ready || resource === undefined
+					|| this.sources.catalog.getContext(resource.contextId).programDomain !== 'cart') return false;
+				const source = this.sources.catalog.resolveLuaSource(resource);
 				return source !== null && source.record.sourceKind !== 'source-only' && !source.record.generated;
 			}
 			case 'runProject':
 				return this.boots.acceptingRequests && this.runtimeTasks.ready
-					&& this.sources.cartridgeSlots.some(cart => cart?.luaSources.can_boot_from_source);
+					&& this.sources.cartridgeSlots.some(cart => cart !== null && this.sources.catalog.getContext(cart.contextId).luaSources.can_boot_from_source);
 			case 'keepEditor':
 				return group.model.previewTab !== null && group.model.previewTab === group.model.activeTab;
 			case 'navigateBack':
@@ -368,7 +412,7 @@ export class IdeCommandController {
 			case 'aem.create': case 'animation.create': case 'animation.createSprite': case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
 			case 'projects.createCartridge': return this.editor.projects !== undefined;
 			case 'resources.import': return this.editor.importFiles !== undefined
-				&& (this.sources.cartridgeSlots[0] !== null || this.sources.cartridgeSlots[1] !== null);
+				&& [...this.sources.catalog.contexts.values()].some(context => context.programDomain === 'cart');
 			case 'builds.jobs': return this.editor.builds !== undefined;
 			case 'server.connection': return true;
 			case 'conversations.history':
@@ -402,6 +446,9 @@ export class IdeCommandController {
 				return this.editor.gamePanel.visible && transport.playbackEnabled;
 			case 'scenarioLab.play':
 			case 'scenarioLab.debug':
+			case 'scenarioLab.debugWithCompanion':
+			case 'scenarioLab.playWithCompanion':
+			case 'scenarioLab.runWithCompanion':
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
 			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
 			case 'scenarioLab.run':
@@ -425,15 +472,18 @@ export class IdeCommandController {
 				if (input?.kind !== 'aem_editor') return false;
 				const property = input.tree.rows[input.tree.selectionIndex]?.element;
 				return property !== undefined && property.path[0] === 'events' && property.path.length >= 2
-					&& getTextFileRuntimeSourceStatus(this.sources, input.workingCopy) === 'applied'
-					&& this.editor.actorLab.canInteract(input.workingCopy.resource.domain);
+					&& getTextFileRuntimeSourceInstallations(this.sources, input.workingCopy).some(installation =>
+						installation.status === 'applied' && this.editor.actorLab.canInteract(installation.domain));
 			}
 			case 'aem': return true;
-			case 'input.testActionString': return this.editor.actionStrings.canStart(this.sources.activeCartridgeSlot);
+			case 'input.testActionString': return [...this.sources.catalog.contexts.keys()].some(contextId => this.editor.actionStrings.canStart(contextId));
 			case 'behaviorLens.testEffect': {
 				const input = group.model.activeTab;
 				return input?.kind === 'behavior_lens' && input.view.presentation.kind === 'properties'
-					&& this.editor.actorLab.canInteract(input.workingCopy.resource.domain);
+					&& ([SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const).some(domain => {
+						const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+						return image !== null && image.sourceContextId === input.workingCopy.resource.contextId && this.editor.actorLab.canInteract(domain);
+					});
 			}
 			case 'animation': case 'progression': case 'inputBindings':
 			case 'scenarioLab':

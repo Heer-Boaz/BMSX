@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -30,9 +31,9 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		{ width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	editorRuntimeState.active = true;
 	ide.editor.setFontVariant(variant);
-	const resource = sources.resourceByIdentity.get(resourceIdentityKey({ domain: 0, path: 'review.lua' }))!;
+	const resource = sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'review.lua' }))!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
-	const proposal = new WorkspaceEditProposal('Review canonical source and retain the complete prospective change', new WorkspaceSourceContext(editorTextModelService, sources), {
+	const proposal = new WorkspaceEditProposal('Review canonical source and retain the complete prospective change', new WorkspaceSourceContext(editorTextModelService, sources.catalog), {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 0, deleteLength: SOURCE.length, text: SOURCE.replaceAll('before', 'after') }] }]]),
 	});
 	const input = new WorkspaceEditReviewInput(proposal);

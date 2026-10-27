@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
@@ -7,7 +8,7 @@ import { AnimationKeyViewport } from '../../ide/workbench/contrib/animation/key_
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 
-const resource = { sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, domain: 0 as const, path: 'animation.lua', source: { resid: 'animation', type: 'lua' as const } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: 'animation.lua', location: { kind: 'workspace' as const, path: 'animation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua', source: { resid: 'animation', type: 'lua' as const } };
 
 test('coincident key picking keeps the selected authored occurrence without overriding a nearer key', () => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=50,value=0},{time_ms=50,value=0},{time_ms=51,value=1}}}}}";
@@ -87,7 +88,7 @@ test('overview visits the visible key interval, keeps spanning tags and performs
 		return Reflect.get(target, property);
 	} });
 	const track = { ...document.tracks[0], keyIndex: { ...document.tracks[0].keyIndex, positions } };
-	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.domain);
+	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
 	t.after(() => { input.dispose(); model.dispose(); });
 	input.document = { ...document, tracks: [track, document.tracks[1]] };
 	for (const lane of input.document.tracks) input.tracks.rows.push({ track: lane, clip: undefined, frames: false, label: lane.label, text: '' });

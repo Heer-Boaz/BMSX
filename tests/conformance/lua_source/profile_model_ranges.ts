@@ -1,4 +1,6 @@
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -8,7 +10,6 @@ import { BehaviorLensInput } from '../../../ide/workbench/contrib/behavior_lens/
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { mapBehaviorLensSourceRanges } from '../../../ide/workbench/contrib/behavior_lens/source_correspondence';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 
 editorViewState.font = new EditorFont('tiny');
 
@@ -16,11 +17,11 @@ for (const [children, viewCount] of [[0, 0], [32, 1], [32, 16], [1024, 1], [1024
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')
 local leaf<const> = { type = 'wait', duration_ticks = 1 }
 trees.register('profile', { root = { type = 'sequence', children = {${'leaf,'.repeat(children)}} } })`;
-	const model = new EditorTextModel({ sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
-	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
+	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, model.resource)], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects'])));
 	const inputs: BehaviorLensInput[] = [];
 	for (let index = 0; index < viewCount; index += 1) {
-		inputs.push(new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail),
+		inputs.push(new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), new Set([model.resource.contextId]),
 			() => assert.fail('range tracking does not start an FSM layout engine')));
 	}
 	model.onDidChangeContent(event => {

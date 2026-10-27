@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { rects_intersect } from '../../machine/ts/common/rect';
 import { layoutBehaviorTreeGraph } from '../../ide/workbench/contrib/behavior_lens/graph_geometry';
 import assert from 'node:assert/strict';
@@ -20,7 +21,7 @@ import { BEHAVIOR_SOURCE_FIXTURE } from '../helpers/behavior_source_fixture';
 
 const font = new Font({ variant: 'tiny' });
 function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
-	const model = new EditorTextModel({ sourceFilePath: 'bt.lua', location: { kind: 'workspace' as const, path: 'bt.lua' }, domain: 0, path: 'bt.lua', source: { type: 'lua', resid: 'bt' } }, 'lua', source);
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'bt.lua', location: { kind: 'workspace' as const, path: 'bt.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'bt.lua', source: { type: 'lua', resid: 'bt' } }, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource)], ['cartlib/behaviour_tree/library'])));
 	const document = project();
 	const definition = document.definitions[0];

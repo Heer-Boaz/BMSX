@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -10,19 +11,19 @@ import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 for (const existing of [false, true]) test(`superseded map source opening disposes only its unadmitted candidate (${existing ? 'retained' : 'new'} source view)`, async t => {
 	const sources = createScenarioTestSourceState([]), group = createTestEditorGroup();
-	const resource = { sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
 	const model = editorTextModelService.retain(resource, 'yaml', 'map_rows: ["m "]\n');
 	const input = new CartMapInput(model, 'nemesis');
 	t.after(() => {
 		group.dispose(); input.dispose();
 		editorTextModelService.clear();
 	});
-	const retained = existing ? await resolveTextCodeEditorInput(sources, resource) : undefined;
+	const retained = existing ? await resolveTextCodeEditorInput(sources.catalog, resource) : undefined;
 	if (retained !== undefined) group.model.add(retained);
 	const disposed: CodeEditorInput[] = [];
 	const dispose = CodeEditorInput.prototype.dispose;
 	t.mock.method(CodeEditorInput.prototype, 'dispose', function (this: CodeEditorInput) { disposed.push(this); dispose.call(this); });
-	const controller = new CartMapController(sources, group, null!);
+	const controller = new CartMapController(sources.catalog, group, null!);
 	controller.openSource(input);
 	group.panes.beginOpen();
 	await new Promise<void>(resolve => setImmediate(resolve));

@@ -1,5 +1,5 @@
 import type { CartEditor } from '../cart_editor';
-import { showEditorMessage, showEditorWarningBanner } from '../common/feedback_state';
+import { showEditorMessage } from '../common/feedback_state';
 import type { EditorTextModel } from '../editor/model/text_model';
 import { extractErrorMessage } from '../common/errors';
 import { computeSourceLabel } from '../common/paths';
@@ -24,11 +24,7 @@ export async function saveTextFileFromCommand(
 		return result;
 	}
 	const saved = `${title} saved${result.persistence.status === 'browser' ? ' (browser)' : ''}`;
-	if (result.application.status === 'failed') {
-		showEditorWarningBanner(`${saved}; runtime apply failed: ${extractErrorMessage(result.application.error)}`, 5.0);
-	} else if (result.application.status === 'not-applied') {
-		showEditorMessage(`${saved}; apply pending`, 'warning', 4.0);
-	} else if (model.mode === 'yaml') {
+	if (model.mode === 'yaml') {
 		const status = getTextFileRuntimeSourceStatus(sources, model);
 		if (status === 'applied') {
 			showEditorMessage(saved, 'success', 2.5);

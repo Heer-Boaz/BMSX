@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -11,7 +12,7 @@ class SourceInput extends CompositeTextEditorInput<'fixture', 'fixture'> {
 
 test('composite source membership, dirty notifications and write access follow real working copies', t => {
 	const service = new EditorTextModelService();
-	const [a, b, c] = ['a', 'b', 'c'].map(path => service.retain({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', path));
+	const [a, b, c] = ['a', 'b', 'c'].map(path => service.retain({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua', resid: path } }, 'lua', path));
 	const input = new SourceInput(a);
 	t.after(() => { input.dispose(); service.clear(); });
 	input.present(a, b, b);

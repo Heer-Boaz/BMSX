@@ -1,26 +1,25 @@
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
-import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import type { BuiltFixtureProgram } from './fixture_media';
 import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
-import type { ResourceDomain } from '../common/resource';
 import { bindSourceBreakpoints, type SourceBreakpoint } from '../runtime/source_breakpoints';
 
 type DebugSource = { domain: ExecutionDomainId; module: string; image: Blua32ToolingImage; record: Blua32CompiledSource; points: SourceBreakpoint[] };
 
 /** Requests bind only to this derived test's immutable images, never the authoring gutter or working copy. */
 export class TestDebuggerSources {
-	public readonly catalog: { source: string; domain: ExecutionDomainId; sourceDomain: ResourceDomain; path: string; symbols: boolean }[] = [];
+	public readonly catalog: { source: string; domain: ExecutionDomainId; sourceContextId: string; path: string; symbols: boolean }[] = [];
 	public readonly pcs: [Map<number, number>, Map<number, number>, Map<number, number>] = [new Map(), new Map(), new Map()];
 	private readonly entries = new Map<string, DebugSource>();
-	public constructor(id: string, program: BuiltTestCartridge, sourceDomain: ResourceDomain, private readonly changed: () => void) {
+	public constructor(id: string, program: BuiltFixtureProgram, private readonly changed: () => void) {
 		for (const domain of [-1, 0, 1] as const) {
-			const debug = program.debugImages[domain + 1];
-			if (debug === null) continue;
-			for (const [module, record] of debug.sources) {
+			const image = domain === -1 ? program.sourceMedia.system : program.sourceMedia.cartridgeSlots[domain];
+			if (image === null) continue;
+			for (const [module, record] of image.sources) {
 				const source = `${id}/source/${this.entries.size}`;
-				this.entries.set(source, { domain, module, image: debug.image, record, points: [] });
-				this.catalog.push({ source, domain, sourceDomain: domain === -1 ? -1 : (domain ^ sourceDomain) as 0 | 1,
-					path: record.displayPath, symbols: debug.image.symbols !== null });
+				this.entries.set(source, { domain, module, image, record, points: [] });
+				this.catalog.push({ source, domain, sourceContextId: image.sourceContextId,
+					path: record.displayPath, symbols: image.symbols !== null });
 			}
 		}
 	}

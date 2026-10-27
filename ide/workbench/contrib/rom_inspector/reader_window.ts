@@ -11,7 +11,7 @@ import { consumeIdeKey, isKeyDown, isKeyJustPressed } from '../../../input/keybo
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
-import { resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -144,8 +144,7 @@ export class RomEntryInspectorWindow {
 	private source() {
 		const path = this.input.reader.subject?.sourcePath;
 		if (path === undefined) return undefined;
-		const domain = this.input.snapshot.domain, resource = resolveRuntimeResourceForContext(this.sources, domain, path);
-		return resource?.domain === domain ? resource : undefined;
+		return this.sources.catalog.resolveResource({ contextId: this.input.snapshot.sourceContextId, path });
 	}
 
 	public isEnabled(command: EditorCommandId): boolean {

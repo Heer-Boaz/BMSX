@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS, createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { beforeEach, afterEach } from 'node:test';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
@@ -17,7 +19,7 @@ import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { HostExecutionControl, HostPauseReason } from '../../hosts/common/execution_control';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { createRuntimeSourceState, forkRuntimeSourceState } from '../../ide/runtime/sources';
+import { forkRuntimeSourceState } from '../../ide/runtime/sources';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { BootService } from '../../ide/workbench/services/execution/boot';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
@@ -32,7 +34,7 @@ async function fixture(t: TestContext) {
 		systemSource: 'module<entry>\ncop0.exec = mem[0x10000028]', systemModules: [], cartSource: source,
 	});
 	const decoded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
-	const sources = createRuntimeSourceState(decoded.system, decoded.cartridgeSlots);
+	const sources = createLoadedTestRuntimeSourceState(decoded.system, decoded.cartridgeSlots);
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const target = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC, input);
 	const runtime = target.runtime, cpu = runtime.machine.cpu;
@@ -45,7 +47,7 @@ async function fixture(t: TestContext) {
 		tasks, execution, audio, new Map());
 	let resets = 0;
 	runtime.onStateReset = () => { resets++; service.didReplaceMachine(); };
-	const model = models.retain({ sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
+	const model = models.retain({ contextLabel: 'fixture-source', sourceFilePath: 'entry.lua', location: { kind: 'workspace' as const, path: 'entry.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
 	// Same resource/version in a different document owner must not enter this build.
 	editorTextModelService.retain(model.resource, 'lua', 'end end -- foreign workspace');
 	t.after(async () => {
@@ -59,7 +61,7 @@ async function fixture(t: TestContext) {
 }
 
 test('rebuilt cart source layers support direct Scenario Lab forks as well as reload from bytes', async t => {
-	const f = await fixture(t), registry = f.sources.systemLuaSources;
+	const f = await fixture(t), registry = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources;
 	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\n-- rebuilt source\n' }]);
 	assert.equal((await f.service.reboot().completion).status, 'reset');
 	const fork = forkRuntimeSourceState(f.sources);
@@ -67,11 +69,11 @@ test('rebuilt cart source layers support direct Scenario Lab forks as well as re
 	assert.equal(fork.systemRom.bytes, f.sources.systemRom.bytes, 'forking does not duplicate ROM backing bytes');
 	assert.equal(fork.cartridgeSlots[0]!.rom.bytes, f.sources.cartridgeSlots[0]!.rom.bytes);
 	const decoded = await loadRomToolingMedia(f.sources.systemRom.bytes, [f.sources.cartridgeSlots[0]!.rom.bytes, null]);
-	const reopened = createRuntimeSourceState(decoded.system, decoded.cartridgeSlots);
+	const reopened = createLoadedTestRuntimeSourceState(decoded.system, decoded.cartridgeSlots);
 	for (const state of [fork, reopened]) {
 		assert.deepEqual(state.systemInstalledBlua32Sources, f.sources.systemInstalledBlua32Sources);
 		assert.deepEqual(state.cartridgeSlots[0]!.installedBlua32Sources, f.sources.cartridgeSlots[0]!.installedBlua32Sources);
-		assert.notEqual(state.systemLuaSources.records[0], registry.records[0]);
+		assert.notEqual(state.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0], registry.records[0]);
 	}
 	for (const layer of [f.sources.systemRom, f.sources.cartridgeSlots[0]!.rom]) {
 		assert.ok(layer.index.entries.every(entry => entry.payload_id === layer.id), 'each derived entry names its owning ROM bytes');
@@ -117,9 +119,9 @@ test('Reboot links a newly imported workspace library without compiling or packi
 	const files = workspaceRecords.provider as MemoryWorkspaceFiles;
 	files.records.set('cartlib/new_module.lua', { contents: 'return { value = 37 }', updatedAt: 1 });
 	files.records.set('cartlib/unrelated.lua', { contents: 'end end', updatedAt: 1 });
-	await discoverWorkspaceSources(f.sources);
+	await discoverWorkspaceSources(f.sources.catalog);
 	const cart = f.sources.cartridgeSlots[0]!;
-	assert.equal(cart.luaSources.module2lua['cartlib/new_module'].src, 'return { value = 37 }');
+	assert.equal(f.sources.catalog.getContext(cart.contextId).luaSources.module2lua['cartlib/new_module'].src, 'return { value = 37 }');
 	assert.equal(f.sources.cartridgeBlua32MediaDirty[0], false, 'catalog discovery does not change the installed program');
 	f.model.pushEditOperations([{ offset: f.source.indexOf('while'), deleteLength: 0,
 		text: "local dependency<const> = require('cartlib/new_module')\nresult = dependency.value\n" }]);
@@ -127,7 +129,7 @@ test('Reboot links a newly imported workspace library without compiling or packi
 	assert.equal(cart.installedBlua32Sources.get('cartlib/new_module'), 'return { value = 37 }');
 	assert.equal(cart.installedBlua32Sources.has('cartlib/unrelated'), false);
 	const decoded = await loadRomToolingMedia(f.sources.systemRom.bytes, [cart.rom.bytes, null]);
-	const reopened = createRuntimeSourceState(decoded.system, decoded.cartridgeSlots).cartridgeSlots[0]!;
+	const reopened = createLoadedTestRuntimeSourceState(decoded.system, decoded.cartridgeSlots).catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	assert.equal(reopened.luaSources.module2lua['cartlib/new_module'].src, 'return { value = 37 }');
 	assert.equal(reopened.luaSources.module2lua['cartlib/unrelated'], undefined);
 });

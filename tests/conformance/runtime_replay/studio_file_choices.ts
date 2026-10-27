@@ -1,5 +1,4 @@
 
-import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { checkQuickPickHighlightRuns } from './studio_quick_pick_highlights';
 
@@ -9,7 +8,7 @@ export async function testStudioFileChoices(test: StudioFixture): Promise<void> 
 	harness.openLuaSource('cart.lua');
 	const origin = sourcePane(test).code.model, version = origin.version, dirty = origin.dirty;
 	const before = cycles(), media = ide.sources.currentBlua32Media;
-	const target = resolveRuntimeResource(ide.sources, { domain: origin.resource.domain, path: 'title_screen.lua' })!;
+	const target = ide.sources.catalog.resolveResource({ contextId: origin.resource.contextId, path: 'title_screen.lua' })!;
 	const picker = ide.editor.quickInput;
 	await press('ControlLeft', 'Comma');
 	for (const code of ['KeyT', 'KeyS', 'KeyC', 'KeyR']) await press(code);

@@ -1,8 +1,9 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import type { CodeEditorControl } from '../../ide/editor/ui/code_editor_control';
 import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
-import type { RuntimeSourceState } from '../../ide/runtime/sources';
+import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
@@ -25,8 +26,8 @@ import { undo as undoActiveEdit, redo as redoActiveEdit } from '../../ide/editor
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 
 function luaResource(path: string): RuntimeResource {
-	return { sourceFilePath: path, location: { kind: 'workspace' as const, path },
-		domain: 0,
+	return { contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path },
+		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path,
 		source: {
 			resid: path,
@@ -439,7 +440,7 @@ test('a local search job cannot continue against another model with the same ver
 	const first = models.retain(luaResource('first.lua'), 'lua', 'needle');
 	const second = models.retain(luaResource('second.lua'), 'lua', 'needle');
 	const code = createTestCodeControl(t, first, documents, clock);
-	const search = new EditorSearchController(code, {} as RuntimeSourceState);
+	const search = new EditorSearchController(code, new WorkspaceSourceCatalog());
 	t.after(() => { search.dispose(); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true);
 	search.openSearch(false);

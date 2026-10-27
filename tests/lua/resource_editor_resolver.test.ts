@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -11,8 +12,8 @@ import {
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 
 function resource(path: string, type: RuntimeResource['source']['type']): RuntimeResource {
-	return { sourceFilePath: path, location: { kind: 'workspace' as const, path },
-		domain: 0,
+	return { contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path },
+		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path,
 		source: {
 			resid: path,
@@ -27,7 +28,7 @@ function registration(id: string, selector: ResourceEditorSelector): ResourceEdi
 		id,
 		selector,
 		createEditorInput: resource => {
-			const input = new ResourceViewerInput(createScenarioTestSourceState([]), resource);
+			const input = new ResourceViewerInput(createScenarioTestSourceState([]).catalog, resource);
 			input.title = id;
 			return input;
 		},

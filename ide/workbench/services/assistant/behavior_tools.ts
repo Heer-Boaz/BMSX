@@ -1,11 +1,11 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
-import { SYSTEM_RESOURCE_DOMAIN, CARTRIDGE_RESOURCE_DOMAINS, resourceIdentityKey, type ResourceDomain, type ResourceIdentity } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import type { EditorTextEdit, EditorTextModel } from '../../../editor/model/text_model';
 import { readLuaSourceRange } from '../../../language/lua/source_edits';
 import { parseLuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { resolveLuaTextFileModel } from '../working_copy/text_file_model';
-import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source_documents';
 import type { BehaviorRegistrationSource, BehaviorSourceNode } from '../../contrib/behavior_lens/model';
 import { indexStateMachineSource } from '../../contrib/behavior_lens/state_machine_index';
@@ -27,7 +27,7 @@ export type ToolBehaviorNode = Omit<BehaviorSourceNode, 'rowKey' | 'children'> &
 export type ToolBehaviorDocument = {
 	readonly behavior: string; readonly syntaxComplete: boolean; readonly root: string;
 	/** Opaque range addresses map directly to their admitted source identities. */
-	readonly sources: readonly { file: string; domain: ResourceDomain; path: string; version: number; readOnly: boolean }[];
+	readonly sources: readonly { file: string; contextId: string; path: string; version: number; readOnly: boolean }[];
 	readonly nodes: readonly ToolBehaviorNode[];
 	readonly entries: readonly { kind: 'initial' | 'concurrent'; owner: string; origin: string; target: { kind: 'state'; node: string } | Extract<StateMachineSourceOutcome['target'], { kind: 'unresolved' }> }[];
 	readonly transitions: readonly { origin: string; node: string; kind: string; outcomes: readonly {
@@ -53,7 +53,7 @@ export class WorkspaceBehaviorTools {
 	private readonly nodes = new Map<string, NodeBinding>();
 
 	public constructor(private readonly id: string, private readonly context: WorkspaceSourceContext,
-		private readonly sources: RuntimeSourceState, private readonly documents: BehaviorSourceDocuments) {}
+		private readonly sourceCatalog: WorkspaceSourceCatalog, private readonly documents: BehaviorSourceDocuments) {}
 
 	public execute(name: string, input: unknown): BehaviorToolReadResult | BehaviorEdit {
 		const request = decodeBehaviorToolRequest(name, input);
@@ -61,13 +61,13 @@ export class WorkspaceBehaviorTools {
 			case 'studio_list_behaviors': {
 				if (this.catalog === undefined) {
 					this.catalog = [];
-					for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
-						for (const registration of this.documents.registrations.getRegistrations(domain)) {
+					for (const contextId of this.sourceCatalog.contexts.keys()) {
+						for (const registration of this.documents.registrations.getRegistrations(contextId)) {
 							const behavior = `${this.id}/behavior/${this.catalog.length}`;
 							this.registrations.set(behavior, registration);
 							// Do not serialize the registration's retained AST/semantic file.
 							const { resource, behaviorKind, semanticId, label, range, occurrenceRange } = registration;
-							this.catalog.push({ behavior, resource: { domain: resource.domain, path: resource.path }, behaviorKind, semanticId, label, range, occurrenceRange });
+							this.catalog.push({ behavior, resource: { contextId: resource.contextId, path: resource.path }, behaviorKind, semanticId, label, range, occurrenceRange });
 						}
 					}
 				}
@@ -109,10 +109,10 @@ export class WorkspaceBehaviorTools {
 		if (existing !== undefined) return existing;
 		const registration = this.registrations.get(handle);
 		if (registration === undefined) throw new StudioToolInputError('Behavior handle does not belong to this source context');
-		const project = getOrCreateSemanticProject(this.context.models, registration.resource.domain);
+		const project = getOrCreateSemanticProject(this.context.models, registration.resource.contextId);
 		const capture = (identity: ResourceIdentity) => {
-			const resource = resolveRuntimeResource(this.sources, identity)!;
-			return this.context.read(resolveLuaTextFileModel(this.context.models, this.sources, resource));
+			const resource = this.sourceCatalog.resolveResource(identity)!;
+			return this.context.read(resolveLuaTextFileModel(this.context.models, this.sourceCatalog, resource));
 		};
 		const root = capture(registration.resource);
 		const document = this.documents.get(root.model);

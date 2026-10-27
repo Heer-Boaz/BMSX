@@ -1,4 +1,6 @@
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import assert from 'node:assert/strict';
@@ -7,7 +9,6 @@ import { createHostOverlayFixture } from '../../helpers/host_overlay';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { EditorFont } from '../../../ide/editor/ui/view/font';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../../ide/workbench/contrib/behavior_lens/layout';
@@ -22,9 +23,9 @@ import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/q
 Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, editorAreaTop: 24, editorAreaBottom: 276 });
 for (const siblings of [24, 1024]) {
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')\nlocal child<const> = { type = 'wait', duration_ticks = 2 }\ntrees.register('profile', { root = { type = 'sequence', children = { ${'child,'.repeat(siblings)} } } })`;
-	const model = new EditorTextModel({ sourceFilePath: 'drag.lua', location: { kind: 'workspace' as const, path: 'drag.lua' }, domain: 0, path: 'drag.lua', source: { type: 'lua', resid: 'drag' } }, 'lua', source);
-	const analysis = buildLuaFileSemanticData(source, model.resource.path);
-	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: 'drag.lua', location: { kind: 'workspace' as const, path: 'drag.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'drag.lua', source: { type: 'lua', resid: 'drag' } }, 'lua', source);
+	const analysis = buildResourceLuaSemanticFixtureFile(source, model.resource);
+	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([analysis], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects'])));
 	const state = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	selectBehaviorLensDefinition(state, document.definitions[0].rowKey);
 	prepareBehaviorLensLayout(state, { left: 0, top: 24, right: 384, bottom: 276 });

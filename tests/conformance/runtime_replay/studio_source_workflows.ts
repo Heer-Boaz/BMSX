@@ -1,3 +1,4 @@
+import { resourceIdentityKey } from '../../../ide/common/resource';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
@@ -29,7 +30,7 @@ export async function testSourceViewsBeforeApply(
 	await frame();
 	const lens = ide.editor.editorGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('W04: source lens command must open a visual view');
-	check(lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
+	check(lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.contextId).getSnapshot().getFileData(resourceIdentityKey(model.identity))!.revision,
 		'W04: source lens projects the edited working-copy generation');
 	check(lens.view.document.definitions.length > 0, 'W04: actual title FSM registration is visible');
 	harness.openLuaSource(model.resource.path);
@@ -44,7 +45,7 @@ export async function testSourceViewsBeforeApply(
 	harness.executeCommand('behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	await frame();
-	check(ide.editor.editorGroup.model.activeTab === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
+	check(ide.editor.editorGroup.model.activeTab === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.contextId).getSnapshot().getFileData(resourceIdentityKey(model.identity))!.revision,
 		'W04: the retained source lens refreshes after undo and redo');
 	ide.editor.editorGroup.close(sourceTab.id);
 	await frame();
@@ -114,7 +115,7 @@ export async function testCapturedSourceApply(test: StudioFixture): Promise<void
 
 export async function testAemSourceApplication(test: StudioFixture): Promise<void> {
 	const { ide, harness, tasks, until, press, title, runPaletteCommand } = test;
-	const resource = ide.sources.resources.find(item => item.domain === 0 && item.source.type === 'aem')!;
+	const resource = ide.sources.catalog.resources.find(item => item.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.source.type === 'aem')!;
 	await ide.editor.navigation.openResource(resource);
 	const aem = ide.editor.editorGroup.model.activeTab;
 	if (aem.kind !== 'aem_editor') throw new Error('W04: an AEM resource opens its visual editor');

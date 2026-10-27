@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
@@ -13,7 +14,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { captureInstalledLuaSources, registerLuaSourceRecord } from '../../ide/runtime/source_registry';
-import { createBlua32SourceImage, registerRuntimeLuaResource } from '../../ide/runtime/sources';
+import { createBlua32SourceImage } from '../../ide/runtime/sources';
 import { RuntimeGteHistory } from '../../ide/runtime/gte_history';
 import { updateFullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { GteDetailsWindow } from '../../ide/workbench/contrib/gte_debugger/details_window';
@@ -41,15 +42,15 @@ return true`;
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', withSource = false, program = PROGRAM) {
 	configureFontVariant(variant);
 	const { runtime, sources, cpu } = eventHistoryRuntime(createCartlibProgramHarness(program).images);
-	const models = new EditorTextModelService(), registry = sources.cartridgeSlots[0]!.luaSources;
+	const models = new EditorTextModelService(), registry = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources;
 	const record = { ...createScenarioTestSourceRecord('entry.lua', 1, program), sourceKind: 'project' as const, program_module: true };
 	if (withSource) {
 		registerLuaSourceRecord(registry, record);
 		const image = sources.currentBlua32Media.cartridgeSlots[0]!;
 		sources.currentBlua32Media = { ...sources.currentBlua32Media,
-			cartridgeSlots: [createBlua32SourceImage(image.layout, image.symbols, captureInstalledLuaSources(registry), 0), null] };
+			cartridgeSlots: [createBlua32SourceImage(image.layout, image.symbols, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_CARTRIDGE_CONTEXT_IDS[0]), null] };
 	}
-	const resource = withSource ? registerRuntimeLuaResource(sources, 0, record) : undefined;
+	const resource = withSource ? sources.catalog.registerLuaResource(TEST_CARTRIDGE_CONTEXT_IDS[0], record) : undefined;
 	const history = new RuntimeGteHistory(runtime, sources, 2), input = new GteDebuggerInput(history);
 	assert.equal(runtime.machine.scheduler.runCpuSlice(0, 10_000_000), RunResult.Halted);
 	const issue = () => {
@@ -63,7 +64,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', withSource = f
 	origin.bindKeyboard(() => {}); origin.focus();
 	const owner = surfaces.attach({ role: 'content', captureScope: origin.scope.surfaceScope, isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw() {} });
-	const source = new CapturedLuaSourceBinding(models, sources);
+	const source = new CapturedLuaSourceBinding(models, sources.catalog);
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
 	let formats = 0, sourceOpens = 0;
 	const synchronize = () => {

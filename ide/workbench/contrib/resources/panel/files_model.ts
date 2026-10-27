@@ -1,8 +1,8 @@
 import {
-	CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, resourceIdentityKey, resourceLocationEquals,
-	type ResourceDomain, type ResourceIdentity, type RuntimeResource, type RuntimeResourceLocation,
+	resourceIdentityKey, resourceLocationEquals,
+	type ResourceIdentity, type RuntimeResource, type RuntimeResourceLocation,
 } from '../../../../common/resource';
-import type { RuntimeSourceState } from '../../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import { revealWorkbenchListSelection } from '../../../ui/list_view';
 import {
 	appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed,
@@ -26,7 +26,6 @@ type FileNode<Element extends FileElement = FileElement> = WorkbenchTreeNode<Fil
 };
 type FileRoot = { node: FileNode<Extract<FileElement, { kind: 'root' }>>; directories: Map<string, FileNode> };
 const FILE_LOCATION_KINDS = ['project', 'workspace', 'generated'] as const;
-const FILE_DOMAINS = [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const;
 
 /** One resource catalog's retained topology; filtering changes presentation, never source identity. */
 export class ResourceFilesModel {
@@ -36,9 +35,9 @@ export class ResourceFilesModel {
 	};
 	public revision = 0;
 	public horizontalScroll = 0;
-	private readonly contexts = new Map<ResourceDomain, Map<RuntimeResourceLocation['kind'], FileRoot>>();
+	private readonly contexts = new Map<string, Map<RuntimeResourceLocation['kind'], FileRoot>>();
 	private readonly files = new Map<string, FileNode<Extract<FileElement, { kind: 'file' }>>>();
-	private sources: RuntimeSourceState | undefined;
+	private catalog: WorkspaceSourceCatalog | undefined;
 	private catalogRevision = -1;
 	private filter: ResourcePanelFilterMode | undefined;
 	private publication = 0;
@@ -47,17 +46,17 @@ export class ResourceFilesModel {
 		return this.tree.selectionIndex < 0 ? null : this.tree.rows[this.tree.selectionIndex];
 	}
 
-	public sync(sources: RuntimeSourceState, filter: ResourcePanelFilterMode): boolean {
-		if (this.sources === sources && this.catalogRevision === sources.resourceCatalogRevision && this.filter === filter) return false;
+	public sync(catalog: WorkspaceSourceCatalog, filter: ResourcePanelFilterMode): boolean {
+		if (this.catalog === catalog && this.catalogRevision === catalog.revision && this.filter === filter) return false;
 		let selected = this.selectedNode;
 		const publication = ++this.publication;
 		let changed = false;
-		for (const [key, resource] of sources.resourceByIdentity) {
+		for (const [key, resource] of catalog.resourceByIdentity) {
 			let node = this.files.get(key);
 			if (node === undefined || !resourceLocationEquals(node.element.location, resource.location)) {
 				const previous = node, location = resource.location;
-				let context = this.contexts.get(resource.domain);
-				if (context === undefined) { context = new Map(); this.contexts.set(resource.domain, context); }
+				let context = this.contexts.get(resource.contextId);
+				if (context === undefined) { context = new Map(); this.contexts.set(resource.contextId, context); }
 				let root = context.get(location.kind);
 				if (root === undefined || location.kind === 'project' && root.node.element.path !== location.projectRootPath) {
 					if (root !== undefined) {
@@ -65,13 +64,14 @@ export class ResourceFilesModel {
 							if (ancestor === root.node) { selected = null; break; }
 						}
 					}
-					const suffix = resource.domain === SYSTEM_RESOURCE_DOMAIN ? 'S' : String(resource.domain);
+					const suffix = catalog.getContext(resource.contextId).programDomain;
 					const rootPath = location.kind === 'project' ? location.projectRootPath : '';
 					const name = location.kind === 'project'
 						? rootPath.length === 0 ? 'Project' : rootPath.slice(rootPath.lastIndexOf('/') + 1)
 						: location.kind === 'workspace' ? 'Shared' : 'Generated';
-					root = { node: this.append(null, { kind: 'root', locationKind: location.kind, domain: resource.domain, path: rootPath,
+					root = { node: this.append(null, { kind: 'root', locationKind: location.kind, contextId: resource.contextId, path: rootPath,
 						label: `${name} ${suffix}`, line: '', contentStartColumn: 0 }), directories: new Map() };
+					if (suffix === 'system') root.node.collapsed = true;
 					context.set(location.kind, root);
 				}
 				let parent: FileNode = root.node;
@@ -80,13 +80,13 @@ export class ResourceFilesModel {
 					const path = location.path.slice(0, separator);
 					let directory = root.directories.get(path);
 					if (directory === undefined) {
-						directory = this.append(parent, { kind: 'directory', domain: resource.domain, path,
+						directory = this.append(parent, { kind: 'directory', contextId: resource.contextId, path,
 							label: location.path.slice(start, separator), line: '', contentStartColumn: 0 });
 						root.directories.set(path, directory);
 					}
 					parent = directory; start = separator + 1; separator = location.path.indexOf('/', start);
 				}
-				node = this.append(parent, { kind: 'file', domain: resource.domain, path: resource.path,
+				node = this.append(parent, { kind: 'file', contextId: resource.contextId, path: resource.path,
 					label: location.path.slice(start), line: '', contentStartColumn: 0, resource, location });
 				this.files.set(key, node); changed = true;
 				if (selected === previous) {
@@ -108,7 +108,7 @@ export class ResourceFilesModel {
 				node.visible = visible;
 			}
 		}
-		for (const [domain, context] of this.contexts) {
+		for (const [contextId, context] of this.contexts) {
 			for (const [kind, root] of context) {
 				for (const [path, node] of root.directories) {
 					if (node.seen !== publication) { root.directories.delete(path); changed = true; }
@@ -126,13 +126,13 @@ export class ResourceFilesModel {
 					node.visible = visible;
 				}
 			}
-			if (context.size === 0) this.contexts.delete(domain);
+			if (context.size === 0) this.contexts.delete(contextId);
 		}
-		this.sources = sources; this.catalogRevision = sources.resourceCatalogRevision; this.filter = filter;
+		this.catalog = catalog; this.catalogRevision = catalog.revision; this.filter = filter;
 		if (!changed) return false;
 		this.tree.roots.length = 0;
-		for (const domain of FILE_DOMAINS) {
-			const context = this.contexts.get(domain);
+		for (const contextId of catalog.contexts.keys()) {
+			const context = this.contexts.get(contextId);
 			if (context === undefined) continue;
 			for (const kind of FILE_LOCATION_KINDS) {
 				const root = context.get(kind);
@@ -160,7 +160,7 @@ export class ResourceFilesModel {
 
 	private append<Element extends FileElement>(parent: FileNode | null, element: Element): FileNode<Element> {
 		const node = appendWorkbenchTreeNode(this.tree, parent, element,
-			element.kind === 'directory' || element.kind === 'root' && (element.locationKind !== 'project' || element.domain === SYSTEM_RESOURCE_DOMAIN)) as FileNode<Element>;
+			element.kind === 'directory' || element.kind === 'root' && (element.locationKind !== 'project')) as FileNode<Element>;
 		element.contentStartColumn = 2 * (node.depth + 1);
 		element.line = ' '.repeat(element.contentStartColumn) + element.label;
 		node.seen = 0; node.included = 0; node.visible = false;

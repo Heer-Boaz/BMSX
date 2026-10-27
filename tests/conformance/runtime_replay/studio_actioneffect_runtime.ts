@@ -11,7 +11,7 @@ export async function openRuntimeEffectLens(test: StudioFixture) {
 	const { ide, press, runPaletteCommand } = test;
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	const picker = ide.editor.quickInput;
-	const model = editorTextModelService.get({ domain: 0, path: 'cart.lua' })!;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!;
 	const index = picker.model.list.rows.findIndex(row => {
 		const item = row.item as BehaviorQuickPickItem;
 		return item.registration.resource.path === 'cart.lua'
@@ -43,7 +43,7 @@ export async function openRuntimeEffectPicker(test: StudioFixture): Promise<void
 export async function openRuntimeEffectInspector(test: StudioFixture, component: 'first' | 'second', period: number) {
 	const { ide, guest, runtime, cycles, press, frame } = test;
 	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes();
-	const model = editorTextModelService.get({ domain: 0, path: 'cart.lua' })!, version = model.version;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!, version = model.version;
 	await openRuntimeEffectPicker(test);
 	const picker = ide.editor.quickInput;
 	await test.clipboard.writeText(`inspection.${component}`);
@@ -69,7 +69,7 @@ export async function openRuntimeEffectInspector(test: StudioFixture, component:
 
 export async function testRuntimeEffectSource(test: StudioFixture): Promise<void> {
 	const { ide, press, frame, cycles, harness } = test;
-	const model = editorTextModelService.get({ domain: 0, path: 'cart.lua' })!;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!;
 	const original = model.buffer.getText(), version = model.version, position = cycles();
 	const inspector = await openRuntimeEffectInspector(test, 'first', 20);
 	await test.capture?.('actioneffect-instance');

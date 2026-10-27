@@ -29,7 +29,7 @@ export type ToolTestResult = CaseSummary & Pick<ScenarioTestResult, 'source' | '
 type TestDiscovery = {
 	readonly coverage: 'current-test-declarations';
 	readonly revision: number;
-	readonly roots: readonly (Pick<ScenarioTestRoot, 'domain' | 'label' | 'testCount'> & {
+	readonly roots: readonly (Pick<ScenarioTestRoot, 'contextId' | 'label' | 'testCount'> & {
 		readonly scope: string;
 		readonly modules: readonly (Pick<ScenarioTestModule, 'label' | 'resource'> & {
 			readonly scope: string;
@@ -63,8 +63,8 @@ export class WorkspaceTestTools {
 	private readonly id = generateUuid();
 	private readonly runs = new Map<string, RunEntry>();
 	private readonly results = new Map<string, ResultEntry>();
-	private readonly scopes = new Map<string, ScenarioTestNodeId>();
-	private scopeRoot: ScenarioTestRoot | undefined;
+	private readonly scopes = new Map<string, { id: ScenarioTestNodeId; root: ScenarioTestRoot }>();
+	private readonly scopeRoots = new WeakMap<ScenarioTestRoot, number>();
 	private scopeGeneration = 0;
 	private discovery: TestDiscovery | undefined;
 	private catalog: Extract<TestToolResult, { kind: 'test-runs' }>['data'] | undefined;
@@ -108,8 +108,8 @@ export class WorkspaceTestTools {
 				const scope = this.scopes.get(request.scope);
 				if (scope === undefined) throw new StudioToolInputError('Scope handle must be discovered in this prompt');
 				this.owner.refreshSources();
-				if (this.scopeRoot !== this.owner.collection.roots[0]) throw new StudioToolInputError('Test source owner changed; discover current scopes again');
-				const run = this.owner.start(scope, request.name === 'studio_debug_test' ? 'debug' : 'run');
+				if (this.owner.collection.getNode(scope.root.id) !== scope.root) throw new StudioToolInputError('Test source owner changed; discover current scopes again');
+				const run = this.owner.start(scope.id, request.name === 'studio_debug_test' ? 'debug' : 'run');
 				this.pruneRuns();
 				return this.readRun(this.admit(run, true));
 			}
@@ -199,27 +199,25 @@ export class WorkspaceTestTools {
 	private discover(): TestDiscovery {
 		this.owner.refreshSources();
 		const collection = this.owner.collection;
-		if (this.scopeRoot !== collection.roots[0]) {
-			this.scopeRoot = collection.roots[0];
-			this.scopeGeneration++;
-		}
 		if (this.discovery?.revision !== collection.revision) {
 			this.scopes.clear();
 			this.discovery = { coverage: 'current-test-declarations', revision: collection.revision,
-				roots: collection.roots.map(root => ({ scope: this.scope(root), domain: root.domain, label: root.label, testCount: root.testCount,
-					modules: root.children.map(module => ({ scope: this.scope(module), label: module.label, resource: module.resource,
+				roots: collection.roots.map(root => ({ scope: this.scope(root, root), contextId: root.contextId, label: root.label, testCount: root.testCount,
+					modules: root.children.map(module => ({ scope: this.scope(module, root), label: module.label, resource: module.resource,
 						sourceRevision: module.sourceTimestamp, kind: module.suite === null ? null : module.suite.kind,
 						diagnostic: module.diagnostic === null ? null : { message: module.diagnostic.message, line: module.diagnostic.line, column: module.diagnostic.column },
-						cases: module.children.map(test => ({ scope: this.scope(test), name: test.caseName, range: test.range })) })),
+						cases: module.children.map(test => ({ scope: this.scope(test, root), name: test.caseName, range: test.range })) })),
 				})),
 			};
 		}
 		return this.discovery;
 	}
 
-	private scope(node: ScenarioTestNode): string {
-		const handle = `${this.id}/scope/${this.scopeGeneration}/${node.id}`;
-		this.scopes.set(handle, node.id);
+	private scope(node: ScenarioTestNode, root: ScenarioTestRoot): string {
+		let generation = this.scopeRoots.get(root);
+		if (generation === undefined) this.scopeRoots.set(root, generation = ++this.scopeGeneration);
+		const handle = `${this.id}/scope/${generation}/${node.id}`;
+		this.scopes.set(handle, { id: node.id, root });
 		return handle;
 	}
 
@@ -264,7 +262,7 @@ export class WorkspaceTestTools {
 		this.inspection?.dispose(); this.inspection = undefined;
 		for (const entry of this.runs.values()) if (entry.owned) this.owner.cancel(entry.run);
 		this.connection.removeEventListener('abort', this.onDisconnect);
-		this.runs.clear(); this.results.clear(); this.scopes.clear(); this.catalog = undefined; this.discovery = undefined; this.scopeRoot = undefined;
+		this.runs.clear(); this.results.clear(); this.scopes.clear(); this.catalog = undefined; this.discovery = undefined;
 	}
 }
 

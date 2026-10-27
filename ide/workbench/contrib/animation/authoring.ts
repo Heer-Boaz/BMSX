@@ -13,12 +13,12 @@ import { ANIMATION_TRACK_TEMPLATES } from './track_templates';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_literal';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 
 /** Authored mutations and prompts. Admission/navigation belong to the controller. */
 export class AnimationAuthoring {
 	public constructor(private readonly controller: Pick<AnimationEditorController, 'modelFor' | 'refresh' | 'selectTrack' | 'selectKey' | 'selectProperty'>,
-		private readonly quickInput: QuickInputController, private readonly sources: RuntimeSourceState) {}
+		private readonly quickInput: QuickInputController, private readonly catalog: WorkspaceSourceCatalog) {}
 	public moveKey(input: AnimationEditorInput, key: AnimationKeySource, value: number): void {
 		const source = key.source!;
 		const model = this.controller.modelFor(input, source.file);
@@ -182,13 +182,11 @@ export class AnimationAuthoring {
 	}
 	public addFrame(input: AnimationEditorInput): void {
 		if (input.document!.family === 'sprite') {
-			const domain = input.workingCopy.resource.domain;
-			const mounted = domain === -1 ? this.sources.systemRom : this.sources.cartridgeSlots[domain]!.rom;
 			this.quickInput.pick('FRAME IMAGE', 'Packed image reference', (_origin, lifetime) => {
 				lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
-				return new TextQuickPickProvider(mounted.index.entries.filter(asset => asset.type === 'image').map(asset => ({ asset,
-					label: asset.resid, description: `${asset.imgmeta!.width} x ${asset.imgmeta!.height}`, detail: '' })).sort((left, right) => left.label.localeCompare(right.label)));
-			}, item => this.insertFrame(input, quoteLuaString(item.asset.resid)));
+				return new TextQuickPickProvider([...this.catalog.getAssetBindings(input.projectContextId, 'img')].map(([id, binding]) => ({ asset: binding.value,
+					label: id, description: `${binding.value.imgmeta!.width} x ${binding.value.imgmeta!.height}`, detail: '' })).sort((left, right) => left.label.localeCompare(right.label)));
+			}, item => this.insertFrame(input, quoteLuaString(item.label)));
 			return;
 		}
 		this.quickInput.input('FRAME', 'Native Lua frame value', '{}', async value => validateLuaTableFieldExpression(value), frame => this.insertFrame(input, frame), lifetime => {

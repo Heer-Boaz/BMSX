@@ -5,15 +5,16 @@ import { createTextEditPreview, type TextEditPreviewHunk } from '../../../editor
 import type { WorkspaceSourceContext } from './source_context';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { TextResourceCreationRequest, ResourceIdentity } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { createPreparedTextResource, prepareTextResourceCreation } from '../../../workspace/workspace';
 import { resolveTextFileModel } from './text_file_model';
 
 export type WorkspaceEditProposalState = 'pending' | 'applying' | 'applied' | 'discarded' | 'stale' | 'failed';
 export type WorkspaceEditPlan =
 	| { readonly kind: 'edit'; readonly edits: ReadonlyMap<EditorTextModel, EditorModelEdit> }
-	| { readonly kind: 'create'; readonly request: TextResourceCreationRequest; readonly sources: RuntimeSourceState; readonly clock: HostClock };
-export type WorkspaceEditPreviewFile = { readonly identity: ResourceIdentity; readonly hunks: readonly TextEditPreviewHunk[] } & ({
+	| { readonly kind: 'create'; readonly request: TextResourceCreationRequest; readonly catalog: WorkspaceSourceCatalog; readonly clock: HostClock };
+export type WorkspaceEditPreviewFile = { readonly identity: ResourceIdentity; readonly contextLabel: string;
+	readonly hunks: readonly TextEditPreviewHunk[] } & ({
 	readonly kind: 'edit';
 	readonly model: EditorTextModel;
 	readonly version: number;
@@ -40,7 +41,8 @@ export class WorkspaceEditProposal {
 		if (plan.kind === 'create') {
 			const request = prepareTextResourceCreation(plan.request);
 			this.creation = { ...plan, request };
-			this.files = [{ kind: 'create', identity: { domain: request.domain, path: request.path },
+			this.files = [{ kind: 'create', identity: { contextId: request.contextId, path: request.path },
+				contextLabel: plan.catalog.getContext(request.contextId).projectRootPath,
 				hunks: [{ offset: 0, line: 1, before: '', after: request.contents }] }];
 		} else {
 			for (const [model, edit] of plan.edits) {
@@ -50,6 +52,7 @@ export class WorkspaceEditProposal {
 				this.edits.set(model, { ...edit, edits: edit.edits.map(operation => ({ ...operation })) });
 			}
 			this.files = [...this.edits].map(([model, edit]) => ({ kind: 'edit', identity: model.identity, model,
+				contextLabel: model.resource.contextLabel,
 				version: edit.version, hunks: createTextEditPreview(model.buffer, edit.edits) }));
 		}
 		for (const model of this.edits.keys()) this.lifetime.add({ dispose: model.onDidChangeReadOnly(() => {
@@ -90,11 +93,11 @@ export class WorkspaceEditProposal {
 		this.lifetime.dispose();
 		this.stateValue = 'applying';
 		if (this.creation !== undefined) {
-			const { clock, sources, request } = this.creation;
+			const { clock, catalog, request } = this.creation;
 			// Exclusive creation uses the same workspace owner as File: New.
 			// No empty working copy, catalog entry or filesystem write exists before approval.
-			return createPreparedTextResource(clock, sources, request).then(async resource => {
-				const model = await resolveTextFileModel(this.context.models, sources, resource);
+			return createPreparedTextResource(clock, catalog, request).then(async resource => {
+				const model = await resolveTextFileModel(this.context.models, catalog, resource);
 				this.stateValue = 'applied';
 				return [model];
 			}).catch(error => {

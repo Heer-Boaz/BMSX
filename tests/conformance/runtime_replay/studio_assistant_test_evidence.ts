@@ -1,6 +1,7 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
+import { TEST_STUDIO_CARTRIDGE_CONTEXT_ID } from '../../helpers/studio_source_contexts';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 
@@ -13,9 +14,11 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	await press('ControlRight', 'ShiftRight'); await runPaletteCommand('Run: Pause');
 	await runPaletteCommand('Scenario Lab: Open');
 	const lab = ide.editor.editorGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
-	const module = ide.scenarioRuns.collection.roots[0].children[0];
+	const module = ide.scenarioRuns.collection.roots.find(root => root.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID)!.children[0];
 	harness.openLuaSource(module.resource.path);
 	const document = harness.getActiveEditorDocument().model;
+	check(document.resource.contextId === module.resource.contextId && document.resource.path === module.resource.path,
+		'test evidence: source editing retains the explicitly admitted suite identity');
 	const source = `return { kind = 'unit',
  teardown = function(t) t:log('cleanup evidence') end,
  tests = {
@@ -31,7 +34,8 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	await until(() => !ide.scenarioRuns.active, 'test evidence: real batch completes');
 	const run = ide.scenarioRuns.results.runs[0];
 	check(run.state === 'failed' && run.failedCount === 1 && run.passedCount === 1, 'test evidence: actual terminal outcomes');
-	await press('Tab'); await press('Home'); await press('ArrowDown');
+	check(lab.view.focus === 'results', 'running a suite reveals its result list');
+	await press('Home'); await press('ArrowDown');
 	await runPaletteCommand('Scenario Lab: Inspect Test Result');
 	const pane = ide.editor.editorGroup.panes.activePane;
 	if (!(pane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab pane required');

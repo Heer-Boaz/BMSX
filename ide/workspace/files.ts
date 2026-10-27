@@ -15,7 +15,6 @@ import {
 	type WorkspaceRecordPersistence,
 } from './records';
 import { joinWorkspacePaths, stripProjectRootPrefix } from './path';
-import type { ResourceDomain } from '../common/resource';
 
 export { joinWorkspacePaths } from './path';
 
@@ -28,7 +27,7 @@ export type WorkspaceSourceSaveResult = {
 
 export function buildWorkspaceDirtyEntryPath(
 	projectRootPath: string,
-	domain: ResourceDomain,
+	contextId: string,
 	resourcePath: string,
 ): string {
 	const normalizedPath = stripProjectRootPrefix(resourcePath, projectRootPath);
@@ -36,7 +35,7 @@ export function buildWorkspaceDirtyEntryPath(
 	const baseName = segments[segments.length - 1];
 	segments.length -= 1;
 	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
-	segments.unshift(domain === -1 ? 'system' : `slot${domain}`);
+	segments.unshift(contextId);
 	segments.push(tempName);
 	return joinWorkspacePaths(projectRootPath, WORKSPACE_METADATA_DIR, WORKSPACE_DIRTY_DIR, ...segments);
 }
@@ -84,9 +83,8 @@ export async function loadWorkspaceSourceFile(
 
 export async function applyWorkspaceSourceOverrides(params: {
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
-	domain: ResourceDomain;
+	contextId: string;
 	registry: LuaSourceRegistry;
-	installedSources: ReadonlyMap<string, string>;
 	projectRootPath: string;
 	/** Bytes already read during this workspace-open operation, not a persistent file cache. */
 	observedSources?: ReadonlyMap<string, WorkspaceRecord>;
@@ -125,7 +123,7 @@ export async function applyWorkspaceSourceOverrides(params: {
 			continue;
 		}
 		const filePath = asset.source_path;
-		const dirtyPath = buildWorkspaceDirtyEntryPath(root, params.domain, filePath);
+		const dirtyPath = buildWorkspaceDirtyEntryPath(root, params.contextId, filePath);
 		const dirtyRecord = params.dirtyRecords.get(dirtyPath);
 		const canonicalPath = canonicalPaths[index];
 		const canonicalRecord = canonicalRecords[index];
@@ -153,7 +151,7 @@ export async function applyWorkspaceSourceOverrides(params: {
 		}
 		if (asset.src !== winnerSource) {
 			changed = true;
-			if (asset.sourceKind === 'project' || params.installedSources.has(asset.module_path)) {
+			if (asset.sourceKind === 'project' || asset.program_module) {
 				programChanged = true;
 			}
 		}

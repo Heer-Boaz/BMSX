@@ -1,3 +1,7 @@
+import { saveLuaResourceSource } from '../../ide/workspace/workspace';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { beforeEach, afterEach } from 'node:test';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
@@ -13,7 +17,7 @@ import { setImmediate } from 'node:timers/promises';
 import { test } from 'node:test';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH } from '../helpers/scenario_media';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
-import { createRuntimeSourceState, enterCartridgeSources } from '../../ide/runtime/sources';
+import { enterCartridgeSources } from '../../ide/runtime/sources';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
@@ -42,7 +46,7 @@ return { kind = 'unit', tests = {
 			cartSource: `module<entry>\nerror('do not run the game for unit cases')`,
 		});
 		const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
-		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+		const sources = createLoadedTestRuntimeSourceState(media.system, media.cartridgeSlots);
 		const authoring = new OffscreenMachine(fixture.systemRom, [fixture.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
 
 		const targets: OffscreenMachine<TestInput>[] = [];
@@ -60,22 +64,22 @@ return { kind = 'unit', tests = {
 				return target;
 			});
 		const collection = runs.collection;
-		const module = collection.findModuleBySourcePath(0, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
+		const module = collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], SCENARIO_FIXTURE_TEST_SOURCE_PATH);
 		// A saved source-only helper does not dirty the gameplay image. Test compilation
 		// still consumes it, independently of unsaved editor models.
-		const helper = sources.cartridgeSlots[0]!.luaSources.module2lua['testlib/fixture'];
+		const helper = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources.module2lua['testlib/fixture'];
 		helper.src = helper.base_src = `return 'edited helper'`;
-		workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath(sources.cartridgeSlots[0]!.projectRootPath, 0, helper.source_path),
+		workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath(sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).projectRootPath, TEST_CARTRIDGE_CONTEXT_IDS[0], helper.source_path),
 			{ contents: 'return "foreign helper"', updatedAt: helper.update_timestamp + 1 });
-		const suite = models.retain(sources.luaResources.find(resource => resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH)!, 'lua', source);
+		const suite = models.retain(sources.catalog.luaResources.find(resource => resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH)!, 'lua', source);
 		suite.pushEditOperations([{ offset: source.indexOf('first ='), deleteLength: 5, text: 'captured' }]);
 		const capturedVersion = suite.version;
 		const capturedSource = suite.buffer.getText();
 		editorTextModelService.retain(suite.resource, 'lua', 'end end -- foreign document');
-		const helperModel = models.retain(sources.luaResources.find(resource => resource.path === helper.source_path)!, 'lua', helper.src);
+		const helperModel = models.retain(sources.catalog.luaResources.find(resource => resource.path === helper.source_path)!, 'lua', helper.src);
 		const originalState = captureRuntimeMachineState(authoring.runtime);
 		const originalMedia = sources.currentBlua32Media;
-		const originalSource = sources.cartridgeSlots[0]!.luaSources.module2lua['testlib/fixture'].src;
+		const originalSource = sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources.module2lua['testlib/fixture'].src;
 		const accepted = runs.start(module.id);
 		let completed = false;
 		const completion = runs.wait(accepted).then(run => { completed = true; return run; });
@@ -103,14 +107,14 @@ return { kind = 'unit', tests = {
 		assert.notEqual(runs.session!.failedExecution!.target.runtime, authoring.runtime);
 		assert.deepEqual(captureRuntimeMachineState(authoring.runtime), originalState);
 		assert.equal(sources.currentBlua32Media, originalMedia);
-		assert.equal(sources.cartridgeSlots[0]!.luaSources.module2lua['testlib/fixture'].src, originalSource);
+		assert.equal(sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources.module2lua['testlib/fixture'].src, originalSource);
 		assert.equal(sources.cartridgeBlua32MediaDirty[0], false);
 		const addedSource = "local helper = require('testlib/fixture')\nreturn { kind = 'unit', tests = { added = function() assert(helper == 'edited helper') end } }";
 		const added = createScenarioTestSourceRecord('tests/carts/example/new_assert.lua', 99, addedSource);
-		registerLuaSourceRecord(sources.cartridgeSlots[0]!.luaSources, added);
+		registerLuaSourceRecord(sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, added);
 		sources.cartridgeBlua32MediaDirty[0] = true; // The workspace admission owner marks this build input.
 		collection.refresh();
-		const addedModule = collection.findModuleBySourcePath(0, added.source_path);
+		const addedModule = collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], added.source_path);
 		runs.start(addedModule.id);
 		assert.equal(disposed.has(targets[1]), true, 'a new run releases the previous failed machine');
 		for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
@@ -167,22 +171,26 @@ return { kind = 'unit', tests = { saved = function() assert(helper == 37) end } 
 			source_path: 'cartlib/scenario_helper.lua', normalized_source_path: 'cartlib/scenario_helper.lua', buffer: Buffer.from('return 1') }],
 	});
 	const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
-	const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+	const sources = createLoadedTestRuntimeSourceState(media.system, media.cartridgeSlots);
 	const cartridge = sources.cartridgeSlots[0]!;
-	const helper = cartridge.luaSources.module2lua['cartlib/scenario_helper'];
+	const helper = sources.catalog.getContext(cartridge.contextId).luaSources.module2lua['cartlib/scenario_helper'];
 	assert.equal(helper.sourceKind, 'library');
 	assert.equal(cartridge.installedBlua32Sources.has(helper.module_path), false);
-	helper.src = helper.base_src = 'return 37';
+	await saveLuaResourceSource(new VirtualHeadlessClock(), sources.catalog, { contextId: cartridge.contextId, path: helper.source_path }, 'return 37');
 	const models = new EditorTextModelService();
 	const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC,
 		(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input));
 	t.after(() => { runs.dispose(); models.clear(); });
-	const module = runs.collection.findModuleBySourcePath(0, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
+	const entry = sources.catalog.resolveResource({ contextId: cartridge.contextId, path: 'entry.lua' })!;
+	models.retain(entry, 'lua', 'end end -- an unrelated gameplay draft must not enter a unit fixture');
+	const installed = sources.currentBlua32Media;
+	const module = runs.collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], SCENARIO_FIXTURE_TEST_SOURCE_PATH);
 	const run = runs.start(module.id);
 	for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 	await runs.wait(run);
 	assert.equal(run.state, 'passed', JSON.stringify(run.items[0].failures));
 	assert.equal(cartridge.rom.bytes, fixture.cartRom);
+	assert.equal(sources.currentBlua32Media, installed);
 	assert.equal(sources.cartridgeBlua32MediaDirty[0], false);
 });
 
@@ -208,7 +216,7 @@ test('both authoring domains retain companion ROM data and source identity; runn
 			], cartSource: `module<entry>\nwhile true do halt_until_irq end`,
 		});
 		const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, fixture.cartRom]);
-		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+		const sources = createLoadedTestRuntimeSourceState(media.system, media.cartridgeSlots);
 		const authoring = new OffscreenMachine(fixture.systemRom, [fixture.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
 
 		const models = new EditorTextModelService();
@@ -217,17 +225,17 @@ test('both authoring domains retain companion ROM data and source identity; runn
 		const collection = runs.collection;
 		for (const slot of [0, 1] as const) {
 			enterCartridgeSources(sources, slot);
-			assert.equal(collection.refresh(), slot === 1, 'owner change matters even at equal registry revision');
-			assert.equal(collection.roots[0].domain, slot);
+			assert.equal(collection.refresh(), false, 'execution-domain changes do not change authored discovery');
+			assert.equal(collection.roots.some(root => root.contextId === TEST_CARTRIDGE_CONTEXT_IDS[slot]), true);
 			assert.equal(collection.refresh(), false);
-			const module = collection.findModuleBySourcePath(slot, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
-			runs.start(module.id);
+			const module = collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[slot], SCENARIO_FIXTURE_TEST_SOURCE_PATH);
+			runs.start(module.id, 'run', TEST_CARTRIDGE_CONTEXT_IDS[slot === 0 ? 1 : 0]);
 			for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 			assert.equal(runs.active, false);
 			assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
-			assert.equal(runs.results.runs[0].items[1].failures[0].location!.resource.domain, slot);
+			assert.equal(runs.results.runs[0].items[1].failures[0].location!.resource.contextId, TEST_CARTRIDGE_CONTEXT_IDS[slot]);
 			assert.equal(runs.results.runs[0].items[1].failures[0].location!.resource.path, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
-			runs.start(module.id);
+			runs.start(module.id, 'run', TEST_CARTRIDGE_CONTEXT_IDS[slot === 0 ? 1 : 0]);
 			for (let preparation = 0; runs.active && runs.session?.execution == null && preparation < 10000; preparation++) await setImmediate();
 			runs.session!.execution!.advance = () => { throw new Error('infrastructure failure'); };
 			runs.advance();

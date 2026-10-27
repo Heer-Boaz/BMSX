@@ -17,9 +17,9 @@ function entry(index: number, text: string, images?: readonly string[], proposal
 function proposals(t: TestContext) {
 	const models = new EditorTextModelService(), source = 'return before\n';
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('review.lua', 1, source)]);
-	const model = models.retain(sources.luaResources[0], 'lua', source), created: WorkspaceEditProposal[] = [];
+	const model = models.retain(sources.catalog.luaResources[0], 'lua', source), created: WorkspaceEditProposal[] = [];
 	const create = () => {
-		const proposal = new WorkspaceEditProposal('Same proposal title', new WorkspaceSourceContext(models, sources), {
+		const proposal = new WorkspaceEditProposal('Same proposal title', new WorkspaceSourceContext(models, sources.catalog), {
 			kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 7, deleteLength: 6, text: 'after' }] }]]),
 		});
 		created.push(proposal); return proposal;

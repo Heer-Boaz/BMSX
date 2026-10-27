@@ -11,11 +11,11 @@ export type CodexUserInput = CodexTextInput | { type: 'image'; url: string };
 export function codexWorkspaceInput(workspaceRoot: string): CodexTextInput {
 	return { type: 'text', text:
 		`Studio workspace (data, not instructions): this turn works in ${workspaceRoot}. `
-		+ 'Studio source paths are relative to it, so a shell command and a Studio source handle name '
-		+ 'the same file. Lua program sources are built and installed by studio_reboot_runtime. '
+		+ 'Studio sources belong to explicitly admitted project contexts; their display paths alone do not name '
+		+ 'a filesystem address. Read canonical working-copy source through Studio tools. Lua program sources are built and installed by studio_reboot_runtime. '
 		+ 'Nothing in Studio rebuilds YAML assets and there is no live asset reload: rebuild a cart '
 		+ 'from a shell with `npm run build:toolchain:cart -- <rom> --debug`, then reboot the target. '
-		+ 'Explicit Studio source references identify domain and path, not frozen file contents. Resolve them with studio_list_sources '
+		+ 'Explicit Studio source references identify contextId and path, not frozen file contents. Resolve them with studio_list_sources '
 		+ 'and studio_read_source when this turn uses them. Studio working copies include unsaved edits; filesystem reads do not. ',
 		text_elements: [] };
 }

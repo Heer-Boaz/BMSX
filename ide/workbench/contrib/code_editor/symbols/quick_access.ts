@@ -25,9 +25,9 @@ export function openSymbolSearch(pane: CodeEditorPane, scope: 'file' | 'workspac
 	pane.editor.quickInput.pick(scope === 'file' ? `SYMBOLS: ${resource.path}` : 'GO TO WORKSPACE SYMBOL',
 		scope === 'file' ? 'Type a symbol name' : 'Symbol name, then source path', (_origin, lifetime) => {
 			const symbols = scope === 'file'
-				? listLuaSymbols(pane.sources, resource.domain, resource.path)
-				: listGlobalLuaSymbols(pane.sources, resource.domain);
-			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => pane.editor.quickInput.hide()));
+				? listLuaSymbols(pane.sources.catalog, resource.contextId, resource.path)
+				: listGlobalLuaSymbols(pane.sources.catalog, resource.contextId);
+			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, pane.sources.catalog, resource.contextId, () => pane.editor.quickInput.hide()));
 			return new SymbolQuickPickProvider(buildSymbolQuickPickItems(symbols, scope), scope);
 		}, item => navigateToLuaDefinition(pane, item.symbol.resource, item.symbol.location),
 		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));

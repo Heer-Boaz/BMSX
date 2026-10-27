@@ -1,9 +1,10 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { WorkspaceTestTools } from '../../ide/workbench/services/assistant/test_tools';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
-import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
+import { advanceLuaSourceRevision, createLuaSourceRegistry, registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -23,7 +24,7 @@ test('discovery projects working copies and diagnostics without running registra
 	const first = await f.tools.execute('studio_list_tests', {}); assert.ok(first.kind === 'tests');
 	assert.equal(first.data.roots[0].testCount, 1);
 	assert.equal(first.data.roots[0].modules[0].cases[0].name, 'sample');
-	const model = f.models.retain(f.sources.luaResources[0], 'lua', 'end end');
+	const model = f.models.retain(f.sources.catalog.luaResources[0], 'lua', 'end end');
 	const invalid = await f.tools.execute('studio_list_tests', {}); assert.ok(invalid.kind === 'tests');
 	assert.equal(invalid.data.roots[0].testCount, 0);
 	assert.equal(invalid.data.roots[0].modules[0].kind, null);
@@ -44,17 +45,50 @@ test('discovery projects working copies and diagnostics without running registra
 	assert.equal(f.service.results.runs.length, 0);
 });
 
-test('foreign scopes and scopes from replaced cartridge sources cannot acquire execution authority', async t => {
+test('foreign scopes reject while installed replacement preserves authored discovery authority', async t => {
 	const f = fixture(t), peer = new WorkspaceTestTools(f.service, f.connection.signal); t.after(() => peer.dispose());
 	const before = await f.tools.execute('studio_list_tests', {}); assert.ok(before.kind === 'tests');
 	const scope = before.data.roots[0].scope;
 	assert.throws(() => peer.execute('studio_start_test_run', { scope }), /must be discovered/);
 	const replacement = createScenarioTestSourceState([createScenarioTestSourceRecord('suite_assert.lua', 7)]);
 	f.sources.cartridgeSlots[0] = replacement.cartridgeSlots[0];
-	assert.throws(() => f.tools.execute('studio_start_test_run', { scope }), /source owner changed/);
+	const detached = await f.tools.execute('studio_list_tests', {}); assert.ok(detached.kind === 'tests');
+	assert.equal(detached.data.roots[0].scope, scope, 'physical media does not own source discovery');
+	registerLuaSourceRecord(f.sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, createScenarioTestSourceRecord('suite_assert.lua', 8));
 	const after = await f.tools.execute('studio_list_tests', {}); assert.ok(after.kind === 'tests');
-	assert.notEqual(after.data.roots[0].scope, scope);
-	assert.throws(() => f.tools.execute('studio_start_test_run', { scope }), /must be discovered/);
+	assert.equal(after.data.roots[0].scope, scope, 'editing a source does not replace its project selection');
+	assert.equal(after.data.roots[0].modules[0].sourceRevision, 8);
+	assert.equal(f.service.results.runs.length, 0);
+});
+
+test('retiring one source root revokes only its scopes and cannot revive them through the same project name', async t => {
+	const f = fixture(t), catalog = f.sources.catalog;
+	const primary = catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	const peer = createLuaSourceRegistry('carts/peer', '');
+	registerLuaSourceRecord(peer, createScenarioTestSourceRecord('peer_assert.lua', 3, undefined, 'carts/peer/peer_assert.lua'));
+	catalog.admitContext({ ...primary, admission: { id: 'peer-source', projectRoot: 'carts/peer' }, luaSources: peer,
+		sourceRoots: [{ path: 'carts/peer', resourcePathPrefix: '', modulePathPrefix: '', structured: true, sourceKind: 'project' }], previewRom: null });
+	const before = await f.tools.execute('studio_list_tests', {}); assert.ok(before.kind === 'tests');
+	const retired = before.data.roots.find(root => root.contextId === primary.id)!;
+	const survivor = before.data.roots.find(root => root.contextId === 'peer-source')!;
+	const admitted = new Error('run admission reached');
+	const start = t.mock.method(f.service, 'start', () => { throw admitted; });
+	const registry = primary.luaSources, record = registry.records[0];
+	registry.records.length = 0;
+	delete registry.path2lua[record.source_path]; delete registry.module2lua[record.module_path];
+	advanceLuaSourceRevision(registry); catalog.rebuildResources();
+	assert.throws(() => f.tools.execute('studio_start_test_run', { scope: retired.scope }), /source owner changed/);
+	assert.equal(start.mock.callCount(), 0);
+	assert.throws(() => f.tools.execute('studio_start_test_run', { scope: survivor.scope }), error => error === admitted);
+	assert.equal(start.mock.calls[0].arguments[0], `scenario-root:peer-source`);
+	registerLuaSourceRecord(registry, record);
+	assert.throws(() => f.tools.execute('studio_start_test_run', { scope: retired.scope }), /source owner changed/);
+	const after = await f.tools.execute('studio_list_tests', {}); assert.ok(after.kind === 'tests');
+	assert.notEqual(after.data.roots.find(root => root.contextId === primary.id)!.scope, retired.scope);
+	assert.equal(after.data.roots.find(root => root.contextId === 'peer-source')!.scope, survivor.scope);
+	assert.throws(() => f.tools.execute('studio_start_test_run', { scope: survivor.scope }), error => error === admitted);
+	assert.equal(start.mock.callCount(), 2);
+	assert.throws(() => f.tools.execute('studio_start_test_run', { scope: retired.scope }), /must be discovered/);
 	assert.equal(f.service.results.runs.length, 0);
 });
 
@@ -64,7 +98,7 @@ test('empty history is not a passing workspace; explicit discovery sees newly ad
 	assert.deepEqual(empty.data.roots, []);
 	assert.deepEqual(await f.tools.execute('studio_list_test_runs', {}), { kind: 'test-runs', data: { coverage: 'retained-studio-runs', revision: 0, runs: [] } });
 	const added = createScenarioTestSourceRecord('added_assert.lua', 10);
-	registerLuaSourceRecord(f.sources.cartridgeSlots[0]!.luaSources, added);
+	registerLuaSourceRecord(f.sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, added);
 	const discovery = await f.tools.execute('studio_list_tests', {}); assert.ok(discovery.kind === 'tests');
 	assert.equal(discovery.data.roots[0].modules[0].resource.path, added.source_path);
 	assert.equal(discovery.data.roots[0].testCount, 1);

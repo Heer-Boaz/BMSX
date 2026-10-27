@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { getEventListeners } from 'node:events';
@@ -81,9 +82,9 @@ test('retained output reports every omitted record and preserves raw trace words
 	const f = await fixture(t), result = f.owner.startItem(f.run, 0, 0);
 	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT + 4; index++) f.owner.appendLog(result, index, `log ${index}`);
 	for (let index = 0; index < SCENARIO_RESULT_CAPTURE_RETAIN_COUNT + 2; index++) f.owner.requestCapture(result, index, `capture ${index}`);
-	const fsm = f.owner.beginFsmTransitionTrace(result, 'instance', 'machine');
+	const fsm = f.owner.beginFsmTransitionTrace(result, 'instance', 'machine', TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	for (let index = 0; index < SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT + 1; index++) f.owner.appendFsmTransition(fsm, index, 0xffffffff, index, 'lane', 'from', 'to', 'committed');
-	const effects = f.owner.beginActionEffectTrace(result, 'owner', 'definition');
+	const effects = f.owner.beginActionEffectTrace(result, 'owner', 'definition', TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	for (let index = 0; index < SCENARIO_RESULT_ACTIONEFFECT_FACT_RETAIN_COUNT + 3; index++) f.owner.appendActionEffectTrigger(effects, index, 0x80000000, index, 'effect', 'accepted');
 	const value = await f.tools.execute('studio_read_test_result', { result: f.resultHandle }); assert.ok(value.kind === 'test-result');
 	const data = JSON.parse(JSON.stringify(value.data));

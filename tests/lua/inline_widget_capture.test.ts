@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -27,7 +28,7 @@ function pointer(x: number, pressedButtons: number = PointerButton.Primary, just
 
 function codeFixture(t: TestContext, variant: 'tiny' | 'msx', source = '-- source') {
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'hold.lua', location: { kind: 'workspace', path: 'hold.lua' }, domain: 0, path: 'hold.lua',
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'hold.lua', location: { kind: 'workspace', path: 'hold.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'hold.lua',
 		source: { type: 'lua', resid: 'hold' } }, 'lua', source);
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
 	t.after(() => {
@@ -111,8 +112,8 @@ test('retiring a target preserves a sibling capture and consumes the interrupted
 
 test('an empty Source budget retires its actual Find capture before the next held move', t => {
 	const code = codeFixture(t, 'tiny'), sources = {} as RuntimeSourceState;
-	const find = new EditorSearchController(code, sources), lineJump = new CodeEditorLineJump(code);
-	const rename = new RenameController(code, sources, new CrossFileRenameManager(sources));
+	const find = new EditorSearchController(code, sources.catalog), lineJump = new CodeEditorLineJump(code);
+	const rename = new RenameController(code, sources.catalog, new CrossFileRenameManager(sources.catalog));
 	const bars = new SourceInlineBars(code, find, rename, lineJump);
 	t.after(() => { find.dispose(); rename.dispose(); lineJump.dispose(); });
 	const client = { left: 0, top: 10, right: 384, bottom: 270 };

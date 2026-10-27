@@ -45,6 +45,13 @@ The PC-indexed range/inline-chain arrays stay direct lookups. Pooling runs durin
 symbol publication/loading, not during instruction dispatch. No guest
 instructions, constants, addresses, cycles or heap accounting change.
 
+`compiledModulePaths` records the entry followed by every canonical module supplied
+to that compilation. It includes const modules whose values are folded into other
+inputs and which have no runtime module function. Source-map remapping does not
+change these compiler input identities. The selected inputs and their mapped source
+origins supply the build's diagnostic source texts; available source text and
+compilation membership remain distinct from the packed source-directory admission.
+
 The design follows LLVM's
 [DWARF string interning](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/lib/CodeGen/AsmPrinter/DwarfStringPool.cpp)
 and [shared inline origins](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/lib/CodeGen/AsmPrinter/DwarfCompileUnit.cpp),
@@ -77,7 +84,8 @@ an ordinary pooled value. The original `debugInlineCallSiteChainIds` still index
 2. Function-address list; module-function list of (path text, address);
    init-participant list of (function text, slot text, system boolean).
 3. Optimization level; trace selector (0 erase, 1 emit, 2 selected channels,
-   followed by a text list for selector 2); preload-module text list.
+   followed by a text list for selector 2); preload-module text list;
+   compiled-module-path text list.
 4. Function-ID text list; display-name text list; function-definition range list;
    global-name text list; system-global-name text list.
 5. Static-function map as a list of (slot text, function text), ordered by slot.

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -8,7 +9,7 @@ import { LuaSyntaxKind } from '../../../toolchain/ts/lua/syntax/ast';
 for (const lines of [64, 4096]) {
 	const gap = '\n-- unrelated contents 🐉'.repeat(lines);
 	const source = `local first={1,2}${gap}\nlocal second={3,4}`;
-	const model = new EditorTextModel({ sourceFilePath: 'transfer.lua', location: { kind: 'workspace' as const, path: 'transfer.lua' }, domain: 0, path: 'transfer.lua', source: { type: 'lua', resid: 'transfer' } }, 'lua', source);
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: 'transfer.lua', location: { kind: 'workspace' as const, path: 'transfer.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'transfer.lua', source: { type: 'lua', resid: 'transfer' } }, 'lua', source);
 	const parsed = parseLuaChunk(source, model.resource.path).chunk!;
 	const first = parsed.body.get(0)!;
 	const second = parsed.body.get(1)!;

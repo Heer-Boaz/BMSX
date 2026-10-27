@@ -1,18 +1,14 @@
-import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { HostClock } from '../../../../hosts/common/clock';
-import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import type { EditorTextModel, EditorTextModelSnapshot } from '../../../editor/model/text_model';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
-import { applyAemSourceRevision, type AemSourceApplyResult } from '../../../runtime/aem';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { persistWorkspaceSourceFile } from '../../../workspace/files';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import type { WorkspaceRecordPersistence } from '../../../workspace/records';
 
 export type TextFileSaveResult = { readonly snapshot: EditorTextModelSnapshot } & (
 	| { readonly status: 'saved'; readonly persistence: WorkspaceRecordPersistence;
-		readonly application: AemSourceApplyResult | { readonly status: 'not-requested' } }
+		readonly application: { readonly status: 'not-requested' } }
 	| { readonly status: 'failed'; readonly error: unknown }
 );
 
@@ -23,7 +19,7 @@ export type TextFileSaveOperation = {
 	readonly result: TextFileSaveResult | undefined;
 };
 
-/** Owns accepted Save operations until persistence and format-specific application finish. */
+/** Owns canonical source writes; installing a saved revision is a separate target operation. */
 export class TextFileSaveService {
 	private readonly pending = new Map<EditorTextModel, TextFileSaveOperation>();
 	private readonly latest = new WeakMap<EditorTextModel, TextFileSaveOperation>();
@@ -33,10 +29,7 @@ export class TextFileSaveService {
 	public constructor(
 		private readonly models: EditorTextModelService,
 		private readonly clock: HostClock,
-		private readonly sources: RuntimeSourceState,
-		private readonly guest: SuspendedGuestSession,
-		private readonly runtime: Runtime,
-		private readonly runtimeTasks: RuntimeTaskQueue,
+		private readonly catalog: WorkspaceSourceCatalog,
 	) {}
 
 	public get acceptingSaves(): boolean { return !this.closing; }
@@ -77,7 +70,7 @@ export class TextFileSaveService {
 		try {
 			switch (model.mode) {
 				case 'lua':
-					({ persistence } = await saveLuaResourceSource(this.clock, this.sources, resource, snapshot.source, model.persistedBaseline));
+					({ persistence } = await saveLuaResourceSource(this.clock, this.catalog, resource, snapshot.source, model.persistedBaseline));
 					break;
 				case 'yaml':
 				case 'aem': {
@@ -89,9 +82,6 @@ export class TextFileSaveService {
 			return { status: 'failed', snapshot, error };
 		}
 		model.completeSave(snapshot);
-		const application = model.mode === 'aem'
-			? await applyAemSourceRevision(this.sources, this.guest, this.runtime, this.runtimeTasks, resource, snapshot.source)
-			: { status: 'not-requested' } as const;
-		return { status: 'saved', snapshot, persistence, application };
+		return { status: 'saved', snapshot, persistence, application: { status: 'not-requested' } };
 	}
 }

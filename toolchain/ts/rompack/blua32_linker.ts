@@ -1032,6 +1032,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		optLevel: input.metadata.optLevel,
 		traceStatements: input.metadata.traceStatements,
 		preloadModules: input.metadata.preloadModules,
+		compiledModulePaths: input.metadata.compiledModulePaths,
 		functionIds: functionLayout.functionIds,
 		functionDisplayNames,
 		functionDefinitions,

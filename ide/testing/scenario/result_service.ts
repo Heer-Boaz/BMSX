@@ -73,6 +73,7 @@ export type ScenarioFsmTransitionRecord = {
 
 export type ScenarioFsmTransitionTrace = {
 	readonly executionDomain: 0 | 1;
+	readonly sourceContextId: string;
 	readonly instanceId: string;
 	readonly machineId: string;
 	readonly transitions: RetainedSequence<ScenarioFsmTransitionRecord>;
@@ -106,6 +107,7 @@ export type ScenarioActionEffectFact =
 
 export type ScenarioActionEffectTrace = {
 	readonly executionDomain: 0 | 1;
+	readonly sourceContextId: string;
 	readonly ownerId: string;
 	readonly ownerDefinitionId: string;
 	readonly facts: RetainedSequence<ScenarioActionEffectFact>;
@@ -131,6 +133,7 @@ export type ScenarioTestResult = {
 export type ScenarioRunMode = 'run' | 'debug';
 
 export type ScenarioRun = {
+	readonly companionContextId: string | null;
 	readonly mode: ScenarioRunMode;
 	readonly id: string;
 	readonly sequence: number;
@@ -177,6 +180,7 @@ export class ScenarioResultService {
 		scopeId: ScenarioTestNodeId,
 		sources: readonly ScenarioRunItemSource[],
 		mode: ScenarioRunMode = 'run',
+		companionContextId: string | null = null,
 	): ScenarioRun {
 		if (this._liveRun !== null) {
 			throw new Error('A scenario run is already active.');
@@ -202,6 +206,7 @@ export class ScenarioResultService {
 			};
 		}
 		const run: ScenarioRun = {
+			companionContextId,
 			mode,
 			id: runId,
 			sequence: this.nextRunSequence,
@@ -258,12 +263,14 @@ export class ScenarioResultService {
 		result: ScenarioTestResult,
 		instanceId: string,
 		machineId: string,
+		sourceContextId: string,
 	): ScenarioFsmTransitionTrace {
 		if (result.fsmTransitionTrace !== null) {
 			throw new Error('A scenario run can record one selected FSM instance.');
 		}
 		const trace: ScenarioFsmTransitionTrace = {
-			executionDomain: result.test.resource.domain,
+			executionDomain: 0,
+			sourceContextId,
 			instanceId,
 			machineId,
 			transitions: new RetainedSequence(
@@ -303,12 +310,14 @@ export class ScenarioResultService {
 		result: ScenarioTestResult,
 		ownerId: string,
 		ownerDefinitionId: string,
+		sourceContextId: string,
 	): ScenarioActionEffectTrace {
 		if (result.actionEffectTrace !== null) {
 			throw new Error('A scenario run can record one selected ActionEffect component.');
 		}
 		const trace: ScenarioActionEffectTrace = {
-			executionDomain: result.test.resource.domain,
+			executionDomain: 0,
+			sourceContextId,
 			ownerId,
 			ownerDefinitionId,
 			facts: new RetainedSequence(

@@ -87,16 +87,16 @@ export async function initializeIdeFeatures(
 			clock,
 			workspaceContext,
 			recoverySessionId,
-			sources,
+			sources.catalog,
 			workspaceFiles,
 			logOutput,
 		);
-		observedSources = await discoverWorkspaceSources(sources);
+		observedSources = await discoverWorkspaceSources(sources.catalog);
 	} else {
 		await shutdownWorkspaceStorage();
 	}
 	const rejectedDirtyPaths = editorAvailable ? await applyAllWorkspaceSourceOverrides(
-		sources,
+		sources.catalog,
 		workspaceDirtyRecords,
 		observedSources,
 	) : new Set<string>();
@@ -132,7 +132,7 @@ export async function initializeIdeFeatures(
 	}
 	await restoreWorkspaceStorageSession(
 		state.editor,
-		sources,
+		sources.catalog,
 		state.debugger,
 		workspacePayload,
 		rejectedDirtyPaths,

@@ -19,10 +19,10 @@ async function main(): Promise<void> {
 		const sources = createScenarioTestSourceState([source]);
 		const runtime = createTestRuntime(createTestRuntimeRomPayload());
 		const guest = new SuspendedGuestSession(runtime);
-		const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
-		const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, guest, runtime, tasks);
-		const diagnostics = new ResourceDiagnosticsService(models, sources, new VirtualHeadlessClock());
-		const model = models.retain(sources.luaResources[0], 'lua', source.src);
+		const { presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
+		const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources.catalog);
+		const diagnostics = new ResourceDiagnosticsService(models, sources.catalog, new VirtualHeadlessClock());
+		const model = models.retain(sources.catalog.luaResources[0], 'lua', source.src);
 		let reads = 0;
 		const getText = model.buffer.getText.bind(model.buffer);
 		model.buffer.getText = () => { reads++; return getText(); };
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
 		const capture: number[] = [], proposal: number[] = [];
 		for (let sample = 0; sample < 30; sample++) {
 			const started = performance.now();
-			const tools = new WorkspaceSourceTools(models, sources, diagnostics, new AbortController().signal, new BehaviorSourceDocuments(models, sources), saves, new VirtualHeadlessClock());
+			const tools = new WorkspaceSourceTools(models, sources.catalog, diagnostics, new AbortController().signal, new BehaviorSourceDocuments(models, sources.catalog), saves, new VirtualHeadlessClock());
 			const catalog = await tools.execute('studio_list_sources', {}); assert.ok(catalog.kind === 'sources');
 			const read = await tools.execute('studio_read_source', { resource: catalog.data[0].resource }); assert.ok(read.kind === 'source');
 			const captured = performance.now();

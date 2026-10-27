@@ -174,6 +174,7 @@ export function encodeBlua32SymbolsImage(symbols: Blua32SymbolsImage): Uint8Arra
 		default: words.push(2); record.vector(metadata.traceStatements, text); break;
 	}
 	record.vector(metadata.preloadModules, text);
+	record.vector(metadata.compiledModulePaths, text);
 	record.vector(metadata.functionIds, text);
 	record.vector(metadata.functionDisplayNames, text);
 	record.vector(metadata.functionDefinitions, range => { words.push(tables.range(range)); });
@@ -254,6 +255,7 @@ export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage 
 	const traceKind = record.word();
 	const traceStatements = traceKind === 0 ? 'erase' : traceKind === 1 ? 'emit' : record.vector(text);
 	const preloadModules = record.vector(text);
+	const compiledModulePaths = record.vector(text);
 	const functionIds = record.vector(text), functionDisplayNames = record.vector(text);
 	const functionDefinitions = record.vector(() => ranges[record.word()]);
 	const globalNames = record.vector(text), systemGlobalNames = record.vector(text);
@@ -298,7 +300,7 @@ export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage 
 		declarationIndex: record.word(), inlineDepth: record.word(), visibleWordRanges: intervals[record.word()],
 	})));
 	return { imageAddress, staticLayoutToken, functionAddresses, moduleFunctions, initParticipants,
-		metadata: { optLevel, traceStatements, preloadModules, functionIds, functionDisplayNames, functionDefinitions,
+		metadata: { optLevel, traceStatements, preloadModules, compiledModulePaths, functionIds, functionDisplayNames, functionDefinitions,
 			globalNames, systemGlobalNames, staticFunctionIdBySlot, debugRanges, debugInlineCallSiteChains,
 			debugInlineCallSiteChainIds, statementPointsByFunction, resumePointsByFunction, localSlotsByFunction,
 			outerBindingsByFunction, lexicalDeclarations, upvalueBindingsByFunction,

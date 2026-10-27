@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -12,7 +13,7 @@ for (const debounce of [0, 200]) {
 		const clock = new VirtualHeadlessClock(), models = new EditorTextModelService();
 		const documents = new CodeDocumentProjections(models, { clock, maxHighlightCache: 64,
 			semanticDebounceMs: debounce, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }) });
-		const model = models.retain({ sourceFilePath: 'retired.lua', location: { kind: 'workspace', path: 'retired.lua' }, domain: 0,
+		const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'retired.lua', location: { kind: 'workspace', path: 'retired.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 			path: 'retired.lua', source: { type: 'lua', resid: 'retired' } }, 'lua', 'return 1');
 		t.after(() => { documents.dispose(); resetSemanticProjects(models); });
 		const scheduled = t.mock.method(clock, 'scheduleOnce');
@@ -30,7 +31,7 @@ test('a source edit retires the queued semantic generation and schedules its can
 	const clock = new VirtualHeadlessClock(), models = new EditorTextModelService();
 	const documents = new CodeDocumentProjections(models, { clock, maxHighlightCache: 64,
 		semanticDebounceMs: 0, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }) });
-	const model = models.retain({ sourceFilePath: 'generation.lua', location: { kind: 'workspace', path: 'generation.lua' }, domain: 0,
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'generation.lua', location: { kind: 'workspace', path: 'generation.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path: 'generation.lua', source: { type: 'lua', resid: 'generation' } }, 'lua', 'return 1');
 	t.after(() => { documents.dispose(); resetSemanticProjects(models); models.clear(); });
 	const document = documents.get(model), scheduled = t.mock.method(clock, 'scheduleOnce');
@@ -47,7 +48,7 @@ test('replacing a view font retains the canonical document and its single pendin
 	const clock = new VirtualHeadlessClock(), models = new EditorTextModelService();
 	const documents = new CodeDocumentProjections(models, { clock, maxHighlightCache: 64,
 		semanticDebounceMs: 200, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }) });
-	const model = models.retain({ sourceFilePath: 'font.lua', location: { kind: 'workspace', path: 'font.lua' }, domain: 0,
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'font.lua', location: { kind: 'workspace', path: 'font.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path: 'font.lua', source: { type: 'lua', resid: 'font' } }, 'lua', 'return 1');
 	const document = documents.get(model), scheduled = t.mock.method(clock, 'scheduleOnce');
 	const code = createTestCodeControl(t, model, documents, clock);
@@ -66,7 +67,7 @@ test('detaching either layout retains a shared document job until its model is r
 	const clock = new VirtualHeadlessClock(), models = new EditorTextModelService();
 	const documents = new CodeDocumentProjections(models, { clock, maxHighlightCache: 64,
 		semanticDebounceMs: 200, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }) });
-	const model = models.retain({ sourceFilePath: 'shared.lua', location: { kind: 'workspace', path: 'shared.lua' }, domain: 0,
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'shared.lua', location: { kind: 'workspace', path: 'shared.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		path: 'shared.lua', source: { type: 'lua', resid: 'shared' } }, 'lua', 'return 1');
 	documents.get(model);
 	const scheduled = t.mock.method(clock, 'scheduleOnce');

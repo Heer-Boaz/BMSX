@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
@@ -28,11 +29,11 @@ import { FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
 const font = new Font({ variant: 'tiny' });
 function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs')))) {
 	Object.assign(editorViewState, { font: new EditorFont('tiny') });
-	const resource = { sourceFilePath: 'graph.lua', location: { kind: 'workspace' as const, path: 'graph.lua' }, domain: 0 as const, path: 'graph.lua', source: { resid: 'graph', type: 'lua' as const } };
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'graph.lua', location: { kind: 'workspace' as const, path: 'graph.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'graph.lua', source: { resid: 'graph', type: 'lua' as const } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	const document = () => buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), resource)], ['cartlib/fsm/library'])));
 	const view = createBehaviorLensViewState(document(), model, 'state-graph', assert.fail);
-	const input = new BehaviorLensInput(model, view, factory);
+	const input = new BehaviorLensInput(model, view, new Set([model.resource.contextId]), factory);
 	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });
 	selectBehaviorLensDefinition(view, view.document.definitions[0].rowKey);
 	const graph = view.presentation;

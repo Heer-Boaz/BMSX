@@ -1,5 +1,4 @@
-import type { FixtureMedia } from './fixture_media';
-import { buildTestCartridge, type BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import { buildFixtureProgram, type BuiltFixtureProgram, type FixtureMedia } from './fixture_media';
 import { LuaError } from '../../toolchain/ts/lua/errors';
 import { TestExecution, DEFAULT_TEST_BUDGETS, type TestBudgets } from './execution';
 import type { TestTarget, TestTargetFactory } from './target';
@@ -14,7 +13,7 @@ export class TestRun {
 	public failedExecution: TestExecution | null = null;
 	private index = 0;
 	private cancelled = false;
-	private program: BuiltTestCartridge | null = null;
+	private program: BuiltFixtureProgram | null = null;
 	private programSource: ScenarioRunItemSource | null = null;
 
 	public constructor(
@@ -30,14 +29,12 @@ export class TestRun {
 
 	public async prepare(): Promise<void> {
 		const result = this.results.startItem(this.result, this.index, 0);
-		const slot = result.test.resource.domain;
-		const companion = this.media.cartridgeSlots[1 - slot];
+		const contextId = result.test.resource.contextId;
+		const companion = this.media.cartridgeSlots[1];
 		try {
-			if (this.programSource === null || this.programSource.test.resource.domain !== slot || this.programSource.test.assetId !== result.test.assetId
+			if (this.programSource === null || this.programSource.test.resource.contextId !== contextId || this.programSource.test.assetId !== result.test.assetId
 				|| this.programSource.source !== result.source) {
-				this.program = await buildTestCartridge({ ...this.media, ramByteCount: this.media.machineModel.ramBytes,
-					cartridge: this.media.cartridgeSlots[slot]!, companionCartridge: companion,
-					test: { sourcePath: result.test.resource.path, source: result.source } });
+				this.program = await buildFixtureProgram(this.media, { sourcePath: result.test.resource.path, source: result.source });
 				this.programSource = result;
 			}
 			if (!this.active) { this.program = null; return; }
@@ -53,7 +50,7 @@ export class TestRun {
 			this.results.fail(result, 0, {
 				phase: 'prepare', message: error instanceof Error ? error.message : String(error),
 				stackTrace: error instanceof Error ? error.stack : undefined,
-				location: error instanceof LuaError ? { resource: { domain: result.test.resource.domain, path: error.path }, line: error.line, column: error.column } : undefined,
+				location: error instanceof LuaError ? { resource: { contextId: result.test.resource.contextId, path: error.path }, line: error.line, column: error.column } : undefined,
 			}, null);
 			this.results.failRun(this.result);
 			this.finish();

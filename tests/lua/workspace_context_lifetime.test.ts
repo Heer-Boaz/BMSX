@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -6,7 +7,7 @@ import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy
 import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
 import { createScenarioTestSourceState, createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 
-const resource = { sourceFilePath: 'proposal.lua', location: { kind: 'workspace' as const, path: 'proposal.lua' }, domain: 0 as const, path: 'proposal.lua', source: { type: 'lua' as const, resid: 'proposal' } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: 'proposal.lua', location: { kind: 'workspace' as const, path: 'proposal.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'proposal.lua', source: { type: 'lua' as const, resid: 'proposal' } };
 const edit = { version: 1, edits: [{ offset: 0, deleteLength: 1, text: 'new' }] };
 
 test('reopening the same resource/version cannot revive edit rights from a retired workspace', t => {
@@ -39,13 +40,13 @@ test('a multi-file proposal cannot mix models belonging to different workspace h
 
 test('a review retains captured evidence but permanently loses authority when its canonical workspace is retired', t => {
 	const models = new EditorTextModelService(), sources = createScenarioTestSourceState([createScenarioTestSourceRecord('proposal.lua', 0, 'x')]);
-	const model = models.retain(sources.luaResources[0], 'lua', 'x');
-	const proposal = new WorkspaceEditProposal('Replace authored source', new WorkspaceSourceContext(models, sources),
+	const model = models.retain(sources.catalog.luaResources[0], 'lua', 'x');
+	const proposal = new WorkspaceEditProposal('Replace authored source', new WorkspaceSourceContext(models, sources.catalog),
 		{ kind: 'edit', edits: new Map([[model, edit]]) });
 	t.after(() => { proposal.dispose(); models.clear(); });
 	const files = proposal.files;
 	models.clear();
-	const reopened = models.retain(sources.luaResources[0], 'lua', 'x');
+	const reopened = models.retain(sources.catalog.luaResources[0], 'lua', 'x');
 	assert.equal(reopened.version, model.version);
 	assert.equal(proposal.state, 'stale'); assert.equal(proposal.lifetime.isDisposed, true);
 	assert.equal(proposal.files, files); assert.equal(files[0].kind, 'edit');

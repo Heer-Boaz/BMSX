@@ -79,8 +79,11 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 	const evidence = '/tmp/bmsx-studio-mcp'; await mkdir(evidence, { recursive: true });
 	await writeFile(join(evidence, 'game.png'), Buffer.from(frame.data as string, 'base64'));
 	await page.screenshot({ path: join(evidence, 'studio.png') });
+	const sourceAdmission = await fetch(`${f.address}/__bmsx__/projects/source?root=carts%2Fnemesis_s`, { method: 'POST', headers: f.headers });
+	assert.equal(sourceAdmission.status, 200);
+	const sourceContext = await sourceAdmission.json();
 	const sources = await call('studio_list_sources', { toolContext });
-	const resource = sources.find((source: { domain: number; path: string }) => source.domain === 0 && source.path === 'cart.lua');
+	const resource = sources.find((source: { contextId: string; path: string }) => source.contextId === sourceContext.id && source.path === 'cart.lua');
 	assert.ok(resource);
 	const source = await call('studio_read_source', { toolContext, resource: resource.resource });
 	const proposal = await call('studio_propose_edits', { toolContext, title: 'MCP source review', files: [{ receipt: source.receipt,
@@ -102,7 +105,7 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 	await page.keyboard.press('Control+z', { delay: 100 });
 	const fresh = await call('studio_open_context', { session: sessions[0].id });
 	const latestCatalog = await call('studio_list_sources', fresh);
-	const latestCart = latestCatalog.find((source: { domain: number; path: string }) => source.domain === 0 && source.path === 'cart.lua');
+	const latestCart = latestCatalog.find((source: { contextId: string; path: string }) => source.contextId === sourceContext.id && source.path === 'cart.lua');
 	const undone = await call('studio_read_source', { ...fresh, resource: latestCart.resource });
 	assert.equal(undone.source, source.source, 'ordinary source-editor Undo reverses an MCP proposal');
 	await page.screenshot({ path: join(evidence, 'undone.png') });

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,15 +25,15 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	const models = new EditorTextModelService(), connection = new AbortController();
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return old\n'),
 		createScenarioTestSourceRecord('helper.lua', 1, 'return old, old\n')]);
-	const main = models.retain(sources.luaResources.find(resource => resource.path === 'cart.lua')!, 'lua', 'return old\n');
+	const main = models.retain(sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!, 'lua', 'return old\n');
 	main.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- UNSAVED COMMENT\n' }]);
 	const before = main.buffer.getText();
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const guest = new SuspendedGuestSession(runtime);
-	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
-	const diagnostics = new ResourceDiagnosticsService(models, sources, new VirtualHeadlessClock());
-	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, guest, runtime, tasks);
-	const sourceTools = new WorkspaceSourceTools(models, sources, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources), saves, new VirtualHeadlessClock());
+	const { presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
+	const diagnostics = new ResourceDiagnosticsService(models, sources.catalog, new VirtualHeadlessClock());
+	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources.catalog);
+	const sourceTools = new WorkspaceSourceTools(models, sources.catalog, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources.catalog), saves, new VirtualHeadlessClock());
 	const proposals: WorkspaceEditProposal[] = [];
 	let completed!: () => void;
 	const done = new Promise<void>(resolve => { completed = resolve; });
@@ -71,7 +72,7 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	const review = new WorkspaceEditReviewInput(proposals[0]); t.after(() => review.dispose());
 	assert.equal(review.proposal.state, 'pending');
 	assert.equal(main.buffer.getText(), before);
-	assert.equal(models.get({ domain: 0, path: 'helper.lua' })!.dirty, false);
+	assert.equal(models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'helper.lua' })!.dirty, false);
 	assert.ok(JSON.stringify(model.requests[2]).includes('UNSAVED COMMENT'));
 	const names = model.requests[0].tools.map(tool => tool.name);
 	for (const tool of STUDIO_SOURCE_TOOLS) assert.ok(names.includes(tool.name), tool.name);
@@ -84,7 +85,7 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	review.proposal.apply();
 	assert.equal(main.buffer.getText(), before.replace('old', 'new'));
 	assert.equal(main.lastSavedSource, 'return old\n');
-	models.get({ domain: 0, path: 'helper.lua' })!.undo();
+	models.get({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'helper.lua' })!.undo();
 	assert.equal(main.buffer.getText(), before);
 	main.redo();
 	assert.equal(main.buffer.getText(), before.replace('old', 'new'));

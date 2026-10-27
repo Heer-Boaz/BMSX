@@ -70,6 +70,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		this.focusTarget.registerCommand('aem.add', { isEnabled: () => this.controller.canAdd(this.input), run: () => this.controller.add(this.input) });
 		this.focusTarget.registerCommand('aem.remove', { isEnabled: () => !this.input.workingCopy.readOnly && this.input.tree.rows[this.input.tree.selectionIndex]?.element.parent !== undefined,
 			run: () => this.controller.remove(this.input) });
+		this.focusTarget.registerCommand('aem.apply', { isEnabled: () => !this.input.applying, run: () => this.controller.apply(this.input) });
 		this.focusTarget.registerCommand('aem.source', { isEnabled: () => true, run: () => this.controller.openSource(this.input) });
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => true, run: () => {
 			const tree = this.input.tree;
@@ -123,7 +124,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		drawWorkbenchPropertyTree(input.tree);
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
+	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status || this.input.applyStatus, bounds.left + 4, bounds.top + 2, 0, color); }
 	public handleKeyboard(input: KeyInputEvent): void {
 		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input); navigateWorkbenchTree(this.input.tree, command); this.pointer.keyboardSelection(this.input.tree); return;

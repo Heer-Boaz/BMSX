@@ -51,7 +51,7 @@ export type ScenarioLabNavigationResult =
 	| { readonly kind: 'inspect-message'; readonly row: ScenarioLabMessageRow }
 	| {
 		readonly kind: 'actioneffect-source';
-		readonly executionDomain: 0 | 1;
+		readonly contextId: string;
 		readonly effectId: string;
 	};
 
@@ -70,7 +70,7 @@ export function updateScenarioLabStatus(state: ScenarioLabViewState): void {
 			case 'scenarioLab.breakpoints': visible = live; break;
 			case 'scenarioLab.revealRun': visible = state.resultService.runs.length !== 0; break;
 			case 'scenarioLab.cancel': visible = state.runActive; break;
-			case 'scenarioLab.debug': visible = !state.runActive && selectedScenarioTestNode(state)?.kind === 'test'; break;
+			case 'scenarioLab.debug': case 'scenarioLab.debugWithCompanion': visible = !state.runActive && selectedScenarioTestNode(state)?.kind === 'test'; break;
 			default: visible = !state.runActive;
 		}
 		if (item.visible !== visible) { item.visible = visible; state.actionsDirty = true; }
@@ -202,7 +202,7 @@ export function scenarioLabCommandEnabled(
 	command: EditorScenarioLabCommandId,
 ): boolean {
 	switch (command) {
-		case 'scenarioLab.debug': return !state.runActive && selectedScenarioTestNode(state)?.kind === 'test';
+		case 'scenarioLab.debug': case 'scenarioLab.debugWithCompanion': return !state.runActive && selectedScenarioTestNode(state)?.kind === 'test';
 		case 'scenarioLab.continue': return state.debugger?.canResume(Mode.Continue) === true;
 		case 'scenarioLab.stepInto': return state.debugger?.canResume(Mode.StepInto) === true;
 		case 'scenarioLab.stepOver': return state.debugger?.canResume(Mode.StepOver) === true;
@@ -210,6 +210,7 @@ export function scenarioLabCommandEnabled(
 		case 'scenarioLab.pause': return state.debugger?.status === 'running';
 		case 'scenarioLab.breakpoints': return state.debugger?.stopped === true || state.debugger?.status === 'running';
 		case 'scenarioLab.run':
+		case 'scenarioLab.runWithCompanion':
 			return !state.runActive && selectedScenarioTestNode(state) !== null;
 		case 'scenarioLab.rerun':
 			return !state.runActive && state.resultService.runs.length > 0;
@@ -259,7 +260,7 @@ function activateScenarioLabSelection(state: ScenarioLabViewState): ScenarioLabN
 	if (row.kind === 'actioneffect_fact') {
 		return {
 			kind: 'actioneffect-source',
-			executionDomain: row.trace.executionDomain,
+			contextId: row.trace.sourceContextId,
 			effectId: row.fact.effectId,
 		};
 	}

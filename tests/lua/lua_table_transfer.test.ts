@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -14,7 +15,7 @@ import { walkLuaAst } from '../../toolchain/ts/lua/syntax/ast/traversal';
 import { LUA_TABLE_TRANSFER_SOURCE } from '../helpers/lua_table_transfer_fixture';
 import { runCompiledLua } from './cpu_test_harness';
 
-const resource = { sourceFilePath: 'transfer.lua', location: { kind: 'workspace' as const, path: 'transfer.lua' }, domain: 0 as const, path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: 'transfer.lua', location: { kind: 'workspace' as const, path: 'transfer.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
 // Compare grammar structure: source text/tokens and locations necessarily change
 // when a field moves. The exact source/history checks below cover those bytes.
 

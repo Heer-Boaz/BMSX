@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
@@ -25,9 +26,9 @@ scenes.register('other room', { objects = {
 } })
 `;
 
-function scene(t: TestContext, domain: 0 | 1 = 0) {
+function scene(t: TestContext, contextId: string = TEST_CARTRIDGE_CONTEXT_IDS[0]) {
 	const path = 'scenes/room.lua';
-	const model = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain, path, source: { resid: path, type: 'lua' } }, 'lua', SOURCE);
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId, path, source: { resid: path, type: 'lua' } }, 'lua', SOURCE);
 	const input = new SceneEditorInput(model);
 	installSceneOutline(input, buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SOURCE, model.resource)], ['cartlib/world/scene_library']))));
 	selectSceneOutlineRow(input, 1);
@@ -36,7 +37,7 @@ function scene(t: TestContext, domain: 0 | 1 = 0) {
 }
 
 test('Scene full identity keeps written member expressions, source correspondence and duplicate membership', t => {
-	const input = scene(t), otherSlot = scene(t, 1);
+	const input = scene(t), otherSlot = scene(t, TEST_CARTRIDGE_CONTEXT_IDS[1]);
 	const members = input.outline.rows.filter(row => row.element.kind === 'member');
 	assert.deepEqual(members.map(row => row.element.label), ["'same  member'", "'same  member'", "'same  member'"]);
 	assert.equal(new Set(members.map(row => row.element.identity)).size, members.length, 'identical labels are distinguished by their actual containing scene and source range');
@@ -47,7 +48,7 @@ test('Scene full identity keeps written member expressions, source correspondenc
 	}
 	assert.ok(members[0].element.identity.includes("Scene 'room'"));
 	assert.ok(members[2].element.identity.includes("Scene 'other room'"));
-	assert.notEqual(members[0].element.identity, otherSlot.outline.rows[1].element.identity, 'the same source path in another cartridge retains its physical domain');
+	assert.notEqual(members[0].element.source.path, otherSlot.outline.rows[1].element.source.path, 'equal human-readable labels do not merge source correspondence from distinct admitted contexts');
 	assert.equal(input.outline.rows[1].element.source, input.document!.analysis.chunk.locations.range(input.document!.scenes[0].objects[0].field.span));
 	assert.equal(input.workingCopy.buffer.getText(), SOURCE);
 });

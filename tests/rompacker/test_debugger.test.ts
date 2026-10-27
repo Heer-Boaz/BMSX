@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -14,7 +16,7 @@ import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/mac
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { ALL_EXECUTION_DOMAINS_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { buildTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import { buildFixtureProgram } from '../../ide/testing/fixture_media';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
 
@@ -27,12 +29,11 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3, cartSour
 			...COROUTINE_FIRMWARE_MODULES],
 		cartSource, cartModules: [{ path: 'game', source: 'return { after_publication = 0 }' }],
 	});
-	const program = await buildTestCartridge({ systemRom: media.systemRom, cartridge: media.cartRom,
-		test: { sourcePath: PATH, source }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
+	const program = await buildFixtureProgram({ systemRom: media.systemRom, cartridgeSlots: [media.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[1], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: PATH, source });
 	const target = new OffscreenMachine(media.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 	const results = new ScenarioResultService();
 	const item: ScenarioTestItem = { kind: 'test', id: 'scenario:1:debug-probe', parentId: 'scenario-module:1:debug', label: 'probe', caseName: 'probe',
-		assetId: 'probe', sourceTimestamp: 0, resource: { domain: 1, path: PATH }, range: program.suite.tests[0].range };
+		assetId: 'probe', sourceTimestamp: 0, resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: PATH }, range: program.suite.tests[0].range };
 	const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]), result = results.startItem(run, 0, 0);
 	const execution = new TestExecution(target, program, results, result,
 		{ ...DEFAULT_TEST_BUDGETS, phaseCycles: 100_000, quantumCycles: 2048 }, undefined, 'debug');
@@ -79,7 +80,7 @@ return { kind = 'unit',
 		for (let frame = 0; frame < 32; frame++) execution.advance();
 		assert.deepEqual(captureRuntimeMachineState(target.runtime), paused, 'a stopped test gets no guest time or grants');
 		const compiled = debug.sources.catalog.find(entry => entry.path === PATH)!;
-		assert.equal(compiled.domain, 0); assert.equal(compiled.sourceDomain, 1);
+		assert.equal(compiled.domain, 0); assert.equal(compiled.sourceContextId, TEST_CARTRIDGE_CONTEXT_IDS[1]);
 		assert.equal(debug.sources.read(compiled.source).text, source);
 		const points = debug.sources.setBreakpoints(compiled.source, [11, 6]);
 		assert.deepEqual(points.map(point => point.status), ['no-statement', 'bound']);

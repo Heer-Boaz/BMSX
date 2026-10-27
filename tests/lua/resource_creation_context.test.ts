@@ -1,9 +1,9 @@
+import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { CartEditor } from '../../ide/cart_editor';
-import type { ResourceDomain } from '../../ide/common/resource';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
@@ -22,9 +22,9 @@ function fixture(t: TestContext, path: string, canonicalPath: string, generated 
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const source = { ...createScenarioTestSourceRecord(path, 1), normalized_source_path: canonicalPath, generated };
 	const sources = createScenarioTestSourceState([source]);
-	const resource = sources.resources.find(resource => resource.domain === 0 && resource.path === path)!;
+	const resource = sources.catalog.resources.find(resource => resource.contextId === TEST_CARTRIDGE_CONTEXT_IDS[0] && resource.path === path)!;
 	const group = createTestEditorGroup();
-	group.model.initialize(resolveLuaCodeEditorInput(sources, resource));
+	group.model.initialize(resolveLuaCodeEditorInput(sources.catalog, resource));
 	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
 	const editor = { quickInput: picker, editorGroup: group } as CartEditor;
 	t.after(() => {
@@ -36,7 +36,7 @@ function fixture(t: TestContext, path: string, canonicalPath: string, generated 
 
 test('New File uses a project resource authoring directory, including a project-local library-named folder', t => {
 	const f = fixture(t, 'cartlib/local.lua', 'carts/nemesis_s/cartlib/local.lua');
-	openCreateResourcePrompt(f.editor, f.sources, f.clock);
+	openCreateResourcePrompt(f.editor, f.sources.catalog, f.clock);
 	assert.equal(f.picker.inputBox, true);
 	// This is the actual proposed filesystem directory, not the prompt wording.
 	assert.equal(f.picker.field.text, 'cartlib/');
@@ -46,10 +46,11 @@ test('New File uses a project resource authoring directory, including a project-
 for (const [path, generated] of [['cartlib/shared.lua', false], ['testlib/context.lua', false], ['bmsx/assets.lua', true]] as const) {
 	test(`New File from ${path} asks for an authoring project instead of borrowing its execution context`, t => {
 		const f = fixture(t, path, path, generated);
-		openCreateResourcePrompt(f.editor, f.sources, f.clock);
+		openCreateResourcePrompt(f.editor, f.sources.catalog, f.clock);
 		assert.equal(f.picker.visible, true); assert.equal(f.picker.inputBox, false);
-		const projects = f.picker.model.items as readonly (QuickPickItem & { domain: ResourceDomain })[];
-		assert.deepEqual(projects.map(project => project.domain), [0, -1]);
+		const projects = f.picker.model.items as readonly (QuickPickItem & { contextId: string })[];
+		assert.deepEqual(new Set(projects.map(project => project.contextId)), new Set([TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0]]));
+		f.picker.model.list.selectionIndex = f.picker.model.list.rows.findIndex(row => projects[row.itemIndex].contextId === TEST_CARTRIDGE_CONTEXT_IDS[0]);
 		f.picker.accept();
 		assert.equal(f.picker.inputBox, true);
 		assert.equal(f.picker.field.text, '', 'the explicitly chosen project cannot inherit an external or generated directory');

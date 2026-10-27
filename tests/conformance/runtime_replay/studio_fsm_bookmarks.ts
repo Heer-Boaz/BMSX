@@ -1,4 +1,3 @@
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
@@ -28,7 +27,7 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 	harness.openLuaSource('cart.lua');
 	const main = sourcePane(test).code.model, originalMain = main.buffer.getText();
 	if (imported) {
-		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+		const record = ide.sources.catalog.getContext(main.resource.contextId).luaSources.records.find(record =>
 			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 		main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length,
 			text: FSM_RETARGET_IMPORTED_SOURCE.replace("require('branch')", `require('${record.module_path}')`) }]);

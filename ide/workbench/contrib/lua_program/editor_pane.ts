@@ -109,10 +109,10 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 				run: () => { this.input.running = false; this.frameNavigation.step(direction); },
 			});
 		}
-		this.focusTarget.registerCommand('luaProgram.testInput', { isEnabled: () => this.input.programKind === 'input' && this.tester.canStart(this.input.workingCopy.resource.domain), run: () => {
+		this.focusTarget.registerCommand('luaProgram.testInput', { isEnabled: () => this.input.programKind === 'input' && this.tester.canStart(this.input.workingCopy.resource.contextId), run: () => {
 			const selected = this.selected();
 			const pattern = selected?.valueExpression?.kind === LuaSyntaxKind.StringLiteralExpression ? selected.valueExpression.value : '';
-			this.tester.open(this.input.workingCopy.resource.domain, pattern);
+			this.tester.open(this.input.workingCopy.resource.contextId, pattern);
 		} });
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => true, run: () => {
 			const tree = this.input.liveVisible ? this.input.live : this.input.tree;

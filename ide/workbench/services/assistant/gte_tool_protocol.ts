@@ -1,5 +1,5 @@
 import type { GteCommandSnapshot } from '../../../runtime/gte_history';
-import { blua32SourceRangeAtPc } from '../../../../toolchain/ts/rompack/blua32_symbols';
+import { capturedLuaSourceAtPc } from '../../../runtime/lua_inspection';
 import { StudioToolInputError, toolArguments } from './tool_input';
 
 export type GteToolRequest =
@@ -48,16 +48,15 @@ export function decodeGteToolRequest(name: string, input: unknown): GteToolReque
 /** The wire owns detached raw words and source locations, never installed media. */
 export function encodeGteCommand(record: GteCommandSnapshot, canSeek: boolean) {
 	const image = record.image;
-	const range = image === null || image.symbols === null ? null
-		: blua32SourceRangeAtPc(image.symbols, image.layout.header.textAddress, record.pc!);
+	const source = image === null ? undefined : capturedLuaSourceAtPc(image, record.pc!);
 	const metadata = { sequence: record.sequence, timeline: record.timeline, cycles: record.cycles, completedTick: record.completedTick,
 		commandWord: record.commandWord, nominalCycles: record.nominalCycles,
 		busSignals: record.kind === 'plus-published' && record.acceptedSequence === undefined ? undefined : record.busSignals, canSeek,
 		acceptedSequence: record.acceptedSequence, acceptedCycles: record.acceptedCycles, deadlineCycles: record.deadlineCycles,
 		source: record.domain === undefined ? undefined : { origin: image === null ? 'instruction' as const : 'installed' as const, domain: record.domain, pc: record.pc,
 			symbols: image !== null && image.symbols !== null,
-			location: range === null ? undefined : { path: range.path,
-				start: { line: range.start.line, column: range.start.column }, end: { line: range.end.line, column: range.end.column } } } };
+			location: source === undefined ? undefined : { ...source.resource,
+				start: { line: source.range.start.line, column: source.range.start.column }, end: { line: source.range.end.line, column: source.range.end.column } } } };
 	if (record.kind === 'plus-accepted') return { ...metadata, kind: 'plus-accepted' as const, beforePlus: Array.from(record.beforePlus) };
 	if (record.kind === 'plus-published') return { ...metadata, kind: 'plus-published' as const,
 		beforePlus: record.acceptedSequence === undefined ? undefined : Array.from(record.beforePlus), afterPlus: Array.from(record.afterPlus) };

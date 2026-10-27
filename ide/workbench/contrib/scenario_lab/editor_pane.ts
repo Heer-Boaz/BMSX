@@ -72,7 +72,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 			case 'none': case 'changed': this.rowFeedback.keyboardSelection(view); return;
 			case 'inspect-message': this.openDetails(result.row); return;
 			case 'open-source': this.controller.openSource(result.location); return;
-			case 'actioneffect-source': this.controller.openActionEffectSource(view, result.executionDomain, result.effectId); return;
+			case 'actioneffect-source': this.controller.openActionEffectSource(view, result.contextId, result.effectId); return;
 		}
 	};
 	private readonly actionBar: WorkbenchActionBarControl;
@@ -114,7 +114,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 			this.rowFeedback.clear();
 			lifetime.add({ dispose: controller.runs.onDidChangeRun(() => contextMenu.hide()) });
 			for (const root of this.input.view.collection.roots)
-				lifetime.add(subscribeToLuaModelChanges(editorTextModelService, root.domain, () => contextMenu.hide()));
+				lifetime.add(subscribeToLuaModelChanges(editorTextModelService, this.controller.runs.collection.catalog, root.contextId, () => contextMenu.hide()));
 		};
 		this.focusTarget.next = this.resultsFocus;
 		this.resultsFocus.previous = this.focusTarget;

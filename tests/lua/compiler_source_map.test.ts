@@ -50,6 +50,8 @@ test('compiler maps generated harness debug metadata to authored source ranges',
 		{ entrySource, optLevel: 0 },
 	);
 
+	assert.deepEqual(compiled.metadata.compiledModulePaths, [ENTRY_PATH, GENERATED_PATH],
+		'compiler input identities are not replaced by remapped debug source paths');
 	const authoredRanges = compiled.metadata.debugRanges.filter(
 		range => range !== null && range.path === TEST_RANGE_PATH,
 	);

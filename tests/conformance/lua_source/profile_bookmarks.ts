@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
@@ -16,7 +17,7 @@ for (const children of [32, 1024]) {
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')
 local leaf<const> = { type = 'wait', duration_ticks = 1 }
 trees.register('profile', { root = { type = 'sequence', children = {${'leaf,'.repeat(children)}} } })`;
-	const model = new EditorTextModel({ sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
 	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	const root = document.definitions[0];
@@ -40,7 +41,7 @@ trees.register('profile', { root = { type = 'sequence', children = {${'leaf,'.re
 }
 
 for (const retainedCodeInput of [false, true]) {
-	const model = new EditorTextModel({ sourceFilePath: 'typing.lua', location: { kind: 'workspace' as const, path: 'typing.lua' }, domain: 0, path: 'typing.lua', source: { type: 'lua', resid: 'typing' } }, 'lua', 'abc');
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: 'typing.lua', location: { kind: 'workspace' as const, path: 'typing.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'typing.lua', source: { type: 'lua', resid: 'typing' } }, 'lua', 'abc');
 	const input = retainedCodeInput ? new CodeEditorInput(model) : null;
 	const view = input === null ? createCodeEditorViewState() : input.context.view;
 	const typingAndUndoMicroseconds = medianMilliseconds(() => {

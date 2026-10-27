@@ -37,6 +37,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 			optLevel: 2,
 			traceStatements: ['fixture.compile', 'fixture.bind'],
 			preloadModules: ['fixture/observer'],
+			compiledModulePaths: ['fixture/entry', 'fixture/observer', 'fixture/constants'],
 			functionIds: ['module:cart/module/anon:4:2:4:14'],
 			functionDisplayNames: ['invoke'],
 			functionDefinitions: [structuredClone(innerCallRange)],
@@ -99,6 +100,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 	assert.equal(decoded.metadata.optLevel, 2);
 	assert.deepEqual(decoded.metadata.traceStatements, ['fixture.compile', 'fixture.bind']);
 	assert.deepEqual(decoded.metadata.preloadModules, ['fixture/observer']);
+	assert.deepEqual(decoded.metadata.compiledModulePaths, ['fixture/entry', 'fixture/observer', 'fixture/constants']);
 	for (const traceStatements of ['erase', 'emit', []] as const) {
 		const metadata = { ...symbols.metadata, traceStatements };
 		assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, metadata })).metadata, metadata);

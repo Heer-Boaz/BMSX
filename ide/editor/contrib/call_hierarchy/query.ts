@@ -1,41 +1,30 @@
 import { getOrCreateSemanticProject } from '../intellisense/semantic/workspace/state';
 import { editorTextModelService } from '../../model/model_service';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/frontend';
 import { CallHierarchyModel } from './model';
 import type { CodeEditorControl } from '../../ui/code_editor_control';
-import { SYSTEM_RESOURCE_DOMAIN, resourceIdentityKey } from '../../../common/resource';
+import { resourceIdentityKey } from '../../../common/resource';
 
 export type CallHierarchyQueryResult =
 	| { kind: 'success'; model: CallHierarchyModel; }
 	| { kind: 'missing_definition'; };
 
-export function resolveCallHierarchyAt(code: CodeEditorControl, sources: RuntimeSourceState, row: number, column: number): CallHierarchyQueryResult {
+export function resolveCallHierarchyAt(code: CodeEditorControl, catalog: WorkspaceSourceCatalog, row: number, column: number): CallHierarchyQueryResult {
 	const resource = code.model.resource;
 	const path = resourceIdentityKey(resource);
-	const snapshot = buildEditorSemanticSnapshot(sources, resource, code.model.buffer);
-	const frontend = createEditorSemanticFrontend(snapshot, resource.domain);
+	const snapshot = buildEditorSemanticSnapshot(catalog, resource, code.model.buffer);
+	const frontend = createEditorSemanticFrontend(snapshot, catalog.getContext(resource.contextId).programDomain);
 	const symbols = frontend.findSymbolsByPosition(path, row + 1, column + 1);
 	if (!symbols) {
 		return { kind: 'missing_definition' };
 	}
-	const resources = sources.luaResources;
-	let rootReadOnly = false;
-	for (let index = 0; index < resources.length; index += 1) {
-		const resource = resources[index];
-		if (resource.domain === code.model.resource.domain && resourceIdentityKey(resource) === path) {
-			rootReadOnly = !!resource.source.generated;
-			break;
-		}
-	}
+	const rootReadOnly = !!resource.source.generated;
+	const allowedContexts = new Set(catalog.getSourceContexts(resource.contextId).map(context => context.id));
 	const allowedPaths = new Set<string>();
-	for (let index = 0; index < resources.length; index += 1) {
-		const resource = resources[index];
-		if ((resource.domain === code.model.resource.domain
-			|| (code.model.resource.domain !== SYSTEM_RESOURCE_DOMAIN
-				&& resource.domain === SYSTEM_RESOURCE_DOMAIN))
-			&& !!resource.source.generated === rootReadOnly) {
-			allowedPaths.add(resourceIdentityKey(resource));
+	for (const candidate of catalog.luaResources) {
+		if (allowedContexts.has(candidate.contextId) && !!candidate.source.generated === rootReadOnly) {
+			allowedPaths.add(resourceIdentityKey(candidate));
 		}
 	}
 	allowedPaths.add(path);
@@ -43,6 +32,6 @@ export function resolveCallHierarchyAt(code: CodeEditorControl, sources: Runtime
 	for (let index = 0; index < symbols.targets.length; index += 1) {
 		rootSymbolIds[index] = symbols.targets[index].id;
 	}
-	const model = new CallHierarchyModel(frontend, rootSymbolIds, symbols.label, getOrCreateSemanticProject(editorTextModelService, resource.domain), allowedPaths);
+	const model = new CallHierarchyModel(frontend, rootSymbolIds, symbols.label, getOrCreateSemanticProject(editorTextModelService, resource.contextId), allowedPaths);
 	return { kind: 'success', model };
 }

@@ -6,7 +6,7 @@ import { check, type StudioFixture } from './studio_fixture';
 export async function testStudioInputResolution(test: StudioFixture): Promise<void> {
 	const { editor } = test.ide;
 	const original = editor.editorGroup.model.activeTab;
-	const resource = test.ide.sources.luaResources.find(candidate => candidate.domain === 0
+	const resource = test.ide.sources.catalog.luaResources.find(candidate => candidate.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId
 		&& editor.editorGroup.model.findById(`code:${resourceIdentityKey(candidate)}`) === undefined)!;
 	const revision = editor.editorGroup.model.revision;
 	const focus = inputFocus.target;
@@ -32,7 +32,7 @@ export async function testStudioInputResolution(test: StudioFixture): Promise<vo
 	check(!first.workingCopy.dirty && test.cycles() === cycles,
 		'A07 admission: opening source did not edit a document or advance the paused machine');
 	editor.editorGroup.close(first.id);
-	const aem = test.ide.sources.resources.find(item => item.domain === 0 && item.source.type === 'aem')!;
+	const aem = test.ide.sources.catalog.resources.find(item => item.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.source.type === 'aem')!;
 	const pendingAem = editor.navigation.openResource(aem);
 	const opened = await editor.navigation.openResource(resource);
 	check(opened === editor.editorGroup.panes.openGeneration && await pendingAem === undefined,

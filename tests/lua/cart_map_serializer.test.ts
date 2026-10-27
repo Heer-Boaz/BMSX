@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resourceIdentityKey } from '../../ide/common/resource';
@@ -16,8 +17,8 @@ test('inactive restored map retains its pending viewport across another session 
 	editorViewState.font = new EditorFont('tiny');
 	editorViewState.lineHeight = 6;
 	const sources = createScenarioTestSourceState([]);
-	const resource = { sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
-	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+	sources.catalog.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const source = `map_rows:\n${Array.from({ length: 40 }, () => `  - "m${' '.repeat(119)}"\n`).join('')}`;
 	const model = editorTextModelService.retain(resource, 'yaml', source);
 	const input = new CartMapInput(model, 'nemesis');
@@ -34,7 +35,7 @@ test('inactive restored map retains its pending viewport across another session 
 	input.tree.scroll = 5;
 	const expected = captureCartMapView(input);
 	const authored = model.buffer.getText(), version = model.version;
-	const serializer = new CartMapInputSerializer(sources);
+	const serializer = new CartMapInputSerializer(sources.catalog);
 	const restored = await serializer.deserialize(serializer.serialize(input));
 	t.after(() => restored.dispose());
 	assert.equal(restored.workingCopy, model);
@@ -62,15 +63,15 @@ test('inactive restored map retains its pending viewport across another session 
 
 test('map recovery rejects a view snapshot when its canonical source changed', async t => {
 	const sources = createScenarioTestSourceState([]);
-	const resource = { sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
-	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+	sources.catalog.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const source = 'map_rows: ["m   "]\n';
 	const model = editorTextModelService.retain(resource, 'yaml', source);
 	const input = new CartMapInput(model, 'nemesis');
 	t.after(() => { input.dispose(); editorTextModelService.clear(); });
 	projectCartMap(input);
 	selectCartMapRow(input, 1);
-	const serializer = new CartMapInputSerializer(sources), serialized = serializer.serialize(input);
+	const serializer = new CartMapInputSerializer(sources.catalog), serialized = serializer.serialize(input);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# authored after capture\n' }]);
 	const restored = await serializer.deserialize(serialized);
 	t.after(() => restored.dispose());
@@ -87,8 +88,8 @@ for (const variant of ['tiny', 'msx'] as const) for (const section of ['outline'
 		editorViewState.font = new EditorFont(variant);
 		editorViewState.lineHeight = editorViewState.font.lineHeight;
 		const sources = createScenarioTestSourceState([]);
-		const resource = { sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
-		sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
+		const resource = { contextLabel: 'Fixture project', sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+		sources.catalog.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 		const source = `map_rows:\n${Array.from({ length: 60 }, () => `  - "m${' '.repeat(119)}"\n`).join('')}`;
 		const model = editorTextModelService.retain(resource, 'yaml', source), input = new CartMapInput(model, 'nemesis'), version = model.version;
 		t.after(() => { input.dispose(); editorTextModelService.clear(); });
@@ -97,7 +98,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const section of ['outline'
 		layoutCartMap(input, wide, true);
 		input.grid.restoreView({ x: 17.25, y: 12.5 }); layoutCartMap(input, wide, false);
 		input.tree.scroll = 7.25; input.section = section;
-		const expected = captureCartMapView(input), serializer = new CartMapInputSerializer(sources);
+		const expected = captureCartMapView(input), serializer = new CartMapInputSerializer(sources.catalog);
 		const restored = await serializer.deserialize(serializer.serialize(input)); t.after(() => restored.dispose());
 		const narrow = { ...wide, right: wide.left + (variant === 'tiny' ? 78 : 118) };
 		layoutCartMap(restored, narrow, true);
@@ -126,8 +127,8 @@ for (const variant of ['tiny', 'msx'] as const) for (const section of ['outline'
 
 test('Source undo preserves a background map view selection and collapsed room', async t => {
 	const sources = createScenarioTestSourceState([]);
-	const resource = { sourceFilePath: 'res/data/castle_map.yaml', location: { kind: 'workspace' as const, path: 'res/data/castle_map.yaml' }, domain: 0, path: 'res/data/castle_map.yaml', source: { resid: 'map', type: 'data' } } as const;
-	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'res/data/castle_map.yaml', location: { kind: 'workspace' as const, path: 'res/data/castle_map.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/data/castle_map.yaml', source: { resid: 'map', type: 'data' } } as const;
+	sources.catalog.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const source = [
 		'2:', '  map: ["...."]', '  objects:', '  - { type: rock, x: 1, y: 0 }',
 		'7:', '  map: ["...."]', '',
@@ -148,7 +149,7 @@ test('Source undo preserves a background map view selection and collapsed room',
 	assert.deepEqual(input.selectionRange, selection);
 	assert.equal(input.activeSheet, '7');
 	assert.equal(input.tree.roots[0].collapsed, true);
-	const serializer = new CartMapInputSerializer(sources);
+	const serializer = new CartMapInputSerializer(sources.catalog);
 	const restored = await serializer.deserialize(serializer.serialize(input));
 	t.after(() => restored.dispose());
 	assert.deepEqual(restored.selectionRange, selection);
@@ -162,8 +163,8 @@ test('Source undo preserves a background map view selection and collapsed room',
 test('an outline-selected far marker keeps its queued reveal through serialization until the map first opens', async t => {
 	editorViewState.font = new EditorFont('tiny'); editorViewState.lineHeight = editorViewState.font.lineHeight;
 	const sources = createScenarioTestSourceState([]);
-	const resource = { sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, domain: 0, path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
-	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'res/data/nemesis_s_stage.yaml', location: { kind: 'workspace' as const, path: 'res/data/nemesis_s_stage.yaml' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/data/nemesis_s_stage.yaml', source: { resid: 'stage', type: 'data' } } as const;
+	sources.catalog.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const cells = Array<string>(300).fill(' '); cells[257] = 'm';
 	const source = `map_rows: ["${cells.join('')}"]\n`;
 	const model = editorTextModelService.retain(resource, 'yaml', source), input = new CartMapInput(model, 'nemesis'), version = model.version;
@@ -176,7 +177,7 @@ test('an outline-selected far marker keeps its queued reveal through serializati
 	input.grid.reveal(input.selected!);
 	const selectedRange = { ...input.selectionRange }, expected = captureCartMapView(input);
 	assert.deepEqual(expected.grid, { x: 2.25, y: 0, reveal: { x: 257, y: 0 } });
-	const serializer = new CartMapInputSerializer(sources), restored = await serializer.deserialize(serializer.serialize(input));
+	const serializer = new CartMapInputSerializer(sources.catalog), restored = await serializer.deserialize(serializer.serialize(input));
 	t.after(() => restored.dispose());
 	assert.equal(restored.workingCopy, model); assert.deepEqual(captureCartMapView(restored), expected);
 	layoutCartMap(restored, bounds, true);

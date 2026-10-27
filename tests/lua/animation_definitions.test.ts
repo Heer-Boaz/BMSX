@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
@@ -18,12 +19,11 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
-import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 
-const resource = { sourceFilePath: 'definitions.lua', location: { kind: 'workspace' as const, path: 'definitions.lua' }, domain: 0 as const, path: 'definitions.lua', source: { resid: 'definitions', type: 'lua' as const } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: 'definitions.lua', location: { kind: 'workspace' as const, path: 'definitions.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', source: { resid: 'definitions', type: 'lua' as const } };
 
 test('native procedural, duration-only and sequence definitions are source, not manufactured keys', () => {
 	for (const source of ['return { frames = function(params) error(params) end, frame_duration = 20 }',
@@ -55,7 +55,7 @@ test('only import-bound producers and FSM timeline fields enter the invocation c
 		impostor.register('not-fsm', { timelines = { wrong = { def = { duration_frames = 90 } } } })
 		impostor:define('not-timeline', { duration_frames = 91 })
 	`, resource);
-	const shared = buildResourceLuaSemanticFixtureFile('return { duration_frames = 7 }', { domain: 0, path: 'shared.lua' });
+	const shared = buildResourceLuaSemanticFixtureFile('return { duration_frames = 7 }', { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'shared.lua' });
 	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file, shared], ['cartlib/fsm/library', 'cartlib/timeline/program', 'cartlib/timeline/timeline_component']));
 	const catalog = collectAnimationDefinitions(resource, snapshot);
 	const values = catalog.map(definition => readLuaNumberLiteral(findNamedLuaTableField(definition.table, 'duration_frames')!.value));
@@ -96,7 +96,7 @@ test('producer navigation distinguishes an initializer from a called builder and
 	`, resource);
 	const builder = buildResourceLuaSemanticFixtureFile(`local builders = { duration = 20 }
 		function builders.make(params) error('producer navigation must not execute this') end
-		return builders`, { domain: 0, path: 'builders.lua' });
+		return builders`, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'builders.lua' });
 	const reader = new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file, builder], [])));
 	const root = buildAnimationSourceDocument(resource, reader.snapshot)!.root;
 	const frames = findNamedLuaTableField(root.table, 'frames')!, duration = findNamedLuaTableField(root.table, 'frame_duration')!;
@@ -112,7 +112,7 @@ test('producer navigation distinguishes an initializer from a called builder and
 	assert.equal(reader.expression(file, frames.value), undefined, 'navigation has not turned a call boundary into a value');
 	assert.equal(reader.expression(file, duration.value), undefined, 'a member definition is navigation, not a closed value proof');
 
-	const ambiguous = buildResourceLuaSemanticFixtureFile('local maker = function() end; maker = unknown; return { frames = maker() }', { domain: 0, path: 'ambiguous.lua' });
+	const ambiguous = buildResourceLuaSemanticFixtureFile('local maker = function() end; maker = unknown; return { frames = maker() }', { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'ambiguous.lua' });
 	const ambiguousReader = new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([ambiguous], [])));
 	const ambiguousRoot = buildAnimationSourceDocument(ambiguous.resource, ambiguousReader.snapshot)!.root;
 	assert.equal(ambiguousReader.producer(ambiguous, findNamedLuaTableField(ambiguousRoot.table, 'frames')!.value), undefined);
@@ -157,14 +157,14 @@ test('a source-authored track extends a native frame builder without replacing i
 test('independent inline views share real documents/history and retire stale session anchors instead of guessing', async t => {
 	const source = "local first = {frames=function() end,frame_duration=20}; local second={duration_frames=8}; return {}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
-	const model = editorTextModelService.retain(resolveRuntimeResource(sources, resource)!, 'lua', source);
+	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
-	const controller = new AnimationEditorController(sources, group, undefined!, undefined!);
-	const project = getOrCreateSemanticProject(editorTextModelService, 0); project.synchronizeRuntimeSources(sources);
+	const controller = new AnimationEditorController(sources.catalog, group, undefined!, undefined!);
+	const project = getOrCreateSemanticProject(editorTextModelService, TEST_CARTRIDGE_CONTEXT_IDS[0]); project.synchronizeSources(sources.catalog);
 	const file = project.getFileData(resource)!;
 	const first = animationDefinitionAtPosition(file, 1, 30)!, second = animationDefinitionAtPosition(file, 1, 86)!;
-	const input = new AnimationEditorInput(model, model.resource.domain, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(first.span)));
-	const other = new AnimationEditorInput(model, model.resource.domain, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(second.span)));
+	const input = new AnimationEditorInput(model, model.resource.contextId, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(first.span)));
+	const other = new AnimationEditorInput(model, model.resource.contextId, luaSourceRangeToTextRange(model.buffer, file.chunk.locations.range(second.span)));
 	group.model.add(input); group.model.add(other);
 	t.after(() => { group.model.clear(); input.dispose(); other.dispose(); editorTextModelService.clear(); });
 	controller.refresh(input); controller.refresh(other);
@@ -181,7 +181,7 @@ test('independent inline views share real documents/history and retire stale ses
 	assert.equal(input.isDirty(), true); assert.equal(other.isDirty(), true);
 	model.undo(); controller.refresh(input); controller.refresh(other);
 	assert.equal(input.isDirty(), false); assert.equal(other.isDirty(), false);
-	const serializer = new AnimationInputSerializer(sources, controller), snapshot = serializer.serialize(input);
+	const serializer = new AnimationInputSerializer(sources.catalog, controller), snapshot = serializer.serialize(input);
 	const restored = await serializer.deserialize(snapshot);
 	assert.equal(restored.workingCopy, model);
 	assert.deepEqual(restored.definitionRange, input.definitionRange);

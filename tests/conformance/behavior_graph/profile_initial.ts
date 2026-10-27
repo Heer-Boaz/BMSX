@@ -1,8 +1,9 @@
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { indexStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import { createStateMachineInitialEdits } from '../../../ide/workbench/contrib/behavior_lens/state_machine_initial';
@@ -11,9 +12,9 @@ for (const states of [32, 1024]) {
 	for (const initial of ["initial='state0',", '']) {
 		const source = `local machines<const> = require('cartlib/fsm/library')
 machines.register('profile',{${initial}states={${Array.from({ length: states }, (_, index) => `state${index}={}`).join(',')}}})`;
-		const resource = { sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, domain: 0 as const, path: 'profile.lua', source: { type: 'lua' as const, resid: 'profile' } };
+		const resource = { contextLabel: 'Profile project', sourceFilePath: 'profile.lua', location: { kind: 'workspace' as const, path: 'profile.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'profile.lua', source: { type: 'lua' as const, resid: 'profile' } };
 		const model = new EditorTextModel(resource, 'lua', source);
-		const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
+		const document = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects'])));
 		const index = indexStateMachineSource(document);
 		const [key, target] = [...index.initialTargets.entries()].at(-1)!;
 		assert.equal(target.name, `state${states - 1}`);

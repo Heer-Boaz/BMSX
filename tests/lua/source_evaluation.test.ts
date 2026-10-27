@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -40,7 +41,7 @@ local to={}`;
 	assert.ok(table.kind === LuaSyntaxKind.TableConstructorExpression && target.kind === LuaSyntaxKind.TableConstructorExpression);
 	const expression = table.fields[0].value;
 	assert.equal(collectLuaSourceEvaluation(file, expression).filter(item => item.kind === 'call').length, 1);
-	const model = new EditorTextModel({ sourceFilePath: file.file, location: { kind: 'workspace' as const, path: file.file },domain:0,path:file.file,source:{type:'lua',resid:'evaluation'}}, 'lua', source);
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: file.file, location: { kind: 'workspace' as const, path: file.file },contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],path:file.file,source:{type:'lua',resid:'evaluation'}}, 'lua', source);
 	model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, file.chunk, table.fields[0], target, 0).edits);
 	assert.deepEqual(runCompiledLua(source + '\nreturn from[2].duration_ticks'), [2]);
 	assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn from[1].duration_ticks, to[1].duration_ticks'), [1, 2]);

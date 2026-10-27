@@ -15,7 +15,7 @@ import type { Blua32SourceImage, RuntimeSourceState } from './sources';
 import type { SuspendedGuestSession } from './suspended_guest';
 import { InspectionValues } from './inspection_values';
 export type { InspectedEntry, InspectedValue } from './inspection_values';
-import { buildLuaStackFrames, createLuaSourceStackTraceFrame, readRuntimeStackFrames, type RuntimeStackFrame, type RuntimeStackTraceFrame } from './stack_trace';
+import { buildLuaStackFrames, readRuntimeStackFrames, type RuntimeStackFrame, type RuntimeStackTraceFrame } from './stack_trace';
 import { runtimeLuaFrameScopes, type RuntimeLuaFrameScope } from './lua_inspection';
 
 type InspectedFrameScope = { readonly kind: RuntimeLuaFrameScope['kind']; readonly status: RuntimeLuaFrameScope['status']; readonly reference?: string; readonly count?: number };
@@ -138,8 +138,7 @@ export class RuntimeInspection {
 		this.requireSuspended();
 		if (this.stack === undefined) {
 			const physical = readRuntimeStackFrames(this.runtime.machine.cpu, this.sources);
-			this.stack = buildLuaStackFrames(physical,
-				(domain, path, line, column, name) => createLuaSourceStackTraceFrame(this.sources, domain, path, line, column, name))
+			this.stack = buildLuaStackFrames(physical).frames
 				.map((frame, index): InspectedFrame => {
 					const location = physical[frame.physicalFrameIndex];
 					const reference = `${this.id}/frame/${index}`;

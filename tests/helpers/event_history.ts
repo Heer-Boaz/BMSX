@@ -1,10 +1,9 @@
-import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
+import { captureInstalledLuaSources, createLuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createBlua32SourceImage, createBlua32SystemSourceImage } from '../../ide/runtime/sources';
-import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createCartlibProgramHarness } from './cartlib_cpu';
-import { createTestRuntimeSourceState } from './runtime_sources';
+import { createTestRuntimeSourceState, TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from './runtime_sources';
 import { cartridgeSlots } from './cartridge';
 
 export function compileEventHistoryFixture(optLevel: 0 | 3 = 3) {
@@ -27,10 +26,10 @@ export function eventHistoryRuntime(images: ReturnType<typeof compileEventHistor
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
-	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', projectRootPath: '', can_boot_from_source: false, revision: 0 };
-	const sources = createTestRuntimeSourceState(registry, [registry, null], 0);
-	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports, captureInstalledLuaSources(sources.systemLuaSources)),
-		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols, captureInstalledLuaSources(sources.cartridgeSlots[0]!.luaSources), 0), null] };
+	const systemSources = createLuaSourceRegistry('', ''), cartSources = createLuaSourceRegistry('', '');
+	const sources = createTestRuntimeSourceState(systemSources, [cartSources, null], 0);
+	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports, captureInstalledLuaSources(systemSources, images.systemSymbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID),
+		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols, captureInstalledLuaSources(cartSources, images.cartSymbols!.metadata.compiledModulePaths), TEST_CARTRIDGE_CONTEXT_IDS[0]), null] };
 	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
 	return { runtime, sources, cpu: runtime.machine.cpu };
 }

@@ -9,7 +9,7 @@ import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
 import type { RuntimeDebuggerExecutionContext } from '../../../runtime/debugger_plans';
 import { admitHotResume, buildBlua32Revision, type BuiltBlua32Revision, type HotResumeEvent } from '../../../runtime/hot_resume';
-import { blua32MediaRequiresRebuild } from '../../../runtime/lua_pipeline';
+import { blua32MediaRequiresRebuild, prepareBlua32SourceBuildRequest } from '../../../runtime/lua_pipeline';
 import type { WorkspaceRecord } from '../../../workspace/records';
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../../../workspace/workspace';
 import { captureLuaTextModelSources, type LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
@@ -116,7 +116,7 @@ export class HotResumeService {
 		if (this.closing) throw new Error('Cannot Hot Resume after workbench shutdown has started.');
 		// A tool's bounded init must not inherit free-running intent from a Game pane.
 		if (context === 'workbench') this.execution.setPauseReason(HostPauseReason.Requested, true);
-		const operation = new PendingHotResume(++this.serial, captureLuaTextModelSources(this.models, this.sources), signal);
+		const operation = new PendingHotResume(++this.serial, captureLuaTextModelSources(this.models, this.sources.catalog), signal);
 		this.latest = operation;
 		this.pending.add(operation);
 		void operation.completion.then(() => this.pending.delete(operation));
@@ -130,15 +130,11 @@ export class HotResumeService {
 			operation.status = 'building';
 			let built: BuiltBlua32Revision | null;
 			try {
-				await applyAllWorkspaceSourceOverrides(this.sources, this.dirtyRecords);
+				await applyAllWorkspaceSourceOverrides(this.sources.catalog, this.dirtyRecords);
 				if (!operation.isCurrent()) return;
-				applyLuaTextModelSources(this.sources, operation.sourceSnapshots);
+				applyLuaTextModelSources(this.sources.catalog, operation.sourceSnapshots);
 				built = blua32MediaRequiresRebuild(this.sources)
-					? buildBlua32Revision(this.sources, this.runtime,
-						{
-							system: this.sources.systemBlua32MediaDirty ? 'workspace' : null,
-							cartridgeSlots: [this.sources.cartridgeBlua32MediaDirty[0] ? 'workspace' : null, this.sources.cartridgeBlua32MediaDirty[1] ? 'workspace' : null],
-						})
+					? buildBlua32Revision(this.sources, this.runtime, prepareBlua32SourceBuildRequest(this.sources))
 					: null;
 			} catch (error) {
 				operation.finish({ status: 'rejected', phase: 'build', applied: false, error });

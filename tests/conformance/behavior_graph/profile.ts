@@ -1,8 +1,9 @@
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import { medianMilliseconds } from '../../helpers/performance';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
 import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/quad_stream';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { projectBehaviorTreeGraph } from '../../../ide/workbench/contrib/behavior_lens/graph_projection';
 import { layoutBehaviorTreeGraph } from '../../../ide/workbench/contrib/behavior_lens/graph_geometry';
@@ -21,10 +22,10 @@ for (const [siblings, opaqueChild] of [[24, false], [1024, false], [24, true], [
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')
 local shared<const> = { type = 'sequence', children = { { type = 'wait', duration_ticks = 2 }, ${opaqueChild ? 'make_node()' : "{ type = 'task', task = actions.move }"} } }
 trees.register('profile', { root = { type = 'sequence', children = { ${'shared,'.repeat(siblings)} } } })`;
-	const resource = { domain: 0 as const, path: 'profile.lua' };
-	const semantic = buildLuaFileSemanticData(source, resource.path);
-	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, semanticSnapshot(semantic)); });
-	const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(semantic)).definitions[0];
+	const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'profile.lua' };
+	const semantic = buildResourceLuaSemanticFixtureFile(source, resource);
+	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([semantic], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects']))); });
+	const definition = buildBehaviorSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([semantic], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects']))).definitions[0];
 	if (definition.behaviorKind !== 'behavior_tree') throw new Error('profile requires the BT fixture');
 	const font = new MeasuredFont({ variant: 'tiny' });
 	const cardProjectionMs = medianMilliseconds(() => { projectBehaviorTreeGraph(definition, font); });

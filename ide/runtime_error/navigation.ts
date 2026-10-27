@@ -9,6 +9,13 @@ import { resetBlinkState } from '../editor/ui/view/caret/blink';
 import { clearExecutionStopHighlight, clearRuntimeErrorOverlay, setActiveRuntimeErrorOverlay,
 	setExecutionStopHighlight } from '../editor/contrib/runtime_error/navigation';
 import { LuaError } from '../../toolchain/ts/lua/errors';
+import { editorTextModelService } from '../editor/model/model_service';
+import { getTextSnapshot } from '../editor/text/source_text';
+import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
+import { resolveLuaTextFileModel } from '../workbench/services/working_copy/text_file_model';
+import type { WorkspaceSourceCatalog } from '../workspace/source_catalog';
+import type { EditorNavigationController } from '../workbench/contrib/resources/navigation';
+import type { EditorTextModel } from '../editor/model/text_model';
 import type { SourceStackTraceFrame } from '../runtime/stack_trace';
 import { extractErrorMessage } from '../common/errors';
 import type { CartEditor } from '../cart_editor';
@@ -72,27 +79,39 @@ export function clearExecutionStopHighlights(group: EditorGroupView): void {
 	if (pane !== undefined) clearExecutionStopHighlight(pane.code);
 }
 
-export async function focusExecutionStop(editor: CartEditor, resource: ResourceIdentity, line: number, column: number): Promise<number | undefined> {
-	const row = line - 1;
-	const generation = await editor.navigation.focusChunkSource(resource, { row, startColumn: column - 1, endColumn: column - 1 });
-	if (generation !== editor.editorGroup.panes.openGeneration) return undefined;
-	setExecutionStopHighlightForCurrentContext(editor.editorGroup, row);
-	const pane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane;
-	centerCursorVertically(pane.code);
-	return generation;
+export type CapturedSourceNavigation = { readonly generation: number; readonly model: EditorTextModel; readonly version: number };
+
+/** Admit captured locations against authored text; callers recheck this receipt before painting. */
+export async function focusCapturedRuntimeSource(navigation: EditorNavigationController, catalog: WorkspaceSourceCatalog,
+	identity: ResourceIdentity, source: Blua32CompiledSource): Promise<CapturedSourceNavigation | undefined> {
+	const resource = catalog.resolveResource(identity);
+	if (resource === undefined) {
+		showEditorMessage(`Installed source '${identity.path}' is not available in the authoring workspace.`, 'warning', 4);
+		return undefined;
+	}
+	const model = editorTextModelService.get(resource) ?? resolveLuaTextFileModel(editorTextModelService, catalog, resource);
+	if (getTextSnapshot(model.buffer) !== readBlua32CompiledSource(source)) {
+		showEditorMessage(`Installed source '${identity.path}' differs from the authoring document.`, 'warning', 4);
+		return undefined;
+	}
+	const version = model.version;
+	const generation = await navigation.focusChunkSource(identity);
+	return generation === undefined ? undefined : { generation, model, version };
 }
 
 export function showLuaErrorOverlay(editor: CartEditor, resource: ResourceIdentity, error: unknown): boolean {
 	if (!(error instanceof LuaError)) return false;
 	if (error.line <= 0 && error.column <= 0) { showEditorMessage(error.message, 'error', 4); return true; }
-	editor.showRuntimeErrorInChunk({ domain: resource.domain, path: error.path }, error.line, error.column, error.message);
+	editor.showRuntimeErrorInChunk({ contextId: resource.contextId, path: error.path }, error.line, error.column, error.message);
 	return true;
 }
 
-export async function navigateToRuntimeErrorFrameTarget(pane: CodeEditorPane, frame: SourceStackTraceFrame): Promise<void> {
+export async function navigateToRuntimeErrorFrameTarget(pane: CodeEditorPane, frame: SourceStackTraceFrame,
+	source: Blua32CompiledSource): Promise<void> {
 	try {
-		const generation = await pane.navigation.focusChunkSource(frame.resource);
-		if (generation !== pane.group.panes.openGeneration) return;
+		const receipt = await focusCapturedRuntimeSource(pane.navigation, pane.sources.catalog, frame.resource, source);
+		if (receipt === undefined || receipt.generation !== pane.group.panes.openGeneration
+			|| receipt.model.version !== receipt.version || editorTextModelService.get(frame.resource) !== receipt.model) return;
 	} catch (error) {
 		showEditorMessage(`Failed to open runtime path: ${extractErrorMessage(error)}`, 'error', 1.6); return;
 	}

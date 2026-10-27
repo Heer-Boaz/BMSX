@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -44,17 +45,17 @@ test('test collection retains source-derived modules and named case identities',
 		createScenarioTestSourceRecord(firstPath, 10),
 	];
 	const sources = createScenarioTestSourceState(records);
-	const collection = new ScenarioTestCollection(sources);
+	const collection = new ScenarioTestCollection(sources.catalog);
 
 	assert.equal(collection.roots.length, 1);
 	const root = collection.roots[0];
-	assert.equal(root.id, 'scenario-root:0');
+	assert.equal(root.id, `scenario-root:${TEST_CARTRIDGE_CONTEXT_IDS[0]}`);
 	assert.equal(root.label, 'nemesis_s');
 	assert.equal(root.testCount, 2);
 	assert.equal(root.children.length, 2);
 
 	registerLuaSourceRecord(
-		sources.cartridgeSlots[0]!.luaSources,
+		sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources,
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/later_assert.lua', 30),
 	);
 	const children = collection.resolveRoot(root.id);
@@ -65,23 +66,23 @@ test('test collection retains source-derived modules and named case identities',
 	assert.equal(children[1].label, 'b');
 	assert.equal(
 		children[0].children[0].id,
-		scenarioTestId(0, scenarioTestAssetId(firstPath), 'sample'),
+		scenarioTestId(TEST_CARTRIDGE_CONTEXT_IDS[0], scenarioTestAssetId(firstPath), 'sample'),
 	);
 	assert.equal(collection.resolveRoot(root.id), children);
-	assert.equal(collection.findModuleBySourcePath(0, secondPath), children[1]);
+	assert.equal(collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], secondPath), children[1]);
 	assert.equal(collection.refresh(), true);
 	assert.equal(root.testCount, 3);
-	assert.equal(collection.findModuleBySourcePath(0, 'tests/carts/nemesis_s/later_assert.lua').children.length, 1);
+	assert.equal(collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], 'tests/carts/nemesis_s/later_assert.lua').children.length, 1);
 	assert.equal(collection.refresh(), false);
 });
 
 test('scenario result service retains current-first runs and bounded ordered output', () => {
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
-	]));
+	]).catalog);
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const service = new ScenarioResultService();
-	const firstRun = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 7 }]);
+	const firstRun = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 7 }]);
 	const first = service.startItem(firstRun, 0, 100);
 	service.markRunning(first);
 	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT + 2; index += 1) {
@@ -90,7 +91,7 @@ test('scenario result service retains current-first runs and bounded ordered out
 	for (let index = 0; index < SCENARIO_RESULT_CAPTURE_RETAIN_COUNT + 2; index += 1) {
 		service.requestCapture(first, index, `capture ${index}`);
 	}
-	const trace = service.beginFsmTransitionTrace(first, 'object.machine', 'machine');
+	const trace = service.beginFsmTransitionTrace(first, 'object.machine', 'machine', TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	for (let index = 0; index < SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT + 2; index += 1) {
 		service.appendFsmTransition(
 			trace,
@@ -103,7 +104,7 @@ test('scenario result service retains current-first runs and bounded ordered out
 			'committed',
 		);
 	}
-	const actionEffectTrace = service.beginActionEffectTrace(first, 'player.1', 'player');
+	const actionEffectTrace = service.beginActionEffectTrace(first, 'player.1', 'player', TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	for (let index = 0; index < SCENARIO_RESULT_ACTIONEFFECT_FACT_RETAIN_COUNT + 2; index += 1) {
 		if ((index & 1) === 0) {
 			service.appendActionEffectTrigger(
@@ -168,7 +169,7 @@ test('scenario result service retains current-first runs and bounded ordered out
 	assert.equal(firstRun.passedCount, 1);
 
 	for (let index = 0; index < SCENARIO_RUN_RETAIN_COUNT; index += 1) {
-		const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: index }]);
+		const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: index }]);
 		const result = service.startItem(run, 0, index);
 		service.cancel(result, index + 1);
 		service.cancelRun(run);
@@ -189,7 +190,7 @@ test('recorded results retain the accepted suite bytes, not a later declaration 
 	const source = "-- captured 🐉\r\nreturn { kind = 'unit', tests = { sample = function() assert(false) end } }\r\n";
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('suite_assert.lua', 7, source),
-	]));
+	]).catalog);
 	const module = collection.roots[0].children[0], item = module.children[0];
 	const results = new ScenarioResultService();
 	const run = results.beginRun(module.id, [{ test: item, source, sourceRevision: 7 }]);
@@ -209,13 +210,13 @@ test('scenario result service retains aggregate failure and cancellation item st
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/b_assert.lua', 20),
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/c_assert.lua', 30),
-	]));
+	]).catalog);
 	const root = collection.roots[0];
 	const tests = collection.resolveNode(root);
 	const service = new ScenarioResultService();
 	const run = service.beginRun(root.id, tests.map((item, index) => ({
 		test: item,
-		source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source,
+		source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source,
 		sourceRevision: index + 1,
 	})));
 	const failed = service.startItem(run, 0, 0);
@@ -237,7 +238,7 @@ test('scenario result service retains aggregate failure and cancellation item st
 
 	const cancelled = service.beginRun(root.id, tests.map(item => ({
 		test: item,
-		source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source,
+		source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source,
 		sourceRevision: 1,
 	})));
 	const active = service.startItem(cancelled, 0, 0);
@@ -276,13 +277,13 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
-	]));
+	]).catalog);
 	const service = new ScenarioResultService();
 	const item = collection.resolveNode(collection.roots[0])[0];
-	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
+	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
 	const observation = new FsmTransitionObservation(channel, stringPool, (...record) => service.appendFsmTransition(trace, ...record));
-	const trace = service.beginFsmTransitionTrace(result, observation.instanceId, observation.machineId);
+	const trace = service.beginFsmTransitionTrace(result, observation.instanceId, observation.machineId, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	observation.drain(20);
 
 	assert.equal(trace.instanceId, 'object.machine');
@@ -327,16 +328,16 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
-	]));
+	]).catalog);
 	const service = new ScenarioResultService();
 	const item = collection.resolveNode(collection.roots[0])[0];
-	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
+	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
 	const observation = new ActionEffectObservation(channel, stringPool, {
 		trigger: (...record) => service.appendActionEffectTrigger(trace, ...record),
 		activity: (...record) => service.appendActionEffectActivity(trace, ...record),
 	});
-	const trace = service.beginActionEffectTrace(result, observation.ownerId, observation.definitionId);
+	const trace = service.beginActionEffectTrace(result, observation.ownerId, observation.definitionId, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	observation.drain(20);
 
 	assert.equal(trace.ownerId, 'player.1');
@@ -366,17 +367,17 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 test('scenario failure retains authored fault navigation', () => {
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
-	]));
+	]).catalog);
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const service = new ScenarioResultService();
-	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 10 }]);
+	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 10 }]);
 	const result = service.startItem(run, 0, 1);
 	const fault = {
 		message: 'assertion failed',
 		resource: item.resource,
 		line: 12,
 		column: 4,
-		details: { luaStack: [] },
+		details: { luaStack: [], sources: new Map() },
 	};
 	service.fail(result, 9, {
 		message: fault.message,

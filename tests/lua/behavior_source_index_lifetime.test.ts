@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -18,7 +19,7 @@ const SOURCE = "local trees<const> = require('cartlib/behaviour_tree/library')\n
 
 class CountingModel extends EditorTextModel {
 	public activeRangeSets = 0;
-	public constructor() { super({ sourceFilePath: 'source.lua', location: { kind: 'workspace' as const, path: 'source.lua' }, domain: 0, path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', SOURCE); }
+	public constructor() { super({ contextLabel: 'Fixture project', sourceFilePath: 'source.lua', location: { kind: 'workspace' as const, path: 'source.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source.lua', source: { type: 'lua', resid: 'source' } }, 'lua', SOURCE); }
 	public override trackRanges<Key>(ranges: ReadonlyMap<Key, TrackedTextRange>): () => void {
 		this.activeRangeSets += 1;
 		const release = super.trackRanges(ranges);
@@ -56,8 +57,8 @@ test('retained behavior inputs release retired generations and retain hidden-vie
 	const model = new CountingModel();
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource)], API_MODULES)));
 	const document = project();
-	const first = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), () => assert.fail('BT does not create an FSM layout engine'));
-	const hidden = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), () => assert.fail('BT does not create an FSM layout engine'));
+	const first = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), new Set([model.resource.contextId]), () => assert.fail('BT does not create an FSM layout engine'));
+	const hidden = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), new Set([model.resource.contextId]), () => assert.fail('BT does not create an FSM layout engine'));
 	assert.equal(model.activeRangeSets, 1);
 	const original = hidden.view.source.ranges.get(document.definitions[0].rowKey)!.start;
 	for (let edit = 0; edit < 20; edit += 1) {

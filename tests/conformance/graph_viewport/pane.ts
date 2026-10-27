@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { pointerHover } from '../../../ide/input/pointer/hover';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../ide/common/models';
@@ -56,7 +57,7 @@ export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 	const inputs = views.map((_, index) => {
 		const path = `graph-fixture-${index}.lua`;
 		return new GraphLayoutTestInput(
-			new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', ''),
+			new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: path, type: 'lua' } }, 'lua', ''),
 			() => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')),
 		);
 	});

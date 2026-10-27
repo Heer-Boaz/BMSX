@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RuntimeResource } from '../../ide/common/resource';
@@ -10,8 +11,8 @@ import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { getLuaTableFieldTriviaSpan } from '../../toolchain/ts/lua/syntax/table_fields';
 import { runCompiledLua } from './cpu_test_harness';
 
-const resource: RuntimeResource = { sourceFilePath: 'table.lua', location: { kind: 'workspace' as const, path: 'table.lua' },
-	domain: 0, path: 'table.lua',
+const resource: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: 'table.lua', location: { kind: 'workspace' as const, path: 'table.lua' },
+	contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'table.lua',
 	source: { resid: 'table.lua', type: 'lua', source_path: 'table.lua', generated: false },
 };
 

@@ -113,19 +113,19 @@ export class StudioWorkbench {
 		this.guest = new SuspendedGuestSession(runtime);
 		this.scenarioRuns = new ScenarioRunService(models, sources, workspaceDirtyRecords, runtime.model, createTestTarget);
 		this.play = new PlayService(models, sources, workspaceDirtyRecords, runtime.model, input, createPlaySession);
-		this.textFileSaves = new TextFileSaveService(models, clock, sources, this.guest, runtime, runtimeTasks);
+		this.textFileSaves = new TextFileSaveService(models, clock, sources.catalog);
 		this.hotResumes = new HotResumeService(models, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
 		this.hotResumes.onDidApply(() => { this.events.beginTimeline(); this.gte.didInstall(); this.gpu.didInstall(); });
 		this.boots = new BootService(models, sources, this.fault, runtime, runtimeTasks, execution, audioOutput, workspaceDirtyRecords);
-		this.diagnostics = new ResourceDiagnosticsService(models, sources, clock);
+		this.diagnostics = new ResourceDiagnosticsService(models, sources.catalog, clock);
 		this.luaEvaluation = new RuntimeLuaEvaluation(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);
 		this.actorExecution = new ActorExecutionService(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);
 		this.frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, runtimeTasks, this.debugger, this.fault, this.guest);
 		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, execution, rewind, runtimeTasks, this.fault, this.guest, this.frameNavigation);
 		this.inspection = new RuntimeInspectionService(runtime, sources, this.guest, this.debugger, execution, runtimeTasks,
 			rewind, this.fault, this.frameNavigation, this.debuggerExecution);
-		this.behaviorSources = new BehaviorSourceDocuments(models, sources);
+		this.behaviorSources = new BehaviorSourceDocuments(models, sources.catalog);
 		this.tools = new WorkspaceToolService(models, sources, this.diagnostics, this.scenarioRuns, this.inspection,
 			this.frameNavigation, gameCapture, this.luaEvaluation, this.debuggerExecution, this.actorExecution,
 			this.behaviorSources, this.textFileSaves, this.boots, this.hotResumes, this.events, this.gte, this.gpu, clock);

@@ -1,3 +1,5 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
+import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { beforeEach, afterEach } from 'node:test';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
@@ -10,7 +12,7 @@ import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH } from '../helpers/scenario_media';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
-import { createRuntimeSourceState, enterCartridgeSources } from '../../ide/runtime/sources';
+import { enterCartridgeSources } from '../../ide/runtime/sources';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { WorkspaceTestTools } from '../../ide/workbench/services/assistant/test_tools';
@@ -49,7 +51,7 @@ return { kind = 'unit',
 		], cartSource: 'module<entry>\nwhile true do halt_until_irq end',
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, media.cartRom]);
-	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots), models = new EditorTextModelService();
+	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots), models = new EditorTextModelService();
 	enterCartridgeSources(sources, slot);
 	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, media.cartRom], PSX_MACHINE_SPEC, new TestInput());
 	const initial = captureRuntimeMachineState(authoring.runtime), installed = sources.currentBlua32Media;
@@ -60,9 +62,13 @@ return { kind = 'unit',
 		for (let grant = 0; service.active && grant < 10000; grant++) { service.advance(); await setImmediate(); }
 		assert.equal(service.active, false);
 	}
-	const document = models.retain(sources.luaResources.find(resource => resource.domain === slot && resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH)!, 'lua', source);
+	const document = models.retain(sources.catalog.luaResources.find(resource => resource.contextId === TEST_CARTRIDGE_CONTEXT_IDS[slot] && resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH)!, 'lua', source);
 	const discovered = await tools.execute('studio_list_tests', {}); assert.ok(discovered.kind === 'tests');
-	const scope = discovered.data.roots[0].modules[0].scope;
+	const module = discovered.data.roots.find(root => root.contextId === document.resource.contextId)!
+		.modules.find(module => module.resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH)!;
+	const selected = service.collection.roots.find(root => root.contextId === module.resource.contextId)!
+		.children.find(item => item.resource.path === module.resource.path)!;
+	const scope = module.scope;
 	const admission = await tools.execute('studio_start_test_run', { scope }); assert.ok(admission.kind === 'test-run');
 	assert.throws(() => tools.execute('studio_inspect_test_target', { result: admission.data.cases[0].result }), /retained failed test target/);
 	document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: source.replace('10', '500') }]);
@@ -79,7 +85,8 @@ return { kind = 'unit',
 	for (const failure of attached.data.failures) {
 		assert.equal(failure.origin, 'failed-thread');
 		const stack = await tools.execute('studio_read_test_stack', { stack: failure.reference, start: 0, count: 100 }); assert.ok(stack.kind === 'test-stack');
-		const frames = stack.data.frames.filter(frame => frame.kind === 'source' && frame.resource.domain === slot);
+		const frames = stack.data.frames.filter(frame => frame.kind === 'source'
+			&& frame.resource.contextId === module.resource.contextId && frame.resource.path === module.resource.path);
 		assert.ok(frames.length > 0); assert.ok(frames.every(frame => frame.domain === 0));
 		const bios = stack.data.frames.find(frame => frame.domain === -1)!;
 		const biosSource = await tools.execute('studio_read_test_frame_source', { frame: bios.reference }); assert.ok(biosSource.kind === 'test-frame-source');
@@ -119,7 +126,7 @@ return { kind = 'unit',
 	}
 	assert.equal(new Set(sameTables).size, 2);
 	const globals = attached.data.globals.find(scope => scope.domain === 0)!;
-	assert.equal(globals.sourceDomain, slot);
+	assert.equal(globals.sourceContextId, TEST_CARTRIDGE_CONTEXT_IDS[slot]);
 	const globalValues = await tools.execute('studio_read_test_values', { reference: globals.reference, start: 0, count: globals.count }); assert.ok(globalValues.kind === 'test-values');
 	assert.equal(globalValues.data.entries.find(e => e.key.display === 'test_global')!.value.kind, 'table');
 	assert.deepEqual(captureRuntimeMachineState(runtime), before, 'inspection never executes, allocates guest objects, or changes CPU/media');
@@ -141,7 +148,7 @@ return { kind = 'unit',
 	newTools.dispose();
 	let disposals = 0;
 	ordinary.onDidDispose(() => { disposals++; assert.equal(ordinary.available, false); });
-	const next = service.start(service.collection.roots[0].id);
+	const next = service.start(selected.id);
 	assert.equal(disposals, 1); ordinary.dispose(); assert.equal(disposals, 1, 'retirement is immediate and emitted once');
 	assert.equal(ordinary.available, false); assert.throws(() => ordinary.readStack(attached.data.failures[0].reference!, 0, 1), /expired/);
 	assert.equal(service.canInspect(result), false); assert.throws(() => service.inspect(result), /no longer/);
@@ -151,7 +158,7 @@ return { kind = 'unit',
 return { kind = 'unit', teardown = function() execution.cancel('body') end,
  tests = { closed = function() error('closed by cleanup') end } }`;
 	document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: closedSource }]);
-	const closedRun = service.start(service.collection.roots[0].id); await finish();
+	const closedRun = service.start(selected.id); await finish();
 	const closed = service.inspect(closedRun.items[0]);
 	assert.equal(closed.state.failures[0].status, 'thread-closed', 'a guest-closed activation is historical evidence, not a live stack');
 	assert.equal(closed.state.failures[0].reference, undefined);

@@ -1,6 +1,5 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
-import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
 import { workspaceRecords } from '../../../ide/workspace/records';
 import { resolveWorkspacePath } from '../../../ide/workspace/path';
 import { CartMapPane } from '../../../ide/workbench/contrib/cart_maps/editor_pane';
@@ -59,7 +58,7 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 			'map: fresh reload restores ordered views, active selection and map view state');
 		check(model.resource.path === restored.sourcePath && model.buffer.getText() === restored.source && !model.dirty && !model.canUndo,
 			'map: reload has exact saved YAML and a fresh, clean working copy without invented Undo');
-		check([...editorTextModelService.models].filter(model => model.resource.domain === 0 && model.resource.path === restored.sourcePath).length === 1,
+		check([...editorTextModelService.models].filter(model => model.resource.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && model.resource.path === restored.sourcePath).length === 1,
 			'map: source and visual views restore one canonical model');
 		await test.press('ControlRight', 'ShiftRight');
 		await test.frame();
@@ -83,7 +82,7 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 	check(source.slice(offset, offset + 2) === (cart === 'pietious' ? '13' : 'm '), 'map: independent source oracle locates only the accepted tokens');
 	const expected = source.slice(0, offset) + (cart === 'pietious' ? '14' : ' m') + source.slice(offset + 2);
 	const media = test.ide.sources.currentBlua32Media, rom = test.ide.sources.cartridgeSlots[0]!.rom.bytes, cycles = test.cycles();
-	const path = resolveWorkspacePath(model.resource.path, runtimeSourceProjectRootPath(test.ide.sources, 0));
+	const path = resolveWorkspacePath(model.resource.path, test.ide.sources.catalog.getContext(model.resource.contextId).projectRootPath);
 	const savedBefore = (await workspaceRecords.provider.read(path))!.contents;
 	await test.capture?.('selected');
 	const sheet = input.grid.content, scrollX = input.grid.horizontal.getScroll(), scrollY = input.grid.vertical.getScroll();

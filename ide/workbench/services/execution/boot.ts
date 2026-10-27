@@ -119,7 +119,7 @@ export class BootService {
 		void this.tasks.schedule(async () => {
 			if (operation.result !== null) return;
 			operation.phase = 'reading-sources';
-			await applyAllWorkspaceSourceOverrides(this.sources, this.dirtyRecords);
+			await applyAllWorkspaceSourceOverrides(this.sources.catalog, this.dirtyRecords);
 			if (operation.result !== null) return;
 			let prepared: Blua32MediaInstallation | null;
 			try {
@@ -136,7 +136,7 @@ export class BootService {
 	private accept(kind: BootOperation['kind'], entry?: Blua32CartridgeEntry, signal?: AbortSignal): PendingBoot {
 		if (this.closing) throw new Error('Cannot boot after workbench shutdown has started.');
 		this.cancelPending('superseded');
-		const operation = new PendingBoot(++this.serial, kind, captureLuaTextModelSources(this.models, this.sources),
+		const operation = new PendingBoot(++this.serial, kind, captureLuaTextModelSources(this.models, this.sources.catalog),
 			entry === undefined ? undefined : { ...entry }, signal);
 		this.latest = operation;
 		return operation;
@@ -151,7 +151,7 @@ export class BootService {
 				throw new Error('CART 1 cannot launch: BIOS boots CART 0 first.');
 			}
 		}
-		applyLuaTextModelSources(this.sources, operation.sourceSnapshots);
+		applyLuaTextModelSources(this.sources.catalog, operation.sourceSnapshots);
 		return prepareBlua32MediaBoot(this.sources, this.runtime,
 			blua32MediaRequiresRebuild(this.sources), operation.entry);
 	}

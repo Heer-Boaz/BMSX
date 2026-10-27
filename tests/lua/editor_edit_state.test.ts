@@ -1,9 +1,10 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import { EditorTextModel, type EditorTextModelContentChangeEvent } from '../../ide/editor/model/text_model';
 
-const resource = { sourceFilePath: 'history.lua', location: { kind: 'workspace' as const, path: 'history.lua' }, domain: 0 as const, path: 'history.lua', source: { type: 'lua' as const, resid: 'history' } };
+const resource = { contextLabel: 'Fixture project', sourceFilePath: 'history.lua', location: { kind: 'workspace' as const, path: 'history.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'history.lua', source: { type: 'lua' as const, resid: 'history' } };
 const selection = new EditorEditStateType<{ readonly position: number }>();
 
 test('one document record publishes the computed result, Undo origin and Redo result after the actual text change', () => {

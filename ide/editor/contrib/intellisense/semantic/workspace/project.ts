@@ -7,17 +7,9 @@ import {
 	type FileSemanticData,
 	type LuaSemanticWorkspaceSnapshot,
 } from '../../../../../../toolchain/ts/lua/semantic/model';
-import { onDidChangeLuaSourceRegistry, type LuaSourceRecord, type LuaSourceRegistry } from '../../../../../runtime/source_registry';
-import {
-	runtimeLuaSourceRegistry,
-	type RuntimeSourceState,
-} from '../../../../../runtime/sources';
-import {
-	SYSTEM_RESOURCE_DOMAIN,
-	type ResourceDomain,
-	type ResourceIdentity,
-	resourceIdentityKey,
-} from '../../../../../common/resource';
+import { type LuaSourceRecord, type LuaSourceRegistry } from '../../../../../runtime/source_registry';
+import type { WorkspaceSourceCatalog } from '../../../../../workspace/source_catalog';
+import { type ResourceIdentity, resourceIdentityKey } from '../../../../../common/resource';
 import type { LuaModuleBindings } from '../../../../../../toolchain/ts/lua/semantic/module_resolution';
 import { readWorkspaceLuaSourceText } from '../../../../../workspace/files';
 import type { EditorTextModelService } from '../../../../model/model_service';
@@ -45,7 +37,7 @@ type ProjectBaseSource = {
 
 // The editor project is the single mutable owner above immutable semantic
 // workspace snapshots. Model events queue source changes, not analysis work.
-// Runtime registries provide the base; retained models and explicit document
+// Admitted context registries provide the base; retained models and explicit document
 // inputs own the newer source regardless of which view happens to be active.
 export class EditorLuaSemanticProject {
 	private readonly workspace = new LuaSemanticWorkspace(new Map());
@@ -53,8 +45,8 @@ export class EditorLuaSemanticProject {
 	private readonly pendingPaths = new Set<string>();
 	private readonly modelBaselines = new Map<string, ModelAnalysisBaseline>();
 	private readonly resourcesByAddress = new Map<string, ResourceIdentity>();
-	private systemModuleBindings: LuaModuleBindings = new Map();
-	private primaryModuleBindings: LuaModuleBindings = new Map();
+	private readonly contextBindings = new Map<string, LuaModuleBindings>();
+	private readonly sourceContextIds = new Set<string>();
 	private moduleBindingsDirty = false;
 	private readonly fileModuleBindings = new Map<string, {
 		readonly analysis: FileSemanticData | undefined;
@@ -64,22 +56,22 @@ export class EditorLuaSemanticProject {
 	private baseSources: ReadonlyMap<string, ProjectBaseSource> = new Map();
 	private readonly modelSubscriptions: readonly (() => void)[];
 	private readonly invalidationListeners = new Set<() => void>();
-	private readonly registrySubscriptions: (() => void)[] = [];
+	private catalogSubscription: (() => void) | undefined;
 	private generationValue = 0;
-	private runtimeSources: RuntimeSourceState;
-	private runtimeSourcesDirty = false;
-	private primaryRegistry: LuaSourceRegistry | undefined;
-	private primaryRevision = -1;
-	private systemRegistry: LuaSourceRegistry | null = null;
-	private systemRevision = -1;
+	private catalog: WorkspaceSourceCatalog | undefined;
+	private sourcesDirty = false;
+	private catalogRevision = -1;
+	private readonly sourceRevisions = new Map<string, { registry: LuaSourceRegistry; revision: number }>();
 
 	public constructor(
-		private readonly domain: ResourceDomain,
+		private readonly contextId: string,
 		private readonly models: EditorTextModelService,
 	) {
+		this.sourceContextIds.add(contextId);
+		this.contextBindings.set(contextId, new Map());
 		const queueModel = (model: EditorTextModel): void => {
 			if (model.mode === 'lua'
-				&& (model.resource.domain === domain || model.resource.domain === SYSTEM_RESOURCE_DOMAIN)) {
+				&& this.sourceContextIds.has(model.identity.contextId)) {
 				const address = this.admitResource(model.identity);
 				this.pendingPaths.add(address);
 				this.invalidate();
@@ -94,7 +86,7 @@ export class EditorLuaSemanticProject {
 			}),
 			models.onDidRemoveModel(model => {
 				if (this.modelBaselines.get(resourceIdentityKey(model.identity))?.model === model) this.modelBaselines.delete(resourceIdentityKey(model.identity));
-				if (model.mode === 'lua' && model.resource.domain === domain) this.documentPaths.delete(resourceIdentityKey(model.identity));
+				if (model.mode === 'lua' && this.sourceContextIds.has(model.identity.contextId)) this.documentPaths.delete(resourceIdentityKey(model.identity));
 				queueModel(model);
 			}),
 		];
@@ -103,8 +95,7 @@ export class EditorLuaSemanticProject {
 
 	public dispose(): void {
 		for (const unsubscribe of this.modelSubscriptions) unsubscribe();
-		for (const unsubscribe of this.registrySubscriptions) unsubscribe();
-		this.registrySubscriptions.length = 0;
+		this.catalogSubscription?.();
 		this.invalidationListeners.clear();
 		this.pendingPaths.clear();
 		this.modelBaselines.clear();
@@ -122,76 +113,58 @@ export class EditorLuaSemanticProject {
 		for (const listener of this.invalidationListeners) listener();
 	}
 
-	public synchronizeRuntimeSources(sources: RuntimeSourceState): void {
-		const queued = this.runtimeSourcesDirty;
-		if (this.refreshRuntimeSources(sources) && !queued) this.invalidate();
+	public synchronizeSources(catalog: WorkspaceSourceCatalog): void {
+		const queued = this.sourcesDirty;
+		if (this.refreshSources(catalog) && !queued) this.invalidate();
 	}
 
-	/** Reconcile queued registry input without publishing a second input generation. */
-	private refreshRuntimeSources(sources: RuntimeSourceState): boolean {
-		this.runtimeSources = sources;
-		this.runtimeSourcesDirty = false;
-		const primaryRegistry = runtimeLuaSourceRegistry(sources, this.domain);
-		const systemRegistry = sources.systemLuaSources;
-		if (this.primaryRegistry === primaryRegistry
-			&& (primaryRegistry === undefined || this.primaryRevision === primaryRegistry.revision)
-			&& this.systemRegistry === systemRegistry
-			&& this.systemRevision === systemRegistry.revision) {
-			return false;
+	/** Context membership and import policy are supplied once by the catalog owner. */
+	private refreshSources(catalog: WorkspaceSourceCatalog): boolean {
+		this.sourcesDirty = false;
+		const contexts = catalog.getSourceContexts(this.contextId);
+		let changed = this.catalog !== catalog || this.catalogRevision !== catalog.revision || this.sourceRevisions.size !== contexts.length;
+		if (!changed) for (const context of contexts) {
+			const previous = this.sourceRevisions.get(context.id);
+			if (previous?.registry !== context.luaSources || previous.revision !== context.luaSources.revision) { changed = true; break; }
 		}
-		if (this.primaryRegistry !== primaryRegistry || this.systemRegistry !== systemRegistry) {
-			for (const unsubscribe of this.registrySubscriptions) unsubscribe();
-			this.registrySubscriptions.length = 0;
-			const queueRegistry = (): void => {
-				this.runtimeSourcesDirty = true;
+		if (!changed) return false;
+		if (this.catalog !== catalog) {
+			this.catalogSubscription?.();
+			this.catalogSubscription = catalog.onDidChange(contextId => {
+				if (!this.sourceContextIds.has(contextId) || this.sourcesDirty) return;
+				this.sourcesDirty = true;
 				this.invalidate();
-			};
-			if (this.domain !== SYSTEM_RESOURCE_DOMAIN && primaryRegistry !== undefined) {
-				this.registrySubscriptions.push(onDidChangeLuaSourceRegistry(primaryRegistry, queueRegistry));
-			}
-			this.registrySubscriptions.push(onDidChangeLuaSourceRegistry(systemRegistry, queueRegistry));
+			});
 		}
-
-		const registries: { domain: ResourceDomain; registry: LuaSourceRegistry }[] = [];
-		if (this.domain !== SYSTEM_RESOURCE_DOMAIN && primaryRegistry !== undefined) {
-			registries.push({ domain: this.domain, registry: primaryRegistry });
-		}
-		registries.push({ domain: SYSTEM_RESOURCE_DOMAIN, registry: systemRegistry });
+		this.catalog = catalog;
+		this.catalogRevision = catalog.revision;
+		this.sourceContextIds.clear();
+		this.sourceRevisions.clear();
+		this.contextBindings.clear();
 		const nextBaseSources = new Map<string, ProjectBaseSource>();
-		const systemModules = new Map<string, string>();
-		const primaryModules = new Map<string, string>();
-		for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
-			const { domain, registry } = registries[registryIndex];
-			for (let recordIndex = 0; recordIndex < registry.records.length; recordIndex += 1) {
-				const record = registry.records[recordIndex];
-				const resource = { domain, path: record.source_path };
+		for (const context of contexts) {
+			this.sourceContextIds.add(context.id);
+			const registry = context.luaSources;
+			this.sourceRevisions.set(context.id, { registry, revision: registry.revision });
+			this.contextBindings.set(context.id, catalog.getModuleBindings(context.id));
+			for (const record of registry.records) {
+				const resource = { contextId: context.id, path: record.source_path };
 				const address = this.admitResource(resource);
 				nextBaseSources.set(address, { resource, registry, record });
-				(domain === SYSTEM_RESOURCE_DOMAIN ? systemModules : primaryModules).set(record.module_path, address);
 				this.pendingPaths.add(address);
 			}
 		}
-
-		for (const path of this.baseSources.keys()) {
-			if (!nextBaseSources.has(path)) this.pendingPaths.add(path);
+		for (const model of this.models.models) if (model.mode === 'lua' && this.sourceContextIds.has(model.identity.contextId)) {
+			this.pendingPaths.add(this.admitResource(model.identity));
 		}
-		// Initial editor namespace policy, broader than compiler public BIOS imports:
-		// cartridge modules shadow BIOS modules, while system files use system scope.
-		const primaryScope = new Map(systemModules);
-		for (const [specifier, address] of primaryModules) primaryScope.set(specifier, address);
-		this.systemModuleBindings = systemModules;
-		this.primaryModuleBindings = primaryScope;
+		for (const path of this.baseSources.keys()) if (!nextBaseSources.has(path)) this.pendingPaths.add(path);
 		this.moduleBindingsDirty = true;
 		this.baseSources = nextBaseSources;
-		this.primaryRegistry = primaryRegistry;
-		this.primaryRevision = primaryRegistry === undefined ? -1 : primaryRegistry.revision;
-		this.systemRegistry = systemRegistry;
-		this.systemRevision = systemRegistry.revision;
 		return true;
 	}
 
 	private synchronizeDocuments(): void {
-		if (this.runtimeSourcesDirty) this.refreshRuntimeSources(this.runtimeSources);
+		if (this.sourcesDirty) this.refreshSources(this.catalog!);
 		if (this.pendingPaths.size === 0) { this.publishModuleBindings(); return; }
 		const changedAnalyses: FileSemanticData[] = [];
 		const removedPaths: string[] = [];
@@ -282,7 +255,7 @@ export class EditorLuaSemanticProject {
 	/** Preferred import names come from admitted module metadata, not written-spelling aliases. */
 	public getModuleCatalog(resource: ResourceIdentity): LuaModuleBindings {
 		this.synchronizeDocuments();
-		return resource.domain === SYSTEM_RESOURCE_DOMAIN ? this.systemModuleBindings : this.primaryModuleBindings;
+		return this.contextBindings.get(resource.contextId)!;
 	}
 
 	/** Semantic file addresses stay opaque outside their owning project. */
@@ -293,7 +266,7 @@ export class EditorLuaSemanticProject {
 	private admitResource(resource: ResourceIdentity): string {
 		const address = resourceIdentityKey(resource);
 		if (!this.resourcesByAddress.has(address)) {
-			this.resourcesByAddress.set(address, { domain: resource.domain, path: resource.path });
+			this.resourcesByAddress.set(address, { contextId: resource.contextId, path: resource.path });
 			this.moduleBindingsDirty = true;
 		}
 		return address;
@@ -303,7 +276,7 @@ export class EditorLuaSemanticProject {
 		if (!this.moduleBindingsDirty) return;
 		const bindings = new Map<string, LuaModuleBindings>();
 		for (const [address, resource] of this.resourcesByAddress) {
-			const scope = resource.domain === SYSTEM_RESOURCE_DOMAIN ? this.systemModuleBindings : this.primaryModuleBindings;
+			const scope = this.contextBindings.get(resource.contextId)!;
 			const analysis = this.workspace.getFileData(address);
 			let cached = this.fileModuleBindings.get(address);
 			if (cached === undefined || cached.analysis !== analysis || cached.scope !== scope) {

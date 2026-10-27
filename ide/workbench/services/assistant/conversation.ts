@@ -1,7 +1,7 @@
 import { AssistantTranscript, type AssistantEntry } from './transcript';
 import type { WorkspaceToolService, WorkspaceToolContext } from './tool_service';
 import { textFileMode } from '../working_copy/text_file_model';
-import type { ResourceIdentity } from '../../../common/resource';
+import type { RuntimeResource } from '../../../common/resource';
 import type { AssistantSourceReference, AssistantConfiguration, AssistantModels, AssistantModelSelection, AssistantUsage } from '../../../../hosts/common/assistant_protocol';
 import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantConnectionFactory, AssistantEvent, AssistantHistoryPage,
 	AssistantLoginMethod, AssistantQueuedMessage, AssistantReviewUpdate, AssistantThread, AssistantTranscriptPage } from '../../../../hosts/common/assistant_protocol';
@@ -49,10 +49,10 @@ export class AssistantConversation extends AssistantTranscript {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
 	/** Catalog identity only: completing a reference neither opens a document nor connects to Codex. */
-	public referenceSources(): ResourceIdentity[] {
-		const resources: ResourceIdentity[] = [];
-		for (const resource of this.sources.resourceByIdentity.values()) {
-			if (textFileMode(resource) !== undefined) resources.push({ domain: resource.domain, path: resource.path });
+	public referenceSources(): RuntimeResource[] {
+		const resources: RuntimeResource[] = [];
+		for (const resource of this.sources.catalog.resourceByIdentity.values()) {
+			if (textFileMode(resource) !== undefined) resources.push(resource);
 		}
 		return resources;
 	}

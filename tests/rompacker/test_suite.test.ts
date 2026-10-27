@@ -58,6 +58,7 @@ test('unit and integration images use linked suite modules, not authored globals
 		for (const kind of ['unit', 'integration'] as const) {
 			const built = await buildTestCartridge({
 				systemRom, cartridge: cartRom,
+				sourceSelection: { kind: 'packaged' },
 				test: { sourcePath: path, source: source.replace("kind = 'unit'", `kind = '${kind}'`) },
 				ramByteCount: 0x00400000, optLevel: 3,
 			});

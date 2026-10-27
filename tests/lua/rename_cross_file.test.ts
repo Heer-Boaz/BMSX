@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -11,7 +12,6 @@ import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/edito
 import { resourceIdentityKey, SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
-import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { EditorWorkspaceEditConflict } from '../../ide/editor/model/undo_redo_service';
 
 test('cross file rename updates a retained background model without opening an editor input', (t) => {
@@ -55,15 +55,15 @@ test('cross file rename updates a retained background model without opening an e
 		SYSTEM_RESOURCE_DOMAIN,
 	);
 
-	const workspace = resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
-	workspace.synchronizeRuntimeSources(sources);
+	const workspace = resetSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID);
+	workspace.synchronizeSources(sources.catalog);
 
-	const mainResource = resolveRuntimeResource(sources, { domain: SYSTEM_RESOURCE_DOMAIN, path: 'main.lua' })!;
-	const usageResource = resolveRuntimeResource(sources, {
-		domain: SYSTEM_RESOURCE_DOMAIN,
+	const mainResource = sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'main.lua' })!;
+	const usageResource = sources.catalog.resolveResource({
+		contextId: TEST_SYSTEM_CONTEXT_ID,
 		path: 'usage.lua',
 	})!;
-	const resourceTab = new ResourceViewerInput(sources, usageResource);
+	const resourceTab = new ResourceViewerInput(sources.catalog, usageResource);
 	const group = createTestEditorGroup();
 	group.model.initialize(resourceTab);
 	t.after(() => {
@@ -80,8 +80,8 @@ test('cross file rename updates a retained background model without opening an e
 		.map(ref => workspace.getSnapshot().getFileData(ref.file)!.chunk.locations.range(ref.span));
 	assert.ok(otherRanges.length > 0);
 
-	const manager = new CrossFileRenameManager(sources);
-	const plan = manager.prepareRename(SYSTEM_RESOURCE_DOMAIN,
+	const manager = new CrossFileRenameManager(sources.catalog);
+	const plan = manager.prepareRename(TEST_SYSTEM_CONTEXT_ID,
 		{ query: resolution!, snapshot: workspace.getSnapshot(), project: workspace, matches: [], expression: 'state' }, 'worldState');
 	editorTextModelService.history.applyEdits(plan);
 	const mainModel = editorTextModelService.get(mainResource)!;
@@ -94,7 +94,7 @@ test('cross file rename updates a retained background model without opening an e
 	assert.equal(group.model.activeTab, resourceTab);
 	assert.equal(group.model.findById(buildCodeTabId(usageResource)), undefined);
 
-	const updatedData = getOrCreateSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN).getFileData(usageResource);
+	const updatedData = getOrCreateSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID).getFileData(usageResource);
 	assert.ok(updatedData);
 	assert.equal(updatedData!.source.trim(), 'print(worldState.value)');
 
@@ -112,7 +112,7 @@ test('cross file rename updates a retained background model without opening an e
 	registerLuaSourceRecord(registry, { ...registry.records[1], resid: 'late', source_path: 'late.lua', normalized_source_path: 'late.lua',
 		module_path: 'late', src: 'print(state.value)', base_src: 'print(state.value)' });
 	const version = mainModel.version;
-	assert.throws(() => manager.prepareRename(SYSTEM_RESOURCE_DOMAIN,
+	assert.throws(() => manager.prepareRename(TEST_SYSTEM_CONTEXT_ID,
 		{ query: nextQuery, snapshot, project: workspace, matches: [], expression: 'state' }, 'tooLate'), EditorWorkspaceEditConflict);
 	assert.equal(mainModel.version, version, 'source discovery cannot apply a reference query that omitted the new file');
 });

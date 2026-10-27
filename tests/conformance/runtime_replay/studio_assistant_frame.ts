@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -15,8 +14,8 @@ export async function runAssistantFrame(kind: StudioRendererKind, canvas: HTMLCa
 	await reachNemesisTitle(test);
 	test.harness.openLuaSource('cart.lua'); await frame();
 	await test.runPaletteCommand('View: Codex Assistant'); await test.runMenuCommand('pause');
-	const resource = { domain: 0 as const, path: 'cartlib/irq.lua' };
-	const line = resolveRuntimeLuaSource(ide.sources, resource)!.record.src.split('\n').findIndex(text => text.includes('local pending = flags')) + 1;
+	const resource = { contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cartlib/irq.lua' };
+	const line = ide.sources.catalog.resolveLuaSource(resource)!.record.src.split('\n').findIndex(text => text.includes('local pending = flags')) + 1;
 	ide.debugger.breakpoints.toggle(resource, line);
 	const continued = ide.debuggerExecution.resume('continue', 'workbench');
 	await until(() => continued.result !== undefined, 'frame tools: source IRQ stop');

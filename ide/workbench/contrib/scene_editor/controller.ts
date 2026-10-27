@@ -1,7 +1,7 @@
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
@@ -16,13 +16,13 @@ import { installSceneOutline, selectSceneOutlineRow, type SceneMemberElement } f
 /** Source projection admission; no world reads or runtime scene ownership. */
 export class SceneEditorController {
 	public constructor(
-		private readonly sources: RuntimeSourceState,
+		private readonly catalog: WorkspaceSourceCatalog,
 		private readonly group: EditorGroupView,
 		private readonly navigation: EditorNavigationController,
 	) {}
 
 	public openResource(resource: RuntimeResource): void {
-		const model = resolveLuaTextFileModel(editorTextModelService, this.sources, resource);
+		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
 		const id = `scene:${resourceIdentityKey(resource)}` as const;
 		this.group.openEditor(this.group.model.findById(id) ?? new SceneEditorInput(model));
 	}
@@ -88,8 +88,8 @@ export class SceneEditorController {
 
 	public refresh(input: SceneEditorInput): void {
 		const model = input.workingCopy;
-		const project = getOrCreateSemanticProject(editorTextModelService, model.resource.domain);
-		project.synchronizeRuntimeSources(this.sources);
+		const project = getOrCreateSemanticProject(editorTextModelService, model.resource.contextId);
+		project.synchronizeSources(this.catalog);
 		const snapshot = project.getSnapshot();
 		if (input.sourceRevision === snapshot.revision) return;
 		const document = buildSceneSourceDocument(model.resource, snapshot, input.document);

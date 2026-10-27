@@ -30,7 +30,7 @@ export function createEditReviewLines(files: readonly WorkspaceEditPreviewFile[]
 	const lines: EditReviewLine[] = [];
 	for (const file of files) {
 		lines.push(createEditReviewLine(file, undefined, 'file', 0,
-			`${file.identity.domain}: ${file.identity.path}  ${file.kind === 'create' ? 'NEW FILE' : `v${file.version}`}`, false));
+			`${file.contextLabel}: ${file.identity.path}  ${file.kind === 'create' ? 'NEW FILE' : `v${file.version}`}`, false));
 		for (const hunk of file.hunks) {
 			lines.push(createEditReviewLine(file, hunk, 'hunk', 0, `@@ line ${hunk.line} @@`, false));
 			for (const part of ['before', 'after'] as const) {

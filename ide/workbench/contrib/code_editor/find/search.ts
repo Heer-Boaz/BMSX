@@ -5,7 +5,7 @@ import * as constants from '../../../../common/constants';
 import { clamp, clamp_wrap } from '../../../../../machine/ts/common/clamp';
 import { getSelectionRange, getSelectionText } from '../../../../editor/editing/text_editing_and_selection';
 import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch } from '../../../../common/models';
-import * as luaPipeline from '../../../../runtime/lua_pipeline';
+import { readWorkspaceLuaSourceText } from '../../../../workspace/files';
 import { enqueueBackgroundTask } from '../../../../common/background_tasks';
 import { beginNavigationCapture, completeNavigation } from '../../../../navigation/navigation_history';
 import { updateDesiredColumn } from '../../../../editor/ui/view/caret/caret';
@@ -24,7 +24,7 @@ import { InlineBarFieldPointer } from '../../../../input/quick_input/pointer/fie
 import { openGlobalSearchMatch } from '../../find/global_search_navigation';
 import { findEditorGroup } from '../../../services/editor/editor_group';
 import { splitText } from '../../../../../machine/ts/common/text_lines';
-import type { RuntimeSourceState } from '../../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import type { EditorTextModel } from '../../../../editor/model/text_model';
 
 const LOCAL_ROWS_PER_SLICE = 256;
@@ -91,7 +91,7 @@ export class EditorSearchController {
 	private layoutDetail = '';
 	private readonly unbindKeyboard: () => void;
 
-	public constructor(public readonly code: CodeEditorControl, private readonly sources: RuntimeSourceState) {
+	public constructor(public readonly code: CodeEditorControl, private readonly catalog: WorkspaceSourceCatalog) {
 		const field = new TextField(code.focusTarget, { allowSpace: true, singleLine: true });
 		this.state = { field, visible: false, query: '', matches: [], currentIndex: -1, job: null,
 			displayOffset: 0, hoverIndex: -1, scope: 'local', globalMatches: [], globalJob: null };
@@ -210,7 +210,7 @@ export class EditorSearchController {
 			this.emitLayoutChanged();
 			return;
 		}
-		this.startGlobalSearchJob(this.sources);
+		this.startGlobalSearchJob(this.catalog);
 	}
 	public activeSearchMatchCount(): number {
 		return this.state.scope === 'global' ? this.state.globalMatches.length : this.state.matches.length;
@@ -335,12 +335,12 @@ export class EditorSearchController {
 		}
 	}
 
-	private startGlobalSearchJob(sources: RuntimeSourceState): void {
+	private startGlobalSearchJob(catalog: WorkspaceSourceCatalog): void {
 		this.cancelGlobalSearchJob();
 
 		const job: GlobalSearchJob = {
 			query: normalizeQuery(this.state.query),
-			resources: sources.luaResources,
+			resources: catalog.luaResources,
 			resourceIndex: 0,
 			currentLines: null,
 			nextRow: 0,
@@ -353,10 +353,10 @@ export class EditorSearchController {
 		this.state.displayOffset = 0;
 		this.state.hoverIndex = -1;
 		this.emitLayoutChanged();
-		enqueueBackgroundTask(() => this.runGlobalSearchSlice(sources, job));
+		enqueueBackgroundTask(() => this.runGlobalSearchSlice(catalog, job));
 	}
 
-	private runGlobalSearchSlice(sources: RuntimeSourceState, job: GlobalSearchJob): boolean {
+	private runGlobalSearchSlice(catalog: WorkspaceSourceCatalog, job: GlobalSearchJob): boolean {
 		if (this.state.globalJob !== job) return false;
 		if (job.query.length === 0) {
 			this.state.globalJob = null;
@@ -367,8 +367,8 @@ export class EditorSearchController {
 		while (job.resourceIndex < job.resources.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
 				if (job.currentLines === null) {
 					const resource = job.resources[job.resourceIndex];
-					const source = luaPipeline.resourceSourceForChunk(sources, resource);
-					job.currentLines = splitText(source);
+					const source = catalog.resolveLuaSource(resource)!;
+					job.currentLines = splitText(readWorkspaceLuaSourceText(source.registry, source.record));
 					job.nextRow = 0;
 				}
 
@@ -588,7 +588,7 @@ export class EditorSearchController {
 	public openSelectedGlobalMatch(): void {
 		if (this.state.scope !== 'global') return;
 		const match = this.state.globalMatches[this.state.currentIndex];
-		if (match) openGlobalSearchMatch(findEditorGroup(this.code.focusTarget)!, this.sources, match);
+		if (match) openGlobalSearchMatch(findEditorGroup(this.code.focusTarget)!, this.catalog, match);
 	}
 
 	public applySearchFieldText(value: string, moveCursorToEnd: boolean): void {

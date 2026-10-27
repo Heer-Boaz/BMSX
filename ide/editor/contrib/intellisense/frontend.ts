@@ -3,26 +3,25 @@ import { createLuaSemanticFrontendFromSnapshot, type LuaSemanticFrontendEnvironm
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { getOrCreateSemanticProject } from './semantic/workspace/state';
 import type { TextBuffer } from '../../text/text_buffer';
-import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { ResourceIdentity } from '../../../common/resource';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { listLuaBuiltinDescriptors } from '../../../runtime/lua_builtins';
 import { PROGRAM_BOOT_GLOBAL_NAMES, type ProgramCompileDomain } from '../../../../toolchain/ts/lua/compiler/system_boot_symbols';
 
 export function buildEditorSemanticSnapshot(
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	identity: ResourceIdentity,
 	buffer: TextBuffer,
 ): LuaSemanticWorkspaceSnapshot {
-	const project = getOrCreateSemanticProject(editorTextModelService, identity.domain);
-	project.synchronizeRuntimeSources(sources);
+	const project = getOrCreateSemanticProject(editorTextModelService, identity.contextId);
+	project.synchronizeSources(catalog);
 	project.analyzeDocument(identity, buffer);
 	return project.getSnapshot();
 }
 
 const semanticEnvironments = new Map<ProgramCompileDomain, LuaSemanticFrontendEnvironment>();
 
-export function createEditorSemanticFrontend(snapshot: LuaSemanticWorkspaceSnapshot, domain: ResourceDomain): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
-	const programDomain = domain === SYSTEM_RESOURCE_DOMAIN ? 'system' : 'cart';
+export function createEditorSemanticFrontend(snapshot: LuaSemanticWorkspaceSnapshot, programDomain: ProgramCompileDomain): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
 	const builtinDescriptors = listLuaBuiltinDescriptors();
 	let semanticEnvironment = semanticEnvironments.get(programDomain);
 	if (semanticEnvironment === undefined || semanticEnvironment.builtinDescriptors !== builtinDescriptors) {
@@ -33,9 +32,9 @@ export function createEditorSemanticFrontend(snapshot: LuaSemanticWorkspaceSnaps
 }
 
 export function buildEditorSemanticFrontend(
-	sources: RuntimeSourceState,
+	catalog: WorkspaceSourceCatalog,
 	identity: ResourceIdentity,
 	buffer: TextBuffer,
 ): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
-	return createEditorSemanticFrontend(buildEditorSemanticSnapshot(sources, identity, buffer), identity.domain);
+	return createEditorSemanticFrontend(buildEditorSemanticSnapshot(catalog, identity, buffer), catalog.getContext(identity.contextId).programDomain);
 }

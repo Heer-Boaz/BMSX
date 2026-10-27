@@ -111,7 +111,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			editor.scenarioLab.open();
 			return;
 		case 'sceneEditor':
-			openSourceView(group, sources, editor.quickInput, {
+			openSourceView(group, sources.catalog, editor.quickInput, {
 				title: 'SCENE EDITOR', accepts: hasSceneSourceDefinitions,
 				openResource: resource => editor.sceneEditor.openResource(resource),
 			});

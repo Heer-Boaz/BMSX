@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -13,8 +12,8 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	const { ide, runtime, frame, until, cycles, harness } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'stack tools: boot actual cart');
 	await reachNemesisTitle(test);
-	const resource = { domain: 0 as const, path: 'cartlib/world/world.lua' };
-	const lines = resolveRuntimeLuaSource(ide.sources, resource)!.record.src.split('\n');
+	const resource = { contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cartlib/world/world.lua' };
+	const lines = ide.sources.catalog.resolveLuaSource(resource)!.record.src.split('\n');
 	const declaration = lines.findIndex(line => line.includes('function world_class:active_definition_view('));
 	const line = lines.findIndex((text, index) => index > declaration && text.includes('views[definition_id] = created')) + 1;
 	harness.openLuaSource(resource.path); await frame();

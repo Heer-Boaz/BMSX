@@ -1,12 +1,11 @@
 import { generateUuid } from '../common/uuid';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import type { BuiltFixtureProgram } from './fixture_media';
 import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import type { ResourceDomain } from '../common/resource';
 import { InspectionValues } from '../runtime/inspection_values';
 import { runtimeLuaFrameScopes, type RuntimeLuaFrameScope } from '../runtime/lua_inspection';
-import { indexBlua32GlobalRegisterFiles } from '../runtime/sources';
 import type { RuntimeStackFrame, RuntimeStackTraceFrame } from '../runtime/stack_trace';
 import { SuspendedGuestSession } from '../runtime/suspended_guest';
 import type { TestStack } from './stack';
@@ -25,19 +24,18 @@ export abstract class TestInspection {
 	private closed = false;
 	private readonly disposalListeners = new Set<() => void>();
 
-	protected constructor(runtime: Runtime, program: BuiltTestCartridge, sourceDomain: ResourceDomain,
+	protected constructor(runtime: Runtime, program: BuiltFixtureProgram,
 		private detached: (() => void) | undefined) {
 		this.values = new InspectionValues(this.id, new SuspendedGuestSession(runtime));
 		const globals = [];
 		const active = runtime.machine.cpu.activeCartridgeSlot();
 		const domains: ResourceDomain[] = active === -1 ? [-1] : [-1, active];
 		for (const domain of domains) {
-			const image = program.debugImages[domain + 1]!.image;
-			const authored: ResourceDomain = domain === -1 ? -1 : (domain ^ sourceDomain) as 0 | 1;
-			if (image.symbols === null) globals.push({ domain, sourceDomain: authored, status: 'symbols-unavailable' as const });
+			const image = (domain === -1 ? program.sourceMedia.system : program.sourceMedia.cartridgeSlots[domain])!;
+			if (image.symbols === null) globals.push({ domain, sourceContextId: image.sourceContextId, status: 'symbols-unavailable' as const });
 			else {
-				const names = indexBlua32GlobalRegisterFiles(image.symbols);
-				globals.push({ domain, sourceDomain: authored, status: 'available' as const, count: names.size, reference: this.values.globals(names) });
+				const names = image.globalRegisterFileByName;
+				globals.push({ domain, sourceContextId: image.sourceContextId, status: 'available' as const, count: names.size, reference: this.values.globals(names) });
 			}
 		}
 		this.globals = globals;
@@ -68,7 +66,7 @@ export abstract class TestInspection {
 			const trace: InspectedTestFrame = { ...frame, reference, domain: physical.executionDomainId,
 				pc: physical.tracePc, functionAddress: physical.functionAddress };
 			this.frames.set(reference, { frame: entry.context.thread.frames[frame.physicalFrameIndex], physical, trace,
-				source: entry.context.sources.get(frame) });
+				source: frame.kind === 'source' ? entry.context.sources.get(frame) : undefined });
 			return trace;
 		});
 		return { inspection: this.id, stack, origin: entry.context.origin, source: 'compiled-test-images' as const,

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from './runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from './lua_semantic_project';
 import assert from 'node:assert/strict';
@@ -20,15 +21,15 @@ export function createBehaviorEditFixture(t: TestContext, path: string, source: 
 	const oldFont = editorViewState.font;
 	editorViewState.font = new EditorFont('tiny');
 	const service = new EditorTextModelService();
-	const model = service.retain({ location: { kind: 'workspace' as const, path }, sourceFilePath: path, domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', source);
+	const model = service.retain({ location: { kind: 'workspace' as const, path }, contextLabel: 'Fixture project', sourceFilePath: path, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua', resid: path } }, 'lua', source);
 	const models = new Map([[resourceIdentityKey(model.resource), model]]);
-	for (const [path, text] of Object.entries(imports)) models.set(resourceIdentityKey({ domain: 0, path }), service.retain({ location: { kind: 'workspace' as const, path }, sourceFilePath: path, domain: 0, path,
+	for (const [path, text] of Object.entries(imports)) models.set(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }), service.retain({ location: { kind: 'workspace' as const, path }, contextLabel: 'Fixture project', sourceFilePath: path, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path,
 		source: { type: 'lua', resid: path } }, 'lua', text));
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([...[...models.values()]
 		.map(model => buildResourceLuaSemanticFixtureFile(model.buffer.getText(), model.resource))], API_MODULES)));
 	const view = createBehaviorLensViewState(project(), model, presentation, path => models.get(path)!);
 	selectBehaviorLensDefinition(view, view.document.definitions[definition].rowKey);
-	const input = new BehaviorLensInput(model, view, () => assert.fail('This source-only fixture does not run a layout worker'));
+	const input = new BehaviorLensInput(model, view, new Set([model.resource.contextId]), () => assert.fail('This source-only fixture does not run a layout worker'));
 	service.onDidChangeContent((model, event) => mapBehaviorLensSourceRanges(view, model.resource, event));
 	const refresh = () => { installBehaviorLensDocument(view, project()); input.updateDefinition(); };
 	t.after(() => { input.dispose(); service.clear(); editorViewState.font = oldFont; });

@@ -79,8 +79,8 @@ export class CodeEditorHoverController {
 		const executionFrameDepth = this.fault.faultSnapshot === null
 			? cpu.getFrameDepth()
 			: this.fault.lastCpuFaultSnapshot.length;
-		const semanticProject = getOrCreateSemanticProject(editorTextModelService, this.code.model.resource.domain);
-		semanticProject.synchronizeRuntimeSources(this.sources);
+		const semanticProject = getOrCreateSemanticProject(editorTextModelService, this.code.model.resource.contextId);
+		semanticProject.synchronizeSources(this.sources.catalog);
 		const semanticSnapshot = semanticProject.getSnapshot();
 		if (this.queryState.valid
 			&& this.queryState.model === this.code.model
@@ -100,11 +100,11 @@ export class CodeEditorHoverController {
 		}
 
 		const snapshot = buildEditorSemanticSnapshot(
-			this.sources,
+			this.sources.catalog,
 			this.code.model.resource,
 			this.code.model.buffer,
 		);
-		const frontend = createEditorSemanticFrontend(snapshot, this.code.model.resource.domain);
+		const frontend = createEditorSemanticFrontend(snapshot, this.sources.catalog.getContext(this.code.model.resource.contextId).programDomain);
 		const semanticHover = frontend.provideHover(path, row + 1, column + 1);
 		const evaluatableExpression = frontend.provideEvaluatableExpression(path, row + 1, column + 1);
 		const runtimeInspection = evaluatableExpression === null

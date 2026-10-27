@@ -34,9 +34,9 @@ that a branch executes or that a runtime guard succeeds. Repeated semantic ids
 and shared constructors remain distinct authored registration occurrences.
 
 Each `sources` entry maps its opaque `file` address to the actual source
-identity (`domain`, `path`), captured version and read-only state. Source ranges
+identity (`contextId`, `path`), captured version and read-only state. Source ranges
 use that address in `range.path`; consumers resolve it through `sources`, not
-by decoding the address or assuming the registration's domain. The logical
+by decoding the address or assuming the registration's source context. The logical
 resource path remains a label, not filesystem authority.
 
 The first source-edit operations are FSM initial selection; BT child removal,

@@ -5,12 +5,13 @@ import {
 } from '../../ide/common/resource';
 import {
 	createRuntimeSourceState,
+	createLoadedProjectSourceCatalog,
 	enterCartridgeSources,
 	enterSystemSources,
-	rebuildRuntimeSourceResources,
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
-import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
+import type { LuaSourceRegistry, LuaSourceRoot } from '../../ide/runtime/source_registry';
+import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -21,6 +22,7 @@ import {
 } from '../../machine/ts/rompack/format';
 import type {
 	PackedCartridgeIndex,
+	RomAsset,
 	RomToolingPackage,
 } from '../../toolchain/ts/rompack/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
@@ -52,7 +54,7 @@ export function createTestRuntime(systemRom: Uint8Array): Runtime {
 	}, new TestInputSource());
 }
 
-function toolingPackage(projectRootPath: string): RomToolingPackage {
+export function createTestToolingPackage(projectRootPath: string): RomToolingPackage {
 	return {
 		img: {},
 		audio: {},
@@ -96,7 +98,7 @@ function emptyRomHeader(): CartRomHeader {
 	};
 }
 
-function romToolingLayer<TDomain extends RomImageDomain>(
+export function createTestRomToolingLayer<TDomain extends RomImageDomain>(
 	id: TDomain,
 	projectRootPath: string,
 	payload: Uint8Array,
@@ -113,7 +115,7 @@ function romToolingLayer<TDomain extends RomImageDomain>(
 		header,
 		index,
 		bytes: payload,
-		package: toolingPackage(projectRootPath),
+		package: createTestToolingPackage(projectRootPath),
 	};
 }
 
@@ -132,70 +134,89 @@ function installedSources(registry: LuaSourceRegistry): ReadonlyMap<string, stri
 	return sources;
 }
 
-function installSourceRegistries(
-	sources: RuntimeSourceState,
-	systemLuaSources: LuaSourceRegistry,
-	cartridgeLuaSources: readonly [LuaSourceRegistry | null, LuaSourceRegistry | null],
-	activeDomain: ResourceDomain,
-): RuntimeSourceState {
-	sources.systemLuaSources = systemLuaSources;
-	sources.systemProjectRootPath = systemLuaSources.projectRootPath;
-	sources.systemInstalledBlua32Sources = installedSources(systemLuaSources);
+/** Explicit fixture admission data, not a runtime domain-to-context resolver. */
+export const TEST_SYSTEM_CONTEXT_ID = 'fixture-system-source';
+export const TEST_CARTRIDGE_CONTEXT_IDS = ['fixture-cartridge-source-a', 'fixture-cartridge-source-b'] as const;
+
+function admitFixtureContexts(system: RomToolingLayer<'system'>,
+	cartridges: readonly [RomToolingLayer<'cart'> | null, RomToolingLayer<'cart'> | null],
+	systemRegistry: LuaSourceRegistry,
+	cartridgeRegistries: readonly [LuaSourceRegistry | null, LuaSourceRegistry | null],
+	authoredAssets: TestAuthoredAssets,
+): WorkspaceSourceCatalog {
+	const catalog = new WorkspaceSourceCatalog();
+	const sourceRoots = (root: string): LuaSourceRoot[] => [
+		{ path: root, resourcePathPrefix: '', modulePathPrefix: '', structured: true, sourceKind: 'project' },
+	];
+	catalog.admitContext({ admission: { id: TEST_SYSTEM_CONTEXT_ID, projectRoot: systemRegistry.projectRootPath },
+		programDomain: 'system', systemContextId: null, luaSources: systemRegistry, sourceRoots: sourceRoots(systemRegistry.projectRootPath),
+		dependencyContextIds: [], previewPackage: system.package, previewRom: { ...system }, assetSources: authoredAssets.system });
 	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
-		const registry = cartridgeLuaSources[slot];
-		if (!registry) {
-			continue;
-		}
-		const cartridge = sources.cartridgeSlots[slot]!;
-		cartridge.luaSources = registry;
-		cartridge.projectRootPath = registry.projectRootPath;
-		cartridge.installedBlua32Sources = installedSources(registry);
+		const registry = cartridgeRegistries[slot];
+		if (registry === null) continue;
+		const layer = cartridges[slot]!;
+		catalog.admitContext({ admission: { id: TEST_CARTRIDGE_CONTEXT_IDS[slot], projectRoot: registry.projectRootPath },
+			programDomain: 'cart', systemContextId: TEST_SYSTEM_CONTEXT_ID, luaSources: registry, sourceRoots: [
+				...sourceRoots(registry.projectRootPath),
+				{ path: 'cartlib', resourcePathPrefix: 'cartlib', modulePathPrefix: 'cartlib', structured: false, sourceKind: 'library' },
+			], dependencyContextIds: [TEST_SYSTEM_CONTEXT_ID], previewPackage: layer.package,
+			previewRom: { ...layer }, assetSources: authoredAssets.cartridgeSlots[slot] });
 	}
-	rebuildRuntimeSourceResources(sources);
-	switch (activeDomain) {
-		case 0:
-		case 1:
-			enterCartridgeSources(sources, activeDomain);
-			break;
-		case SYSTEM_RESOURCE_DOMAIN:
-			enterSystemSources(sources);
-			break;
-	}
-	return sources;
+	return catalog;
 }
+
+export type TestAuthoredAssets = {
+	readonly system: readonly RomAsset[];
+	readonly cartridgeSlots: readonly [readonly RomAsset[], readonly RomAsset[]];
+};
 
 export function createTestRuntimeSourceState(
 	systemLuaSources: LuaSourceRegistry,
 	cartridgeLuaSources: readonly [LuaSourceRegistry | null, LuaSourceRegistry | null],
 	activeDomain: ResourceDomain,
+	authoredAssets: TestAuthoredAssets = { system: [], cartridgeSlots: [[], []] },
 ): RuntimeSourceState {
+	const system = createTestRomToolingLayer('system', systemLuaSources.projectRootPath, createTestRuntimeRomPayload());
 	const cartridgeLayers: [RomToolingLayer<'cart'> | null, RomToolingLayer<'cart'> | null] = [
-		cartridgeLuaSources[0]
-			? romToolingLayer('cart', cartridgeLuaSources[0].projectRootPath, createTestRuntimeRomPayload())
-			: null,
-		cartridgeLuaSources[1]
-			? romToolingLayer('cart', cartridgeLuaSources[1].projectRootPath, createTestRuntimeRomPayload())
-			: null,
+		cartridgeLuaSources[0] === null ? null : createTestRomToolingLayer('cart', cartridgeLuaSources[0].projectRootPath, createTestRuntimeRomPayload()),
+		cartridgeLuaSources[1] === null ? null : createTestRomToolingLayer('cart', cartridgeLuaSources[1].projectRootPath, createTestRuntimeRomPayload()),
 	];
-	const sources = createRuntimeSourceState(
-		romToolingLayer('system', systemLuaSources.projectRootPath, createTestRuntimeRomPayload()),
-		cartridgeLayers,
-	);
-	return installSourceRegistries(sources, systemLuaSources, cartridgeLuaSources, activeDomain);
+	const catalog = admitFixtureContexts(system, cartridgeLayers, systemLuaSources, cartridgeLuaSources, authoredAssets);
+	const sources = createRuntimeSourceState(system, cartridgeLayers, { catalog, systemContextId: TEST_SYSTEM_CONTEXT_ID,
+		cartridgeContextIds: [cartridgeLuaSources[0] === null ? null : TEST_CARTRIDGE_CONTEXT_IDS[0],
+			cartridgeLuaSources[1] === null ? null : TEST_CARTRIDGE_CONTEXT_IDS[1]] });
+	// These fixtures explicitly install the supplied source generations; they do
+	// not make the mutable authoring registry an installed-media owner.
+	sources.systemInstalledBlua32Sources = installedSources(systemLuaSources);
+	sources.systemSourceRevision = 0;
+	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
+		const registry = cartridgeLuaSources[slot];
+		if (registry === null) continue;
+		sources.cartridgeSlots[slot]!.installedBlua32Sources = installedSources(registry);
+		sources.cartridgeSlots[slot]!.installedSourceRevision = 0;
+	}
+	if (activeDomain === SYSTEM_RESOURCE_DOMAIN) enterSystemSources(sources); else enterCartridgeSources(sources, activeDomain);
+	return sources;
 }
 
-export function createTestSystemImageRuntimeSourceState(
-	systemRom: Uint8Array,
-	systemLuaSources: LuaSourceRegistry,
-): RuntimeSourceState {
-	const sources = createRuntimeSourceState(
-		romToolingLayer('system', systemLuaSources.projectRootPath, systemRom),
-		[null, null],
+export function createTestSystemImageRuntimeSourceState(systemRom: Uint8Array, systemLuaSources: LuaSourceRegistry): RuntimeSourceState {
+	const layer = createTestRomToolingLayer('system', systemLuaSources.projectRootPath, systemRom);
+	const catalog = admitFixtureContexts(layer, [null, null], systemLuaSources, [null, null], { system: layer.index.entries, cartridgeSlots: [[], []] });
+	const sources = createRuntimeSourceState(layer, [null, null], { catalog, systemContextId: TEST_SYSTEM_CONTEXT_ID, cartridgeContextIds: [null, null] });
+	sources.systemInstalledBlua32Sources = installedSources(systemLuaSources);
+	sources.systemSourceRevision = 0;
+	return sources;
+}
+
+/** Real ROM fixture admission: seed authored contexts once, then attach their exact images. */
+export function createLoadedTestRuntimeSourceState(system: RomToolingLayer<'system'>,
+	cartridges: readonly [RomToolingLayer<'cart'> | null, RomToolingLayer<'cart'> | null]): RuntimeSourceState {
+	const catalog = createLoadedProjectSourceCatalog(
+		{ admission: { id: TEST_SYSTEM_CONTEXT_ID, projectRoot: system.index.projectRootPath }, layer: system },
+		cartridges.flatMap((layer, slot) => layer === null ? [] : [{
+			admission: { id: TEST_CARTRIDGE_CONTEXT_IDS[slot], projectRoot: layer.index.projectRootPath }, layer,
+		}]),
 	);
-	return installSourceRegistries(
-		sources,
-		systemLuaSources,
-		[null, null],
-		SYSTEM_RESOURCE_DOMAIN,
-	);
+	return createRuntimeSourceState(system, cartridges, { catalog, systemContextId: TEST_SYSTEM_CONTEXT_ID,
+		cartridgeContextIds: [cartridges[0] === null ? null : TEST_CARTRIDGE_CONTEXT_IDS[0], cartridges[1] === null ? null : TEST_CARTRIDGE_CONTEXT_IDS[1]] });
 }

@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -27,7 +28,7 @@ for (const path of paths) {
 	const locations = original.chunk.locations;
 	const all: LuaTableConstructorExpression[] = [];
 	walkLuaAst(original.chunk, node => { if (node.kind === LuaSyntaxKind.TableConstructorExpression) all.push(node); });
-	const model = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: 0, path, source: { type: 'lua', resid: path, source_path: path, generated: false } }, 'lua', source);
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua', resid: path, source_path: path, generated: false } }, 'lua', source);
 	const spans = all.map(table => luaSourceRangeToTextRange(model.buffer, locations.range(table.span)));
 	for (let index = 0; index < all.length; index += 1) {
 		const from = all[index];

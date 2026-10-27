@@ -12,8 +12,9 @@ are described in [the software architecture](../docs/architecture.md#studio-owne
 | `workbench/` | Studio shell, editor groups, panels, windows, shared controls and tool contributions. |
 | `language/` | Language-specific source adapters, highlighting, formatting and queries shared by tools. |
 | `input/`, `commands/` | UI focus, gesture routing, keyboard dispatch and workbench commands. |
-| `runtime/` | Studio's source catalog, execution/inspection integration and connection to physical targets. |
-| `workspace/` | Authored records, workspace files and storage contracts. |
+| `runtime/` | Execution/inspection integration, installed source generations and connection to physical targets. |
+| `testing/` | Captured fixture programs, isolated test targets and their debugger/inspection lifetimes. |
+| `workspace/` | Admitted source contexts, authored records, workspace files and storage contracts. |
 | `browser/`, `node/` | Platform-specific Studio integrations. |
 | `common/`, `theme/` | Shared primitives and presentation tokens, without feature-owned state. |
 
@@ -65,6 +66,18 @@ Frontend and native source recovery consume explicit context/session namespaces;
 canonical file Save addresses remain separate from
 [recovery storage](../docs/studio_source_recovery_design.md).
 
+`workspace/source_catalog.ts` owns admitted source contexts, resource identities
+and their explicit module/asset bindings independently of installed media.
+Documents and semantic projects use context/path keys; canonical filesystem
+addresses and display captions are separate producer metadata. An execution can
+install no image, one image or several generations from the same context.
+`runtime/sources.ts` retains each installation's physical domain and captured
+source generation. Debugging and runtime navigation consume those captures,
+not the current authoring registry or an inferred context-to-socket mapping.
+Play and Scenario preparation capture an explicit authored source namespace;
+the fixture compiler consumes it independently of the ROM's packaged assets.
+Unit fixtures have their own entry rather than rebuilding the gameplay program.
+
 ## Documents, inputs and panes
 
 `editor/model/` owns canonical text models. Workbench working-copy services own
@@ -89,7 +102,9 @@ view without disposing the canonical model or another input's view.
 composite working copies and last-view Save/Discard/Cancel decisions. It rechecks
 canonical state and surviving views after awaited decisions or writes.
 `TextFileSaveService` owns accepted writes and their captured source snapshots;
-groups own final view retirement. Forced owner teardown is separate from user
+it does not build or install assets. Explicit execution operations own those
+changes and retain their selected target/image through asynchronous work.
+Groups own final view retirement. Forced owner teardown is separate from user
 close admission. Opening and activation settle the attached focused control's
 draft before changing group membership or pane attachment.
 The group's Source pane keeps plain reading mementos for ordinary reopening,

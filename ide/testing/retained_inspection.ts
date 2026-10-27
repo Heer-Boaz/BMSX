@@ -1,6 +1,6 @@
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import type { BuiltFixtureProgram } from './fixture_media';
 import type { TestFailureContext } from './failure_context';
 import type { ScenarioTestResult } from './scenario/result_service';
 import { TestInspection } from './inspection';
@@ -8,9 +8,9 @@ import { TestInspection } from './inspection';
 /** Read-only case-end attachment. Failed threads are not executable debugger stops. */
 export class TestTargetInspection extends TestInspection {
 	public readonly state;
-	public constructor(target: string, runtime: Runtime, program: BuiltTestCartridge, result: ScenarioTestResult,
+	public constructor(target: string, runtime: Runtime, program: BuiltFixtureProgram, result: ScenarioTestResult,
 		contexts: readonly TestFailureContext[], detached: () => void) {
-		super(runtime, program, result.test.resource.domain, detached);
+		super(runtime, program, detached);
 		this.state = { inspection: this.id, target, role: 'retained-test' as const, mode: 'post-mortem' as const,
 			heap: 'retained-at-case-end' as const, source: 'compiled-test-images' as const,
 			canResume: false, canStep: false, canEvaluate: false,

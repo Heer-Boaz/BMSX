@@ -123,7 +123,7 @@ export function writeProblemsPanelItemLayout(out: ProblemsPanelItemLayout, diagn
 	const identity = diagnostic.model.identity, line = diagnostic.row + 1, column = diagnostic.startColumn + 1;
 	const position = `:${line}:${column}`;
 	out.location = truncateMeasuredText(computeSourceLabel(identity.path), availableWidth - measureText(position), measureTextRange) + position;
-	out.feedback = `${sourceTabDescription(identity)}:${line}:${column}\n${message}`;
+	out.feedback = `${sourceTabDescription(diagnostic.model.resource)}:${line}:${column}\n${message}`;
 	out.diagnostic = diagnostic;
 	out.availableWidth = availableWidth;
 	out.lineHeight = lineHeight;

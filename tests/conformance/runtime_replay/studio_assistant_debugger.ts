@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -13,8 +12,8 @@ export async function runAssistantDebugger(kind: StudioRendererKind, canvas: HTM
 	const { ide, runtime, frame, until, cycles, harness } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'debugger tools: boot actual cart');
 	await reachNemesisTitle(test);
-	const resource = { domain: 0 as const, path: 'cartlib/world/world.lua' };
-	const installed = resolveRuntimeLuaSource(ide.sources, resource)!.record.src;
+	const resource = { contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cartlib/world/world.lua' };
+	const installed = ide.sources.catalog.resolveLuaSource(resource)!.record.src;
 	harness.openLuaSource(resource.path); await frame();
 	const model = harness.getActiveEditorDocument().model;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty editor is NOT the source being debugged\n' }]);

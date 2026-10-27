@@ -157,6 +157,7 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 		record.vector(std::get<std::vector<std::string>>(metadata.traceStatements), text);
 	}
 	record.vector(metadata.preloadModules, text);
+	record.vector(metadata.compiledModulePaths, text);
 	record.vector(metadata.functionIds, text);
 	record.vector(metadata.functionDisplayNames, text);
 	record.vector(metadata.functionDefinitions, [&](const auto& range) { words.push_back(tables.range(range)); });
@@ -265,6 +266,7 @@ auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage {
 		case 2: metadata.traceStatements = record.vector([&] { return std::string(text()); }); break;
 	}
 	metadata.preloadModules = record.vector([&] { return std::string(text()); });
+	metadata.compiledModulePaths = record.vector([&] { return std::string(text()); });
 	metadata.functionIds = record.vector([&] { return std::string(text()); });
 	metadata.functionDisplayNames = record.vector([&] { return std::string(text()); });
 	metadata.functionDefinitions = record.vector([&] { return ranges[record.word()]; });

@@ -1,6 +1,6 @@
 import { editorTextModelService } from '../../../editor/model/model_service';
-import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
-import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
+import { readWorkspaceLuaSourceText } from '../../../workspace/files';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { BehaviorInspectionProperty } from './inspection';
@@ -10,7 +10,7 @@ const correspondence = new WeakMap<NonNullable<BehaviorInspectionProperty['sourc
 }>();
 
 /** Runtime callbacks navigate only while the source corresponds to their installed addresses. */
-export function canOpenBehaviorInspectionSource(sources: RuntimeSourceState, detail: BehaviorInspectionProperty): boolean {
+export function canOpenBehaviorInspectionSource(catalog: WorkspaceSourceCatalog, detail: BehaviorInspectionProperty): boolean {
 	const source = detail.source;
 	if (source === undefined) return false;
 	if (source.installedSource === undefined) return true;
@@ -25,6 +25,8 @@ export function canOpenBehaviorInspectionSource(sources: RuntimeSourceState, det
 		}
 		return match.matches;
 	}
-	const resource = resolveRuntimeResource(sources, source.resource);
-	return resource !== undefined && resourceSourceForChunk(sources, resource) === source.installedSource;
+	const resource = catalog.resolveResource(source.resource);
+	if (resource === undefined) return false;
+	const authored = catalog.resolveLuaSource(resource)!;
+	return readWorkspaceLuaSourceText(authored.registry, authored.record) === source.installedSource;
 }

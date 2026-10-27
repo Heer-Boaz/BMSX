@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
@@ -25,9 +26,9 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		{ width: 700, height: 288 }, sources, new Map(), unused, unused, unused);
 	editorRuntimeState.active = true; ide.editor.setFontVariant(variant);
 	host.input.setPointerAdmissionMode('routed');
-	const resource = sources.resourceByIdentity.get(resourceIdentityKey({ domain: 0, path: 'review.lua' }))!;
+	const resource = sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'review.lua' }))!;
 	const model = editorTextModelService.retain(resource, 'lua', record.src);
-	const proposal = new WorkspaceEditProposal('Review', new WorkspaceSourceContext(editorTextModelService, sources), {
+	const proposal = new WorkspaceEditProposal('Review', new WorkspaceSourceContext(editorTextModelService, sources.catalog), {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 7, deleteLength: 1, text: '2' }] }]]),
 	});
 	const input = new WorkspaceEditReviewInput(proposal), editor = ide.editor;

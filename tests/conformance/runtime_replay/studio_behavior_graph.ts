@@ -1,7 +1,6 @@
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { testStudioGraphNavigation } from './studio_graph_navigation';
 
-import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../../helpers/behavior_source_fixture';
@@ -115,7 +114,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 
 /** Final screenshot state, using the same real picker and independent authored Lua. */
 export async function presentBehaviorTreeGraph(test: StudioFixture): Promise<void> {
-	await test.ide.editor.navigation.openResource(resolveRuntimeResource(test.ide.sources, { domain: 0, path: 'cart.lua' })!);
+	await test.ide.editor.navigation.openResource(test.ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!);
 	const model = sourcePane(test).code.model;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	await test.runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');

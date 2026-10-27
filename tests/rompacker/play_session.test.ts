@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -20,7 +22,7 @@ import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { GX_GPU_PCRTC_BGCOLOR_LOW, gxGpuPcrtcRegisterAddress } from '../../machine/ts/spec/gx/pcrtc';
-import { buildTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import { buildFixtureProgram } from '../../ide/testing/fixture_media';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { readRuntimeLuaModuleExport, runtimeLuaFunctionSource, RuntimeLuaFunctionSourceCache } from '../../ide/runtime/lua_inspection';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
@@ -59,13 +61,12 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=__bmsx_setmetatable' }, ...COROUTINE_FIRMWARE_MODULES],
 		cartSource: gameSource, cartModules: [{ path: 'game', source: 'return {updates=0,down_samples=0}' }, ...modules],
 	});
-	const program = await buildTestCartridge({ systemRom: media.systemRom, cartridge: media.cartRom,
-		test: { sourcePath: PATH, source: scene }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
+	const program = await buildFixtureProgram({ systemRom: media.systemRom, cartridgeSlots: [media.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[sourceDomain], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: PATH, source: scene });
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const target = new OffscreenMachine(media.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new PlayInput(new InputChannel(input)));
 	const authoring = new OffscreenMachine(media.systemRom, sourceDomain === 0 ? [media.cartRom, null] : [null, media.cartRom], PSX_MACHINE_SPEC, input);
 	const logs: string[] = [], device = new HostAudioDevice(new DiscardingAudioSink());
-	const session = new PlayRuntimeSession(target, program, sourceDomain, device, { log(_level, message) { logs.push(message); } });
+	const session = new PlayRuntimeSession(target, program, device, { log(_level, message) { logs.push(message); } });
 	t.after(async () => { await session.dispose(); authoring.dispose(); input.dispose(); });
 	const frame = async (elapsed = 1000 / 60) => { session.advance(elapsed); await session.tasks.join(); };
 	const settle = async (done: () => boolean) => {
@@ -90,7 +91,7 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: Play inspection uses
 	assert.ok(exported.kind === 'value'); assert.strictEqual(exported.value, f.game());
 	const callback = guest.global('inspect_probe'), source = runtimeLuaFunctionSource(code, guest, callback)!;
 	assert.equal(source.executionDomain, 0);
-	assert.deepEqual(source.resource, { domain: 1, path: 'entry.lua' });
+	assert.deepEqual(source.resource, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'entry.lua' });
 	assert.equal(source.installedSource, gameSource);
 	const cache = new RuntimeLuaFunctionSourceCache(code, guest), cached = cache.update(callback);
 	for (let index = 0; index < 1000; index++) assert.strictEqual(cache.update(callback), cached);

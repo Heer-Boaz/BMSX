@@ -1,4 +1,3 @@
-import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import { openSceneEditor } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
@@ -68,7 +67,7 @@ export async function testScenePlacementIdentity(test: StudioFixture): Promise<v
 			&& test.ide.sources.currentBlua32Media !== previousMedia, 'identity: five-document source application completes normal registration');
 		for (const document of documents) {
 			const expected = revision === 0 ? document.prototypeOwned : document.source;
-			const path = resolveRuntimeLuaSource(ide.sources, document.model.resource)!.record.module_path;
+			const path = ide.sources.catalog.resolveLuaSource(document.model.resource)!.record.module_path;
 			check(!document.model.dirty && document.model.lastSavedSource === expected
 				&& ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get(path) === expected,
 				'identity: saved and installed revisions agree for each affected source');

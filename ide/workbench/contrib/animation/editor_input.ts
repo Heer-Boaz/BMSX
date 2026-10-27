@@ -1,4 +1,4 @@
-import { resourceIdentityKey, type ResourceDomain } from '../../../common/resource';
+import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
@@ -53,7 +53,7 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 		mode: 'compact', rowHeight: 0, tracksVisible: true, keysVisible: false, detailsVisible: false };
 	public status = '';
 	private readonly projectionListeners = new Set<() => void>();
-	public constructor(public readonly workingCopy: EditorTextModel, public readonly projectDomain: ResourceDomain, definitionRange?: TrackedTextRange,
+	public constructor(public readonly workingCopy: EditorTextModel, public readonly projectContextId: string, definitionRange?: TrackedTextRange,
 		public readonly definitionLabel = computeResourceTabTitle(workingCopy.resource), public readonly consumerPath?: string) {
 		super(`animation:${nextInputId++}`, 'animation', `ANIM ${definitionLabel}`, true);
 		this.definitionRange = definitionRange === undefined ? undefined : { ...definitionRange };

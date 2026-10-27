@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -5,8 +6,8 @@ import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel, type EditorTextModelContentChangeEvent } from '../../ide/editor/model/text_model';
 import { mapTextOffset, mapTrackedTextRange, textChangesEndOffset, type EditorTextChange } from '../../ide/editor/text/text_change';
 
-const resource: RuntimeResource = { sourceFilePath: 'tracked.lua', location: { kind: 'workspace' as const, path: 'tracked.lua' },
-	domain: 0, path: 'tracked.lua',
+const resource: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: 'tracked.lua', location: { kind: 'workspace' as const, path: 'tracked.lua' },
+	contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'tracked.lua',
 	source: { resid: 'tracked.lua', type: 'lua', source_path: 'tracked.lua', generated: false },
 };
 test('text positions map replacement boundaries and insertion affinity in UTF-16 application order', () => {

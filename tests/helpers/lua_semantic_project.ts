@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from './runtime_sources';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import type { LuaProjectModuleBindings } from '../../toolchain/ts/lua/semantic/module_resolution';
 import { buildLuaFileSemanticData, type FileSemanticData, type LuaSemanticWorkspaceSnapshotInput } from '../../toolchain/ts/lua/semantic/model';
@@ -33,26 +34,26 @@ export function createResourceModuleProjectFixture(
 ): [readonly LuaSemanticWorkspaceSnapshotInput[], LuaProjectModuleBindings] {
 	const admitted = files.slice();
 	for (const module of apiModules) {
-		const resource = { domain: -1 as const, path: `${module}.lua` };
+		const resource = { contextId: TEST_SYSTEM_CONTEXT_ID, path: `${module}.lua` };
 		if (!admitted.some(file => resourceIdentityKey(file.resource) === resourceIdentityKey(resource))) {
 			admitted.push(buildResourceLuaSemanticFixtureFile('', resource));
 		}
 	}
-	const scopes = new Map<number, Map<string, string>>();
+	const scopes = new Map<string, Map<string, string>>();
 	for (const file of admitted) {
-		if (scopes.has(file.resource.domain)) continue;
+		if (scopes.has(file.resource.contextId)) continue;
 		const modules = new Map<string, string>();
 		for (const candidate of admitted) {
-			if (candidate.resource.domain === file.resource.domain) modules.set(toLuaModulePath(candidate.resource.path), candidate.file);
+			if (candidate.resource.contextId === file.resource.contextId) modules.set(toLuaModulePath(candidate.resource.path), candidate.file);
 		}
-		if (file.resource.domain !== -1) {
+		if (file.resource.contextId !== TEST_SYSTEM_CONTEXT_ID) {
 			for (const candidate of admitted) {
 				const module = toLuaModulePath(candidate.resource.path);
-				if (candidate.resource.domain === -1 && !modules.has(module)) modules.set(module, candidate.file);
+				if (candidate.resource.contextId === TEST_SYSTEM_CONTEXT_ID && !modules.has(module)) modules.set(module, candidate.file);
 			}
 		}
-		scopes.set(file.resource.domain, modules);
+		scopes.set(file.resource.contextId, modules);
 	}
 	return [admitted.map(file => ({ path: file.file, source: file.source, analysis: file })),
-		new Map(admitted.map(file => [file.file, scopes.get(file.resource.domain)!]))];
+		new Map(admitted.map(file => [file.file, scopes.get(file.resource.contextId)!]))];
 }

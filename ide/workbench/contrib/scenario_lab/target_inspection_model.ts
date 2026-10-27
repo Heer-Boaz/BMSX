@@ -19,7 +19,7 @@ export class TestTargetInspectionModel {
 		else this.append(null, `Stopped thread ${state.stack.thread} / ${state.reason}`, state.stack.status,
 			'Current test stop. Continuing, stepping or cleanup expires every frame and value.',
 			state.stack.reference === undefined ? undefined : { kind: 'stack', reference: state.stack.reference, start: 0 });
-		for (const scope of state.globals) this.append(null, `Globals / physical ${scope.domain} / source ${scope.sourceDomain}`,
+		for (const scope of state.globals) this.append(null, `Globals / physical ${scope.domain} / source ${scope.sourceContextId}`,
 			scope.status, 'Installed binding names. Values belong to this inspection of the test machine, not the authoring game.',
 			scope.reference === undefined ? undefined : { kind: 'values', reference: scope.reference, start: 0 });
 		rebuildWorkbenchTreeRows(this.tree, this.tree.roots[0]);

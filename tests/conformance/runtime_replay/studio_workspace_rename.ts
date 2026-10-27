@@ -1,4 +1,3 @@
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
@@ -10,7 +9,7 @@ export async function testStudioWorkspaceRename(test: StudioFixture): Promise<vo
 	const main = harness.getActiveEditorDocument().model;
 	const mainTab = ide.editor.editorGroup.model.activeTab;
 	const originalMain = main.buffer.getText();
-	const providerSource = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+	const providerSource = ide.sources.catalog.getContext(main.resource.contextId).luaSources.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 	harness.openLuaSource(providerSource.source_path);
 	const provider = harness.getActiveEditorDocument().model;

@@ -11,7 +11,7 @@ export function executeEditorSymbolNavigationCommand(pane: CodeEditorPane, comma
 			openDefinitionSearch(pane, code.view.cursorRow, code.view.cursorColumn);
 			return;
 		case 'callHierarchy': {
-			const result = resolveCallHierarchyAt(code, pane.sources, code.view.cursorRow, code.view.cursorColumn);
+			const result = resolveCallHierarchyAt(code, pane.sources.catalog, code.view.cursorRow, code.view.cursorColumn);
 			switch (result.kind) {
 				case 'missing_definition':
 					showEditorMessage('Definition not found at cursor', 'warning', 1.8);

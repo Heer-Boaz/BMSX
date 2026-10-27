@@ -1,9 +1,10 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createPathModuleProjectFixture, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import { captureInstalledLuaSources } from '../../ide/runtime/source_registry';
 import { SUPERVISOR_FAULT_MODULE, runToSupervisorFault } from '../helpers/supervisor_fault';
-import { readRuntimeStackFrames, buildLuaStackFrames, createLuaSourceStackTraceFrame } from '../../ide/runtime/stack_trace';
+import { readRuntimeStackFrames, buildLuaStackFrames } from '../../ide/runtime/stack_trace';
 import { editorTextModelService, EditorTextModelService } from '../../ide/editor/model/model_service';
 import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import { canOpenBehaviorInspectionSource } from '../../ide/workbench/contrib/behavior_lens/inspection_source';
@@ -67,7 +68,7 @@ const intellisenseEngineModulePromise = import('../../ide/editor/contrib/intelli
 const editorDiagnosticsModulePromise = import('../../ide/workbench/services/diagnostics/lua');
 
 const EMPTY_ROM_PAYLOAD = createTestRuntimeRomPayload();
-const runtimeResource = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'cart.lua' } as const;
+const runtimeResource = { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'cart.lua' } as const;
 
 function createSourceState(files: Record<string, string>, systemRom: Uint8Array): RuntimeSourceState {
 	const systemLuaSources: LuaSourceRegistry = {
@@ -105,8 +106,8 @@ function createIntellisenseSources(files: Record<string, string> = {}) {
 }
 
 function testLuaResource(path: string): RuntimeResource {
-	return { sourceFilePath: path, location: { kind: 'workspace' as const, path },
-		domain: SYSTEM_RESOURCE_DOMAIN,
+	return { contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path },
+		contextId: TEST_SYSTEM_CONTEXT_ID,
 		path,
 		source: {
 			resid: path,
@@ -171,7 +172,7 @@ function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0, modules:
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, systemLuaSources);
 	sources.currentBlua32Media = {
-		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(systemLuaSources)),
+		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(systemLuaSources, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID),
 		cartridgeSlots: [null, null],
 	};
 	const bridge = { sources, suspendedGuest: new SuspendedGuestSession(runtime) };
@@ -182,7 +183,7 @@ function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0, modules:
 		runtime,
 		sourcePath,
 		analysis: buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, runtimeResource),
-			...Object.entries(modules).map(([path, text]) => buildResourceLuaSemanticFixtureFile(text, { domain: SYSTEM_RESOURCE_DOMAIN, path: `${path}.lua` }))], [])).getFileData(resourceIdentityKey(runtimeResource))!,
+			...Object.entries(modules).map(([path, text]) => buildResourceLuaSemanticFixtureFile(text, { contextId: TEST_SYSTEM_CONTEXT_ID, path: `${path}.lua` }))], [])).getFileData(resourceIdentityKey(runtimeResource))!,
 	};
 }
 
@@ -382,20 +383,20 @@ test('editor diagnostics share one retained project snapshot across open documen
 		'reader.lua': readerSource,
 		'declaration.lua': declarationSource,
 	});
-	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID);
 	const contexts = Object.entries({ 'reader.lua': readerSource, 'declaration.lua': declarationSource }).map(([path, source]) =>
-		new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
+		new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_SYSTEM_CONTEXT_ID, path, source: { resid: path, type: 'lua' } }, 'lua', source));
 
-	const initial = computeResourceDiagnostics(editorTextModelService, bridge, contexts);
+	const initial = computeResourceDiagnostics(editorTextModelService, bridge.catalog, contexts);
 	assert.ok(!initial.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
-	const project = getOrCreateSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
+	const project = getOrCreateSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID);
 	const initialSnapshot = project.getSnapshot();
 
-	computeResourceDiagnostics(editorTextModelService, bridge, contexts);
+	computeResourceDiagnostics(editorTextModelService, bridge.catalog, contexts);
 	assert.equal(project.getSnapshot(), initialSnapshot, 'unchanged diagnostic pass retains the program snapshot');
 
 	contexts[1].pushEditOperations([{ offset: 0, deleteLength: contexts[1].buffer.length, text: 'replacement = { value = 1 }' }]);
-	const updated = computeResourceDiagnostics(editorTextModelService, bridge, contexts);
+	const updated = computeResourceDiagnostics(editorTextModelService, bridge.catalog, contexts);
 	assert.ok(updated.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
 });
 
@@ -408,30 +409,30 @@ test('diagnostics over more than 24 documents parse each generation once, includ
 		const path = `document_${index}.lua`;
 		const source = `return ${index}`;
 		files[path] = source;
-		contexts.push(new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
+		contexts.push(new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_SYSTEM_CONTEXT_ID, path, source: { resid: path, type: 'lua' } }, 'lua', source));
 	}
 	const bridge = createIntellisenseSources(files);
-	const project = resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
+	const project = resetSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID);
 	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
-	assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge, contexts), []);
+	assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge.catalog, contexts), []);
 	assert.equal(parse.mock.callCount(), contexts.length);
 	const old = project.getSnapshot();
-	for (let pass = 0; pass < 3; pass++) assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge, contexts), []);
+	for (let pass = 0; pass < 3; pass++) assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge.catalog, contexts), []);
 	assert.equal(parse.mock.callCount(), contexts.length, 'document lifetime, not cache capacity, determines reuse');
 	assert.equal(project.getSnapshot(), old);
 	contexts[0].pushEditOperations([{ offset: 0, deleteLength: contexts[0].buffer.length, text: 'local value =' }]);
-	const diagnostics = computeResourceDiagnostics(editorTextModelService, bridge, contexts);
+	const diagnostics = computeResourceDiagnostics(editorTextModelService, bridge.catalog, contexts);
 	assert.equal(diagnostics.length, 1);
 	assert.equal(diagnostics[0].model, contexts[0]);
 	assert.equal(parse.mock.callCount(), contexts.length + 1);
 	const invalid = project.getFileData(contexts[0].identity)!;
 	assert.equal(invalid.syntaxError, invalid.chunk.syntaxError);
 	assert.equal(invalid.chunk.source, contexts[0].buffer.getText());
-	computeResourceDiagnostics(editorTextModelService, bridge, contexts);
+	computeResourceDiagnostics(editorTextModelService, bridge.catalog, contexts);
 	assert.equal(project.getFileData(contexts[0].identity)!.chunk, invalid.chunk);
 	assert.equal(parse.mock.callCount(), contexts.length + 1, 'incomplete source is retained, not reparsed on each diagnostic read');
 	contexts[0].pushEditOperations([{ offset: 0, deleteLength: contexts[0].buffer.length, text: files[contexts[0].identity.path] }]);
-	assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge, contexts), []);
+	assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge.catalog, contexts), []);
 	assert.equal(parse.mock.callCount(), contexts.length + 2);
 	assert.equal(old.getFileData(resourceIdentityKey(contexts[0].identity))!.chunk.source, contexts[0].buffer.getText());
 	assert.equal(old.getFileData(resourceIdentityKey(contexts[0].identity))!.syntaxError, null);
@@ -446,10 +447,10 @@ test('static definition lookup preserves one-based source coordinates at an iden
 	].join('\n');
 	const usageLine = source.split('\n')[1];
 	const usageColumn = usageLine.indexOf('target') + 'target'.length;
-	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID);
 
 	const location = findStaticDefinitionLocation(
-		createIntellisenseSources({ 'main.lua': source }),
+		createIntellisenseSources({ 'main.lua': source }).catalog,
 		2,
 		usageColumn,
 		'main.lua',
@@ -457,7 +458,7 @@ test('static definition lookup preserves one-based source coordinates at an iden
 	);
 
 	assert.ok(location);
-	assert.equal(location.path, resourceIdentityKey({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'main.lua' }));
+	assert.equal(location.path, resourceIdentityKey({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'main.lua' }));
 	assert.equal(location.range.startLine, 1);
 	assert.equal(location.range.startColumn, 7);
 });
@@ -477,7 +478,7 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 		fault,
 		bridge.suspendedGuest,
 		analysis,
-		runtimeResource,
+		runtimeResource, SYSTEM_RESOURCE_DOMAIN,
 		['counter'],
 		1,
 		counterColumn,
@@ -517,8 +518,7 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 	runtime.machine.cpu.reset();
 	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
 	const fault = createRuntimeFaultState();
-	const stack = buildLuaStackFrames(readRuntimeStackFrames(runtime.machine.cpu, bridge.sources),
-		(domain, path, line, column, name) => createLuaSourceStackTraceFrame(bridge.sources, domain, path, line, column, name));
+	const stack = buildLuaStackFrames(readRuntimeStackFrames(runtime.machine.cpu, bridge.sources)).frames;
 	assert.equal(stack[0].functionName, 'inspect');
 	assert.equal(stack[0].kind, 'source');
 	assert.equal(stack[0].line, 2);
@@ -533,7 +533,7 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 		fault,
 		bridge.suspendedGuest,
 		analysis,
-		runtimeResource,
+		runtimeResource, SYSTEM_RESOURCE_DOMAIN,
 		['seed'],
 		8,
 		callerLine.indexOf('seed') + 1,
@@ -578,7 +578,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 		fault,
 		bridge.suspendedGuest,
 		analysis,
-		runtimeResource,
+		runtimeResource, SYSTEM_RESOURCE_DOMAIN,
 		['captured', 'value'],
 		4,
 		usageColumn,
@@ -648,36 +648,36 @@ halt_until_irq`;
 		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 		const callback = guest.global('callback');
 		const location = runtimeLuaFunctionSource(bridge.sources, guest, callback)!;
-		assert.deepEqual(location.resource, { domain: SYSTEM_RESOURCE_DOMAIN, path: 'cart.lua' });
+		assert.deepEqual(location.resource, { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'cart.lua' });
 		assert.deepEqual(location.range.start, { line: 1, column: 12 });
 		assert.equal(location.installedSource, source);
 		t.after(() => editorTextModelService.clear());
 		const detail: BehaviorInspectionProperty = { label: 'callback', value: '', description: '', warning: false, source: location };
-		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), true);
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources.catalog, detail), true);
 		const model = editorTextModelService.retain(testLuaResource('cart.lua'), 'lua', source);
 		const changedSource = source.replace('return 7', 'return 77');
 		// A different installed authoring image cannot decide correspondence with this captured callback.
 		bridge.sources.systemInstalledBlua32Sources = new Map([['cart', changedSource]]);
-		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), true);
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources.catalog, detail), true);
 		model.pushEditOperations([{ offset: 0, deleteLength: source.length, text: changedSource }]);
-		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), false);
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources.catalog, detail), false);
 		model.undo();
-		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), true);
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources.catalog, detail), true);
 		const textReads = t.mock.method(model.buffer, 'getText');
-		for (let update = 0; update < 1000; update++) assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), true);
+		for (let update = 0; update < 1000; update++) assert.equal(canOpenBehaviorInspectionSource(bridge.sources.catalog, detail), true);
 		assert.equal(textReads.mock.callCount(), 0, 'unchanged source correspondence does not flatten the document on repaint');
 		editorTextModelService.clear();
 		const reopened = editorTextModelService.retain(testLuaResource('cart.lua'), 'lua', changedSource);
 		assert.notStrictEqual(reopened, model);
-		assert.equal(canOpenBehaviorInspectionSource(bridge.sources, detail), false);
+		assert.equal(canOpenBehaviorInspectionSource(bridge.sources.catalog, detail), false);
 		const correspondence = new RuntimeLuaFunctionSourceCache(bridge.sources, guest);
 		const cached = correspondence.update(callback)!;
 		assert.deepEqual(cached, location);
 		for (let update = 0; update < 1000; update++) assert.strictEqual(correspondence.update(callback), cached);
 		// Working-copy edits/renames cannot replace the source admitted with this code.
-		const working = bridge.sources.systemLuaSources.records[0];
+		const working = bridge.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.records[0];
 		working.src = '-- edited after admission'; working.source_path = 'renamed.lua';
-		bridge.sources.systemLuaSources.revision++;
+		bridge.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.revision++;
 		assert.strictEqual(correspondence.update(callback), cached);
 		assert.deepEqual(runtimeLuaFunctionSource(bridge.sources, guest, callback), location);
 		// Hot Resume changes physical call targets without replacing the allocation identity.
@@ -752,9 +752,9 @@ halt_until_irq`;
 		assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
 		const fault = createRuntimeFaultState();
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
-			analysis, runtimeResource, ['target', 'missing'], 4, 8), { kind: 'value', value: null });
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target', 'missing'], 4, 8), { kind: 'value', value: null });
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
-			analysis, runtimeResource, ['target', 'missing', 'value'], 4, 8), { kind: 'unavailable', reason: 'not_a_table' });
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target', 'missing', 'value'], 4, 8), { kind: 'unavailable', reason: 'not_a_table' });
 	});
 
 	test(`suspended inspection resolves static declarations by installed definition, never globals at O${optLevel}`, t => {
@@ -775,12 +775,12 @@ return buffer`;
 		const fault = createRuntimeFaultState();
 		for (const [line, column, address] of [[1, 5, image.image.header.bssAddress], [6, 7, image.image.header.dataAddress], [8, 9, image.image.header.dataAddress]]) {
 			assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
-				runtimeResource, ['buffer'], line, column), { kind: 'value', value: address });
+				runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['buffer'], line, column), { kind: 'value', value: address });
 		}
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
-			runtimeResource, ['shape'], 2, 8), { kind: 'unavailable', reason: 'not_runtime_value' });
+			runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['shape'], 2, 8), { kind: 'unavailable', reason: 'not_runtime_value' });
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
-			runtimeResource, ['buffer', 'field'], 8, 9), { kind: 'unavailable', reason: 'not_a_table' }, 'an address is not a Lua table');
+			runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['buffer', 'field'], 8, 9), { kind: 'unavailable', reason: 'not_a_table' }, 'an address is not a Lua table');
 		assert.equal(reads.mock.callCount(), 0);
 	});
 
@@ -793,9 +793,9 @@ return buffer`;
 		const reads = t.mock.method(bridge.suspendedGuest, 'global');
 		const fault = createRuntimeFaultState();
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
-			runtimeResource, ['exported'], 3, 8), { kind: 'value', value: image.image.header.bssAddress });
+			runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['exported'], 3, 8), { kind: 'value', value: image.image.header.bssAddress });
 		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
-			runtimeResource, ['shape'], 3, 25), { kind: 'unavailable', reason: 'not_runtime_value' });
+			runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['shape'], 3, 25), { kind: 'unavailable', reason: 'not_runtime_value' });
 		assert.equal(reads.mock.callCount(), 0);
 	});
 
@@ -820,7 +820,7 @@ return buffer`;
 			assert.equal(blua32SlotLiveAtPc(slot.liveWordRanges, codeAddress, codeAddress + range.end * INSTRUCTION_BYTES), false, 'interval end is exclusive');
 		}
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
-			analysis, runtimeResource, ['target'], declarations.length + 4, 8);
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target'], declarations.length + 4, 8);
 		assert.equal(result.kind, 'value');
 		if (result.kind === 'value') assert.equal(result.value, 42);
 	});
@@ -831,7 +831,7 @@ return buffer`;
 		runtime.machine.cpu.reset();
 		assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
-			analysis, runtimeResource, ['value'], 3, 8);
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value'], 3, 8);
 		if (optLevel === 0) {
 			assert.equal(result.kind, 'value');
 			if (result.kind === 'value') assert.equal(result.value, 11);
@@ -900,7 +900,7 @@ return descend(1)`,
 			const fault = createRuntimeFaultState();
 			const column = scenario.source.split('\n')[scenario.line - 1].indexOf('value') + 1;
 			assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
-				analysis, runtimeResource, ['value'], scenario.line, column), scenario.expected);
+				analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column), scenario.expected);
 
 			const faultSource = "require('supervisor_fault'); " + scenario.source.replace('halt_until_irq', "raise_fault('recursive stop')");
 			const faulted = createIntellisenseRuntime(faultSource, optLevel, { [SUPERVISOR_FAULT_MODULE.path]: SUPERVISOR_FAULT_MODULE.source });
@@ -909,7 +909,7 @@ return descend(1)`,
 			recordSupervisorFault(fault, faulted.bridge.sources, faulted.runtime, faulted.bridge.suspendedGuest);
 			faulted.runtime.machine.cpu.reset(); faulted.runtime.machine.cpu.installBootPrimitives();
 			assert.deepEqual(readRuntimeLuaValue(faulted.runtime, faulted.bridge.sources, fault, faulted.bridge.suspendedGuest,
-				faulted.analysis, runtimeResource, ['value'], scenario.line, column), scenario.expected,
+				faulted.analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column), scenario.expected,
 				'captured fault frames retain the same invocation after the physical stack is replaced');
 		});
 	}
@@ -927,7 +927,7 @@ return dormant
 		runtime.machine.cpu.reset();
 		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
-			analysis, runtimeResource, ['target', 'value'], 4, 9);
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target', 'value'], 4, 9);
 		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
 	});
 
@@ -942,7 +942,7 @@ return table
 		runtime.machine.cpu.reset();
 		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
-			analysis, runtimeResource, ['table'], 4, 8);
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['table'], 4, 8);
 		assert.equal(result.kind, 'value');
 		if (result.kind === 'value') assert.equal(result.value, null);
 	});
@@ -962,7 +962,7 @@ return value
 		const fault = createRuntimeFaultState();
 		for (const [line, column, expected] of [[7, 8, 11], [5, 11, 22]]) {
 			const result = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
-				analysis, runtimeResource, ['value', 'number'], line, column);
+				analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value', 'number'], line, column);
 			assert.equal(result.kind, 'value');
 			if (result.kind === 'value') assert.equal(result.value, expected);
 		}
@@ -981,7 +981,7 @@ return actor:run()
 		runtime.machine.cpu.reset();
 		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
-			analysis, runtimeResource, ['self', 'value'], 5, 9);
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['self', 'value'], 5, 9);
 		assert.equal(result.kind, 'value');
 		if (result.kind === 'value') assert.equal(result.value, 42);
 	});
@@ -998,7 +998,7 @@ return pending
 		runtime.machine.cpu.reset();
 		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
-			analysis, runtimeResource, ['pending'], 6, 8);
+			analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['pending'], 6, 8);
 		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
 	});
 }
@@ -1025,8 +1025,8 @@ test('suspended inspection requires installed source correspondence, and regains
 	const fault = createRuntimeFaultState();
 	const changed = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source.replace('target', 'edited'), runtimeResource)], [])).getFileData(resourceIdentityKey(runtimeResource))!;
 	assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
-		changed, runtimeResource, ['target'], 3, 8), { kind: 'unavailable', reason: 'source_changed' });
-	const result = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis, runtimeResource, ['target'], 3, 8);
+		changed, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target'], 3, 8), { kind: 'unavailable', reason: 'source_changed' });
+	const result = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['target'], 3, 8);
 	assert.equal(result.kind, 'value');
 	if (result.kind === 'value') assert.equal(result.value, 42);
 	const { inspectLuaRuntimeExpression } = await intellisenseEngineModulePromise;
@@ -1167,12 +1167,12 @@ test('project reference catalog resolves globals across paths', async t => {
 		'return state',
 	].join('\n');
 
-	const workspace = new EditorLuaSemanticProject(SYSTEM_RESOURCE_DOMAIN, new EditorTextModelService());
+	const workspace = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
 	t.after(() => workspace.dispose());
-	workspace.updateDocument({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' }, usageSource);
-	workspace.updateDocument({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua' }, globalSource);
-	workspace.updateDocument({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'parameter.lua' }, parameterSource);
-	workspace.updateDocument({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'local.lua' }, localSource);
+	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' }, usageSource);
+	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'global.lua' }, globalSource);
+	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'parameter.lua' }, parameterSource);
+	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'local.lua' }, localSource);
 
 	const usageLines = usageSource.split('\n');
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
@@ -1181,14 +1181,14 @@ test('project reference catalog resolves globals across paths', async t => {
 	assert.ok(stateColumn >= 0);
 
 	const snapshot = workspace.getSnapshot();
-	const symbolInfo = createLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition(resourceIdentityKey({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' }), stateRow + 1, stateColumn + 1);
+	const symbolInfo = createLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition(resourceIdentityKey({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' }), stateRow + 1, stateColumn + 1);
 	assert.ok(symbolInfo);
 	if (!symbolInfo) {
 		return;
 	}
 
 	const matches = symbolInfo.references
-		.filter(ref => ref.file === resourceIdentityKey({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' }))
+		.filter(ref => ref.file === resourceIdentityKey({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' }))
 		.map(ref => luaRangeToSearchMatch(snapshot.getFileData(ref.file)!.chunk.locations.range(ref.span), usageLines))
 		.filter((match): match is { row: number; start: number; end: number } => match !== null);
 
@@ -1230,31 +1230,31 @@ test('reference lookup resolves global definition across paths', async t => {
 		'}',
 	].join('\n');
 
-	const workspace = new EditorLuaSemanticProject(SYSTEM_RESOURCE_DOMAIN, new EditorTextModelService());
+	const workspace = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
 	t.after(() => workspace.dispose());
-	workspace.updateDocument({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' }, usageSource);
-	workspace.updateDocument({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua' }, globalSource);
+	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' }, usageSource);
+	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'global.lua' }, globalSource);
 
 	const usageLines = usageSource.split('\n');
-	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID);
 
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	assert.ok(stateRow >= 0);
 	const stateColumn = usageLines[stateRow]!.indexOf('state');
 	assert.ok(stateColumn >= 0);
 
-	const result = resolveReferenceLookup(createIntellisenseSources({ 'global.lua': globalSource }), {
+	const result = resolveReferenceLookup(createIntellisenseSources({ 'global.lua': globalSource }).catalog, {
 		buffer: new PieceTreeBuffer(usageSource),
 		cursorRow: stateRow,
 		cursorColumn: stateColumn,
-		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' },
+		identity: { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' },
 	});
 
 	assert.equal(result.kind, 'success', 'reference lookup succeeded');
 	if (result.kind === 'success') {
 		assert.ok(result.info.matches.length > 0, 'matches found');
 		assert.equal(result.info.expression, 'state');
-		const symbolInfo = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition(resourceIdentityKey({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' }), stateRow + 1, stateColumn + 1);
+		const symbolInfo = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition(resourceIdentityKey({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' }), stateRow + 1, stateColumn + 1);
 		assert.ok(symbolInfo);
 		if (symbolInfo) {
 			assert.deepEqual(
@@ -1281,13 +1281,13 @@ test('reference lookup retains all definitions of a value alternative', async ()
 	const lines = source.split('\n');
 	const cursorRow = 7;
 	const cursorColumn = lines[cursorRow]!.indexOf('run');
-	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID);
 
-	const result = resolveReferenceLookup(createIntellisenseSources(), {
+	const result = resolveReferenceLookup(createIntellisenseSources().catalog, {
 		buffer: new PieceTreeBuffer(source),
 		cursorRow,
 		cursorColumn,
-		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'alternatives.lua' },
+		identity: { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'alternatives.lua' },
 	});
 
 	assert.equal(result.kind, 'success');
@@ -1315,28 +1315,28 @@ test('reference lookup prefers local parameter over global', async t => {
 		'print(state)',
 	].join('\n');
 
-	const workspace = new EditorLuaSemanticProject(SYSTEM_RESOURCE_DOMAIN, new EditorTextModelService());
+	const workspace = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
 	t.after(() => workspace.dispose());
-	workspace.updateDocument({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' }, usageSource);
-	workspace.updateDocument({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua' }, globalSource);
+	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' }, usageSource);
+	workspace.updateDocument({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'global.lua' }, globalSource);
 
 	const usageLines = usageSource.split('\n');
-	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID);
 
 	const helperLineIndex = usageLines.findIndex(line => line.includes('helper'));
 	assert.ok(helperLineIndex >= 0);
 	const parameterColumn = usageLines[helperLineIndex]!.indexOf('state');
 
-	const parameterResult = resolveReferenceLookup(createIntellisenseSources({ 'global.lua': globalSource }), {
+	const parameterResult = resolveReferenceLookup(createIntellisenseSources({ 'global.lua': globalSource }).catalog, {
 		buffer: new PieceTreeBuffer(usageSource),
 		cursorRow: helperLineIndex,
 		cursorColumn: parameterColumn,
-		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' },
+		identity: { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'usage.lua' },
 	});
 
 	assert.equal(parameterResult.kind, 'success', 'parameter lookup succeeds');
 	if (parameterResult.kind === 'success') {
-		const workspaceGlobal = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition(resourceIdentityKey({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua' }), 1, 1);
+		const workspaceGlobal = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition(resourceIdentityKey({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'global.lua' }), 1, 1);
 		if (workspaceGlobal) {
 			assert.notDeepEqual(
 				parameterResult.info.query.targets[0].range,
@@ -1363,9 +1363,9 @@ test('context tokens ignore retained comment trivia and resolve declaration name
 	const { resetSemanticProject } = await workspaceStateModulePromise;
 	const source = 'local --[[decoy_name]] actual_name = 7 -- trailing_name\nreturn actual_name';
 	const path = 'comment_context.lua';
-	const model = new EditorTextModel({ sourceFilePath: path, location: { kind: 'workspace' as const, path }, domain: SYSTEM_RESOURCE_DOMAIN, path,
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_SYSTEM_CONTEXT_ID, path,
 		source: { resid: path, type: 'lua', source_path: path, generated: false } }, 'lua', source);
-	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, TEST_SYSTEM_CONTEXT_ID);
 	const { documents, clock } = createTestCodeDocuments(context);
 	const code = createTestCodeControl(context, model, documents, clock);
 	context.after(() => model.dispose());

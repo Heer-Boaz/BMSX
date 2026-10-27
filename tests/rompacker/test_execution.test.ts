@@ -1,3 +1,5 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -5,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH } from '../helpers/scenario_media';
-import { buildTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import { buildFixtureProgram } from '../../ide/testing/fixture_media';
 import type { TestTarget } from '../../ide/testing/target';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { TestInput } from '../../ide/testing/input';
@@ -42,12 +44,11 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 			],
 			cartSource: `module<entry>\nerror('game entry must never run in a unit target')`,
 		});
-		const program = await buildTestCartridge({ ...fixture, systemRom: fixture.systemRom, cartridge: fixture.cartRom,
-			test: { sourcePath: testSource.path, source }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
+		const program = await buildFixtureProgram({ ...fixture, systemRom: fixture.systemRom, cartridgeSlots: [fixture.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: testSource.path, source });
 		const results = new ScenarioResultService();
 		const items: ScenarioTestItem[] = program.suite.tests.map(test => ({
 			kind: 'test', id: `scenario:0:${test.name}`, parentId: 'scenario-module:0:fixture', label: test.name,
-			caseName: test.name, resource: { domain: 0, path: testSource.path }, assetId: 'fixture', sourceTimestamp: 0, range: test.range,
+			caseName: test.name, resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: testSource.path }, assetId: 'fixture', sourceTimestamp: 0, range: test.range,
 		}));
 		const run = results.beginRun('scenario-root:0', items.map(test => ({ test, source, sourceRevision: 0 })));
 		let previous: TestTarget | null = null;
@@ -99,8 +100,7 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
  teardown = function(t, fixture) assert(fixture.started); error('cleanup failed') end,
  tests = { never = function() error('body must not run') end }
 }`;
-		const setupProgram = await buildTestCartridge({ systemRom: fixture.systemRom, cartridge: fixture.cartRom,
-			test: { sourcePath: testSource.path, source: setupSource }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
+		const setupProgram = await buildFixtureProgram({ systemRom: fixture.systemRom, cartridgeSlots: [fixture.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: testSource.path, source: setupSource });
 		const setupTarget = new OffscreenMachine(fixture.systemRom, [setupProgram.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 		const setupItem = { ...items[0], caseName: 'never' };
 		const setupRun = results.beginRun(setupItem.id, [{ test: setupItem, source: setupSource, sourceRevision: 1 }]);
@@ -158,13 +158,12 @@ while true do
  halt_until_irq
 end`,
 		});
-		const program = await buildTestCartridge({ systemRom: fixture.systemRom, cartridge: fixture.cartRom,
-			test: { sourcePath: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
+		const program = await buildFixtureProgram({ systemRom: fixture.systemRom, cartridgeSlots: [fixture.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source });
 		const target = new OffscreenMachine(fixture.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 		const results = new ScenarioResultService();
 		const item: ScenarioTestItem = { kind: 'test', id: 'scenario:0:integration', caseName: 'input_and_boundary',
 			parentId: 'scenario-module:0:fixture', label: 'input_and_boundary', assetId: 'fixture', sourceTimestamp: 0,
-			resource: { domain: 0, path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: program.suite.tests[0].range };
+			resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: program.suite.tests[0].range };
 		const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]);
 		const result = results.startItem(run, 0, 0);
 		let captures = 0;
@@ -211,15 +210,14 @@ while true do
  halt_until_irq
 end`,
 		});
-		const program = await buildTestCartridge({ systemRom: fixture.systemRom, cartridge: fixture.cartRom,
-			test: { sourcePath: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
+		const program = await buildFixtureProgram({ systemRom: fixture.systemRom, cartridgeSlots: [fixture.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source });
 		for (const caseName of ['waiting', 'spinning']) {
 			const target = new OffscreenMachine(fixture.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 			const results = new ScenarioResultService();
 			const declaration = program.suite.tests.find(test => test.name === caseName)!;
 			const item: ScenarioTestItem = { kind: 'test', id: `scenario:0:${caseName}`, caseName,
 				parentId: 'scenario-module:0:fixture', label: caseName, assetId: 'fixture', sourceTimestamp: 0,
-				resource: { domain: 0, path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: declaration.range };
+				resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: declaration.range };
 			const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]);
 			const result = results.startItem(run, 0, 0);
 			const execution = new TestExecution(target, program, results, result);

@@ -2,8 +2,7 @@ import { generateUuid } from '../common/uuid';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
-import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
-import type { ResourceDomain } from '../common/resource';
+import type { BuiltFixtureProgram } from './fixture_media';
 import { RuntimeDebuggerResumeMode, RuntimeDebuggerStopReason, SourceDebugger } from '../runtime/source_debugger';
 import { TestDebuggerSources } from './debugger_sources';
 import { TestStopInspection } from './stop_inspection';
@@ -24,11 +23,10 @@ export class TestDebugger {
 	private readonly inspections = new Set<TestStopInspection>();
 	private readonly listeners = new Set<() => void>();
 
-	public constructor(private readonly runtime: Runtime, private readonly program: BuiltTestCartridge, private readonly sourceDomain: ResourceDomain,
+	public constructor(private readonly runtime: Runtime, private readonly program: BuiltFixtureProgram,
 		bindingChanged: () => void) {
-		this.sources = new TestDebuggerSources(this.id, program, sourceDomain, bindingChanged);
-		this.source = new SourceDebugger(runtime.machine.cpu, { system: program.debugImages[0].image,
-			cartridgeSlots: [program.debugImages[1].image, program.debugImages[2] === null ? null : program.debugImages[2].image] }, this.sources.pcs, bindingChanged);
+		this.sources = new TestDebuggerSources(this.id, program, bindingChanged);
+		this.source = new SourceDebugger(runtime.machine.cpu, program.sourceMedia, this.sources.pcs, bindingChanged);
 	}
 	public get stopped(): boolean { return this.status === 'stopped'; }
 	public get domainMask(): number { return this.stopped ? ALL_EXECUTION_DOMAINS_MASK : this.source.domainMask; }
@@ -84,7 +82,7 @@ export class TestDebugger {
 	}
 	public inspect(): TestStopInspection {
 		if (!this.stopped) throw new Error('A live test inspection requires a stopped debugger.');
-		const inspection = new TestStopInspection(this.runtime, this.program, this.sourceDomain, this.snapshot(), this.stopThread!,
+		const inspection = new TestStopInspection(this.runtime, this.program, this.snapshot(), this.stopThread!,
 			() => this.inspections.delete(inspection));
 		this.inspections.add(inspection);
 		return inspection;

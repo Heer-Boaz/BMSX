@@ -113,7 +113,7 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 	private openImpactSource(input: WorkspaceEditReviewInput): void {
 		this.quickInput.pick('Impact Source', input.evidence.summary, () => {
 			return new TextQuickPickProvider(input.evidence.items.map(item => ({ label: item.label, description: item.value,
-				detail: `${sourceTabDescription(item.location.model.identity)} / v${item.location.version}\n${item.description}`, location: item.location })));
+				detail: `${sourceTabDescription(item.location.model.resource)} / v${item.location.version}\n${item.description}`, location: item.location })));
 		}, item => {
 			const { model, offset } = item.location, position = { row: 0, column: 0 };
 			model.buffer.positionAt(offset, position);

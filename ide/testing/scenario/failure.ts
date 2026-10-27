@@ -1,11 +1,11 @@
 import { LuaError } from '../../../toolchain/ts/lua/errors';
-import { resolveRuntimeLuaSourceForContext, type RuntimeSourceState } from '../../runtime/sources';
+import { type RuntimeSourceState } from '../../runtime/sources';
 import type { ScenarioRunFailure } from './result_service';
 
 /** Project preparation errors into immutable run diagnostics. */
 export function scenarioFailureFromError(
 	sources: RuntimeSourceState,
-	domain: 0 | 1,
+	contextId: string,
 	phase: string,
 	error: unknown,
 ): ScenarioRunFailure {
@@ -16,11 +16,11 @@ export function scenarioFailureFromError(
 	};
 	if (!(error instanceof LuaError)) return failure;
 	const path = error.path.startsWith('@') ? error.path.slice(1) : error.path;
-	const source = resolveRuntimeLuaSourceForContext(sources, domain, path)!;
+	const resource = sources.catalog.resolveResource({ contextId, path }) ?? sources.catalog.resolveModule(contextId, path)!;
 	return {
 		...failure,
 		location: {
-			resource: { domain: source.domain, path: source.record.source_path },
+			resource: { contextId: resource.contextId, path: resource.path },
 			line: error.line,
 			column: error.column,
 		},

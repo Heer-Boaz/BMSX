@@ -5,6 +5,8 @@ import { openBrowserWorkspaceSession } from './workspace_session';
 import { importWorkspaceFiles } from './file_import';
 import { loadPublishedBuild, openPublishedBuild } from './published_media';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
+import type { StudioSourceContext } from '../../hosts/common/studio_projects';
+import { createLoadedProjectSourceCatalog } from '../runtime/sources';
 import { showEditorMessage } from '../common/feedback_state';
 import { HttpConversationObserver } from './conversation_observer';
 import { decodeImage, encodePngImage } from '../../hosts/browser/image';
@@ -78,10 +80,30 @@ async function startBrowserStudio(): Promise<void> {
 		const workspace = configuration.workspace;
 		// A raw-media open admits its selected source folder. Only a build receipt
 		// can supply the named project's identity; matching filesystem roots cannot.
-		const sourceRoot = (sourceMedia.cartridgeSlots[0] ?? sourceMedia.cartridgeSlots[1] ?? sourceMedia.system).index.projectRootPath;
+		const workspaceCartridge = sourceMedia.cartridgeSlots[0] ?? sourceMedia.cartridgeSlots[1];
+		const sourceRoot = (workspaceCartridge ?? sourceMedia.system).index.projectRootPath;
 		const workspaceContext = buildRequest !== null ? published!.project.cartridge
 			: workspace.kind === 'browser' ? await resolveBrowserSourceContext(sourceRoot)
 				: await new HttpWorkspaceProjects(httpSession(workspace.baseUrl)).resolveSource(sourceRoot);
+		const resolveSource = (root: string) => workspace.kind === 'browser' ? resolveBrowserSourceContext(root)
+			: new HttpWorkspaceProjects(httpSession(workspace.baseUrl)).resolveSource(root);
+		const systemContext = published === undefined ? await resolveSource(sourceMedia.system.index.projectRootPath) : published.project.system;
+		const cartridgeContexts: [StudioSourceContext | null, StudioSourceContext | null] = [null, null];
+		const sourceSeeds = workspaceCartridge === null ? [] : [{ admission: workspaceContext, layer: workspaceCartridge }];
+		for (const slot of [0, 1] as const) {
+			const layer = sourceMedia.cartridgeSlots[slot];
+			if (layer === null) continue;
+			const admission = published !== undefined ? published.project.cartridge : layer.index.projectRootPath === workspaceContext.projectRoot
+				? workspaceContext : await resolveSource(layer.index.projectRootPath);
+			cartridgeContexts[slot] = admission;
+			// The opened workspace owns its authoring seed; another installation
+			// of that context contributes no second mutable source namespace.
+			if (!sourceSeeds.some(seed => seed.admission.id === admission.id)) sourceSeeds.push({ admission, layer });
+		}
+		const catalog = createLoadedProjectSourceCatalog({ admission: systemContext, layer: sourceMedia.system }, sourceSeeds);
+		const sourceBindings = { catalog, systemContextId: systemContext.id,
+			cartridgeContextIds: [cartridgeContexts[0] === null ? null : cartridgeContexts[0].id,
+				cartridgeContexts[1] === null ? null : cartridgeContexts[1].id] as const };
 		const browserSession = await openBrowserWorkspaceSession();
 		if (workspace.kind === 'browser') browserFiles = await IndexedDbWorkspaceRecordProvider.open();
 		const workspaceFiles = workspace.kind === 'browser' ? browserFiles! : new HttpWorkspaceRecordProvider(httpSession(workspace.baseUrl));
@@ -149,6 +171,7 @@ async function startBrowserStudio(): Promise<void> {
 			hostOverlayMenu,
 			storage,
 			workspaceContext,
+			sourceBindings,
 			browserSession.identity,
 			workspaceFiles,
 			options.clock,

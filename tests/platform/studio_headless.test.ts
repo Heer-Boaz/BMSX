@@ -60,7 +60,7 @@ test('headless Studio owns runtime, source history, persistence and session life
 	const readEntry = async (session: string) => {
 		const context = await call('studio_open_context', { session });
 		const catalog = await call('studio_list_sources', context);
-		const entry = catalog.find((resource: { domain: number; path: string }) => resource.domain === 0 && resource.path === 'entry.lua');
+		const entry = catalog.find((resource: { contextId: string; path: string }) => resource.contextId === build.project.cartridge.id && resource.path === 'entry.lua');
 		assert.ok(entry);
 		const source = await call('studio_read_source', { ...context, resource: entry.resource });
 		return { ...context, ...source };
@@ -163,14 +163,14 @@ test('headless Studio owns runtime, source history, persistence and session life
 	for (const [identity, contents] of [[request.requestId, firstText + original], [secondRequest.requestId, secondText + original]]) {
 		const directory = join(f.root, build.project.cartridge.projectRoot, '.bmsx/studio', build.project.cartridge.id, identity);
 		const recovery = JSON.parse(await readFile(join(directory, 'sources.json'), 'utf8'));
-		const entry = recovery.dirtyFiles.find((entry: { domain: number; path: string }) => entry.domain === 0 && entry.path === 'entry.lua');
+		const entry = recovery.dirtyFiles.find((entry: { contextId: string; path: string }) => entry.contextId === build.project.cartridge.id && entry.path === 'entry.lua');
 		assert.ok(entry);
 		const files = await readdir(directory, { recursive: true });
 		const sourcePath = files.find(path => path.endsWith(`~entry.lua.${entry.updatedAt}`))!;
 		assert.equal(await readFile(join(directory, sourcePath), 'utf8'), contents);
 	}
 	const dirty = await call('studio_close_headless', { session: first, discardUnsaved: false });
-	assert.equal(dirty.status, 'dirty'); assert.ok(dirty.resources.some((resource: { domain: number; path: string }) => resource.domain === 0 && resource.path === 'entry.lua'));
+	assert.equal(dirty.status, 'dirty'); assert.ok(dirty.resources.some((resource: { contextId: string; path: string }) => resource.contextId === build.project.cartridge.id && resource.path === 'entry.lua'));
 	assert.equal(await readFile(savedPath, 'utf8'), original);
 	let edited = await readEntry(first);
 	assert.equal(edited.source, firstText + original);
@@ -183,8 +183,8 @@ test('headless Studio owns runtime, source history, persistence and session life
 	assert.equal(await readFile(savedPath, 'utf8'), firstText + original);
 	const reboot = await call('studio_reboot_runtime', { toolContext: edited.toolContext, target: runtime.target });
 	assert.equal(reboot.result.status, 'reset'); assert.equal(reboot.result.installed, true); assert.equal(reboot.result.reset, true);
-	assert.ok(reboot.capturedDocuments.some((document: { domain: number; path: string; version: number }) =>
-		document.domain === 0 && document.path === 'entry.lua' && document.version === edited.version));
+	assert.ok(reboot.capturedDocuments.some((document: { contextId: string; path: string; version: number }) =>
+		document.contextId === build.project.cartridge.id && document.path === 'entry.lua' && document.version === edited.version));
 	const installed = await readEntry(first);
 	assert.equal((await call('studio_read_source_status', { toolContext: installed.toolContext, receipt: installed.receipt })).runtime, 'applied');
 	const afterInstall = await call('studio_step_frames', { toolContext: installed.toolContext, target: runtime.target, direction: 'forward', count: 3 });

@@ -1,3 +1,4 @@
+import { createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { beforeEach, afterEach } from 'node:test';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
@@ -11,7 +12,7 @@ import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH } from '../helpers/scenario_media';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
-import { createRuntimeSourceState } from '../../ide/runtime/sources';
+
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { WorkspaceTestTools } from '../../ide/workbench/services/assistant/test_tools';
@@ -40,7 +41,7 @@ return { kind = 'integration',
 		], cartSource: 'module<entry>\nwhile true do halt_until_irq end',
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
-	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots), models = new EditorTextModelService();
+	const sources = createLoadedTestRuntimeSourceState(loaded.system, loaded.cartridgeSlots), models = new EditorTextModelService();
 	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
 	const initial = captureRuntimeMachineState(authoring.runtime), installed = sources.currentBlua32Media;
 	const targets: OffscreenMachine<TestInput>[] = [];
@@ -53,7 +54,7 @@ return { kind = 'integration',
 		for (let grant = 0; !predicate() && grant < 10000; grant++) { service.advance(); await setImmediate(); }
 		assert.ok(predicate(), 'bounded host driver must reach the requested boundary');
 	}
-	const document = models.retain(sources.luaResources.find(resource => resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH)!, 'lua', source);
+	const document = models.retain(sources.catalog.luaResources.find(resource => resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH)!, 'lua', source);
 	const discovery = await tools.execute('studio_list_tests', {}); assert.ok(discovery.kind === 'tests');
 	const module = discovery.data.roots[0].modules[0];
 	const passScope = module.cases.find(item => item.name === 'passes')!.scope, waitScope = module.cases.find(item => item.name === 'waits')!.scope;
@@ -128,7 +129,7 @@ return { kind = 'integration',
 	await advanceUntil(() => !service.active);
 	assert.equal(own.state, 'cancelled'); assert.equal(own.items[0].logs.at(own.items[0].logs.length - 1).text, 'cleanup ends');
 
-	const helper = sources.luaResources.find(resource => resource.path === 'testlib/fixture.lua')!;
+	const helper = sources.catalog.luaResources.find(resource => resource.path === 'testlib/fixture.lua')!;
 	models.retain(helper, 'lua', 'end end -- invalid dependency, valid test declaration');
 	const beforeFailure = targets.length;
 	const failed = service.start(service.collection.roots[0].id);

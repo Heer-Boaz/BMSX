@@ -20,5 +20,5 @@ export function scenarioModuleCaptions(root: ScenarioTestRoot): ReadonlyMap<Scen
 
 /** Full source membership is independent of the contextual tree caption and current catalog. */
 export function scenarioTestIdentity(test: ScenarioTestItem): string {
-	return `Cartridge ${test.resource.domain} / ${test.resource.path}\n${test.caseName}`;
+	return `${test.resource.path}\n${test.caseName}`;
 }

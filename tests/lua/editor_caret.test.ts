@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import type { CodeEditorControl } from '../../ide/editor/ui/code_editor_control';
@@ -39,7 +40,7 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 
 	constants.setIdeThemeVariant(theme);
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'caret.lua', location: { kind: 'workspace', path: 'caret.lua' }, domain: 0, path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', 'A');
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'caret.lua', location: { kind: 'workspace', path: 'caret.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'caret.lua', source: { type: 'lua', resid: 'caret' } }, 'lua', 'A');
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont(variant));
 	const darkBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME;
 	const lightBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT;

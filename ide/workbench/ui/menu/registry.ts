@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.view'
 	| 'menubar.tools';
 
-export type WorkbenchContextMenuId = 'play.context' | 'gamePanel.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
 export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.run' | 'home.tools' | 'buildLog.title' | 'window.title' | 'play.title' | 'animation.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
@@ -445,6 +445,11 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'scenarioLab.details' },
 		{ type: 'command', command: 'scenarioLab.inspectTarget' },
 	],
+	'scenarioLab.context': [
+		{ type: 'command', command: 'scenarioLab.runWithCompanion' },
+		{ type: 'command', command: 'scenarioLab.debugWithCompanion' },
+		{ type: 'command', command: 'scenarioLab.playWithCompanion' },
+	],
 	'behaviorLens.graph.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeTree' },
@@ -462,6 +467,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'aem.edit' },
 		{ type: 'command', command: 'aem.remove' },
 		{ type: 'command', command: 'aem.source' },
+		{ type: 'command', command: 'aem.apply' },
 		{ type: 'command', command: 'aem.testEvent' },
 	],
 	'luaProgram.title': [
@@ -489,6 +495,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'aem.edit' },
 		{ type: 'command', command: 'aem.remove' },
 		{ type: 'command', command: 'aem.source' },
+		{ type: 'command', command: 'aem.apply' },
 		{ type: 'command', command: 'aem.testEvent' },
 	],
 	'luaProgram.context': [

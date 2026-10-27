@@ -9,7 +9,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { createBlua32SystemSourceImage, resolveRuntimeResource } from '../../ide/runtime/sources';
+import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { api } from '../../ide/runtime/overlay_api';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { RuntimeIdeState } from '../../ide/workbench/state';
@@ -37,7 +37,7 @@ export function createActualSourcePanes(t: TestContext, sameModel = false) {
 	}
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports,
-		captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
+		captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), sources.systemContextId), cartridgeSlots: [null, null] };
 	const externalWork = (): never => { throw new Error('Source pane acceptance does not request external work.'); };
 	const clipboard = new HeadlessClipboard();
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: externalWork }, externalWork,
@@ -45,7 +45,7 @@ export function createActualSourcePanes(t: TestContext, sameModel = false) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), externalWork, externalWork, externalWork);
 	const editor = ide.editor, firstGroup = editor.editorGroup;
-	const firstInput = resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: 'first.lua' })!);
+	const firstInput = resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: sources.systemContextId, path: 'first.lua' })!);
 	firstGroup.openEditor(firstInput);
 	const first = firstGroup.panes.getPane('code_editor') as CodeEditorPane;
 	let secondGroup: EditorGroupView;
@@ -62,8 +62,8 @@ export function createActualSourcePanes(t: TestContext, sameModel = false) {
 		handleWheel: event => { secondGroup.panes.activePane?.handleWheel(event); return true; },
 		onRetire: () => pointerCapture.cancelScope(secondGroup.captureScope),
 	});
-	const secondInput = resolveLuaCodeEditorInput(sources, sameModel ? firstInput.workingCopy.resource
-		: resolveRuntimeResource(sources, { domain: -1, path: 'second.lua' })!);
+	const secondInput = resolveLuaCodeEditorInput(sources.catalog, sameModel ? firstInput.workingCopy.resource
+		: sources.catalog.resolveResource({ contextId: sources.systemContextId, path: 'second.lua' })!);
 	secondGroup.panes.layout(secondBounds); secondGroup.openEditor(secondInput);
 	const second = secondGroup.panes.getPane('code_editor') as CodeEditorPane;
 	const arrange = () => { firstGroup.panes.layout(firstBounds); secondGroup.panes.layout(secondBounds); };

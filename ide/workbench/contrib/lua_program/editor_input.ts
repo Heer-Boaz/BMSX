@@ -1,4 +1,4 @@
-import { resourceIdentityKey } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceDomain } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
@@ -9,6 +9,7 @@ import type { LuaProgramKind, LuaProgramOccurrence, LuaProgramProperty } from '.
 import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { sourceTabDescription } from '../../ui/tab/titles';
+import type { Blua32SourceImage } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 import type { WorkbenchPropertyElement } from '../../ui/property_tree';
 
@@ -26,6 +27,8 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 	public liveVisible = false;
 	public liveDirty = true;
 	public instance: SuspendedValueIdentity | undefined;
+	public runtimeDomain: ResourceDomain | undefined;
+	public runtimeImage: Blua32SourceImage | undefined;
 	public instanceLabel = '';
 	public programHashId = 0;
 	public stateHashId = 0;

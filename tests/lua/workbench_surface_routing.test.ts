@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
@@ -68,7 +69,7 @@ function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: 
 		projectRootPath: '', can_boot_from_source: false, revision: 0 }, [null, null], SYSTEM_RESOURCE_DOMAIN)
 		: createTestSystemImageRuntimeSourceState(authored.image.romBytes, authored.registry);
 	if (authored !== undefined) sources.currentBlua32Media = {
-		system: createBlua32SystemSourceImage(authored.image.image, authored.image.symbols, authored.image.biosImports, captureInstalledLuaSources(authored.registry)),
+		system: createBlua32SystemSourceImage(authored.image.image, authored.image.symbols, authored.image.biosImports, captureInstalledLuaSources(authored.registry, authored.image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID),
 		cartridgeSlots: [null, null],
 	};
 	const unused = (): never => { throw new Error('Surface routing does not request domain work.'); };
@@ -119,7 +120,7 @@ return { _objects = { actor, other } }` },
 		source_path: 'actor-reflow.lua', normalized_source_path: 'actor-reflow.lua', module_path: 'actor-reflow',
 		update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	const f = fixture(t, { image, registry });
-	const sourceModel = f.ide.models.retain(f.sources.luaResources[0], 'lua', source);
+	const sourceModel = f.ide.models.retain(f.sources.catalog.luaResources[0], 'lua', source);
 	f.host.runtime.machine.cpu.runUntilDepth(0, 100_000);
 	f.host.execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
 	f.ide.inspection.pause();
@@ -260,8 +261,8 @@ test('the real Assistant transcript owns only its selected-message actions for t
 		base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	const { editor, sources } = fixture(t, { image, registry }), models = new EditorTextModelService();
 	const conversation = new TranscriptProducer(models, sources, editor.tools), input = new AssistantInput(conversation);
-	const model = models.retain(sources.luaResources[0], 'lua', source);
-	const proposal = new WorkspaceEditProposal('Proposed source', new WorkspaceSourceContext(models, sources), {
+	const model = models.retain(sources.catalog.luaResources[0], 'lua', source);
+	const proposal = new WorkspaceEditProposal('Proposed source', new WorkspaceSourceContext(models, sources.catalog), {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 7, deleteLength: 2, text: '43' }] }]]),
 	});
 	t.after(() => { input.dispose(); conversation.dispose(); models.clear(); });
@@ -431,13 +432,14 @@ test('Animation body clients and its actual property draft publish exact client-
 	const { editor, sources } = fixture(t, { image, registry });
 	const texture = encodeDirect16GxTexture(1, 1, new Uint8ClampedArray([255, 0, 0, 255]));
 	const encoded = new Uint8Array(encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount));
-	const rom = sources.systemRom, start = rom.bytes.length, bytes = new Uint8Array(start + encoded.length);
+	const context = sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID), rom = context.previewRom!, start = rom.bytes.length, bytes = new Uint8Array(start + encoded.length);
 	bytes.set(rom.bytes); bytes.set(encoded, start); rom.bytes = bytes;
 	const assets: RomAsset[] = [{ resid: 'picture', type: 'image', imgmeta: { width: 1, height: 1, texture_u: 0, texture_v: 0, gx_atlas_id: 'picture-atlas' } },
 		{ resid: 'picture-atlas', type: 'texture', start, end: bytes.length, texturemeta: { mode: texture.mode,
 			word_width: texture.wordWidth, height: texture.height, texture_word_count: texture.textureWordCount, clut_word_count: texture.clutWordCount } }];
 	finalizePackedRomAssets(assets); rom.index.entries.push(...assets);
-	const input = editor.animations.openResource(sources.luaResources.find(resource => resource.path === path)!); editor.update(0);
+	context.previewPackage.img.picture = assets[0]; sources.catalog.rebuildResources();
+	const input = editor.animations.openResource(sources.catalog.luaResources.find(resource => resource.path === path)!); editor.update(0);
 	const tracks = inputFocus.target!, commands = ['animation.tracks', 'animation.keys', 'animation.details'] as const;
 	const handlers = commands.map(command => tracks.getCommand(command));
 	editor.animations.selectTrack(input, 1); editor.animations.selectKey(input, 0); editor.update(0);
@@ -494,7 +496,7 @@ test('Animation body clients and its actual property draft publish exact client-
 	editor.editorGroup.openEditor(input); editor.update(0);
 	for (const client of [...clients, field]) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), true);
 	assert.equal(input.workingCopy.buffer.getText(), edited);
-	const timeline = editor.animations.openResource(sources.luaResources.find(resource => resource.path === timelinePath)!);
+	const timeline = editor.animations.openResource(sources.catalog.luaResources.find(resource => resource.path === timelinePath)!);
 	editor.animations.selectTrack(timeline, 1); editor.animations.selectKey(timeline, 0); editor.update(0);
 	editor.commands.execute('animation.keys');
 	const keysClient = inputFocus.target!;

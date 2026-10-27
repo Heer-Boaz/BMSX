@@ -27,12 +27,20 @@ import {
 	collectRomAssetSymbols,
 } from '../../toolchain/ts/rompack/asset_symbols';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
-import { isCartLibrarySource } from '../../toolchain/ts/lua/source_paths';
 import type { Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
 import { isScenarioTestAsset } from '../../toolchain/ts/rompack/scenario_test';
 
 /** Authoring role; importing a library does not change its role or packed provenance. */
 export type LuaSourceKind = 'project' | 'library' | 'source-only';
+
+/** Explicit source membership and namespace mapping supplied by project admission. */
+export type LuaSourceRoot = {
+	readonly path: string;
+	readonly resourcePathPrefix: string;
+	readonly modulePathPrefix: string;
+	readonly structured: boolean;
+	readonly sourceKind: LuaSourceKind;
+};
 
 export type LuaSourceRecord = RomLuaAsset & {
 	readonly sourceKind: LuaSourceKind;
@@ -63,12 +71,24 @@ export type LuaSourceMatch = {
 	record: LuaSourceRecord;
 };
 
+/** Source-only projects use the same registry owner as packed-source admission. */
+export function createLuaSourceRegistry(projectRootPath: string, entrySourcePath: string): LuaSourceRegistry {
+	return { records: [], path2lua: {}, module2lua: {}, entrySourcePath, projectRootPath,
+		can_boot_from_source: false, revision: 0 };
+}
+
 /** Capture written paths with their installed text; later working-copy renames do not change code provenance. */
-export function captureInstalledLuaSources(registry: LuaSourceRegistry): ReadonlyMap<string, Blua32CompiledSource> {
+export function captureInstalledLuaSources(
+	registry: LuaSourceRegistry, compiledModulePaths: readonly string[],
+): ReadonlyMap<string, Blua32CompiledSource> {
 	const sources = new Map<string, Blua32CompiledSource>();
-	for (const record of registry.records) if (record.program_module) sources.set(record.module_path, {
-		displayPath: record.source_path, content: { kind: 'text', text: record.src },
-	});
+	for (const modulePath of compiledModulePaths) {
+		const record = registry.module2lua[modulePath];
+		// A source-bearing image can still omit individual embedded source files.
+		if (record !== undefined) sources.set(modulePath, {
+			displayPath: record.source_path, content: { kind: 'text', text: record.src },
+		});
+	}
 	return sources;
 }
 
@@ -119,16 +139,9 @@ export function buildLuaSources(
 	index: CartridgeIndex,
 	payloadId: RomImageDomain,
 	entrySourcePath: string | undefined,
+	sourceRoots: readonly LuaSourceRoot[],
 ): LuaSourceRegistry {
-	const registry: LuaSourceRegistry = {
-		records: [],
-		path2lua: {},
-		module2lua: {},
-		entrySourcePath: '',
-		projectRootPath: index.projectRootPath,
-		can_boot_from_source: false,
-		revision: 0,
-	};
+	const registry = createLuaSourceRegistry(index.projectRootPath, '');
 
 	let programSourceCount = 0;
 	for (const entry of romSource.list('lua') as PackedLuaSourceAsset[]) {
@@ -139,13 +152,15 @@ export function buildLuaSources(
 		const src = utf8FatalDecoder.decode(romSource.getBytes(entry));
 		const baseSrc = baseEntry ? utf8FatalDecoder.decode(cartSource.getBytes(baseEntry)) : src;
 		const modulePath = toLuaModulePath(entry.source_path);
+		const sourceRoot = sourceRoots.find(root => entry.normalized_source_path === root.path
+			|| entry.normalized_source_path.startsWith(`${root.path}/`));
 		const luaRecord: LuaSourceRecord = {
 			...entry, src, base_src: baseSrc,
 			base_update_timestamp: entry.update_timestamp,
 			module_path: modulePath,
 			generated: ROM_GENERATED_MODULE_PATHS.includes(modulePath),
 			sourceKind: isScenarioTestAsset(entry) ? 'source-only'
-				: isCartLibrarySource(modulePath) ? 'library' : entry.program_module ? 'project' : 'source-only',
+				: sourceRoot === undefined ? entry.program_module ? 'project' : 'source-only' : sourceRoot.sourceKind,
 			program_module: entry.program_module,
 		};
 		registerLuaSourceRecord(registry, luaRecord);
@@ -153,9 +168,10 @@ export function buildLuaSources(
 			programSourceCount += 1;
 		}
 	}
-	registry.can_boot_from_source = programSourceCount > 0;
+	const entrySource = entrySourcePath === undefined ? undefined : registry.module2lua[toLuaModulePath(entrySourcePath)];
+	registry.can_boot_from_source = programSourceCount > 0 && entrySource !== undefined;
+	if (entrySource !== undefined) registry.entrySourcePath = entrySource.source_path;
 	if (programSourceCount > 0) {
-		registry.entrySourcePath = registry.module2lua[toLuaModulePath(entrySourcePath!)].source_path;
 		const assetEntries: RomAsset[] = [];
 		const entries = romSource.list();
 		for (let index = 0; index < entries.length; index += 1) {

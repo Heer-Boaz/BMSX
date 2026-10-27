@@ -32,7 +32,7 @@ export class AssistantReferences {
 			} else {
 				if (!this.suggestions.visible || this.from !== from) {
 					const picks = input.conversation.referenceSources().map(resource => ({ label: resource.path,
-						description: resource.domain === -1 ? 'System source' : `Slot ${resource.domain}`, detail: '', resource }));
+						description: resource.contextLabel, detail: '', resource }));
 					this.suggestions.open(new FileQuickPickProvider(picks));
 				}
 				this.from = from; this.to = caret;

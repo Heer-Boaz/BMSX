@@ -1,6 +1,5 @@
 import { FSM_INITIAL_CART_SOURCE } from '../../helpers/fsm_initial_fixture';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -12,7 +11,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await runMenuCommand('pause');
 	harness.openLuaSource('cart.lua');
 	const model = harness.getActiveEditorDocument().model;
-	const record = runtimeLuaSourceRegistry(ide.sources, model.resource.domain)!.records.find(record =>
+	const record = ide.sources.catalog.getContext(model.resource.contextId).luaSources.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== model.resource.path && !record.module_path.startsWith('cartlib/'))!;
 	harness.openLuaSource(record.source_path);
 	const bridge = harness.getActiveEditorDocument().model;

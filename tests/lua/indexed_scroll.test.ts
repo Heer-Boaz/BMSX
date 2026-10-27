@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import { EMPTY_DIAGNOSTICS_BY_ROW } from '../../ide/editor/contrib/diagnostics/model';
@@ -66,7 +67,7 @@ test('property and resource rendering preserves the actual retained fractional r
 	scrollWorkbenchList(tree, 1.5);
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('rows.lua', 1,
 		Array.from({ length: 80 }, (_, index) => `-- row ${index}`).join('\n'))]);
-	const input = new ResourceViewerInput(sources, sources.luaResources[0]);
+	const input = new ResourceViewerInput(sources.catalog, sources.catalog.luaResources[0]);
 	const pane = new ResourceViewerEditorPane(inputFocus.workbenchScope);
 	pane.setInput(input, { left: 0, top: 0, right: 240, bottom: 160 });
 	t.after(() => { pane.clearInput(); pane.dispose(); input.dispose(); });
@@ -85,7 +86,7 @@ test('property and resource rendering preserves the actual retained fractional r
 test('source scrolling retains fractional pixels while hit tests resolve source columns', t => {
 	configureFontVariant('tiny');
 	const { models, documents, clock } = createTestCodeDocuments(t);
-	const model = models.retain({ sourceFilePath: 'wheel.lua', location: { kind: 'workspace' as const, path: 'wheel.lua' }, domain: 0, path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'wheel.lua', location: { kind: 'workspace' as const, path: 'wheel.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'wheel.lua', source: { type: 'lua', resid: 'wheel' } }, 'lua', ('abcdefghijklmnop'.repeat(20) + '\n').repeat(80));
 	const view = createCodeEditorViewState();
 	const code = createTestCodeControl(t, model, documents, clock, view);
 	code.wordWrapEnabled = false;
@@ -115,7 +116,7 @@ test('source scrolling retains fractional pixels while hit tests resolve source 
 
 test('Problems wheel integrates sub-row distances without changing selection or being undone by focused drawing', t => {
 	configureFontVariant('tiny');
-	const model = new EditorTextModel({ sourceFilePath: 'problems.lua', location: { kind: 'workspace' as const, path: 'problems.lua' }, domain: 0, path: 'problems.lua', source: { type: 'lua', resid: 'problems' } }, 'lua', 'x');
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'problems.lua', location: { kind: 'workspace' as const, path: 'problems.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'problems.lua', source: { type: 'lua', resid: 'problems' } }, 'lua', 'x');
 	const diagnostics: EditorDiagnostic[] = Array.from({ length: 10 }, (_, row) => ({ model, version: 1, row,
 		startColumn: 0, endColumn: 1, message: 'A diagnostic message that wraps across several narrow panel lines.', severity: 'error' }));
 	const controller = new ProblemsPanelController();
@@ -142,7 +143,7 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 
 test('Problems wheel prepares current variable-height layout after show, resize and diagnostic refresh without painting', t => {
 	configureFontVariant('tiny');
-	const model = new EditorTextModel({ sourceFilePath: 'problems-layout.lua', location: { kind: 'workspace' as const, path: 'problems-layout.lua' }, domain: 0, path: 'problems-layout.lua', source: { type: 'lua', resid: 'problems-layout' } }, 'lua', 'x');
+	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'problems-layout.lua', location: { kind: 'workspace' as const, path: 'problems-layout.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'problems-layout.lua', source: { type: 'lua', resid: 'problems-layout' } }, 'lua', 'x');
 	const diagnostic = (message: string, row: number): EditorDiagnostic => ({ model, version: 1, row, startColumn: 0, endColumn: 1, message, severity: 'error' });
 	const diagnostics = [diagnostic('Short', 0), diagnostic('A diagnostic message that wraps across several narrow panel lines.', 1), diagnostic('Last', 2)];
 	const coverage = { ready: 1, pending: 0, unsupported: 0, failed: 0 };
@@ -174,8 +175,8 @@ test('actual Resource viewers keep arranged scrollbar gestures and retirement lo
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('read.lua', 1,
 		Array.from({ length: 80 }, (_, row) => `-- retained row ${row}`).join('\n'))]);
 	const first = createTestEditorGroup(), second = createTestEditorGroup();
-	const firstInput = new ResourceViewerInput(sources, sources.luaResources[0]);
-	const secondInput = new ResourceViewerInput(sources, sources.luaResources[0]);
+	const firstInput = new ResourceViewerInput(sources.catalog, sources.catalog.luaResources[0]);
+	const secondInput = new ResourceViewerInput(sources.catalog, sources.catalog.luaResources[0]);
 	const bounds = { left: 10, top: 20, right: 150, bottom: 130 };
 	first.panes.layout(bounds);
 	second.panes.layout({ left: 190, top: 40, right: 350, bottom: 280 });

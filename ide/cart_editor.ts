@@ -107,7 +107,7 @@ import { PointerButton } from '../hosts/common/input/pointer_event';
 import { WorkbenchSurfaceService } from './workbench/services/windows/service';
 import type { WorkbenchSurface } from './workbench/services/windows/model';
 import { Scrollbar } from './workbench/ui/scrollbar';
-import { clearExecutionStopHighlights } from './runtime_error/navigation';
+import { focusCapturedRuntimeSource, clearExecutionStopHighlights } from './runtime_error/navigation';
 import { getBuiltinIdentifiersSnapshot } from './editor/contrib/intellisense/engine';
 import { resetSemanticProjects } from './editor/contrib/intellisense/semantic/workspace/state';
 import { editorTextModelService } from './editor/model/model_service';
@@ -515,7 +515,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.resourcePanel.focusTarget.scope.surfaceScope = this.chromeScope;
 		problemsPanel.focusTarget.scope.surfaceScope = this.chromeScope;
 		this.resourceEditors = createResourceEditorResolver(
-			this.sources,
+			this.sources.catalog,
 		);
 
 		this.unbindEditorInputRetirement = this.editorGroup.panes.onDidClearEditor(() => {
@@ -527,14 +527,14 @@ export class RuntimeCartEditor implements CartEditor {
 		this.gamePanel.focusScope.surfaceScope = this.chromeScope;
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.editorGroup, this.quickInput, this.clipboard);
 		this.navigation = new EditorNavigationController(
-			this.sources,
+			this.sources.catalog,
 			this.resourcePanel,
 			this.resourceEditors,
 			this.editorGroup,
 		);
-		this.cartMaps = new CartMapController(this.sources, this.editorGroup, this.quickInput);
-		this.sceneEditor = new SceneEditorController(this.sources, this.editorGroup, this.navigation);
-		this.animations = new AnimationEditorController(this.sources, this.editorGroup, this.navigation, this.quickInput);
+		this.cartMaps = new CartMapController(this.sources.catalog, this.editorGroup, this.quickInput);
+		this.sceneEditor = new SceneEditorController(this.sources.catalog, this.editorGroup, this.navigation);
+		this.animations = new AnimationEditorController(this.sources.catalog, this.editorGroup, this.navigation, this.quickInput);
 		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
 			this.quickInput, this.editorGroup, this.navigation, actorExecution, rewind, sources,
 			{ kind: 'direct', presenter, recipient: input, transport: this.commands.transport });
@@ -559,26 +559,26 @@ export class RuntimeCartEditor implements CartEditor {
 			scenarioRuns,
 			this.play,
 		);
-		this.aemEditor = new AemEditorController(sources, this.editorGroup, this.quickInput);
+		this.aemEditor = new AemEditorController(sources, this.editorGroup, this.quickInput, guest, runtime, runtimeTasks);
 		this.luaPrograms = new LuaProgramController(sources, guest, this.editorGroup, this.navigation, this.quickInput, rewind);
-		this.actionStrings = new ActionStringTester(sources, clock, this.quickInput, scenarioRuns, this.scenarioLab);
+		this.actionStrings = new ActionStringTester(sources.catalog, clock, this.quickInput, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {
 			home: { serialize: () => '', deserialize: () => new HomeInput(workspaceState.context) },
-			animation: new AnimationInputSerializer(sources, this.animations),
-			aem_editor: new AemEditorInputSerializer(sources),
-			lua_program: new LuaProgramInputSerializer(sources, this.luaPrograms),
+			animation: new AnimationInputSerializer(sources.catalog, this.animations),
+			aem_editor: new AemEditorInputSerializer(sources.catalog),
+			lua_program: new LuaProgramInputSerializer(sources.catalog, this.luaPrograms),
 			event_viewer: { serialize: () => '', deserialize: () => new EventViewerInput(this.events) },
 			terminal: { serialize: () => '', deserialize: () => new TerminalInput() },
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
 			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
-			code_editor: new CodeEditorInputSerializer(sources),
-			behavior_lens: new BehaviorLensInputSerializer(sources, this.behaviorLens),
-			cart_map: new CartMapInputSerializer(sources),
-			scene_editor: new SceneEditorInputSerializer(sources, this.sceneEditor),
+			code_editor: new CodeEditorInputSerializer(sources.catalog),
+			behavior_lens: new BehaviorLensInputSerializer(sources.catalog, this.behaviorLens),
+			cart_map: new CartMapInputSerializer(sources.catalog),
+			scene_editor: new SceneEditorInputSerializer(sources.catalog, this.sceneEditor),
 			scenario_lab: new ScenarioLabInputSerializer(this.scenarioLab),
-			resource_view: new ResourceViewerInputSerializer(sources),
+			resource_view: new ResourceViewerInputSerializer(sources.catalog),
 		};
-		this.crossFileRename = new CrossFileRenameManager(this.sources);
+		this.crossFileRename = new CrossFileRenameManager(this.sources.catalog);
 		this.unbindProblemsPanel = problemsPanel.focusTarget.bindKeyboard(
 			input => problemsPanel.handleKeyboard(input, this.editorGroup),
 		);
@@ -905,6 +905,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.unsubscribeTextModelChanged();
 				this.codeDocuments.dispose();
 				editorTextModelService.clear();
+				this.sources.catalog.dispose();
 			}
 		}
 		this.resourcePanel.hide();
@@ -926,6 +927,18 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!editorRuntimeState.active) {
 			this.activate();
 		}
+		if (details !== undefined) {
+			const frame = details.luaStack.find(frame => frame.kind === 'source')!;
+			void focusCapturedRuntimeSource(this.navigation, this.sources.catalog, resource, details.sources.get(frame)!)
+				.then(receipt => {
+					if (receipt === undefined || receipt.generation !== this.editorGroup.panes.openGeneration
+						|| receipt.model.version !== receipt.version || editorTextModelService.get(resource) !== receipt.model) return;
+					const pane = this.editorGroup.panes.getPane('code_editor') as CodeEditorPane;
+					pane.showRuntimeError(line, column, message, details, resource.path);
+				})
+				.catch(error => showEditorMessage(`Failed to open runtime source: ${String(error)}`, 'error', 4.0));
+			return;
+		}
 		void this.navigation.focusChunkSource(resource)
 			.then(generation => {
 				if (generation !== this.editorGroup.panes.openGeneration) return;
@@ -938,6 +951,10 @@ export class RuntimeCartEditor implements CartEditor {
 	public renderFaultOverlay(): void {
 		const snapshot = this.fault.faultSnapshot;
 		if (!snapshot) {
+			return;
+		}
+		if (snapshot.resource === undefined) {
+			showEditorMessage(snapshot.message, 'error', 4.0);
 			return;
 		}
 		this.showRuntimeErrorInChunk(
@@ -959,6 +976,10 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		if (!snapshot) {
 			return false;
+		}
+		if (snapshot.resource === undefined) {
+			showEditorMessage(snapshot.message, 'error', 4.0);
+			return true;
 		}
 		this.showRuntimeErrorInChunk(
 			snapshot.resource,
@@ -990,7 +1011,7 @@ export class RuntimeCartEditor implements CartEditor {
 		setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
 		applyViewportSize(viewport);
 		resetSemanticProjects(editorTextModelService);
-		const resourcePanel = new ResourcePanelController(this, this.sources, {
+		const resourcePanel = new ResourcePanelController(this, this.sources.catalog, {
 			resourceVertical: new Scrollbar('vertical'),
 			resourceHorizontal: new Scrollbar('horizontal'),
 		}, resourcePanelWidthRatio);

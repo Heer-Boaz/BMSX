@@ -1,6 +1,6 @@
 import { getOrCreateSemanticProject } from '../intellisense/semantic/workspace/state';
 import { editorTextModelService } from '../../model/model_service';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { buildEditorSemanticFrontend } from '../intellisense/frontend';
 import type { ReferenceMatchInfo } from './state';
 import type { TextBuffer } from '../../text/text_buffer';
@@ -19,9 +19,9 @@ export type ReferenceLookupResult =
 	| { kind: 'success'; info: ReferenceMatchInfo; initialIndex: number; }
 	| { kind: 'error'; message: string; duration: number; };
 
-export function resolveReferenceLookup(sources: RuntimeSourceState, options: ReferenceLookupOptions): ReferenceLookupResult {
+export function resolveReferenceLookup(catalog: WorkspaceSourceCatalog, options: ReferenceLookupOptions): ReferenceLookupResult {
 	const path = resourceIdentityKey(options.identity);
-	const frontend = buildEditorSemanticFrontend(sources, options.identity, options.buffer);
+	const frontend = buildEditorSemanticFrontend(catalog, options.identity, options.buffer);
 	const resolution = frontend.findReferencesByPosition(path, options.cursorRow + 1, options.cursorColumn + 1);
 	if (!resolution) {
 		return { kind: 'error', message: 'No symbol at cursor', duration: 1.6 };
@@ -59,7 +59,7 @@ export function resolveReferenceLookup(sources: RuntimeSourceState, options: Ref
 			expression: resolution.label,
 			query: resolution,
 			snapshot: frontend.snapshot,
-			project: getOrCreateSemanticProject(editorTextModelService, options.identity.domain),
+			project: getOrCreateSemanticProject(editorTextModelService, options.identity.contextId),
 		},
 		initialIndex,
 	};

@@ -1,3 +1,4 @@
+import { TEST_STUDIO_CARTRIDGE_CONTEXT_ID } from '../helpers/studio_source_contexts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -54,7 +55,7 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 		[call('studio_list_sources', {})],
 		body => {
 			const catalog = outputs(body)[0];
-			return [catalog.find(resource => resource.domain === 0 && resource.path === 'cart.lua'), catalog.find(resource => resource.domain === 0 && resource.path.endsWith('nemesis_s_stage.yaml'))]
+			return [catalog.find(resource => resource.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && resource.path === 'cart.lua'), catalog.find(resource => resource.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && resource.path.endsWith('nemesis_s_stage.yaml'))]
 				.map((resource, index) => ({ ...call('studio_read_source', { resource: resource.resource }), call_id: `read:${index}` }));
 		},
 		body => outputs(body).slice(1).map((read, index) => ({ ...call('studio_read_diagnostics', { receipt: read.receipt }), call_id: `diagnostics:${index}` })),
@@ -200,7 +201,7 @@ for (const backend of backends) test(`Studio ${backend}: native history, editabl
 	const waiting = new Promise<void>(resolve => { stopped = resolve; });
 	const reads = [
 		[call('studio_list_sources', {})],
-		body => [call('studio_read_source', { resource: outputs(body)[0].find(resource => resource.domain === 0 && resource.path === 'cart.lua').resource })],
+		body => [call('studio_read_source', { resource: outputs(body)[0].find(resource => resource.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && resource.path === 'cart.lua').resource })],
 	];
 	const model = await createCodexModelFixture(t, [
 		() => held, CODEX_FIXTURE_DONE, ...reads,

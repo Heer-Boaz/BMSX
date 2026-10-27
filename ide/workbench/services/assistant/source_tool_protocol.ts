@@ -1,12 +1,11 @@
 import { StudioToolInputError, toolArguments } from './tool_input';
 import { STUDIO_BEHAVIOR_TOOLS } from './behavior_tool_protocol';
 import type { TextFileSaveResult } from '../working_copy/text_file_save';
-import type { ResourceDomain } from '../../../common/resource';
 
 export type SourceToolEdit = { offset: number; deleteLength: number; text: string; expectedText: string };
 export type SourceToolRequest =
 	| { name: 'studio_list_sources' }
-	| { name: 'studio_propose_source'; title: string; domain: ResourceDomain; path: string; source: string }
+	| { name: 'studio_propose_source'; title: string; contextId: string; path: string; source: string }
 	| { name: 'studio_read_source'; resource: string }
 	| { name: 'studio_read_diagnostics'; receipt: string }
 	| { name: 'studio_read_source_status' | 'studio_save_source'; receipt: string }
@@ -19,17 +18,17 @@ const RECEIPT_FIELDS = ['receipt'];
 const PROPOSAL_FIELDS = ['title', 'files'];
 const FILE_FIELDS = ['receipt', 'edits'];
 const EDIT_FIELDS = ['offset', 'deleteLength', 'text', 'expectedText'];
-const CREATE_FIELDS = ['title', 'domain', 'path', 'source'];
+const CREATE_FIELDS = ['title', 'contextId', 'path', 'source'];
 
 export const STUDIO_SOURCE_TOOLS = [
 	...STUDIO_BEHAVIOR_TOOLS,
 	{ name: 'studio_edit_history', description: 'Undo or redo through the ordinary resource/workspace history, using a current source receipt. Compound edits preserve their cross-file dependencies. Requires source-edit authority, independently of the Studio host; does not Save or install. A changed source retires this context: open a new context and read fresh receipts afterwards.',
 		inputSchema: { type: 'object', properties: { receipt: { type: 'string' }, direction: { type: 'string', enum: ['undo', 'redo'] } }, required: ['receipt', 'direction'], additionalProperties: false } },
-	{ name: 'studio_propose_source', description: 'Propose one new authored text source for explicit Studio review: Lua (including _assert.lua Scenario suites), YAML data or AEM YAML/JSON under res/. Choose an installed source domain from studio_list_sources (-1 BIOS, 0/1 cart) and a path relative to its project folder. No file or working copy is created before approval. Apply uses ordinary exclusive workspace creation: existing files are never overwritten. Creation persists source and opens its editor; it does not compile, install, execute or build assets. Authored assets remain available before their first build. Closing/discarding a pending review writes nothing. Once creation is accepted its write completes independently of the proposing turn. Read fresh source handles after approval. Use studio_propose_edits for existing files.',
-		inputSchema: { type: 'object', properties: { title: { type: 'string', minLength: 1 }, domain: { type: 'integer', enum: [-1, 0, 1] }, path: { type: 'string', minLength: 1 }, source: { type: 'string' } }, required: CREATE_FIELDS, additionalProperties: false } },
+	{ name: 'studio_propose_source', description: 'Propose one new authored text source for explicit Studio review: Lua (including _assert.lua Scenario suites), YAML data or AEM YAML/JSON under res/. Choose an admitted source contextId from studio_list_sources and a path relative to its project folder. No file or working copy is created before approval. Apply uses ordinary exclusive workspace creation: existing files are never overwritten. Creation persists source and opens its editor; it does not compile, install, execute or build assets. Authored assets remain available before their first build. Closing/discarding a pending review writes nothing. Once creation is accepted its write completes independently of the proposing turn. Read fresh source handles after approval. Use studio_propose_edits for existing files.',
+		inputSchema: { type: 'object', properties: { title: { type: 'string', minLength: 1 }, contextId: { type: 'string', minLength: 1 }, path: { type: 'string', minLength: 1 }, source: { type: 'string' } }, required: CREATE_FIELDS, additionalProperties: false } },
 	{ name: 'studio_read_source_status', description: 'Read current working-copy dirty state, its relation to installed code/assets and the latest ordinary Studio Save acknowledgement for a current source receipt. Save status is historical: workspace acknowledges the project filesystem, browser acknowledges the browser-owned workspace. A pending Save is not success. Runtime applied only compares source with the installed revision, not successful initialization. YAML compares exact packaged source metadata, not live guest objects; changed source requires an asset rebuild and missing metadata is untracked. Source-only Lua tests are not installed program modules. This does not save, build, execute or refresh expired source authority.',
 		inputSchema: { type: 'object', properties: { receipt: { type: 'string' } }, required: RECEIPT_FIELDS, additionalProperties: false } },
-	{ name: 'studio_save_source', description: 'Explicitly Save the exact working-copy revision read in this tool context, using the same service as Ctrl+S. Requires a current source receipt, not a review ID or path. Does not accept edits or approve a proposal. Lua and YAML Save persist source without building/installing it; AEM Save also performs its ordinary asset application, reported separately. Waits for the actual persistence/application outcome, not provider polling. Once admitted, the Save finishes even if its tool context retires; no writes are rolled back. Later edits stay dirty. Read fresh source/status in a new tool context after retirement. A failed write leaves the document unsaved; recovery checkpoints never count as saved source.',
+	{ name: 'studio_save_source', description: 'Explicitly Save the exact working-copy revision read in this tool context, using the same service as Ctrl+S. Requires a current source receipt, not a review ID or path. Does not accept edits or approve a proposal. Save persists authored text without building or installing code or assets. Asset application is a separate explicit target operation. Waits for the actual persistence outcome, not provider polling. Once admitted, the Save finishes even if its tool context retires; no writes are rolled back. Later edits stay dirty. Read fresh source/status in a new tool context after retirement. A failed write leaves the document unsaved; recovery checkpoints never count as saved source.',
 		inputSchema: { type: 'object', properties: { receipt: { type: 'string' } }, required: RECEIPT_FIELDS, additionalProperties: false } },
 	{ name: 'studio_list_sources', description: 'List source resources in this captured Studio workspace. Handles belong only to this tool context; paths are labels, not filesystem access.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
@@ -57,10 +56,10 @@ export function decodeSourceToolRequest(name: string, input: unknown): SourceToo
 		case 'studio_propose_source': {
 			const value = toolArguments(input, CREATE_FIELDS);
 			if (typeof value.title !== 'string' || value.title.length === 0 || typeof value.path !== 'string'
-				|| typeof value.source !== 'string' || value.domain !== -1 && value.domain !== 0 && value.domain !== 1) {
-				throw new StudioToolInputError('New source requires a title, installed domain, project-relative path and source text.');
+				|| typeof value.source !== 'string' || typeof value.contextId !== 'string' || value.contextId.length === 0) {
+				throw new StudioToolInputError('New source requires a title, admitted contextId, project-relative path and source text.');
 			}
-			return { name, title: value.title, domain: value.domain, path: value.path, source: value.source };
+			return { name, title: value.title, contextId: value.contextId, path: value.path, source: value.source };
 		}
 		case 'studio_list_sources':
 			toolArguments(input, NO_FIELDS);
@@ -107,6 +106,5 @@ export function encodeSourceSaveResult(result: TextFileSaveResult) {
 	const { persistence, application } = result;
 	return { status: result.status, version: result.snapshot.version,
 		persistence,
-		application: application.status === 'failed'
-			? { status: application.status, phase: application.phase, error: String(application.error) } : application };
+		application };
 }

@@ -1,8 +1,9 @@
 import { generateUuid } from '../../../common/uuid';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorDocumentMode, EditorModelEdit, EditorTextModel } from '../../../editor/model/text_model';
-import type { ResourceDomain, RuntimeResource } from '../../../common/resource';
-import { runtimeLuaSourceRegistry, type RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeResource } from '../../../common/resource';
+import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { EditorDiagnostic } from '../../../common/models';
 import type { ResourceDiagnostics, ResourceDiagnosticsService } from '../diagnostics/resource_diagnostics';
@@ -11,13 +12,14 @@ import { resolveTextFileModel, textFileMode } from '../working_copy/text_file_mo
 import { WorkspaceEditProposal } from '../working_copy/workspace_edit';
 import { decodeSourceToolRequest, encodeSourceSaveResult } from './source_tool_protocol';
 import type { TextFileSaveService } from '../working_copy/text_file_save';
-import { getTextFileRuntimeSourceStatus } from '../working_copy/runtime_source_status';
+import { getTextFileRuntimeSourceInstallations, getTextFileRuntimeSourceStatus,
+	type RuntimeSourceInstallation } from '../working_copy/runtime_source_status';
 import { StudioToolInputError } from './tool_input';
 import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source_documents';
 import { STUDIO_BEHAVIOR_TOOL_NAMES } from './behavior_tool_protocol';
 import { WorkspaceBehaviorTools, type BehaviorToolReadResult } from './behavior_tools';
 
-export type ToolSourceResource = { readonly resource: string; readonly domain: ResourceDomain; readonly path: string; readonly mode: EditorDocumentMode; readonly readOnly: boolean };
+export type ToolSourceResource = { readonly resource: string; readonly contextId: string; readonly path: string; readonly mode: EditorDocumentMode; readonly readOnly: boolean };
 export type ToolSourceReceipt = { readonly receipt: string; readonly resource: string; readonly version: number; readonly source: string; readonly readOnly: boolean };
 export type ToolSourceDiagnostics = { readonly receipt: string; readonly version: number } & (
 	| { readonly status: 'ready'; readonly diagnostics: readonly Omit<EditorDiagnostic, 'model' | 'version'>[] }
@@ -34,6 +36,7 @@ export type SourceToolResult =
 	| { kind: 'diagnostics'; data: ToolSourceDiagnostics }
 	| { kind: 'source-save'; data: { receipt: string; operation: number } & ReturnType<typeof encodeSourceSaveResult> }
 	| { kind: 'source-status'; data: { receipt: string; version: number; dirty: boolean; runtime: ReturnType<typeof getTextFileRuntimeSourceStatus>;
+		installations: readonly Pick<RuntimeSourceInstallation, 'domain' | 'status'>[];
 		latestSave?: { operation: number; version: number; matchesCurrentSource: boolean; result: ReturnType<typeof encodeSourceSaveResult> | { status: 'pending' } } } }
 	| { kind: 'proposal'; data: { status: 'review-required'; review: string; files: number }; proposal: WorkspaceEditProposal };
 
@@ -55,19 +58,20 @@ export class WorkspaceSourceTools {
 
 	public constructor(
 		private readonly models: EditorTextModelService,
-		private readonly sources: RuntimeSourceState,
+		private readonly sourceCatalog: WorkspaceSourceCatalog,
 		private readonly diagnostics: ResourceDiagnosticsService,
 		private readonly connection: AbortSignal,
 		private readonly behaviorSources: BehaviorSourceDocuments,
 		private readonly saves: TextFileSaveService,
 		private readonly clock: HostClock,
+		private readonly runtimeSources?: RuntimeSourceState,
 	) {
 		connection.throwIfAborted();
-		this.context = new WorkspaceSourceContext(models, sources);
-		for (const resource of sources.resourceByIdentity.values()) {
+		this.context = new WorkspaceSourceContext(models, sourceCatalog);
+		for (const resource of sourceCatalog.resourceByIdentity.values()) {
 			const mode = textFileMode(resource);
 			if (mode === undefined) continue; // Binary/cooked resources have no authored text capability.
-			const descriptor: ToolSourceResource = { resource: `${this.id}/resource/${this.catalog.length}`, domain: resource.domain,
+			const descriptor: ToolSourceResource = { resource: `${this.id}/resource/${this.catalog.length}`, contextId: resource.contextId,
 				path: resource.path, mode, readOnly: resource.source.generated === true };
 			this.resources.set(descriptor.resource, { resource });
 			this.catalog.push(descriptor);
@@ -79,7 +83,7 @@ export class WorkspaceSourceTools {
 		signal?.throwIfAborted();
 		this.assertReading();
 		if (STUDIO_BEHAVIOR_TOOL_NAMES.has(name)) {
-			this.behaviors ??= new WorkspaceBehaviorTools(this.id, this.context, this.sources, this.behaviorSources);
+			this.behaviors ??= new WorkspaceBehaviorTools(this.id, this.context, this.sourceCatalog, this.behaviorSources);
 			const result = this.behaviors.execute(name, argumentsValue);
 			if (result.kind !== 'edit') return result;
 			return this.offer(new WorkspaceEditProposal(result.title, this.context, { kind: 'edit',
@@ -96,9 +100,9 @@ export class WorkspaceSourceTools {
 					changed: record !== null, version: model.version, dirty: model.dirty } };
 			}
 			case 'studio_propose_source': {
-				if (runtimeLuaSourceRegistry(this.sources, request.domain) === undefined) throw new StudioToolInputError('The selected source domain has no project.');
-				return this.offer(new WorkspaceEditProposal(request.title, this.context, { kind: 'create', clock: this.clock, sources: this.sources,
-					request: { domain: request.domain, relativePath: request.path, contents: request.source } }));
+				if (!this.sourceCatalog.contexts.has(request.contextId)) throw new StudioToolInputError('The selected source context is not admitted.');
+				return this.offer(new WorkspaceEditProposal(request.title, this.context, { kind: 'create', clock: this.clock, catalog: this.sourceCatalog,
+					request: { contextId: request.contextId, relativePath: request.path, contents: request.source } }));
 			}
 			case 'studio_read_source_status': case 'studio_save_source': {
 				const receipt = this.receipts.get(request.receipt);
@@ -112,7 +116,10 @@ export class WorkspaceSourceTools {
 				}
 				const operation = this.saves.latestOperation(model);
 				return { kind: 'source-status', data: { receipt: request.receipt, version, dirty: model.dirty,
-					runtime: getTextFileRuntimeSourceStatus(this.sources, model), latestSave: operation === undefined ? undefined : {
+					runtime: this.runtimeSources === undefined ? 'untracked' : getTextFileRuntimeSourceStatus(this.runtimeSources, model),
+					installations: this.runtimeSources === undefined ? [] : getTextFileRuntimeSourceInstallations(this.runtimeSources, model)
+						.map(({ domain, status }) => ({ domain, status })),
+					latestSave: operation === undefined ? undefined : {
 						operation: operation.id, version: operation.snapshot.version, matchesCurrentSource: operation.snapshot.source === source,
 						result: operation.result === undefined ? { status: 'pending' } : encodeSourceSaveResult(operation.result) } } };
 			}
@@ -121,7 +128,7 @@ export class WorkspaceSourceTools {
 				const resource = this.resources.get(request.resource);
 				if (!resource) throw new StudioToolInputError('Resource handle does not belong to this source context');
 				if (resource.read === undefined) {
-					resource.read = Promise.resolve(resolveTextFileModel(this.models, this.sources, resource.resource)).then(model => {
+					resource.read = Promise.resolve(resolveTextFileModel(this.models, this.sourceCatalog, resource.resource)).then(model => {
 						this.assertReading();
 						const captured = this.context.read(model);
 						const receipt = `${this.id}/source/${this.receipts.size}`;

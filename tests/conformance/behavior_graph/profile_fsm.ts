@@ -1,10 +1,11 @@
+import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../../helpers/lua_semantic_project';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../../helpers/runtime_sources';
 import type { LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import { LuaSourceReader } from '../../../ide/language/lua/source_reader';
-import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { indexStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import { medianMilliseconds } from '../../helpers/performance';
-import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { collectBehaviorRegistrations } from '../../../ide/workbench/contrib/behavior_lens/registrations';
 import { buildStateMachineBody } from '../../../ide/workbench/contrib/behavior_lens/state_machine';
@@ -23,13 +24,13 @@ local shared<const> = { initial = 'idle', on = { reset = 'idle' }, states = {
 	idle = { update = callback, on = { go = '../active' } }, active = {},
 } }
 machines.register('profile', { initial = 'lane0', states = { ${Array.from({ length: siblings }, (_, index) => `lane${index} = shared`).join(',')} } })`;
-	const resource = { domain: 0 as const, path: 'fsm_profile.lua' };
-	const semantic = buildLuaFileSemanticData(source, resource.path);
-	const snapshot = semanticSnapshot(semantic);
+	const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'fsm_profile.lua' };
+	const semantic = buildResourceLuaSemanticFixtureFile(source, resource);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([semantic], ['cartlib/fsm/library', 'cartlib/behaviour_tree/library', 'cartlib/actioneffects']));
 	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, snapshot); });
 	const document = buildBehaviorSourceDocument(resource, snapshot);
 	const referenceIndexMs = medianMilliseconds(() => { indexStateMachineSource(document); });
-	const model = new EditorTextModel({ sourceFilePath: resource.path, ...resource, location: { kind: 'workspace', path: resource.path }, source: { resid: 'fsm_profile', type: 'lua' } }, 'lua', source);
+	const model = new EditorTextModel({ contextLabel: 'Profile project', sourceFilePath: resource.path, ...resource, location: { kind: 'workspace', path: resource.path }, source: { resid: 'fsm_profile', type: 'lua' } }, 'lua', source);
 	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const references = [...view.stateMachines.references.values()];
 	const selected = selectStateMachineSource(references.findLast(items => items[0].kind === 'state-outcome' && items[0].outcome.proof.kind === 'return')![0], view.source.models);

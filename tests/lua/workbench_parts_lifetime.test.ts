@@ -1,3 +1,6 @@
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
+import type { SourceStackTraceFrame } from '../../ide/runtime/stack_trace';
+import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
@@ -22,7 +25,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { api } from '../../ide/runtime/overlay_api';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { createBlua32SystemSourceImage, registerWorkspaceTextSources, resolveRuntimeResource } from '../../ide/runtime/sources';
+import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { getProblemsPanelBounds } from '../../ide/workbench/contrib/problems/panel/layout';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
@@ -39,6 +42,11 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { parseLuaChunk } from './cpu_test_harness';
+import { RuntimeDebuggerResumeMode, RuntimeDebuggerStopReason } from '../../ide/runtime/source_debugger';
+import { presentRuntimeDebuggerStop } from '../../ide/workbench/contrib/debugger/controller';
+import { updateSelectedScenarioNode } from '../../ide/workbench/contrib/scenario_lab/projection';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'parts.lua'), [],
@@ -50,12 +58,12 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 		const path = index === -1 ? 'parts.lua' : `directory_${index}/child.lua`;
 		const text = index < 0 || index >= 20 ? source : '9return 1';
 		registerLuaSourceRecord(registry, { resid: path, type: 'lua', src: text, base_src: text,
-			source_path: path, normalized_source_path: path, module_path: path,
+			source_path: path, normalized_source_path: path, module_path: toLuaModulePath(path),
 			update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	}
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports,
-		captureInstalledLuaSources(registry)), cartridgeSlots: [null, null] };
+		captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	const unused = (): never => { throw new Error('Part lifetime does not request external domain work.'); };
 	const clipboard = new HeadlessClipboard();
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
@@ -63,7 +71,7 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources, resolveRuntimeResource(sources, { domain: -1, path: registry.entrySourcePath })!));
+	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	t.after(async () => {
 		problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null);
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
@@ -79,13 +87,13 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	assert.equal(editor.textTarget!.replaceText(0, 0, ' '), true);
 	const edited = model.buffer.getText(), version = model.version, cycles = host.runtime.machine.scheduler.nowCycles;
 	assert.equal(model.canUndo, true);
-	const resource = (index: number) => sources.resourceByIdentity.get(resourceIdentityKeyFromParts(-1, `directory_${index}/child.lua`))!;
+	const resource = (index: number) => sources.catalog.resourceByIdentity.get(resourceIdentityKeyFromParts(TEST_SYSTEM_CONTEXT_ID, `directory_${index}/child.lua`))!;
 	return { pane, ide, editor, host, sources, input, model, view, source, edited, version, cycles, key, resource, clipboard };
 }
 
 function openAemFixture(f: ReturnType<typeof fixture>, source = 'events:\n  story:\n    channel: music\n    rules: []\n', path = 'events.aem.yaml') {
-	registerWorkspaceTextSources(f.sources, -1, [{ type: 'aem', resid: 'events', source_path: path }]);
-	const resource = f.sources.resourceByIdentity.get(resourceIdentityKeyFromParts(-1, path))!;
+	f.sources.catalog.registerTextSources(TEST_SYSTEM_CONTEXT_ID, [{ type: 'aem', resid: 'events', source_path: path }]);
+	const resource = f.sources.catalog.resourceByIdentity.get(resourceIdentityKeyFromParts(TEST_SYSTEM_CONTEXT_ID, path))!;
 	const model = editorTextModelService.retain(resource, 'aem', source), input = new AemEditorInput(model);
 	f.editor.editorGroup.openEditor(input); f.editor.update(0);
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["events","story","channel"]');
@@ -100,12 +108,12 @@ test('ordinary Source close and reopen restores a plain reading memento in a fre
 	closedView.cursorRow = 50; closedView.cursorColumn = 8;
 	closedView.selectionAnchor = { row: 49, column: 3 };
 	closedView.scrollRow = 35.5;
-	const duplicate = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	const duplicate = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
 	duplicate.context.view.cursorRow = 2;
 	f.editor.editorGroup.openEditor(duplicate);
 	assert.equal(f.editor.editorGroup.model.activeTab, f.input, 'an offered duplicate cannot replace the admitted view');
 	f.editor.editorGroup.close(f.input.id);
-	const reopened = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	const reopened = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
 	f.editor.editorGroup.openEditor(reopened);
 	assert.equal(f.editor.editorGroup.model.activeTab, reopened); assert.notEqual(reopened, f.input);
 	assert.notEqual(reopened.context.view.editSource, closedView.editSource);
@@ -125,13 +133,13 @@ test('explicit Source opening and serialized view state take precedence over the
 	f.view.cursorRow = 50; f.view.cursorColumn = 8; f.view.scrollRow = 35.5;
 	f.editor.editorGroup.model.add(new SceneEditorInput(f.model));
 	f.editor.editorGroup.close(f.input.id);
-	const selected = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	const selected = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
 	f.editor.editorGroup.openEditor(selected, { selection: { row: 5, startColumn: 7, endColumn: 9 } });
 	assert.equal(selected.context.view.cursorRow, 5); assert.equal(selected.context.view.cursorColumn, 7);
 	f.editor.editorGroup.close(selected.id);
 	const persisted = new CodeEditorInput(f.model);
 	persisted.context.view.cursorRow = 12; persisted.context.view.cursorColumn = 8; persisted.context.view.scrollRow = 3;
-	const serializer = new CodeEditorInputSerializer(f.sources), state = serializer.serialize(persisted);
+	const serializer = new CodeEditorInputSerializer(f.sources.catalog), state = serializer.serialize(persisted);
 	persisted.dispose();
 	const restored = await serializer.deserialize(state);
 	f.editor.editorGroup.openEditor(restored);
@@ -148,7 +156,7 @@ test('ordinary Source reopen resolves both saved selection endpoints against tex
 	f.model.completeSave(f.model.createSnapshot());
 	f.editor.editorGroup.close(f.input.id);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: 'return 1' }]);
-	const reopened = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	const reopened = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
 	f.editor.editorGroup.openEditor(reopened);
 	assert.equal(f.editor.editorGroup.model.activeTab, reopened); assert.equal(reopened.workingCopy, f.model);
 	assert.equal(reopened.context.view.cursorRow, 0); assert.equal(reopened.context.view.cursorColumn, f.model.buffer.length);
@@ -380,8 +388,8 @@ test('Rename rejected before field presentation retires its source-reading subsc
 
 test('actual inspector and source attachments preserve user-opened Files and Problems reading state', t => {
 	const f = fixture(t), files = f.editor.resourcePanel, tree = files.files.tree;
-	for (let index = 0; index < 20; index++) resolveLuaTextFileModel(editorTextModelService, f.sources, f.resource(index));
-	resolveLuaTextFileModel(editorTextModelService, f.sources, f.resource(50));
+	for (let index = 0; index < 20; index++) resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.resource(index));
+	resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.resource(50));
 	f.editor.diagnostics.computePending();
 	assert.ok(problemsPanel.getDiagnostics().length >= 20, 'the real diagnostics producer supplies a scrollable authored-error list');
 	files.show(); files.queuePendingSelection(f.resource(40)); files.applyPendingSelection();
@@ -408,7 +416,7 @@ test('actual inspector and source attachments preserve user-opened Files and Pro
 	assert.equal(gpu.kind, 'gpu_debugger'); unchanged();
 	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
 	assert.ok(f.editor.editorGroup.model.activeTab === f.input); assert.ok(f.pane.code.model === f.model); assert.ok(f.pane.code.view === f.view); unchanged();
-	f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources, f.resource(50))); f.editor.update(0); unchanged();
+	f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50))); f.editor.update(0); unchanged();
 	assert.ok(f.editor.editorGroup.model.activeTab!.resource === f.resource(50));
 	f.editor.editorGroup.activate(f.input.id); f.editor.update(0); unchanged();
 	f.key('KeyZ', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canRedo, true);
@@ -421,8 +429,8 @@ test('actual inspector and source attachments leave Call Hierarchy expansion and
 	const calls = 'local function target() end\n'
 		+ Array.from({ length: 20 }, (_, index) => `local function caller_${index}() target() end`).join('\n') + '\n'
 		+ Array.from({ length: 40 }, (_, index) => `local function leaf_${index}() caller_0() end`).join('\n');
-	const project = new EditorLuaSemanticProject(-1, new EditorTextModelService());
-	const callsResource = { domain: -1 as const, path: 'calls.lua' };
+	const project = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
+	const callsResource = { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'calls.lua' };
 	project.updateDocument(callsResource, calls);
 	t.after(() => project.dispose());
 	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
@@ -442,7 +450,7 @@ test('actual inspector and source attachments leave Call Hierarchy expansion and
 	};
 	f.editor.commands.execute('gpuDebugger'); f.editor.update(0); unchanged();
 	f.editor.editorGroup.activate(f.input.id); f.editor.update(0); unchanged();
-	f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources, f.resource(50))); f.editor.update(0); unchanged();
+	f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50))); f.editor.update(0); unchanged();
 	panel.setSelectionIndex(1); panel.collapseSelectedCallHierarchyNode();
 	assert.equal(panel.itemCount, firstLevel, 'the same retained hierarchy still owns its expanded branch');
 	panel.setFocused(true); panel.hide();
@@ -461,7 +469,7 @@ test('outgoing source presentation retires without clearing the retained context
 	assert.ok(context.runtimeErrorOverlay === overlay); assert.equal(context.executionStopRow, stop);
 	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
 	assert.ok(f.pane.code.runtimeError.activeOverlay === overlay); assert.equal(f.pane.code.runtimeError.executionStopRow, stop);
-	const other = resolveLuaCodeEditorInput(f.sources, f.resource(50));
+	const other = resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50));
 	f.editor.editorGroup.openEditor(other); f.editor.update(0);
 	assert.equal(f.pane.code.runtimeError.activeOverlay, null); assert.equal(f.pane.code.runtimeError.executionStopRow, null);
 	assert.ok(context.runtimeErrorOverlay === overlay); assert.equal(context.executionStopRow, stop);
@@ -489,7 +497,7 @@ test('source presentation clears on workbench retirement and last-input close, t
 	assert.equal(f.pane.code.runtimeError.activeOverlay, null); assert.equal(f.pane.code.runtimeError.executionStopRow, null);
 	assert.equal(focusRuntimeErrorOverlay(f.editor.editorGroup), false);
 	assert.equal(f.editor.editorGroup.model.activeTab, null, 'a closed error view cannot regain admission through overlay focus');
-	const reopened = resolveLuaCodeEditorInput(f.sources, f.model.resource);
+	const reopened = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
 	t.after(() => reopened.dispose());
 	assert.equal(reopened.workingCopy, f.model);
 	assert.equal(reopened.context.runtimeErrorOverlay, null);
@@ -574,7 +582,7 @@ test('the actual Problems sash preserves automatic sizing until motion and commi
 	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
 	assert.equal(pointerCapture.active, false); assert.equal(problemsPanel.visibleHeight, automatic);
-	for (let index = 0; index < 20; index++) resolveLuaTextFileModel(editorTextModelService, f.sources, f.resource(index));
+	for (let index = 0; index < 20; index++) resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.resource(index));
 	f.editor.diagnostics.computePending(); f.editor.update(0);
 	assert.ok(problemsPanel.visibleHeight > automatic, 'a stationary sash click must not pin the automatic content-size owner');
 	problemsPanel.setFixedHeightPx(73); f.editor.update(0);
@@ -647,7 +655,7 @@ for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as
 test('retiring Problems does not cancel the actual sibling tab-strip scrollbar gesture', t => {
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(73);
-	for (let index = 40; index < 48; index++) f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources, f.resource(index)));
+	for (let index = 40; index < 48; index++) f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
 	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
 	const thumb = f.editor.editorGroup.tabStrip.scrollbar.getThumb()!; assert.ok(thumb !== null);
 	const x = (thumb.left + thumb.right) / 2, y = (thumb.top + thumb.bottom) / 2;
@@ -722,8 +730,8 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 		const calls = 'local function target() end\n'
 			+ Array.from({ length: 20 }, (_, index) => `local function caller_${index}() target() end`).join('\n') + '\n'
 			+ Array.from({ length: 40 }, (_, index) => `local function leaf_${index}() caller_0() end`).join('\n');
-		const project = new EditorLuaSemanticProject(-1, new EditorTextModelService());
-		const callsResource = { domain: -1 as const, path: 'calls.lua' };
+		const project = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
+		const callsResource = { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'calls.lua' };
 		project.updateDocument(callsResource, calls);
 		t.after(() => project.dispose());
 		const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
@@ -829,7 +837,7 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 	assert.ok(panel.getBounds()!.right - panel.getBounds()!.left > committedSpan, 'a fresh admitted sash gesture still changes the user size intent');
 	f.editor.dispatchPointer({ x: dividerX + 32, y: dividerY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 17 });
-	for (let index = 40; index < 48; index++) f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources, f.resource(index)));
+	for (let index = 40; index < 48; index++) f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
 	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
 	const tabThumb = f.editor.editorGroup.tabStrip.scrollbar.getThumb()!; assert.ok(tabThumb !== null);
 	const tabX = (tabThumb.left + tabThumb.right) / 2, tabY = (tabThumb.top + tabThumb.bottom) / 2;
@@ -886,7 +894,7 @@ for (const stage of ['visible', 'pending', 'pending-roundtrip'] as const) test(`
 
 test('completion readonly subscription belongs only to the attached canonical model', t => {
 	const f = fixture(t), previous = f.model;
-	const other = resolveLuaCodeEditorInput(f.sources, f.resource(50));
+	const other = resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50));
 	const model = other.context.model, subscribe = model.onDidChangeReadOnly;
 	let subscriptions = 0;
 	t.mock.method(model, 'onDidChangeReadOnly', listener => {
@@ -918,7 +926,7 @@ test('completion readonly subscription belongs only to the attached canonical mo
 test('a stationary captured tab drag advances from the actual host frame without pointer polling or guest execution', t => {
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
 	for (let index = 40; index < 52; index++) {
-		f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources, f.resource(index)));
+		f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
 		f.editor.update(0);
 	}
 	const input = f.editor.editorGroup.model.activeTab!, bounds = f.editor.editorGroup.tabStrip.layoutState.items.peek(f.editor.editorGroup.model.indexOf(f.editor.editorGroup.model.findById(input.id)!)).bounds;
@@ -1054,3 +1062,125 @@ test('Home keyboard scroll retires a pointer action before a same-poll release',
 	assert.equal(invoke.mock.callCount(), 0);
 	assert.equal(pointerCapture.draining, false);
 });
+
+
+test('runtime faults navigate only to authored text matching their retained installation', async t => {
+	const f = fixture(t), image = f.sources.currentBlua32Media.system!;
+	const proof = image.sources.get(toLuaModulePath(f.model.resource.path))!;
+	const frame: SourceStackTraceFrame = { kind: 'source', resource: f.model.identity,
+		functionName: 'entry', workspacePath: f.model.resource.path, line: 1, column: 1 };
+	const details = { luaStack: [frame], sources: new Map([[frame, proof]]) };
+	const edited = f.model.buffer.getText(), history = f.model.canUndo;
+	f.editor.showRuntimeErrorInChunk(frame.resource, frame.line, frame.column, 'fault', details);
+	await setImmediate();
+	assert.equal(f.pane.code.runtimeError.activeOverlay, null, 'a captured address cannot mark a different authored revision');
+	assert.equal(f.model.buffer.getText(), edited); assert.equal(f.model.canUndo, history);
+	f.model.undo();
+	f.editor.showRuntimeErrorInChunk(frame.resource, frame.line, frame.column, 'fault', details);
+	await setImmediate();
+	assert.equal(f.pane.code.runtimeError.activeOverlay!.details, details);
+});
+
+test('typing during captured-fault opening retires location projection without replacing the source', async t => {
+	const f = fixture(t); f.model.undo();
+	const proof = f.sources.currentBlua32Media.system!.sources.get(toLuaModulePath(f.model.resource.path))!;
+	const frame: SourceStackTraceFrame = { kind: 'source', resource: f.model.identity,
+		functionName: 'entry', workspacePath: f.model.resource.path, line: 1, column: 1 };
+	const details = { luaStack: [frame], sources: new Map([[frame, proof]]) };
+	f.editor.showRuntimeErrorInChunk(frame.resource, frame.line, frame.column, 'fault', details);
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer authored revision\n' }]);
+	const version = f.model.version;
+	await setImmediate();
+	assert.equal(f.pane.code.runtimeError.activeOverlay, null);
+	assert.equal(f.model.version, version); assert.equal(f.model.dirty, true);
+});
+
+test('an installed-only source path cannot substitute another authored file', async t => {
+	const f = fixture(t), active = f.editor.editorGroup.model.activeTab;
+	const resource = { contextId: f.model.identity.contextId, path: 'only-in-another-build.lua' };
+	const frame: SourceStackTraceFrame = { kind: 'source', resource,
+		functionName: 'entry', workspacePath: resource.path, line: 1, column: 1 };
+	const proof = { displayPath: resource.path, content: { kind: 'text' as const, text: 'return 99' } };
+	f.editor.showRuntimeErrorInChunk(resource, frame.line, frame.column, 'fault', { luaStack: [frame], sources: new Map([[frame, proof]]) });
+	await setImmediate();
+	assert.equal(f.editor.editorGroup.model.activeTab, active);
+	assert.equal(editorTextModelService.get(resource), undefined);
+	assert.equal(f.pane.code.runtimeError.activeOverlay, null);
+});
+
+for (const interruption of ['none', 'resume', 'another-tab', 'typing', 'symbols-only'] as const) {
+	test(`debugger source projection retains its exact stop and document through asynchronous opening: ${interruption}`, async t => {
+		const f = fixture(t); f.model.undo();
+		const image = f.sources.currentBlua32Media.system!;
+		const word = image.symbols!.metadata.debugRanges.findIndex(range => range !== null
+			&& toLuaModulePath(range.path) === toLuaModulePath(f.model.resource.path));
+		assert.ok(word >= 0);
+		const range = image.symbols!.metadata.debugRanges[word]!;
+		const media = interruption === 'symbols-only'
+			? { ...f.sources.currentBlua32Media, system: createBlua32SystemSourceImage(image.layout, image.symbols, image.biosImports,
+				new Map(), image.sourceContextId) } : f.sources.currentBlua32Media;
+		f.ide.debugger.source.stop = { id: 1, thread: f.host.runtime.machine.cpu.activeThread,
+			media, domain: -1, pc: image.layout.header.textAddress + word * INSTRUCTION_BYTES,
+			inlineDepth: 0, reason: RuntimeDebuggerStopReason.Step };
+		const pending = presentRuntimeDebuggerStop(f.editor, f.ide.debugger, f.sources.catalog);
+		await Promise.resolve(); // The source attaches before the debugger projection's continuation.
+		if (interruption === 'resume') f.ide.debugger.source.resume(RuntimeDebuggerResumeMode.Continue);
+		else if (interruption === 'another-tab') f.editor.commands.execute('gpuDebugger');
+		else if (interruption === 'typing') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- later\n' }]);
+		const active = f.editor.editorGroup.model.activeTab, text = f.model.buffer.getText(), version = f.model.version;
+		await pending;
+		assert.equal(f.editor.editorGroup.model.activeTab, active);
+		assert.equal(f.model.buffer.getText(), text); assert.equal(f.model.version, version);
+		assert.equal(f.input.context.executionStopRow, interruption === 'none' ? range.start.line - 1 : null);
+	});
+}
+
+for (const mode of ['run', 'debug', 'play'] as const) {
+	test(`ordinary ${mode} starts directly; companion selection is a separate explicit command`, async t => {
+		const f = fixture(t);
+		const sourceState = createScenarioTestSourceState([createScenarioTestSourceRecord('fixture_assert.lua', 1,
+			"return { kind = 'integration', tests = { sample = function() end } }")]);
+		const primary = sourceState.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]);
+		f.sources.catalog.admitContext(primary);
+		sourceState.catalog.dispose();
+		f.editor.scenarioLab.open();
+		f.editor.update(0);
+		const view = f.editor.scenarioLab.resolveInput().view;
+		const selected = f.editor.scenarioLab.runs.collection.findModuleBySourcePath(primary.id, 'fixture_assert.lua');
+		const originalScope = selected.children[0].id;
+		view.testPane.selectionIndex = view.testPane.rows.findIndex(row => row.id === originalScope);
+		assert.ok(view.testPane.selectionIndex >= 0);
+		updateSelectedScenarioNode(view);
+		const admitted = new Error('fixture admission reached');
+		const start = mode === 'play'
+			? t.mock.method(f.editor.play.service, 'start', () => { throw admitted; })
+			: t.mock.method(f.editor.scenarioLab.runs, 'start', () => { throw admitted; });
+		const ordinary = mode === 'play' ? 'scenarioLab.play' : mode === 'debug' ? 'scenarioLab.debug' : 'scenarioLab.run';
+		const explicit = mode === 'play' ? 'scenarioLab.playWithCompanion'
+			: mode === 'debug' ? 'scenarioLab.debugWithCompanion' : 'scenarioLab.runWithCompanion';
+		assert.equal(f.editor.commands.isEnabled(ordinary), true);
+		assert.throws(() => f.editor.commands.execute(ordinary), error => error === admitted);
+		assert.equal(start.mock.callCount(), 1);
+		assert.equal(f.editor.quickInput.visible, false);
+		const first = start.mock.calls[0].arguments;
+		assert.equal(first[0], mode === 'play' ? selected : originalScope);
+		assert.equal(first[mode === 'play' ? 1 : 2], null);
+		start.mock.resetCalls();
+		assert.equal(f.editor.commands.isEnabled(explicit), true);
+		f.editor.commands.execute(explicit);
+		assert.equal(f.editor.quickInput.visible, true);
+		assert.equal(start.mock.callCount(), 0);
+		// A later UI selection cannot retarget the original logical scope/module.
+		view.testPane.selectionIndex = 0;
+		updateSelectedScenarioNode(view);
+		const picker = f.editor.quickInput;
+		picker.model.list.selectionIndex = picker.model.list.rows.findIndex(row => 'contextId' in row.item && row.item.contextId === primary.id);
+		assert.ok(picker.model.list.selectionIndex >= 0);
+		assert.throws(() => picker.accept(), error => error === admitted);
+		assert.equal(start.mock.callCount(), 1);
+		const chosen = start.mock.calls[0].arguments;
+		assert.equal(chosen[0], mode === 'play' ? selected : originalScope);
+		assert.equal(chosen[mode === 'play' ? 1 : 2], primary.id);
+		assert.equal(f.editor.quickInput.visible, false);
+	});
+}

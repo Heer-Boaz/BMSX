@@ -80,6 +80,7 @@ int main() {
 	symbols.metadata.functionIds = {"entry"};
 	symbols.metadata.traceStatements = std::vector<std::string>{"fixture.compile", "fixture.bind"};
 	symbols.metadata.preloadModules = {"fixture/observer"};
+	symbols.metadata.compiledModulePaths = {"fixture/entry", "fixture/observer", "fixture/constants"};
 	symbols.metadata.functionDisplayNames = {"entryDisplay"};
 	symbols.metadata.debugRanges = {outerCallRange, nullptr};
 	symbols.metadata.debugInlineCallSiteChains = {noInlineCalls, inlineCallSites};
@@ -126,6 +127,9 @@ int main() {
 	}
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
 	const auto& metadata = decodedSymbols.metadata;
+	if (metadata.compiledModulePaths != symbols.metadata.compiledModulePaths) {
+		throw std::runtime_error("BLua32 symbols lost complete compilation input membership");
+	}
 	if (metadata.statementPointsByFunction[0][0].range != metadata.functionDefinitions[0]
 		|| metadata.localSlotsByFunction[0][0].definition != metadata.functionDefinitions[0]
 		|| metadata.statementPointsByFunction[0][0].inlineCallSites != metadata.debugInlineCallSiteChains[1]

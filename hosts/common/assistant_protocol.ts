@@ -27,7 +27,7 @@ export type AssistantThread = { id: string; title: string; updatedAt: number };
 export type AssistantHistoryPage = { threads: AssistantThread[]; nextCursor: string | null };
 /** UTF-16 ranges in the authored prompt, bound to an exact Studio source identity.
  * References are resolved by Studio source tools when used, not read from disk at queue time. */
-export type AssistantSourceReference = { from: number; to: number; source: { domain: -1 | 0 | 1; path: string } };
+export type AssistantSourceReference = { from: number; to: number; source: { contextId: string; path: string } };
 export type AssistantHistoryEntry = { kind: 'user' | 'assistant' | 'status'; text: string; references?: readonly AssistantSourceReference[]; images?: readonly string[] };
 export type AssistantTranscriptPage = { thread: AssistantThread; configuration: AssistantConfiguration; entries: AssistantHistoryEntry[]; nextCursor: string | null };
 export type AssistantQueuedMessage = { id: string; text: string; references?: readonly AssistantSourceReference[]; images?: readonly string[] };

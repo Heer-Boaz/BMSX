@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -15,8 +16,8 @@ import {
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { runCompiledLua } from './cpu_test_harness';
 
-const resource: RuntimeResource = { sourceFilePath: 'scene.lua', location: { kind: 'workspace' as const, path: 'scene.lua' },
-	domain: 0,
+const resource: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: 'scene.lua', location: { kind: 'workspace' as const, path: 'scene.lua' },
+	contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 	path: 'scene.lua',
 	source: {
 		resid: 'scene.lua',

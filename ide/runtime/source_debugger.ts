@@ -1,9 +1,10 @@
+import type { Blua32InstalledMedia } from './sources';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import { ThreadStatus, type Thread } from '../../machine/ts/machine/cpu/thread';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit, type ExecutionDomainId, type ExecutionDomainMask } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
-import { blua32ToolingImageForDomain, type Blua32ToolingMedia } from '../../toolchain/ts/rompack/blua32_media';
+import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { SourceLocationPcs } from './source_breakpoints';
 
 export const enum RuntimeDebuggerResumeMode { Continue, StepInto, StepOver, StepOut }
@@ -15,7 +16,7 @@ export const enum RuntimeDebuggerStopReason { Breakpoint, Step }
 export type RuntimeDebuggerSourceStop = {
 	readonly id: number;
 	readonly thread: Thread;
-	readonly media: Blua32ToolingMedia;
+	readonly media: Blua32InstalledMedia;
 	readonly domain: ExecutionDomainId;
 	readonly pc: number;
 	readonly inlineDepth: number;
@@ -33,13 +34,13 @@ export class SourceDebugger {
 	public stepThread: Thread | undefined;
 	private stepDepth = 0;
 	private stepInlineDepth = 0;
-	private stepMedia: Blua32ToolingMedia | undefined;
+	private stepMedia: Blua32InstalledMedia | undefined;
 	private readonly stepPcs = [new Map<number, number>(), new Map<number, number>(), new Map<number, number>()];
 	private readonly suppression: Suppression[] = [];
 	private notifiedStop: RuntimeDebuggerSourceStop | undefined;
 	private readonly stopListeners = new Set<(stop: RuntimeDebuggerSourceStop | undefined) => void>();
 
-	public constructor(private readonly cpu: CPU, private media: Blua32ToolingMedia,
+	public constructor(private readonly cpu: CPU, private media: Blua32InstalledMedia,
 		private breakpoints: SourceLocationPcs, private readonly bindingChanged: () => void) {}
 
 	public onDidChangeStop(listener: (stop: RuntimeDebuggerSourceStop | undefined) => void): () => void {
@@ -52,7 +53,7 @@ export class SourceDebugger {
 		for (const listener of this.stopListeners) listener(this.stop);
 	}
 
-	public install(media: Blua32ToolingMedia, breakpoints: SourceLocationPcs): void {
+	public install(media: Blua32InstalledMedia, breakpoints: SourceLocationPcs): void {
 		if (this.media !== media) { this.stepMedia = undefined; this.stop = undefined; this.retiredStopId = this.stopSerial; }
 		this.media = media; this.breakpoints = breakpoints;
 		if (this.stepping) this.prepareSteps();

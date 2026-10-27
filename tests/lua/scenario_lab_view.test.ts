@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 
@@ -79,7 +80,7 @@ function createViewFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny') {
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/b_assert.lua', 20),
-	]));
+	]).catalog);
 	const results = new ScenarioResultService();
 	const view = createScenarioLabViewState(collection, results, false);
 	prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM });
@@ -91,7 +92,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const font = installWorkbenchViewport(t, variant);
 		const records = ['nemesis_s_bel_encounter', 'nemesis_s_cinematic_flow', 'different_project_intro', 'nemesis_s_intro', 'intro', 'a/same', 'b/same']
 			.map((name, index) => createScenarioTestSourceRecord(`tests/carts/nemesis_s/${name}_assert.lua`, index));
-		const sources = createScenarioTestSourceState(records), collection = new ScenarioTestCollection(sources);
+		const sources = createScenarioTestSourceState(records), collection = new ScenarioTestCollection(sources.catalog);
 		const root = collection.roots[0], view = createScenarioLabViewState(collection, new ScenarioResultService(), false);
 		prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: 222, bottom: CODE_AREA_BOTTOM });
 		const rows = view.testPane.rows.filter(row => row.kind === 'module');
@@ -111,10 +112,10 @@ for (const variant of ['tiny', 'msx'] as const) {
 		view.testPane.selectionIndex = testRowIndex;
 		const source = executeScenarioLabNavigation(view, 'activate');
 		assert.deepEqual(source, { kind: 'open-source', location: { resource: item.resource, line: item.range.start.line, column: item.range.start.column } });
-		assert.equal(item.id, scenarioTestId(0, item.assetId, 'sample'));
+		assert.equal(item.id, scenarioTestId(TEST_CARTRIDGE_CONTEXT_IDS[0], item.assetId, 'sample'));
 		assert.equal(scenarioModuleCaptions({ ...root, label: 'different_project' }).get(encounter.module), 'nemesis_s_bel_encounter', 'a different root cannot elide another project namespace');
-		const otherSlot = { ...item, resource: { ...item.resource, domain: 1 as const }, id: scenarioTestId(1, item.assetId, item.caseName) };
-		assert.notEqual(scenarioTestIdentity(item), scenarioTestIdentity(otherSlot), 'same source and case in another physical cartridge retains distinct membership');
+		const otherSlot = { ...item, resource: { ...item.resource, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1] }, id: scenarioTestId(TEST_CARTRIDGE_CONTEXT_IDS[1], item.assetId, item.caseName) };
+		assert.notEqual(item.id, otherSlot.id, 'the same authored source and case in another admitted context retain distinct membership');
 		assert.notEqual(scenarioTestIdentity(item), scenarioTestIdentity(cinematic.module.children[0]), 'same authored case in another module retains distinct source identity');
 		assert.deepEqual(records.map(record => record.src), records.map(() => "return { kind = 'unit', tests = { sample = function() end } }"));
 		const retainedRows = view.testPane.rows.slice(), retainedTexts = view.testPane.rows.map(row => row.feedbackText);
@@ -248,7 +249,7 @@ test('scenario result projection follows a new run and preserves stable log iden
 	const resultPane = view.resultPane;
 	const firstRun = results.beginRun(
 		testItem.id,
-		[{ test: testItem, source: collection.findModuleBySourcePath(testItem.resource.domain, testItem.resource.path).source, sourceRevision: 7 }],
+		[{ test: testItem, source: collection.findModuleBySourcePath(testItem.resource.contextId, testItem.resource.path).source, sourceRevision: 7 }],
 	);
 	const first = results.startItem(firstRun, 0, 100);
 	results.markRunning(first);
@@ -274,7 +275,7 @@ test('scenario result projection follows a new run and preserves stable log iden
 	results.completeRun(firstRun);
 	const secondRun = results.beginRun(
 		testItem.id,
-		[{ test: testItem, source: collection.findModuleBySourcePath(testItem.resource.domain, testItem.resource.path).source, sourceRevision: 8 }],
+		[{ test: testItem, source: collection.findModuleBySourcePath(testItem.resource.contextId, testItem.resource.path).source, sourceRevision: 8 }],
 	);
 	const second = results.startItem(secondRun, 0, 201);
 	view.runActive = true;
@@ -292,7 +293,7 @@ test('scenario result projection follows a new run and preserves stable log iden
 test('scenario messages activate their complete stored text without inventing a source location', t => {
 	const { collection, results, view } = createViewFixture(t);
 	const item = collection.roots[0].children[0].children[0];
-	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
+	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = results.startItem(run, 0, 20);
 	const text = `expected:\n\n${'W'.repeat(300)}\nactual:\nlast actual value`;
 	results.appendLog(result, 21, text);
@@ -333,9 +334,9 @@ test('scenario messages activate their complete stored text without inventing a 
 test('scenario messages retain an actual diagnostic location separately from test context', t => {
 	const { collection, results, view } = createViewFixture(t);
 	const item = collection.roots[0].children[0].children[0];
-	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 2 }]);
+	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 2 }]);
 	const result = results.startItem(run, 0, 0);
-	const location = { resource: { domain: 0 as const, path: 'actors/independent.lua' }, line: 79, column: 6 };
+	const location = { resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'actors/independent.lua' }, line: 79, column: 6 };
 	results.appendLog(result, 5, 'actual fault stack', location);
 	results.fail(result, 5, { message: 'actual fault', location }, null);
 	refreshScenarioLabProjection(view);
@@ -352,7 +353,7 @@ test('scenario messages retain an actual diagnostic location separately from tes
 test('scenario Details exposes retained exception frames and phase, not only the row message', t => {
 	const { collection, results, view } = createViewFixture(t);
 	const item = collection.roots[0].children[0].children[0];
-	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
+	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = results.startItem(run, 0, 0);
 	const stackTrace = 'TypeError: broken protocol\n    at install (execution_service.ts:100:7)';
 	results.fail(result, 5, { message: 'broken protocol', stackTrace, phase: 'install' }, null);
@@ -368,14 +369,14 @@ test('scenario Details exposes retained exception frames and phase, not only the
 test('scenario Details navigates each retained source frame without fabricating locations for instruction frames', t => {
 	const { collection, results, view } = createViewFixture(t);
 	const item = collection.roots[0].children[0].children[0];
-	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
+	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = results.startItem(run, 0, 0);
-	const origin = { resource: { domain: 1 as const, path: 'machine/bios/base.lua' }, line: 222, column: 3 };
+	const origin = { resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'machine/bios/base.lua' }, line: 222, column: 3 };
 	const callback = { resource: item.resource, line: 30, column: 3 };
 	results.fail(result, 10, { message: 'assertion failed', location: origin }, {
 		message: 'assertion failed',
 		...origin,
-		details: { luaStack: [
+		details: { sources: new Map(), luaStack: [
 			{ kind: 'source', functionName: 'assert', workspacePath: origin.resource.path, ...origin },
 			{ kind: 'source', functionName: 'test.update', workspacePath: item.resource.path, ...callback },
 			{ kind: 'instruction', functionName: '<unknown>', executionDomainId: 0, instructionAddress: 0x08010400 },
@@ -396,7 +397,7 @@ test('scenario Details navigates each retained source frame without fabricating 
 test('navigation restores a result by identity after log eviction and keeps the saved collapsed run', t => {
 	const { collection, results, view } = createViewFixture(t);
 	const item = collection.roots[0].children[0].children[0];
-	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
+	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = results.startItem(run, 0, 0);
 	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT; index += 1) results.appendLog(result, index, `entry ${index}`);
 	refreshScenarioLabProjection(view);
@@ -434,7 +435,7 @@ test('navigation restores a result by identity after log eviction and keeps the 
 test('live result eviction clears its selection until an actual new run or user selection', t => {
 	const { collection, results, view } = createViewFixture(t);
 	const item = collection.roots[0].children[0].children[0];
-	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
+	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = results.startItem(run, 0, 0);
 	results.appendLog(result, 1, 'selected message');
 	refreshScenarioLabProjection(view);
@@ -447,7 +448,7 @@ test('live result eviction clears its selection until an actual new run or user 
 	assert.equal(view.resultPane.selectionIndex, -1, 'later refreshes cannot silently select a different subject');
 	results.complete(result, 601);
 	results.completeRun(run);
-	const next = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 2 }]);
+	const next = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 2 }]);
 	refreshScenarioLabProjection(view);
 	assert.equal(view.resultPane.rows[view.resultPane.selectionIndex].id, next.id, 'a new run is explicitly selected by its identity');
 });
@@ -455,12 +456,13 @@ test('live result eviction clears its selection until an actual new run or user 
 test('scenario result projection retains FSM facts without inventing source navigation', (t) => {
 	const { collection, results, view } = createViewFixture(t);
 	const item = collection.roots[0].children[0].children[0];
-	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 7 }]);
+	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 7 }]);
 	const result = results.startItem(run, 0, 100);
 	const trace = results.beginFsmTransitionTrace(
 		result,
 		'nemesis_s.director.nemesis_s.director.fsm',
 		'nemesis_s.director.fsm',
+		TEST_CARTRIDGE_CONTEXT_IDS[0],
 	);
 	results.appendFsmTransition(
 		trace,
@@ -488,12 +490,13 @@ test('scenario result projection retains FSM facts without inventing source navi
 test('scenario result projection retains ordered ActionEffect facts', (t) => {
 	const { collection, results, view } = createViewFixture(t);
 	const item = collection.roots[0].children[0].children[0];
-	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 7 }]);
+	const run = results.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 7 }]);
 	const result = results.startItem(run, 0, 100);
 	const trace = results.beginActionEffectTrace(
 		result,
 		'nemesis_s.player.1',
 		'nemesis_s.player',
+		TEST_CARTRIDGE_CONTEXT_IDS[0],
 	);
 	results.appendActionEffectActivity(
 		trace,
@@ -537,7 +540,7 @@ test('scenario result projection retains ordered ActionEffect facts', (t) => {
 	const activation = executeScenarioLabNavigation(view, 'activate');
 	assert.deepEqual(activation, {
 		kind: 'actioneffect-source',
-		executionDomain: 0,
+		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],
 		effectId: 'fire_salvo',
 	});
 	assert.match(
@@ -550,7 +553,7 @@ test('scenario workbench renderer uses the active tiny IDE font', (t) => {
 	const tinyFont = installWorkbenchViewport(t);
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
-	]));
+	]).catalog);
 	const results = new ScenarioResultService();
 	const view = createScenarioLabViewState(collection, results, false);
 	prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM });

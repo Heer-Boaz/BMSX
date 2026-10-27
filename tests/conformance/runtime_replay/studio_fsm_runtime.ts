@@ -11,7 +11,7 @@ export async function openRuntimeStateMachineLens(test: StudioFixture) {
 	const { ide, press } = test;
 	await test.runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	const picker = ide.editor.quickInput;
-	const model = editorTextModelService.get({ domain: 0, path: 'cart.lua' })!;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!;
 	const index = picker.model.list.rows.findIndex(row => {
 		const item = row.item as BehaviorQuickPickItem;
 		return item.registration.resource.path === model.resource.path
@@ -56,7 +56,7 @@ export async function openRuntimeStatePicker(test: StudioFixture, component: 'fi
 export async function openRuntimeStateInspector(test: StudioFixture, component: 'first' | 'second', loadedRevision: number, path = ':/nest') {
 	const { guest, runtime, cycles, press, frame } = test;
 	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('inspection_fsm_callback_count');
-	const model = editorTextModelService.get({ domain: 0, path: 'cart.lua' })!, version = model.version;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!, version = model.version;
 	await openRuntimeStatePicker(test, component);
 	const picker = test.ide.editor.quickInput;
 	const index = picker.model.list.rows.findIndex(row => row.item.label === `${component}_actor.walker${path}`);
@@ -82,7 +82,7 @@ export async function openRuntimeStateInspector(test: StudioFixture, component: 
 
 export async function testRuntimeStateSource(test: StudioFixture): Promise<void> {
 	const { press, cycles, guest, frame } = test;
-	const model = editorTextModelService.get({ domain: 0, path: 'inspection_callbacks.lua' })!;
+	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'inspection_callbacks.lua' })!;
 	const source = model.buffer.getText(), version = model.version, position = cycles(), callbacks = guest.global('inspection_fsm_callback_count');
 	const inspector = await openRuntimeStateInspector(test, 'first', 10);
 	await test.capture?.('fsm-state-instance');

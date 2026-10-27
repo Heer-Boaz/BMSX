@@ -74,6 +74,7 @@ import { DiskWorkspaceRecordProvider } from '../../../ide/node/workspace_records
 import { WorkspaceProjects } from '../../../hosts/node/workspace/projects';
 import type { RuntimeIdeState } from '../../../ide/workbench/state';
 import type { StudioSourceContext } from '../../../hosts/common/studio_projects';
+import { createLoadedProjectSourceCatalog, type RuntimeSourceBindings } from '../../../ide/runtime/sources';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 import { RemoteInput } from '../../../hosts/common/input/remote';
 import { HostControlServer } from '../../../hosts/node/control/server';
@@ -220,12 +221,30 @@ async function main(): Promise<void> {
 				const media = sourceMedia!;
 				const projects = new WorkspaceProjects(workspaceRoot, path.join(workspaceRoot, '.bmsx/studio'));
 				let context: StudioSourceContext;
-				try { context = await projects.resolveSource((media.cartridgeSlots[0] ?? media.cartridgeSlots[1] ?? media.system).index.projectRootPath); }
-				finally { await projects.close(); }
+				let sourceBindings: RuntimeSourceBindings;
+				try {
+					const system = await projects.resolveSource(media.system.index.projectRootPath);
+					const cartridgeContexts: [StudioSourceContext | null, StudioSourceContext | null] = [null, null];
+					for (const slot of [0, 1] as const) {
+						const layer = media.cartridgeSlots[slot];
+						if (layer !== null) cartridgeContexts[slot] = await projects.resolveSource(layer.index.projectRootPath);
+					}
+					context = cartridgeContexts[0] ?? cartridgeContexts[1] ?? system;
+					const workspaceCartridge = media.cartridgeSlots[0] ?? media.cartridgeSlots[1];
+					const seeds = workspaceCartridge === null ? [] : [{ admission: context, layer: workspaceCartridge }];
+					for (const slot of [0, 1] as const) {
+						const layer = media.cartridgeSlots[slot], admission = cartridgeContexts[slot];
+						if (layer !== null && admission !== null && admission.id !== context.id) seeds.push({ admission, layer });
+					}
+					const catalog = createLoadedProjectSourceCatalog({ admission: system, layer: media.system }, seeds);
+					sourceBindings = { catalog, systemContextId: system.id, cartridgeContextIds: [
+						cartridgeContexts[0] === null ? null : cartridgeContexts[0].id,
+						cartridgeContexts[1] === null ? null : cartridgeContexts[1].id] };
+				} finally { await projects.close(); }
 				ide = await prepareWorkbenchRuntime(
 					media, runtime, presenter, presentation, encodePngImage, decodeImage, videoOutput, input, audioOutput,
 					runtimeTasks, execution, rewind, hostOverlayMenu,
-					new MemoryStorage(), context, randomUUID(), new DiskWorkspaceRecordProvider(workspaceRoot), clock,
+					new MemoryStorage(), context, sourceBindings, randomUUID(), new DiskWorkspaceRecordProvider(workspaceRoot), clock,
 					clipboard, new IdeMicrotaskQueue(), logOutput, RESOURCE_PANEL_DEFAULT_RATIO,
 					() => new NodeGraphLayoutEngine(new Worker(path.join(__dirname, 'graph-layout.node-worker.cjs'))),
 				);
@@ -278,8 +297,26 @@ async function main(): Promise<void> {
 					const media = sourceMedia!;
 					const projects = new WorkspaceProjects(workspaceRoot, path.join(workspaceRoot, '.bmsx/studio'));
 					let context: StudioSourceContext;
-					try { context = await projects.resolveSource((media.cartridgeSlots[0] ?? media.cartridgeSlots[1] ?? media.system).index.projectRootPath); }
-					finally { await projects.close(); }
+					let sourceBindings: RuntimeSourceBindings;
+					try {
+						const system = await projects.resolveSource(media.system.index.projectRootPath);
+						const cartridgeContexts: [StudioSourceContext | null, StudioSourceContext | null] = [null, null];
+						for (const slot of [0, 1] as const) {
+							const layer = media.cartridgeSlots[slot];
+							if (layer !== null) cartridgeContexts[slot] = await projects.resolveSource(layer.index.projectRootPath);
+						}
+						context = cartridgeContexts[0] ?? cartridgeContexts[1] ?? system;
+						const workspaceCartridge = media.cartridgeSlots[0] ?? media.cartridgeSlots[1];
+						const seeds = workspaceCartridge === null ? [] : [{ admission: context, layer: workspaceCartridge }];
+						for (const slot of [0, 1] as const) {
+							const layer = media.cartridgeSlots[slot], admission = cartridgeContexts[slot];
+							if (layer !== null && admission !== null && admission.id !== context.id) seeds.push({ admission, layer });
+						}
+						const catalog = createLoadedProjectSourceCatalog({ admission: system, layer: media.system }, seeds);
+						sourceBindings = { catalog, systemContextId: system.id, cartridgeContextIds: [
+							cartridgeContexts[0] === null ? null : cartridgeContexts[0].id,
+							cartridgeContexts[1] === null ? null : cartridgeContexts[1].id] };
+					} finally { await projects.close(); }
 					const microtasks = new IdeMicrotaskQueue();
 					const storage = new MemoryStorage();
 					const capture = new HeadlessCaptureCoordinator(
@@ -306,6 +343,7 @@ async function main(): Promise<void> {
 						hostOverlayMenu,
 						storage,
 						context,
+						sourceBindings,
 						randomUUID(),
 						new DiskWorkspaceRecordProvider(workspaceRoot),
 						clock,

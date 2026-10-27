@@ -1,10 +1,8 @@
 import { DisposableStore } from '../../../common/lifecycle';
-import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { getTextSnapshot } from '../../../editor/text/source_text';
-import { onDidChangeLuaSourceRegistry } from '../../../runtime/source_registry';
-import { runtimeLuaSourceRegistry, type RuntimeSourceState } from '../../../runtime/sources';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 
 export type CapturedWorkspaceSource = {
 	readonly model: EditorTextModel;
@@ -20,22 +18,16 @@ export class WorkspaceSourceContext {
 	private readonly lifetime = new DisposableStore();
 	private readonly captured = new Map<EditorTextModel, CapturedWorkspaceSource>();
 	private readonly invalidationListeners = new Set<() => void>();
-	private readonly registries;
-	private readonly catalog;
 	private reasonValue: string | undefined;
 
-	public constructor(public readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState) {
-		this.catalog = sources.resourceByIdentity;
+	public constructor(public readonly models: EditorTextModelService, catalog: WorkspaceSourceCatalog) {
 		this.lifetime.add({ dispose: models.onWillClear(() => this.invalidate('Workspace closed')) });
 		this.lifetime.add({ dispose: models.onDidChangeContent(model => this.invalidate(`Source changed: ${model.resource.path}`)) });
-		this.registries = ([SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const).map(domain => ({ domain, registry: runtimeLuaSourceRegistry(sources, domain) }));
-		for (const { domain, registry } of this.registries) {
-			if (registry === undefined) continue; // Empty cartridge socket.
-			this.lifetime.add({ dispose: onDidChangeLuaSourceRegistry(registry, path => {
-				if (path !== undefined && models.get({ domain, path }) !== undefined) return; // A model owns the effective source, not its saved base.
-				this.invalidate('Workspace source catalog changed');
-			}) });
-		}
+		this.lifetime.add({ dispose: catalog.onDidChange((contextId, path) => {
+			// Retained models own effective text; persisting their base is not an edit.
+			if (path !== undefined && models.get({ contextId, path }) !== undefined) return;
+			this.invalidate('Workspace source catalog changed');
+		}) });
 	}
 
 	public get reason(): string | undefined { return this.reasonValue; }
@@ -45,14 +37,8 @@ export class WorkspaceSourceContext {
 		return () => this.invalidationListeners.delete(listener);
 	}
 
-	/** Admission checks identities of replaced sockets without scanning/re-reading source. */
+	/** The catalog and model owners retire the operation's authority synchronously. */
 	public assertCurrent(): void {
-		if (this.reasonValue === undefined && this.catalog !== this.sources.resourceByIdentity) {
-			this.invalidate('Workspace resource catalog was replaced');
-		}
-		if (this.reasonValue === undefined && this.registries.some(({ domain, registry }) => runtimeLuaSourceRegistry(this.sources, domain) !== registry)) {
-			this.invalidate('Workspace source catalog was replaced');
-		}
 		if (this.reasonValue !== undefined) throw new WorkspaceSourceContextConflict(this.reasonValue);
 	}
 

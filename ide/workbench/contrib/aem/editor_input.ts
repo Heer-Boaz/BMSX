@@ -25,6 +25,8 @@ export class AemEditorInput extends WorkingCopyEditorInput<`aem:${string}`, 'aem
 	public document: Document | undefined;
 	public source = '';
 	public status = '';
+	public applyStatus = '';
+	public applying = false;
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, };
 	public constructor(public readonly workingCopy: EditorTextModel) {
 		super(`aem:${resourceIdentityKey(workingCopy.resource)}`, 'aem_editor', computeResourceTabTitle(workingCopy.resource), true);

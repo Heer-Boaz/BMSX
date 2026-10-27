@@ -1,3 +1,4 @@
+import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -15,7 +16,7 @@ import type { LuaSyntaxSpan } from '../../toolchain/ts/lua/syntax/source_locatio
 import { FSM_BEHAVIOR_SOURCE, FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
 
 function fixture(source = FSM_BEHAVIOR_SOURCE) {
-	const resource = { sourceFilePath: 'fsm_fixture.lua', location: { kind: 'workspace' as const, path: 'fsm_fixture.lua' }, domain: 0 as const, path: 'fsm_fixture.lua',
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'fsm_fixture.lua', location: { kind: 'workspace' as const, path: 'fsm_fixture.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'fsm_fixture.lua',
 		source: { resid: 'fsm_fixture', type: 'lua' as const, source_path: 'fsm_fixture.lua', generated: false } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	const analysis = buildResourceLuaSemanticFixtureFile(source, resource);

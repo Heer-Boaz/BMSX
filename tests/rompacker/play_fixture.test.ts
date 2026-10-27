@@ -1,3 +1,4 @@
+import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -5,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
-import { buildTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
+import { buildFixtureProgram } from '../../ide/testing/fixture_media';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { TestInput } from '../../ide/testing/input';
 import { PlayFixture, DEFAULT_PLAY_FIXTURE_BUDGETS } from '../../ide/testing/play_fixture';
@@ -53,8 +54,7 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3,
 			...COROUTINE_FIRMWARE_MODULES], cartSource: GAME,
 		cartModules: [{ path: 'game', source: 'return { updates=0, down_samples=0, after_publication=0 }' }],
 	});
-	const program = await buildTestCartridge({ systemRom: media.systemRom, cartridge: media.cartRom,
-		test: { sourcePath: PATH, source }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
+	const program = await buildFixtureProgram({ systemRom: media.systemRom, cartridgeSlots: [media.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: PATH, source });
 	const target = new OffscreenMachine(media.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 	const logs: string[] = [], captures: { tick: number; label: string; sequence?: number }[] = [];
 	const output: FixtureOutput = {
@@ -64,7 +64,7 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3,
 		observeFsm() { assert.fail('This fixture does not request an FSM observer'); },
 		observeActionEffects() { assert.fail('This fixture does not request an ActionEffect observer'); },
 	};
-	const play = new PlayFixture(target, target.input, program, 0, output, budgets);
+	const play = new PlayFixture(target, target.input, program, output, budgets);
 	t.after(() => play.dispose());
 	const drain = () => {
 		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
@@ -121,7 +121,7 @@ return {kind='integration',
 		const input = new PlayInput(new InputChannel(physical));
 		const target = new OffscreenMachine(f.media.systemRom, [f.program.layer.bytes, null], PSX_MACHINE_SPEC, input);
 		const logs: string[] = [];
-		const play = new PlayFixture(target, input.fixture, f.program, 0, {
+		const play = new PlayFixture(target, input.fixture, f.program, {
 			log(_tick, value) { logs.push(valueToString(value, target.runtime.machine.cpu.stringPool)); },
 			captureRequested: () => assert.fail('unexpected capture'), captured: () => assert.fail('unexpected publication'),
 			observeFsm: () => assert.fail('unexpected FSM recording'), observeActionEffects: () => assert.fail('unexpected ActionEffect recording'),
