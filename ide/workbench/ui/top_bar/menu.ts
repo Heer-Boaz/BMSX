@@ -1,6 +1,6 @@
 import { WORKBENCH_MENUS, type WorkbenchMenuItem } from '../menu/registry';
 
-export const MENU_IDS = ['file', 'edit', 'view', 'run', 'tools'] as const;
+export const MENU_IDS = ['file', 'edit', 'view', 'run', 'tools', 'window'] as const;
 export type MenuId = typeof MENU_IDS[number];
 export type TopBarMenuEntry = {
 	readonly id: MenuId;

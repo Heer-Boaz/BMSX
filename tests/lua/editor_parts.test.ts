@@ -19,6 +19,184 @@ import { KeyModifier } from '../../hosts/common/input/text';
 import { getProblemsPanelBounds } from '../../ide/workbench/contrib/problems/panel/layout';
 import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { api } from '../../ide/runtime/overlay_api';
+import { COLOR_FRAME } from '../../ide/common/constants';
+import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
+import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
+
+test('Focus Main changes actual paint and hit order while document inputs and local sessions remain retained', t => {
+	const f = createActualSourcePanes(t, true), parts = f.editor.editorParts, main = parts.main;
+	const model = f.firstInput.workingCopy, text = model.buffer.getText(), version = model.version;
+	const cycles = f.host.runtime.machine.scheduler.nowCycles;
+	main.group.openEditor(new CodeEditorInput(model)); f.update();
+	const mainInput = main.group.model.activeTab!, mainPane = main.group.panes.activePane!;
+	f.second.focus();
+	f.secondPart.quickInput.input('', '', 'retained document draft', async value => value, () => {});
+	f.first.focus();
+	const paintOrder: string[] = [], drawMain = mainPane.draw.bind(mainPane), drawFirst = f.first.draw.bind(f.first);
+	t.mock.method(mainPane, 'draw', () => { paintOrder.push('main'); drawMain(); });
+	t.mock.method(f.first, 'draw', () => { paintOrder.push('document'); drawFirst(); });
+	const fill = api.fill_rect.bind(api), mainChrome = main.surface.presentationParent!;
+	t.mock.method(api, 'fill_rect', (left, top, right, bottom, z, color) => {
+		const bounds = mainChrome.getBounds();
+		if (left === bounds.left && top === bounds.top && right === bounds.right && bottom === bounds.bottom
+			&& color === COLOR_FRAME) paintOrder.push('main background');
+		fill(left, top, right, bottom, z, color);
+	});
+	// This overlap is the paint/hit stacking contract, not a particular window position.
+	const firstBounds = f.firstGroup.panes.contentBounds, mainBounds = main.group.panes.contentBounds;
+	const x = (Math.max(firstBounds.left, mainBounds.left) + Math.min(firstBounds.right, mainBounds.right)) / 2;
+	const y = (Math.max(firstBounds.top, mainBounds.top) + Math.min(firstBounds.bottom, mainBounds.bottom)) / 2;
+	assert.equal(f.editor.surfaces.hitTest(x, y), f.firstGroup.paneSurface);
+	f.paint();
+	assert.deepEqual(paintOrder.filter(event => event !== 'main background'), ['main', 'document']);
+	f.editor.commands.execute('window.focusMain', f.first.commandTarget); f.update();
+	paintOrder.length = 0; f.paint();
+	assert.ok(parts.activePart === main); assert.ok(inputFocus.target === mainPane.commandTarget);
+	assert.equal(f.editor.surfaces.hitTest(x, y), main.group.paneSurface);
+	assert.deepEqual(paintOrder.filter(event => event !== 'main background'), ['document', 'main']);
+	assert.ok(paintOrder.indexOf('document') < paintOrder.lastIndexOf('main background'),
+		'foreground main chrome paints its opaque background after the covered document');
+	assert.ok(paintOrder.lastIndexOf('main background') < paintOrder.indexOf('main'));
+	f.firstPart.focus(); f.update(); paintOrder.length = 0; f.paint();
+	assert.equal(f.editor.surfaces.hitTest(x, y), f.firstGroup.paneSurface);
+	assert.deepEqual(paintOrder.filter(event => event !== 'main background'), ['main', 'document']);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.firstGroup.panes.activePane === f.first);
+	assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane === f.second);
+	assert.ok(main.group.model.activeTab === mainInput && main.group.panes.activePane === mainPane);
+	assert.equal(f.secondPart.quickInput.visible, true); assert.equal(f.secondPart.quickInput.field.text, 'retained document draft');
+	assert.ok(mainInput.kind === 'code_editor' && mainInput.workingCopy === model && f.secondInput.workingCopy === model);
+	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+test('the workspace window picker activates actual MRU parts and restores their retained local input', async t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
+	parts.main.group.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();
+	const mainPane = parts.main.group.panes.activePane!, model = f.firstInput.workingCopy;
+	const text = model.buffer.getText(), version = model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;
+	f.first.focus();
+	f.firstPart.quickInput.input('', '', 'retained first draft', async value => value, () => {});
+	f.second.focus();
+	f.editor.commands.execute('window.showAll', f.second.commandTarget);
+	const picker = f.editor.quickInput;
+	assert.equal(picker.visible, true); assert.ok(inputFocus.target === picker.field.focusTarget);
+	assert.equal(picker.model.list.rows.length, parts.mostRecentlyActive.length);
+	picker.model.list.selectionIndex = parts.mostRecentlyActive.indexOf(f.firstPart);
+	f.key('Enter');
+	assert.equal(picker.visible, false); assert.ok(parts.activePart === f.firstPart);
+	assert.ok(inputFocus.target === f.firstPart.quickInput.field.focusTarget);
+	assert.equal(f.firstPart.quickInput.field.text, 'retained first draft');
+	f.editor.commands.execute('window.showAll', f.firstPart.quickInput.field.focusTarget);
+	picker.model.list.selectionIndex = parts.mostRecentlyActive.indexOf(parts.main);
+	f.key('Enter');
+	assert.equal(picker.visible, false); assert.ok(parts.activePart === parts.main);
+	assert.ok(inputFocus.target === mainPane.commandTarget);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.firstGroup.panes.activePane === f.first);
+	assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane === f.second);
+	assert.equal(f.firstPart.quickInput.visible, true);
+	f.editor.commands.execute('window.showAll', mainPane.commandTarget);
+	assert.equal(picker.visible, true);
+	assert.equal(await parts.close(f.secondPart), true);
+	assert.equal(picker.visible, false, 'retiring any listed part retires the picker generation instead of retaining stale part rows');
+	assert.equal(f.firstPart.quickInput.visible, true);
+	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+test('the window picker can foreground a closing document and its actual local decision', async t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
+	f.firstInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained close draft\n' }]);
+	f.second.focus();
+	const closing = parts.close(f.firstPart);
+	assert.equal(f.firstPart.closing, true); assert.equal(f.firstPart.actionPrompt.visible, true);
+	f.editor.commands.execute('window.showAll', f.second.commandTarget);
+	const picker = f.editor.quickInput;
+	assert.equal(picker.model.list.rows.length, parts.mostRecentlyActive.length);
+	picker.model.list.selectionIndex = parts.mostRecentlyActive.indexOf(f.firstPart);
+	f.key('Enter');
+	assert.equal(picker.visible, false); assert.ok(parts.activePart === f.firstPart);
+	assert.ok(inputFocus.target === f.firstPart.actionPrompt.focusTarget);
+	f.key('Escape');
+	assert.equal(await closing, false); assert.equal(f.firstPart.retired, false);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
+	assert.equal(f.firstInput.workingCopy.dirty, true);
+});
+
+test('New Editor Window creates an independent empty document without moving or executing the invoking Source', t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts, model = f.firstInput.workingCopy;
+	const text = model.buffer.getText(), version = model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;
+	f.first.focus(); f.editor.commands.execute('window.newEditor', f.first.commandTarget); f.update();
+	const created = parts.activePart;
+	assert.equal(parts.documents.length, 3); assert.ok(created !== parts.main && created !== f.firstPart && created !== f.secondPart);
+	assert.equal(created.group.model.tabs.length, 0); assert.equal(created.group.panes.activePane, null);
+	assert.equal(created.window!.visible, true); assert.ok(inputFocus.target === created.focusTarget);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.firstGroup.panes.activePane === f.first);
+	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+test('Focus Main activates and foregrounds its empty container without leaving focus in a covered document', t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts, main = parts.main;
+	f.first.focus();
+	assert.equal(main.group.model.activeTab, null);
+	const mainBounds = main.group.panes.contentBounds, documentBounds = f.firstGroup.panes.contentBounds;
+	// Empty Main must own the same overlapping hit region as an occupied Main.
+	const x = (Math.max(mainBounds.left, documentBounds.left) + Math.min(mainBounds.right, documentBounds.right)) / 2;
+	const y = (Math.max(mainBounds.top, documentBounds.top) + Math.min(mainBounds.bottom, documentBounds.bottom)) / 2;
+	assert.equal(f.editor.surfaces.hitTest(x, y), f.firstGroup.paneSurface);
+	f.editor.commands.execute('window.focusMain', f.first.commandTarget); f.update();
+	assert.ok(parts.activePart === main);
+	assert.ok(inputFocus.target === main.focusTarget);
+	assert.equal(f.editor.surfaces.hitTest(x, y), main.group.paneSurface);
+	f.key('Enter');
+	assert.equal(main.group.model.activeTab?.kind, 'home', 'the empty container admits its actual Home-opening keyboard behavior');
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.firstGroup.panes.activePane === f.first);
+});
+
+test('Open Editor in New Window copies Source view state while retaining one canonical model and edit history', async t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts, model = f.firstInput.workingCopy;
+	parts.main.group.openEditor(new CodeEditorInput(f.secondInput.workingCopy)); f.update();
+	const mainInput = parts.main.group.model.activeTab, mainPane = parts.main.group.panes.activePane;
+	const original = model.buffer.getText(), cycles = f.host.runtime.machine.scheduler.nowCycles;
+	f.first.focus();
+	assert.equal(f.first.code.focusTarget.textInput!.replaceText(0, 0, '-- shared window draft\n'), true);
+	const view = f.firstInput.context.view;
+	view.cursorRow = 1; view.cursorColumn = 7; view.selectionAnchor = { row: 1, column: 0 };
+	const selection = captureCodeEditorView(f.firstInput), draft = model.buffer.getText(), version = model.version;
+	assert.equal(f.editor.commands.isEnabled('window.copyEditor', f.first.commandTarget), true);
+	f.editor.commands.execute('window.copyEditor', f.first.commandTarget); f.update();
+	const document = parts.activePart, input = document.group.model.activeTab, pane = document.group.panes.activePane!;
+	assert.equal(parts.documents.length, 3); assert.ok(document !== f.firstPart && document !== f.secondPart && document !== parts.main);
+	assert.ok(input instanceof CodeEditorInput && input !== f.firstInput);
+	assert.ok(pane !== f.first && pane.commandTarget !== f.first.commandTarget);
+	assert.ok(input.context.view !== view && input.workingCopy === model);
+	assert.deepEqual(captureCodeEditorView(input), selection);
+	assert.ok(parts.main.group.model.activeTab === mainInput && parts.main.group.panes.activePane === mainPane);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.firstGroup.panes.activePane === f.first);
+	assert.equal(document.group.model.previewTab, null, 'the copied view is explicitly retained, not a replaceable preview');
+	assert.equal(model.buffer.getText(), draft); assert.equal(model.version, version); assert.equal(model.canUndo, true);
+	input.context.view.cursorColumn++;
+	assert.deepEqual(captureCodeEditorView(f.firstInput), selection, 'the two controls retain independent reading positions');
+	assert.equal(await parts.close(f.firstPart), true);
+	assert.equal(f.firstPart.actionPrompt.visible, false, 'closing one copy is not a last-working-copy dirty close');
+	assert.ok(document.group.model.activeTab === input && document.group.panes.activePane === pane);
+	assert.ok(editorTextModelService.get(model.resource) === model); assert.equal(model.dirty, true);
+	f.editor.commands.execute('undo', pane.commandTarget); f.update();
+	assert.equal(model.buffer.getText(), original); assert.equal(model.canRedo, true);
+	assert.ok(parts.main.group.model.activeTab === mainInput && parts.main.group.panes.activePane === mainPane);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+test('Open Editor in New Window is unavailable for an actual host diagnostic without view-copy capability', t => {
+	const f = createActualSourcePanes(t), diagnostic = new HostErrorInput('fixture host diagnostic');
+	f.firstGroup.openEditor(diagnostic); f.update();
+	const pane = f.firstGroup.panes.activePane!, documents = f.editor.editorParts.documents.length;
+	assert.equal(f.editor.commands.isEnabled('window.copyEditor', pane.commandTarget), false);
+	f.editor.commands.execute('window.copyEditor', pane.commandTarget);
+	assert.equal(f.editor.editorParts.documents.length, documents);
+	assert.ok(f.firstGroup.model.activeTab === diagnostic && f.firstGroup.panes.activePane === pane);
+});
 
 test('the main Scene survives its actual Source window, canonical edits, Save and window retirement', async t => {
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);

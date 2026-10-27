@@ -29,7 +29,7 @@ interface SurfaceAttachment extends WorkbenchSurfaceCallbacks {
 }
 
 interface PresentedSurface extends SurfaceAttachment {
-	readonly presentationParent?: WorkbenchSurface;
+	readonly presentationParent?: WorkbenchSurface | null;
 }
 
 export type WorkbenchSurfaceOptions =

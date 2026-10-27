@@ -22,7 +22,7 @@ export class SceneEditorInputSerializer implements EditorInputSerializer<SceneEd
 		const state: SerializedSceneEditorInput = JSON.parse(value);
 		if (state.version !== 1) throw new Error(`Unsupported scene editor editor version '${state.version}'.`);
 		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
-		const input = new SceneEditorInput(model);
+		const input = new SceneEditorInput(model, this.controller.createView);
 		this.controller.refresh(input);
 		if (sameSource) restoreSceneEditorView(input, state.view);
 		else selectSceneOutlineRow(input, -1);

@@ -12,6 +12,7 @@ import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
 import { CartMapGrid, type MapGridContent, type MapGridMarker } from './grid';
 import type { PietiousObject, PietiousSource } from './pietious_source';
 import type { NemesisMarker, NemesisSource } from './nemesis_source';
+import { captureCartMapView, restoreCartMapView } from './view_snapshot';
 
 export type CartMapKind = 'pietious' | 'nemesis';
 export type CartMapSection = 'outline' | 'map';
@@ -85,6 +86,11 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 				this.selectionRange.end = event.editState.value.end;
 			} else mapTrackedTextRange(this.selectionRange, event.changes);
 		}) });
+	}
+	public createView(): CartMapInput {
+		const view = captureCartMapView(this), input = new CartMapInput(this.workingCopy, this.mapKind);
+		restoreCartMapView(input, view);
+		return input;
 	}
 	public override toResourceEditor() { return { resource: this.workingCopy.resource, editorId: WORKBENCH_CART_MAP_EDITOR_ID }; }
 }

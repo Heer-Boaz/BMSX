@@ -41,11 +41,13 @@ import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain
 import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
 import type { Blua32SourceImage } from '../runtime/sources';
 import { getTextFileRuntimeSourceInstallations } from '../workbench/services/working_copy/runtime_source_status';
+import { showOpenWindows } from '../workbench/services/editor/open_windows';
+import { findWorkbenchWindow } from '../workbench/ui/window/control';
 
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
-	'tabs.next', 'tabs.previous',
+	'tabs.next', 'tabs.previous', 'window.copyEditor',
 	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
 	'scenarioLab.play', 'play.reset', 'play.source',
 	'scenarioLab.runWithCompanion', 'scenarioLab.debugWithCompanion', 'scenarioLab.playWithCompanion',
@@ -86,6 +88,8 @@ export class IdeCommandController {
 		private readonly textFileSaves: TextFileSaveService,
 	) {}
 	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): void {
+		const originWindow = findWorkbenchWindow(target);
+		if (originWindow === null) return;
 		const originGroup = findEditorGroup(target);
 		if (originGroup === null) return;
 		const originPart = this.editor.editorParts.partForTarget(target);
@@ -113,6 +117,22 @@ export class IdeCommandController {
 			return;
 		}
 		switch (command) {
+			case 'window.showAll': showOpenWindows(this.editor.editorParts, this.editor.quickInput); return;
+			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
+			case 'window.newEditor': this.editor.editorParts.createDocument().focus(); return;
+			case 'window.copyEditor': {
+				const input = group.model.activeTab;
+				if (input?.createView === undefined || part.closing) return;
+				const view = input.createView();
+				this.editor.editorParts.createDocument().group.openEditor(view, { pinned: true });
+				return;
+			}
+			case 'window.maximize': case 'window.collapse': case 'window.hide': {
+				const window = originWindow === undefined ? part.window : originWindow;
+				const implementation = window?.focusTarget.getCommand(command);
+				if (implementation?.isEnabled()) implementation.run();
+				return;
+			}
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				this.editor.play.execute(command); return;
@@ -345,6 +365,8 @@ export class IdeCommandController {
 	}
 
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
+		const originWindow = findWorkbenchWindow(focus);
+		if (originWindow === null) return false;
 		const originGroup = findEditorGroup(focus);
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(focus);
@@ -357,6 +379,12 @@ export class IdeCommandController {
 		const implementation = focus?.getCommand(command);
 		if (implementation !== undefined) return implementation.isEnabled();
 		switch (command) {
+			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
+			case 'window.copyEditor': return !part.closing && group.model.activeTab?.createView !== undefined;
+			case 'window.maximize': case 'window.collapse': case 'window.hide': {
+				const window = originWindow === undefined ? part.window : originWindow;
+				return window?.focusTarget.getCommand(command)?.isEnabled() === true;
+			}
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				return this.editor.play.isCommandEnabled(command);
@@ -496,6 +524,8 @@ export class IdeCommandController {
 	}
 
 	public isActive(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): boolean {
+		const originWindow = findWorkbenchWindow(target);
+		if (originWindow === null) return false;
 		const originGroup = findEditorGroup(target);
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(target);
@@ -505,6 +535,10 @@ export class IdeCommandController {
 		if (implementation !== undefined) return implementation.isChecked?.() === true;
 		const part = this.editor.editorParts.partForGroup(group);
 		switch (command) {
+			case 'window.maximize': case 'window.collapse': {
+				const window = originWindow === undefined ? part.window : originWindow;
+				return window?.focusTarget.getCommand(command)?.isChecked?.() === true;
+			}
 			case 'runtime.toggleTimeline': return part.timeline.requested;
 			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
 			case 'romInspector.hold': {

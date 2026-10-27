@@ -91,6 +91,14 @@ export class WorkbenchSurfaceService implements IDisposable {
 		return undefined;
 	}
 
+	/** Modeless tools escape pane clipping but stay in their real window's ordered family. */
+	public windowContext(owner: WorkbenchSurface): WorkbenchSurface | null {
+		for (let current: Surface | null | undefined = owner as Surface; current != null; current = current.presentationParent) {
+			if (current.role === 'window' || current.role === 'modal') return current;
+		}
+		return null;
+	}
+
 	/** Layout/visibility producers notify after publishing their own state. */
 	public changed(): void {
 		this.changePending = true;
@@ -212,7 +220,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 			const child = this.hitContext(node.children, x, y);
 			if (child !== null) return child;
 			if (point_in_rect(x, y, node.getBounds())
-				|| node.options.role === 'modal' && (node.options.blockedScope === null || node.presentationParent !== null)
+				|| node.options.role === 'modal' && node.options.blockedScope === null
 				|| node.options.role === 'transient' && node.options.outsidePress === 'consume') {
 				let admitted = node, blocker = this.blockingModal(admitted);
 				while (blocker !== null) { admitted = blocker; blocker = this.blockingModal(admitted); }

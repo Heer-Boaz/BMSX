@@ -63,6 +63,10 @@ timeline, Quick Input and decision dialogs. Document parts use the shared window
 container; they are not another Studio session or workspace. Opening a document
 does not replace the main part's authored subject. Workspace storage records
 part topology and requested placement independently of shared source recovery.
+The main presentation family and document windows share the surface owner's
+ordered window band. Window navigation raises actual parts; owned inspectors
+stay in their window/modal presentation family. Shared window models retain
+normal placement independently of maximized and collapsed presentation.
 
 Shared execution composition owns the primary `RuntimeTransport` and
 `RunTargetSelection`. Global run/debug controls and audio monitoring consume
@@ -129,6 +133,11 @@ An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
 Source inputs own their model-to-view subscriptions. Closing one releases its
 view without disposing the canonical model or another input's view.
+An input's optional fresh-view capability belongs to its contribution. It creates
+independent retained state over shared working copies, not another document or a
+copy of runtime inspection/input authority. Complex authoring tools retain their
+concrete contribution factory; frontend commands do not reconstruct subjects
+through filenames or persistence serializers.
 `EditorCloseController` admits user closes across the frontend's groups, including
 composite working copies and last-view Save/Discard/Cancel decisions. It rechecks
 canonical state and surviving views after awaited decisions or writes.

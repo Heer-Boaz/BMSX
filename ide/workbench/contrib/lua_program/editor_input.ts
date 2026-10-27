@@ -18,6 +18,7 @@ import type { RuntimeTransport } from '../../../runtime/transport';
 let nextInputId = 0;
 
 export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}`, 'lua_program'> {
+	public readonly createView?: () => LuaProgramInput;
 	public readonly tree = createWorkbenchPropertyTree<LuaProgramProperty>();
 	public readonly live = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
 	public readonly sourceModels = new Map<string, EditorTextModel>();
@@ -39,8 +40,10 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 	public readonly secondaryActions: WorkbenchMenuItem[] = [];
 	public readonly actionBar = createWorkbenchActionBar('luaProgram.title', true, this.secondaryActions);
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, };
-	public constructor(public readonly workingCopy: EditorTextModel, public readonly programKind: LuaProgramKind, span: TrackedTextRange, guest: SuspendedGuestSession) {
+	public constructor(public readonly workingCopy: EditorTextModel, public readonly programKind: LuaProgramKind, span: TrackedTextRange, guest: SuspendedGuestSession,
+		createView?: (source: LuaProgramInput) => LuaProgramInput) {
 		super(`program:${nextInputId++}`, 'lua_program', programKind === 'progression' ? 'PROGRESSION' : 'INPUT BINDINGS', true);
+		if (createView !== undefined) this.createView = () => createView(this);
 		this.occurrenceRange = { ...span };
 		this.sourceModels.set(resourceIdentityKey(workingCopy.resource), workingCopy);
 		this.setWorkingCopies(new Set(this.sourceModels.values()));

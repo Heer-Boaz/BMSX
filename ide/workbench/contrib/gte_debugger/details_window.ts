@@ -86,6 +86,7 @@ export class GteDetailsWindow {
 		private readonly source: CapturedLuaSourceBinding, private readonly openSource: () => void) {
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
 			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: owner,
+			presentationParent: surfaces.windowContext(owner),
 			focusScope: focusReturn.scope, focusReturn, workArea, getTitleTooltip: () => this.titleTooltip,
 			content: {
 				draw: () => this.draw(),

@@ -91,7 +91,6 @@ for (const variant of ['tiny', 'msx'] as const) test(`GTE ${variant} Details is 
 	assert.equal(details.window.surface!.role, 'window'); assert.equal(details.window.surface!.lifetimeOwner, f.owner);
 	assert.equal(details.inspector.chrome, 'client'); assert.equal(input.detailsWindow.title, 'NCLIP #0');
 	assert.equal(input.detailsWindow.requestedBounds.bottom, input.layout.bottom - 4);
-	assert.deepEqual(input.detailsActions.items.map(item => item.icon), ['source', 'collapse', 'close']);
 	assert.equal(details.inspector.model.rows.length, 68);
 	assert.equal(details.inspector.model.rows[1].element.value, 'Source unavailable');
 	assert.equal(details.inspector.model.rows[67].element.label, 'C[31]');

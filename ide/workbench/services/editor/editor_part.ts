@@ -6,6 +6,8 @@ import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../../../hosts/common/input/text';
+import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { api } from '../../../runtime/overlay_api';
 import * as colors from '../../../common/constants';
 import type { EditorCommandRunner } from '../../../common/commands';
@@ -42,6 +44,7 @@ type EditorPartOptions = {
 	readonly kind: 'document';
 	readonly requestedBounds: Readonly<RectBounds>;
 	readonly collapsed: boolean;
+	readonly maximized: boolean;
 });
 
 /** One real editor container: controls and sessions live here, documents do not. */
@@ -81,9 +84,10 @@ export class EditorPart {
 		if (options.kind === 'document') {
 			const model = new WorkbenchWindowModel(options.requestedBounds, 160, 96);
 			model.open = true;
+			model.setMaximized(options.maximized);
 			model.setCollapsed(options.collapsed);
 			this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, options.surfaces, options.commands, {
-				model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: options.owner,
+				model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: options.owner, presentationParent: null,
 				focusScope: options.scope, focusReturn: options.focusReturn, workArea: options.workArea,
 				content: { draw: () => this.drawClient() },
 				layoutContent: bounds => this.layoutDocument(bounds),
@@ -101,7 +105,15 @@ export class EditorPart {
 			this.scope = new InputFocusScope(Symbol('main editor part'), options.scope);
 			this.clientScope = this.scope;
 			this.focusTarget = inputFocus.createTarget(options.focusReturn, this.scope);
-			this.focusTarget.canFocus = () => this.group.panes.activePane !== null;
+			this.focusTarget.canFocus = () => !this.retired;
+			this.subscriptions.push(this.focusTarget.bindKeyboard(input => {
+				if (input.modifiers !== KeyModifier.none) return;
+				if (isKeyJustPressed('Enter', input)) {
+					consumeIdeKey('Enter', input); options.commands.execute('home', this.focusTarget);
+				} else if (isKeyJustPressed('Escape', input)) {
+					consumeIdeKey('Escape', input); options.focusReturn.focus();
+				}
+			}));
 			this.surface = this.clientSurface = options.surfaces.attach({
 				role: 'content', lifetimeOwner: options.owner, presentationParent: options.owner, captureScope: this.scope.surfaceScope,
 				isVisible: () => true, getBounds: () => this.clientBounds, getClip: () => options.owner.getClip(),
@@ -124,7 +136,7 @@ export class EditorPart {
 			next => next !== null && options.surfaces.isInContext(next.scope.surfaceScope, this.actionPrompt.pointerScope),
 			{ ...presentation, reveal: () => this.reveal(this.promptSurface) });
 		this.quickInputSurface = options.surfaces.attach({ role: 'modal', blockedScope: this.surface,
-			presentationParent: this.kind === 'main' ? null : this.surface, captureScope: this.quickInput.pointerScope,
+			presentationParent: this.kind === 'main' ? options.owner : this.surface, captureScope: this.quickInput.pointerScope,
 			lifetimeOwner: this.clientSurface, isVisible: () => this.quickInput.visible,
 			getBounds: () => this.quickInput.layout.bounds, getClip: () => this.kind === 'document' ? this.window!.model.bounds : this.modalClip,
 			draw: () => this.quickInput.draw(), handlePointer: snapshot => this.quickInput.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0),
@@ -132,7 +144,7 @@ export class EditorPart {
 			onRetire: () => this.quickInput.hide(false),
 		});
 		this.promptSurface = options.surfaces.attach({ role: 'modal', blockedScope: this.surface,
-			presentationParent: this.kind === 'main' ? null : this.surface, captureScope: this.actionPrompt.pointerScope,
+			presentationParent: this.kind === 'main' ? options.owner : this.surface, captureScope: this.actionPrompt.pointerScope,
 			lifetimeOwner: this.clientSurface, isVisible: () => this.actionPrompt.visible,
 			getBounds: () => this.actionPrompt.view.bounds, getClip: () => this.kind === 'document' ? this.window!.model.bounds : this.modalClip,
 			draw: () => this.actionPrompt.draw(), handlePointer: snapshot => this.actionPrompt.handlePointer(snapshot),
@@ -172,6 +184,7 @@ export class EditorPart {
 
 	public focus(): void {
 		this.reveal(null);
+		this.options.onDidActivate(this);
 		if (this.actionPrompt.visible && this.options.surfaces.isAdmitted(this.promptSurface)) {
 			this.options.surfaces.raise(this.promptSurface); this.actionPrompt.focusTarget.focus();
 		} else if (this.quickInput.visible && this.options.surfaces.isAdmitted(this.quickInputSurface)) {
@@ -184,7 +197,7 @@ export class EditorPart {
 
 	/** Present local controls before their field can acquire native input or focus. */
 	private reveal(modal: WorkbenchSurface | null): void {
-		if (this.window === undefined) this.options.layoutMain();
+		if (this.window === undefined) { this.options.layoutMain(); this.raise(); }
 		else {
 			this.window.setCollapsed(false);
 			this.window.show(false);
@@ -193,7 +206,10 @@ export class EditorPart {
 		if (modal !== null) this.options.surfaces.raise(modal);
 	}
 
-	public raise(): void { if (this.window !== undefined) this.window.show(false); }
+	public raise(): void {
+		if (this.window === undefined) this.options.surfaces.raise(this.options.owner);
+		else this.window.show(false);
+	}
 
 	public setClosing(closing: boolean): void {
 		this.closing = closing;

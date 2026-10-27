@@ -23,7 +23,7 @@ import type { ActorLabInput } from '../../contrib/actor_lab/editor_input';
 import type { GameViewInput } from '../../contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../contrib/edit_review/editor_input';
 
-export type EditorInput =
+export type EditorInput = (
 	| HomeInput
 	| PlayEditorInput
 	| AnimationEditorInput
@@ -46,7 +46,11 @@ export type EditorInput =
 	| SceneEditorInput
 	| CartMapInput
 	| LuaProgramInput
-	| AemEditorInput;
+	| AemEditorInput
+) & {
+	/** A distinct retained authoring view over the same canonical source, when supported. */
+	createView?(): EditorInput;
+};
 
 export type EditorInputKind = EditorInput['kind'];
 

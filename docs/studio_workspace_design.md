@@ -69,6 +69,11 @@ invitation to substitute Home or another declaration.
   disposable view bindings. Independent Studio views share the working copy,
   not that input object. This preserves the existing ownership instead of
   copying VS Code class names with different lifetime semantics.
+- VS Code's [window actions](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorActions.ts#L2390-L2569)
+  expose new windows and explicit move/copy separately from ordinary opening.
+  Window membership alone does not make those operations discoverable. Studio's
+  additional-view action uses each contribution's fresh-input capability rather
+  than sharing a retained input or turning another tool into Source.
 - Godot's [main-screen container](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/editor_main_screen.h#L49-L64)
   keeps the main area present, while its
   [dock manager](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/docks/editor_dock_manager.h)
@@ -99,7 +104,7 @@ not an editable asset schema or an isolated preview contract.
 | Workflow | Existing BMSX owners | Missing capability or boundary |
 | --- | --- | --- |
 | Main workspace and document editors | `services/editor/editor_parts.ts` and `editor_part.ts` compose main/document lifetime, controls and local sessions over shared documents. | Canvas placement does not supply docking or native host windows. Those require separate presentation and lifecycle contracts, rather than another editor instance. |
-| Window navigation and additional views | The frontend retains actual part membership, activation/MRU, placement, collapse and close admission. The editor picker lists the invoking group's tabs. | A frontend window switcher/reveal menu, an explicit additional document-window/view action and maximize/restore still need user-facing commands and interaction contracts. Retained multiple-part support alone does not make those workflows discoverable. These are Studio shell capabilities, not cartlib extensions or a reason to add another document owner. |
+| Window navigation and additional views | The Window menu exposes main-workspace activation, an MRU window picker, new editor windows and contribution-owned additional views. Shared window chrome owns maximize/restore, collapse and close admission. | Docking and native host-window integration remain separate capabilities. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
 | Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
 | Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Studio adapters for known factories and cart-owned authoring metadata are possible producers; a mandatory new cartlib schema is not assumed. The read-only [runtime inspection contract](cartlib_inspection_contract.md) does not supply that authoring metadata. |
 | Hierarchy and Details | Scene's outline/options project authored membership; Actor Lab independently inspects runtime actors/components. | Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations before Studio can offer that kind of hierarchy. |
@@ -407,6 +412,40 @@ Moving to a sibling does not dismiss an already retained local session. A delaye
 submission can complete its canonical edit without returning keyboard focus from
 that sibling. A background close decision likewise remains local without
 interrupting an unrelated part's draft.
+
+## Window navigation and presentation
+
+The Window menu makes frontend membership actionable. Show Open Windows lists
+the actual main and document parts in activation order, including collapsed
+windows and windows awaiting a local close decision. Choosing one reveals that
+part and focuses its retained local dialog or client. Cancel returns to the
+invoking control; retiring a listed owner revokes the picker rather than
+redirecting its stale choice. The tab overflow picker remains group-local.
+
+The permanent main presentation family and document windows are peers in the
+same ordered window band. The main family includes project navigation, its
+client and its opaque background. Focus Main Workspace raises that family;
+focusing a document raises its own family again. Neither action hides, collapses
+or disposes another part. An empty main container still owns keyboard focus:
+Enter opens Home and Escape returns to project navigation. It cannot leave
+typing routed to a document covered by the main work area.
+
+Owned modeless inspectors escape the pane's clip within the nearest real window
+or modal context, rather than becoming unrelated root windows. Raising the part
+therefore retains its inspectors' relative order. Main-local dialogs use the
+main presentation family while blocking their named part; workspace dialogs
+remain above all families. Lifetime, presentation and blocked scope remain
+independent references.
+
+New Editor Window creates another real group without replacing the main subject.
+Open Editor in New Window requires the retained input's contribution-owned
+fresh-view capability. It constructs a distinct input of the same tool and
+authored subject, with independent selection, viewport and subscriptions over
+the same canonical working copies. A factory may consume its contribution's
+typed view snapshot; it does not round-trip session storage or guess an editor
+from a filename. Live inspections, instance handles, playback and guest-input
+authority are not copied. Contributions without that capability do not advertise
+the command. This deliberately differs from VS Code's shareable input objects.
 
 ## Execution and input
 

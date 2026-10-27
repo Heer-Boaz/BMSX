@@ -308,6 +308,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
 	private readonly unbindSourceStop: () => void;
+	private readonly unbindMainChromeActivation: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext & WorkbenchChromeLayout = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get lineHeight(): number { return editorViewState.lineHeight; },
@@ -411,7 +412,7 @@ export class RuntimeCartEditor implements CartEditor {
 			next => next !== null && this.surfaces.isInContext(next.scope.surfaceScope, this.actionPrompt.pointerScope),
 			{ scope: inputFocus.workbenchScope, bounds: this.rootSurfaceBounds, kind: 'workspace' });
 		const chromeSurface = this.surfaces.attach({
-			role: 'content', captureScope: this.chromeScope, isVisible: () => true,
+			role: 'window', captureScope: this.chromeScope, isVisible: () => true,
 			getBounds: () => this.rootSurfaceBounds, getClip: () => this.rootSurfaceBounds,
 			draw: () => this.drawWorkbenchChrome(),
 			handlePointer: snapshot => handleWorkbenchChromePointer(this, snapshot),
@@ -464,6 +465,9 @@ export class RuntimeCartEditor implements CartEditor {
 				this.commands,
 				this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
 		}, closeEditors: (targets, origin, prompt) => this.editorClose.close(targets, origin, prompt),
+		});
+		this.unbindMainChromeActivation = inputFocus.onDidActivateInteraction(target => {
+			if (target.scope.surfaceScope === this.chromeScope) this.editorParts.activate(this.editorParts.main);
 		});
 		this.editorClose = new EditorCloseController(this.editorParts.groups, textFileSaves, this.actionPrompt, editorTextModelService);
 		this.surfaces.attach({
@@ -809,8 +813,6 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public draw(): void {
-		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
-
 		this.surfaces.draw(api);
 	}
 
@@ -840,7 +842,7 @@ export class RuntimeCartEditor implements CartEditor {
 	};
 
 	private drawWorkbenchChrome(): void {
-
+		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 		renderTopBar(this.chromeRenderContext, this.menubar);
 		drawResourcePanel(this.resourcePanel);
 		this.gamePanel.draw();
@@ -865,6 +867,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.observedConversation.dispose();
 		this.unbindBreakpoints();
 		this.unbindSourceStop();
+		this.unbindMainChromeActivation();
 		this.actionPrompt.dispose();
 		this.terminal.discard();
 		await this.workbench.shutdown();

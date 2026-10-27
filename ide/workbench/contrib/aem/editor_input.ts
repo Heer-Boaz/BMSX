@@ -7,6 +7,8 @@ import type { StructuredCollection } from '../../../language/yaml/structured_edi
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
+import { captureWorkbenchTreeView, restoreWorkbenchTreeView } from '../../ui/tree_view';
+import { projectAemSource } from './source';
 
 export const WORKBENCH_AEM_EDITOR_ID = 'bmsx.aem';
 export type AemProperty = WorkbenchPropertyElement & {
@@ -31,5 +33,12 @@ export class AemEditorInput extends WorkingCopyEditorInput<`aem:${string}`, 'aem
 	public constructor(public readonly workingCopy: EditorTextModel) {
 		super(`aem:${resourceIdentityKey(workingCopy.resource)}`, 'aem_editor', computeResourceTabTitle(workingCopy.resource), true);
 		this.setLabel(this.title, `Audio Events / ${sourceTabDescription(workingCopy.resource)}`, 'Audio Events');
+	}
+	public createView(): AemEditorInput {
+		projectAemSource(this);
+		const view = captureWorkbenchTreeView(this.tree, element => element.key), input = new AemEditorInput(this.workingCopy);
+		projectAemSource(input);
+		restoreWorkbenchTreeView(input.tree, view, element => element.key);
+		return input;
 	}
 }

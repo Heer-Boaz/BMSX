@@ -23,5 +23,6 @@ export const editorChromeState: EditorChromeState = {
 		run: create_rect_bounds(),
 		view: create_rect_bounds(),
 		tools: create_rect_bounds(),
+		window: create_rect_bounds(),
 	},
 };

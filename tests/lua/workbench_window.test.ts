@@ -39,13 +39,14 @@ function fixture() {
 		execute: (command, target) => focus.executeCommand(command, target),
 	};
 	function window(name: string, left = 40, top = 40, onRetireContent?: () => void, getTitleTooltip?: () => string,
-		windowOptions: Pick<WorkbenchWindowOptions, 'focusScope' | 'requestClose'> = { focusScope: parent.scope }) {
+		windowOptions: Pick<WorkbenchWindowOptions, 'focusScope' | 'requestClose'>
+			& Partial<Pick<WorkbenchWindowOptions, 'lifetimeOwner' | 'presentationParent'>> = { focusScope: parent.scope },
+		actions = createWorkbenchActionBar('window.title')) {
 		const model = new WorkbenchWindowModel({ left, top, right: left + 240, bottom: top + 180 }, 120, 80);
 		model.title = name;
-		const actions = createWorkbenchActionBar('window.title');
 		let input = false, layouts = 0, restores = 0, retires = 0, painted = 0, clicked = 0, hidden = 0;
 		const control = new WorkbenchFloatingWindow(focus, capture, hover, surfaces, commands, {
-			model, actionBar: actions, lifetimeOwner: owner, ...windowOptions, focusReturn: parent, workArea,
+			model, actionBar: actions, lifetimeOwner: owner, presentationParent: null, ...windowOptions, focusReturn: parent, workArea,
 			getTitleTooltip,
 			content: { draw() { painted += 1; }, handlePointer() { clicked += 1; } },
 			layoutContent() { layouts += 1; }, retireContentInput() { input = false; retires += 1; onRetireContent?.(); },
@@ -67,7 +68,7 @@ test('window client and focused chrome publish their actual window commands with
 	const f = fixture(), a = f.window('Owned window');
 	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
 	a.show(true); a.control.clientFocusTarget.focus();
-	for (const command of ['window.collapse', 'window.hide'] as const)
+	for (const command of ['window.collapse', 'window.maximize', 'window.hide'] as const)
 		assert.equal(a.control.clientFocusTarget.getCommand(command), a.control.focusTarget.getCommand(command));
 	f.focus.executeCommand('window.collapse');
 	assert.equal(a.model.collapsed, true); assert.equal(f.focus.target, a.control.actionFocusTarget);
@@ -76,6 +77,134 @@ test('window client and focused chrome publish their actual window commands with
 	f.focus.executeCommand('window.hide', a.control.clientFocusTarget);
 	assert.equal(a.model.open, false); assert.equal(a.hidden(), 1);
 	assert.equal(f.owner.visible, true, 'closing a window does not retire its owning content');
+});
+
+test('maximized placement fills the work area without replacing normal requested placement', () => {
+	const requested = { left: 170, top: 90, right: 470, bottom: 330 };
+	const model = new WorkbenchWindowModel(requested, 150, 100);
+	const area = { left: 10, top: 20, right: 500, bottom: 380 };
+	const retainedRequested = model.requestedBounds;
+	model.setMaximized(true); model.arrange(area, 16);
+	assert.deepEqual(model.bounds, area);
+	assert.equal(model.requestedBounds, retainedRequested); assert.deepEqual(model.requestedBounds, requested);
+	assert.equal(model.resizeEdgeAt(area.left, area.top), 0);
+	assert.equal(model.resizeEdgeAt(area.right - 1, area.bottom - 1), 0);
+	assert.equal(model.arrange(area, 16), false);
+	area.left = 30; area.top = 40; area.right = 130; area.bottom = 110;
+	model.arrange(area, 16);
+	assert.deepEqual(model.bounds, area); assert.deepEqual(model.requestedBounds, requested);
+	area.left = 10; area.top = 20; area.right = 500; area.bottom = 380;
+	model.arrange(area, 16); model.setMaximized(false); model.arrange(area, 16);
+	assert.deepEqual(model.bounds, requested); assert.deepEqual(model.requestedBounds, requested);
+	assert.equal(model.arrange(area, 16), false);
+});
+
+test('collapsed maximized placement uses normal requested position and width while retaining maximize mode', () => {
+	const requested = { left: 70, top: 90, right: 370, bottom: 330 };
+	const model = new WorkbenchWindowModel(requested, 150, 100);
+	const area = { left: 10, top: 20, right: 500, bottom: 380 };
+	model.setMaximized(true); model.setCollapsed(true); model.arrange(area, 16);
+	assert.equal(model.maximized, true);
+	assert.deepEqual(model.bounds, { left: requested.left, top: requested.top, right: requested.right, bottom: requested.top + 16 });
+	assert.equal(model.client.top, model.client.bottom); assert.deepEqual(model.requestedBounds, requested);
+	assert.equal(model.resizeEdgeAt(requested.right - 1, requested.top + 8), 0);
+	model.setCollapsed(false); model.arrange(area, 16);
+	assert.deepEqual(model.bounds, area); assert.deepEqual(model.requestedBounds, requested);
+	model.setMaximized(false); model.arrange(area, 16);
+	assert.deepEqual(model.bounds, requested);
+});
+
+test('focused maximize and restore commands expand collapsed chrome and preserve the retained client', t => {
+	const f = fixture(), a = f.window('MAXIMIZE'); a.show(true);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const client = a.control.clientSurface!, requested = { ...a.model.requestedBounds };
+	f.focus.executeCommand('window.maximize', a.control.clientFocusTarget);
+	assert.equal(a.model.maximized, true); assert.deepEqual(a.model.bounds, f.workArea);
+	assert.equal(a.control.clientSurface, client); assert.equal(a.retires(), 0); assert.equal(a.restores(), 1);
+	assert.equal(f.focus.target, a.client);
+	const maximize = a.actions.items.find(item => item.command === 'window.maximize')!;
+	assert.equal(maximize.checked, true); assert.equal(maximize.checkedIcon, 'restore');
+	a.control.setCollapsed(true);
+	assert.equal(a.model.maximized, true); assert.equal(client.visible, false);
+	f.focus.executeCommand('window.maximize', a.control.actionFocusTarget);
+	assert.equal(a.model.maximized, false); assert.equal(a.model.collapsed, false);
+	assert.deepEqual(a.model.bounds, requested); assert.equal(maximize.checked, false);
+	assert.equal(a.control.clientSurface, client); assert.equal(client.visible, true);
+	a.control.setCollapsed(true);
+	f.focus.executeCommand('window.maximize', a.control.focusTarget);
+	assert.equal(a.model.maximized, true); assert.equal(a.model.collapsed, false);
+	assert.deepEqual(a.model.bounds, f.workArea); assert.deepEqual(a.model.requestedBounds, requested);
+	a.control.update();
+	const measured = f.measurements(), layouts = a.layouts();
+	for (let frame = 0; frame < 100; frame++) { a.layout(); a.control.update(); }
+	assert.equal(f.measurements(), measured); assert.equal(a.layouts(), layouts);
+});
+
+test('maximize and restore cancel held chrome moves and resizes without committing the remainder of the gesture', t => {
+	const f = fixture(), a = f.window('GESTURE'); a.show();
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	for (const resize of [false, true]) {
+		const bounds = a.model.bounds;
+		const down = resize ? pointer(bounds.left + 1, bounds.top + 1, 1, 1) : pointer(bounds.left + 12, bounds.top + 7, 1, 1);
+		f.capture.beginRoute(a.control.scope.surfaceScope, down); a.control.surface!.handlePointer!(down, 0);
+		assert.equal(f.capture.active, true);
+		f.capture.dispatch(pointer(down.viewportX + 10, down.viewportY + 10, 1), false, 1, a.control.scope.surfaceScope);
+		const requested = { ...a.model.requestedBounds };
+		f.focus.executeCommand('window.maximize', a.control.focusTarget);
+		assert.equal(f.capture.active, false); assert.equal(f.capture.draining, true);
+		f.capture.dispatch(pointer(down.viewportX + 40, down.viewportY + 40, 0, 0, 1), false, 2, a.control.scope.surfaceScope);
+		assert.equal(f.capture.draining, false); assert.deepEqual(a.model.requestedBounds, requested);
+		f.focus.executeCommand('window.maximize', a.control.focusTarget);
+		assert.deepEqual(a.model.bounds, requested);
+	}
+});
+
+test('maximized windows admit no header move or edge resize, including their collapsed form', t => {
+	const f = fixture(), a = f.window('FIXED'); a.show(); a.control.setMaximized(true);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const requested = { ...a.model.requestedBounds };
+	for (const collapsed of [false, true]) {
+		a.control.setCollapsed(collapsed);
+		for (const edge of [false, true]) {
+			const bounds = a.model.bounds;
+			const down = edge ? pointer(bounds.left + 1, bounds.top + 1, 1, 1) : pointer(bounds.left + 12, bounds.top + 7, 1, 1);
+			f.capture.beginRoute(a.control.scope.surfaceScope, down); a.control.surface!.handlePointer!(down, 0);
+			assert.equal(f.capture.active, false);
+			f.capture.endRoute(pointer(down.viewportX, down.viewportY));
+			assert.deepEqual(a.model.requestedBounds, requested); assert.equal(a.model.maximized, true);
+		}
+	}
+});
+
+test('maximize and restore retain client and sibling captures without retiring the input surface', t => {
+	const f = fixture(), a = f.window('FIRST'), b = f.window('SECOND', 200, 70); a.show(true); b.show();
+	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	const surface = a.control.clientSurface!;
+	for (const current of [a, b]) {
+		let cancelled = 0, released = 0;
+		const target = { handleCapturedPointer() {}, releaseCapturedPointer() { released++; }, cancelPointer() { cancelled++; } };
+		current.client.focus();
+		f.capture.beginRoute(current.control.clientScope.surfaceScope, pointer(250, 150, 1, 1)); f.capture.capture(target);
+		for (const maximized of [true, false]) {
+			a.control.setMaximized(maximized);
+			assert.equal(f.capture.active, true); assert.equal(f.capture.draining, false); assert.equal(cancelled, 0);
+			assert.equal(f.focus.target, current.client);
+			assert.equal(a.control.clientSurface, surface); assert.equal(surface.retired, false); assert.equal(a.retires(), 0); assert.equal(a.restores(), 1);
+		}
+		f.capture.dispatch(pointer(250, 150, 0, 0, 1), false, 1, current.control.clientScope.surfaceScope);
+		assert.equal(released, 1);
+	}
+});
+
+test('custom window action contributions may omit maximize while the actual window command remains available', t => {
+	const f = fixture(), standard = createWorkbenchActionBar('window.title');
+	const custom = { ...standard, items: standard.items.filter(item => item.command !== 'window.maximize') };
+	const a = f.window('CUSTOM', 40, 40, undefined, undefined, { focusScope: f.parent.scope }, custom);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.show(); f.focus.executeCommand('window.maximize', a.control.clientFocusTarget);
+	assert.equal(a.model.maximized, true); assert.deepEqual(a.model.bounds, f.workArea);
+	f.focus.executeCommand('window.maximize', a.control.focusTarget);
+	assert.equal(a.model.maximized, false); assert.deepEqual(a.model.bounds, a.model.requestedBounds);
 });
 
 test('requested placement survives narrow work areas and collapse preserves expanded dimensions', () => {
@@ -142,6 +271,48 @@ test('two real overlapping windows share paint/hit order but retain independent 
 	assert.equal(f.focus.target, b.client, 'hiding an unrelated window cannot steal keyboard focus');
 	assert.equal(a.control.surface, undefined); assert.equal(a.model.open, false); assert.equal(a.hidden(), 1);
 	assert.equal(f.surfaces.hitTest(140, 120), b.control.clientSurface);
+});
+
+test('raising a frontend preserves its modeless inspector family outside the pane clip without reattaching input', t => {
+	const f = fixture(), document = f.window('DOCUMENT'); document.show();
+	const inspector = f.window('INSPECTOR', 120, 110, undefined, undefined, {
+		focusScope: document.control.clientScope, lifetimeOwner: document.control.clientSurface!,
+		presentationParent: f.surfaces.windowContext(document.control.clientSurface!),
+	});
+	inspector.show();
+	const sibling = f.window('SIBLING', 140, 100); sibling.show();
+	t.after(() => { inspector.control.dispose(); document.control.dispose(); sibling.control.dispose(); f.surfaces.dispose(); });
+	const surface = inspector.control.surface!, client = inspector.control.clientSurface!, requested = { ...inspector.model.requestedBounds };
+	const layouts = inspector.layouts(), restores = inspector.restores();
+	const order: string[] = [];
+	for (const [name, window] of [['document', document], ['inspector', inspector], ['sibling', sibling]] as const) {
+		const draw = window.control.clientSurface!.draw.bind(window.control.clientSurface!);
+		t.mock.method(window.control.clientSurface!, 'draw', () => { order.push(name); draw(); });
+	}
+	const { presenter, renderer } = createHostOverlayFixture(500, 400);
+	const paint = () => { order.length = 0; renderer.beginFrame(presenter); api.beginFrame(renderer); f.surfaces.draw(api); renderer.endFrame(); };
+	// The shared point is outside the document but inside both inspectors' and sibling's clients.
+	const bounds = inspector.model.client, siblingBounds = sibling.model.client;
+	const x = (Math.max(bounds.left, siblingBounds.left, document.model.bounds.right) + Math.min(bounds.right, siblingBounds.right)) / 2;
+	const y = (Math.max(bounds.top, siblingBounds.top) + Math.min(bounds.bottom, siblingBounds.bottom)) / 2;
+	assert.equal(f.surfaces.hitTest(x, y), sibling.control.clientSurface);
+	paint(); assert.deepEqual(order, ['document', 'inspector', 'sibling']);
+	inspector.client.focus();
+	let cancelled = 0;
+	const gesture = { handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancelled++; } };
+	f.capture.beginRoute(inspector.control.clientScope.surfaceScope, pointer(x, y, 1, 1)); f.capture.capture(gesture);
+	document.control.show(false);
+	assert.equal(f.surfaces.hitTest(x, y), client);
+	paint(); assert.deepEqual(order, ['sibling', 'document', 'inspector']);
+	assert.equal(f.focus.target, inspector.client); assert.equal(f.capture.active, true); assert.equal(cancelled, 0);
+	assert.equal(inspector.control.surface, surface); assert.equal(inspector.control.clientSurface, client);
+	assert.equal(surface.retired, false); assert.equal(client.retired, false); assert.equal(inspector.input(), true);
+	assert.equal(inspector.layouts(), layouts); assert.equal(inspector.restores(), restores); assert.equal(inspector.retires(), 0);
+	assert.deepEqual(inspector.model.requestedBounds, requested);
+	sibling.control.show(false);
+	assert.equal(f.surfaces.hitTest(x, y), sibling.control.clientSurface);
+	assert.equal(f.capture.active, true); assert.equal(cancelled, 0);
+	f.capture.dispatch(pointer(x, y, 0, 0, 1), false, 1, inspector.control.clientScope.surfaceScope);
 });
 
 test('surface retirement returns owned client focus without relying on content cleanup', t => {
@@ -312,7 +483,7 @@ test('idle frames do no chrome measurement/layout and hide differs from pane det
 test('window icon tooltips are passive, modal-admitted, retained feedback with no idle measurement', t => {
 	const f = fixture(), a = f.window('SUBJECT'); a.show();
 	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
-	const close = a.actions.items[1];
+	const close = a.actions.items.find(item => item.command === 'window.hide')!;
 	a.control.surface!.handlePointer!(pointer((close.bounds.left + close.bounds.right) >> 1,
 		(close.bounds.top + close.bounds.bottom) >> 1), 0);
 	a.control.update();
@@ -389,7 +560,7 @@ test('font changes reserve stable icon cells and measure the caption only in the
 		const first = a.actions.items[0].bounds;
 		assert.ok(font.measure(a.model.displayTitle) <= first.left - a.model.header.left - 8);
 		assert.equal(a.model.header.bottom - a.model.header.top, font.lineHeight + 8);
-		assert.equal(a.actions.items[1].bounds.right, a.model.header.right - 3);
+		assert.equal(a.actions.items.at(-1)!.bounds.right, a.model.header.right - 3);
 		assert.ok(a.actions.items.every(item => item.bounds.left >= a.model.header.left));
 	}
 });
@@ -463,18 +634,19 @@ test('window ownership ancestry is independent of focus return and close admissi
 	assert.equal(closeRequests, 1); assert.equal(a.model.open, false); assert.equal(a.hidden(), 1);
 });
 
-test('placement notifications publish requested placement and collapse, not passive arrangement or chrome updates', () => {
+test('placement notifications publish requested placement and modes, not passive arrangement or chrome updates', () => {
 	const bounds = { left: 40, top: 40, right: 280, bottom: 220 };
-	const model = new WorkbenchWindowModel(bounds, 120, 80), changes: boolean[] = [];
-	const unbind = model.onDidChangePlacement(() => changes.push(model.collapsed));
-	model.setRequestedBounds(bounds); model.setCollapsed(false);
+	const model = new WorkbenchWindowModel(bounds, 120, 80), changes: [boolean, boolean][] = [];
+	const unbind = model.onDidChangePlacement(() => changes.push([model.collapsed, model.maximized]));
+	model.setRequestedBounds(bounds); model.setCollapsed(false); model.setMaximized(false);
 	model.arrange({ left: 0, top: 20, right: 500, bottom: 380 }, 16);
 	model.title = 'CHROME'; model.invalidate(); model.setMinimumSize(140, 90);
 	assert.deepEqual(changes, []);
 	model.setRequestedBounds({ left: 60, top: 50, right: 300, bottom: 230 });
 	model.setCollapsed(true); model.setCollapsed(true);
+	model.setMaximized(true); model.setMaximized(true);
 	model.arrange({ left: 0, top: 20, right: 100, bottom: 90 }, 16);
-	assert.deepEqual(changes, [false, true]);
-	unbind(); model.setCollapsed(false);
-	assert.deepEqual(changes, [false, true]);
+	assert.deepEqual(changes, [[false, false], [true, false], [true, true]]);
+	unbind(); model.setCollapsed(false); model.setMaximized(false);
+	assert.deepEqual(changes, [[false, false], [true, false], [true, true]]);
 });

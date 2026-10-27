@@ -85,9 +85,10 @@ A **surface** is an independently ordered paint/input root. Register root
 workbench parts, windows and transients, not every row, glyph or property.
 Controls keep their own retained child geometry and hit tests.
 
-A **window** is a surface with a client area, a focus scope and window chrome.
-The floating-window control supplies title/actions, move/resize and close
-interaction. It does not know what its content inspects or edits.
+A **window family** is an ordered presentation context with a client area and
+focus scope. The permanent main frontend supplies fixed workbench chrome; the
+floating-window control supplies title/actions, move/resize and close for
+independently placed windows. It does not know what its content inspects or edits.
 
 The model distinguishes the following roles and their planned implementation
 scope. A planned slice is a dependency, not an implementation-status claim.
@@ -95,7 +96,7 @@ scope. A planned slice is a dependency, not an implementation-status claim.
 | Role | Placement and input behaviour | Product consumer | Planned scope |
 | --- | --- | --- | --- |
 | Layout content | Bounds supplied by the existing workbench or pane layout. | Editor group, resource panel, game panel, timeline. | A: publish the existing layout roots. |
-| Modeless window | Independently placed within its stacking context; its full opaque rectangle excludes surfaces behind it. | Actor Lab Details; GPU operation and GTE command Details. | C: chrome and first product window; hardware Details use the same container. |
+| Modeless window | The main family has layout-owned placement; floating windows own requested placement. Their opaque rectangles exclude surfaces behind them in the same ordered context. | Main/document editors; Actor Lab Details; GPU operation and GTE command Details. | C: shared floating chrome; main/document composition uses the same ordered family boundary. |
 | Contained subwindow | Independently ordered inside a window's client area, bounded by that client's effective clip. | No concrete product consumer yet. | Designed, provisional and not validated by a product consumer; no nested arrangement implementation in A–C. |
 | Anchored transient | Owner-relative anchor, explicit dismissal and input policy; may escape the owner's content clip. | Context menu, submenu, completion popup, interactive hover. | A: migrate existing transients. |
 | Modal surface | Blocks a named scope and confines focus/commands within it until resolved. | Root action prompt/Quick Input; pane-local image lightbox. | A: root and existing owner-local blocking. |
@@ -170,12 +171,14 @@ its admission boundary. A backdrop covers exactly the blocked scope, so blocked
 input cannot reach a visibly uncovered lower branch accidentally.
 
 The blocked scope and presentation parent are explicit, independent references.
-A main-part chooser may present above document windows without becoming a
-workspace modal. Such a promoted local modal shares the modeless-window order:
-its owner raises it for a foreground interaction, and an unrelated window can
-subsequently rise above it. Outside the chooser's actual rectangle, an unrelated
-window remains a pointer target; hits on the blocked main content are consumed
-by its modal. Promotion never transfers command authority or a popup's lifetime.
+The permanent main presentation family and document windows share the window
+band. A main-part chooser escapes its content clip within that main family,
+without becoming a workspace modal. Foreground invocation raises its family;
+another window can subsequently rise above it. Raising the opaque main family
+covers document windows without changing their visibility or lifetime state.
+Owned modeless inspectors likewise present in their nearest real window or
+modal family, so raising an editor does not strand its inspectors behind it.
+Promotion never transfers command authority or a popup's lifetime.
 Applicable modal admission is derived from the published surface order, not a
 second independently mutable stack. Visibility and arrangement are published
 after the outgoing control's blur publishes its draft, before the incoming
@@ -257,6 +260,22 @@ If the area is smaller than the requested minimum, arrangement uses the
 available area and content clips/scrolls; it does not invent another window or
 discard the requested size. This is ordinary constrained layout, not recovery
 from invalid internal geometry.
+
+### Maximized window presentation
+
+Maximize selects the published work area as the expanded arranged bounds while
+retaining normal requested placement unchanged. Restore arranges those same
+normal bounds against the current work area and font; it never restores a
+captured rectangle from another layout generation. The shared title actions and
+window commands expose the mode with maximize/restore icons. Move/resize and the
+resize grip are unavailable while maximized; switching mode cancels only an
+active chrome gesture, not an unrelated client or sibling capture.
+
+Collapse preserves the maximized flag but uses normal requested placement for
+its title-only presentation. Expanding returns to maximized presentation; using
+the maximize/restore action also expands the client. Session placement records
+normal requested bounds, maximized and collapsed independently. It does not
+persist arranged pixels, focus authorization or a live capture.
 
 ### Collapsed window presentation
 

@@ -19,6 +19,7 @@ import { LuaProgramRuntimeProjection, readProgramInstances, type ProgramInstance
 import { programFieldTemplates, programEntryTemplate } from './schema';
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { RuntimeTransport } from '../../../runtime/transport';
+import { captureWorkbenchTreeView, restoreWorkbenchTreeView } from '../../ui/tree_view';
 
 /** Source ownership and runtime readback meet in a retained input, never in a second program database. */
 export class LuaProgramController {
@@ -26,6 +27,16 @@ export class LuaProgramController {
 	public constructor(private readonly sources: RuntimeSourceState, public readonly guest: SuspendedGuestSession,
 		private readonly navigation: EditorNavigationController,
 		private readonly rewind: HostRewind, private readonly transport: RuntimeTransport) {}
+	public readonly createView = (source: LuaProgramInput): LuaProgramInput => {
+		this.refresh(source);
+		const view = captureWorkbenchTreeView(source.tree, element => element.key);
+		const input = new LuaProgramInput(source.workingCopy, source.programKind, source.occurrenceRange, this.guest, this.createView);
+		for (const [path, model] of source.sourceModels) input.sourceModels.set(path, model);
+		input.publishModels();
+		this.refresh(input);
+		restoreWorkbenchTreeView(input.tree, view, element => element.key);
+		return input;
+	};
 	public open(group: EditorGroupView, quickInput: QuickInputController, kind: LuaProgramKind): void {
 		quickInput.pick(kind === 'progression' ? 'PROGRESSION PROGRAMS' : 'INPUT BINDINGS', 'Choose a producer call',
 			() => {
@@ -62,7 +73,7 @@ export class LuaProgramController {
 		let input = group.model.tabs.find((input): input is LuaProgramInput => input.kind === 'lua_program'
 			&& input.workingCopy === model && input.programKind === occurrence.kind && input.occurrenceRange.start === span.start && input.occurrenceRange.end === span.end);
 		if (input === undefined) {
-			input = new LuaProgramInput(model, occurrence.kind, span, this.guest);
+			input = new LuaProgramInput(model, occurrence.kind, span, this.guest, this.createView);
 			this.refresh(input);
 		}
 		group.openEditor(input, options);

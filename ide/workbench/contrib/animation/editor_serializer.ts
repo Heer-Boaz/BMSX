@@ -41,7 +41,7 @@ export class AnimationInputSerializer implements EditorInputSerializer<Animation
 		const state: AnimationSnapshot = JSON.parse(value);
 		if (state.version !== 3) throw new Error(`Unsupported animation editor view version '${state.version}'.`);
 		const primary = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
-		const input = new AnimationEditorInput(primary.model, state.projectContextId, state.definition, state.label, state.consumer);
+		const input = new AnimationEditorInput(primary.model, state.projectContextId, state.definition, state.label, state.consumer, this.controller.createView);
 		if (!primary.sameSource && input.definitionRange !== undefined) input.definitionRange.end = input.definitionRange.start;
 		let sameSource = primary.sameSource;
 		for (const dependency of state.dependencies) {

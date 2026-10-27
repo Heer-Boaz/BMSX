@@ -18,11 +18,22 @@ import { WorkbenchActionBarControl } from '../action_bar_control';
 import { WorkbenchTooltip } from '../tooltip';
 import { WindowResizeEdge, type WorkbenchWindowModel } from './model';
 
+const windowsByScope = new WeakMap<InputFocusScope, WorkbenchFloatingWindow | null>();
+
+/** Resolve the nearest real window, distinguishing root chrome from a retired owner. */
+export function findWorkbenchWindow(target: InputFocusTarget | null): WorkbenchFloatingWindow | null | undefined {
+	for (let scope = target?.commandContext.scope; scope != null; scope = scope.commandParent) {
+		const window = windowsByScope.get(scope);
+		if (window !== undefined) return window;
+	}
+	return undefined;
+}
+
 export type WorkbenchWindowOptions = {
 	readonly model: WorkbenchWindowModel;
 	readonly actionBar: WorkbenchActionBarState;
 	readonly lifetimeOwner: WorkbenchSurface;
-	readonly presentationParent?: WorkbenchSurface;
+	readonly presentationParent: WorkbenchSurface | null;
 	/** Logical command and interaction ancestry, independent of current focus return. */
 	readonly focusScope: InputFocusScope;
 	/** Current concrete return control, not the window's ownership ancestry. */
@@ -87,12 +98,16 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.clientFocusTarget.previous = this.actions.focusTarget;
 		this.clientFocusTarget.next = this.focusTarget;
 		this.focusTarget.previous = this.actions.focusTarget;
-		this.focusTarget.registerCommand('window.collapse', { isEnabled: () => this.visible, run: () => this.setCollapsed(!options.model.collapsed) });
+		this.focusTarget.registerCommand('window.collapse', { isEnabled: () => this.visible, isChecked: () => options.model.collapsed,
+			run: () => this.setCollapsed(!options.model.collapsed) });
+		this.focusTarget.registerCommand('window.maximize', { isEnabled: () => this.visible, isChecked: () => options.model.maximized,
+			run: () => this.setMaximized(!options.model.maximized) });
 		this.focusTarget.registerCommand('window.hide', { isEnabled: () => this.visible,
 			run: () => { if (options.requestClose !== undefined) options.requestClose(); else this.hide(); } });
-		for (const command of ['window.collapse', 'window.hide'] as const)
+		for (const command of ['window.collapse', 'window.maximize', 'window.hide'] as const)
 			this.clientFocusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
-		this.updateCollapseState();
+		this.updateChromeState();
+		windowsByScope.set(this.scope, this);
 	}
 
 	public get visible(): boolean { return this.surface !== undefined && this.surface.visible; }
@@ -128,6 +143,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 					|| this.containsScope(surface, this.focus.target.scope.surfaceScope))) this.focus.setTarget(options.focusReturn);
 			},
 		});
+		this.updateChromeState();
 		this.actions.setInput(options.actionBar, this.focusTarget);
 		this.tooltip.attach(this.surfaces, this.surface, options.workArea);
 		this.attachClient();
@@ -153,6 +169,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	}
 
 	public dispose(): void {
+		windowsByScope.set(this.scope, null);
 		this.detach();
 		this.actions.dispose();
 		this.unbindKeyboard();
@@ -162,9 +179,9 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public setCollapsed(collapsed: boolean): void {
 		if (this.model.collapsed === collapsed) return;
 		const clientHadFocus = this.containsScope(this.clientSurface, this.focus.target?.scope.surfaceScope);
-		if (this.resizing !== WindowResizeEdge.None) this.cancelPointer();
+		this.capture.cancelTarget(this);
 		this.model.setCollapsed(collapsed);
-		this.updateCollapseState();
+		this.updateChromeState();
 		if (collapsed) {
 			this.retireClientInput();
 			if (clientHadFocus && (this.focus.target === null || this.focus.target.scope === this.scope
@@ -174,6 +191,17 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			}
 		} else if (this.visible) this.restoreClientInput();
 		if (this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
+	}
+
+	public setMaximized(maximized: boolean): void {
+		if (this.model.maximized === maximized) return;
+		this.capture.cancelTarget(this);
+		this.model.setMaximized(maximized);
+		if (this.model.collapsed) this.setCollapsed(false);
+		else {
+			this.updateChromeState();
+			if (this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
+		}
 	}
 
 	/** Font, producer revisions and work-area changes are the only chrome layout triggers. */
@@ -206,8 +234,10 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.updateTooltip();
 	}
 
-	private updateCollapseState(): void {
+	private updateChromeState(): void {
 		this.options.actionBar.items.find(item => item.command === 'window.collapse')!.checked = this.model.collapsed;
+		const maximize = this.options.actionBar.items.find(item => item.command === 'window.maximize');
+		if (maximize !== undefined) maximize.checked = this.model.maximized;
 	}
 
 	private updateTooltip(): void {
@@ -251,7 +281,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.headerHovered = header;
 		if (header) this.hover.visit(this);
 		else this.hover.release(this);
-		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && (edge !== WindowResizeEdge.None || header)) {
+		if (!this.model.maximized && (snapshot.justPressedButtons & PointerButton.Primary) !== 0 && (edge !== WindowResizeEdge.None || header)) {
 			this.focusTarget.focus();
 			this.startX = snapshot.viewportX; this.startY = snapshot.viewportY;
 			copy_rect_bounds(this.startBounds, this.model.bounds);

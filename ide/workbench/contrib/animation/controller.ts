@@ -26,6 +26,29 @@ export class AnimationEditorController {
 	public constructor(private readonly catalog: WorkspaceSourceCatalog,
 		private readonly navigation: EditorNavigationController) { this.authoring = new AnimationAuthoring(this, catalog); }
 
+	public readonly createView = (source: AnimationEditorInput): AnimationEditorInput => {
+		this.refresh(source);
+		const input = new AnimationEditorInput(source.workingCopy, source.projectContextId, source.definitionRange,
+			source.definitionLabel, source.consumerPath, this.createView);
+		for (const [path, model] of source.sourceModels) input.sourceModels.set(path, model);
+		input.publishModels();
+		input.trackSelection = source.trackSelection === undefined ? undefined : { path: source.trackSelection.path, range: { ...source.trackSelection.range } };
+		input.keySelection = source.keySelection === undefined ? undefined : { path: source.keySelection.path, range: { ...source.keySelection.range } };
+		input.detailSelection = source.detailSelection === undefined ? undefined : { path: source.detailSelection.path, range: { ...source.detailSelection.range } };
+		input.tracks.scroll = source.tracks.scroll;
+		this.refresh(input);
+		input.details.scroll = source.details.scroll;
+		input.activeClient = source.activeClient;
+		input.columnSplit.ratio = source.columnSplit.ratio;
+		input.rowSplit.ratio = source.rowSplit.ratio;
+		if (source.keys.unit !== undefined) {
+			input.keys.setView(source.keys.range.minimum, source.keys.range.maximum);
+			input.keys.setCursor(source.keys.cursor);
+			input.keys.snap = source.keys.snap;
+		}
+		return input;
+	};
+
 	public open(group: EditorGroupView, quickInput: QuickInputController): void {
 		const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
 		const snapshotFor = (contextId: string): LuaSemanticWorkspaceSnapshot => {
@@ -86,7 +109,7 @@ export class AnimationEditorController {
 			&& item.projectContextId === contextId && item.workingCopy === model && item.consumerPath === definition.consumer?.file
 			&& item.definitionRange !== undefined && luaSourceRangeMatchesTextRange(model.buffer, range, item.definitionRange));
 		if (input === undefined) {
-			input = new AnimationEditorInput(model, contextId, luaSourceRangeToTextRange(model.buffer, range), definition.label, definition.consumer?.file);
+			input = new AnimationEditorInput(model, contextId, luaSourceRangeToTextRange(model.buffer, range), definition.label, definition.consumer?.file, this.createView);
 			if (definition.consumer !== undefined) {
 				const consumer = this.catalog.resolveResource(project.getResourceIdentity(definition.consumer.file))!;
 				input.sourceModels.set(definition.consumer.file, resolveLuaTextFileModel(editorTextModelService, this.catalog, consumer));
@@ -100,7 +123,7 @@ export class AnimationEditorController {
 	public openResource(group: EditorGroupView, resource: RuntimeResource, options: EditorTabOpenOptions = {}): AnimationEditorInput {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
 		let input = group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
-		if (input === undefined) { input = new AnimationEditorInput(model, resource.contextId); this.refresh(input); }
+		if (input === undefined) { input = new AnimationEditorInput(model, resource.contextId, undefined, undefined, undefined, this.createView); this.refresh(input); }
 		group.openEditor(input, options);
 		return input;
 	}

@@ -6,7 +6,7 @@ import type { ResourceEditorIdentity } from '../../common/editor_input';
 import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
 import { createCodeEditorViewState } from '../../../editor/ui/code_editor_state';
 import { CodeEditorViewBinding } from '../../../editor/ui/code_editor_view_binding';
-import { restoreCodeEditorView, type CodeEditorLocation } from './view_snapshot';
+import { captureCodeEditorView, restoreCodeEditorView, type CodeEditorLocation } from './view_snapshot';
 
 export const WORKBENCH_TEXT_EDITOR_ID = 'workbench.editor.text';
 
@@ -33,6 +33,12 @@ export class CodeEditorInput extends WorkingCopyEditorInput<CodeEditorTabId, 'co
 
 	public get workingCopy(): EditorTextModel {
 		return this.context.model;
+	}
+
+	public createView(): CodeEditorInput {
+		const input = new CodeEditorInput(this.workingCopy);
+		input.initializeViewState(captureCodeEditorView(this));
+		return input;
 	}
 
 	public override toResourceEditor(): ResourceEditorIdentity {

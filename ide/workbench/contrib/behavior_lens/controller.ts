@@ -54,6 +54,7 @@ import { readBehaviorTreeInstances, type BehaviorTreeInstanceChoice } from './be
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import { BehaviorRuntimeInspection, type BehaviorRuntimeSelection } from './runtime_inspection';
 import type { RuntimeTransport } from '../../../runtime/transport';
+import { captureBehaviorLensView, restoreBehaviorLensView } from './view_snapshot';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -72,6 +73,15 @@ export class BehaviorLensController {
 		private readonly rewind: HostRewind,
 		private readonly transport: RuntimeTransport,
 	) {}
+
+	public readonly createView = (source: BehaviorLensInput): BehaviorLensInput => {
+		this.updateView(source);
+		const view = captureBehaviorLensView(source);
+		const input = this.createInput(source.workingCopy, source.view.presentation.kind, source.getWorkingCopies());
+		restoreBehaviorLensView(input, view);
+		input.updateDefinition();
+		return input;
+	};
 
 	public open(group: EditorGroupView, quickInput: QuickInputController, kind: BehaviorKind | null = null, options: EditorTabOpenOptions = {}): void {
 		quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
@@ -113,12 +123,13 @@ export class BehaviorLensController {
 	}
 
 	/** Source-derived input creation is independent of group admission and pane layout. */
-	public createInput(model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind']): BehaviorLensInput {
+	public createInput(model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind'],
+		initialWorkingCopies?: readonly EditorTextModel[]): BehaviorLensInput {
 		const project = getOrCreateSemanticProject(editorTextModelService, model.resource.contextId);
 		return new BehaviorLensInput(model, createBehaviorLensViewState(this.documents.get(model), model, presentation, address => {
 			const resource = this.sources.catalog.resolveResource(project.getResourceIdentity(address))!;
 			return resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
-		}), new Set(this.sources.catalog.getSourceContexts(model.resource.contextId).map(context => context.id)), this.createGraphLayoutEngine);
+		}), new Set(this.sources.catalog.getSourceContexts(model.resource.contextId).map(context => context.id)), this.createGraphLayoutEngine, this.createView, initialWorkingCopies);
 	}
 
 	/** Refreshes a visible source lens when its canonical code buffer advances. */

@@ -80,7 +80,8 @@ export class GpuDetailsWindow {
 		private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
 		private readonly focusReturn: InputFocusTarget, private readonly workArea: Readonly<RectBounds>) {
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
-			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: owner, focusScope: focusReturn.scope, focusReturn, workArea,
+			model: input.detailsWindow, actionBar: input.detailsActions, lifetimeOwner: owner,
+			presentationParent: surfaces.windowContext(owner), focusScope: focusReturn.scope, focusReturn, workArea,
 			getTitleTooltip: () => this.titleTooltip,
 			content: {
 				draw: () => this.draw(),

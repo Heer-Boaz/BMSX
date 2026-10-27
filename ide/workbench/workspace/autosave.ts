@@ -73,7 +73,7 @@ export function commitWorkspaceSessionLocally(
 		return previousGeneration;
 	}
 	const payload: WorkspaceAutosavePayload = {
-		version: 3,
+		version: 4,
 		dirtyFiles,
 		editorParts,
 		breakpoints,

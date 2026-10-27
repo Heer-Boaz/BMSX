@@ -24,6 +24,7 @@ export type AnimationClient = 'tracks' | 'keys' | 'details';
 let nextInputId = 0;
 
 export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${string}`, 'animation'> {
+	public readonly createView?: () => AnimationEditorInput;
 	public readonly definitionRange: TrackedTextRange | undefined;
 	public readonly sourceModels = new Map<string, EditorTextModel>();
 	public sourceRevision: symbol | undefined;
@@ -54,8 +55,10 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 	public status = '';
 	private readonly projectionListeners = new Set<() => void>();
 	public constructor(public readonly workingCopy: EditorTextModel, public readonly projectContextId: string, definitionRange?: TrackedTextRange,
-		public readonly definitionLabel = computeResourceTabTitle(workingCopy.resource), public readonly consumerPath?: string) {
+		public readonly definitionLabel = computeResourceTabTitle(workingCopy.resource), public readonly consumerPath?: string,
+		createView?: (source: AnimationEditorInput) => AnimationEditorInput) {
 		super(`animation:${nextInputId++}`, 'animation', `ANIM ${definitionLabel}`, true);
+		if (createView !== undefined) this.createView = () => createView(this);
 		this.definitionRange = definitionRange === undefined ? undefined : { ...definitionRange };
 		this.sourceModels.set(resourceIdentityKey(workingCopy.resource), workingCopy);
 		this.publishModels();

@@ -1046,6 +1046,7 @@ test('retiring a real window with its property menu focused returns to an admitt
 	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
 		model: new WorkbenchWindowModel({ left: 20, top: 30, right: 250, bottom: 240 }, 100, 80),
 		actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorParts.main.group.paneSurface,
+		presentationParent: editor.surfaces.windowContext(editor.editorParts.main.group.paneSurface),
 		focusScope: tree.scope, focusReturn: tree, workArea: extent, content: { draw() {} }, layoutContent() {},
 		retireContentInput: () => inspector.hide(),
 		restoreContentInput: () => inspector.show({ title: 'DETAILS', items: [{ label: 'A', value: 'B', description: '', warning: false }],
@@ -1327,7 +1328,7 @@ test('routed guest gesture survives UI overlap, focus changes, extra buttons and
 	game.setInput(bounds);
 	let paneOccurrences = 0, windowOccurrences = 0;
 	editor.surfaces.attach({
-		role: 'content', captureScope: scope.surfaceScope, isVisible: () => true,
+		role: 'content', lifetimeOwner: editor.editorParts.main.surface, presentationParent: editor.editorParts.main.surface, captureScope: scope.surfaceScope, isVisible: () => true,
 		getBounds: () => extent, getClip: () => extent, draw() {},
 		handlePointer: snapshot => { paneOccurrences += 1; game.handlePointer(snapshot); },
 	});
@@ -1367,7 +1368,7 @@ test('UI gesture cannot migrate into a guest and explicit viewport retirement dr
 	const bounds = { left: 100, top: 60, right: 300, bottom: 240 };
 	game.setInput(bounds); game.focusTarget.focus();
 	let uiOccurrences = 0;
-	editor.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, isVisible: () => true,
+	editor.surfaces.attach({ role: 'content', lifetimeOwner: editor.editorParts.main.surface, presentationParent: editor.editorParts.main.surface, captureScope: scope.surfaceScope, isVisible: () => true,
 		getBounds: () => extent, getClip: () => extent, draw() {}, handlePointer: snapshot => { game.handlePointer(snapshot); } });
 	editor.surfaces.attach({ role: 'window', captureScope: Symbol('window'), isVisible: () => true,
 		getBounds: () => ({ left: 180, top: 80, right: 260, bottom: 180 }), getClip: () => extent, draw() {},
@@ -1403,7 +1404,7 @@ test('wheel routes the current exposed preview independently of a captured point
 	const secondGame = new GameInputControl(owner, second, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	firstGame.setInput({ left: 20, top: 60, right: 170, bottom: 240 });
 	secondGame.setInput({ left: 200, top: 60, right: 350, bottom: 240 });
-	editor.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, isVisible: () => true,
+	editor.surfaces.attach({ role: 'content', lifetimeOwner: editor.editorParts.main.surface, presentationParent: editor.editorParts.main.surface, captureScope: scope.surfaceScope, isVisible: () => true,
 		getBounds: () => extent, getClip: () => extent, draw() {},
 		handlePointer: snapshot => { firstGame.handlePointer(snapshot); secondGame.handlePointer(snapshot); }, handleWheel: () => false });
 	let covered = false;
@@ -1441,7 +1442,8 @@ test('actual activation drains the producer hold established in player mode, inc
 		update_timestamp: 0, base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	const { editor, host, extent } = fixture(t, { image, registry });
 	const calls: number[] = [];
-	editor.surfaces.attach({ role: 'window', captureScope: Symbol('new input owner'), isVisible: () => true,
+	editor.surfaces.attach({ role: 'content', lifetimeOwner: editor.editorParts.main.surface, presentationParent: editor.editorParts.main.surface,
+		captureScope: Symbol('new input owner'), isVisible: () => true,
 		getBounds: () => extent, getClip: () => extent, draw() {}, handlePointer: snapshot => { calls.push(snapshot.justPressedButtons); } });
 	editorRuntimeState.active = false;
 	host.input.setPointerAdmissionMode('physical');
@@ -1500,7 +1502,7 @@ test('native producer cancellation ends a routed guest hold without a successful
 	const owner = inputFocus.createTarget(null, scope); owner.bindKeyboard(() => {});
 	const game = new GameInputControl(owner, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	game.setInput({ left: 20, top: 60, right: 350, bottom: 240 });
-	editor.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, isVisible: () => true,
+	editor.surfaces.attach({ role: 'content', lifetimeOwner: editor.editorParts.main.surface, presentationParent: editor.editorParts.main.surface, captureScope: scope.surfaceScope, isVisible: () => true,
 		getBounds: () => extent, getClip: () => extent, draw() {}, handlePointer: snapshot => { game.handlePointer(snapshot); } });
 	const snapshot = createInputControllerSnapshot();
 	let remote = new RemoteInput(host.input, host.clock, undefined, event => editor.dispatchPointer(event));
@@ -1541,6 +1543,7 @@ test('real window hide and root-modal admission cancel true producer guest holds
 	const model = new WorkbenchWindowModel({ left: 30, top: 40, right: 350, bottom: 260 }, 100, 80);
 	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
 		model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorParts.main.group.paneSurface,
+		presentationParent: editor.surfaces.windowContext(editor.editorParts.main.group.paneSurface),
 		focusScope: tree.scope, focusReturn: tree, workArea: extent,
 		content: { draw() {}, handlePointer: snapshot => { game.handlePointer(snapshot); } },
 		layoutContent: bounds => game.setInput(bounds), retireContentInput: () => game.clearInput(),
@@ -1578,12 +1581,12 @@ test('retiring the press owner cannot admit that occurrence to a replacement vie
 	const snapshot = createInputControllerSnapshot();
 	for (const shortClick of [false, true]) {
 		let replacement: ReturnType<typeof editor.surfaces.attach>;
-		const original = editor.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope,
+		const original = editor.surfaces.attach({ role: 'content', lifetimeOwner: editor.editorParts.main.surface, presentationParent: editor.editorParts.main.surface, captureScope: scope.surfaceScope,
 			isVisible: () => true, getBounds: () => extent, getClip: () => extent, draw() {},
 			onRetire: () => pointerCapture.cancelScope(scope.surfaceScope),
 			handlePointer: () => {
 				original.dispose();
-				replacement = editor.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope,
+				replacement = editor.surfaces.attach({ role: 'content', lifetimeOwner: editor.editorParts.main.surface, presentationParent: editor.editorParts.main.surface, captureScope: scope.surfaceScope,
 					isVisible: () => true, getBounds: () => extent, getClip: () => extent, draw() {},
 					handlePointer: event => { game.handlePointer(event); },
 					onRetire: () => pointerCapture.cancelScope(scope.surfaceScope) });

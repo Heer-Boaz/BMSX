@@ -18,6 +18,7 @@ export const POSITION_AXES = ['x', 'y', 'z'] as const;
 export type SceneEditorSection = 'outline' | 'details';
 
 export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, 'scene_editor'> {
+	public readonly createView?: () => SceneEditorInput;
 	public version = 0;
 	public section: SceneEditorSection = 'outline';
 	public sourceRevision: symbol | undefined;
@@ -45,8 +46,9 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		mode: 'outline', splitMinimumWidth: 0, detailsLeft: 0, projectedOffsetTop: 0, outlineTitle: '', detailsTitle: '', sourceBounds: create_rect_bounds(),
 	};
 
-	public constructor(public readonly workingCopy: EditorTextModel) {
+	public constructor(public readonly workingCopy: EditorTextModel, createView?: (source: SceneEditorInput) => SceneEditorInput) {
 		super(`scene:${resourceIdentityKey(workingCopy.resource)}`, 'scene_editor', 'SCENE EDITOR', true);
+		if (createView !== undefined) this.createView = () => createView(this);
 		this.sourceCaption = computeResourceTabTitle(workingCopy.resource);
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
 		this.disposables.add({ dispose: workingCopy.onDidChangeContent(event => {

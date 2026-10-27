@@ -6,7 +6,8 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.edit'
 	| 'menubar.run'
 	| 'menubar.view'
-	| 'menubar.tools';
+	| 'menubar.tools'
+	| 'menubar.window';
 
 export type WorkbenchContextMenuId = 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
@@ -55,6 +56,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'menubar.run': readonly WorkbenchMenuItem[];
 	readonly 'menubar.view': readonly WorkbenchMenuItem[];
 	readonly 'menubar.tools': readonly WorkbenchMenuItem[];
+	readonly 'menubar.window': readonly WorkbenchMenuItem[];
 	readonly 'scenarioLab.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'scenarioLab.target': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.graph.title': readonly WorkbenchMenuCommandItem[];
@@ -204,6 +206,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'actorLab.details.title': [
 		{ type: 'command', command: 'actorLab.lockDetails', icon: 'pin', checkedIcon: 'unpin' },
 		{ type: 'command', command: 'window.collapse', icon: 'collapse', checkedIcon: 'expand' },
+		{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
 		{ type: 'command', command: 'window.hide', icon: 'close' },
 	],
 	'actorLab.property.context': [
@@ -216,6 +219,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
 	'problems.title': [{ type: 'command', command: 'problems.coverage', icon: 'info' }],
 	'window.title': [{ type: 'command', command: 'window.collapse', icon: 'collapse', checkedIcon: 'expand' },
+		{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
 		{ type: 'command', command: 'window.hide', icon: 'close' }],
 	'code.context': [
 		{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' },
@@ -272,6 +276,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'romInspector.reader.title': [
 		{ type: 'command', command: 'romInspector.hold', icon: 'pin', checkedIcon: 'unpin' },
 		{ type: 'command', command: 'window.collapse', icon: 'collapse', checkedIcon: 'expand' },
+		{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
 		{ type: 'command', command: 'window.hide', icon: 'close' },
 	],
 	'romInspector.reader.content': [
@@ -309,6 +314,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'gte.inspector.content': [{ type: 'command', command: 'gte.view' }],
 	'gte.details.title': [{ type: 'command', command: 'gte.source', icon: 'source' },
 		{ type: 'command', command: 'window.collapse', icon: 'collapse', checkedIcon: 'expand' },
+		{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
 		{ type: 'command', command: 'window.hide', icon: 'close' }],
 	'gte.context': [
 		{ type: 'command', command: 'gte.view' },
@@ -411,6 +417,17 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'wrap' },
 		{ type: 'command', command: 'filter' },
 		{ type: 'command', command: 'theme-toggle' },
+	],
+	'menubar.window': [
+		{ type: 'command', command: 'window.focusMain' },
+		{ type: 'command', command: 'window.showAll' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'window.newEditor' },
+		{ type: 'command', command: 'window.copyEditor' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'window.maximize' },
+		{ type: 'command', command: 'window.collapse' },
+		{ type: 'command', command: 'window.hide' },
 	],
 	'menubar.tools': [
 		{ type: 'command', command: 'sceneEditor' },

@@ -32,7 +32,7 @@ export class LuaProgramInputSerializer implements EditorInputSerializer<LuaProgr
 			dependencies.push(resolved.model);
 			if (!resolved.sameSource) sameDependencies = false;
 		}
-		const input = new LuaProgramInput(model, state.kind, state.occurrence, this.controller.guest);
+		const input = new LuaProgramInput(model, state.kind, state.occurrence, this.controller.guest, this.controller.createView);
 		for (const dependency of dependencies) input.sourceModels.set(resourceIdentityKey(dependency.resource), dependency);
 		input.publishModels();
 		this.controller.refresh(input);

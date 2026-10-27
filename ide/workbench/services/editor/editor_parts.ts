@@ -43,6 +43,7 @@ export class EditorParts {
 	/** Membership projection is updated only by actual part construction/retirement. */
 	public get groups(): readonly EditorGroupView[] { return this.groupList; }
 	public get activeGroup(): EditorGroupView { return this.activePart.group; }
+	public get mostRecentlyActive(): readonly EditorPart[] { return this.mru; }
 
 	public constructor(private readonly options: EditorPartsOptions) {
 		this.main = new EditorPart({ ...options, kind: 'main', onDidActivate: part => this.activate(part),
@@ -72,11 +73,11 @@ export class EditorParts {
 		this.changed();
 	}
 
-	public createDocument(requestedBounds?: Readonly<RectBounds>, collapsed = false): EditorPart {
+	public createDocument(requestedBounds?: Readonly<RectBounds>, collapsed = false, maximized = false): EditorPart {
 		const area = this.options.workArea;
 		const width = Math.round((area.right - area.left) * 0.86), height = Math.round((area.bottom - area.top) * 0.86);
 		const offset = 8 * (this.documentParts.length % 4 + 1);
-		const part = new EditorPart({ ...this.options, kind: 'document', collapsed,
+		const part = new EditorPart({ ...this.options, kind: 'document', collapsed, maximized,
 			focusReturn: this.main.focusTarget,
 			requestedBounds: requestedBounds === undefined ? {
 				left: area.right - width - offset, top: area.top + offset,
@@ -92,7 +93,7 @@ export class EditorParts {
 
 	public activate(part: EditorPart): void {
 		navigationState.activeGroup = part.group;
-		if (this.activePart === part) return;
+		if (this.activePart === part) { part.raise(); return; }
 		this.activePart = part;
 		this.mru.splice(this.mru.indexOf(part), 1); this.mru.unshift(part);
 		part.raise();
@@ -168,10 +169,10 @@ export class EditorParts {
 		const documents: SerializedDocumentEditorPart[] = this.documentParts.map((part, index) => {
 			const prior = previous?.documents[index], model = part.window!.model, bounds = model.requestedBounds;
 			const group = part.group.model.serialize(serializers, prior?.group);
-			if (prior !== undefined && group === prior.group && model.collapsed === prior.collapsed
+			if (prior !== undefined && group === prior.group && model.collapsed === prior.collapsed && model.maximized === prior.maximized
 				&& bounds.left === prior.requestedBounds.left && bounds.top === prior.requestedBounds.top
 				&& bounds.right === prior.requestedBounds.right && bounds.bottom === prior.requestedBounds.bottom) return prior;
-			return { group, requestedBounds: { ...bounds }, collapsed: model.collapsed };
+			return { group, requestedBounds: { ...bounds }, collapsed: model.collapsed, maximized: model.maximized };
 		});
 		const active = this.activePart === this.main ? 0 : this.documentParts.indexOf(this.activePart) + 1;
 		const mru = this.mru.map(part => part === this.main ? 0 : this.documentParts.indexOf(part) + 1);
@@ -184,7 +185,7 @@ export class EditorParts {
 	public async restore(state: SerializedEditorParts, serializers: EditorInputSerializers): Promise<void> {
 		await this.main.group.model.deserialize(state.main, serializers);
 		for (const document of state.documents) {
-			const part = this.createDocument(document.requestedBounds, document.collapsed);
+			const part = this.createDocument(document.requestedBounds, document.collapsed, document.maximized);
 			await part.group.model.deserialize(document.group, serializers);
 		}
 		for (const group of this.groupList) {

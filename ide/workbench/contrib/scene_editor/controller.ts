@@ -12,6 +12,7 @@ import type { EditorNavigationController } from '../resources/navigation';
 import { SceneEditorInput } from './editor_input';
 import { buildSceneSourceDocument } from './source';
 import { installSceneOutline, selectSceneOutlineRow, type SceneMemberElement } from './outline';
+import { captureSceneEditorView, restoreSceneEditorView } from './view_snapshot';
 
 /** Source projection admission; no world reads or runtime scene ownership. */
 export class SceneEditorController {
@@ -20,10 +21,19 @@ export class SceneEditorController {
 		private readonly navigation: EditorNavigationController,
 	) {}
 
+	public readonly createView = (source: SceneEditorInput): SceneEditorInput => {
+		this.refresh(source);
+		const view = captureSceneEditorView(source);
+		const input = new SceneEditorInput(source.workingCopy, this.createView);
+		this.refresh(input);
+		restoreSceneEditorView(input, view);
+		return input;
+	};
+
 	public openResource(group: EditorGroupView, resource: RuntimeResource): void {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
 		const id = `scene:${resourceIdentityKey(resource)}` as const;
-		group.openEditor(group.model.findById(id) ?? new SceneEditorInput(model));
+		group.openEditor(group.model.findById(id) ?? new SceneEditorInput(model, this.createView));
 	}
 
 	public openSource(group: EditorGroupView, input: SceneEditorInput): void {

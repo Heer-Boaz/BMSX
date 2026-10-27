@@ -25,6 +25,12 @@ export class ResourceViewerInput extends ReadonlyEditorInput<ResourceViewerTabId
 	/** An explicit open resolves the live projection; the retained viewport stays with this input. */
 	public refreshContent(): void { this.content = undefined; }
 
+	public createView(): ResourceViewerInput {
+		const input = new ResourceViewerInput(this.catalog, this.resource);
+		input.view.scroll = this.view.scroll;
+		return input;
+	}
+
 	public override toResourceEditor(): ResourceEditorIdentity {
 		return { resource: this.resource, editorId: WORKBENCH_RESOURCE_VIEWER_ID };
 	}

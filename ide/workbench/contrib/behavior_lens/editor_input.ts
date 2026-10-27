@@ -24,6 +24,7 @@ let nextInputId = 0;
 
 /** Retained input for one source-derived behavior view. */
 export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabId, 'behavior_lens'> {
+	public readonly createView?: () => BehaviorLensInput;
 	/** The attached pane owns/disposes this visible inspection; source identity stays separate. */
 	public runtimeInspection: BehaviorRuntimeInspection | undefined;
 	public readonly graphLayout: AsyncGraphLayout<StateGraphModel>;
@@ -31,15 +32,17 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 	private ownedDefinition: BehaviorSourceNode | undefined;
 
 	/** workingCopy anchors the registration; it is not necessarily an edit target. */
-	public constructor(public readonly workingCopy: EditorTextModel, public readonly view: BehaviorLensViewState, sourceContexts: ReadonlySet<string>, createEngine: GraphLayoutEngineFactory) {
+	public constructor(public readonly workingCopy: EditorTextModel, public readonly view: BehaviorLensViewState, sourceContexts: ReadonlySet<string>, createEngine: GraphLayoutEngineFactory,
+		createView?: (source: BehaviorLensInput) => BehaviorLensInput, initialWorkingCopies: readonly EditorTextModel[] = [workingCopy]) {
 		super(
 			`behavior:${nextInputId++}`,
 			'behavior_lens',
 			'BEHAVIOR LENS',
 			true,
 		);
+		if (createView !== undefined) this.createView = () => createView(this);
 		this.graphLayout = this.disposables.add(new AsyncGraphLayout(createEngine));
-		this.setWorkingCopies(new Set([workingCopy]));
+		this.setWorkingCopies(new Set(initialWorkingCopies));
 		this.updateDefinition();
 		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
 			if (model.mode !== 'lua' || !sourceContexts.has(model.resource.contextId)) return;

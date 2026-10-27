@@ -21,7 +21,7 @@ export function drawWorkbenchWindow(model: WorkbenchWindowModel, actions: Workbe
 	api.popClipRect();
 	api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, active ? colors.COLOR_FOCUS_BORDER : colors.COLOR_WINDOW_BORDER);
 	if (!model.collapsed) api.fill_rect(header.left + 1, header.bottom - 1, header.right - 1, header.bottom, 0, colors.COLOR_WINDOW_BORDER);
-	if (!model.collapsed) {
+	if (!model.collapsed && !model.maximized) {
 		api.fill_rect(bounds.right - 5, bounds.bottom - 2, bounds.right - 2, bounds.bottom - 1, 0, colors.COLOR_WINDOW_BORDER);
 		api.fill_rect(bounds.right - 3, bounds.bottom - 4, bounds.right - 2, bounds.bottom - 2, 0, colors.COLOR_WINDOW_BORDER);
 	}
