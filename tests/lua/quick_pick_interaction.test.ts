@@ -26,10 +26,10 @@ function fixture(t: TestContext) {
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
 	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const items = Array.from({ length: 100 }, (_, id) => ({ id, label: `row_${id}`, description: 'independent catalog', detail: `${id}` }));
-	let accepted: typeof items[number] | undefined, pressId = 0;
-	const open = () => picker.pick('Choose', 'Filter', () => new TextQuickPickProvider(items), item => { accepted = item; });
-	const pointer = (x: number, y: number, held = 0, down = 0, up = 0) => {
-		const snapshot: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true, viewportX: x, viewportY: y,
+	let accepted: typeof items[number] | undefined, acceptedModifiers: KeyModifier | undefined, pressId = 0;
+	const open = () => picker.pick('Choose', 'Filter', () => new TextQuickPickProvider(items), (item, modifiers) => { accepted = item; acceptedModifiers = modifiers; });
+	const pointer = (x: number, y: number, held = 0, down = 0, up = 0, modifiers = KeyModifier.none) => {
+		const snapshot: PointerInputSnapshot = { modifiers, spaceDown: false, valid: true, insideViewport: true, viewportX: x, viewportY: y,
 			pressedButtons: held, justPressedButtons: down, justReleasedButtons: up };
 		if (!pointerCapture.dispatch(snapshot, false, clock.now(), picker.pointerScope)) picker.handlePointer(snapshot, down !== 0);
 	};
@@ -40,8 +40,35 @@ function fixture(t: TestContext) {
 	const press = (code: string) => { key(code, true); key(code, false); };
 	open();
 	t.after(() => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
-	return { picker, items, open, pointer, key, press, clock, accepted: () => accepted };
+	return { picker, items, open, pointer, key, press, clock, accepted: () => accepted, acceptedModifiers: () => acceptedModifiers };
 }
+
+for (const [code, modifiers] of [['Enter', KeyModifier.none], ['Enter', KeyModifier.alt],
+	['NumpadEnter', KeyModifier.ctrl | KeyModifier.shift | KeyModifier.meta]] as const)
+	test(`${code} acceptance transports the event's raw modifier mask ${modifiers} with the exact chosen item`, t => {
+		const f = fixture(t), event = new KeyInputEvent(code, modifiers);
+		inputFocus.handleKeyboard(event);
+		assert.equal(event.consumed, true); assert.equal(f.picker.visible, false);
+		assert.ok(f.accepted() === f.items[0]); assert.equal(f.acceptedModifiers(), modifiers);
+	});
+
+for (const [pressed, released] of [[KeyModifier.none, KeyModifier.alt], [KeyModifier.alt, KeyModifier.none],
+	[KeyModifier.shift, KeyModifier.ctrl | KeyModifier.meta]] as const)
+	test(`pointer acceptance uses release modifiers ${released}, not the earlier press mask ${pressed}`, t => {
+		const f = fixture(t), view = f.picker.model.viewport.bounds;
+		// Coordinates deliver a row gesture; item identity and event metadata are the contract.
+		const x = view.left + 5, y = view.top + 4;
+		f.pointer(x, y, PRIMARY, PRIMARY, 0, pressed);
+		assert.equal(f.acceptedModifiers(), undefined);
+		f.pointer(x, y, 0, 0, PRIMARY, released);
+		assert.ok(f.accepted() === f.items[0]); assert.equal(f.acceptedModifiers(), released);
+	});
+
+test('programmatic acceptance has explicit modifier intent and an unmodified default', t => {
+	const f = fixture(t);
+	f.picker.accept(); assert.equal(f.acceptedModifiers(), KeyModifier.none);
+	f.open(); f.picker.accept(KeyModifier.alt); assert.equal(f.acceptedModifiers(), KeyModifier.alt);
+});
 
 test('chooser rows accept only a release on the captured admitted row, never pointer down or another row', t => {
 	const { picker, items, pointer, accepted } = fixture(t), model = picker.model;

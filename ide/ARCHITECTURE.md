@@ -226,12 +226,15 @@ outstanding asynchronous openings. Forced teardown retires the part's controls
 and command authority without closing shared documents or sibling views.
 
 The frontend owns shared navigation history. Captured selections belong to their
-group/input lifetime and name their destination group. Opening generations
+group/input lifetime and name their destination group. A group admits the
+resolver factory and captures opening, focus and navigation authority before
+invoking it; an inadmissible group starts no resolution. Opening generations
 arbitrate group-local admission across draft publication, clear, model and
 pane-show callbacks; they are not control-attachment lifetimes. A superseded
-opening cannot reattach its input or reactivate its group. Actions retain the
-invoking control's group through popup
-focus. Constructing or disposing a group cannot reset another group's history.
+opening cannot reattach its input or reactivate its group. Commands retain the
+actual control subject separately from their invoking editor context: local
+capabilities and clipboard belong to the control, placement to that editor
+context. Constructing or disposing a group cannot reset another group's history.
 Explicit moves retarget stacked and pending navigation entries to the actual
 destination group and surviving input before retiring the old view.
 

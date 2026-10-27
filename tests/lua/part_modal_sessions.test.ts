@@ -12,7 +12,7 @@ import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/acti
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
-import type { PointerSnapshot } from '../../ide/common/models';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 
 const REQUEST: ActionPromptRequest = { title: 'Unsaved source', message: 'Choose the source operation.',
 	primary: 'Save', secondary: 'Discard', primaryEnabled: true, defaultChoice: 'primary' };
@@ -140,7 +140,8 @@ test('a real pointer press activates a background local field or prompt rather t
 	second.origin.focus();
 	first.quick.input('', '', 'background', async value => value, () => {}, undefined, { preserveFocus: true });
 	const field = first.quick.layout.field;
-	const pointer: PointerSnapshot = { valid: true, insideViewport: true, viewportX: field.left + 4, viewportY: field.top + 3,
+	const pointer: PointerInputSnapshot = { valid: true, insideViewport: true, viewportX: field.left + 4, viewportY: field.top + 3,
+		modifiers: KeyModifier.none, spaceDown: false,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
 	first.quick.handlePointer(pointer, true);
 	assert.ok(inputFocus.target === first.quick.field.focusTarget);

@@ -64,7 +64,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Files pointer d
 	const pointer = { valid: true, insideViewport: true,
 		viewportX: layout.contentLeft - panel.hscroll + (metrics.markerStartWidth + metrics.markerEndWidth) / 2,
 		viewportY: layout.contentTop + (index - panel.scroll + 0.5) * panel.lineHeight,
-		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
 	assert.equal(handleResourcePanelPointer(panel, pointer, true), true);
 	assert.equal(node.collapsed, false); assert.equal(open.mock.callCount(), 0);
 	assert.equal(panel.files.selectedNode, node); assert.equal(panel.isFocused(), true);
@@ -86,7 +86,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Files folder di
 	assert.equal(handleResourcePanelPointer(panel, { valid: true, insideViewport: true,
 		viewportX: layout.contentLeft - panel.hscroll + (metrics.markerStartWidth + metrics.markerEndWidth) / 2,
 		viewportY: layout.contentTop + (index - panel.scroll + 0.5) * panel.lineHeight,
-		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 }, true), true);
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false }, true), true);
 	assert.equal(node.collapsed, true); assert.equal(panel.isFocused(), true);
 	for (const key of ['ArrowRight', 'ArrowLeft']) {
 		const input = new KeyInputEvent(key, KeyModifier.none);

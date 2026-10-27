@@ -9,14 +9,16 @@ import { CommandQuickPickProvider, type CommandQuickPickItem } from './quick_pic
 type WorkbenchCommandPick = CommandQuickPickItem & { readonly target: InputFocusTarget | null };
 
 /** Menu, keybinding and Palette actions share one command catalog and controller. */
-export function buildCommandQuickPickItems(commands: Pick<IdeCommandController, 'isEnabled' | 'isActive'>, origin: InputFocusTarget | null): WorkbenchCommandPick[] {
+export function buildCommandQuickPickItems(commands: Pick<IdeCommandController, 'isEnabled' | 'isActive'>, origin: InputFocusTarget | null,
+	editorTarget: InputFocusTarget | null = origin): WorkbenchCommandPick[] {
 	const items: WorkbenchCommandPick[] = [];
 	for (const command of EDITOR_COMMAND_IDS) {
 		// An explicit Palette action can address its view without granting that
 		// view's keyboard capabilities to a field or toolbar. Local commands win,
 		// including a disabled local Undo rather than another document's Undo.
-		const target = origin !== null && origin.getCommand(command) === undefined
-			&& origin.commandContext.getCommand(command) !== undefined ? origin.commandContext : origin;
+		const target = origin !== null && origin.getCommand(command) !== undefined ? origin
+			: origin !== null && origin.commandContext.getCommand(command) !== undefined ? origin.commandContext
+			: origin?.clipboard !== undefined && (command === 'copy' || command === 'cut' || command === 'paste') ? origin : editorTarget;
 		if (!commands.isEnabled(command, target)) continue;
 		const presentation = EDITOR_COMMAND_PRESENTATION[command];
 		const binding = EDITOR_COMMAND_KEYBINDING_LABELS.get(command);
@@ -32,16 +34,21 @@ export function buildCommandQuickPickItems(commands: Pick<IdeCommandController, 
 	return items;
 }
 
-export function showCommandPalette(picker: QuickInputController, commands: Pick<IdeCommandController, 'isEnabled' | 'isActive' | 'execute'>, invocationOrigin?: InputFocusTarget | null): void {
+export function showCommandPalette(picker: QuickInputController, commands: Pick<IdeCommandController, 'isEnabled' | 'isActive' | 'execute'>,
+	invocationOrigin?: InputFocusTarget | null, editorTarget?: InputFocusTarget | null): void {
+	const editorScope = editorTarget?.commandContext.scope, editorGeneration = editorScope?.contextGeneration;
 	picker.pick('COMMAND PALETTE', 'Type a command', target => {
-		return new CommandQuickPickProvider(buildCommandQuickPickItems(commands, target));
+		return new CommandQuickPickProvider(buildCommandQuickPickItems(commands, target, editorTarget === undefined ? target : editorTarget));
 	}, item => {
+		if (editorScope?.contextGeneration !== editorGeneration) return;
 		// Selection is new user input. An asynchronous operation may have ended
 		// since the available actions were enumerated; never execute a stale Cancel.
 		if (!commands.isEnabled(item.command, item.target)) {
 			showEditorMessage(`${item.label} is no longer available.`, 'warning', 2);
 			return;
 		}
-		commands.execute(item.command, item.target);
-	}, undefined, { invocationOrigin });
+		commands.execute(item.command, item.target, undefined, editorTarget);
+	}, lifetime => {
+		if (editorScope !== undefined) lifetime.add({ dispose: editorScope.onDidRetireContext(() => picker.hide(false)) });
+	}, { invocationOrigin });
 }

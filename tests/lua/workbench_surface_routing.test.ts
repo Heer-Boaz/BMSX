@@ -593,7 +593,7 @@ test('chrome Palette after a preserve-focus switch addresses the new attached cl
 	const next = new GameViewInput();
 	group.openEditor(next, { preserveFocus: true });
 	const attached = group.panes.activePane!.commandTarget;
-	assert.notEqual(attached, detached);
+	assert.ok(attached !== detached);
 	assert.ok(inputFocus.target === chrome);
 	assert.ok(detached.scope.lastFocused === detached);
 	attached.registerCommand('sceneEditor.source', {
@@ -604,8 +604,9 @@ test('chrome Palette after a preserve-focus switch addresses the new attached cl
 	const items = editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
 	const item = items.find(item => item.command === 'sceneEditor.source');
 	assert.ok(item);
-	assert.equal(item.target, attached);
-	assert.equal(editor.quickInput.invocationOrigin, attached);
+	assert.ok(item.target === attached);
+	// The active editor supplies view actions; Files retains its own local capabilities.
+	assert.ok(editor.quickInput.invocationOrigin === chrome);
 	const row = editor.quickInput.model.list.rows.findIndex(row => items[row.itemIndex] === item);
 	assert.ok(row >= 0);
 	editor.quickInput.model.list.selectionIndex = row;

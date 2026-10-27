@@ -131,7 +131,7 @@ not an editable asset schema or an isolated preview contract.
 | Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
 | Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Studio adapters for known factories and cart-owned authoring metadata are possible producers; a mandatory new cartlib schema is not assumed. The read-only [runtime inspection contract](cartlib_inspection_contract.md) does not supply that authoring metadata. |
 | Hierarchy and Details | Scene's outline/options project authored membership; Actor Lab independently inspects runtime actors/components. | Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations before Studio can offer that kind of hierarchy. |
-| Project content browser | `contrib/resources/panel/files_model.ts` retains project/shared/generated file trees. `content_index.ts` projects recognized Scene, BT, FSM, ActionEffect, progression, input-binding and animation occurrences as file children, using existing source/semantic owners. File activation keeps the registered default editor; declaration activation opens its exact subject in the appropriate tool. | Thumbnail browsing, richer asset-type filters, collections and cross-project migration are separate Studio capabilities. Epic's [Content Browser](https://dev.epicgames.com/documentation/en-us/unreal-engine/content-browser-in-unreal-engine) distinguishes these operations from the level viewport. |
+| Project content browser | `contrib/resources/panel/files_model.ts` retains project/shared/generated file trees. `content_index.ts` projects recognized Scene, BT, FSM, ActionEffect, progression, input-binding and animation occurrences as file children, using existing source/semantic owners. File activation keeps the registered default editor; declaration activation opens its exact subject in the appropriate tool. | Dragging unopened files/declarations into an editor destination needs a Files-owned row gesture and opening admission, distinct from retained-editor transfer; sizing cannot assume an existing source group. Thumbnail browsing, richer asset-type filters, collections and cross-project migration are separate Studio capabilities. Epic's [Content Browser](https://dev.epicgames.com/documentation/en-us/unreal-engine/content-browser-in-unreal-engine) distinguishes these operations from the level viewport. |
 | Constructive authoring | Source templates create animation, sprite-animation, ActionEffect, progression, input and AEM resources. Scene and Behavior Lens edit admitted existing declarations and list members, including duplicating written BT children. | Guided creation of Scene, prefab, BT and FSM declarations, adding Scene members/FSM states and inserting BT node kinds from templates or a palette, including into empty branches, are missing Studio operations over existing cartlib domains. These require source-preserving edits and occurrence identity, but need not wait for a spatial viewport or introduce another asset format. |
 | Content lifecycle and dependencies | Resource navigation, new-source creation, file import, source-symbol references and canonical model editing exist. | Rename/move/duplicate/delete and folder operations need workspace file authority plus document, recovery and reference lifetimes. Asset dependencies/used-by and reference repair need domain-aware source relationships, not string replacement or an assumption that Lua symbol references cover asset IDs. These are more basic Studio gaps than collections or cross-project migration. VS Code's [file actions](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/files/browser/fileActions.contribution.ts) and Epic's [Reference Viewer](https://dev.epicgames.com/documentation/en-us/unreal-engine/reference-viewer-in-unreal-engine) expose these as distinct operations. |
 | Project/session entry | Project creation, Build Jobs, admitted source contexts and workspace recovery already have owners. | Selecting/opening/replacing a project in the frontend and starting without an execution target remain distinct lifecycle capabilities. Creating a cartridge or building it must not silently substitute for attaching its source workspace. The existing source-admission boundary, not an installed socket, owns that identity. |
@@ -565,6 +565,13 @@ Keyboard focus, active part, hovered surface and command subject remain separate
 - A workspace command has no document subject. A document command invoked from
   root chrome or the Command Palette captures the activated editor context when
   the interaction starts. It does not infer a different subject on submission.
+  The Palette retains that editor context separately from the focused control's
+  local capabilities and clipboard. A disabled local command never borrows the
+  editor's action. Its fixed catalog retires when either contributing context
+  retires, including during focus return after popup teardown.
+  Local Palette actions use their control's accepting selection, while editor
+  placement still uses the retained invocation context; a row-invoked context
+  menu instead binds its specific clicked subject.
 - Source-consuming commands accept the originating control's draft through its
   existing edit boundary before reading canonical source. Its subject owner
   resolves the surviving occurrence after that publication, rather than acting
@@ -598,6 +605,22 @@ Navigation does not override a newer foreground interaction during focus return.
 Popup checked state, enablement and execution all consume the same retained
 origin and editor subject. Menu dismissal keeps the existing focus-return
 contract independent of that subject.
+
+Files exposes Open to Side as a local command as well as a context action:
+Ctrl/Cmd+Enter acts on the focused file/declaration, and Alt+primary body
+activation expresses the same placement. Disclosure targets, directories and
+Call Hierarchy keep their own navigation semantics. These bindings exist only
+where the focused control supplies the capability; they do not reserve guest
+gameplay keys.
+
+Go to File uses Alt+Enter or Alt+pointer acceptance for explicit side placement;
+ordinary acceptance keeps registered-editor affinity. Quick Input transports
+the accepting event's raw modifier mask alongside the exact item. Keyboard
+uses that key event and pointer uses its matching release, not a global key
+sample or the earlier press. The resource contribution owns the interpretation,
+captured invoking group, catalog identities and foreground handoff. Picker
+teardown cannot turn a later-focused control into the old request's origin or
+allow a retired resource to reopen through its same-path replacement.
 
 The tab list is one composite keyboard control with a retained, exact focused
 input separate from the group's selected input. `Focus Editor Tabs` enters at

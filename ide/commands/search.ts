@@ -1,7 +1,6 @@
 import { showCommandPalette } from '../workbench/contrib/commands/quick_access';
 import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
-import { buildResourceQuickPickItems } from '../workbench/contrib/resources/quick_access';
-import { FileQuickPickProvider } from '../workbench/services/quick_input/file_provider';
+import { showResourceQuickAccess } from '../workbench/contrib/resources/quick_access';
 import type { InputFocusTarget } from '../input/focus';
 import type { EditorCommandId, EditorSearchCommandId } from '../common/commands';
 import type { CartEditor } from '../cart_editor';
@@ -18,15 +17,14 @@ export function isEditorSearchCommand(command: EditorCommandId): command is Work
 export function executeEditorSearchCommand(editor: CartEditor, sources: RuntimeSourceState,
 	command: WorkbenchSearchCommand, group: EditorGroupView, target: InputFocusTarget | null): void {
 	switch (command) {
-		case 'commandPalette':
+		case 'commandPalette': {
+			const editorTarget = findEditorGroup(target) === group ? target : group.panes.activePane?.commandTarget ?? group.tabFocusTarget;
 			showCommandPalette(editor.quickInput, editor.commands,
-				findEditorGroup(target) === group ? target : group.panes.activePane?.commandTarget ?? group.tabFocusTarget);
+				target === editor.quickInput.field.focusTarget ? undefined : target === null ? editorTarget : target, editorTarget);
 			return;
+		}
 		case 'resourceSearch': {
-			editor.quickInput.pick('GO TO FILE', 'Type a file name or path', () => new FileQuickPickProvider(buildResourceQuickPickItems(sources.catalog.resources)),
-				item => { void editor.navigation.openResource(editor.editorParts.editorDestination(group, { resource: item.resource,
-				editorId: editor.resourceEditors.getEditorId(item.resource) }), item.resource); },
-			lifetime => lifetime.add({ dispose: group.onWillDispose(() => editor.quickInput.hide()) }));
+			showResourceQuickAccess(editor, sources.catalog, group);
 			return;
 		}
 		case 'runtimeErrorFocus':

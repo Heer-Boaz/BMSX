@@ -32,7 +32,7 @@ export class AemEditorController {
 		quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', () => new TextQuickPickProvider(this.sources.catalog.resources
 			.filter(resource => resource.source.type === 'aem').map(resource => ({ label: resource.path, description: this.sources.catalog.getContext(resource.contextId).projectRootPath, detail: '', resource }))),
 			item => {
-				void group.openResolvedEditor(resolveAemEditorInput(this.sources.catalog, item.resource))
+				void group.openResolvedEditor(() => resolveAemEditorInput(this.sources.catalog, item.resource))
 					.catch(error => showEditorWarningBanner(`Cannot open audio map: ${error instanceof Error ? error.message : String(error)}`));
 			}, lifetime => {
 				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
@@ -42,7 +42,7 @@ export class AemEditorController {
 		const selected = input.tree.rows[input.tree.selectionIndex]?.element;
 		const position = { row: 0, column: 0 };
 		if (selected !== undefined) input.workingCopy.buffer.positionAt(selected.node.range![0], position);
-		void group.openResolvedEditor(resolveTextCodeEditorInput(this.sources.catalog, input.workingCopy.resource),
+		void group.openResolvedEditor(() => resolveTextCodeEditorInput(this.sources.catalog, input.workingCopy.resource),
 			{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } })
 			.catch(error => showEditorWarningBanner(`Cannot open audio source: ${error instanceof Error ? error.message : String(error)}`));
 	}

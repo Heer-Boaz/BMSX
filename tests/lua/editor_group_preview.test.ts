@@ -266,7 +266,7 @@ test('resolved opening reports rejected draft admission without attachment or fo
 	const back = [...navigationState.back], forward = [...navigationState.forward];
 	let retired = 0;
 	next.onWillDispose(() => { retired += 1; });
-	assert.equal(await f.group.openResolvedEditor(next, { pinned: false }), undefined);
+	assert.equal(await f.group.openResolvedEditor(() => next, { pinned: false }), undefined);
 	assert.equal(retired, 1); assert.equal(f.publications(), 0);
 	assert.deepEqual(f.group.model.tabs, [f.kept, f.current]);
 	assert.equal(f.group.model.previewTab, f.current); assert.equal(f.group.panes.activePane?.input, f.current);

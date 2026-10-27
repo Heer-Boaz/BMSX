@@ -41,14 +41,14 @@ export class CartMapController {
 			lifetime => lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) }));
 	}
 	public openResource(group: EditorGroupView, resource: RuntimeResource, kind: CartMapKind): void {
-		void group.openResolvedEditor(resolveCartMapInput(this.catalog, resource, kind))
+		void group.openResolvedEditor(() => resolveCartMapInput(this.catalog, resource, kind))
 			.catch(error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
 	}
 	public openSource(group: EditorGroupView, input: CartMapInput): void {
 		projectCartMap(input);
 		const position = { row: 0, column: 0 };
 		input.workingCopy.buffer.positionAt(input.selectionRange.start, position);
-		void group.openResolvedEditor(resolveTextCodeEditorInput(this.catalog, input.workingCopy.resource),
+		void group.openResolvedEditor(() => resolveTextCodeEditorInput(this.catalog, input.workingCopy.resource),
 			{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } })
 			.catch(error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
 	}

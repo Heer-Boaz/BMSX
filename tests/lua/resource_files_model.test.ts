@@ -256,15 +256,40 @@ test('changed canonical location replaces its selected tree projection without c
 	assert.ok(resource === f.sources.catalog.resourceByIdentity.get(resourceIdentityKey(selected.element)));
 });
 
-test('unchanged namespaces in a new source-state object retain canonical topology and update actual resource references', () => {
+test('same-path resource identity replacement publishes once over the retained row while same-resource source updates stay quiet', () => {
+	const f = fixture(), contextId = TEST_CARTRIDGE_CONTEXT_IDS[0], path = 'deep/inner/main.lua';
+	const selected = file(f.model, contextId, path); assert.ok(selected.element.kind === 'file');
+	const previous = selected.element.resource, revision = f.model.revision, record = f.cart.path2lua[path];
+	let changes = 0, coherent = false;
+	const unbind = f.model.onDidChange(() => {
+		changes++;
+		coherent = selected.element.kind === 'file' && selected.element.resource !== previous
+			&& selected.element.resource === f.sources.catalog.resolveResource(previous) && f.model.selectedNode === selected;
+	});
+	try {
+		f.cart.records.splice(f.cart.records.indexOf(record), 1); delete f.cart.path2lua[path]; delete f.cart.module2lua[record.module_path];
+		f.sources.catalog.rebuildResources(); registerLuaSourceRecord(f.cart, { ...record, update_timestamp: record.update_timestamp + 1 });
+		f.sources.catalog.rebuildResources();
+		assert.equal(f.model.sync(f.sources.catalog, 'lua_only', EMPTY_CONTENT, 0), true);
+		assert.equal(changes, 1); assert.equal(coherent, true); assert.equal(f.model.revision, revision + 1);
+		const resource = selected.element.resource;
+		const updated = createScenarioTestSourceRecord(path, 4, 'return 4', `carts/first/${path}`);
+		registerLuaSourceRecord(f.cart, updated); f.sources.catalog.registerLuaResource(contextId, updated);
+		assert.ok(f.sources.catalog.resolveResource(resource) === resource);
+		assert.equal(f.model.sync(f.sources.catalog, 'lua_only', EMPTY_CONTENT, 0), false);
+		assert.equal(changes, 1); assert.equal(f.model.revision, revision + 1); assert.ok(f.model.selectedNode === selected);
+	} finally { unbind(); }
+});
+
+test('a new source-state publishes replacement resources while retaining namespace topology and reading position', () => {
 	const f = fixture(), selected = file(f.model, TEST_CARTRIDGE_CONTEXT_IDS[0], 'deep/inner/main.lua'), revision = f.model.revision;
 	f.model.horizontalScroll = 17.5; f.model.tree.scroll = 2.25;
 	const next = createTestRuntimeSourceState(f.system, [f.cart, f.other], 0);
-	assert.equal(f.model.sync(next.catalog, 'lua_only', EMPTY_CONTENT, 0), false);
-	assert.equal(f.model.selectedNode, selected); assert.equal(f.model.revision, revision);
+	assert.equal(f.model.sync(next.catalog, 'lua_only', EMPTY_CONTENT, 0), true);
+	assert.ok(f.model.selectedNode === selected); assert.equal(f.model.revision, revision + 1);
 	assert.equal(f.model.horizontalScroll, 17.5); assert.equal(f.model.tree.scroll, 2.25);
 	assert.ok(selected.element.kind === 'file');
-	assert.equal(selected.element.resource, next.catalog.resourceByIdentity.get(resourceIdentityKey(selected.element)));
+	assert.ok(selected.element.resource === next.catalog.resourceByIdentity.get(resourceIdentityKey(selected.element)));
 });
 
 test('domains with no eligible resources have no fake placeholder rows or disclosure targets', () => {

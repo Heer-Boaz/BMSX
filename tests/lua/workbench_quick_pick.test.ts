@@ -18,7 +18,7 @@ import { insertValue, selectAll, setCursorFromOffset, setFieldText } from '../..
 import { SingleLineFieldViewport } from '../../ide/editor/ui/inline/single_line_viewport';
 import { inputFocus, type InputFocusTarget } from '../../ide/input/focus';
 import type { EditorCommandId } from '../../ide/common/commands';
-import { showCommandPalette } from '../../ide/workbench/contrib/commands/quick_access';
+import { buildCommandQuickPickItems, showCommandPalette } from '../../ide/workbench/contrib/commands/quick_access';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { QuickPickModel } from '../../ide/workbench/services/quick_input/model';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
@@ -70,6 +70,26 @@ for (const kind of ['pick', 'input', 'replacement'] as const) test(`quick ${kind
 		assert.ok(caret.x >= picker.layout.field.left + 3 && caret.x + caret.width <= picker.layout.field.right - 3);
 		assert.ok(caret.y >= picker.layout.field.top + 2 && caret.y + caret.height <= picker.layout.field.bottom);
 	}
+});
+
+test('composed Palette keeps focused-control clipboard separate from its captured editor commands', () => {
+	const origin = inputFocus.createTarget(), editorTarget = inputFocus.createTarget();
+	origin.bindClipboard({ readOnly: false, copy: () => 'focused selection', cut() {}, paste() {} });
+	const items = buildCommandQuickPickItems({ isEnabled: command => command === 'copy' || command === 'cut' || command === 'paste' || command === 'save',
+		isActive: () => false }, origin, editorTarget);
+	for (const command of ['copy', 'cut', 'paste'] as const) assert.ok(items.find(item => item.command === command)!.target === origin);
+	assert.ok(items.find(item => item.command === 'save')!.target === editorTarget);
+});
+
+test('composed Palette captures secondary context before outgoing blur can replace its editor', t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget(), editorTarget = inputFocus.createTarget();
+	origin.bindKeyboard(() => {}); origin.focus();
+	let executed = false;
+	t.after(origin.onDidBlur(() => editorTarget.scope.retireContext()));
+	showCommandPalette(picker, { isEnabled: command => command === 'save', isActive: () => false,
+		execute: () => { executed = true; } }, origin, editorTarget);
+	assert.equal(picker.visible, false); assert.equal(executed, false);
+	assert.ok(inputFocus.admittedTarget !== picker.field.focusTarget);
 });
 
 for (const enabledAtAccept of [true, false]) test(`Palette retains the actual provider origin when acceptance is ${enabledAtAccept ? 'admitted' : 'disabled'} after focus changes`, t => {
@@ -677,10 +697,12 @@ test('query pointer hit testing uses the scrolled text origin, not an unrelated 
 	const start = picker.textViewport.start;
 	assert.ok(start > 0);
 	picker.handlePointer({ viewportX: picker.layout.field.left + 3, viewportY: picker.layout.field.top + 3,
-		valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 }, true);
+		valid: true, insideViewport: true, modifiers: KeyModifier.none, spaceDown: false,
+		pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 }, true);
 	assert.equal(picker.field.cursorColumn, start);
 	picker.handlePointer({ viewportX: picker.layout.field.left + 3, viewportY: picker.layout.field.top + 3,
-		valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 }, false);
+		valid: true, insideViewport: true, modifiers: KeyModifier.none, spaceDown: false,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 }, false);
 	assert.equal(picker.field.pointerSelecting, false);
 });
 

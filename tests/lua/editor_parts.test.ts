@@ -272,7 +272,7 @@ test('local dirty close preserves an invalid sibling draft and revokes asynchron
 	draft.field.focusTarget.focus(); draft.field.focusTarget.textInput!.replaceText(0, 1, '-');
 	assert.equal(draft.pending, true);
 	const candidate = Promise.withResolvers<CodeEditorInput>();
-	const lateOpen = f.firstGroup.openResolvedEditor(candidate.promise);
+	const lateOpen = f.firstGroup.openResolvedEditor(() => candidate.promise);
 	const closing = f.editor.editorParts.close(f.firstPart);
 	assert.equal(f.firstPart.actionPrompt.visible, true, 'a sibling draft cannot block this local close decision');
 	assert.equal(draft.pending, true); assert.equal(draft.error, ''); assert.equal(accepted, 7);
@@ -296,10 +296,9 @@ test('local dirty close preserves an invalid sibling draft and revokes asynchron
 	const fresh = new CodeEditorInput(f.secondInput.workingCopy);
 	assert.equal(f.firstGroup.openEditor(fresh, { preserveFocus: true }), true, 'Cancel reopens new admission without reviving old requests');
 	f.editor.editorParts.clear();
-	const retiredCandidate = new CodeEditorInput(f.secondInput.workingCopy);
-	let retiredDisposed = false; retiredCandidate.onWillDispose(() => { retiredDisposed = true; });
-	assert.equal(await f.firstGroup.openResolvedEditor(retiredCandidate), undefined);
-	assert.equal(retiredDisposed, true); assert.equal(f.firstGroup.panes.activePane, null);
+	let retiredResolved = false;
+	assert.equal(await f.firstGroup.openResolvedEditor(() => { retiredResolved = true; return new CodeEditorInput(f.secondInput.workingCopy); }), undefined);
+	assert.equal(retiredResolved, false); assert.equal(f.firstGroup.panes.activePane, null);
 	assert.equal(f.firstGroup.model.tabs.length, 0); assert.equal(f.firstGroup.paneSurface.retired, true);
 	assert.equal(f.editor.editorParts.documents.length, 0);
 	assert.ok(f.editor.editorParts.activePart === f.editor.editorParts.main);
@@ -311,7 +310,7 @@ test('a background input attachment preserves a minimized window and sibling foc
 	f.second.focus();
 	const sibling = inputFocus.target;
 	const input = new CodeEditorInput(f.secondInput.workingCopy);
-	const result = await f.firstGroup.openResolvedEditor(input, { preserveFocus: true });
+	const result = await f.firstGroup.openResolvedEditor(() => input, { preserveFocus: true });
 	assert.equal(result?.activated, false);
 	assert.ok(f.firstGroup.panes.activePane!.input === input);
 	assert.equal(f.firstPart.window!.model.minimized, true);

@@ -47,7 +47,7 @@ import {
 import type { ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
 import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
-import { inputFocus } from '../../../../input/focus';
+import { inputFocus, type InputFocusTarget } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
 import type { ProjectContentIndex } from './content_index';
@@ -158,6 +158,13 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		this.focusTarget.canFocus = () => this.isVisible();
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
 		this.contextMenu = new ResourcePanelContextMenu(editor, catalog, content, this);
+		this.focusTarget.registerCommand('resources.openToSide', {
+			isEnabled: () => {
+				const kind = this.files.selectedNode?.element.kind;
+				return this.isVisible() && this.mode === 'resources' && (kind === 'file' || kind === 'definition');
+			},
+			run: editorContext => { if (this.focusTarget.hasFocus) this.openSelected('side', editorContext); },
+		});
 		this.focusTarget.registerCommand('contextMenu', {
 			isEnabled: () => this.isVisible() && this.mode === 'resources' && this.files.selectedNode !== null,
 			run: () => {
@@ -332,24 +339,47 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		this.clampHScroll();
 	}
 
-	openSelected(): void {
+	openSelected(placement: 'default' | 'side' = 'default', editorContext?: InputFocusTarget): void {
 		if (this.mode === 'command') {
-			this.activateSelectedCallHierarchy();
+			if (placement === 'default') this.activateSelectedCallHierarchy();
 			return;
 		}
 		const selected = this.files.selectedNode;
 		if (selected === null) return;
-		if (selected.element.kind === 'file') void this.editor.navigation.openResource(this.editor.editorParts.editorDestination(undefined, { resource: selected.element.resource,
-			editorId: this.editor.resourceEditors.getEditorId(selected.element.resource) }), selected.element.resource);
-		else if (selected.element.kind === 'definition') {
-			const origin = inputFocus.admittedTarget;
-			if (origin === null) return;
-			const invoking = findEditorGroup(origin);
-			if (invoking === null) return;
-			openProjectContent(this.editor, this.content, selected.element.content,
-				resolveProjectContentDestination(this.editor, selected.element.content, invoking ?? this.editor.editorParts.activeGroup), origin);
+		const element = selected.element;
+		if (element.kind !== 'file' && element.kind !== 'definition') {
+			if (placement === 'default') this.toggleFileDisclosure(selected);
+			return;
 		}
-		else this.toggleSelectedFileDisclosure();
+		const resource = element.kind === 'file' ? element.resource : element.content.ownerResource;
+		const entry = element.kind === 'definition' ? element.content : undefined;
+		const origin = inputFocus.admittedTarget;
+		if (origin === null) return;
+		const invoking = findEditorGroup(editorContext === undefined ? origin : editorContext);
+		if (invoking === null) return;
+		const parts = this.editor.editorParts, reference = invoking ?? parts.activeGroup, part = parts.partForGroup(reference);
+		const scope = origin.scope, context = scope.contextGeneration, generation = reference.panes.openGeneration;
+		const filesContext = this.focusTarget.scope.contextGeneration, revision = this.files.revision;
+		// Draft and topology callbacks retain this subject, never the row selected afterwards.
+		const current = (): boolean => {
+			const subject = entry === undefined ? this.catalog.resolveResource(resource) === resource : this.content.isCurrent(entry);
+			const focused = inputFocus.admittedTarget;
+			return subject && this.isVisible() && this.mode === 'resources' && this.files.revision === revision
+				&& this.focusTarget.scope.contextGeneration === filesContext && scope.contextGeneration === context
+				&& parts.partForGroup(reference) === part && !part.surface.retired && reference.openingAdmitted && part.operation === 'none'
+				&& reference.panes.openGeneration === generation && (focused === null || scope.contains(focused.scope));
+		};
+		if (!reference.commitPendingEdit() || !current()) return;
+		const editorId = entry === undefined ? this.editor.resourceEditors.getEditorId(resource) : undefined;
+		const destination = placement === 'side' ? parts.sideGroup(reference)
+			: entry === undefined ? parts.editorDestination(reference, { resource, editorId: editorId! })
+				: resolveProjectContentDestination(this.editor, entry, reference);
+		if (destination === undefined || !current()) return;
+		if (entry === undefined) void this.editor.navigation.openResource(destination, resource, { editorId });
+		else {
+			const settledOrigin = inputFocus.admittedTarget;
+			if (settledOrigin !== null) openProjectContent(this.editor, this.content, entry, destination, settledOrigin);
+		}
 	}
 
 	public toggleSelectedFileDisclosure(): void {

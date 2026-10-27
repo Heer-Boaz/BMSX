@@ -28,7 +28,7 @@ export type InputRuntimeContext = {
 export type FocusCommand = {
 	isEnabled(): boolean;
 	isChecked?(): boolean;
-	run(): void;
+	run(editorContext?: InputFocusTarget): void;
 };
 
 /** A concrete control's unsubmitted value, never a pane-wide success stub. */

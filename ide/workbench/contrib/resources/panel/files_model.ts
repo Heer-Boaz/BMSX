@@ -113,7 +113,10 @@ export class ResourceFilesModel {
 					selected = node;
 					for (let ancestor = node.parent; ancestor !== null; ancestor = ancestor.parent) ancestor.collapsed = false;
 				}
-			} else { node.element.resource = resource; node.element.location = resource.location; }
+			} else {
+				if (node.element.resource !== resource) changed = true;
+				node.element.resource = resource; node.element.location = resource.location;
+			}
 			const included = filter === 'all' || resource.source.type === 'lua';
 			for (let ancestor: FileNode | null = node; ancestor !== null; ancestor = ancestor.parent as FileNode | null) {
 				ancestor.seen = publication;

@@ -118,29 +118,26 @@ test('destination attachment retirement rejects transfer while the live source c
 	assert.ok(target.model.activeTab === f.secondInput); assert.equal(f.editor.editorParts.closeController.isPending(f.firstInput), false);
 });
 
-for (const origin of ['source', 'destination'] as const) for (const coalesced of [false, true]) for (const deferred of [false, true])
-	test(`inadmitted ${origin} resolution cannot interrupt ${coalesced ? 'coalesced' : 'retained'} transfer history (${deferred ? 'late' : 'ready'} candidate)`, async t => {
+for (const origin of ['source', 'destination'] as const) for (const coalesced of [false, true])
+	test(`inadmitted ${origin} resolution cannot interrupt ${coalesced ? 'coalesced' : 'retained'} transfer history or start input production`, async t => {
 		const f = createActualSourcePanes(t, coalesced), parts = f.editor.editorParts, source = f.firstGroup, target = f.secondGroup;
 		const group = origin === 'source' ? source : target, input = f.firstInput, receiver = coalesced ? f.secondInput : input;
 		resetNavigationHistoryState(); t.after(resetNavigationHistoryState);
 		const entry = new NavigationHistoryEntry({ kind: 'input', input }, new CodeEditorNavigationSelection(input), source);
 		navigationState.back.push(entry);
-		const candidate = new HomeInput(null), resolution = Promise.withResolvers<HomeInput>();
-		let retired = 0; candidate.onWillDispose(() => { retired++; });
+		let resolved = false;
 		let pending: Promise<EditorInputOpenResult | undefined> | undefined, receiptUnchanged = false;
 		const unbind = source.model.onDidChange(() => {
 			if (source.model.indexOf(input) >= 0 || pending !== undefined) return;
 			const receipt = group.panes.openGeneration;
-			pending = group.openResolvedEditor(deferred ? resolution.promise : candidate);
+			pending = group.openResolvedEditor(() => { resolved = true; return new HomeInput(null); });
 			receiptUnchanged = group.panes.openGeneration === receipt;
 		}); t.after(unbind);
 		const moved = parts.moveEditor(source, input, { kind: 'group', group: target });
 		assert.equal(group.openingAdmitted, true, 'the host operation has reopened admission before the candidate settles');
-		if (deferred) resolution.resolve(candidate);
 		assert.equal(await pending, undefined);
-		assert.equal(moved, true); assert.equal(receiptUnchanged, true); assert.equal(retired, 1);
+		assert.equal(moved, true); assert.equal(receiptUnchanged, true); assert.equal(resolved, false);
 		assert.ok(target.model.activeTab === receiver && target.panes.activePane?.input === receiver);
 		assert.ok(entry.owner === target && entry.target.kind === 'input' && entry.target.input === receiver);
 		assert.equal(entry.isDisposed, false); assert.equal(navigationState.back.includes(entry), true);
-		assert.equal(source.model.tabs.includes(candidate), false); assert.equal(target.model.tabs.includes(candidate), false);
 	});

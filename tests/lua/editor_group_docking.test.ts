@@ -98,7 +98,7 @@ test('same-part group docking retains the exact controls and scopes and does not
 	const reference = parts.splitGroup(source, 'right'); assert.ok(reference);
 	reference.openEditor(new CodeEditorInput(f.secondInput.workingCopy)); main.focus(); f.editor.update(0);
 	const resolution = Promise.withResolvers<CodeEditorInput>(), candidate = new CodeEditorInput(f.secondInput.workingCopy);
-	const pending = source.openResolvedEditor(resolution.promise), generation = source.panes.openGeneration;
+	const pending = source.openResolvedEditor(() => resolution.promise), generation = source.panes.openGeneration;
 	const scope = source.focusScope, tabScope = source.tabScope, surface = source.surface, pane = source.panes.activePane;
 	beginGroupDrag(f, source);
 	const destination = bodyPoint(reference, 'down'); dispatch(f, destination, 'move'); dispatch(f, destination, 'up');

@@ -292,17 +292,13 @@ export class EditorGroupView {
 		return options.preserveFocus ? admit() : captureNavigation(admit);
 	}
 
-	/** Own asynchronous candidate admission and departure capture before storage can yield. */
-	public async openResolvedEditor(candidate: EditorInput | Promise<EditorInput>, options: EditorTabOpenOptions = {}): Promise<EditorInputOpenResult | undefined> {
-		if (!this.openingAdmitted) {
-			const input = await candidate;
-			input.dispose();
-			return undefined;
-		}
+	/** Own opening admission and departure before candidate resolution can publish or yield. */
+	public async openResolvedEditor(resolveInput: () => EditorInput | Promise<EditorInput>, options: EditorTabOpenOptions = {}): Promise<EditorInputOpenResult | undefined> {
+		if (!this.openingAdmitted) return undefined;
 		const generation = this.panes.beginOpen(), focusRevision = inputFocus.revision;
 		let departure = options.preserveFocus ? null : beginNavigationCapture();
 		try {
-			const input = await candidate;
+			const input = await resolveInput();
 			if (!this.openingAdmitted || generation !== this.panes.openGeneration) { input.dispose(); return undefined; }
 			const preserveFocus = options.preserveFocus || focusRevision !== inputFocus.revision;
 			if (!withNavigationCaptureSuspended(() => this.openEditor(input, { ...options, preserveFocus }))) return undefined;

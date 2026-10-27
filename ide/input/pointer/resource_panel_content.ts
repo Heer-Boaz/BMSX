@@ -1,12 +1,13 @@
 import { pointerHover } from './hover';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import type { PointerSnapshot } from '../../common/models';
+import type { PointerInputSnapshot } from '../../common/models';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
+import { isAltDown } from '../keyboard/key_input';
 
 export function handleResourcePanelPointer(
 	resourcePanel: ResourcePanelController,
-	snapshot: PointerSnapshot,
+	snapshot: PointerInputSnapshot,
 	justPressed: boolean,
 ): boolean {
 	const panelBounds = resourcePanel.getBounds();
@@ -28,10 +29,16 @@ export function handleResourcePanelPointer(
 		return true;
 	}
 	if (justPressed) {
+		const mode = resourcePanel.getMode(), revision = resourcePanel.files.revision;
+		const context = resourcePanel.focusTarget.scope.contextGeneration;
 		resourcePanel.setFocused(true);
+		// Outgoing blur may retire the exact tree presentation that produced this hit.
+		if (!resourcePanel.isFocused() || resourcePanel.getMode() !== mode
+			|| resourcePanel.focusTarget.scope.contextGeneration !== context
+			|| mode === 'resources' && resourcePanel.files.revision !== revision) return true;
 		if (hoverIndex >= 0) {
 			resourcePanel.setSelectionIndex(hoverIndex);
-			openResourcePanelSelection(resourcePanel, hoverIndex, snapshot.viewportX);
+			openResourcePanelSelection(resourcePanel, hoverIndex, snapshot.viewportX, isAltDown(snapshot));
 		}
 	}
 	return true;
@@ -41,11 +48,15 @@ function openResourcePanelSelection(
 	resourcePanel: ResourcePanelController,
 	hoverIndex: number,
 	pointerX: number,
+	toSide: boolean,
 ): void {
 	const mode = resourcePanel.getMode();
 	if (resourcePanel.isDisclosureHit(hoverIndex, pointerX)) {
 		if (mode === 'resources') resourcePanel.toggleSelectedFileDisclosure();
 		else resourcePanel.openSelected();
 	} else if (mode === 'command') resourcePanel.openSelectedCallHierarchyLocation();
-	else resourcePanel.openSelected();
+	else {
+		const kind = resourcePanel.files.selectedNode!.element.kind;
+		resourcePanel.openSelected(toSide && (kind === 'file' || kind === 'definition') ? 'side' : 'default');
+	}
 }

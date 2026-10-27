@@ -184,5 +184,5 @@ export type EditorCommandEnablement = {
 };
 
 export interface EditorCommandRunner extends EditorCommandEnablement {
-	execute(command: EditorCommandId, target?: InputFocusTarget | null, input?: EditorInput): void;
+	execute(command: EditorCommandId, target?: InputFocusTarget | null, input?: EditorInput, editorContext?: InputFocusTarget | null): void;
 }

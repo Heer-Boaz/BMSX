@@ -89,13 +89,17 @@ export class IdeCommandController {
 		private readonly logOutput: LogOutput,
 		private readonly textFileSaves: TextFileSaveService,
 	) {}
-	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target, input?: EditorInput): void {
+	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target, input?: EditorInput,
+		editorContext?: InputFocusTarget | null): void {
+		if (editorContext === null) return;
 		const commandScope = target?.commandContext.scope, contextGeneration = commandScope?.contextGeneration;
+		const editorScope = editorContext?.commandContext.scope, editorGeneration = editorScope?.contextGeneration;
+		const invocationTarget = editorContext === undefined ? target : editorContext;
 		const originWindow = findWorkbenchWindow(target);
 		if (originWindow === null) return;
-		const originGroup = findEditorGroup(target);
+		const originGroup = findEditorGroup(invocationTarget);
 		if (originGroup === null) return;
-		const originPart = this.editor.editorParts.partForTarget(target);
+		const originPart = this.editor.editorParts.partForTarget(invocationTarget);
 		if (originPart === null) return;
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return;
@@ -115,10 +119,11 @@ export class IdeCommandController {
 				if (inputFocus.target !== null && findEditorGroup(inputFocus.target) !== group) return;
 			}
 		}
-		if (commandScope?.contextGeneration !== contextGeneration || input !== undefined && !group.model.contains(input)) return;
+		if (commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration
+			|| input !== undefined && !group.model.contains(input)) return;
 		const implementation = input === undefined ? target?.getCommand(command) : undefined;
 		if (implementation !== undefined) {
-			if (implementation.isEnabled()) implementation.run();
+			if (implementation.isEnabled()) implementation.run(group.focusTarget);
 			return;
 		}
 		const editor = input === undefined ? group.model.activeTab : input;

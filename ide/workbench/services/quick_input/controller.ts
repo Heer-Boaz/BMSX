@@ -3,9 +3,9 @@ import type { ContextMenuController } from '../context_menu/controller';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { create_rect_bounds, point_in_rect } from '../../../../machine/ts/common/rect';
-import type { KeyInputEvent } from '../../../../hosts/common/input/text';
+import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { DisposableStore } from '../../../common/lifecycle';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerInputSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
@@ -34,7 +34,7 @@ type QuickInputSession = {
 	readonly disposables: DisposableStore;
 	contextAdmitted: boolean;
 	unbindOrigin: (() => void) | undefined;
-	readonly accept: () => void | Promise<void>;
+	readonly accept: (modifiers: KeyModifier) => void | Promise<void>;
 	prepare: (() => void) | undefined;
 };
 
@@ -107,7 +107,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		title: string,
 		placeholder: string,
 		provide: (origin: InputFocusTarget | null, disposables: DisposableStore) => QuickPickProvider<T>,
-		accept: (item: T) => void,
+		accept: (item: T, modifiers: KeyModifier) => void,
 		onWillShow?: (lifetime: DisposableStore) => void,
 		options: QuickInputOptions = {},
 	): void {
@@ -143,14 +143,14 @@ export class QuickInputController implements PointerCaptureTarget {
 				resetInlineBlink();
 				this.onDidChangeVisibility();
 			},
-			accept: () => {
+			accept: modifiers => {
 				const list = this.model.list;
 				if (list.selectionIndex === -1) return; // A real user choice is required.
 				const item = provider.items[list.rows[list.selectionIndex].itemIndex];
 				try {
 					this.retireSession(true, true);
 					session.disposables.dispose();
-					if (session.contextAdmitted) accept(item);
+					if (session.contextAdmitted) accept(item, modifiers);
 				} finally {
 					session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
 					if (this.retiringSession === session) this.retiringSession = null;
@@ -308,8 +308,8 @@ export class QuickInputController implements PointerCaptureTarget {
 		if (!handoff && this.retiringSession === session) this.retiringSession = null;
 	}
 
-	public accept(): void | Promise<void> {
-		return this.session!.accept();
+	public accept(modifiers: KeyModifier = KeyModifier.none): void | Promise<void> {
+		return this.session!.accept(modifiers);
 	}
 
 	public update(): void {
@@ -337,7 +337,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		if (isKeyJustPressed('Enter', input) || isKeyJustPressed('NumpadEnter', input)) {
 			consumeIdeKey('Enter', input);
 			consumeIdeKey('NumpadEnter', input);
-			void this.accept();
+			void this.accept(input.modifiers);
 			return;
 		}
 		if (this.inputBox) {
@@ -365,7 +365,7 @@ export class QuickInputController implements PointerCaptureTarget {
 
 	public onPointerLeave(): void { this.model.list.hoverIndex = -1; }
 
-	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean): void {
+	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean): void {
 		this.update();
 		if (!snapshot.valid || !snapshot.insideViewport) { pointerHover.release(this); return; }
 		if (justPressed && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layout.bounds)) {
@@ -413,7 +413,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.pressedRow = undefined;
 	}
 
-	public handleCapturedPointer(snapshot: PointerSnapshot): void {
+	public handleCapturedPointer(snapshot: PointerInputSnapshot): void {
 		this.update();
 		const index = this.model.rowIndexAtPosition(snapshot.viewportX, snapshot.viewportY);
 		this.model.list.hoverIndex = index;
@@ -421,14 +421,14 @@ export class QuickInputController implements PointerCaptureTarget {
 		else pointerHover.release(this);
 	}
 
-	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
+	public releaseCapturedPointer(snapshot: PointerInputSnapshot): void {
 		this.handleCapturedPointer(snapshot);
 		const row = this.pressedRow;
 		const index = this.model.rowIndexAtPosition(snapshot.viewportX, snapshot.viewportY);
 		this.cancelPointer();
 		if (row !== undefined && index >= 0 && this.model.list.rows[index] === row) {
 			this.model.list.selectionIndex = index;
-			this.accept();
+			this.accept(snapshot.modifiers);
 		}
 	}
 
