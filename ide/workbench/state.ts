@@ -72,10 +72,12 @@ export class RuntimeIdeState extends StudioWorkbench {
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
-		this.hotResumes.onDidApply(() => clearAllRuntimeErrorOverlays(this.editor.editorGroup));
+		this.hotResumes.onDidApply(() => {
+			for (const group of this.editor.editorParts.groups) clearAllRuntimeErrorOverlays(group);
+		});
 		this.onDidReplaceMachine(() => {
 			this.editor.terminal.discard();
-			clearAllRuntimeErrorOverlays(this.editor.editorGroup);
+			for (const group of this.editor.editorParts.groups) clearAllRuntimeErrorOverlays(group);
 			pointerHover.clear();
 		});
 		this.onDidStop(() => {
@@ -84,7 +86,7 @@ export class RuntimeIdeState extends StudioWorkbench {
 		});
 		this.onDidFailHostFrame(stack => {
 			this.overlayRenderer.abandonFrame();
-			openHostError(this.editor.editorGroup, stack);
+			openHostError(this.editor.editorParts.main.group, stack);
 			this.editor.activate();
 		});
 	}

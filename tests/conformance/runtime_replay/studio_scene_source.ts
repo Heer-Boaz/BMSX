@@ -14,7 +14,7 @@ export async function openSceneEditor(test: StudioFixture): Promise<SceneEditorI
 	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'sceneEditor')!;
 	check(item.enabled, 'scene: the actual View menu admits the Lua document');
 	await test.clickContextCommand(item.command!);
-	const input = test.ide.editor.editorGroup.model.activeTab;
+	const input = test.ide.editor.editorParts.activeGroup.model.activeTab;
 	if (input.kind !== 'scene_editor') throw new Error('scene: View command must open the Scene Editor');
 	return input;
 }
@@ -72,7 +72,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	for (let index = 0; index < 8; index += 1) await frame();
 	check(scene.outline.roots[0].children[2] === retainedRow && scene.properties[0].field === retainedField,
 		'scene: stable visible frames retain the same row and source projection objects');
-	const pane = ide.editor.editorGroup.panes.activePane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('scene: the actual Scene Editor pane must own these controls');
 	const [x, y, z] = pane.controls;
 	const expected = original.slice(0, start) + '( --[[source-owned anchor]]\n\t\t\t\t\t17)' + original.slice(end);
@@ -131,7 +131,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await click(scene.properties[0].bounds);
 	await press('Digit9');
 	await click(scene.actionBar.items[0].bounds);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && harness.getActiveEditorDocument().model === model,
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && harness.getActiveEditorDocument().model === model,
 		'scene: the real Source action navigates to the same model');
 	check(model.buffer.getText() === expected.replace('\t17)', '\t09)'), 'scene: source navigation accepts the departing control before resource detach');
 	await press('ControlLeft', 'KeyZ');
@@ -185,9 +185,9 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	const generatedSource = generated.buffer.getText();
 	// A retained projection can be empty (e.g. after deleting its final registration).
 	// Attach explicitly here to test readonly pane lifecycle, not source discovery.
-	ide.editor.sceneEditor.openResource(ide.editor.editorGroup, generated.resource);
+	ide.editor.sceneEditor.openResource(ide.editor.editorParts.main.group, generated.resource);
 	await frame();
-	const readonlyScene = ide.editor.editorGroup.model.activeTab;
+	const readonlyScene = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (readonlyScene.kind !== 'scene_editor') throw new Error('scene: readonly projection was not attached');
 	check(readonlyScene.workingCopy === generated && generated.readOnly && readonlyScene.outline.rows.length === 0,
 		'scene: readonly non-scene source does not invent a scene or an edit route');
@@ -206,7 +206,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await press('Digit2');
 	await press('Digit2');
 	await test.clickTab(readonlyScene.id);
-	check(ide.editor.editorGroup.model.activeTab === readonlyScene && model.buffer.getText() === expected.replace('\t17)', '\t22)')
+	check(ide.editor.editorParts.activeGroup.model.activeTab === readonlyScene && model.buffer.getText() === expected.replace('\t17)', '\t22)')
 		&& generated.buffer.getText() === generatedSource, 'scene: switching inputs of the same retained pane accepts against the departing resource');
 	await test.clickTab(scene.id);
 	await press('ControlLeft', 'KeyZ');

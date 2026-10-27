@@ -27,17 +27,17 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	const media = ide.sources.currentBlua32Media;
 	// The existing module is only a textmodel carrier. No fixture is compiled or installed in the machine.
 	harness.openLuaSource('cart.lua');
-	const code = ide.editor.editorGroup.model.activeTab;
+	const code = ide.editor.editorParts.activeGroup.model.activeTab;
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await clipboard.writeText('BT fixture.tree');
 	await press('ControlLeft', 'KeyV');
-	const picker = ide.editor.quickInput;
+	const picker = ide.editor.editorParts.activePart.quickInput;
 	check(picker.model.list.rows.length === 2, 'source graph: the fixture contributes two independent registrations');
 	await press('Enter');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('source graph: actual Behavior Lens input missing');
 	check(lens.workingCopy === model, 'source graph: the lens and code share the real working copy');
 	const view = lens.view;
@@ -59,12 +59,12 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	await click(graph.actionBar.items[0].bounds);
 	await test.clickTab(lens.id);
 	await click(bounds);
-	check(ide.editor.editorGroup.model.activeTab === lens, 'source graph: pane switching cancels the earlier click, not a double-click on return');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens, 'source graph: pane switching cancels the earlier click, not a double-click on return');
 	await click(graph.actionBar.items[0].bounds, 6);
 	const sourceLines = BEHAVIOR_SOURCE_FIXTURE.split('\n');
 	const sourceRow = sourceLines.findIndex(line => line.includes('children = { leaf,'));
 	const sourceColumn = sourceLines[sourceRow].indexOf('leaf');
-	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === sourceRow
+	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === sourceRow
 		&& sourcePane(test).code.view.cursorColumn === sourceColumn && !hasSelection(sourcePane(test).code),
 		'source graph: a held Source gesture opens the initializer reference without starting a code drag');
 	const oldDocument = view.document;
@@ -98,7 +98,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	await test.clickTab(lens.id);
 	check(view.selection === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');
 	await press('Enter');
-	check(ide.editor.editorGroup.model.activeTab === lens, 'source graph: an absent selection has no stale source action');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens, 'source graph: an absent selection has no stale source action');
 	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);

@@ -41,7 +41,7 @@ function fixture(t: TestContext) {
 		isEnabled: (command, target) => target?.getCommand(command)?.isEnabled() === true,
 		execute: (command, target) => { target!.getCommand(command)!.run(); },
 	};
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => {
 		picker.dispose(); menu.dispose(); originGroup.dispose(); siblingGroup.dispose();
 		editorTextModelService.clear(); inputFocus.setTarget(null);

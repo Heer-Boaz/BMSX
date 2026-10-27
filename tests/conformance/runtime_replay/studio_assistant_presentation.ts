@@ -21,7 +21,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	harness.openLuaSource('cart.lua'); await frame();
 	await press('ControlLeft', 'Home'); await test.clipboard.writeText('-- REFERENCED WORKING COPY\n'); await press('ControlLeft', 'KeyV');
 	await test.runPaletteCommand('View: Codex Assistant');
-	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant expected');
+	const view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant expected');
 	const conversation = ide.editor.assistant, paused = cycles();
 	const picker = ide.editor.quickInput;
 	const emptyComposerHeight = view.composerBounds.bottom - view.composerBounds.top;

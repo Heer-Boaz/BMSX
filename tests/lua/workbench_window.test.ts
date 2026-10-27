@@ -10,7 +10,7 @@ import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
-import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
+import { WorkbenchFloatingWindow, type WorkbenchWindowOptions } from '../../ide/workbench/ui/window/control';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { ELLIPSIS } from '../../ide/common/text';
@@ -38,13 +38,14 @@ function fixture() {
 		isEnabled: (command, target) => focus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => focus.executeCommand(command, target),
 	};
-	function window(name: string, left = 40, top = 40, onRetireContent?: () => void, getTitleTooltip?: () => string) {
+	function window(name: string, left = 40, top = 40, onRetireContent?: () => void, getTitleTooltip?: () => string,
+		windowOptions: Pick<WorkbenchWindowOptions, 'focusScope' | 'requestClose'> = { focusScope: parent.scope }) {
 		const model = new WorkbenchWindowModel({ left, top, right: left + 240, bottom: top + 180 }, 120, 80);
 		model.title = name;
 		const actions = createWorkbenchActionBar('window.title');
 		let input = false, layouts = 0, restores = 0, retires = 0, painted = 0, clicked = 0, hidden = 0;
 		const control = new WorkbenchFloatingWindow(focus, capture, hover, surfaces, commands, {
-			model, actionBar: actions, lifetimeOwner: owner, focusReturn: parent, workArea,
+			model, actionBar: actions, lifetimeOwner: owner, ...windowOptions, focusReturn: parent, workArea,
 			getTitleTooltip,
 			content: { draw() { painted += 1; }, handlePointer() { clicked += 1; } },
 			layoutContent() { layouts += 1; }, retireContentInput() { input = false; retires += 1; onRetireContent?.(); },
@@ -222,11 +223,16 @@ test('window drag and all-edge resize use central capture, root work area and cu
 	f.capture.dispatch(pointer(bottomRight.viewportX - 20, bottomRight.viewportY - 20, 0, 0, 1), false, 7, a.control.scope.surfaceScope);
 });
 
-test('collapse structurally retires client capture and transients, focuses expand, and preserves the model', t => {
+test('collapse retires client input and transients while retaining the attached client and descendant surfaces', t => {
 	const f = fixture(), a = f.window('COLLAPSE'); a.show(true);
 	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
 	const height = a.model.requestedBounds.bottom - a.model.requestedBounds.top;
 	const clientSurface = a.control.clientSurface!;
+	let descendantRetired = 0, contextRetired = 0;
+	const descendant = f.surfaces.attach({ role: 'content', lifetimeOwner: clientSurface, presentationParent: clientSurface,
+		captureScope: Symbol('retained descendant'), isVisible: () => true, getBounds: () => a.model.client,
+		getClip: () => a.model.client, draw() {}, onRetire() { descendantRetired++; } });
+	t.after(a.control.clientScope.onDidRetireContext(() => { contextRetired++; }));
 	let popupRetired = 0, cancelled = 0;
 	const popup = f.surfaces.attach({ role: 'transient', outsidePress: 'consume', lifetimeOwner: clientSurface,
 		presentationParent: a.control.surface, captureScope: Symbol('client popup'), isVisible: () => true,
@@ -234,10 +240,12 @@ test('collapse structurally retires client capture and transients, focuses expan
 	const popupFocus = f.focus.createTarget(a.client, new InputFocusScope(popup.captureScope));
 	popupFocus.canFocus = () => !popup.retired;
 	popupFocus.focus();
-	f.capture.beginRoute(a.control.clientScope.surfaceScope, pointer(100, 100, 1, 1));
+	f.capture.beginRoute(descendant.captureScope, pointer(100, 100, 1, 1));
 	f.capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() { assert.fail('collapse is not a physical release'); }, cancelPointer() { cancelled += 1; } });
 	a.control.setCollapsed(true);
-	assert.equal(a.control.clientSurface, undefined); assert.equal(clientSurface.retired, true); assert.equal(popup.retired, true);
+	assert.ok(a.control.clientSurface === clientSurface); assert.equal(clientSurface.retired, false); assert.equal(clientSurface.visible, false);
+	assert.equal(descendant.retired, false); assert.equal(descendant.visible, false); assert.equal(descendantRetired, 0);
+	assert.equal(contextRetired, 1); assert.equal(popup.retired, true);
 	assert.equal(popupRetired, 1); assert.equal(cancelled, 1); assert.equal(f.capture.draining, true);
 	assert.equal(a.input(), false); assert.equal(a.retires(), 1);
 	assert.equal(f.focus.target!.scope, a.control.scope);
@@ -251,7 +259,9 @@ test('collapse structurally retires client capture and transients, focuses expan
 	f.parent.focus(); a.control.setCollapsed(false);
 	assert.equal(a.input(), true); assert.equal(f.focus.target, f.parent, 'expanding does not seize unrelated focus');
 	assert.equal(a.model.bounds.bottom - a.model.bounds.top, height);
-	assert.equal(a.control.clientSurface!.retired, false);
+	assert.ok(a.control.clientSurface === clientSurface); assert.equal(clientSurface.visible, true);
+	assert.equal(descendant.visible, true); assert.equal(descendantRetired, 0);
+	assert.ok(f.surfaces.hitTest(100, 100) === descendant, 'expansion admits the same retained descendant');
 });
 
 test('collapsing another window preserves an unrelated gesture; collapsed horizontal resizing retains expanded height', t => {
@@ -320,7 +330,7 @@ test('window icon tooltips are passive, modal-admitted, retained feedback with n
 	const measurements = f.measurements();
 	for (let frame = 0; frame < 1000; frame++) { a.layout(); a.control.update(); }
 	assert.equal(f.measurements(), measurements);
-	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('modal'), lifetimeOwner: f.owner,
+	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: Symbol('modal'), lifetimeOwner: f.owner,
 		getBounds: () => f.workArea, getClip: () => f.workArea, isVisible: () => true, draw() {} });
 	paint();
 	assert.equal(labels.includes('Close Window'), false, 'a blocked window cannot paint its tooltip above a modal');
@@ -414,4 +424,57 @@ test('long title tooltips wrap every path glyph instead of moving caption trunca
 		tooltip.show(title, anchor, font, measure, measureText, area);
 		assert.equal(measurements, measured, 'moving an anchor only places retained lines; it does not wrap the title again');
 	}
+});
+
+
+test('restored collapsed attachments publish a retained client without restoring client input', t => {
+	const f = fixture(), a = f.window('RESTORED');
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.model.setCollapsed(true); a.show();
+	const client = a.control.clientSurface!;
+	assert.ok(client !== undefined); assert.equal(client.visible, false); assert.equal(client.retired, false);
+	assert.equal(a.input(), false); assert.equal(a.restores(), 0); assert.equal(a.retires(), 0);
+	const descendant = f.surfaces.attach({ role: 'content', lifetimeOwner: client, presentationParent: client,
+		captureScope: Symbol('restored group'), isVisible: () => true, getBounds: () => a.model.client,
+		getClip: () => a.model.client, draw() {} });
+	assert.equal(descendant.visible, false);
+	a.control.setCollapsed(false);
+	assert.ok(a.control.clientSurface === client); assert.equal(descendant.visible, true);
+	assert.equal(a.restores(), 1); assert.equal(a.input(), true); assert.ok(a.layouts() > 0);
+});
+
+test('window ownership ancestry is independent of focus return and close admission leaves presentation attached', t => {
+	const f = fixture(), ownerScope = new InputFocusScope(Symbol('document parent'), f.focus.workbenchScope);
+	const ownCommands: EditorCommandRunner = { isEnabled: () => false, execute() {} };
+	ownerScope.commands = ownCommands;
+	let closeRequests = 0;
+	const a = f.window('DOCUMENT', 40, 40, undefined, undefined,
+		{ focusScope: ownerScope, requestClose() { closeRequests++; } });
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.show(true);
+	assert.ok(f.focus.commandRunner === ownCommands, 'client commands follow the declared logical owner, not the return target');
+	f.focus.executeCommand('window.hide', a.control.clientFocusTarget);
+	assert.equal(closeRequests, 1); assert.equal(a.model.open, true); assert.equal(a.hidden(), 0);
+	assert.equal(a.control.visible, true); assert.equal(a.input(), true);
+	const escape = new KeyInputEvent('Escape', KeyModifier.none, false, true);
+	a.control.focusTarget.focus(); f.focus.handleKeyboard(escape);
+	assert.ok(f.focus.target === f.parent, 'Escape still returns to the explicitly supplied control');
+	a.control.hide();
+	assert.equal(closeRequests, 1); assert.equal(a.model.open, false); assert.equal(a.hidden(), 1);
+});
+
+test('placement notifications publish requested placement and collapse, not passive arrangement or chrome updates', () => {
+	const bounds = { left: 40, top: 40, right: 280, bottom: 220 };
+	const model = new WorkbenchWindowModel(bounds, 120, 80), changes: boolean[] = [];
+	const unbind = model.onDidChangePlacement(() => changes.push(model.collapsed));
+	model.setRequestedBounds(bounds); model.setCollapsed(false);
+	model.arrange({ left: 0, top: 20, right: 500, bottom: 380 }, 16);
+	model.title = 'CHROME'; model.invalidate(); model.setMinimumSize(140, 90);
+	assert.deepEqual(changes, []);
+	model.setRequestedBounds({ left: 60, top: 50, right: 300, bottom: 230 });
+	model.setCollapsed(true); model.setCollapsed(true);
+	model.arrange({ left: 0, top: 20, right: 100, bottom: 90 }, 16);
+	assert.deepEqual(changes, [false, true]);
+	unbind(); model.setCollapsed(false);
+	assert.deepEqual(changes, [false, true]);
 });

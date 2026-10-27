@@ -222,7 +222,7 @@ return {tracks={{kind='value',interpolation='cubic',keys={
 	const key = input.document.tracks[0].keys[0];
 	assert.equal(key.coordinate!.value, -25);
 	assert.equal(key.arrive!.value, -8);
-	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
+	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!);
 	assert.equal(authoring.canEditCurveField(input, key, 'arrive'), false, 'an alias is readable, not a literal field to overwrite');
 	assert.equal(authoring.canEditCurveField(input, key, 'value'), true);
 	authoring.editCurveKey(input, key, undefined, 'value', -3);
@@ -237,7 +237,7 @@ return {tracks={{kind='value',interpolation='cubic',keys={
 test('the curve commits time and value as one native source edit and idle geometry does no projection work', () => {
 	const model = new EditorTextModel(resource, 'lua', source), input = new AnimationEditorInput(model, model.resource.contextId);
 	input.document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
-	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
+	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!);
 	authoring.editCurveKey(input, input.document.tracks[0].keys[1], 120, 'value', 200);
 	const changed = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(model.buffer.getText(), resource)], [])))!;
 	assert.equal(changed.tracks[0].keys[1].coordinate!.value, 120);

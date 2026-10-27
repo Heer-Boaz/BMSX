@@ -634,7 +634,7 @@ test('property feedback retires on scroll, logical row replacement and containin
 test('full property feedback respects the shared modal admission contract and inspector hide lifetime', t => {
 	const f = feedbackFixture(t);
 	f.pointer(); f.layout(); f.paint(); assert.equal(f.labels.includes(f.item.label), true);
-	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, lifetimeOwner: f.owner, captureScope: Symbol('modal'),
+	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, lifetimeOwner: f.owner, captureScope: Symbol('modal'),
 		getBounds: () => f.area, getClip: () => f.area, isVisible: () => true, draw() {} });
 	f.paint(); assert.equal(f.labels.includes(f.item.label), false, 'feedback cannot paint over a modal that blocks its owner');
 	modal.dispose(); f.inspector.hide(); f.paint();

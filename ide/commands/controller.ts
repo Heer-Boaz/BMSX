@@ -22,9 +22,9 @@ import { problemsPanel } from '../workbench/contrib/problems/panel/controller';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
 import { TextEditorInput } from '../workbench/common/editor_input';
+import { editorTextModelService } from '../editor/model/model_service';
 import type { TextFileSaveService } from '../workbench/services/working_copy/text_file_save';
 import { saveTextFileFromCommand } from './source_save';
-import type { EditorTextModel } from '../editor/model/text_model';
 import { type RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
@@ -33,7 +33,6 @@ import {
 	resumeRuntimeDebugger, RuntimeDebuggerResumeMode,
 	type RuntimeDebuggerState,
 } from '../runtime/debugger_state';
-import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { inputFocus, type InputFocusTarget } from '../input/focus';
 import { showServerConnection } from '../workbench/contrib/server/connection';
@@ -89,7 +88,10 @@ export class IdeCommandController {
 	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): void {
 		const originGroup = findEditorGroup(target);
 		if (originGroup === null) return;
-		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
+		const originPart = this.editor.editorParts.partForTarget(target);
+		if (originPart === null) return;
+		const group = originGroup ?? originPart?.group ?? this.editor.editorParts.activeGroup;
+		const part = this.editor.editorParts.partForGroup(group);
 		const selected = this.runTargets.selected;
 		const runtimeContext = target?.scope.runtimeOwner?.runtime;
 		const local = runtimeContext?.interaction;
@@ -142,9 +144,9 @@ export class IdeCommandController {
 				const choices = getTextFileRuntimeSourceInstallations(this.sources, input.workingCopy)
 					.filter(installation => installation.status === 'applied' && this.editor.actorLab.canInteract(installation.domain))
 					.map(installation => ({ ...installation, label: `Physical ${installation.domain}`, description: input.workingCopy.resource.contextLabel, detail: event }));
-				this.editor.quickInput.pick('AUDITION APPLIED EVENT', 'Choose the actual installed attachment', (_origin, lifetime) => {
-					lifetime.add({ dispose: input.onWillDispose(() => this.editor.quickInput.hide()) });
-					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.editor.quickInput.hide()) });
+				part.quickInput.pick('AUDITION APPLIED EVENT', 'Choose the actual installed attachment', (_origin, lifetime) => {
+					lifetime.add({ dispose: input.onWillDispose(() => part.quickInput.hide()) });
+					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => part.quickInput.hide()) });
 					return new TextQuickPickProvider(choices);
 				}, choice => {
 					const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
@@ -156,7 +158,7 @@ export class IdeCommandController {
 				const resource = group.model.activeTab?.resource;
 				if (resource !== undefined && this.editor.actionStrings.canStart(resource.contextId)) { this.editor.actionStrings.open(resource.contextId); return; }
 				const contexts = [...this.sources.catalog.contexts.values()].filter(context => this.editor.actionStrings.canStart(context.id));
-				this.editor.quickInput.pick('INPUT EXPERIMENT PROJECT', 'Choose the authored project', () => new TextQuickPickProvider(contexts.map(context => ({
+				part.quickInput.pick('INPUT EXPERIMENT PROJECT', 'Choose the authored project', () => new TextQuickPickProvider(contexts.map(context => ({
 					label: context.projectRootPath, description: context.programDomain, detail: '', contextId: context.id,
 				}))), item => this.editor.actionStrings.open(item.contextId));
 				return;
@@ -170,8 +172,8 @@ export class IdeCommandController {
 					if (image === null || image.sourceContextId !== input.workingCopy.resource.contextId || !this.editor.actorLab.canInteract(domain)) continue;
 					choices.push({ domain, image, label: `Physical ${domain}`, description: input.workingCopy.resource.contextLabel, detail: 'Choose a granted runtime effect on this attachment' });
 				}
-				this.editor.quickInput.pick('TEST GRANTED EFFECT', 'Choose the actual installed attachment', (_origin, lifetime) => {
-					lifetime.add({ dispose: input.onWillDispose(() => this.editor.quickInput.hide()) });
+				part.quickInput.pick('TEST GRANTED EFFECT', 'Choose the actual installed attachment', (_origin, lifetime) => {
+					lifetime.add({ dispose: input.onWillDispose(() => part.quickInput.hide()) });
 					return new TextQuickPickProvider(choices);
 				}, choice => {
 					const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
@@ -193,12 +195,11 @@ export class IdeCommandController {
 				showServerConnection(this.editor);
 				return;
 			case 'conversations.history':
-				openObservedConversation(group, this.editor.observedConversation, this.editor.quickInput);
+				openObservedConversation(group, this.editor.observedConversation, part.quickInput);
 				return;
 			case 'debugEvaluation':
 				if (this.debuggerState.plans.controlSuspended && this.debuggerState.source.stop !== undefined) {
 					resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
-					clearExecutionStopHighlights(group);
 				} else this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
 				if (!this.debuggerState.plans.controlSuspended) this.execution.requestExecution(false);
 				return;
@@ -221,14 +222,14 @@ export class IdeCommandController {
 				return;
 			}
 			case 'runtime.focusTimeline':
-				if (runtimeContext !== undefined) this.editor.runtimeTimeline.setContext(runtimeContext);
-				this.editor.runtimeTimeline.focus(); return;
-			case 'runtime.hideTimeline': this.editor.runtimeTimeline.hide(); return;
+				if (runtimeContext !== undefined) part.timeline.setContext(runtimeContext);
+				part.timeline.focus(); return;
+			case 'runtime.hideTimeline': part.timeline.hide(); return;
 			case 'runtime.toggleTimeline':
-				if (this.editor.runtimeTimeline.requested) this.editor.runtimeTimeline.hide();
+				if (part.timeline.requested) part.timeline.hide();
 				else {
-					if (runtimeContext !== undefined) this.editor.runtimeTimeline.setContext(runtimeContext);
-					this.editor.runtimeTimeline.focus();
+					if (runtimeContext !== undefined) part.timeline.setContext(runtimeContext);
+					part.timeline.focus();
 				}
 				return;
 			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
@@ -284,7 +285,6 @@ export class IdeCommandController {
 				selected.debuggerExecution.resume(command === 'debugStepInto' ? 'into' : command === 'debugStepOut' ? 'out'
 					: command === 'debugStepOver' ? 'over' : 'continue', selected.transport === this.transport ? 'game' : 'workbench');
 				if (selected.transport === this.transport) {
-					clearExecutionStopHighlights(group);
 					deactivateEditor(this.editor, this.overlayRenderer);
 				}
 				return;
@@ -318,15 +318,16 @@ export class IdeCommandController {
 
 	public async executeConfirmedAction(
 		request: EditorActionRequest,
-		workingCopies: readonly EditorTextModel[],
 		saveBeforeAction: boolean,
 	): Promise<boolean> {
 		if (request.action === 'run' && this.sources.currentBlua32Media.cartridgeSlots[request.entry.domain] !== request.expectedImage) return false;
 		if (saveBeforeAction) {
-			for (let index = 0; index < workingCopies.length; index += 1) {
-				const result = await saveTextFileFromCommand(this.textFileSaves, workingCopies[index], this.editor, this.sources);
-				if (result.status === 'failed' || workingCopies[index].dirty) {
-					return false;
+			for (;;) {
+				const workingCopies = editorTextModelService.dirtyWorkingCopies;
+				if (workingCopies.length === 0) break;
+				for (const model of workingCopies) {
+					const result = await saveTextFileFromCommand(this.textFileSaves, model, this.editor, this.sources);
+					if (result.status === 'failed' || model.dirty) return false;
 				}
 			}
 		}
@@ -346,7 +347,10 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const originGroup = findEditorGroup(focus);
 		if (originGroup === null) return false;
-		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
+		const originPart = this.editor.editorParts.partForTarget(focus);
+		if (originPart === null) return false;
+		const group = originGroup ?? originPart?.group ?? this.editor.editorParts.activeGroup;
+		const part = this.editor.editorParts.partForGroup(group);
 		const selected = this.runTargets.selected;
 		const local = focus?.scope.runtimeOwner?.runtime?.interaction;
 		const transport = local === undefined ? selected?.transport : local.transport;
@@ -356,7 +360,7 @@ export class IdeCommandController {
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
 			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut':
 				return this.editor.play.isCommandEnabled(command);
-			case 'menubar.focus': return this.editor.isActive && !this.editor.actionPrompt.visible && !this.editor.quickInput.visible;
+			case 'menubar.focus': return this.editor.isActive && !this.editor.actionPrompt.visible && !part.quickInput.visible;
 			case 'hostError': return this.fault.hostFrameFailure !== undefined;
 			case 'assistant': return this.editor.assistant.available;
 			case 'terminal': return this.editor.terminal.canOpen;
@@ -415,9 +419,9 @@ export class IdeCommandController {
 			case 'stepFrame':
 			case 'stepFrameBack':
 				return transport?.available === true && transport.navigation.canStep(command === 'stepFrameBack' ? -1 : 1);
-			case 'runtime.focusTimeline': return this.editor.isActive && (local === undefined ? this.editor.runtimeTimeline.available : transport?.available === true);
-			case 'runtime.hideTimeline': return this.editor.isActive && this.editor.runtimeTimeline.canHide;
-			case 'runtime.toggleTimeline': return this.editor.isActive && ((local === undefined ? this.editor.runtimeTimeline.available : transport?.available === true) || this.editor.runtimeTimeline.requested);
+			case 'runtime.focusTimeline': return this.editor.isActive && (local === undefined ? part.timeline.available : transport?.available === true);
+			case 'runtime.hideTimeline': return this.editor.isActive && part.timeline.canHide;
+			case 'runtime.toggleTimeline': return this.editor.isActive && ((local === undefined ? part.timeline.available : transport?.available === true) || part.timeline.requested);
 			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
 			case 'runtime.pause': return transport?.playbackEnabled === true;
 			case 'runtime.present':
@@ -494,11 +498,14 @@ export class IdeCommandController {
 	public isActive(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): boolean {
 		const originGroup = findEditorGroup(target);
 		if (originGroup === null) return false;
-		const group = originGroup ?? navigationState.activeGroup ?? this.editor.editorGroup;
+		const originPart = this.editor.editorParts.partForTarget(target);
+		if (originPart === null) return false;
+		const group = originGroup ?? originPart?.group ?? this.editor.editorParts.activeGroup;
 		const implementation = target?.getCommand(command);
 		if (implementation !== undefined) return implementation.isChecked?.() === true;
+		const part = this.editor.editorParts.partForGroup(group);
 		switch (command) {
-			case 'runtime.toggleTimeline': return this.editor.runtimeTimeline.requested;
+			case 'runtime.toggleTimeline': return part.timeline.requested;
 			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
 			case 'romInspector.hold': {
 				const input = group.model.activeTab;

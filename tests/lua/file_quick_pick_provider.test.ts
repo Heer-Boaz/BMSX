@@ -93,7 +93,7 @@ test('same-path files from two sockets retain distinct original resources throug
 	const items = buildResourceQuickPickItems(resources);
 	const provider = new FileQuickPickProvider(items);
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const picker = new QuickInputController(menu);
+	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); });
 	let accepted: RuntimeResource | undefined;
 	picker.pick('FILES', 'query', () => provider, item => { accepted = item.resource; });

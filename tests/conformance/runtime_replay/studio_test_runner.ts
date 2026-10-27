@@ -10,7 +10,7 @@ export async function runStudioTestRunner(test: StudioFixture) {
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'test runner: cartridge boot');
 	await press('ControlRight', 'ShiftRight');
 	await runPaletteCommand('Scenario Lab: Open');
-	const tab = ide.editor.editorGroup.model.activeTab;
+	const tab = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (tab.kind !== 'scenario_lab') throw new Error('Scenario Lab expected');
 	const moduleRow = tab.view.testPane.rows.find(row => row.kind === 'module')!;
 	if (moduleRow.kind !== 'module') throw new Error('Packaged test module expected');
@@ -51,7 +51,7 @@ export async function runStudioTestRunner(test: StudioFixture) {
 	const retainedIndex = tab.view.resultPane.rows.findIndex(row => row.id === run.items[0].id);
 	for (let index = 0; index < retainedIndex; index++) await press('ArrowDown');
 	ide.editor.commands.execute('scenarioLab.inspectTarget');
-	const targetPane = ide.editor.editorGroup.panes.activePane;
+	const targetPane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(targetPane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab target pane expected');
 	targetPane.update();
 	const targetTree = targetPane.targetInspection.model!.tree, root = targetTree.roots[0];
@@ -77,7 +77,7 @@ export async function runStudioTestRunner(test: StudioFixture) {
 	await press('Tab'); await press('Home');
 	for (let index = 0; index < failedIndex; index++) await press('ArrowDown');
 	await runPaletteCommand('Scenario Lab: Inspect Test Result');
-	const pane = ide.editor.editorGroup.panes.activePane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab result pane expected');
 	check(pane.inspector.visible && pane.inspector.model.rows[0].element.value === 'failed', 'Details observes the recorded outcome');
 	check(pane.inspector.model.rows[2].element.value === authored, 'Details reads the failed suite, not the passing rerun source');

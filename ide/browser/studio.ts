@@ -262,7 +262,7 @@ async function startBrowserStudio(): Promise<void> {
 			const connection = new StudioServerConnection(httpSession(server.baseUrl),
 				{ title: document.title, url: location.href, tools: server.tools, builds: server.builds }, ide.editor.tools, proposal => {
 					ide.editor.activate();
-					ide.editor.editorGroup.openEditor(new WorkspaceEditReviewInput(proposal));
+					ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup).openEditor(new WorkspaceEditReviewInput(proposal));
 				}, (state, detail) => {
 					ide.editor.serverConnectionState = state;
 					ide.editor.serverConnectionDetail = detail;

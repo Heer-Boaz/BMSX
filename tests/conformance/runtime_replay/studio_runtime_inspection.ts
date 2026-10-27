@@ -228,10 +228,10 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await openRuntimeEffectInspector(test, 'first', 48);
 	await openRuntimeEffectPicker(test);
 	rewind.seekTo(history.latestCycles); await settle();
-	check(!ide.editor.quickInput.visible, 'inspection: restore invalidates the borrowed instance choices');
+	check(!ide.editor.editorParts.activePart.quickInput.visible, 'inspection: restore invalidates the borrowed instance choices');
 	await openRuntimeStatePicker(test, 'first');
 	rewind.seekTo(history.earliestCycles); await settle();
-	check(!ide.editor.quickInput.visible, 'inspection: restore also invalidates the borrowed FSM state scope');
+	check(!ide.editor.editorParts.activePart.quickInput.visible, 'inspection: restore also invalidates the borrowed FSM state scope');
 	const restoredFsm = await openRuntimeStateInspector(test, 'first', 30);
 	const retainedState = restoredFsm.model.rows[0].element;
 	rewind.seekTo(history.latestCycles); await settle();
@@ -239,7 +239,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		'inspection: restore refreshes the retained FSM document, unlike borrowed picker choices');
 	await openRegisteredDefinitionPicker(test, 'fsm');
 	rewind.seekTo(history.earliestCycles); await settle();
-	check(!ide.editor.quickInput.visible, 'catalog: restore releases the borrowed registry choices');
+	check(!ide.editor.editorParts.activePart.quickInput.visible, 'catalog: restore releases the borrowed registry choices');
 	const restoredCatalog = await openRegisteredDefinition(test, 'effect', 'pulse');
 	check(restoredCatalog.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '48', 'catalog: reselect reads the restored registry');
 	rewind.seekTo(history.latestCycles); await settle();
@@ -252,14 +252,14 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await inspectRuntimeTreeBlackboard(test, 'second');
 	await openRuntimeTreePicker(test);
 	rewind.seekTo(history.latestCycles); await settle();
-	check(!ide.editor.quickInput.visible, 'runtime BT: restore releases the borrowed component choices');
+	check(!ide.editor.editorParts.activePart.quickInput.visible, 'runtime BT: restore releases the borrowed component choices');
 	inspect('inspection_effect.definition.period_ms');
 	await frame();
 	const expression = 'inspection_effect.definition.period_ms';
 	const lines = model.buffer.getText().split('\n');
 	const row = lines.findIndex(line => line.includes(expression));
 	const column = lines[row].indexOf(expression) + expression.length - 1;
-	await ide.editor.navigation.focusChunkSource(ide.editor.editorGroup, model.resource, { row, startColumn: column, endColumn: column });
+	await ide.editor.navigation.focusChunkSource(ide.editor.editorParts.activeGroup, model.resource, { row, startColumn: column, endColumn: column });
 	await frame();
 	const position = cycles(), version = model.version;
 	for (const theme of ['dark', 'light']) {

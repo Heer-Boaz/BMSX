@@ -16,21 +16,21 @@ const guestPoint = { x: 0, y: 0 };
 /** One structural target owns the occurrence, or the existing gesture continues. */
 export function handleTextEditorPointerInput(snapshot: PointerInputSnapshot, event: PointerInputEvent, surfaces: WorkbenchSurfaceService): void {
 	const now = event.timestamp;
-	pointerHover.beginDispatch();
+	const focused = inputFocus.target;
+	if (pointerCapture.guestBinding === undefined && focused?.guestInput !== undefined && snapshot.valid && snapshot.justPressedButtons !== 0
+		&& (!snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, focused.guestInput.bounds))) {
+		focused.release();
+	}
+	const routeScope = pointerCapture.routeScope;
+	const routed = routeScope === undefined ? undefined : surfaces.findByScope(routeScope);
+	if (routeScope !== undefined && (!snapshot.valid || routed === undefined || !surfaces.isAdmitted(routed))) {
+		pointerCapture.cancelScope(routeScope);
+	}
+	const target = pointerCapture.routeScope !== undefined ? routed
+		: snapshot.valid && snapshot.insideViewport ? surfaces.hitTest(snapshot.viewportX, snapshot.viewportY) : null;
+	const scope = target?.captureScope ?? WORKBENCH_POINTER_SCOPE;
+	pointerHover.beginDispatch(target?.captureScope);
 	try {
-		const focused = inputFocus.target;
-		if (pointerCapture.guestBinding === undefined && focused?.guestInput !== undefined && snapshot.valid && snapshot.justPressedButtons !== 0
-			&& (!snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, focused.guestInput.bounds))) {
-			focused.release();
-		}
-		const routeScope = pointerCapture.routeScope;
-		const routed = routeScope === undefined ? undefined : surfaces.findByScope(routeScope);
-		if (routeScope !== undefined && (!snapshot.valid || routed === undefined || !surfaces.isAdmitted(routed))) {
-			pointerCapture.cancelScope(routeScope);
-		}
-		const target = pointerCapture.routeScope !== undefined ? routed
-			: snapshot.valid && snapshot.insideViewport ? surfaces.hitTest(snapshot.viewportX, snapshot.viewportY) : null;
-		const scope = target?.captureScope ?? WORKBENCH_POINTER_SCOPE;
 		if (pointerCapture.dispatch(snapshot, false, now, scope)) return;
 		if (target === null || target === undefined) return;
 		pointerCapture.beginRoute(scope, snapshot);
@@ -70,6 +70,6 @@ export function handleWorkbenchChromePointer(editor: CartEditor, snapshot: Point
 		return;
 	}
 	if (handleEditorChromePointerDispatch(editor, snapshot, justPressed)) return;
-	handleEditorPanelPointer(editor.resourcePanel, editor.editorGroup, snapshot, justPressed,
+	handleEditorPanelPointer(editor.resourcePanel, editor.editorParts, snapshot, justPressed,
 		(snapshot.justReleasedButtons & PointerButton.Primary) !== 0);
 }

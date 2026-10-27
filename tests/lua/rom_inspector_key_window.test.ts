@@ -152,7 +152,7 @@ test('client-owned window commands collapse and close the captured client withou
 	f.commands.execute('window.collapse', context); f.key.update();
 	assert.equal(f.input.keyWindow.collapsed, true); assert.equal(inputFocus.target, f.key.window.actionFocusTarget);
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
-	assert.equal(f.key.window.clientSurface, undefined); assert.equal(view.scrollTop, scroll);
+	assert.equal(f.key.window.clientSurface!.visible, false); assert.equal(view.scrollTop, scroll);
 	pointerCapture.dispatch(point(down.viewportX, down.viewportY, 0, 0, 1), false, 1); pointerCapture.endRoute(point(0, 0));
 	f.clickAction('window.collapse'); assert.ok(f.key.window.clientSurface); assert.equal(view.scrollTop, scroll);
 	f.clickAction('window.hide'); assert.equal(f.input.keyWindow.open, false); assert.equal(f.key.window.surface, undefined);
@@ -186,7 +186,7 @@ test('controller recreation retains placement/open/collapse per snapshot and nev
 	f.recreate(); assert.equal(model.open, true); assert.equal(model.collapsed, true);
 	f.key.update(); assert.equal(inputFocus.target, f.unrelated);
 	assert.deepEqual(model.requestedBounds, requested); assert.equal(f.input.keyViewport.scrollTop, scroll);
-	assert.equal(f.key.window.clientSurface, undefined);
+	assert.equal(f.key.window.clientSurface!.visible, false);
 	f.key.window.setCollapsed(false); f.key.update(); assert.equal(inputFocus.target, f.unrelated);
 	f.key.window.hide(); assert.equal(inputFocus.target, f.unrelated);
 	f.recreate(); f.key.update(); assert.equal(model.open, false); assert.equal(f.key.window.surface, undefined);

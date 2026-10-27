@@ -301,7 +301,7 @@ test('property full-text feedback retires on scroll, projection replacement, cle
 	f.group.children[0] = replacement; rebuildWorkbenchTreeRows(f.state, f.group); f.state.textDirty = true; f.layout(200); f.pointer.updateFeedback(f.state); f.paint();
 	assert.equal(f.texts.includes(old.element.label), false); assert.equal(f.texts.includes(replacement.element.label), false, 'new source projection cannot inherit an existing hover');
 	f.move(1); f.paint(); assert.ok(f.texts.includes(replacement.element.label));
-	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('modal'), getBounds: () => f.area, getClip: () => f.area, isVisible: () => true, draw() {} });
+	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: Symbol('modal'), getBounds: () => f.area, getClip: () => f.area, isVisible: () => true, draw() {} });
 	f.paint(); assert.equal(f.texts.includes(replacement.element.label), false); modal.dispose();
 	f.pointer.clear(); f.paint(); assert.equal(f.texts.includes(replacement.element.label), false);
 	const retained = f.pointer as unknown as { feedbackNode: unknown; tree: unknown; feedbackText: string };

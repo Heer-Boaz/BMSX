@@ -11,19 +11,16 @@ import {
 } from './models';
 
 export async function applyWorkspaceAutosavePayload(
-	editor: Pick<CartEditor, 'editorGroup' | 'editorInputSerializers' | 'setFontVariant'>,
+	editor: Pick<CartEditor, 'editorParts' | 'editorInputSerializers' | 'setFontVariant'>,
 	catalog: WorkspaceSourceCatalog,
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
 ): Promise<void> {
-	editor.editorGroup.panes.clearEditor();
-	editor.editorGroup.model.clear();
+	editor.editorParts.clear();
 	editorTextModelService.clear();
 	editor.setFontVariant(payload.fontVariant);
 	await restoreWorkspaceDirtyModels(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords);
-	await editor.editorGroup.model.deserialize(payload.editorGroup, editor.editorInputSerializers);
-	const active = editor.editorGroup.model.activeTab;
-	if (active !== null) editor.editorGroup.activate(active.id, undefined, undefined, true);
+	await editor.editorParts.restore(payload.editorParts, editor.editorInputSerializers);
 	debuggerState.breakpoints.restore(payload.breakpoints);
 }
 

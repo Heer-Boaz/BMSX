@@ -4,6 +4,7 @@ import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID } from '../helpers/r
 import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
+import { openGpuDebugger } from '../../ide/workbench/contrib/gpu_debugger/editor_input';
 import { openHome } from '../../ide/workbench/contrib/home/editor_input';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -71,15 +72,15 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
+	editor.editorParts.main.group.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	t.after(async () => {
 		problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null);
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
-	const input = editor.editorGroup.model.activeTab!;
+	const input = editor.editorParts.main.group.model.activeTab!;
 	assert.ok(input.kind === 'code_editor');
-	const pane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane;
+	const pane = editor.editorParts.main.group.panes.getPane('code_editor') as CodeEditorPane;
 	const model = pane.code.model!, view = pane.code.view!;
 	const key = (code: string, modifiers = KeyModifier.none) => {
 		editor.dispatchKey(new KeyInputEvent(code, modifiers)); editor.dispatchKey(new KeyInputEvent(code, modifiers, false, false)); editor.update(0);
@@ -95,7 +96,7 @@ function openAemFixture(f: ReturnType<typeof fixture>, source = 'events:\n  stor
 	f.sources.catalog.registerTextSources(TEST_SYSTEM_CONTEXT_ID, [{ type: 'aem', resid: 'events', source_path: path }]);
 	const resource = f.sources.catalog.resourceByIdentity.get(resourceIdentityKeyFromParts(TEST_SYSTEM_CONTEXT_ID, path))!;
 	const model = editorTextModelService.retain(resource, 'aem', source), input = new AemEditorInput(model);
-	f.editor.editorGroup.openEditor(input); f.editor.update(0);
+	f.editor.editorParts.main.group.openEditor(input); f.editor.update(0);
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["events","story","channel"]');
 	return { input, model, source };
 }
@@ -104,18 +105,18 @@ test('ordinary Source close and reopen restores a plain reading memento in a fre
 	const source = Array.from({ length: 100 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
 	const f = fixture(t, source), closedView = f.input.context.view;
 	// Another retained source-backed view keeps this dirty document alive through Source close.
-	f.editor.editorGroup.model.add(new SceneEditorInput(f.model));
+	f.editor.editorParts.main.group.model.add(new SceneEditorInput(f.model));
 	closedView.cursorRow = 50; closedView.cursorColumn = 8;
 	closedView.selectionAnchor = { row: 49, column: 3 };
 	closedView.scrollRow = 35.5;
 	const duplicate = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
 	duplicate.context.view.cursorRow = 2;
-	f.editor.editorGroup.openEditor(duplicate);
-	assert.equal(f.editor.editorGroup.model.activeTab, f.input, 'an offered duplicate cannot replace the admitted view');
-	f.editor.editorGroup.close(f.input.id);
+	f.editor.editorParts.main.group.openEditor(duplicate);
+	assert.equal(f.editor.editorParts.main.group.model.activeTab, f.input, 'an offered duplicate cannot replace the admitted view');
+	f.editor.editorParts.main.group.close(f.input.id);
 	const reopened = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
-	f.editor.editorGroup.openEditor(reopened);
-	assert.equal(f.editor.editorGroup.model.activeTab, reopened); assert.notEqual(reopened, f.input);
+	f.editor.editorParts.main.group.openEditor(reopened);
+	assert.equal(f.editor.editorParts.main.group.model.activeTab, reopened); assert.notEqual(reopened, f.input);
 	assert.notEqual(reopened.context.view.editSource, closedView.editSource);
 	assert.equal(reopened.workingCopy, f.model); assert.equal(f.model.dirty, true);
 	assert.equal(reopened.context.view.cursorRow, 50); assert.equal(reopened.context.view.cursorColumn, 8);
@@ -131,18 +132,18 @@ test('explicit Source opening and serialized view state take precedence over the
 	const source = Array.from({ length: 100 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
 	const f = fixture(t, source);
 	f.view.cursorRow = 50; f.view.cursorColumn = 8; f.view.scrollRow = 35.5;
-	f.editor.editorGroup.model.add(new SceneEditorInput(f.model));
-	f.editor.editorGroup.close(f.input.id);
+	f.editor.editorParts.main.group.model.add(new SceneEditorInput(f.model));
+	f.editor.editorParts.main.group.close(f.input.id);
 	const selected = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
-	f.editor.editorGroup.openEditor(selected, { selection: { row: 5, startColumn: 7, endColumn: 9 } });
+	f.editor.editorParts.main.group.openEditor(selected, { selection: { row: 5, startColumn: 7, endColumn: 9 } });
 	assert.equal(selected.context.view.cursorRow, 5); assert.equal(selected.context.view.cursorColumn, 7);
-	f.editor.editorGroup.close(selected.id);
+	f.editor.editorParts.main.group.close(selected.id);
 	const persisted = new CodeEditorInput(f.model);
 	persisted.context.view.cursorRow = 12; persisted.context.view.cursorColumn = 8; persisted.context.view.scrollRow = 3;
 	const serializer = new CodeEditorInputSerializer(f.sources.catalog), state = serializer.serialize(persisted);
 	persisted.dispose();
 	const restored = await serializer.deserialize(state);
-	f.editor.editorGroup.openEditor(restored);
+	f.editor.editorParts.main.group.openEditor(restored);
 	assert.equal(restored.context.view.cursorRow, 12); assert.equal(restored.context.view.cursorColumn, 8);
 	assert.equal(restored.context.view.scrollRow, 3);
 	assert.equal(restored.workingCopy, f.model); assert.equal(f.model.dirty, true);
@@ -154,11 +155,11 @@ test('ordinary Source reopen resolves both saved selection endpoints against tex
 	f.view.cursorRow = 50; f.view.cursorColumn = 8;
 	f.view.selectionAnchor = { row: 49, column: 3 };
 	f.model.completeSave(f.model.createSnapshot());
-	f.editor.editorGroup.close(f.input.id);
+	f.editor.editorParts.main.group.close(f.input.id);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: 'return 1' }]);
 	const reopened = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
-	f.editor.editorGroup.openEditor(reopened);
-	assert.equal(f.editor.editorGroup.model.activeTab, reopened); assert.equal(reopened.workingCopy, f.model);
+	f.editor.editorParts.main.group.openEditor(reopened);
+	assert.equal(f.editor.editorParts.main.group.model.activeTab, reopened); assert.equal(reopened.workingCopy, f.model);
 	assert.equal(reopened.context.view.cursorRow, 0); assert.equal(reopened.context.view.cursorColumn, f.model.buffer.length);
 	assert.equal(getSingleCursorSelectionRange(reopened.context.view), null);
 	assert.equal(f.view.cursorRow, 50, 'the closed view remains retired rather than tracking the shortened document');
@@ -182,15 +183,15 @@ for (const format of ['yaml', 'json'] as const) {
 		const position = { row: 0, column: 0 };
 		aem.model.buffer.positionAt(aem.input.tree.rows[aem.input.tree.selectionIndex].element.node.range![0], position);
 		f.editor.commands.execute('aem.source'); await setImmediate(); f.editor.update(0);
-		const code = f.editor.editorGroup.model.activeTab!; assert.ok(code.kind === 'code_editor');
+		const code = f.editor.editorParts.main.group.model.activeTab!; assert.ok(code.kind === 'code_editor');
 		assert.ok(code.workingCopy === aem.model && code.resource === aem.input.resource && f.pane.code.model === aem.model);
 		assert.notEqual(code.id, aem.input.id);
 		assert.equal(f.pane.code.view!.cursorRow, position.row); assert.equal(f.pane.code.view!.cursorColumn, position.column);
 		assert.equal(aem.model.version, version); assert.equal(aem.model.buffer.getText(), edited); assert.equal(aem.model.canUndo, true);
 		f.key('KeyZ', KeyModifier.ctrl);
 		assert.equal(aem.model.buffer.getText(), source); assert.equal(aem.model.canRedo, true);
-		f.editor.editorGroup.activate(aem.input.id); f.editor.update(0);
-		assert.ok(f.editor.editorGroup.model.activeTab === aem.input && aem.input.workingCopy === aem.model);
+		f.editor.editorParts.main.group.activate(aem.input.id); f.editor.update(0);
+		assert.ok(f.editor.editorParts.main.group.model.activeTab === aem.input && aem.input.workingCopy === aem.model);
 		assert.equal(aem.input.tree.rows[aem.input.tree.selectionIndex].element.key, selectedKey);
 		assert.equal(aem.model.buffer.getText(), source); assert.equal(aem.model.canRedo, true);
 		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
@@ -205,7 +206,7 @@ for (const format of ['yaml', 'json'] as const) {
 		assert.deepEqual(root.path, []); assert.ok(root.node === aem.input.document!.contents);
 		assert.equal(f.editor.commands.isEnabled('aem.add'), true);
 		f.editor.commands.execute('aem.add');
-		const picker = f.editor.quickInput; assert.equal(picker.visible, true); assert.equal(picker.inputBox, false);
+		const picker = f.editor.editorParts.main.quickInput; assert.equal(picker.visible, true); assert.equal(picker.inputBox, false);
 		// The selection is the authored property key, not the Quick Input's display wording.
 		picker.model.list.selectionIndex = picker.model.list.rows.findIndex(row => row.item.label === 'events');
 		assert.ok(picker.model.list.selectionIndex >= 0); await picker.accept();
@@ -217,7 +218,7 @@ for (const format of ['yaml', 'json'] as const) {
 		assert.equal(aem.model.canUndo, true);
 		f.key('KeyZ', KeyModifier.ctrl);
 		assert.equal(aem.model.buffer.getText(), source); assert.equal(aem.model.canRedo, true);
-		assert.ok(f.editor.editorGroup.model.activeTab === aem.input && aem.input.workingCopy === aem.model);
+		assert.ok(f.editor.editorParts.main.group.model.activeTab === aem.input && aem.input.workingCopy === aem.model);
 		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 		assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 	});
@@ -254,8 +255,8 @@ for (const control of ['tree', 'actions'] as const) {
 		assert.notEqual(inputFocus.admittedTarget, target, 'recovery does not silently reclaim focus');
 		f.key('Delete'); assert.equal(aem.model.buffer.getText(), edited);
 		assert.ok(aem.input.tree.rows[aem.input.tree.selectionIndex] === selected);
-		assert.ok(f.editor.editorGroup.model.activeTab === aem.input && aem.input.workingCopy === aem.model);
-		f.editor.editorGroup.panes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
+		assert.ok(f.editor.editorParts.main.group.model.activeTab === aem.input && aem.input.workingCopy === aem.model);
+		f.editor.editorParts.main.group.panes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
 		assert.equal(aem.model.buffer.getText(), aem.source); assert.equal(aem.model.canRedo, true);
 		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 		assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
@@ -278,7 +279,7 @@ test('the independently presented AEM property edit retains its own input above 
 	assert.ok(f.editor.textTarget === undefined);
 	problemsPanel.hide(); f.editor.update(0);
 	assert.ok(inputFocus.admittedTarget === null);
-	f.editor.editorGroup.panes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
+	f.editor.editorParts.main.group.panes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(aem.model.buffer.getText(), aem.source); assert.equal(aem.model.canRedo, true);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
@@ -378,7 +379,7 @@ test('Rename rejected before field presentation retires its source-reading subsc
 	assert.equal(f.pane.rename.isVisible(), false); assert.equal(f.pane.rename.isActive(), false);
 	assert.equal(f.pane.rename.getMatchCount(), 0); assert.equal(subscriptions, 0, 'rejected Rename cannot retain a workspace-source observer');
 	assert.ok(f.editor.textTarget === undefined && f.editor.clipboardTarget === undefined);
-	problemsPanel.hide(); f.editor.update(0); f.editor.editorGroup.panes.activePane!.focus();
+	problemsPanel.hide(); f.editor.update(0); f.editor.editorParts.main.group.panes.activePane!.focus();
 	f.editor.commands.execute('rename');
 	assert.equal(f.pane.rename.isActive(), true); assert.ok(f.pane.rename.getMatchCount() > 0); assert.equal(subscriptions, 1);
 	f.key('Escape'); assert.equal(subscriptions, 0); assert.equal(f.pane.rename.isVisible(), false);
@@ -411,14 +412,14 @@ test('actual inspector and source attachments preserve user-opened Files and Pro
 		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version); assert.equal(f.model.canUndo, true);
 		assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 	};
-	f.editor.commands.execute('gpuDebugger'); f.editor.update(0);
-	const gpu = f.editor.editorGroup.model.activeTab!;
+	openGpuDebugger(f.editor.editorParts.main.group, f.editor.gpu); f.editor.update(0);
+	const gpu = f.editor.editorParts.main.group.model.activeTab!;
 	assert.equal(gpu.kind, 'gpu_debugger'); unchanged();
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
-	assert.ok(f.editor.editorGroup.model.activeTab === f.input); assert.ok(f.pane.code.model === f.model); assert.ok(f.pane.code.view === f.view); unchanged();
-	f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50))); f.editor.update(0); unchanged();
-	assert.ok(f.editor.editorGroup.model.activeTab!.resource === f.resource(50));
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0); unchanged();
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0);
+	assert.ok(f.editor.editorParts.main.group.model.activeTab === f.input); assert.ok(f.pane.code.model === f.model); assert.ok(f.pane.code.view === f.view); unchanged();
+	f.editor.editorParts.main.group.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50))); f.editor.update(0); unchanged();
+	assert.ok(f.editor.editorParts.main.group.model.activeTab!.resource === f.resource(50));
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0); unchanged();
 	f.key('KeyZ', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canRedo, true);
 	files.setFocused(true); files.hide(); assert.equal(files.isVisible(), false); assert.equal(files.isFocused(), false);
 	problemsPanel.setFocused(true); inputFocus.moveFocus(false); assert.equal(problemsPanel.header.hasFocus, true); problemsPanel.hide(); assert.equal(problemsPanel.isVisible, false); assert.equal(problemsPanel.header.hasFocus, false);
@@ -448,9 +449,9 @@ test('actual inspector and source attachments leave Call Hierarchy expansion and
 		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version); assert.equal(f.model.canUndo, true);
 		assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 	};
-	f.editor.commands.execute('gpuDebugger'); f.editor.update(0); unchanged();
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0); unchanged();
-	f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50))); f.editor.update(0); unchanged();
+	openGpuDebugger(f.editor.editorParts.main.group, f.editor.gpu); f.editor.update(0); unchanged();
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0); unchanged();
+	f.editor.editorParts.main.group.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50))); f.editor.update(0); unchanged();
 	panel.setSelectionIndex(1); panel.collapseSelectedCallHierarchyNode();
 	assert.equal(panel.itemCount, firstLevel, 'the same retained hierarchy still owns its expanded branch');
 	panel.setFocused(true); panel.hide();
@@ -463,17 +464,17 @@ test('outgoing source presentation retires without clearing the retained context
 	const overlay = f.pane.code.runtimeError.activeOverlay, stop = f.pane.code.runtimeError.executionStopRow;
 	assert.ok(overlay !== null); assert.ok(stop !== null);
 	f.pane.code.caret.cursorRevealSuspended = true;
-	f.editor.commands.execute('gpuDebugger'); f.editor.update(0);
+	openGpuDebugger(f.editor.editorParts.main.group, f.editor.gpu); f.editor.update(0);
 	assert.equal(f.pane.code.runtimeError.activeOverlay, null); assert.equal(f.pane.code.runtimeError.executionStopRow, null);
 	assert.equal(f.pane.code.caret.cursorRevealSuspended, false);
 	assert.ok(context.runtimeErrorOverlay === overlay); assert.equal(context.executionStopRow, stop);
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0);
 	assert.ok(f.pane.code.runtimeError.activeOverlay === overlay); assert.equal(f.pane.code.runtimeError.executionStopRow, stop);
 	const other = resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50));
-	f.editor.editorGroup.openEditor(other); f.editor.update(0);
+	f.editor.editorParts.main.group.openEditor(other); f.editor.update(0);
 	assert.equal(f.pane.code.runtimeError.activeOverlay, null); assert.equal(f.pane.code.runtimeError.executionStopRow, null);
 	assert.ok(context.runtimeErrorOverlay === overlay); assert.equal(context.executionStopRow, stop);
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0);
 	assert.ok(f.pane.code.model === f.model && f.pane.code.view === f.view);
 	assert.ok(f.pane.code.runtimeError.activeOverlay === overlay); assert.equal(f.pane.code.runtimeError.executionStopRow, stop);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
@@ -489,14 +490,14 @@ test('source presentation clears on workbench retirement and last-input close, t
 	assert.equal(f.pane.code.runtimeError.activeOverlay, null); assert.equal(f.pane.code.runtimeError.executionStopRow, null);
 	assert.ok(context.runtimeErrorOverlay === overlay); assert.equal(context.executionStopRow, stop);
 	f.editor.activate(); f.editor.update(0);
-	assert.ok(f.pane.code.model === f.model && f.editor.editorGroup.model.activeTab === f.input);
+	assert.ok(f.pane.code.model === f.model && f.editor.editorParts.main.group.model.activeTab === f.input);
 	assert.ok(f.pane.code.runtimeError.activeOverlay === overlay); assert.equal(f.pane.code.runtimeError.executionStopRow, stop);
 	f.model.completeSave(f.model.createSnapshot());
-	f.editor.editorGroup.close(f.input.id);
-	assert.equal(f.editor.editorGroup.model.activeTab, null); assert.equal(f.pane.code.model, null);
+	f.editor.editorParts.main.group.close(f.input.id);
+	assert.equal(f.editor.editorParts.main.group.model.activeTab, null); assert.equal(f.pane.code.model, null);
 	assert.equal(f.pane.code.runtimeError.activeOverlay, null); assert.equal(f.pane.code.runtimeError.executionStopRow, null);
-	assert.equal(focusRuntimeErrorOverlay(f.editor.editorGroup), false);
-	assert.equal(f.editor.editorGroup.model.activeTab, null, 'a closed error view cannot regain admission through overlay focus');
+	assert.equal(focusRuntimeErrorOverlay(f.editor.editorParts.main.group), false);
+	assert.equal(f.editor.editorParts.main.group.model.activeTab, null, 'a closed error view cannot regain admission through overlay focus');
 	const reopened = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
 	t.after(() => reopened.dispose());
 	assert.equal(reopened.workingCopy, f.model);
@@ -525,7 +526,7 @@ test('an already-focused Source loses native editing admission and pending Paste
 	assert.ok(f.editor.textTarget === undefined, 'recovering layout does not silently steal keyboard focus');
 	f.pane.code.focusTarget.focus();
 	assert.ok(f.editor.textTarget !== undefined && f.editor.clipboardTarget !== undefined);
-	assert.ok(f.pane.code.model === f.model && f.editor.editorGroup.model.activeTab === f.input);
+	assert.ok(f.pane.code.model === f.model && f.editor.editorParts.main.group.model.activeTab === f.input);
 	f.key('KeyZ', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canRedo, true);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
@@ -544,7 +545,7 @@ test('withholding Source body retains its authored reading position, cursor and 
 	assert.deepEqual(f.view.selectionAnchor, anchor); assert.ok(f.editor.textTarget === undefined);
 	assert.ok(f.pane.code.model === f.model && f.pane.code.view === f.view);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
-	f.editor.editorGroup.panes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
+	f.editor.editorParts.main.group.panes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canRedo, true);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
@@ -559,9 +560,9 @@ test('ordinary inspector return preserves manual Source reading away from its re
 	const scroll = f.view.scrollRow, column = f.view.cursorColumn, anchor = { ...f.view.selectionAnchor! };
 	assert.ok(scroll > 0 && f.view.cursorRow === 0 && f.view.selectionAnchor !== null,
 		'physical wheel scrolling moved the reading viewport away from its retained source selection');
-	f.editor.commands.execute('gpuDebugger'); f.editor.update(0);
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
-	assert.ok(f.pane.code.model === f.model && f.pane.code.view === f.view && f.editor.editorGroup.model.activeTab === f.input);
+	openGpuDebugger(f.editor.editorParts.main.group, f.editor.gpu); f.editor.update(0);
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0);
+	assert.ok(f.pane.code.model === f.model && f.pane.code.view === f.view && f.editor.editorParts.main.group.model.activeTab === f.input);
 	assert.equal(f.view.scrollRow, scroll, 'reattaching the same source geometry is not a request to reveal its offscreen caret');
 	assert.equal(f.view.cursorRow, 0); assert.equal(f.view.cursorColumn, column); assert.deepEqual(f.view.selectionAnchor, anchor);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version); assert.equal(f.model.canUndo, true);
@@ -655,11 +656,11 @@ for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as
 test('retiring Problems does not cancel the actual sibling tab-strip scrollbar gesture', t => {
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(73);
-	for (let index = 40; index < 48; index++) f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
-	const thumb = f.editor.editorGroup.tabStrip.scrollbar.getThumb()!; assert.ok(thumb !== null);
+	for (let index = 40; index < 48; index++) f.editor.editorParts.main.group.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0);
+	const thumb = f.editor.editorParts.main.group.tabStrip.scrollbar.getThumb()!; assert.ok(thumb !== null);
 	const x = (thumb.left + thumb.right) / 2, y = (thumb.top + thumb.bottom) / 2;
-	const scroll = f.editor.editorGroup.tabStrip.scrollbar.getScroll();
+	const scroll = f.editor.editorParts.main.group.tabStrip.scrollbar.getScroll();
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 	assert.equal(pointerCapture.active, true);
@@ -667,7 +668,7 @@ test('retiring Problems does not cancel the actual sibling tab-strip scrollbar g
 	assert.equal(pointerCapture.active, true); assert.equal(pointerCapture.draining, false);
 	f.editor.dispatchPointer({ x: x + 32, y, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
-	assert.ok(f.editor.editorGroup.tabStrip.scrollbar.getScroll() > scroll);
+	assert.ok(f.editor.editorParts.main.group.tabStrip.scrollbar.getScroll() > scroll);
 	f.editor.dispatchPointer({ x: x + 32, y, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
@@ -678,6 +679,7 @@ test('retiring Problems does not cancel the actual sibling tab-strip scrollbar g
 test('an actual Files scrollbar gesture survives sibling editor activation while a source gesture retires and drains', t => {
 	const source = 'local value = 42\n' + 'value = value + 1\n'.repeat(60) + 'return value';
 	const f = fixture(t, source), files = f.editor.resourcePanel;
+	t.after(() => pointerCapture.interrupt(false));
 	files.show(); files.queuePendingSelection(f.resource(40)); files.applyPendingSelection();
 	f.editor.update(0); files.prepareLayout();
 	const thumb = f.editor.resourcePanel.resourceVertical.getThumb()!;
@@ -687,11 +689,11 @@ test('an actual Files scrollbar gesture survives sibling editor activation while
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 	const chrome = pointerCapture.routeScope;
-	assert.ok(pointerCapture.active && chrome !== undefined && chrome !== f.editor.editorGroup.captureScope);
+	assert.ok(pointerCapture.active && chrome !== undefined && chrome !== f.editor.editorParts.main.group.captureScope);
 	const sourceScroll = f.view.scrollRow, fileScroll = files.scroll;
-	f.editor.commands.execute('gpuDebugger'); f.editor.update(0);
+	openGpuDebugger(f.editor.editorParts.main.group, f.editor.gpu); f.editor.update(0);
 	assert.ok(pointerCapture.active && pointerCapture.routeScope === chrome && !pointerCapture.draining);
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0);
 	assert.ok(pointerCapture.active && pointerCapture.routeScope === chrome);
 	f.editor.dispatchPointer({ x, y: y + 24, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
@@ -706,9 +708,9 @@ test('an actual Files scrollbar gesture survives sibling editor activation while
 	const codeX = (codeThumb.left + codeThumb.right) / 2, codeY = (codeThumb.top + codeThumb.bottom) / 2;
 	f.editor.dispatchPointer({ x: codeX, y: codeY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 4 });
-	assert.ok(pointerCapture.active && pointerCapture.routeScope === f.editor.editorGroup.captureScope);
+	assert.ok(pointerCapture.active && pointerCapture.routeScope === f.editor.editorParts.main.group.captureScope);
 	const retainedFiles = files.scroll, retainedSource = f.view.scrollRow;
-	f.editor.commands.execute('gpuDebugger'); f.editor.update(0);
+	openGpuDebugger(f.editor.editorParts.main.group, f.editor.gpu); f.editor.update(0);
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	f.editor.dispatchPointer({ x, y: y + 48, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 5 });
@@ -837,11 +839,11 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 	assert.ok(panel.getBounds()!.right - panel.getBounds()!.left > committedSpan, 'a fresh admitted sash gesture still changes the user size intent');
 	f.editor.dispatchPointer({ x: dividerX + 32, y: dividerY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 17 });
-	for (let index = 40; index < 48; index++) f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
-	const tabThumb = f.editor.editorGroup.tabStrip.scrollbar.getThumb()!; assert.ok(tabThumb !== null);
+	for (let index = 40; index < 48; index++) f.editor.editorParts.main.group.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0);
+	const tabThumb = f.editor.editorParts.main.group.tabStrip.scrollbar.getThumb()!; assert.ok(tabThumb !== null);
 	const tabX = (tabThumb.left + tabThumb.right) / 2, tabY = (tabThumb.top + tabThumb.bottom) / 2;
-	const tabScroll = f.editor.editorGroup.tabStrip.scrollbar.getScroll(), fileScroll = panel.scroll;
+	const tabScroll = f.editor.editorParts.main.group.tabStrip.scrollbar.getScroll(), fileScroll = panel.scroll;
 	f.editor.dispatchPointer({ x: tabX, y: tabY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 18 });
 	assert.equal(pointerCapture.active, true);
@@ -851,7 +853,7 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 	assert.equal(pointerCapture.draining, false);
 	f.editor.dispatchPointer({ x: tabX + 32, y: tabY, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 19 });
-	assert.ok(f.editor.editorGroup.tabStrip.scrollbar.getScroll() > tabScroll); assert.equal(panel.scroll, fileScroll);
+	assert.ok(f.editor.editorParts.main.group.tabStrip.scrollbar.getScroll() > tabScroll); assert.equal(panel.scroll, fileScroll);
 	f.editor.dispatchPointer({ x: tabX + 32, y: tabY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 20 });
 	assert.equal(pointerCapture.active, false); problemsPanel.hide(); f.editor.update(0);
@@ -901,7 +903,7 @@ test('completion readonly subscription belongs only to the attached canonical mo
 		const unbind = subscribe.call(model, listener); subscriptions++;
 		return () => { subscriptions--; unbind(); };
 	});
-	f.editor.editorGroup.openEditor(other); f.editor.update(0);
+	f.editor.editorParts.main.group.openEditor(other); f.editor.update(0);
 	assert.equal(subscriptions, 1);
 	f.key('End', KeyModifier.ctrl);
 	assert.equal(f.editor.textTarget!.replaceText(model.buffer.length, model.buffer.length, '\nretur'), true);
@@ -911,7 +913,7 @@ test('completion readonly subscription belongs only to the attached canonical mo
 	previous.refreshResource({ ...previous.resource, source: { ...previous.resource.source!, generated: true } });
 	assert.ok(f.pane.code.model === model); assert.ok(f.pane.completion.session === session);
 	assert.equal(f.pane.code.inlineEdit.active, true); assert.equal(f.pane.code.inlineEdit.version, ghostVersion);
-	for (let index = 0; index < 3; index++) { f.editor.editorGroup.activate(other.id); f.editor.update(0); }
+	for (let index = 0; index < 3; index++) { f.editor.editorParts.main.group.activate(other.id); f.editor.update(0); }
 	assert.equal(subscriptions, 1, 'same-input reselection does not reattach the readonly observer');
 	const source = model.buffer.getText(), version = model.version;
 	model.refreshResource({ ...model.resource, source: { ...model.resource.source!, generated: true } });
@@ -919,18 +921,18 @@ test('completion readonly subscription belongs only to the attached canonical mo
 	assert.equal(f.pane.code.inlineEdit.version, ghostVersion + 1);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version);
 	assert.equal(previous.buffer.getText(), f.edited); assert.equal(previous.version, f.version);
-	f.editor.editorGroup.activate(f.input.id); f.editor.update(0);
+	f.editor.editorParts.main.group.activate(f.input.id); f.editor.update(0);
 	assert.equal(subscriptions, 0, 'detaching the source retires its readonly observer');
 });
 
 test('a stationary captured tab drag advances from the actual host frame without pointer polling or guest execution', t => {
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
 	for (let index = 40; index < 52; index++) {
-		f.editor.editorGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
+		f.editor.editorParts.main.group.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
 		f.editor.update(0);
 	}
-	const input = f.editor.editorGroup.model.activeTab!, bounds = f.editor.editorGroup.tabStrip.layoutState.items.peek(f.editor.editorGroup.model.indexOf(f.editor.editorGroup.model.findById(input.id)!)).bounds;
-	const viewport = f.editor.editorGroup.tabStrip.layoutState.viewportBounds, bar = f.editor.editorGroup.tabStrip.scrollbar;
+	const input = f.editor.editorParts.main.group.model.activeTab!, bounds = f.editor.editorParts.main.group.tabStrip.layoutState.items.peek(f.editor.editorParts.main.group.model.indexOf(f.editor.editorParts.main.group.model.findById(input.id)!)).bounds;
+	const viewport = f.editor.editorParts.main.group.tabStrip.layoutState.viewportBounds, bar = f.editor.editorParts.main.group.tabStrip.scrollbar;
 	assert.ok(bar.getScroll() > 0, 'real retained source tabs must overflow the strip before an edge hold');
 	const x = Math.max(bounds.left, viewport.left) + 3, y = bounds.top + 1;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
@@ -941,62 +943,62 @@ test('a stationary captured tab drag advances from the actual host frame without
 	f.editor.dispatchPointer({ x: edge, y, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	f.editor.update(0);
-	const scroll = bar.getScroll(), order = f.editor.editorGroup.model.tabs.map(tab => tab.id);
+	const scroll = bar.getScroll(), order = f.editor.editorParts.main.group.model.tabs.map(tab => tab.id);
 	f.host.clock.advance(500); f.editor.update(0.5);
 	assert.ok(bar.getScroll() < scroll, 'host frames, not repeated pointer events, advance a stationary edge hold');
-	assert.deepEqual(f.editor.editorGroup.model.tabs.map(tab => tab.id), order, 'a held drag does not publish a tab reorder');
+	assert.deepEqual(f.editor.editorParts.main.group.model.tabs.map(tab => tab.id), order, 'a held drag does not publish a tab reorder');
 	const beforeRelease = bar.getScroll();
 	f.host.clock.advance(500);
 	f.editor.dispatchPointer({ x: edge, y, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(bar.getScroll(), beforeRelease, 'release resolves the drop without an extra temporal scroll step');
-	assert.equal(pointerCapture.active, false); assert.ok(f.editor.editorGroup.tabStrip.drag.state === null);
+	assert.equal(pointerCapture.active, false); assert.ok(f.editor.editorParts.main.group.tabStrip.drag.state === null);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
 
 test('Home is an ordinary retained workspace editor and closing all editors leaves the group empty', async t => {
 	const f = fixture(t);
-	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
-	const home = f.editor.editorGroup.model.activeTab!;
+	openHome(f.editor.editorParts.main.group, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
+	const home = f.editor.editorParts.main.group.model.activeTab!;
 	assert.equal(home.kind, 'home');
 	if (home.kind !== 'home') throw new Error('Home contribution');
 	assert.deepEqual(home.workspaceContext, { id: 'home-source-context', projectRoot: '/workspace/current' });
 	assert.equal(home.resource, undefined);
 	assert.equal(home.isDirty(), false);
-	assert.ok(f.editor.editorGroup.panes.activePane!.input === home);
-	assert.equal(f.editor.editorGroup.panes.activePane!.companionGameMinimumWidth, undefined);
+	assert.ok(f.editor.editorParts.main.group.panes.activePane!.input === home);
+	assert.equal(f.editor.editorParts.main.group.panes.activePane!.companionGameMinimumWidth, undefined);
 	const serialized = f.editor.editorInputSerializers.home.serialize(home);
 	assert.equal(serialized, '', 'the attached workspace, not saved cartridge identity, supplies the Home subject');
-	f.editor.editorGroup.activate(f.input.id);
-	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
-	assert.ok(f.editor.editorGroup.model.activeTab === home);
-	assert.equal(f.editor.editorGroup.model.tabs.filter(input => input.kind === 'home').length, 1);
-	assert.ok(f.editor.editorGroup.model.tabs.includes(f.input));
+	f.editor.editorParts.main.group.activate(f.input.id);
+	openHome(f.editor.editorParts.main.group, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
+	assert.ok(f.editor.editorParts.main.group.model.activeTab === home);
+	assert.equal(f.editor.editorParts.main.group.model.tabs.filter(input => input.kind === 'home').length, 1);
+	assert.ok(f.editor.editorParts.main.group.model.tabs.includes(f.input));
 	assert.ok(f.input.context.model === f.model);
 	assert.equal(f.model.buffer.getText(), f.edited);
 	assert.equal(f.model.version, f.version);
 	assert.equal(f.model.canUndo, true);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
-	for (const input of [...f.editor.editorGroup.model.tabs]) {
-		const close = f.editor.editorGroup.close(input.id);
-		if (f.editor.actionPrompt.visible) { f.key('Tab'); f.key('Enter'); }
+	for (const input of [...f.editor.editorParts.main.group.model.tabs]) {
+		const close = f.editor.editorParts.main.group.close(input.id);
+		if (f.editor.editorParts.main.actionPrompt.visible) { f.key('Tab'); f.key('Enter'); }
 		assert.equal(await close, true);
 	}
 	f.editor.update(0);
-	assert.equal(f.editor.editorGroup.model.activeTab, null);
-	assert.equal(f.editor.editorGroup.panes.activePane, null);
+	assert.equal(f.editor.editorParts.main.group.model.activeTab, null);
+	assert.equal(f.editor.editorParts.main.group.panes.activePane, null);
 	assert.equal(inputFocus.target, null);
-	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
-	assert.equal(f.editor.editorGroup.model.activeTab!.kind, 'home');
-	assert.ok(f.editor.editorGroup.model.activeTab !== home);
+	openHome(f.editor.editorParts.main.group, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
+	assert.equal(f.editor.editorParts.main.group.model.activeTab!.kind, 'home');
+	assert.ok(f.editor.editorParts.main.group.model.activeTab !== home);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
 
 test('Home publishes action geometry before accepting a fresh pointer release', t => {
 	const f = fixture(t);
-	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
-	const home = f.editor.editorGroup.model.activeTab!;
+	openHome(f.editor.editorParts.main.group, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
+	const home = f.editor.editorParts.main.group.model.activeTab!;
 	if (home.kind !== 'home') throw new Error('Home contribution');
 	const bounds = home.sections[0].actions.items[1].bounds;
 	const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
@@ -1013,8 +1015,8 @@ test('Home publishes action geometry before accepting a fresh pointer release', 
 
 test('Home cover revokes both a held action and keyboard admission before the next frame', t => {
 	const f = fixture(t);
-	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
-	const home = f.editor.editorGroup.model.activeTab!;
+	openHome(f.editor.editorParts.main.group, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
+	const home = f.editor.editorParts.main.group.model.activeTab!;
 	if (home.kind !== 'home') throw new Error('Home contribution');
 	const focused = inputFocus.target!, bounds = home.sections[0].actions.items[0].bounds;
 	const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
@@ -1044,8 +1046,8 @@ test('Home cover revokes both a held action and keyboard admission before the ne
 test('Home keyboard scroll retires a pointer action before a same-poll release', t => {
 	const f = fixture(t); f.editor.resourcePanel.show();
 	f.editor.updateViewport({ width: 256, height: 160 }); // Exercise a client that genuinely requires scrolling.
-	openHome(f.editor.editorGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
-	const home = f.editor.editorGroup.model.activeTab!;
+	openHome(f.editor.editorParts.main.group, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
+	const home = f.editor.editorParts.main.group.model.activeTab!;
 	if (home.kind !== 'home') throw new Error('Home contribution');
 	f.key('Escape'); // The actual Home action bar returns focus to its scroll view.
 	const bounds = home.sections[0].actions.items[1].bounds;
@@ -1073,12 +1075,19 @@ test('runtime faults navigate only to authored text matching their retained inst
 	const edited = f.model.buffer.getText(), history = f.model.canUndo;
 	f.editor.showRuntimeErrorInChunk(frame.resource, frame.line, frame.column, 'fault', details);
 	await setImmediate();
-	assert.equal(f.pane.code.runtimeError.activeOverlay, null, 'a captured address cannot mark a different authored revision');
+	for (const group of f.editor.editorParts.groups) for (const input of group.model.tabs) if (input.kind === 'code_editor') {
+		assert.equal(input.context.runtimeErrorOverlay, null, 'a captured address cannot mark a different authored revision');
+	}
 	assert.equal(f.model.buffer.getText(), edited); assert.equal(f.model.canUndo, history);
 	f.model.undo();
 	f.editor.showRuntimeErrorInChunk(frame.resource, frame.line, frame.column, 'fault', details);
 	await setImmediate();
-	assert.equal(f.pane.code.runtimeError.activeOverlay!.details, details);
+	const group = f.editor.editorParts.activeGroup, input = group.model.activeTab!;
+	assert.ok(group !== f.editor.editorParts.main.group && input.kind === 'code_editor');
+	assert.ok(input.context.model === f.model && input.context.view !== f.view);
+	const pane = group.panes.getPane('code_editor') as CodeEditorPane;
+	assert.ok(pane.code.runtimeError.activeOverlay!.details === details);
+	assert.equal(f.pane.code.runtimeError.activeOverlay, null, 'the separate main view does not inherit document-local presentation');
 });
 
 test('typing during captured-fault opening retires location projection without replacing the source', async t => {
@@ -1091,19 +1100,23 @@ test('typing during captured-fault opening retires location projection without r
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer authored revision\n' }]);
 	const version = f.model.version;
 	await setImmediate();
-	assert.equal(f.pane.code.runtimeError.activeOverlay, null);
+	const group = f.editor.editorParts.activeGroup, input = group.model.activeTab!;
+	assert.ok(group !== f.editor.editorParts.main.group && input.kind === 'code_editor');
+	assert.ok(input.context.model === f.model);
+	assert.equal(input.context.runtimeErrorOverlay, null);
+	assert.equal((group.panes.getPane('code_editor') as CodeEditorPane).code.runtimeError.activeOverlay, null);
 	assert.equal(f.model.version, version); assert.equal(f.model.dirty, true);
 });
 
 test('an installed-only source path cannot substitute another authored file', async t => {
-	const f = fixture(t), active = f.editor.editorGroup.model.activeTab;
+	const f = fixture(t), active = f.editor.editorParts.main.group.model.activeTab;
 	const resource = { contextId: f.model.identity.contextId, path: 'only-in-another-build.lua' };
 	const frame: SourceStackTraceFrame = { kind: 'source', resource,
 		functionName: 'entry', workspacePath: resource.path, line: 1, column: 1 };
 	const proof = { displayPath: resource.path, content: { kind: 'text' as const, text: 'return 99' } };
 	f.editor.showRuntimeErrorInChunk(resource, frame.line, frame.column, 'fault', { luaStack: [frame], sources: new Map([[frame, proof]]) });
 	await setImmediate();
-	assert.equal(f.editor.editorGroup.model.activeTab, active);
+	assert.equal(f.editor.editorParts.main.group.model.activeTab, active);
 	assert.equal(editorTextModelService.get(resource), undefined);
 	assert.equal(f.pane.code.runtimeError.activeOverlay, null);
 });
@@ -1119,19 +1132,42 @@ for (const interruption of ['none', 'resume', 'another-tab', 'typing', 'symbols-
 		const media = interruption === 'symbols-only'
 			? { ...f.sources.currentBlua32Media, system: createBlua32SystemSourceImage(image.layout, image.symbols, image.biosImports,
 				new Map(), image.sourceContextId) } : f.sources.currentBlua32Media;
-		f.ide.debugger.source.stop = { id: 1, thread: f.host.runtime.machine.cpu.activeThread,
-			media, domain: -1, pc: image.layout.header.textAddress + word * INSTRUCTION_BYTES,
-			inlineDepth: 0, reason: RuntimeDebuggerStopReason.Step };
+		const pc = image.layout.header.textAddress + word * INSTRUCTION_BYTES;
+		if (interruption === 'none') {
+			f.ide.debugger.source.install(media, [new Map([[pc, 0]]), new Map(), new Map()]);
+			assert.equal(f.ide.debugger.source.shouldStop(-1, pc), true);
+		} else f.ide.debugger.source.stop = { id: 1, thread: f.host.runtime.machine.cpu.activeThread,
+			media, domain: -1, pc, inlineDepth: 0, reason: RuntimeDebuggerStopReason.Step };
 		const pending = presentRuntimeDebuggerStop(f.editor, f.ide.debugger, f.sources.catalog);
 		await Promise.resolve(); // The source attaches before the debugger projection's continuation.
+		const group = f.editor.editorParts.activeGroup, input = group.model.activeTab!;
+		assert.ok(input.kind === 'code_editor');
+		if (interruption === 'symbols-only') assert.equal(f.editor.editorParts.documents.length, 0);
+		else {
+			assert.ok(group !== f.editor.editorParts.main.group && input !== f.input);
+			assert.ok(input.context.model === f.model && input.context.view !== f.view);
+		}
 		if (interruption === 'resume') f.ide.debugger.source.resume(RuntimeDebuggerResumeMode.Continue);
 		else if (interruption === 'another-tab') f.editor.commands.execute('gpuDebugger');
 		else if (interruption === 'typing') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- later\n' }]);
-		const active = f.editor.editorGroup.model.activeTab, text = f.model.buffer.getText(), version = f.model.version;
+		const active = group.model.activeTab, text = f.model.buffer.getText(), version = f.model.version;
 		await pending;
-		assert.equal(f.editor.editorGroup.model.activeTab, active);
+		assert.ok(group.model.activeTab === active);
 		assert.equal(f.model.buffer.getText(), text); assert.equal(f.model.version, version);
-		assert.equal(f.input.context.executionStopRow, interruption === 'none' ? range.start.line - 1 : null);
+		assert.equal(input.context.executionStopRow, interruption === 'none' ? range.start.line - 1 : null);
+		assert.equal(f.input.context.executionStopRow, null);
+		if (interruption === 'none') {
+			const pane = group.panes.getPane('code_editor') as CodeEditorPane;
+			assert.equal(pane.code.runtimeError.executionStopRow, range.start.line - 1);
+			f.ide.debugger.source.resume(RuntimeDebuggerResumeMode.Continue);
+			assert.equal(input.context.executionStopRow, null);
+			assert.equal(pane.code.runtimeError.executionStopRow, null);
+			openGpuDebugger(group, f.editor.gpu);
+			group.activate(input.id);
+			assert.equal(input.context.executionStopRow, null);
+			assert.equal(pane.code.runtimeError.executionStopRow, null, 'reattachment cannot resurrect a retired debugger stop');
+			assert.equal(f.input.context.executionStopRow, null);
+		}
 	});
 }
 

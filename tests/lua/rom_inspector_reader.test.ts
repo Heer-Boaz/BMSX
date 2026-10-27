@@ -65,7 +65,7 @@ function imageSnapshot(): RomInspectorSnapshot {
 test('ROM catalog commands dispatch from the actual focused list and after filter Enter', t => {
 	configureFontVariant('tiny');
 	const input = new RomInspectorInput(imageSnapshot()), surfaces = new WorkbenchSurfaceService();
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('ROM catalog command owner'), getBounds: () => area,
 		getClip: () => area, isVisible: () => true, draw() {} });
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
@@ -119,8 +119,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 	origin.bindKeyboard(() => {});
 	const owner = surfaces.attach({ role: 'content', captureScope: origin.scope.surfaceScope, getBounds: () => input.layout,
 		getClip: () => input.layout, isVisible: () => true, draw() {} });
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
-	const popup: WorkbenchSurface = surfaces.attach({ role: 'modal', blockedScope: null, lifetimeOwner: owner, captureScope: quickInput.pointerScope,
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const popup: WorkbenchSurface = surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, lifetimeOwner: owner, captureScope: quickInput.pointerScope,
 		getBounds: () => quickInput.layout.bounds, getClip: () => area, isVisible: () => quickInput.visible, draw() {} });
 	const unbind = inputFocus.bindScopeAdmission(scope => {
 		const surface = surfaces.findByScope(scope.surfaceScope); return surface !== undefined && surfaces.isAdmitted(surface);
@@ -200,7 +200,7 @@ test('reader view changes, collapse and controller recreation preserve the same 
 	f.choose('Metadata'); f.choose('Preview');
 	assert.equal(f.input.reader.preview, bitmap); assert.equal(f.input.reader.imageView.mode, scale);
 	f.choose('Properties'); assert.equal(f.reader.inspector.model.selectionIndex, selected); assert.equal(f.reader.inspector.model.viewport.scrollTop, scroll);
-	f.reader.window.setCollapsed(true); f.reader.update(); assert.equal(f.reader.window.clientSurface, undefined);
+	f.reader.window.setCollapsed(true); f.reader.update(); assert.equal(f.reader.window.clientSurface!.visible, false);
 	f.recreate(); f.reader.update(); assert.equal(f.input.readerWindow.collapsed, true); assert.equal(f.input.reader.preview, bitmap);
 	f.reader.window.setCollapsed(false); f.reader.update(); assert.equal(f.reader.inspector.model.selectionIndex, selected);
 	assert.equal(f.reader.inspector.model.viewport.scrollTop, scroll); assert.equal(released, 0);
@@ -258,9 +258,9 @@ test('byte reading stays anchored to its document offset when window columns or 
 	assert.equal(address(), first, 'input-owned reading metrics survive controller detachment and a font change');
 });
 
-test('a collapsed reader admits subject actions but not detached client view commands', t => {
+test('a collapsed reader admits subject actions but not hidden client view commands', t => {
 	const f = fixture(t); f.select('a-image'); f.input.readerWindow.setCollapsed(true); f.reader.show();
-	assert.equal(f.reader.window.clientSurface, undefined); assert.equal(f.input.reader.preview, undefined);
+	assert.equal(f.reader.window.clientSurface!.visible, false); assert.equal(f.input.reader.preview, undefined);
 	assert.equal(f.reader.isEnabled('romInspector.source'), true); assert.equal(f.reader.isEnabled('romInspector.hold'), true);
 	for (const command of ['romInspector.content', 'romInspector.zoom', 'romInspector.collision'] as const) {
 		assert.equal(f.reader.isEnabled(command), false);

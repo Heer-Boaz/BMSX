@@ -147,8 +147,8 @@ return { _objects = { actor, other } }` },
 	const controller = f.editor.actorLab, input = controller.resolveInput();
 	input.domain = -1; input.actorHashId = readActorChoices(f.sources, controller.guest, -1)[0].hashId;
 	f.editor.updateViewport({ width: 640, height: 360 });
-	f.editor.editorGroup.openEditor(input); f.editor.update(0);
-	const pane = f.editor.editorGroup.panes.activePane;
+	f.editor.editorParts.main.group.openEditor(input); f.editor.update(0);
+	const pane = f.editor.editorParts.main.group.panes.activePane;
 	assert.ok(pane instanceof ActorLabEditorPane);
 	return { ...f, controller, input, pane, sourceModel };
 }
@@ -289,7 +289,7 @@ test('the real Assistant transcript owns only its selected-message actions for t
 	const message = conversation.message('Exact selected message\r\nwith retained bytes'), proposed = conversation.proposal(proposal);
 	assert.equal(conversation.available, false);
 	input.selection.select(undefined);
-	editor.editorGroup.openEditor(input); editor.update(0);
+	editor.editorParts.main.group.openEditor(input); editor.update(0);
 	assert.ok(inputFocus.target === input.draft.focusTarget);
 	assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.moveFocus(false), true);
 	const client = inputFocus.target!;
@@ -307,21 +307,21 @@ test('the real Assistant transcript owns only its selected-message actions for t
 	assert.equal((await editor.clipboard.read()).text, message.text.getText());
 	input.selection.select(proposed);
 	assert.equal(editor.commands.isEnabled('assistant.review', client), true);
-	editor.editorGroup.panes.clearEditor();
+	editor.editorParts.main.group.panes.clearEditor();
 	for (const command of ['assistant.review', 'assistant.copy'] as const) assert.equal(editor.commands.isEnabled(command, client), false);
-	editor.commands.execute('assistant.review', client); assert.equal(editor.editorGroup.panes.activePane, null);
-	editor.editorGroup.panes.openEditor(input); inputFocus.moveFocus(false); inputFocus.moveFocus(false);
+	editor.commands.execute('assistant.review', client); assert.equal(editor.editorParts.main.group.panes.activePane, null);
+	editor.editorParts.main.group.panes.openEditor(input); inputFocus.moveFocus(false); inputFocus.moveFocus(false);
 	assert.ok(inputFocus.target === client);
 	assert.equal(editor.commands.isEnabled('assistant.review', client), true);
 	editor.commands.execute('assistant.review', client);
-	const review = editor.editorGroup.panes.activePane!.input;
+	const review = editor.editorParts.main.group.panes.activePane!.input;
 	assert.equal(review.kind, 'workspace_edit_review');
 	assert.ok(review.kind === 'workspace_edit_review' && review.proposal === proposal);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
 });
 
 test('Assistant borrows its draft command context only for the concrete input attachment', t => {
-	const { editor } = fixture(t), group = editor.editorGroup;
+	const { editor } = fixture(t), group = editor.editorParts.main.group;
 	const input = new AssistantInput(editor.assistant), companion = new GameViewInput();
 	t.after(() => input.dispose());
 	group.openEditor(input);
@@ -359,7 +359,7 @@ test('Assistant borrows its draft command context only for the concrete input at
 });
 
 test('generic command admission and execution use the exact target and disabled locals shadow other owners', t => {
-	const { editor } = fixture(t), parent = inputFocus.createTarget(null, editor.editorGroup.focusScope), leaf = inputFocus.createTarget(parent);
+	const { editor } = fixture(t), parent = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope), leaf = inputFocus.createTarget(parent);
 	leaf.commandContext = parent;
 	let local = 0, ancestor = 0, enabled = true;
 	for (const command of ['undo', 'resourceSearch'] as const) {
@@ -403,7 +403,7 @@ test('global run controls and audio retain their selected physical owner indepen
 	editor.commands.execute('gameView'); editor.update(0);
 	assert.ok(ide.runTargets.selected === selected, 'opening a primary-target view cannot select it for global execution');
 	assert.ok(host.audio.device.selected === audio);
-	const pane = editor.editorGroup.panes.activePane!, primaryPause = t.mock.method(ide.transport, 'pause');
+	const pane = editor.editorParts.main.group.panes.activePane!, primaryPause = t.mock.method(ide.transport, 'pause');
 	editor.commands.execute('pause', null);
 	assert.equal(execution.userPaused, false);
 	assert.equal(host.execution.userPaused, true);
@@ -416,11 +416,11 @@ test('global run controls and audio retain their selected physical owner indepen
 	editor.commands.execute('stepFrame', null);
 	assert.equal(execution.frameStepPending, true);
 	assert.equal(host.execution.frameStepPending, false);
-	assert.ok(editor.editorGroup.panes.activePane === pane, 'a global step on another target cannot replace the main view');
+	assert.ok(editor.editorParts.main.group.panes.activePane === pane, 'a global step on another target cannot replace the main view');
 	execution.finishFrameStep(); navigation.afterHostFrame();
 	assert.equal(editor.commands.isEnabled('debugContinue', null), false, 'Continue still requires a source debugger stop');
 	assert.equal(editor.commands.isEnabled('debugStepInto', null), false);
-	const localScope = new InputFocusScope(editor.editorGroup.focusScope.surfaceScope, editor.editorGroup.focusScope);
+	const localScope = new InputFocusScope(editor.editorParts.main.group.focusScope.surfaceScope, editor.editorParts.main.group.focusScope);
 	const local = new InputInteraction(transport);
 	localScope.interaction = local;
 	const client = inputFocus.createTarget(null, localScope); client.bindKeyboard(() => {});
@@ -432,11 +432,11 @@ test('global run controls and audio retain their selected physical owner indepen
 	assert.equal(host.execution.userPaused, true, 'a different command subject cannot replace the actual local runtime');
 	assert.equal(primaryPause.mock.callCount(), 1);
 	editor.commands.execute('runtime.focusTimeline', client);
-	assert.equal(editor.runtimeTimeline.available, true);
+	assert.equal(editor.editorParts.main.timeline.available, true);
 	assert.ok(inputFocus.target!.commandContext === client, 'Timeline retains the actual runtime client rather than its authoring command alias');
 	transport.retire();
 	assert.ok(inputFocus.target === pane.commandTarget, 'retirement returns focus through the actual owning pane');
-	assert.ok(editor.runtimeTimeline.focusScope.runtime === pane.commandTarget.scope.runtimeOwner!.runtime,
+	assert.ok(editor.editorParts.main.timeline.focusScope.runtime === pane.commandTarget.scope.runtimeOwner!.runtime,
 		'the newly activated client, not global run selection, supplies the replacement Timeline attachment');
 	assert.equal(editor.commands.isEnabled('runtime.pause', client), false);
 	editor.commands.execute('runtime.pause', client);
@@ -448,20 +448,20 @@ test('global run controls and audio retain their selected physical owner indepen
 	const revision = host.execution.revision;
 	editor.commands.execute('pause', null); editor.commands.execute('stepFrame', null); editor.commands.execute('runtime.pause', null);
 	assert.equal(host.execution.revision, revision);
-	assert.ok(editor.editorGroup.panes.activePane === pane);
+	assert.ok(editor.editorParts.main.group.panes.activePane === pane);
 });
 
 test('a preparing Play client cannot redirect its unavailable local transport or Timeline to primary', t => {
 	const { ide, editor } = fixture(t);
 	const handle = new PlayHandle({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'preparing.lua' }, 'Preparing fixture', '', 0, null, undefined);
 	handle.preparation = Promise.resolve();
-	editor.editorGroup.openEditor(new PlayEditorInput(handle, ide.play)); editor.update(0);
-	const pane = editor.editorGroup.panes.activePane!, primaryPause = t.mock.method(ide.transport, 'pause');
+	editor.editorParts.main.group.openEditor(new PlayEditorInput(handle, ide.play)); editor.update(0);
+	const pane = editor.editorParts.main.group.panes.activePane!, primaryPause = t.mock.method(ide.transport, 'pause');
 	assert.ok(pane.commandTarget !== undefined);
 	assert.equal(pane.commandTarget.scope.runtime!.interaction.transport, null);
-	assert.equal(editor.runtimeTimeline.available, false);
-	editor.runtimeTimeline.focus();
-	assert.equal(editor.runtimeTimeline.visible, false);
+	assert.equal(editor.editorParts.main.timeline.available, false);
+	editor.editorParts.main.timeline.focus();
+	assert.equal(editor.editorParts.main.timeline.visible, false);
 	assert.equal(editor.commands.isEnabled('runtime.pause', pane.commandTarget), false);
 	editor.commands.execute('runtime.pause', pane.commandTarget);
 	assert.equal(primaryPause.mock.callCount(), 0);
@@ -472,7 +472,7 @@ test('a preparing Play client cannot redirect its unavailable local transport or
 
 for (const action of ['run', 'reboot', 'hot-resume'] as const) for (const newer of ['none', 'selection', 'editor'] as const) {
 	test(`${action} receipt admits only its retained run intent and editor presentation after newer ${newer}`, async t => {
-		const { ide, editor, host, sources } = actorFixture(t), group = editor.editorGroup;
+		const { ide, editor, host, sources } = actorFixture(t), group = editor.editorParts.main.group;
 		host.presenter.initialize(new RenderPassLibrary(host.backend, host.presenter));
 		t.after(() => host.presenter.dispose());
 		const presentation = { group, generation: group.panes.openGeneration };
@@ -527,7 +527,7 @@ for (const action of ['run', 'reboot', 'hot-resume'] as const) for (const newer 
 }
 
 test('root Palette in an empty group cannot revive commands from its detached last-focused pane', t => {
-	const { editor } = fixture(t), group = editor.editorGroup;
+	const { editor } = fixture(t), group = editor.editorParts.main.group;
 	group.openEditor(new HostErrorInput('previous document'));
 	const detached = group.panes.activePane!.commandTarget;
 	let staleExecutions = 0;
@@ -553,7 +553,7 @@ test('root Palette in an empty group cannot revive commands from its detached la
 });
 
 test('chrome Palette after a preserve-focus switch addresses the new attached client rather than old focus memory', t => {
-	const { editor } = fixture(t), group = editor.editorGroup;
+	const { editor } = fixture(t), group = editor.editorParts.main.group;
 	group.openEditor(new HostErrorInput('previous document'));
 	const detached = group.panes.activePane!.commandTarget;
 	let staleExecutions = 0, currentExecutions = 0;
@@ -589,7 +589,7 @@ test('chrome Palette after a preserve-focus switch addresses the new attached cl
 });
 
 test('chrome Palette retains Host Error body Copy and writes the exact attached document bytes', async t => {
-	const { editor } = fixture(t), group = editor.editorGroup;
+	const { editor } = fixture(t), group = editor.editorParts.main.group;
 	const stack = 'RangeError: invalid tuple\n\tat sample.lua:8:3\n';
 	group.openEditor(new HostErrorInput(stack));
 	const pane = group.panes.activePane!;
@@ -622,7 +622,7 @@ test('Conversations publishes older-page admission on its real transcript client
 	const older = t.mock.method(conversation, 'older', async () => {}), nextOlder = t.mock.method(replacement, 'older', async () => {});
 	t.after(() => { input.dispose(); next.dispose(); conversation.dispose(); replacement.dispose(); });
 	conversation.olderCursor = 'previous-page'; replacement.olderCursor = 'replacement-page';
-	editor.editorGroup.panes.openEditor(input);
+	editor.editorParts.main.group.panes.openEditor(input);
 	const client = inputFocus.target!;
 	assert.ok(client.getCommand('conversations.older'));
 	assert.equal(client.getCommand('conversations.older'), client.parent!.getCommand('conversations.older'));
@@ -633,11 +633,11 @@ test('Conversations publishes older-page admission on its real transcript client
 	editor.commands.execute('conversations.older', client); assert.equal(older.mock.callCount(), 1);
 	conversation.pending = false; conversation.olderCursor = null;
 	assert.equal(editor.commands.isEnabled('conversations.older', client), false);
-	conversation.olderCursor = 'previous-page'; editor.editorGroup.panes.clearEditor();
+	conversation.olderCursor = 'previous-page'; editor.editorParts.main.group.panes.clearEditor();
 	assert.notEqual(inputFocus.admittedTarget, client);
 	assert.equal(editor.commands.isEnabled('conversations.older', client), false);
 	editor.commands.execute('conversations.older', client); assert.equal(older.mock.callCount(), 1);
-	editor.editorGroup.panes.openEditor(next);
+	editor.editorParts.main.group.panes.openEditor(next);
 	assert.equal(inputFocus.target, client, 'the retained client reads its newly attached input, not the old conversation');
 	assert.equal(editor.commands.isEnabled('conversations.older', client), true);
 	editor.commands.execute('conversations.older', client);
@@ -653,11 +653,11 @@ test('Conversations wrapping is invariant under translation of the editor client
 	conversation.message('A conversation transcript wraps at its own client width, independently of the client origin. '.repeat(5));
 	conversation.configuration = { agent: 'codex', provider: null, model: 'a-model-with-a-long-name', effort: 'a-long-effort-description', serviceTier: 'a-long-service-tier' };
 	const bounds = { left: 0, top: 24, right: 180, bottom: 260 };
-	editor.editorGroup.panes.layout(bounds); editor.editorGroup.panes.openEditor(input);
+	editor.editorParts.main.group.panes.layout(bounds); editor.editorParts.main.group.panes.openEditor(input);
 	const rows = input.transcript.rows.length, footer = input.footer.lines.slice(), height = input.viewport.contentHeight;
 	// This focused layout contract changes the origin only; neither producer text nor available width changes.
-	editor.editorGroup.panes.layout({ ...bounds, left: bounds.left + 80, right: bounds.right + 80 });
-	editor.editorGroup.panes.activePane!.update(0);
+	editor.editorParts.main.group.panes.layout({ ...bounds, left: bounds.left + 80, right: bounds.right + 80 });
+	editor.editorParts.main.group.panes.activePane!.update(0);
 	assert.equal(input.transcript.rows.length, rows); assert.equal(input.viewport.contentHeight, height);
 	assert.deepEqual(input.footer.lines, footer);
 });
@@ -666,17 +666,17 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Assistant clien
 	const { editor } = fixture(t), input = new AssistantInput(editor.assistant);
 	t.after(() => input.dispose());
 	editor.setFontVariant(variant);
-	editor.editorGroup.openEditor(input); editor.update(0);
+	editor.editorParts.main.group.openEditor(input); editor.update(0);
 	insertValue(input.draft, 'A retained assistant draft wraps at the actual client width without changing its text or selection. '.repeat(6));
-	input.draft.setSelection(7, 31); editor.editorGroup.panes.activePane!.update(0);
+	input.draft.setSelection(7, 31); editor.editorParts.main.group.panes.activePane!.update(0);
 	const state = input.draft.readText(), rows = input.composer.rows.slice(), bounds = { ...input.layout }, composer = { ...input.composerBounds };
 	// Equal-width translation is the layout algorithm under test, not an incidental screen position.
-	editor.editorGroup.panes.layout({ ...bounds, left: bounds.left + 40, right: bounds.right + 40 });
-	editor.editorGroup.panes.activePane!.update(0);
+	editor.editorParts.main.group.panes.layout({ ...bounds, left: bounds.left + 40, right: bounds.right + 40 });
+	editor.editorParts.main.group.panes.activePane!.update(0);
 	assert.deepEqual(input.composer.rows, rows);
 	assert.deepEqual(input.composerBounds, { ...composer, left: composer.left + 40, right: composer.right + 40 });
 	assert.deepEqual(input.draft.readText(), state); assert.ok(inputFocus.target === input.draft.focusTarget);
-	editor.resourcePanel.show(); editor.editorGroup.panes.activePane!.focus(); editor.update(0);
+	editor.resourcePanel.show(); editor.editorParts.main.group.panes.activePane!.focus(); editor.update(0);
 	assert.equal(editor.resourcePanel.visible, true);
 	assert.ok(input.composer.rows.length > rows.length, 'the real Files client reduces the available composer width');
 	assert.deepEqual(input.draft.readText(), state); assert.ok(inputFocus.target === input.draft.focusTarget);
@@ -688,7 +688,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Assistant clien
 
 for (const command of ['animation.remove', 'animation.tracks', 'animation.keys', 'animation.details'] as const)
 test(`${command} publishes the actual focused draft before resolving the explicit action owner`, t => {
-	const { editor } = fixture(t), parent = inputFocus.createTarget(null, editor.editorGroup.focusScope);
+	const { editor } = fixture(t), parent = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope);
 	let value = 1, calls = 0;
 	const field = new ValueInput(parent, INTEGER_INPUT_FORMAT, accepted => { value = accepted; });
 	t.after(() => field.dispose()); field.setValue(value);
@@ -733,7 +733,7 @@ test('Animation body clients and its actual property draft publish exact client-
 			word_width: texture.wordWidth, height: texture.height, texture_word_count: texture.textureWordCount, clut_word_count: texture.clutWordCount } }];
 	finalizePackedRomAssets(assets); rom.index.entries.push(...assets);
 	context.previewPackage.img.picture = assets[0]; sources.catalog.rebuildResources();
-	const input = editor.animations.openResource(editor.editorGroup, sources.catalog.luaResources.find(resource => resource.path === path)!); editor.update(0);
+	const input = editor.animations.openResource(editor.editorParts.main.group, sources.catalog.luaResources.find(resource => resource.path === path)!); editor.update(0);
 	const tracks = inputFocus.target!, commands = ['animation.tracks', 'animation.keys', 'animation.details'] as const;
 	const handlers = commands.map(command => tracks.getCommand(command));
 	editor.animations.selectTrack(input, 1); editor.animations.selectKey(input, 0); editor.update(0);
@@ -774,23 +774,23 @@ test('Animation body clients and its actual property draft publish exact client-
 	for (let index = 0; index < commands.length; index++) assert.equal(field.getCommand(commands[index]), handlers[index]);
 	assert.equal(field.getCommand('undo'), undo, 'navigation does not borrow or replace the actual field-local history');
 	assert.equal(native.replaceText(0, native.readText().text.length, '2'), true);
-	showCommandPalette(editor.quickInput, editor.commands);
+	showCommandPalette(editor.editorParts.main.quickInput, editor.commands);
 	assert.equal(input.document!.tracks[0].keys[0].value!.value, 2, 'ordinary Palette blur first publishes the actual field draft');
-	assert.equal(editor.quickInput.invocationOrigin, details, 'the retired field resolves to its actual Details owner before catalog enumeration');
-	const palette = editor.quickInput.model.list;
+	assert.equal(editor.editorParts.main.quickInput.invocationOrigin, details, 'the retired field resolves to its actual Details owner before catalog enumeration');
+	const palette = editor.editorParts.main.quickInput.model.list;
 	assert.ok(palette.rows.some(row => (row.item as CommandQuickPickItem).command === 'animation.tracks'));
-	editor.quickInput.hide();
+	editor.editorParts.main.quickInput.hide();
 	const edited = input.workingCopy.buffer.getText();
 	editor.commands.execute('animation.tracks', field); assert.equal(input.activeClient, 'tracks');
 	assert.equal(input.workingCopy.buffer.getText(), edited);
-	editor.editorGroup.panes.clearEditor();
+	editor.editorParts.main.group.panes.clearEditor();
 	for (const client of [...clients, field]) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), false);
 	const detachedPicks = buildCommandQuickPickItems(editor.commands, field);
 	for (const command of commands) assert.equal(detachedPicks.some(item => item.command === command), false);
-	editor.editorGroup.openEditor(input); editor.update(0);
+	editor.editorParts.main.group.openEditor(input); editor.update(0);
 	for (const client of [...clients, field]) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), true);
 	assert.equal(input.workingCopy.buffer.getText(), edited);
-	const timeline = editor.animations.openResource(editor.editorGroup, sources.catalog.luaResources.find(resource => resource.path === timelinePath)!);
+	const timeline = editor.animations.openResource(editor.editorParts.main.group, sources.catalog.luaResources.find(resource => resource.path === timelinePath)!);
 	editor.animations.selectTrack(timeline, 1); editor.animations.selectKey(timeline, 0); editor.update(0);
 	editor.commands.execute('animation.keys');
 	const keysClient = inputFocus.target!;
@@ -801,22 +801,22 @@ test('Animation body clients and its actual property draft publish exact client-
 	const valueField = inputFocus.target!, valueText = valueField.textInput!, localUndo = valueField.getCommand('undo');
 	assert.equal(valueText.replaceText(0, valueText.readText().text.length, 'invalid +'), true);
 	editor.commands.execute('animation.addKey', valueField);
-	assert.equal(inputFocus.target, valueField); assert.equal(editor.quickInput.visible, false);
+	assert.equal(inputFocus.target, valueField); assert.equal(editor.editorParts.main.quickInput.visible, false);
 	assert.equal(timeline.workingCopy.buffer.getText(), timelineSource);
 	assert.equal(valueText.replaceText(0, valueText.readText().text.length, '2'), true);
 	editor.commands.execute('animation.addKey', valueField);
-	assert.equal(editor.quickInput.inputBox, true, 'the actual Add Key handler opens its owned value prompt after publishing the old property');
+	assert.equal(editor.editorParts.main.quickInput.inputBox, true, 'the actual Add Key handler opens its owned value prompt after publishing the old property');
 	assert.equal(timeline.document!.tracks[0].keys[0].value!.value, 2);
 	assert.equal(valueField.getCommand('undo'), localUndo);
-	editor.quickInput.hide(); timeline.workingCopy.undo();
+	editor.editorParts.main.quickInput.hide(); timeline.workingCopy.undo();
 	assert.equal(timeline.workingCopy.buffer.getText(), timelineSource); assert.equal(timeline.workingCopy.undo(), null);
-	editor.editorGroup.panes.clearEditor();
+	editor.editorParts.main.group.panes.clearEditor();
 	for (const client of [...clients, field, valueField]) for (const command of ['animation.source', 'animation.fit', 'animation.snap', 'animation.addKey', 'animation.addFrame'] as const)
 		assert.equal(editor.commands.isEnabled(command, client), false);
 });
 
 test('clipboard admission and execution retain the supplied leaf rather than its alias or ambient focus', async t => {
-	const { editor } = fixture(t), parent = inputFocus.createTarget(null, editor.editorGroup.focusScope), selected = new TextField(parent), other = new TextField(parent);
+	const { editor } = fixture(t), parent = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope), selected = new TextField(parent), other = new TextField(parent);
 	selected.focusTarget.commandContext = parent;
 	setFieldText(selected, 'selected data', true); selectAll(selected);
 	setFieldText(other, 'unrelated data', true); selectAll(other); other.focusTarget.focus();
@@ -830,11 +830,11 @@ test('clipboard admission and execution retain the supplied leaf rather than its
 test('common runtime commands orchestrate the physical transport and the active view capture latch', t => {
 	const { editor, host } = fixture(t);
 	const toggle = t.mock.method(editor.commands.transport, 'togglePlayback');
-	assert.equal(editor.editorGroup.panes.activePane, null);
+	assert.equal(editor.editorParts.main.group.panes.activePane, null);
 	editor.commands.execute('runtime.playback');
 	assert.equal(toggle.mock.callCount(), 1, 'the transport operation does not depend on an optional capture view');
 	editor.commands.execute('events');
-	const pane = editor.editorGroup.panes.activePane!;
+	const pane = editor.editorParts.activeGroup.panes.activePane!;
 	assert.equal(pane.input.kind, 'event_viewer');
 	assert.equal(pane.commandTarget!.getCommand('runtime.pause'), undefined, 'a latch is not a partial public command');
 	pane.commandTarget.scope.runtime!.interaction.running = true; host.execution.setPauseReason(HostPauseReason.Requested, false);
@@ -858,10 +858,11 @@ for (const command of ['events', 'gpuDebugger', 'gteDebugger'] as const) test(`$
 for (const command of ['events', 'gpuDebugger', 'gteDebugger'] as const) test(`${command} timeline Tab boundaries return to its actual reading client`, t => {
 	const { editor } = fixture(t); editor.commands.execute(command); editor.update(0);
 	const client = inputFocus.target!;
+	const timeline = editor.editorParts.activePart.timeline;
 	assert.notEqual(client, inputFocus.target!.commandContext);
-	editor.runtimeTimeline.focus(); assert.equal(inputFocus.moveFocus(true), true);
+	timeline.focus(); assert.equal(inputFocus.moveFocus(true), true);
 	assert.ok(inputFocus.target === client, 'Shift+Tab restores the actual reading client');
-	editor.runtimeTimeline.focus(); assert.equal(inputFocus.moveFocus(false), true);
+	timeline.focus(); assert.equal(inputFocus.moveFocus(false), true);
 	assert.ok(inputFocus.target === client, 'an unavailable history range leaves no intermediate slider stop');
 });
 
@@ -869,9 +870,10 @@ test('revealing Timeline from its own chrome retains the invoking client instead
 	const { editor } = fixture(t);
 	editor.commands.execute('events');
 	const client = inputFocus.target!;
+	const timeline = editor.editorParts.activePart.timeline;
 	const logical = client.scope.runtimeOwner!.runtime!;
 	editor.commands.execute('runtime.focusTimeline', client);
-	const chrome = inputFocus.target!, scope = editor.runtimeTimeline.focusScope;
+	const chrome = inputFocus.target!, scope = timeline.focusScope;
 	assert.ok(chrome.commandContext === logical.target);
 	for (let invocation = 0; invocation < 3; invocation++) {
 		editor.commands.execute('runtime.focusTimeline', chrome);
@@ -969,7 +971,7 @@ test('surface capture continues outside canvas; hiding its route drains the hold
 
 test('real popup and modal sources publish visibility before focus admission and revoke covered hover immediately', async t => {
 	const { editor, pointer } = fixture(t);
-	const origin = inputFocus.createTarget(null, editor.editorGroup.focusScope); origin.bindKeyboard(() => {}); origin.focus();
+	const origin = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); origin.bindKeyboard(() => {}); origin.focus();
 	let leaves = 0;
 	const hover = { onPointerLeave() { leaves += 1; } };
 	pointerHover.visit(hover);
@@ -985,7 +987,7 @@ test('real popup and modal sources publish visibility before focus admission and
 
 	editor.quickInput.pick('Choose', '', () => new TextQuickPickProvider([{ label: 'one', description: '', detail: '' }]), () => {});
 	assert.equal(editor.quickInput.field.focusTarget.hasFocus, true);
-	assert.equal(editor.surfaces.isAdmitted(editor.editorGroup.paneSurface), false);
+	assert.equal(editor.surfaces.isAdmitted(editor.editorParts.main.group.paneSurface), false);
 	assert.equal(editor.surfaces.topBlockingSurface?.captureScope, editor.quickInput.pointerScope);
 	editor.quickInput.hide();
 	assert.equal(inputFocus.target, origin);
@@ -996,14 +998,14 @@ test('real popup and modal sources publish visibility before focus admission and
 		modifiers: KeyModifier.none, timestamp: 0 }), true);
 	editor.actionPrompt.close();
 	assert.equal(await decision, 'cancel');
-	assert.equal(editor.surfaces.isAdmitted(editor.editorGroup.paneSurface), true);
+	assert.equal(editor.surfaces.isAdmitted(editor.editorParts.main.group.paneSurface), true);
 	assert.equal(inputFocus.target, origin);
 });
 
 
 test('menu presentation follows its invoking window session and retires on owner hide or close', t => {
 	const { editor, extent } = fixture(t);
-	const tree = inputFocus.createTarget(null, editor.editorGroup.focusScope); tree.bindKeyboard(() => {});
+	const tree = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); tree.bindKeyboard(() => {});
 	let visible = true;
 	const scope = Symbol('details window');
 	const window = editor.surfaces.attach({
@@ -1040,11 +1042,11 @@ test('menu presentation follows its invoking window session and retires on owner
 
 test('retiring a real window with its property menu focused returns to an admitted owner', t => {
 	const { editor, extent } = fixture(t);
-	const tree = inputFocus.createTarget(null, editor.editorGroup.focusScope); tree.bindKeyboard(() => {});
+	const tree = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); tree.bindKeyboard(() => {});
 	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
 		model: new WorkbenchWindowModel({ left: 20, top: 30, right: 250, bottom: 240 }, 100, 80),
-		actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorGroup.paneSurface,
-		focusReturn: tree, workArea: extent, content: { draw() {} }, layoutContent() {},
+		actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorParts.main.group.paneSurface,
+		focusScope: tree.scope, focusReturn: tree, workArea: extent, content: { draw() {} }, layoutContent() {},
 		retireContentInput: () => inspector.hide(),
 		restoreContentInput: () => inspector.show({ title: 'DETAILS', items: [{ label: 'A', value: 'B', description: '', warning: false }],
 			focusReturn: tree, canOpenSource: () => false, openSource() {} }, false),
@@ -1073,10 +1075,10 @@ test('retiring a real window with its property menu focused returns to an admitt
 
 test('session popup promotes to its actual root or owner-local modal context, never above the admission boundary', t => {
 	const { editor, extent } = fixture(t);
-	const tree = inputFocus.createTarget(null, editor.editorGroup.focusScope); tree.bindKeyboard(() => {}); tree.focus();
+	const tree = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); tree.bindKeyboard(() => {}); tree.focus();
 	const rootScope = Symbol('root modal');
 	const root = editor.surfaces.attach({
-		role: 'modal', blockedScope: null, captureScope: rootScope,
+		role: 'modal', blockedScope: null, presentationParent: null, captureScope: rootScope,
 		isVisible: () => true, getBounds: () => extent, getClip: () => extent, draw() {},
 	});
 	const rootTarget = inputFocus.createTarget(tree, new InputFocusScope(rootScope));
@@ -1094,8 +1096,8 @@ test('session popup promotes to its actual root or owner-local modal context, ne
 
 	const localScope = Symbol('owner-local modal');
 	const local = editor.surfaces.attach({
-		role: 'modal', blockedScope: editor.editorGroup.paneSurface, lifetimeOwner: editor.editorGroup.paneSurface, captureScope: localScope,
-		isVisible: () => true, getBounds: editor.editorGroup.paneSurface.getBounds, getClip: editor.editorGroup.paneSurface.getClip, draw() {},
+		role: 'modal', blockedScope: editor.editorParts.main.group.paneSurface, presentationParent: editor.editorParts.main.group.paneSurface, lifetimeOwner: editor.editorParts.main.group.paneSurface, captureScope: localScope,
+		isVisible: () => true, getBounds: editor.editorParts.main.group.paneSurface.getBounds, getClip: editor.editorParts.main.group.paneSurface.getClip, draw() {},
 	});
 	const localTarget = inputFocus.createTarget(tree, new InputFocusScope(localScope));
 	localTarget.canFocus = () => local.visible;
@@ -1105,7 +1107,7 @@ test('session popup promotes to its actual root or owner-local modal context, ne
 	assert.equal(localPopup.lifetimeOwner, local);
 	assert.equal(localPopup.presentationParent, local);
 	assert.equal(editor.surfaces.isAdmitted(localPopup), true);
-	assert.equal(editor.surfaces.isAdmitted(editor.editorGroup.paneSurface), false);
+	assert.equal(editor.surfaces.isAdmitted(editor.editorParts.main.group.paneSurface), false);
 	assert.equal(editor.surfaces.hitTest(100, 200), localPopup);
 	assert.notEqual(editor.surfaces.hitTest(2, 2), localPopup, 'an owner-local popup does not block root chrome');
 	local.dispose();
@@ -1127,7 +1129,7 @@ test('menu invocation without focused content has an explicit root-chrome lifeti
 
 test('actual Quick Input and action prompt retain their modal lifetime while their session-owned menu has focus', async t => {
 	const { editor } = fixture(t);
-	const origin = inputFocus.createTarget(null, editor.editorGroup.focusScope); origin.bindKeyboard(() => {}); origin.focus();
+	const origin = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); origin.bindKeyboard(() => {}); origin.focus();
 	editor.quickInput.pick('Choose', '', () => new TextQuickPickProvider([{ label: 'one', description: '', detail: '' }]), () => {});
 	const picker = editor.surfaces.findByScope(editor.quickInput.pointerScope)!;
 	editor.contextMenu.show(100, 60, [{ type: 'command', command: 'save' }], editor.commands);
@@ -1162,8 +1164,8 @@ test('actual Quick Input and action prompt retain their modal lifetime while the
 test('the actual lightbox keeps its property popup inside the pane admission context and retires it on close', t => {
 	const { editor } = fixture(t);
 	const cache = new ImagePreviewCache(async () => ({ width: 1, height: 1, pixels: new Uint8Array([1, 2, 3, 255]) }));
-	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.editorGroup.paneSurface, editor.commands);
-	preview.layout(editor.editorGroup.paneSurface.getBounds(), editorViewState.lineHeight);
+	const preview = new ImagePreviewOverlay(cache, editor.surfaces, editor.editorParts.main.group.paneSurface, editor.commands);
+	preview.layout(editor.editorParts.main.group.paneSurface.getBounds(), editorViewState.lineHeight);
 	t.after(() => { preview.dispose(); cache.dispose(); });
 	preview.open('fixture:image');
 	editor.contextMenu.show(100, 60, [{ type: 'command', command: 'save' }], editor.commands);
@@ -1173,7 +1175,7 @@ test('the actual lightbox keeps its property popup inside the pane admission con
 	assert.equal(popup.lifetimeOwner, preview.surface);
 	assert.equal(popup.presentationParent, preview.surface);
 	assert.equal(editor.surfaces.isInContext(popup.captureScope, preview.surface.captureScope), true);
-	assert.equal(editor.surfaces.isAdmitted(editor.editorGroup.paneSurface), false);
+	assert.equal(editor.surfaces.isAdmitted(editor.editorParts.main.group.paneSurface), false);
 	preview.close();
 	assert.equal(editor.contextMenu.visible, false);
 	assert.equal(popup.retired, true);
@@ -1183,7 +1185,7 @@ test('the actual lightbox keeps its property popup inside the pane admission con
 
 test('a newly shown menu accepts the next native row click before any workbench update', t => {
 	const { editor, pointer } = fixture(t);
-	const origin = inputFocus.createTarget(null, editor.editorGroup.focusScope); origin.bindKeyboard(() => {}); origin.focus();
+	const origin = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); origin.bindKeyboard(() => {}); origin.focus();
 	let actions = 0;
 	editor.contextMenu.show(100, 60, [{ type: 'command', command: 'save' }], {
 		isEnabled: () => true, execute: () => { actions += 1; },
@@ -1206,7 +1208,7 @@ test('editor input retirement cancels its actual prompt and picker sessions with
 	t.after(() => remote.release());
 	for (const kind of ['prompt', 'picker']) {
 		const game = new GameViewInput();
-		editor.editorGroup.panes.openEditor(game);
+		editor.editorParts.main.group.panes.openEditor(game);
 		const bounds = game.frameBounds;
 		remote.apply([{ type: 'pointer', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 },
 			{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
@@ -1218,7 +1220,7 @@ test('editor input retirement cancels its actual prompt and picker sessions with
 		]), () => {});
 		editor.contextMenu.show(100, 60, [{ type: 'command', command: 'save' }], editor.commands);
 		assert.equal(editor.contextMenu.focusTarget.hasFocus, true);
-		editor.editorGroup.panes.openEditor(new HostErrorInput('replacement'));
+		editor.editorParts.main.group.panes.openEditor(new HostErrorInput('replacement'));
 		assert.equal(editor.actionPrompt.visible, false);
 		assert.equal(editor.quickInput.visible, false);
 		assert.equal(editor.contextMenu.visible, false, 'retirement also removes the source-owned popup');
@@ -1237,14 +1239,14 @@ test('clearing an editor preserves root-origin and other live-owner modal sessio
 	const chrome = inputFocus.createTarget(null, editor.resourcePanel.focusTarget.scope); chrome.bindKeyboard(() => {});
 	for (const owner of [null, chrome, other]) {
 		for (const kind of ['prompt', 'picker']) {
-			editor.editorGroup.panes.openEditor(new HostErrorInput('existing'));
+			editor.editorParts.main.group.panes.openEditor(new HostErrorInput('existing'));
 			inputFocus.setTarget(owner);
 			const decision = kind === 'prompt' ? editor.actionPrompt.show(PROMPT_REQUEST) : undefined;
 			if (kind === 'picker') editor.quickInput.pick('Choose', '', () => new TextQuickPickProvider([
 				{ label: 'one', description: '', detail: '' },
 			]), () => {});
 			const sessionFocus = inputFocus.target;
-			editor.editorGroup.panes.clearEditor();
+			editor.editorParts.main.group.panes.clearEditor();
 			assert.equal(editor.actionPrompt.visible, kind === 'prompt');
 			assert.equal(editor.quickInput.visible, kind === 'picker');
 			assert.ok(inputFocus.target === sessionFocus, 'pane retirement does not steal an independent surface focus');
@@ -1258,8 +1260,8 @@ test('clearing an editor preserves root-origin and other live-owner modal sessio
 
 test('a blocked retained focus or a root modal without focus cannot dispatch root keyboard commands', t => {
 	const { editor, extent } = fixture(t);
-	const origin = inputFocus.createTarget(null, editor.editorGroup.focusScope); origin.bindKeyboard(() => {}); origin.focus();
-	const modal = editor.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('focusless modal'),
+	const origin = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); origin.bindKeyboard(() => {}); origin.focus();
+	const modal = editor.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: Symbol('focusless modal'),
 		isVisible: () => true, getBounds: () => extent, getClip: () => extent, draw() {} });
 	assert.equal(inputFocus.target, origin);
 	assert.equal(inputFocus.admittedTarget, null);
@@ -1275,7 +1277,7 @@ test('a blocked retained focus or a root modal without focus cannot dispatch roo
 
 test('native remote paste reaches the admitted Quick Input field before modal keyboard delegation', async t => {
 	const { editor, host } = fixture(t);
-	const origin = inputFocus.createTarget(null, editor.editorGroup.focusScope); origin.bindKeyboard(() => {}); origin.focus();
+	const origin = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); origin.bindKeyboard(() => {}); origin.focus();
 	editor.quickInput.pick('Find actor', '', () => new TextQuickPickProvider([
 		{ label: 'player', description: '', detail: '' }, { label: 'enemy', description: '', detail: '' },
 	]), () => {});
@@ -1294,7 +1296,7 @@ test('native remote paste reaches the admitted Quick Input field before modal ke
 
 test('a toolbar menu uses its explicit tree invocation for lifetime and commands while restoring inspector focus', t => {
 	const { editor, extent } = fixture(t);
-	const tree = inputFocus.createTarget(null, editor.editorGroup.focusScope); tree.bindKeyboard(() => {});
+	const tree = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); tree.bindKeyboard(() => {});
 	const windowScope = new InputFocusScope(Symbol('inspector'));
 	const window = editor.surfaces.attach({ role: 'window', captureScope: windowScope.surfaceScope, isVisible: () => true,
 		getBounds: () => extent, getClip: () => extent, draw() {} });
@@ -1307,7 +1309,7 @@ test('a toolbar menu uses its explicit tree invocation for lifetime and commands
 		{ selectFirst: true, invocationOrigin: tree });
 	const popup = editor.surfaces.findByScope(editor.contextMenu.pointerScope)!;
 	assert.equal(editor.contextMenu.invocationOrigin, tree);
-	assert.equal(popup.lifetimeOwner, editor.editorGroup.paneSurface);
+	assert.equal(popup.lifetimeOwner, editor.editorParts.main.group.paneSurface);
 	assert.equal(editor.contextMenu.focusTarget.commandContext, tree);
 	assert.equal(editor.contextMenu.model.rows[0].enabled, true);
 	editor.contextMenu.accept();
@@ -1535,11 +1537,11 @@ test('resetting one registered pointer producer retains another producer hold in
 
 test('real window hide and root-modal admission cancel true producer guest holds and drain all remaining buttons', async t => {
 	const { editor, host, extent } = fixture(t);
-	const tree = inputFocus.createTarget(null, editor.editorGroup.focusScope); tree.bindKeyboard(() => {});
+	const tree = inputFocus.createTarget(null, editor.editorParts.main.group.focusScope); tree.bindKeyboard(() => {});
 	const model = new WorkbenchWindowModel({ left: 30, top: 40, right: 350, bottom: 260 }, 100, 80);
 	const window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, editor.surfaces, editor.commands, {
-		model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorGroup.paneSurface,
-		focusReturn: tree, workArea: extent,
+		model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: editor.editorParts.main.group.paneSurface,
+		focusScope: tree.scope, focusReturn: tree, workArea: extent,
 		content: { draw() {}, handlePointer: snapshot => { game.handlePointer(snapshot); } },
 		layoutContent: bounds => game.setInput(bounds), retireContentInput: () => game.clearInput(),
 		restoreContentInput: () => game.setInput(model.client), focusContent: () => game.focusTarget.focus(),
@@ -1608,30 +1610,30 @@ test('actual menu tab commands retain their invoking group and retired origins n
 	const group = createTestEditorGroup(editor.commands);
 	const surface = editor.surfaces.attach({ role: 'content', captureScope: group.captureScope,
 		getBounds: () => extent, getClip: () => extent, isVisible: () => true, draw() {} });
-	const mainInputs = [...editor.editorGroup.model.tabs], mainActive = editor.editorGroup.model.activeTab;
+	const mainInputs = [...editor.editorParts.main.group.model.tabs], mainActive = editor.editorParts.main.group.model.activeTab;
 	const first = new HostErrorInput('first'), second = new GameViewInput();
 	let origin!: InputFocusTarget;
 	try {
 		group.openEditor(first); group.openEditor(second);
 		origin = inputFocus.target!;
-		editor.editorGroup.panes.activePane?.focus();
+		editor.editorParts.main.group.panes.activePane?.focus();
 		editor.contextMenu.show(100, 60, [{ type: 'command', command: 'tabs.next' }], editor.commands,
 			{ selectFirst: true, invocationOrigin: origin });
 		assert.equal(editor.contextMenu.model.rows[0].enabled, true);
 		editor.contextMenu.accept();
 		assert.equal(group.model.activeTab, first);
-		assert.equal(editor.editorGroup.model.activeTab, mainActive);
-		assert.deepEqual(editor.editorGroup.model.tabs, mainInputs);
+		assert.equal(editor.editorParts.main.group.model.activeTab, mainActive);
+		assert.deepEqual(editor.editorParts.main.group.model.tabs, mainInputs);
 		editor.contextMenu.show(100, 60, [{ type: 'command', command: 'tabs.close' }], editor.commands,
 			{ selectFirst: true, invocationOrigin: origin });
 		editor.contextMenu.accept();
 		assert.deepEqual(group.model.tabs, [second]);
-		assert.equal(editor.editorGroup.model.activeTab, mainActive);
+		assert.equal(editor.editorParts.main.group.model.activeTab, mainActive);
 	} finally { group.dispose(); surface.dispose(); }
 	assert.equal(editor.commands.isEnabled('tabs.close', origin), false);
 	assert.equal(editor.commands.isEnabled('tabs.next', origin), false);
 	editor.commands.execute('tabs.close', origin);
 	editor.commands.execute('tabs.next', origin);
-	assert.equal(editor.editorGroup.model.activeTab, mainActive);
-	assert.deepEqual(editor.editorGroup.model.tabs, mainInputs);
+	assert.equal(editor.editorParts.main.group.model.activeTab, mainActive);
+	assert.deepEqual(editor.editorParts.main.group.model.tabs, mainInputs);
 });

@@ -10,7 +10,7 @@ import { sourcePane, check, type StudioFixture } from './studio_fixture';
 export async function openRuntimeEffectLens(test: StudioFixture) {
 	const { ide, press, runPaletteCommand } = test;
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
-	const picker = ide.editor.quickInput;
+	const picker = ide.editor.editorParts.activePart.quickInput;
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!;
 	const index = picker.model.list.rows.findIndex(row => {
 		const item = row.item as BehaviorQuickPickItem;
@@ -20,10 +20,10 @@ export async function openRuntimeEffectLens(test: StudioFixture) {
 	check(index >= 0, 'runtime effect: source catalog still offers the unexecuted registration');
 	for (let n = 0; n < index; n += 1) await press('ArrowDown');
 	await press('Enter');
-	const input = ide.editor.editorGroup.model.activeTab;
+	const input = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'properties') throw new Error('runtime effect: actual ActionEffect lens required');
 	// Reopening the same input retains its inspector; dismiss it explicitly to use the source lens.
-	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	if (inspector.visible) await press('Escape');
 	check(!inspector.visible, 'runtime effect: source navigation dismisses the previous inspection through its close gesture');
 	return input;
@@ -31,7 +31,7 @@ export async function openRuntimeEffectLens(test: StudioFixture) {
 
 export async function openRuntimeEffectPicker(test: StudioFixture): Promise<void> {
 	const input = await openRuntimeEffectLens(test);
-	const picker = test.ide.editor.quickInput;
+	const picker = test.ide.editor.editorParts.activePart.quickInput;
 	const live = input.view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.inspectRuntimeEffect')!;
 	await test.click(live.bounds);
 	check(picker.visible, 'runtime effect: real Live action opens the shared picker');
@@ -45,13 +45,13 @@ export async function openRuntimeEffectInspector(test: StudioFixture, component:
 	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes();
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!, version = model.version;
 	await openRuntimeEffectPicker(test);
-	const picker = ide.editor.quickInput;
+	const picker = ide.editor.editorParts.activePart.quickInput;
 	await test.clipboard.writeText(`inspection.${component}`);
 	await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1,
 		'runtime effect: same effect id on different components remains selectable');
 	await press('Enter');
-	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !picker.visible, 'runtime effect: selected instance opens the existing inspector');
 	const rows: InspectedPropertyRow<RuntimeInspectionProperty>[] = inspector.model.rows;
 	check(rows.find(row => row.element.label === 'PERIOD')!.element.value === String(period), 'runtime effect: actual loaded period, not the source literal 999');

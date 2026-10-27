@@ -24,11 +24,11 @@ export async function testSourceViewsBeforeApply(
 	model.pushEditOperations([{ offset: source.indexOf(originalRule), deleteLength: originalRule.length, text: newRule }]);
 	const edited = source.replace(originalRule, newRule);
 	check(model.dirty && status() === 'pending', 'W04: typing immediately differs from both saved and installed source');
-	const sourceTab = ide.editor.editorGroup.model.activeTab;
+	const sourceTab = ide.editor.editorParts.activeGroup.model.activeTab;
 	harness.executeCommand('behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	await frame();
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('W04: source lens command must open a visual view');
 	check(lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.contextId).getSnapshot().getFileData(resourceIdentityKey(model.identity))!.revision,
 		'W04: source lens projects the edited working-copy generation');
@@ -45,11 +45,11 @@ export async function testSourceViewsBeforeApply(
 	harness.executeCommand('behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	await frame();
-	check(ide.editor.editorGroup.model.activeTab === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.contextId).getSnapshot().getFileData(resourceIdentityKey(model.identity))!.revision,
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.contextId).getSnapshot().getFileData(resourceIdentityKey(model.identity))!.revision,
 		'W04: the retained source lens refreshes after undo and redo');
-	ide.editor.editorGroup.close(sourceTab.id);
+	ide.editor.editorParts.activeGroup.close(sourceTab.id);
 	await frame();
-	check(ide.editor.editorGroup.model.activeTab === lens, 'W04: closing the code tab does not close its source view');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens, 'W04: closing the code tab does not close its source view');
 	harness.openLuaSource(model.resource.path);
 	check(harness.getActiveEditorDocument().model === model, 'W04: reopening a closed tab retains document content and history');
 	const note = '\n-- W04: this unsaved source edit is included in Hot Resume.\n';
@@ -116,8 +116,8 @@ export async function testCapturedSourceApply(test: StudioFixture): Promise<void
 export async function testAemSourceApplication(test: StudioFixture): Promise<void> {
 	const { ide, harness, tasks, until, press, title, runPaletteCommand } = test;
 	const resource = ide.sources.catalog.resources.find(item => item.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.source.type === 'aem')!;
-	await ide.editor.navigation.openResource(ide.editor.editorGroup, resource);
-	const aem = ide.editor.editorGroup.model.activeTab;
+	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource);
+	const aem = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (aem.kind !== 'aem_editor') throw new Error('W04: an AEM resource opens its visual editor');
 	const model = aem.workingCopy;
 	await runPaletteCommand('Audio Events: Open Source');
@@ -163,7 +163,7 @@ export async function testCapturedSourceReboot(test: StudioFixture): Promise<voi
 		'W04: reboot applies its captured document after older saved workspace sources');
 	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'W04: reboot cannot acknowledge later typing');
 	ide.editor.activate();
-	await ide.editor.navigation.openResource(ide.editor.editorGroup, model.resource);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), model.resource);
 	await frame();
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === captured && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied',

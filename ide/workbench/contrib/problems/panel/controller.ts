@@ -28,6 +28,7 @@ import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
 import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
 import { handleProblemsPanelPointerInput } from './pointer';
 import type { EditorGroupView } from '../../../services/editor/editor_group';
+import type { EditorParts } from '../../../services/editor/editor_parts';
 import { inputFocus } from '../../../../input/focus';
 import { ProblemsPanelHeader } from './header';
 import type { EditorCommandRunner } from '../../../../common/commands';
@@ -238,13 +239,13 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	public handlePointer(
-		editorGroup: EditorGroupView,
+		parts: EditorParts,
 		snapshot: PointerSnapshot,
 		justPressed: boolean,
 		_justReleased: boolean,
 		bounds: RectBounds,
 	): boolean {
-		return handleProblemsPanelPointerInput(this, editorGroup, snapshot, justPressed, bounds);
+		return handleProblemsPanelPointerInput(this, parts, snapshot, justPressed, bounds);
 	}
 
 	public handlePointerWheel(deltaRows: number, bounds: RectBounds): boolean {
@@ -268,15 +269,15 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 		return true;
 	}
 
-	public handleKeyboard(playerInput: KeyInputEvent, editorGroup: EditorGroupView): void {
-		handleProblemsPanelKeyboardInput(playerInput, this, editorGroup);
+	public handleKeyboard(playerInput: KeyInputEvent, parts: EditorParts): void {
+		handleProblemsPanelKeyboardInput(playerInput, this, parts);
 	}
 
 	public handleKeyboardCommand(
-		editorGroup: EditorGroupView,
+		parts: EditorParts,
 		command: ProblemsPanelCommand,
 	): boolean {
-		return handleProblemsPanelNavigationCommand(this, editorGroup, command);
+		return handleProblemsPanelNavigationCommand(this, parts, command);
 	}
 
 	public setFixedHeightPx(height: number): void { this.fixedHeightPx = height > 0 ? height : null; this.cachedLayout = null; }

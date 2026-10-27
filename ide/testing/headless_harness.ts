@@ -87,18 +87,18 @@ export function createHeadlessIdeHarness(
 		getLogMessage: index => logOutput.messages[index],
 		getFaultStack: () => ide.fault.lastLuaCallStack,
 		getSignatureHelp: () => {
-			const pane = ide.editor.editorGroup.panes.activePane;
+			const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 			return pane?.input.kind === 'code_editor' ? (pane as CodeEditorPane).completion.hint : null;
 		},
-		getActiveWorkbenchTab: () => ide.editor.editorGroup.model.activeTab,
-		getActiveCodeContext: () => getActiveCodeTabContext(ide.editor.editorGroup),
+		getActiveWorkbenchTab: () => ide.editor.editorParts.activeGroup.model.activeTab,
+		getActiveCodeContext: () => getActiveCodeTabContext(ide.editor.editorParts.activeGroup),
 		getActiveEditorDocument: () => {
-			const pane = ide.editor.editorGroup.panes.activePane;
+			const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 			return pane?.input.kind === 'code_editor' ? (pane as CodeEditorPane).code : null;
 		},
-		getWorkbenchTabs: () => ide.editor.editorGroup.model.tabs,
+		getWorkbenchTabs: () => ide.editor.editorParts.activeGroup.model.tabs,
 		getHover: (row, column) => {
-			const pane = ide.editor.editorGroup.panes.activePane;
+			const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 			if (pane?.input.kind !== 'code_editor') return null;
 			const source = pane as CodeEditorPane;
 			source.hover.update(row, column);
@@ -106,7 +106,7 @@ export function createHeadlessIdeHarness(
 		},
 		performHotResume: () => performHotResume(
 			ide.hotResumes, ide.editor, ide.execution, ide.overlayRenderer, logOutput,
-			ide.runTargets, { action: 'hot-resume', presentation: { group: ide.editor.editorGroup, generation: ide.editor.editorGroup.panes.openGeneration } },
+			ide.runTargets, { action: 'hot-resume', presentation: { group: ide.editor.editorParts.activeGroup, generation: ide.editor.editorParts.activeGroup.panes.openGeneration } },
 		),
 		toggleLuaBreakpoint: (path: string, line: number) => {
 			const resource = (ide.sources.catalog.resolveResource({ contextId: ide.sources.activeContextId, path })
@@ -116,7 +116,7 @@ export function createHeadlessIdeHarness(
 		isDebuggerStopped: () => ide.debugger.source.stop !== undefined,
 		reboot: () => performReboot(
 			ide.boots, ide.editor, ide.execution, ide.overlayRenderer, logOutput,
-			ide.runTargets, { action: 'reboot', presentation: { group: ide.editor.editorGroup, generation: ide.editor.editorGroup.panes.openGeneration } },
+			ide.runTargets, { action: 'reboot', presentation: { group: ide.editor.editorParts.activeGroup, generation: ide.editor.editorParts.activeGroup.panes.openGeneration } },
 		),
 		executeCommand: command => ide.editor.commands.execute(command),
 		openLuaSource: (path: string) => {
@@ -127,10 +127,10 @@ export function createHeadlessIdeHarness(
 			);
 			const resource = (ide.sources.catalog.resolveResource({ contextId: ide.sources.activeContextId, path })
 				?? ide.sources.catalog.resolveModule(ide.sources.activeContextId, path))!;
-			openLuaCodeTab(ide.editor.editorGroup, ide.sources.catalog, ide.sources.catalog.resolveResource(resource)!);
+			openLuaCodeTab(ide.editor.editorParts.activeGroup, ide.sources.catalog, ide.sources.catalog.resolveResource(resource)!);
 		},
 		replaceActiveCodeSource: (source: string) => {
-			const code = (ide.editor.editorGroup.panes.activePane as CodeEditorPane).code;
+			const code = (ide.editor.editorParts.activeGroup.panes.activePane as CodeEditorPane).code;
 			const buffer = code.model.buffer;
 			const lastRow = buffer.getLineCount() - 1;
 			selectAllSingleCursor(

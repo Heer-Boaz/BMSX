@@ -62,9 +62,9 @@ function menuFixture(t: TestContext) {
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	ide.boots.didReplaceMachine();
-	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
+	editor.editorParts.main.group.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	editorRuntimeState.active = true; editor.interaction.setActive(true); host.input.setPointerAdmissionMode('routed'); editor.update(0);
-	const pane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane;
+	const pane = editor.editorParts.main.group.panes.getPane('code_editor') as CodeEditorPane;
 	const origin = inputFocus.target!, model = pane.code.model!, view = pane.code.view!;
 	view.cursorRow = 1; view.cursorColumn = 6;
 	const key = (code: string, modifiers = KeyModifier.none, down = true, repeat = false) => {
@@ -76,7 +76,7 @@ function menuFixture(t: TestContext) {
 
 test('Files focus is idempotent and retains its selection and source working copy while Ctrl+B still toggles visibility', t => {
 	const { editor, host, origin, model, view, source, key } = menuFixture(t);
-	const panel = editor.resourcePanel, input = editor.editorGroup.panes.activePane!.input;
+	const panel = editor.resourcePanel, input = editor.editorParts.main.group.panes.activePane!.input;
 	const version = model.version, cycles = host.runtime.machine.scheduler.nowCycles;
 	assert.equal(panel.visible, false);
 	assert.equal(key('KeyE', KeyModifier.ctrl | KeyModifier.shift).consumed, true);
@@ -108,9 +108,9 @@ test('Files focus is idempotent and retains its selection and source working cop
 	assert.equal(panel.isVisible(), true); assert.equal(panel.isFocused(), true);
 	assert.ok(panel.files.selectedNode === selected); assert.equal(root.collapsed, false);
 
-	assert.ok(editor.editorGroup.panes.activePane!.input === input);
-	assert.ok((editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code.model === model
-		&& (editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code.view === view);
+	assert.ok(editor.editorParts.main.group.panes.activePane!.input === input);
+	assert.ok((editor.editorParts.main.group.panes.getPane('code_editor') as CodeEditorPane).code.model === model
+		&& (editor.editorParts.main.group.panes.getPane('code_editor') as CodeEditorPane).code.view === view);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.canUndo, false);
 	assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 6); assert.equal(view.selectionAnchor, null);
 	assert.equal(host.runtime.machine.scheduler.nowCycles, cycles);
@@ -131,7 +131,7 @@ test('clean AltLeft release and F10 use the real menu session and return the sou
 	key('F10', KeyModifier.none, false); assert.equal(editor.contextMenu.visible, true);
 	key('F10'); assert.equal(editor.contextMenu.visible, false); assert.ok(inputFocus.target === origin);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.canUndo, false);
-	assert.ok((editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code.view === view); assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 6);
+	assert.ok((editor.editorParts.main.group.panes.getPane('code_editor') as CodeEditorPane).code.view === view); assert.equal(view.cursorRow, 1); assert.equal(view.cursorColumn, 6);
 });
 
 test('F10 preserves the concrete step-over binding while closed and dismisses only an admitted menu', t => {
@@ -251,13 +251,13 @@ test('physical menu gestures remain guest input while a real scanout client has 
 
 test('runtime picker execution retains a source field focus until a fresh authoring interaction, not the accepting key release', t => {
 	const f = menuFixture(t);
-	const scope = new InputFocusScope(f.editor.editorGroup.focusScope.surfaceScope, f.editor.editorGroup.focusScope);
+	const scope = new InputFocusScope(f.editor.editorParts.main.group.focusScope.surfaceScope, f.editor.editorParts.main.group.focusScope);
 	const interaction = new InputInteraction(f.editor.commands.transport);
 	scope.interaction = interaction;
 	const runtimeClient = inputFocus.createTarget(null, scope); runtimeClient.bindKeyboard(() => {});
 	scope.runtime = { target: runtimeClient, interaction };
 	f.editor.quickInput.pick('Runtime action', '', () => new TextQuickPickProvider([{ label: 'Resume', description: '', detail: '' }]),
-		() => f.editor.commands.execute('runtime.playback', runtimeClient), undefined, runtimeClient);
+		() => f.editor.commands.execute('runtime.playback', runtimeClient), undefined, { invocationOrigin: runtimeClient });
 	f.key('Enter');
 	assert.ok(inputFocus.target === f.origin);
 	assert.equal(interaction.running, true); assert.equal(f.host.execution.executionBlocked(), false);
@@ -272,13 +272,13 @@ test('empty-group Studio retirement and blocked admission cannot carry an Alt ca
 	const { editor, origin, key } = menuFixture(t);
 	key('AltLeft', KeyModifier.alt);
 	const extent = { left: 0, top: 0, right: 384, bottom: 288 };
-	const blocker = editor.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('blocking menu admission'),
+	const blocker = editor.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: Symbol('blocking menu admission'),
 		isVisible: () => true, getBounds: () => extent, getClip: () => extent, draw() {} });
 	assert.ok(inputFocus.target === origin); assert.equal(inputFocus.admittedTarget, null);
 	key('ShiftLeft', KeyModifier.alt | KeyModifier.shift);
 	blocker.dispose(); key('AltLeft', KeyModifier.none, false);
 	assert.equal(editor.contextMenu.visible, false, 'a temporarily blocked owner does not retain an armed gesture');
-	for (const tab of [...editor.editorGroup.model.tabs]) editor.editorGroup.close(tab.id);
+	for (const tab of [...editor.editorParts.main.group.model.tabs]) editor.editorParts.main.group.close(tab.id);
 	assert.equal(inputFocus.target, null);
 	key('AltLeft', KeyModifier.alt); editor.deactivate(); editor.activate(); key('AltLeft', KeyModifier.none, false);
 	assert.equal(editor.contextMenu.visible, false, 'empty-group retirement cancels Alt even without a focused control to blur');
@@ -288,15 +288,15 @@ test('empty-group Studio retirement and blocked admission cannot carry an Alt ca
 
 test('the real Menu icon remains pointer-accessible with ordinary, overflowing and empty editor groups', t => {
 	const { editor, origin, key } = menuFixture(t);
-	const sourceTab = editor.editorGroup.model.tabs[0];
+	const sourceTab = editor.editorParts.main.group.model.tabs[0];
 	for (const group of ['ordinary', 'overflow', 'empty'] as const) {
 		if (group === 'overflow') {
-			editor.editorGroup.openEditor(new GameViewInput()); editor.editorGroup.activate(sourceTab.id);
+			editor.editorParts.main.group.openEditor(new GameViewInput()); editor.editorParts.main.group.activate(sourceTab.id);
 			editor.updateViewport({ width: 96, height: 288 });
-		} else if (group === 'empty') for (const tab of [...editor.editorGroup.model.tabs]) editor.editorGroup.close(tab.id);
+		} else if (group === 'empty') for (const tab of [...editor.editorParts.main.group.model.tabs]) editor.editorParts.main.group.close(tab.id);
 		for (const variant of ['tiny', 'msx'] as const) {
 			editor.setFontVariant(variant); editor.update(0);
-			if (group === 'overflow') assert.equal(editor.editorGroup.tabStrip.scrollbar.isVisible(), true);
+			if (group === 'overflow') assert.equal(editor.editorParts.main.group.tabStrip.scrollbar.isVisible(), true);
 			const bounds = editorChromeState.menuButtonBounds;
 			assert.ok(bounds.right > bounds.left && bounds.bottom > bounds.top, 'Menu retains an actual pointer target without an editor');
 			const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
@@ -307,21 +307,21 @@ test('the real Menu icon remains pointer-accessible with ordinary, overflowing a
 			assert.equal(editor.contextMenu.visible, true);
 			key('Escape'); assert.equal(editor.contextMenu.visible, false);
 			if (group !== 'empty') assert.ok(inputFocus.target === origin);
-			else assert.equal(editor.editorGroup.panes.activePane, null);
+			else assert.equal(editor.editorParts.main.group.panes.activePane, null);
 		}
 	}
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} game chrome and Timeline menus retain visibility intent without stealing guest secondary input`, t => {
 	const f = menuFixture(t), game = new GameViewInput();
-	f.editor.editorGroup.openEditor(game); f.editor.setFontVariant(variant); f.editor.update(0);
+	f.editor.editorParts.main.group.openEditor(game); f.editor.setFontVariant(variant); f.editor.update(0);
 	const content = inputFocus.target!, version = f.model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const x = game.layout.left + 1, y = game.layout.top + 1;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
 	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 }); f.editor.update(0);
-	const menu = f.editor.contextMenu, timeline = f.editor.runtimeTimeline;
+	const menu = f.editor.contextMenu, timeline = f.editor.editorParts.main.timeline;
 	assert.equal(menu.visible, true); assert.ok(menu.invocationOrigin === content && menu.returnFocus === content);
 	assert.equal(menu.model.rows[0].command, 'runtime.toggleTimeline'); assert.equal(menu.model.rows[0].enabled, true);
 	f.key('Escape'); f.key('Escape', KeyModifier.none, false); assert.ok(inputFocus.target === content);
@@ -355,7 +355,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} game chrome and
 });
 
 test('a requested primary GamePanel supplies Timeline beside Source without coupling its transport to admitted preview geometry', t => {
-	const f = menuFixture(t), timeline = f.editor.runtimeTimeline, version = f.model.version;
+	const f = menuFixture(t), timeline = f.editor.editorParts.main.timeline, version = f.model.version;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	f.editor.updateViewport({ width: 700, height: 288 });
 	f.editor.commands.execute('gameView.togglePanel'); f.editor.update(0);
@@ -394,13 +394,13 @@ test('a requested primary GamePanel supplies Timeline beside Source without coup
 	assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
 	f.editor.updateViewport({ width: 700, height: 288 }); f.editor.update(0);
 	assert.equal(f.editor.gamePanel.visible, true); assert.equal(timeline.visible, false);
-	const game = new GameViewInput(); f.editor.editorGroup.openEditor(game); f.editor.update(0);
+	const game = new GameViewInput(); f.editor.editorParts.main.group.openEditor(game); f.editor.update(0);
 	assert.equal(f.editor.gamePanel.enabled, true); assert.equal(f.editor.gamePanel.visible, false);
 	assert.equal(f.editor.gamePanel.focusScope.runtime, undefined);
-	assert.ok(f.editor.editorGroup.panes.activePane!.commandTarget.scope.runtimeOwner!.runtime!.interaction.transport === f.editor.commands.transport);
+	assert.ok(f.editor.editorParts.main.group.panes.activePane!.commandTarget.scope.runtimeOwner!.runtime!.interaction.transport === f.editor.commands.transport);
 	assert.equal(timeline.available, true, 'the selected Game view owns its own target rather than borrowing a hidden companion');
-	const source = f.editor.editorGroup.model.tabs.find(tab => tab.kind === 'code_editor')!;
-	f.editor.editorGroup.activate(source.id); f.editor.update(0);
+	const source = f.editor.editorParts.main.group.model.tabs.find(tab => tab.kind === 'code_editor')!;
+	f.editor.editorParts.main.group.activate(source.id); f.editor.update(0);
 	f.editor.commands.execute('gameView.closePanel'); f.editor.update(0);
 	assert.equal(timeline.available, false); assert.equal(timeline.requested, false);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.version, version); assert.equal(f.model.canUndo, false);
@@ -675,7 +675,7 @@ test('a real QuickInput query cannot borrow its invoking list Find while retaini
 	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
 	let finds = 0;
 	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); });
 	f.parent.focus();
 	picker.input('Filter events', 'Query', 'probe', async text => text, () => assert.fail('Ctrl/Cmd F submitted the query'));

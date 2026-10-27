@@ -2,10 +2,10 @@ import { pointerHover } from './hover';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
 import { getProblemsPanelBounds, problemsPanel } from '../../workbench/contrib/problems/panel/controller';
-import type { EditorGroupView } from '../../workbench/services/editor/editor_group';
+import type { EditorParts } from '../../workbench/services/editor/editor_parts';
 
 export function handleProblemsPanelPointer(
-	editorGroup: EditorGroupView,
+	parts: EditorParts,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	justReleased: boolean,
@@ -23,7 +23,7 @@ export function handleProblemsPanelPointer(
 		return false;
 	}
 	pointerHover.visit(problemsPanel);
-	if (!problemsPanel.handlePointer(editorGroup, snapshot, justPressed, justReleased, problemsBounds)) {
+	if (!problemsPanel.handlePointer(parts, snapshot, justPressed, justReleased, problemsBounds)) {
 		return false;
 	}
 	return true;

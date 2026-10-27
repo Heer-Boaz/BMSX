@@ -26,7 +26,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await press('F1');
 	check(cycles() === sourcePosition && ide.editor.guestInputRecipient === null, 'source focus holds gameplay and captures its input');
 	await runPaletteCommand('View: Game');
-	const view = ide.editor.editorGroup.model.activeTab;
+	const view = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (view.kind !== 'game_view') throw new Error('Game View required');
 	await click(view.frameBounds);
 	const focused = inputFocus.target;
@@ -103,7 +103,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await until(() => nemesisTitleState(test) !== 'idle', 'game input: viewport confirmation starts the real title sequence');
 	await test.releaseGuestKey('Space');
 	await press('ShiftLeft', 'F1');
-	check(model.version === version && ide.editor.editorGroup.model.activeTab === view, 'gameplay leaves source and open editors intact');
+	check(model.version === version && ide.editor.editorParts.activeGroup.model.activeTab === view, 'gameplay leaves source and open editors intact');
 	await click(view.frameBounds);
 	setKey('KeyZ', true);
 	await frame();
@@ -116,7 +116,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 
 	await runPaletteCommand('Actor Lab: Open');
 	await press('Enter');
-	const actor = ide.editor.editorGroup.model.activeTab;
+	const actor = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (actor.kind !== 'actor_lab') throw new Error('Actor Lab required');
 	await click(test.visiblePreviewPoint(actor.previewBounds));
 	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && !execution.executionBlocked(),
@@ -190,7 +190,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 		'inspecting the hovered live actor is the explicit pause and selection action');
 	const previewPlacement = JSON.stringify(actor.previewBounds);
 	await runPaletteCommand('Actor Lab: Inspect Instance');
-	const actorPane = ide.editor.editorGroup.panes.activePane as ActorLabEditorPane;
+	const actorPane = ide.editor.editorParts.activeGroup.panes.activePane as ActorLabEditorPane;
 	const inspector = actorPane.inspector, details = actor.details;
 	check(actorPane.companionGameMinimumWidth === undefined && inspector.visible && actor.detailsWindow.open && actorPane.detailsWindow.visible,
 		'instance Details attach as a separate floating window over the full game preview');

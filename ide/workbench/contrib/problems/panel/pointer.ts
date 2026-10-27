@@ -3,11 +3,11 @@ import type { PointerSnapshot } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { gotoDiagnostic } from '../../code_editor/diagnostics/navigation';
 import type { ProblemsPanelController } from './controller';
-import type { EditorGroupView } from '../../../services/editor/editor_group';
+import type { EditorParts } from '../../../services/editor/editor_parts';
 
 export function handleProblemsPanelPointerInput(
 	controller: ProblemsPanelController,
-	editorGroup: EditorGroupView,
+	parts: EditorParts,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	bounds: RectBounds,
@@ -73,6 +73,6 @@ export function handleProblemsPanelPointerInput(
 	}
 	controller.setSelectionIndex(diagnosticIndex);
 	controller.revealSelection(layout, availableWidth);
-	gotoDiagnostic(editorGroup, diagnostics[diagnosticIndex]);
+	gotoDiagnostic(parts, diagnostics[diagnosticIndex]);
 	return true;
 }

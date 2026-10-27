@@ -14,6 +14,7 @@ import { ActionPrompt } from '../../ide/workbench/contrib/modal/action_prompt';
 import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 
 const REQUEST: ActionPromptRequest = { title: 'Unsaved changes', message: 'Choose what happens to this source.',
 	primary: 'Save', secondary: 'Discard', primaryEnabled: true, defaultChoice: 'primary' };
@@ -27,7 +28,7 @@ function fixture(t: TestContext) {
 	const origin = focus.createTarget();
 	origin.bindKeyboard(() => {});
 	origin.focus();
-	const prompt = new ActionPrompt(focus, capture);
+	const prompt = new ActionPrompt(focus, capture, undefined, undefined, { scope: focus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	let pressId = 0;
 	const frame = () => { clock.advance(20); input.pollInput(); };
 	const key = (code: string, down: boolean) => {
@@ -60,6 +61,27 @@ test('modal owns focus until Escape is released, then returns it to the invoking
 	f.press('Escape');
 	assert.equal(await result, 'cancel');
 	assert.equal(f.focus.target, f.origin);
+});
+
+test('prompt visibility is published before modal focus admission and before return to its invoker', async t => {
+	configureFontVariant(DEFAULT_FONT_VARIANT);
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), surfaces = new WorkbenchSurfaceService();
+	const bounds = { left: 0, top: 0, right: 384, bottom: 288 }, origin = focus.createTarget();
+	origin.bindKeyboard(() => {});
+	surfaces.attach({ role: 'content', captureScope: origin.scope.surfaceScope,
+		isVisible: () => true, getBounds: () => bounds, getClip: () => bounds, draw() {} });
+	const prompt = new ActionPrompt(focus, capture, () => surfaces.changed(), undefined,
+		{ scope: focus.workbenchScope, bounds, kind: 'workspace' });
+	surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: prompt.pointerScope,
+		isVisible: () => prompt.visible, getBounds: () => prompt.view.bounds, getClip: () => bounds, draw() {} });
+	const unbind = focus.bindScopeAdmission(scope => surfaces.isAdmitted(surfaces.findByScope(scope.surfaceScope)!));
+	t.after(() => { unbind(); prompt.dispose(); surfaces.dispose(); focus.setTarget(null); });
+	origin.focus();
+	const decision = prompt.show(REQUEST);
+	assert.ok(focus.target === prompt.focusTarget);
+	prompt.close('cancel');
+	assert.equal(await decision, 'cancel');
+	assert.ok(focus.target === origin);
 });
 
 test('Escape cancellation survives a modifier change before its release', async t => {
@@ -179,6 +201,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} prompt layout w
 	const f = fixture(t);
 	configureFontVariant(variant);
 	editorViewState.viewportWidth = 96; editorViewState.viewportHeight = 400;
+	Object.assign(f.prompt.presentation.bounds, { right: 96, bottom: 400 });
 	const overlay = createHostOverlayFixture(384, 400);
 	const text = t.mock.method(api, 'blit_text_inline_with_font');
 	const measurement = t.mock.method(editorViewState.font, 'measureTextRange');
@@ -188,7 +211,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} prompt layout w
 	for (let frame = 0; frame < 10; frame++) f.prompt.update();
 	assert.equal(measurement.mock.callCount(), measured, 'unchanged retained content has no repeated layout measurement');
 	for (const width of [96, 384]) {
-		editorViewState.viewportWidth = width; f.prompt.update();
+		editorViewState.viewportWidth = width; Object.assign(f.prompt.presentation.bounds, { right: width }); f.prompt.update();
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 		text.mock.resetCalls(); f.prompt.draw(); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 		assert.ok(f.prompt.view.bounds.left >= 0 && f.prompt.view.bounds.right <= width);

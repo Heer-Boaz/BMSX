@@ -1,15 +1,15 @@
 import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
 import type { SerializedBreakpoints } from '../../runtime/breakpoints';
 import type { WorkspaceRecord } from '../../workspace/records';
-import type { SerializedEditorGroup } from '../services/editor/editor_serialization';
+import type { SerializedEditorParts } from '../services/editor/editor_parts_serialization';
 
 import type { PersistedDirtyEntry } from '../../workspace/source_recovery_store';
 export type { PersistedDirtyEntry } from '../../workspace/source_recovery_store';
 
 export type WorkspaceAutosavePayload = {
-	version: 2;
+	version: 3;
 	dirtyFiles: PersistedDirtyEntry[];
-	editorGroup: SerializedEditorGroup;
+	editorParts: SerializedEditorParts;
 	breakpoints: SerializedBreakpoints;
 	fontVariant: FontVariant;
 };
@@ -17,7 +17,7 @@ export type WorkspaceAutosavePayload = {
 /** Persistent layout and source references are admitted as one versioned format. */
 export function deserializeWorkspaceAutosavePayload(source: string): WorkspaceAutosavePayload {
 	const payload: WorkspaceAutosavePayload = JSON.parse(source);
-	if (payload.version !== 2) throw new Error(`Unsupported workspace session version '${payload.version}'.`);
+	if (payload.version !== 3) throw new Error(`Unsupported workspace session version '${payload.version}'.`);
 	return payload;
 }
 

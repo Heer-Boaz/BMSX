@@ -57,11 +57,21 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 }
 
 export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId, group: EditorGroupView): void {
+	const invokingGroup = group;
+	switch (command) {
+		case 'home': case 'sceneEditor': group = editor.editorParts.main.group; break;
+		case 'animation': case 'romInspector': case 'events': case 'gpuDebugger': case 'gteDebugger':
+		case 'terminal': case 'conversations': case 'assistant': case 'behaviorLens': case 'behaviorLens.preview':
+		case 'behaviorLens.actionEffects': case 'behaviorLens.stateMachines': case 'behaviorLens.behaviorTrees':
+		case 'cartMap': case 'aem': case 'progression': case 'inputBindings':
+			group = editor.editorParts.documentDestination(group); break;
+	}
+	const picker = editor.editorParts.partForGroup(group).quickInput;
 	switch (command) {
 		case 'home': openHome(group, workspaceState.context); return;
-		case 'animation': editor.animations.open(group); return;
+		case 'animation': editor.animations.open(group, picker); return;
 		case 'hostError': openHostError(group, fault.hostFrameFailure!); return;
-		case 'romInspector': openRomInspector(group, editor.quickInput, sources); return;
+		case 'romInspector': openRomInspector(group, picker, sources); return;
 		case 'events': openEventViewer(group, editor.events); return;
 		case 'gpuDebugger': openGpuDebugger(group, editor.gpu); return;
 		case 'gteDebugger': openGteDebugger(group, editor.gte); return;
@@ -71,7 +81,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			return;
 		case 'actorLab': editor.actorLab.open(); return;
 		case 'gameView': openGameView(group); return;
-		case 'conversations': openObservedConversation(group, editor.observedConversation, editor.quickInput); return;
+		case 'conversations': openObservedConversation(group, editor.observedConversation, picker); return;
 		case 'assistant': openAssistant(group, editor.assistant); return;
 		case 'resources':
 			editor.resourcePanel.togglePanel();
@@ -83,33 +93,33 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			toggleProblemsPanel(group);
 			return;
 		case 'behaviorLens':
-			editor.behaviorLens.open(group);
+			editor.behaviorLens.open(group, picker);
 			return;
 		case 'behaviorLens.preview':
-			editor.behaviorLens.open(group, null, { pinned: false });
+			editor.behaviorLens.open(group, picker, null, { pinned: false });
 			return;
 		case 'keepEditor':
 			group.model.pin(group.model.activeTab);
 			return;
-		case 'openEditors': showOpenEditors(group, editor.quickInput); return;
+		case 'openEditors': showOpenEditors(group, picker); return;
 		case 'behaviorLens.actionEffects':
-			editor.behaviorLens.open(group, 'action_effect');
+			editor.behaviorLens.open(group, picker, 'action_effect');
 			return;
 		case 'behaviorLens.stateMachines':
-			editor.behaviorLens.open(group, 'state_machine');
+			editor.behaviorLens.open(group, picker, 'state_machine');
 			return;
 		case 'behaviorLens.behaviorTrees':
-			editor.behaviorLens.open(group, 'behavior_tree');
+			editor.behaviorLens.open(group, picker, 'behavior_tree');
 			return;
-		case 'cartMap': editor.cartMaps.open(group); return;
-		case 'aem': editor.aemEditor.open(group); return;
-		case 'progression': editor.luaPrograms.open(group, 'progression'); return;
-		case 'inputBindings': editor.luaPrograms.open(group, 'input'); return;
+		case 'cartMap': editor.cartMaps.open(group, picker); return;
+		case 'aem': editor.aemEditor.open(group, picker); return;
+		case 'progression': editor.luaPrograms.open(group, picker, 'progression'); return;
+		case 'inputBindings': editor.luaPrograms.open(group, picker, 'input'); return;
 		case 'scenarioLab':
 			editor.scenarioLab.open();
 			return;
 		case 'sceneEditor':
-			openSourceView(group, sources.catalog, editor.quickInput, {
+			openSourceView(invokingGroup, sources.catalog, picker, {
 				title: 'SCENE EDITOR', accepts: hasSceneSourceDefinitions,
 				openResource: resource => editor.sceneEditor.openResource(group, resource),
 			});

@@ -1,3 +1,4 @@
+import type { QuickInputController } from '../../services/quick_input/controller';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -72,7 +73,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 	public constructor(private readonly controller: AnimationEditorController,
 		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>,
-		private readonly group: EditorGroupView, scope: InputFocusScope) {
+		private readonly group: EditorGroupView, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
 		super(scope);
 		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, workArea);
 		this.propertyPointer.attachFeedback(surfaces, paneSurface, workArea, this.detailsFocus);
@@ -107,11 +108,11 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		};
 		this.detailsFocus.commandContext = this.focusTarget;
 		this.unbindDetailsKeyboard = this.detailsFocus.bindKeyboard(player => this.handleDetailsKeyboard(player));
-		this.focusTarget.registerCommand('animation.addTrack', { isEnabled: () => this.hasInput && this.controller.authoring.canAddTrack(this.input), run: () => this.controller.authoring.addTrack(this.input) });
-		this.focusTarget.registerCommand('animation.addKey', { isEnabled: () => this.hasInput && this.controller.authoring.canAddKey(this.input), run: () => this.controller.authoring.addKey(this.input) });
-		this.focusTarget.registerCommand('animation.addClip', { isEnabled: () => this.hasInput && this.controller.authoring.canAddClip(this.input), run: () => this.controller.authoring.addClip(this.input) });
-		this.focusTarget.registerCommand('animation.addFrame', { isEnabled: () => this.hasInput && this.controller.authoring.canAddFrame(this.input), run: () => this.controller.authoring.addFrame(this.input) });
-		this.focusTarget.registerCommand('animation.addProperty', { isEnabled: () => this.hasInput && this.controller.authoring.canAddProperty(this.input), run: () => this.controller.authoring.addProperty(this.input) });
+		this.focusTarget.registerCommand('animation.addTrack', { isEnabled: () => this.hasInput && this.controller.authoring.canAddTrack(this.input), run: () => this.controller.authoring.addTrack(this.input, this.quickInput) });
+		this.focusTarget.registerCommand('animation.addKey', { isEnabled: () => this.hasInput && this.controller.authoring.canAddKey(this.input), run: () => this.controller.authoring.addKey(this.input, this.quickInput) });
+		this.focusTarget.registerCommand('animation.addClip', { isEnabled: () => this.hasInput && this.controller.authoring.canAddClip(this.input), run: () => this.controller.authoring.addClip(this.input, this.quickInput) });
+		this.focusTarget.registerCommand('animation.addFrame', { isEnabled: () => this.hasInput && this.controller.authoring.canAddFrame(this.input), run: () => this.controller.authoring.addFrame(this.input, this.quickInput) });
+		this.focusTarget.registerCommand('animation.addProperty', { isEnabled: () => this.hasInput && this.controller.authoring.canAddProperty(this.input), run: () => this.controller.authoring.addProperty(this.input, this.quickInput) });
 		this.focusTarget.registerCommand('animation.duplicate', { isEnabled: () => this.hasInput && this.controller.authoring.canDuplicate(this.input), run: () => this.controller.authoring.duplicate(this.input) });
 		this.focusTarget.registerCommand('animation.earlier', { isEnabled: () => this.hasInput && this.controller.authoring.canReorder(this.input, -1), run: () => this.controller.authoring.reorder(this.input, -1) });
 		this.focusTarget.registerCommand('animation.later', { isEnabled: () => this.hasInput && this.controller.authoring.canReorder(this.input, 1), run: () => this.controller.authoring.reorder(this.input, 1) });

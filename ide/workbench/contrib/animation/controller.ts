@@ -9,7 +9,7 @@ import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_m
 import { resourceIdentityKey, type RuntimeResource } from '../../../common/resource';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import type { EditorNavigationController } from '../resources/navigation';
@@ -24,9 +24,9 @@ import { revealWorkbenchListSelection } from '../../ui/list_view';
 export class AnimationEditorController {
 	public readonly authoring: AnimationAuthoring;
 	public constructor(private readonly catalog: WorkspaceSourceCatalog,
-		private readonly navigation: EditorNavigationController, private readonly quickInput: QuickInputController) { this.authoring = new AnimationAuthoring(this, quickInput, catalog); }
+		private readonly navigation: EditorNavigationController) { this.authoring = new AnimationAuthoring(this, catalog); }
 
-	public open(group: EditorGroupView): void {
+	public open(group: EditorGroupView, quickInput: QuickInputController): void {
 		const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
 		const snapshotFor = (contextId: string): LuaSemanticWorkspaceSnapshot => {
 			let snapshot = snapshots.get(contextId);
@@ -48,7 +48,7 @@ export class AnimationEditorController {
 			}
 			if (buildAnimationSourceDocument(model.resource, snapshot) !== undefined) { this.openResource(group, model.resource); return; }
 		}
-		this.quickInput.pick('ANIMATIONS', 'Choose a written definition', (_origin, lifetime) => {
+		quickInput.pick('ANIMATIONS', 'Choose a written definition', (_origin, lifetime) => {
 			snapshots.clear();
 			const choices: { label: string; description: string; detail: string; contextId: string; definition: AnimationDefinitionSource }[] = [];
 			const admitted = new Map<string, Map<LuaTableConstructorExpression, Set<FileSemanticData | undefined>>>();
@@ -67,17 +67,17 @@ export class AnimationEditorController {
 						contextId: resource.contextId, definition });
 				}
 			}
-			const retire = () => this.quickInput.hide();
+			const retire = () => quickInput.hide();
 			lifetime.add({ dispose: editorTextModelService.onDidChangeContent(retire) });
 			lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
 			lifetime.add({ dispose: this.catalog.onDidChange(retire) });
 			return new TextQuickPickProvider(choices);
 		},
 			item => this.openDefinition(group, item.contextId, item.definition),
-			lifetime => lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) }));
+			lifetime => lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) }));
 	}
 
-	public openDefinition(group: EditorGroupView, contextId: string, definition: AnimationDefinitionSource): AnimationEditorInput {
+	public openDefinition(group: EditorGroupView, contextId: string, definition: AnimationDefinitionSource, options: EditorTabOpenOptions = {}): AnimationEditorInput {
 		const project = getOrCreateSemanticProject(editorTextModelService, contextId);
 		const resource = this.catalog.resolveResource(project.getResourceIdentity(definition.file.file))!;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
@@ -93,15 +93,15 @@ export class AnimationEditorController {
 			}
 			this.refresh(input);
 		}
-		group.openEditor(input);
+		group.openEditor(input, options);
 		return input;
 	}
 
-	public openResource(group: EditorGroupView, resource: RuntimeResource): AnimationEditorInput {
+	public openResource(group: EditorGroupView, resource: RuntimeResource, options: EditorTabOpenOptions = {}): AnimationEditorInput {
 		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
 		let input = group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
 		if (input === undefined) { input = new AnimationEditorInput(model, resource.contextId); this.refresh(input); }
-		group.openEditor(input);
+		group.openEditor(input, options);
 		return input;
 	}
 

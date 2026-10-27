@@ -14,33 +14,39 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT enemy_crossfoe');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('crossfoe: concrete BT graph required');
 	const model = lens.workingCopy;
 	const graph = lens.view.presentation;
 	const original = model.buffer.getText();
-	check(!model.dirty && !model.canUndo && ide.editor.editorGroup.model.findById(buildCodeTabId(model.resource)) === undefined, 'crossfoe: clean Lens model exists without a code view');
+	check(!model.dirty && !model.canUndo && ide.editor.editorParts.groups.every(group => group.model.findById(buildCodeTabId(model.resource)) === undefined), 'crossfoe: clean Lens model exists without a code view');
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await runPaletteCommand('Behavior Lens: Move BT Child Later');
 	check(model.dirty && model.buffer.getText() !== original, 'crossfoe: only an explicit source command edits the BT');
 	await until(() => workspaceState.localRevision === workspaceState.requestedRevision, 'crossfoe: real autosave timer backs up the visual edit');
 	const backup = workspaceState.localGeneration!;
-	check(backup.payload.dirtyFiles.some(entry => entry.path === model.resource.path)
-		&& !backup.payload.editorGroup.inputs.some(entry => entry.kind === 'code_editor' && (JSON.parse(entry.value) as SerializedCodeEditorInput).source.resource.path === model.resource.path), 'crossfoe: a valid content backup need not have a code view');
+	check(backup.payload.dirtyFiles.some(entry => entry.contextId === model.resource.contextId && entry.path === model.resource.path)
+		&& [backup.payload.editorParts.main, ...backup.payload.editorParts.documents.map(part => part.group)].every(group =>
+			!group.inputs.some(entry => {
+				if (entry.kind !== 'code_editor') return false;
+				const resource = (JSON.parse(entry.value) as SerializedCodeEditorInput).source.resource;
+				return resource.contextId === model.resource.contextId && resource.path === model.resource.path;
+			})), 'crossfoe: a valid content backup need not have a code view');
 	const editedVersion = model.version;
 	await click(graph.actionBar.items[0].bounds, 8);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model && model.version === editedVersion && !hasSelection(sourcePane(test).code),
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model && model.version === editedVersion && !hasSelection(sourcePane(test).code),
 		'crossfoe: first Source activation attaches the same edited model without another edit');
 	await until(() => workspaceState.localRevision === workspaceState.requestedRevision, 'crossfoe: first code-view metadata survives the autosave timer');
 	const sourceGeneration = workspaceState.localGeneration!;
 	check(sourceGeneration.dirtyRecords === backup.dirtyRecords && sourceGeneration.payload.dirtyFiles === backup.payload.dirtyFiles,
 		'crossfoe: navigation does not rewrite the dirty source backup');
-	check(sourceGeneration.payload.editorGroup.inputs.some(entry => {
+	check([sourceGeneration.payload.editorParts.main, ...sourceGeneration.payload.editorParts.documents.map(part => part.group)].some(group => group.inputs.some(entry => {
 		if (entry.kind !== 'code_editor') return false;
 		const state: SerializedCodeEditorInput = JSON.parse(entry.value);
-		return state.source.resource.path === model.resource.path && state.view.cursor === model.buffer.offsetAt(sourcePane(test).code.view.cursorRow, sourcePane(test).code.view.cursorColumn);
-	}),
+		return state.source.resource.contextId === model.resource.contextId && state.source.resource.path === model.resource.path
+			&& state.view.cursor === model.buffer.offsetAt(sourcePane(test).code.view.cursorRow, sourcePane(test).code.view.cursorColumn);
+	})),
 		'crossfoe: recovery now includes the first code view and its exact source selection');
 	await press('ControlLeft', 'KeyZ');
 	check(!model.dirty && model.buffer.getText() === original, 'crossfoe: ordinary document Undo restores the clean source');
@@ -63,11 +69,11 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 			await click(bounds, 8);
 		} else {
 			await test.runPaletteCommand('Behavior Lens: Open Source Details');
-			const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
-			check(inspector.visible && !ide.editor.quickInput.visible, 'crossfoe: Details opens full source content');
+			const inspector = (ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+			check(inspector.visible && !ide.editor.editorParts.activePart.quickInput.visible, 'crossfoe: Details opens full source content');
 			await click(inspector.actionBar.items[0].bounds, 8);
 		}
-		check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model && !hasSelection(sourcePane(test).code), `${route}: Source focuses code without a held selection`);
+		check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model && !hasSelection(sourcePane(test).code), `${route}: Source focuses code without a held selection`);
 		for (let index = 0; index < 140; index += 1) await frame();
 		check(model.version === cleanVersion && !model.dirty && navigationEdits === 0 && model.buffer.getText() === original,
 			`${route}: navigation emits no content change and creates no dirty working copy`);

@@ -13,13 +13,13 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = ide.editor.editorGroup.model.activeTab;
+	const code = ide.editor.editorParts.activeGroup.model.activeTab;
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_MEMBERSHIP_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.membership');
-	let lens = ide.editor.editorGroup.model.activeTab;
+	let lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT membership: concrete graph required');
 	let view = lens.view;
 	let graph = lens.view.presentation;
@@ -34,7 +34,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	check(opaque.member?.index === 1 && opaque.source.kind === 'dynamic' && opaque.children.length === 0,
 		'BT membership: physical navigation enters the opaque slot without inventing its result');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === opaque.source.occurrenceRange.start.line - 1
+	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === opaque.source.occurrenceRange.start.line - 1
 		&& sourcePane(test).code.view.cursorColumn === opaque.source.occurrenceRange.start.column - 1 && !hasSelection(sourcePane(test).code),
 		'BT membership: held Source opens the builder use, not its function or a code drag');
 	await test.clickTab(lens.id);
@@ -67,14 +67,14 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	check(model.buffer.getText() === BT_MEMBERSHIP_SOURCE, 'BT membership: normal code history restores both source changes');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.weighted-membership');
-	const nextDefinition2 = ide.editor.editorGroup.model.activeTab;
+	const nextDefinition2 = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
 	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
 	lens = nextDefinition2;
 	view = lens.view;
 	graph = nextDefinition2.view.presentation;
 	viewport = graph.viewport;
-	check(ide.editor.editorGroup.model.activeTab === lens && lens.workingCopy === model, 'BT membership: chosen definition retains the same text owner');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && lens.workingCopy === model, 'BT membership: chosen definition retains the same text owner');
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await press('ArrowRight');
@@ -95,7 +95,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 		'BT membership: choice Source uses the full choice occurrence, not its opaque child');
 	await test.clickTab(lens.id);
 	await runPaletteCommand('Behavior Lens: Open Source Details');
-	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	const weight = choice.details.find(detail => detail.label === 'weight')!;
 	const detailIndex = inspector.model.rows.findIndex(row => row.element.source?.range === weight.range);
 	check(inspector.visible && detailIndex >= 0, 'BT membership: known weight remains inspectable');

@@ -13,7 +13,7 @@ import { RectRenderKind, type RectRenderSubmission, type GlyphRenderSubmission }
 import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from '../../machine/ts/render/headless/host_2d';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
-import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createTestEditorParts } from '../helpers/editor_panes';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 
@@ -157,7 +157,7 @@ test('Problems padding and header cannot hover clipped row geometry', t => {
 	const controller = new ProblemsPanelController();
 	controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(-1);
 	t.after(() => controller.setFocused(false));
-	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const parts = createTestEditorParts(t), group = parts.main.group;
 	const bounds = { left: 8, top: 8, right: 112, bottom: 38 };
 	const layout = controller.prepareLayout(bounds);
 	const snapshot: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 12, viewportY: 0,
@@ -165,7 +165,7 @@ test('Problems padding and header cannot hover clipped row geometry', t => {
 	for (const y of [bounds.top, layout.contentTop - 1, layout.contentBottom, bounds.bottom - 1]) for (const pressed of [false, true]) {
 		controller.setHoverIndex(0); snapshot.viewportY = y;
 		snapshot.pressedButtons = snapshot.justPressedButtons = pressed ? PointerButton.Primary : 0;
-		assert.equal(controller.handlePointer(group, snapshot, pressed, false, bounds), true);
+		assert.equal(controller.handlePointer(parts, snapshot, pressed, false, bounds), true);
 		assert.equal(controller.getHoverIndex(), -1);
 		assert.equal(controller.getSelectionIndex(), -1);
 		assert.equal(group.panes.activePane, null);

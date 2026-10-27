@@ -1,4 +1,5 @@
 import type { EditorCommandRunner } from '../../ide/common/commands';
+import type { TestContext } from 'node:test';
 import { ResourceViewerEditorPane } from '../../ide/workbench/contrib/resources/editor_pane';
 import type { KeyInputEvent } from '../../hosts/common/input/text';
 import type { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
@@ -27,10 +28,14 @@ import type {
 	ScenarioLabInput,
 } from '../../ide/workbench/ui/tab/model';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
+import type { EditorPaneFactories } from '../../ide/workbench/services/editor/editor_panes';
 import { EditorGroupView, type EditorGroupPresentation } from '../../ide/workbench/services/editor/editor_group';
 import type { CloseEditors } from '../../ide/workbench/services/editor/editor_close';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { pointerCapture } from '../../ide/input/pointer/capture';
 import { drawEditorText } from '../../ide/editor/render/text_renderer';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { measureText, measureTextRange } from '../../ide/editor/common/text/layout';
@@ -132,14 +137,39 @@ const retireTestEditors: CloseEditors = targets => {
 	return Promise.resolve(true);
 };
 
+/** Real frontend parts share one surface owner and popup family without constructing a machine. */
+export function createTestEditorParts(
+	t: TestContext,
+	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
+	factories: EditorPaneFactories = createTestEditorPaneFactories(),
+): EditorParts {
+	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+	const parts = new EditorParts({
+		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
+		commands, contextMenu, renderContext: presentation.renderContext, factories, closeEditors: retireTestEditors,
+		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
+		layoutMain: () => parts.main.layoutMain(presentation.workArea, presentation.workArea),
+	});
+	t.after(() => { parts.dispose(); contextMenu.dispose(); surfaces.dispose(); });
+	return parts;
+}
+
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorGroup(
 	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
-	codePane?: (scope: InputFocusScope) => EditorPane<CodeEditorInput>,
+	codePane?: (scope: InputFocusScope, group: EditorGroupView) => EditorPane<CodeEditorInput>,
 	closeEditors: CloseEditors = retireTestEditors,
 	presentation: EditorGroupPresentation = createTestGroupPresentation(),
 ): EditorGroupView {
-	const group = new EditorGroupView({
+	return new EditorGroupView(createTestEditorPaneFactories(codePane), commands, closeEditors, presentation);
+}
+
+/** Parts and standalone groups use the same real group-local pane factories. */
+export function createTestEditorPaneFactories(
+	codePane?: (scope: InputFocusScope, group: EditorGroupView) => EditorPane<CodeEditorInput>,
+): EditorPaneFactories {
+	return {
 		home: group => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(group.focusScope, activateViewInput),
 		play_session: group => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(group.focusScope, activateViewInput),
 		animation: group => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope, activateViewInput),
@@ -155,7 +185,7 @@ export function createTestEditorGroup(
 		conversation_observer: group => new TestEditorPane<ConversationObserverInput>(group.focusScope, activateViewInput),
 		assistant: group => new TestEditorPane<AssistantInput>(group.focusScope, activateViewInput),
 		workspace_edit_review: group => new TestEditorPane<WorkspaceEditReviewInput>(group.focusScope, activateViewInput),
-		code_editor: group => codePane === undefined ? new TestCodeEditorPane(group.focusScope) : codePane(group.focusScope),
+		code_editor: group => codePane === undefined ? new TestCodeEditorPane(group.focusScope) : codePane(group.focusScope, group),
 		resource_view: group => new ResourceViewerEditorPane(group.focusScope),
 		aem_editor: group => new TestEditorPane<AemEditorInput>(group.focusScope, activateViewInput),
 		lua_program: group => new TestEditorPane<LuaProgramInput>(group.focusScope, activateViewInput),
@@ -163,6 +193,5 @@ export function createTestEditorGroup(
 		scenario_lab: group => new TestEditorPane<ScenarioLabInput>(group.focusScope, activateViewInput),
 		scene_editor: group => new TestEditorPane<SceneEditorInput>(group.focusScope, activateViewInput),
 		cart_map: group => new TestEditorPane<CartMapInput>(group.focusScope, activateViewInput),
-	}, commands, closeEditors, presentation);
-	return group;
+	};
 }

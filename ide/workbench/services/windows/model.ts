@@ -2,6 +2,12 @@ import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { IDisposable } from '../../../common/lifecycle';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { PointerCaptureScope } from '../../../input/pointer/capture';
+import type { InputFocusScope } from '../../../input/focus';
+
+export type WorkbenchModalPresentation = {
+	readonly scope: InputFocusScope;
+	readonly bounds: Readonly<RectBounds>;
+} & ({ readonly kind: 'workspace' } | { readonly kind: 'part'; reveal(): void });
 
 /** Actual controller operations, retained for the attachment's lifetime. */
 export interface WorkbenchSurfaceCallbacks {
@@ -30,7 +36,12 @@ export type WorkbenchSurfaceOptions =
 	| PresentedSurface & { readonly role: 'content' | 'window' | 'feedback' }
 	| PresentedSurface & { readonly role: 'subwindow'; readonly presentationParent: WorkbenchSurface }
 	| PresentedSurface & { readonly role: 'transient'; readonly outsidePress: 'consume' | 'owner' }
-	| SurfaceAttachment & { readonly role: 'modal'; readonly blockedScope: WorkbenchSurface | null };
+	| SurfaceAttachment & {
+		readonly role: 'modal';
+		/** Input ownership remains local even when presentation escapes its clip. */
+		readonly blockedScope: WorkbenchSurface | null;
+		readonly presentationParent: WorkbenchSurface | null;
+	};
 
 /** A retained presentation/input root, not a second control or focus tree. */
 export interface WorkbenchSurface extends IDisposable, WorkbenchSurfaceCallbacks {

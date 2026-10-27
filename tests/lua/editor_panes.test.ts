@@ -182,7 +182,9 @@ test('an attached input receives its current layout before its control can acqui
 	const harness = createEditorPanes();
 	t.after(() => { harness.group.dispose(); inputFocus.setTarget(null); });
 	const presented = new WeakMap<object, EditorInput>();
+	let paneLayouts = 0;
 	t.mock.method(RecordingEditorPane.prototype, 'layout', function (this: RecordingEditorPane<EditorInput>, bounds: Readonly<RectBounds>) {
+		paneLayouts++;
 		EditorPane.prototype.layout.call(this, bounds);
 		presented.set(this, this.input);
 	});
@@ -191,12 +193,21 @@ test('an attached input receives its current layout before its control can acqui
 		this.focusTarget.focus();
 	});
 	harness.group.panes.layout({ left: 0, top: 10, right: 384, bottom: 270 });
+	let presentedLayouts = 0;
+	const unbind = harness.group.panes.onWillShowEditor(() => {
+		assert.ok(harness.group.panes.activePane !== null, 'container layout follows input attachment');
+		harness.group.panes.layout({ left: 0, top: 10 + presentedLayouts, right: 384, bottom: 270 });
+		presentedLayouts++;
+	});
+	t.after(unbind);
 	harness.group.panes.openEditor(codeInput('code:0\0a.lua'));
 	assert.equal(harness.codePane().focusTarget.hasFocus, true);
 	harness.group.panes.openEditor(resourceInput());
 	assert.equal(harness.resourcePane().focusTarget.hasFocus, true);
 	harness.group.panes.openEditor(codeInput('code:0\0b.lua'));
 	assert.equal(harness.codePane().focusTarget.hasFocus, true);
+	assert.equal(presentedLayouts, 3, 'each attachment offers one owning-container layout phase');
+	assert.equal(paneLayouts, 3, 'container arrangement and final attachment do not lay out the same input twice');
 });
 
 test('Build Output opens the actual request identity once, retains its document, and never reuses a closed transient input', async t => {

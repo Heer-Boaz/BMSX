@@ -13,7 +13,7 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	await until(() => cycles() > test.runtime.timing.cpuHz * 13, 'test evidence: boot actual cart');
 	await press('ControlRight', 'ShiftRight'); await runPaletteCommand('Run: Pause');
 	await runPaletteCommand('Scenario Lab: Open');
-	const lab = ide.editor.editorGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
+	const lab = ide.editor.editorParts.activeGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
 	const module = ide.scenarioRuns.collection.roots.find(root => root.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID)!.children[0];
 	harness.openLuaSource(module.resource.path);
 	const document = harness.getActiveEditorDocument().model;
@@ -37,7 +37,7 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	check(lab.view.focus === 'results', 'running a suite reveals its result list');
 	await press('Home'); await press('ArrowDown');
 	await runPaletteCommand('Scenario Lab: Inspect Test Result');
-	const pane = ide.editor.editorGroup.panes.activePane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab pane required');
 	check(pane.inspector.visible && pane.inspector.model.rows[2].element.value === source, 'ordinary Details owns the same captured suite evidence');
 	await renderer.capture!('shared-test-result'); await press('Escape');
@@ -46,7 +46,7 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: current }]);
 	const version = document.version, position = cycles(), media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('View: Codex Assistant');
-	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
+	const view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	const conversation = ide.editor.assistant;
 	await test.click(view.composerBounds); await test.clipboard.writeText('Read the recorded test results. They predate my source edit; do not run or change anything.');
 	await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');

@@ -15,7 +15,7 @@ import { createProblemsPanelLayout, writeProblemsPanelLayout } from '../../ide/w
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { createResourcePanelLayout, writeResourcePanelLayout } from '../../ide/workbench/contrib/resources/panel/layout';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
-import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 const pointer = (x: number, y: number): PointerSnapshot => ({
@@ -61,11 +61,11 @@ test('Problems layout publishes a retained top divider strip with exclusive righ
 test('Resource resize retains its extent while hiding retires only its own captured gesture and strip', t => {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
-	const group = createTestEditorGroup(), editor = { editorGroup: group, isActive: true } as CartEditor;
+	const parts = createTestEditorParts(t), editor = { editorParts: parts, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, createScenarioTestSourceState([]).catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
 	const sibling = new ProblemsPanelController();
-	t.after(() => { panel.hide(); sibling.hide(); group.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); });
+	t.after(() => { panel.hide(); sibling.hide(); inputFocus.setTarget(null); pointerCapture.cancel(); });
 	panel.show();
 	const strip = panel.resizeBounds, right = panel.getBounds().right;
 	panel.beginResize(pointer(right, strip.top));

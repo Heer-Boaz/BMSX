@@ -173,7 +173,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		if (focused) {
 			this.focusTarget.focus();
 		} else if (this.focusTarget.hasFocus) {
-			const activePane = this.editor.editorGroup.panes.activePane;
+			const activePane = this.editor.editorParts.main.group.panes.activePane;
 			const bounds = getWorkbenchEditorBounds();
 			if (activePane === null || bounds.right === bounds.left || bounds.bottom === bounds.top) this.focusTarget.release();
 			else activePane.focus();
@@ -315,7 +315,8 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		}
 		const selected = this.files.selectedNode;
 		if (selected === null) return;
-		if (selected.element.kind === 'file') void this.editor.navigation.openResource(this.editor.editorGroup, selected.element.resource);
+		if (selected.element.kind === 'file') void this.editor.navigation.openResource(this.editor.editorParts.documentDestination(undefined, { resource: selected.element.resource,
+			editorId: this.editor.resourceEditors.getEditorId(selected.element.resource) }), selected.element.resource);
 		else if (this.files.toggle(this.selectionIndex)) { this.updateFilesMetrics(); this.ensureSelectionVisible(); }
 	}
 

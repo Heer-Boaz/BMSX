@@ -7,9 +7,8 @@ import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_m
 import type { Blua32SourceImage, RuntimeSourceState } from '../../../runtime/sources';
 import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../common/resource';
 import type { QuickInputController } from '../../services/quick_input/controller';
-import { type EditorOpenOptions } from '../../ui/tab/group_model';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
 import { BehaviorLensInput } from './editor_input';
 import {
 	selectBehaviorLensDefinition,
@@ -67,7 +66,6 @@ export class BehaviorLensController {
 	public constructor(
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
-		public readonly quickInput: QuickInputController,
 		public readonly documents: BehaviorSourceDocuments,
 		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
 		private readonly guest: SuspendedGuestSession,
@@ -75,15 +73,15 @@ export class BehaviorLensController {
 		private readonly transport: RuntimeTransport,
 	) {}
 
-	public open(group: EditorGroupView, kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
-		this.quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
+	public open(group: EditorGroupView, quickInput: QuickInputController, kind: BehaviorKind | null = null, options: EditorTabOpenOptions = {}): void {
+		quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
 			() => new TextQuickPickProvider(buildBehaviorQuickPickItems(this.sources.catalog, this.documents.registrations, kind)),
 			item => this.openDefinition(group, item.registration, options), lifetime => {
-				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
 
-	public openDefinition(group: EditorGroupView, registration: BehaviorRegistrationSource, options: EditorOpenOptions = {}): BehaviorLensInput {
+	public openDefinition(group: EditorGroupView, registration: BehaviorRegistrationSource, options: EditorTabOpenOptions = {}): BehaviorLensInput {
 		return captureNavigation(() => {
 			const resource = this.sources.catalog.resolveResource(registration.resource)!;
 			const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
@@ -174,7 +172,7 @@ export class BehaviorLensController {
 		else this.openSelectedSource(group, input.view);
 	}
 
-	public inspectRuntimeEffect(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+	public inspectRuntimeEffect(group: EditorGroupView, quickInput: QuickInputController, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const choices: Array<ActionEffectInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
@@ -183,20 +181,20 @@ export class BehaviorLensController {
 				choices.push({ ...item, domain, image, detail: `Physical ${domain} / ${item.detail}` });
 			}
 		}
-		this.quickInput.pick('GRANTED ACTIONEFFECTS', 'Choose an instance and its actual installed attachment',
+		quickInput.pick('GRANTED ACTIONEFFECTS', 'Choose an instance and its actual installed attachment',
 			(_origin, lifetime) => {
-				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => quickInput.hide()) });
 				return new TextQuickPickProvider(choices);
 			}, choice => {
 				this.showRuntimeInspection(group, input, inspector, choice.domain, choice.image, `LIVE EFFECT / ${choice.label}`, {
 					kind: 'action_effect', componentHashId: choice.component.hashId, effectHashId: choice.effect.hashId,
 				});
 			}, lifetime => {
-				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
 
-	public inspectRuntimeStateMachine(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+	public inspectRuntimeStateMachine(group: EditorGroupView, quickInput: QuickInputController, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const choices: Array<StateMachineInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
@@ -205,13 +203,13 @@ export class BehaviorLensController {
 				choices.push({ ...item, domain, image, detail: `Physical ${domain} / ${item.detail}` });
 			}
 		}
-		this.quickInput.pick('FSM INSTANCES', 'Choose an instance and its actual installed attachment',
+		quickInput.pick('FSM INSTANCES', 'Choose an instance and its actual installed attachment',
 			(_origin, lifetime) => {
-				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => quickInput.hide()) });
 				return new TextQuickPickProvider(choices);
-			}, machine => this.quickInput.pick(`STATES / ${machine.label}`, machine.detail,
+			}, machine => quickInput.pick(`STATES / ${machine.label}`, machine.detail,
 				(_origin, lifetime) => {
-					lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+					lifetime.add({ dispose: this.guest.onDidInvalidate(() => quickInput.hide()) });
 					return new TextQuickPickProvider(readStateMachineStates(this.guest, machine.machine));
 				}, state => {
 					this.showRuntimeInspection(group, input, inspector, machine.domain, machine.image, `LIVE FSM / ${state.label}`, {
@@ -219,13 +217,13 @@ export class BehaviorLensController {
 						machineHashId: machine.machine.hashId, stateHashId: state.state.hashId,
 					});
 				}, lifetime => {
-					lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+					lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 				}), lifetime => {
-				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
 
-	public inspectRuntimeTree(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+	public inspectRuntimeTree(group: EditorGroupView, quickInput: QuickInputController, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const choices: Array<BehaviorTreeInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
@@ -234,16 +232,16 @@ export class BehaviorLensController {
 				choices.push({ ...item, domain, image, detail: `Physical ${domain} / ${item.detail}` });
 			}
 		}
-		this.quickInput.pick('BT INSTANCES', 'Choose an instance and its actual installed attachment',
+		quickInput.pick('BT INSTANCES', 'Choose an instance and its actual installed attachment',
 			(_origin, lifetime) => {
-				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => quickInput.hide()) });
 				return new TextQuickPickProvider(choices);
 			}, choice => {
 				this.showRuntimeInspection(group, input, inspector, choice.domain, choice.image, `LIVE BT / ${choice.label}`, {
 					kind: 'behavior_tree', componentHashId: choice.component.hashId,
 				});
 			}, lifetime => {
-				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
 
@@ -258,7 +256,7 @@ export class BehaviorLensController {
 		lifetime.add({ dispose: () => { input.runtimeInspection = undefined; } });
 	}
 
-	public inspectRegisteredDefinitions(group: EditorGroupView, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+	public inspectRegisteredDefinitions(group: EditorGroupView, quickInput: QuickInputController, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const isStateMachine = input.view.presentation.kind === 'state-graph';
 		const choices: Array<BehaviorDefinitionChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
@@ -278,22 +276,22 @@ export class BehaviorLensController {
 			});
 			lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
 		};
-		this.quickInput.pick(isStateMachine ? 'REGISTERED FSMS' : 'REGISTERED ACTIONEFFECTS',
+		quickInput.pick(isStateMachine ? 'REGISTERED FSMS' : 'REGISTERED ACTIONEFFECTS',
 			'Published definitions and their actual installed attachments',
 			(_origin, lifetime) => {
-				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => quickInput.hide()) });
 				return new TextQuickPickProvider(choices);
 			}, choice => {
 				if (!isStateMachine) { inspect(choice); return; }
-				this.quickInput.pick(`LOADED STATES / ${choice.label}`, 'Definition hierarchy, not an actor instance',
+				quickInput.pick(`LOADED STATES / ${choice.label}`, 'Definition hierarchy, not an actor instance',
 					(_origin, lifetime) => {
-						lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+						lifetime.add({ dispose: this.guest.onDidInvalidate(() => quickInput.hide()) });
 						return new TextQuickPickProvider(readStateMachineDefinitionStates(this.guest, choice.definition));
 					}, inspect, lifetime => {
-						lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+						lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 					});
 			}, lifetime => {
-				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
 

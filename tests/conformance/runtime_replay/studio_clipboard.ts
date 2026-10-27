@@ -38,7 +38,7 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 		snapshot() {
 			const target = inputFocus.target?.clipboard;
 			const field = target instanceof TextField ? target : undefined;
-			const tab = test.ide.editor.editorGroup.model.activeTab;
+			const tab = test.ide.editor.editorParts.activeGroup.model.activeTab;
 			return {
 				text: field?.text, canUndo: field?.canUndo, canRedo: field?.canRedo,
 				canPaste: test.ide.editor.commands.isEnabled('paste'),
@@ -58,13 +58,13 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 		async property() {
 			test.harness.openLuaSource('scenes/root.lua'); await test.frame();
 			test.ide.editor.commands.execute('sceneEditor'); await test.frame();
-			const view = test.ide.editor.editorGroup.model.activeTab; if (view.kind !== 'scene_editor') throw new Error('Scene Editor expected');
+			const view = test.ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'scene_editor') throw new Error('Scene Editor expected');
 			await selectMember(test, view, 2);
 			await test.click(view.properties[0].bounds);
 		},
 		async transcript() {
 			test.ide.editor.commands.execute('assistant'); await test.frame();
-			const view = test.ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant expected');
+			const view = test.ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant expected');
 			const text = 'Clipboard: **literal** output';
 			view.conversation.notice(text); await test.frame();
 			const index = view.conversation.entries.length - 1;

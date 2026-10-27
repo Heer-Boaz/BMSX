@@ -1,3 +1,5 @@
+import type { EditorParts } from '../../services/editor/editor_parts';
+import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -64,6 +66,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>,
 		private readonly group: EditorGroupView,
+		parts: EditorParts,
 		scope: InputFocusScope,
 	) {
 		super(scope);
@@ -98,7 +101,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		this.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
 		this.focusTarget.registerCommand('sceneEditor.source', {
 			isEnabled: () => this.hasInput,
-			run: () => this.controller.openSource(this.group, this.input),
+			run: () => this.controller.openSource(parts.documentDestination(this.group, { resource: this.input.workingCopy.resource, editorId: WORKBENCH_TEXT_EDITOR_ID }), this.input),
 		});
 		this.focusTarget.registerCommand('sceneEditor.removeMember', {
 			isEnabled: () => this.hasInput && this.controller.canRemoveSelectedMember(this.input),

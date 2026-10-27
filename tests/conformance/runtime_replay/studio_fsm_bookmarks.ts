@@ -35,13 +35,13 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 	}
 	const source = imported ? FSM_RETARGET_MODULE_SOURCE : FSM_RETARGET_SOURCE;
 	const mainVersion = main.version;
-	const code = ide.editor.editorGroup.model.activeTab;
+	const code = ide.editor.editorParts.activeGroup.model.activeTab;
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.two');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('FSM bookmark: concrete input required');
 	const view = lens.view;
 	const graph = lens.view.presentation;
@@ -78,20 +78,20 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 		const range = selectedBehaviorLensSourceRange(view)!;
 		version = model.version;
 		await click(graph.actionBar.items[0].bounds, 6);
-		check(ide.editor.editorGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
+		check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
 			&& sourcePane(test).code.view.cursorRow === range.start.line - 1 && sourcePane(test).code.view.cursorColumn === range.start.column - 1,
 			'FSM bookmark: held Source activation navigates without dirtying or selecting code');
 		await press('ArrowRight');
 		check(sourcePane(test).code.view.cursorColumn === range.start.column, 'FSM bookmark: code input remains responsive');
 		await press('AltLeft', 'ArrowLeft'); await ready();
-		check(ide.editor.editorGroup.model.activeTab === lens && selectedBehaviorLensSourceRange(view)!.start.line === range.start.line,
+		check(ide.editor.editorParts.activeGroup.model.activeTab === lens && selectedBehaviorLensSourceRange(view)!.start.line === range.start.line,
 			'FSM bookmark: actual Back restores the same source proof');
 		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- after navigation restore\n' }]);
 		await ready();
 		check(selectedBehaviorLensSourceRange(view)?.start.line === range.start.line + 1,
 			'FSM bookmark: an edit after Back maps active selection once, independently of navigation history');
 		await click(graph.actionBar.items[0].bounds);
-		check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === range.start.line && !hasSelection(sourcePane(test).code),
+		check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === range.start.line && !hasSelection(sourcePane(test).code),
 			'FSM bookmark: the restored and edited proof still opens the exact source line');
 		await press('ControlLeft', 'KeyZ');
 		await test.clickTab(lens.id); await ready();

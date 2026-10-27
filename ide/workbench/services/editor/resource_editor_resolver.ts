@@ -17,15 +17,23 @@ export class ResourceEditorResolver {
 	public constructor(private readonly registrations: readonly ResourceEditorRegistration[]) {
 	}
 
+	public getEditorId(resource: RuntimeResource, preferredEditorId?: string): string {
+		return this.resolveRegistration(resource, preferredEditorId).id;
+	}
+
 	public resolveEditorInput(
 		resource: RuntimeResource,
 		preferredEditorId?: string,
 	): EditorInput | Promise<EditorInput> {
+		return this.resolveRegistration(resource, preferredEditorId).createEditorInput(resource);
+	}
+
+	private resolveRegistration(resource: RuntimeResource, preferredEditorId?: string): ResourceEditorRegistration {
 		for (let index = 0; index < this.registrations.length; index += 1) {
 			const registration = this.registrations[index];
 			if ((preferredEditorId === undefined || registration.id === preferredEditorId)
 				&& resourceMatchesSelector(resource, registration.selector)) {
-				return registration.createEditorInput(resource);
+				return registration;
 			}
 		}
 		throw new Error(`No editor '${preferredEditorId}' is registered for '${resource.path}'.`);

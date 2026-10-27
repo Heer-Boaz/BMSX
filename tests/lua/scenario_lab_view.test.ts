@@ -176,7 +176,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		f.view.testPane.rowsDirty = true; prepareScenarioLabLayout(f.view, { left: 0, top: CODE_AREA_TOP, right: 222, bottom: CODE_AREA_BOTTOM });
 		f.update(); f.paint(); assert.deepEqual(f.labels, [], 'a reprojection with the same index cannot inherit source feedback');
 		f.point.viewportX++; f.view.testPane.hoverIndex = 1; f.feedback.pointer(f.view, f.point); f.update(); f.paint(); assert.ok(f.labels.length > 0);
-		const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('modal'), isVisible: () => true,
+		const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: Symbol('modal'), isVisible: () => true,
 			getBounds: () => f.area, getClip: () => f.area, draw() {} });
 		f.paint(); assert.deepEqual(f.labels, []); modal.dispose();
 		f.feedback.clear(); f.paint(); assert.deepEqual(f.labels, []);
@@ -766,7 +766,7 @@ test('Scenario controller refresh, wheel and status rendering retain the actual 
 		inputFocus.setTarget(null); await ide.editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	ide.editor.scenarioLab.open();
-	const pane = ide.editor.editorGroup.panes.getPane('scenario_lab')!, view = pane.input.view;
+	const pane = ide.editor.editorParts.main.group.panes.getPane('scenario_lab')!, view = pane.input.view;
 	const bounds = { left: 421, top: 31, right: 701, bottom: 151 };
 	pane.layout(bounds); pane.update(0);
 	const other = createScenarioLabViewState(view.collection, view.resultService, false);

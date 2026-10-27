@@ -14,6 +14,7 @@ import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
+import type { EditorPart } from '../../services/editor/editor_part';
 import type { CartEditor } from '../../../cart_editor';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
@@ -95,11 +96,13 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 			+ constants.SCROLLBAR_WIDTH + constants.CODE_AREA_RIGHT_MARGIN;
 	}
 
+	public readonly part: EditorPart;
 	public constructor(scope: InputFocusScope, public readonly group: EditorGroupView, public readonly editor: CartEditor,
 		public readonly clipboard: Clipboard, public readonly sources: RuntimeSourceState,
 		public readonly guest: SuspendedGuestSession, public readonly fault: RuntimeFaultState,
 		public readonly runtime: Runtime, public readonly debuggerState: RuntimeDebuggerState, clock: HostClock) {
 		super();
+		this.part = editor.editorParts.partForGroup(group);
 		const code = this.code = new CodeEditorControl(scope, editorViewState.font, clock);
 		this.completion = new EditorCompletionController(code, sources, guest, fault, runtime);
 		this.find = new EditorSearchController(code, sources.catalog);
@@ -168,8 +171,8 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public override clearInput(): void {
 		const scope = this.code.focusTarget.scope;
 		if (this.editor.contextMenu.visible && this.editor.contextMenu.invocationOrigin?.scope === scope) this.editor.contextMenu.hide(false);
-		if (this.editor.quickInput.visible && this.editor.quickInput.invocationOrigin?.scope === scope) this.editor.quickInput.hide(false);
-		if (this.editor.actionPrompt.visible && this.editor.actionPrompt.invocationOrigin?.scope === scope) this.editor.actionPrompt.close('cancel', false);
+		if (this.part.quickInput.visible && this.part.quickInput.invocationOrigin?.scope === scope) this.part.quickInput.hide(false);
+		if (this.part.actionPrompt.visible && this.part.actionPrompt.invocationOrigin?.scope === scope) this.part.actionPrompt.close('cancel', false);
 		storeCodeTabContext(this.code, this.input.context);
 		this.viewMementos.set(this.input.workingCopy, captureCodeEditorView(this.input));
 		this.completion.clearInput(); this.find.closeSearch(false); this.lineJump.close(false); this.rename.cancel();
@@ -202,7 +205,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public override update(deltaSeconds: number): void {
 		this.code.update(deltaSeconds); this.completion.processPending(deltaSeconds);
 		const pointer = this.code.pointer.lastPointerSnapshot;
-		const blocked = this.editor.actionPrompt.visible || this.editor.quickInput.visible || this.editor.contextMenu.visible;
+		const blocked = !this.editor.surfaces.isAdmitted(this.group.paneSurface) || this.editor.contextMenu.visible;
 		if (pointer !== null && !blocked) {
 			const bounds = getCodeAreaBounds(this.code);
 			const selection = this.code.pointer.selectionSnapshot;

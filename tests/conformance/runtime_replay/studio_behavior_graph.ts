@@ -12,7 +12,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	if (view.presentation.kind !== 'graph') throw new Error('BT controls require the concrete graph');
 	const graph = view.presentation;
 	const viewport = graph.viewport;
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	check(editorViewState.font.variant === 'tiny' && editorViewState.viewportWidth === 384 && editorViewState.viewportHeight === 288,
 		'BT controls: actual constrained tiny-font viewport');
 	await press('Home');
@@ -21,14 +21,14 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	if (sequence?.kind !== 'node') throw new Error('BT controls: root node not selected');
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	const picker = ide.editor.quickInput;
-	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	const detail = sequence.details.find(item => item.label === 'num_loops')!;
 	const detailIndex = inspector.model.rows.findIndex(row => row.element.source?.range === detail.range);
 	check(inspector.visible && !picker.visible && detailIndex >= 0,
 		'BT controls: full inspector includes decorator policy without a source-choice popup');
 	for (let index = 0; index < detailIndex; index += 1) await press('ArrowDown');
 	await press('Enter');
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === detail.range.start.line - 1
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === detail.range.start.line - 1
 		&& sourcePane(test).code.view.cursorColumn === detail.range.start.column - 1, 'BT controls: detail activation opens its exact Lua value');
 	await test.clickTab(lens.id);
 	await press('ArrowDown');
@@ -114,7 +114,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 
 /** Final screenshot state, using the same real picker and independent authored Lua. */
 export async function presentBehaviorTreeGraph(test: StudioFixture): Promise<void> {
-	await test.ide.editor.navigation.openResource(test.ide.editor.editorGroup, test.ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!);
+	await test.ide.editor.navigation.openResource(test.ide.editor.editorParts.documentDestination(test.ide.editor.editorParts.activeGroup), test.ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!);
 	const model = sourcePane(test).code.model;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	await test.runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');

@@ -209,7 +209,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const f = fixture(t, variant);
 		const hasHint = () => f.glyphs.some(glyph => glyph.text.startsWith('SHIFT+F1'));
 		f.guest.focusTarget.focus(); f.paint(); assert.equal(hasHint(), true);
-		const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('status modal'),
+		const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: Symbol('status modal'),
 			getBounds: () => f.bounds, getClip: () => f.bounds, isVisible: () => true, draw() {} });
 		assert.equal(inputFocus.target, f.guest.focusTarget); assert.equal(inputFocus.admittedTarget, null);
 		f.paint(); assert.equal(hasHint(), false, 'retained focus does not bypass the real modal boundary');

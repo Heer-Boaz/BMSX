@@ -1,3 +1,4 @@
+import { WORKBENCH_TEXT_EDITOR_ID } from '../../code_editor/editor_input';
 import type { CallHierarchyPanelItem } from './items';
 import type { CartEditor } from '../../../../cart_editor';
 
@@ -6,7 +7,7 @@ export function openResourcePanelCallHierarchyLocation(
 	item: CallHierarchyPanelItem,
 ): void {
 	void editor.navigation.focusChunkSource(
-		editor.editorGroup, item.resource,
+		editor.editorParts.documentDestination(undefined, { resource: item.resource, editorId: WORKBENCH_TEXT_EDITOR_ID }), item.resource,
 		{
 			row: item.location.range.startLine - 1,
 			startColumn: item.location.range.startColumn - 1,

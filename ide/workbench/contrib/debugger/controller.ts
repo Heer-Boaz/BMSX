@@ -1,3 +1,4 @@
+import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
 import {
 	RuntimeDebuggerStopReason,
 	type RuntimeDebuggerState,
@@ -60,13 +61,14 @@ export async function presentRuntimeDebuggerStop(
 		contextId: image.sourceContextId,
 		path: source.displayPath,
 	};
-	const receipt = await focusCapturedRuntimeSource(editor.navigation, editor.editorGroup, catalog, resource, source);
-	if (state.source.stop !== stop || receipt === undefined || receipt.generation !== editor.editorGroup.panes.openGeneration
+	const group = editor.editorParts.documentDestination(editor.editorParts.activeGroup, { resource, editorId: WORKBENCH_TEXT_EDITOR_ID });
+	const receipt = await focusCapturedRuntimeSource(editor.navigation, group, catalog, resource, source);
+	if (state.source.stop !== stop || receipt === undefined || receipt.generation !== group.panes.openGeneration
 		|| receipt.model.version !== receipt.version || editorTextModelService.get(resource) !== receipt.model) return;
-	const code = (editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code;
+	const code = (group.panes.getPane('code_editor') as CodeEditorPane).code;
 	code.view.selectionAnchor = null; clearEditorPointerSelectionState(code);
 	setCursorPosition(code, range.start.line - 1, range.start.column - 1);
-	setExecutionStopHighlightForCurrentContext(editor.editorGroup, range.start.line - 1);
+	setExecutionStopHighlightForCurrentContext(group, range.start.line - 1);
 	centerCursorVertically(code);
 	showEditorMessage(
 		stop.reason === RuntimeDebuggerStopReason.Breakpoint

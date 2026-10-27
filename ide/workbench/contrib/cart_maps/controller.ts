@@ -28,18 +28,17 @@ export async function resolveCartMapInput(catalog: WorkspaceSourceCatalog, resou
 }
 
 export class CartMapController {
-	public constructor(private readonly catalog: WorkspaceSourceCatalog,
-		private readonly quickInput: QuickInputController) {}
-	public open(group: EditorGroupView): void {
+	public constructor(private readonly catalog: WorkspaceSourceCatalog) {}
+	public open(group: EditorGroupView, quickInput: QuickInputController): void {
 		const active = group.model.activeTab;
 		if (active instanceof TextEditorInput) {
 			const kind = cartMapKind(active.workingCopy.resource);
 			if (kind !== undefined) { this.openResource(group, active.workingCopy.resource, kind); return; }
 		}
-		this.quickInput.pick('MAP EDITOR', 'Authored room objects / stage markers', () => new FileQuickPickProvider(
+		quickInput.pick('MAP EDITOR', 'Authored room objects / stage markers', () => new FileQuickPickProvider(
 			buildResourceQuickPickItems(this.catalog.resources.filter(resource => cartMapKind(resource) !== undefined))),
 			item => this.openResource(group, item.resource, cartMapKind(item.resource)!),
-			lifetime => lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) }));
+			lifetime => lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) }));
 	}
 	public openResource(group: EditorGroupView, resource: RuntimeResource, kind: CartMapKind): void {
 		void group.openResolvedEditor(resolveCartMapInput(this.catalog, resource, kind))

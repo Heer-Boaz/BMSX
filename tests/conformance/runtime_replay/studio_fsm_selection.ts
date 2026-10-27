@@ -22,17 +22,17 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = ide.editor.editorGroup.model.activeTab;
+	const code = ide.editor.editorParts.activeGroup.model.activeTab;
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_PROOF_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	const picker = ide.editor.quickInput;
+	const picker = ide.editor.editorParts.activePart.quickInput;
 	await clipboard.writeText('FSM fixture.proofs');
 	await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 2, 'FSM proof: duplicate registrations stay independently selectable');
 	await press('Enter');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('FSM proof: expected the real source input');
 	const view = lens.view;
 	const graph = view.presentation;
@@ -42,7 +42,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	const right = definition.transitions.filter(transition => transition.slot.kind === 'update')[1];
 	await revealLensOccurrence(test, view, right.slot.source.rowKey);
 	await test.runPaletteCommand('Behavior Lens: Open Source Details');
-	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !picker.visible, 'FSM proof: shared Details action opens readable source evidence');
 	const rows = inspector.model.rows;
 	const first = rows[0], second = rows[1];
@@ -52,7 +52,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	check(rows[0] === first && rows[1] === second, 'FSM proof: unchanged inspector frames retain measured content');
 	await press('ArrowDown');
 	await click(inspector.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === 4
+	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === 4
 		&& sourcePane(test).code.view.cursorColumn === FSM_PROOF_SOURCE.split('\n')[4].indexOf('return') && !hasSelection(sourcePane(test).code),
 		'FSM proof: held picker acceptance opens the second return, not the binding, initializer or a dragged code selection');
 	check(selectedProof(view).transition === right && selectedProof(view).outcome === right.outcomes[1],

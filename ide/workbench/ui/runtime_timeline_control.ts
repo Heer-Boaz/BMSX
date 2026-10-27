@@ -1,12 +1,11 @@
 import type { PointerSnapshot } from '../../common/models';
 import type { EditorCommandRunner } from '../../common/commands';
 import { editorViewState } from '../../editor/ui/view/state';
-import { inputFocus, type InputFocusScope, type InputFocusTarget, type InputRuntimeContext } from '../../input/focus';
+import { inputFocus, InputFocusScope, type InputFocusTarget, type InputRuntimeContext } from '../../input/focus';
 import { pointerCapture } from '../../input/pointer/capture';
 import { pointerHover } from '../../input/pointer/hover';
 import type { FrameNavigationOperation } from '../../runtime/frame_navigation';
 import type { RuntimeTransport } from '../../runtime/transport';
-import { statusAreaHeight } from '../common/layout';
 import { WorkbenchActionBarControl } from './action_bar_control';
 import { createWorkbenchActionBar } from './action_bar';
 import { WorkbenchSlider } from './slider';
@@ -44,8 +43,11 @@ export class RuntimeTimelineControl {
 	private presented = false;
 	private requestedCycles: number | undefined;
 	private seekOperation: FrameNavigationOperation | undefined;
-	public constructor(private readonly commands: EditorCommandRunner, private readonly focusContent: () => void) {
-		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, null, focusContent);
+	public constructor(private readonly commands: EditorCommandRunner, private readonly focusContent: () => void,
+		parent: InputFocusTarget, private readonly bounds: Readonly<RectBounds>) {
+		const target = inputFocus.createTarget(parent, new InputFocusScope(Symbol('runtime timeline'), parent.scope));
+		target.canFocus = () => false;
+		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, target, focusContent);
 		this.focusScope = this.actions.focusTarget.scope;
 		this.slider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.actions.focusTarget,
 			value => this.requestSeek(value), () => { this.requestedCycles = undefined; });
@@ -127,6 +129,9 @@ export class RuntimeTimelineControl {
 			&& (menu.focusTarget.hasFocus || inputFocus.pendingTarget === menu.focusTarget);
 		this.presented = false;
 		if (invokingMenu) menu.hide(false);
+		// Retire the controls without activating their focus-return parent before
+		// setContext/updateTransport have committed the replacement attachment.
+		if (ownsFocus) inputFocus.setTarget(null);
 		pointerCapture.cancelTarget(this.slider); pointerCapture.cancelTarget(this.actions);
 		this.slider.clearInput(); this.actions.clearInput(); this.tooltip.hide();
 		this.actions.focusTarget.previous = null; this.slider.focusTarget.next = null;
@@ -161,10 +166,10 @@ export class RuntimeTimelineControl {
 		this.actionState.items[1].icon = playing ? 'pause' : 'play';
 		this.actions.update();
 		this.actionState.items[1].tooltip = editorCommandTitle('runtime.playback', !playing);
-		const top = editorViewState.viewportHeight - statusAreaHeight() - this.height;
+		const bounds = this.bounds;
 		const offsetTenths = rewind.active ? Math.trunc((history.latestCycles - rewind.positionCycles) * 10 / runtime.timing.cpuHz) : 0;
 		const durationTenths = Math.trunc((history.latestCycles - history.earliestCycles) * 10 / runtime.timing.cpuHz);
-		this.layout.update(this.actionState, this.range, editorViewState.font.renderFont(), 0, top, editorViewState.viewportWidth, offsetTenths, durationTenths);
+		this.layout.update(this.actionState, this.range, editorViewState.font.renderFont(), bounds.left, bounds.top, bounds.right, offsetTenths, durationTenths);
 		this.range.setRange(history.earliestCycles, history.latestCycles, 1);
 		this.range.enabled = rewind.available && (navigation.available || navigation.active === this.seekOperation && this.seekOperation !== undefined);
 		if (this.requestedCycles === undefined && this.seekOperation === undefined) this.range.value = rewind.positionCycles;

@@ -12,7 +12,7 @@ export async function runStudioActorChanges(test: StudioFixture) {
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'actor changes: boot authoring');
 	await press('ControlRight', 'ShiftRight');
 	harness.openLuaSource('cart.lua');
-	const sourceTab = ide.editor.editorGroup.model.activeTab, source = harness.getActiveEditorDocument().model;
+	const sourceTab = ide.editor.editorParts.activeGroup.model.activeTab, source = harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: source.buffer.length, text: ACTOR_TOOLS_SOURCE
 		.replace("local display<const>", "local gpu<const> = require('cartlib/gx/gpu')\nlocal input<const> = require('cartlib/input/input')\nlocal clock<const> = require('cartlib/clock')\nlocal display<const>")
 		.replace('systems = {}', "systems = { require('cartlib/input/input_system') }")
@@ -54,9 +54,9 @@ actor_tool_ready = true`)
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'actor changes: baseline frame boundary');
 	await runPaletteCommand('Actor Lab: Open'); await press('Enter'); await frame();
-	const lab = ide.editor.editorGroup.model.activeTab;
+	const lab = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
-	const pane = ide.editor.editorGroup.panes.activePane as ActorLabEditorPane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane as ActorLabEditorPane;
 	let inspector = pane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	check(inspector.model.rows.every(row => !row.element.valueChanged), 'initial instance observation is not a value change');
@@ -154,8 +154,8 @@ actor_tool_ready = true`)
 	// The array slots deliberately precede hash fields, without assuming hash iteration order.
 	await press('ControlLeft', 'KeyF');
 	await test.clipboard.writeText('Inventory'); await press('ControlLeft', 'KeyV');
-	check(ide.editor.quickInput.model.list.rows.length === 1
-		&& (ide.editor.quickInput.model.list.rows[0].item as ActorMemberChoice).node.kind === 'component',
+	check(ide.editor.editorParts.activePart.quickInput.model.list.rows.length === 1
+		&& (ide.editor.editorParts.activePart.quickInput.model.list.rows[0].item as ActorMemberChoice).node.kind === 'component',
 		'Find resolves the actual guest-owned Inventory component');
 	await press('Enter'); await frame();
 	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Home');

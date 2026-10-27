@@ -64,6 +64,11 @@ export class InputFocusScope {
 			if (scope.runtime !== undefined) return scope;
 		return undefined;
 	}
+	public contains(scope: InputFocusScope): boolean {
+		for (let current: InputFocusScope | null = scope; current !== null; current = current.commandParent)
+			if (current === this) return true;
+		return false;
+	}
 
 	/** A transient's command authority ends with its invoking attachment or an ancestor. */
 	public onDidRetireContext(listener: () => void): () => void {
@@ -266,13 +271,16 @@ export class InputFocusService {
 			&& (this.scopeAdmission === undefined || this.scopeAdmission(target.scope)) ? target : null;
 	}
 
-	public setTarget(target: InputFocusTarget | null): void {
+	/** Incoming modal owners publish after outgoing blur commits its draft, before focus admission. */
+	public setTarget(target: InputFocusTarget | null, present?: () => void): void {
 		target = this.resolveTarget(target);
-		if (target !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) return;
+		if (present === undefined && target !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) return;
 		const revision = ++this.focusRevision;
 		this.pendingTargetValue = target;
 		const previous = this.targetValue;
 		if (previous === target) {
+			present?.();
+			if (revision !== this.focusRevision) return;
 			this.pendingTargetValue = null;
 			if (target !== null) this.activateInteraction(target);
 			this.notifyTargetChanged(); return;
@@ -281,7 +289,10 @@ export class InputFocusService {
 		this.targetValue = null;
 		if (previous !== null) previous.didBlur(target);
 		if (revision !== this.focusRevision) return;
+		present?.();
+		if (revision !== this.focusRevision) return;
 		target = this.resolveTarget(target);
+		if (target !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) target = null;
 		this.pendingTargetValue = null;
 		this.targetValue = target;
 		if (target !== null) { target.scope.lastFocused = target; target.didFocus(); }

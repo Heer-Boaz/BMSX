@@ -56,10 +56,10 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 		const resource = ide.sources.catalog.resources.find(resource => resource.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && (kind === 'aem'
 			? resource.source.type === 'aem'
 			: resource.source.type === 'data' && resource.path.endsWith('nemesis_s_stage.yaml')))!;
-		await ide.editor.navigation.openResource(ide.editor.editorGroup, resource);
+		await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource);
 		if (kind === 'aem') {
 			await frame();
-			const input = ide.editor.editorGroup.model.activeTab;
+			const input = ide.editor.editorParts.activeGroup.model.activeTab;
 			if (input.kind !== 'aem_editor') throw new Error('source saves: actual audio event editor required');
 			const original = input.workingCopy.buffer.getText();
 			const index = input.tree.rows.findIndex(row => row.element.path.length === 2 && row.element.path[0] === 'events');
@@ -95,8 +95,8 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			const saved = ide.textFileSaves.latestOperation(document)!.result!;
 			check(saved.status === 'saved' && saved.application.status === 'not-requested', 'source saves: persistence never requests runtime application');
 			check(ide.sources.currentBlua32Media === media, 'source saves: saving AEM preserves the installed generation');
-			await ide.editor.navigation.openResource(ide.editor.editorGroup, resource); await frame();
-			const aem = ide.editor.editorGroup.model.activeTab;
+			await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource); await frame();
+			const aem = ide.editor.editorParts.activeGroup.model.activeTab;
 			if (aem.kind !== 'aem_editor') throw new Error('source saves: explicit Apply belongs to the actual AEM input');
 			await test.runPaletteCommand('Audio Events: Apply to Installed Attachment'); await press('Enter');
 			await until(() => !aem.applying && getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: explicit named attachment Apply succeeds');

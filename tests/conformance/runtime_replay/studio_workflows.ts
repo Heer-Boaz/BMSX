@@ -316,7 +316,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(title() === faultActor, 'fault repair keeps the retained actor');
 	check(ide.fault.lastLuaCallStack.length === 0 && ide.fault.faultSnapshot === null, 'repair clears obsolete fault inspection');
 	check(sourcePane(test).code.runtimeError.activeOverlay === null, 'repair removes the active error adornment');
-	for (const input of ide.editor.editorGroup.model.tabs) {
+	for (const group of ide.editor.editorParts.groups) for (const input of group.model.tabs) {
 		if (input.kind !== 'code_editor') continue;
 		check(input.context.runtimeErrorOverlay === null, 'repair removes error adornments from all retained code views');
 	}

@@ -1,3 +1,4 @@
+import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
 import { beforeEach } from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import assert from 'node:assert/strict';
@@ -10,7 +11,7 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import type { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
-import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createTestEditorGroup, createTestEditorPaneFactories, createTestGroupPresentation } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
@@ -73,32 +74,41 @@ test('Scene pane Source and member commands retain their group and input when an
 		createScenarioTestSourceRecord('scene.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
-	const first = createTestEditorGroup(), second = createTestEditorGroup();
 	const opened: Parameters<EditorNavigationController['focusChunkSource']>[] = [];
 	const navigation = { focusChunkSource: (...args: Parameters<EditorNavigationController['focusChunkSource']>) => {
 		opened.push(args); return Promise.resolve(undefined);
 	} } as EditorNavigationController;
 	const controller = new SceneEditorController(sources.catalog, navigation);
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
-	controller.openResource(first, resource); controller.openResource(second, resource);
-	const left = first.model.activeTab, right = second.model.activeTab;
-	assert.ok(left instanceof SceneEditorInput); assert.ok(right instanceof SceneEditorInput);
-	controller.refresh(left); controller.refresh(right);
-	selectSceneOutlineRow(left, 0); selectSceneOutlineRow(right, 1);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
-	const bounds = { left: 0, top: 0, right: 384, bottom: 288 };
-	const surface = surfaces.attach({ role: 'content', captureScope: second.captureScope, isVisible: () => true,
-		getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	const pane = new SceneEditorPane(controller, commands as IdeCommandController, sources, menu, surfaces, surface, bounds, second, second.focusScope);
+	const bounds = { left: 0, top: 0, right: 384, bottom: 288 }, presentation = createTestGroupPresentation(surfaces, bounds);
+	let parts: EditorParts;
+	const factories = createTestEditorPaneFactories();
+	factories.scene_editor = group => new SceneEditorPane(controller, commands as IdeCommandController, sources, menu,
+		surfaces, group.paneSurface, bounds, group, parts, group.focusScope);
+	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds,
+		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
+		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
+		layoutMain: () => parts.main.layoutMain(bounds, bounds),
+		closeEditors: async targets => { for (const target of targets) target.group.removeEditor(target.input); return true; },
+	});
+	const first = parts.main.group, second = parts.createDocument(bounds).group;
+	first.panes.layout(bounds);
+	controller.openResource(first, resource); controller.openResource(second, resource);
+	const left = first.model.activeTab, right = second.model.activeTab;
+	assert.ok(left instanceof SceneEditorInput); assert.ok(right instanceof SceneEditorInput);
+	controller.refresh(left); controller.refresh(right);
+	selectSceneOutlineRow(left, 0); selectSceneOutlineRow(right, 1);
+	const pane = second.panes.getPane('scene_editor')!;
 	t.after(() => {
-		pane.clearInput(); pane.dispose(); menu.dispose(); surfaces.dispose(); first.dispose(); second.dispose(); inputFocus.setTarget(null);
+		parts.dispose(); menu.dispose(); surfaces.dispose(); inputFocus.setTarget(null);
 		editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
 	});
-	pane.setInput(right, bounds); pane.update(); pane.focus();
+	pane.update(0); pane.focus();
 	const origin = inputFocus.target!;
 	first.activate(left.id);
 	inputFocus.executeCommand('sceneEditor.source', origin);
@@ -108,6 +118,6 @@ test('Scene pane Source and member commands retain their group and input when an
 	assert.ok(right.workingCopy.buffer.getText().indexOf("member_id = 'source only'") < right.workingCopy.buffer.getText().indexOf("member_id = 'subject'"));
 	controller.refresh(left);
 	assert.equal(left.outline.rows[left.outline.selectionIndex].element.kind, 'scene');
-	pane.clearInput();
+	second.panes.clearEditor();
 	assert.equal(origin.getCommand('sceneEditor.removeMember')!.isEnabled(), false, 'a detached pane no longer admits its former subject');
 });

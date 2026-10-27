@@ -19,6 +19,7 @@ export class WorkbenchWindowModel {
 	public revision = 0;
 	private titleValue = '';
 	private placementRevision = 0;
+	private placementListeners: Set<() => void> | undefined;
 	private arrangedRevision = -1;
 	private headerHeight = 0;
 	private readonly workArea = create_rect_bounds();
@@ -34,10 +35,20 @@ export class WorkbenchWindowModel {
 		this.revision += 1;
 	}
 
+	public onDidChangePlacement(listener: () => void): () => void {
+		const listeners = this.placementListeners ??= new Set();
+		listeners.add(listener);
+		return () => listeners.delete(listener);
+	}
+
 	public setRequestedBounds(bounds: Readonly<RectBounds>): void {
+		const requested = this.requestedBounds;
+		if (requested.left === bounds.left && requested.top === bounds.top
+			&& requested.right === bounds.right && requested.bottom === bounds.bottom) return;
 		copy_rect_bounds(this.requestedBounds, bounds);
 		this.revision += 1;
 		this.placementRevision += 1;
+		this.publishPlacement();
 	}
 
 	public setCollapsed(collapsed: boolean): void {
@@ -45,6 +56,11 @@ export class WorkbenchWindowModel {
 		this.collapsed = collapsed;
 		this.revision += 1;
 		this.placementRevision += 1;
+		this.publishPlacement();
+	}
+
+	private publishPlacement(): void {
+		if (this.placementListeners !== undefined) for (const listener of this.placementListeners) listener();
 	}
 
 	public setMinimumSize(width: number, height: number): void {

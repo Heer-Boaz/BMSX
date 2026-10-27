@@ -12,7 +12,7 @@ export async function startAssistantImageTest(kind: StudioRendererKind, canvas: 
 	await reachNemesisTitle(test);
 	test.harness.openLuaSource('cart.lua'); await test.frame();
 	test.ide.editor.commands.execute('assistant'); await test.frame();
-	const view = test.ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant expected');
+	const view = test.ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant expected');
 	await test.click(view.composerBounds);
 	const cycles = test.cycles();
 	return {

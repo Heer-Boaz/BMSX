@@ -17,17 +17,17 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const actor = title(), position = cycles(), media = ide.sources.currentBlua32Media;
 	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!;
-	check(ide.editor.editorGroup.model.findById(buildCodeTabId(resource)) === undefined, 'resource context: scene has never had a code input');
-	ide.editor.sceneEditor.openResource(ide.editor.editorGroup, resource);
+	check(ide.editor.editorParts.groups.every(group => group.model.findById(buildCodeTabId(resource)) === undefined), 'resource context: scene has never had a code input');
+	ide.editor.sceneEditor.openResource(ide.editor.editorParts.main.group, resource);
 	await frame();
-	const scene = ide.editor.editorGroup.model.activeTab;
+	const scene = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (scene.kind !== 'scene_editor') throw new Error('resource context: actual visual editor expected');
 	const model = scene.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: 'local studio_context_probe = missing_from_scene_context\n' }]);
 	await until(() => ide.diagnostics.get(model)!.status === 'ready', 'resource context: background analysis of visual-only source');
 	const marker = ide.diagnostics.diagnostics.find(item => item.model === model && item.message.includes('missing_from_scene_context'))!;
 	check(marker !== undefined && marker.version === model.version, 'resource context: resource marker identifies exact model revision');
-	check(ide.editor.editorGroup.model.findById(buildCodeTabId(resource)) === undefined && ide.editor.editorGroup.model.activeTab === scene,
+	check(ide.editor.editorParts.groups.every(group => group.model.findById(buildCodeTabId(resource)) === undefined) && ide.editor.editorParts.activeGroup.model.activeTab === scene,
 		'resource context: analysis neither requires nor creates a code input');
 	const yaml = ide.sources.catalog.resources.find(item => item.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.path.endsWith('nemesis_s_stage.yaml'))!;
 	const yamlModel = await resolveTextFileModel(editorTextModelService, ide.sources.catalog, yaml);

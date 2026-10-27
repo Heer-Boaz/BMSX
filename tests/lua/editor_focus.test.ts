@@ -44,6 +44,41 @@ test('surface admission gates focus and keyboard delivery without replacing reta
 	assert.equal(keys, 1);
 });
 
+test('incoming presentation follows outgoing draft publication and precedes focus admission in one transition', () => {
+	const focus = new InputFocusService(), outgoing = focus.createTarget(), incoming = focus.createTarget();
+	let published = false, committed = false, notifications = 0;
+	focus.bindScopeAdmission(scope => scope !== incoming.scope || published);
+	outgoing.onDidBlur(next => { assert.ok(next === incoming); committed = true; });
+	incoming.onDidFocus(() => { assert.equal(committed, true); assert.equal(published, true); });
+	outgoing.focus();
+	focus.onDidChangeTarget(() => { notifications++; });
+	focus.setTarget(incoming, () => {
+		assert.equal(committed, true); assert.equal(focus.target, null);
+		assert.ok(focus.pendingTarget === incoming); published = true;
+	});
+	assert.ok(focus.admittedTarget === incoming);
+	assert.equal(notifications, 1, 'presentation is inside the focus transition, not a blur-to-null and refocus workaround');
+});
+
+test('a newer focus owner during outgoing blur prevents stale incoming presentation', () => {
+	const focus = new InputFocusService(), outgoing = focus.createTarget(), incoming = focus.createTarget(), newer = focus.createTarget();
+	outgoing.focus(); outgoing.onDidBlur(() => newer.focus());
+	let presentations = 0;
+	focus.setTarget(incoming, () => { presentations++; });
+	assert.equal(presentations, 0); assert.ok(focus.target === newer); assert.equal(focus.pendingTarget, null);
+});
+
+test('incoming publication cannot admit a retired request or overwrite its newer focus owner', () => {
+	const focus = new InputFocusService(), outgoing = focus.createTarget(), incoming = focus.createTarget(), newer = focus.createTarget();
+	outgoing.focus();
+	focus.setTarget(incoming, () => newer.focus());
+	assert.ok(focus.target === newer); assert.equal(focus.pendingTarget, null);
+	focus.bindScopeAdmission(scope => scope !== incoming.scope);
+	focus.setTarget(incoming, () => {});
+	assert.equal(focus.target, null, 'a denied post-publication request does not select an unrelated control');
+	assert.equal(focus.pendingTarget, null);
+});
+
 test('pending clipboard reads cannot edit a control after blur, even when the same target is refocused', async t => {
 	t.after(() => inputFocus.setTarget(null));
 	const field = new TextField();

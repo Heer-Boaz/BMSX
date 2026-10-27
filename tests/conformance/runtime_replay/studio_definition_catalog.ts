@@ -15,7 +15,7 @@ export async function openRegisteredDefinitionPicker(test: StudioFixture, kind: 
 	expected = kind === 'effect' ? 'empty,pulse,shared_alias,ungranted' : 'companion,empty,unattached,walker'): Promise<void> {
 	if (kind === 'effect') await openRuntimeEffectLens(test); else await openRuntimeStateMachineLens(test);
 	await test.runPaletteCommand('Behavior Lens: Inspect Registered Definitions');
-	const picker = test.ide.editor.quickInput;
+	const picker = test.ide.editor.editorParts.activePart.quickInput;
 	check(picker.visible, 'catalog: actual palette opens the registered scope');
 	const labels = picker.model.list.rows.map(row => row.item.label).sort();
 	check(labels.join(',') === expected,
@@ -38,7 +38,7 @@ export async function openRegisteredDefinition(test: StudioFixture, kind: 'effec
 	const time = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('inspection_fsm_callback_count');
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!, version = model.version;
 	await openRegisteredDefinitionPicker(test, kind);
-	const picker = test.ide.editor.quickInput;
+	const picker = test.ide.editor.editorParts.activePart.quickInput;
 	let index = picker.model.list.rows.findIndex(row => row.item.label === id);
 	check(index >= 0, `catalog: published ${id} is selectable`);
 	for (let n = 0; n < index; n += 1) await press('ArrowDown');
@@ -51,7 +51,7 @@ export async function openRegisteredDefinition(test: StudioFixture, kind: 'effec
 		for (let n = 0; n < index; n += 1) await press('ArrowDown');
 		await press('Enter');
 	}
-	const inspector = (test.ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (test.ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !picker.visible, 'catalog: concrete definition opens the existing property inspector');
 	const row = inspector.model.rows[0], measured = row.value;
 	for (let n = 0; n < 10; n += 1) await test.frame();
@@ -68,7 +68,7 @@ export async function testActorlessDefinitionCatalog(test: StudioFixture): Promi
 	const empty = await openRegisteredDefinition(test, 'effect', 'empty');
 	check(empty.model.rows.length === 1, 'catalog: a registered empty definition is real, not unavailable');
 	const retainedRow = empty.model.rows[0];
-	await test.clickTab(ide.editor.editorGroup.model.activeTab.id);
+	await test.clickTab(ide.editor.editorParts.activeGroup.model.activeTab.id);
 	check(empty.visible && empty.model.rows[0] === retainedRow, 'catalog: focusing the active tab retains its inspector session');
 	const unused = await openRegisteredDefinition(test, 'effect', 'ungranted');
 	check(unused.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '777', 'catalog: loaded unused scalar');

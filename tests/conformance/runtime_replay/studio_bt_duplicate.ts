@@ -12,13 +12,13 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = ide.editor.editorGroup.model.activeTab;
+	const code = ide.editor.editorParts.activeGroup.model.activeTab;
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.order');
-	let lens = ide.editor.editorGroup.model.activeTab;
+	let lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT duplication requires the concrete graph');
 	let graph = lens.view.presentation;
 	let viewport = graph.viewport;
@@ -47,7 +47,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	console.info('STUDIO: BT duplicated child ready for visual inspection');
 	const range = children()[2].source.occurrenceRange;
 	await click(sourceButton.bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code)
+	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code)
 		&& sourcePane(test).code.view.cursorRow === range.start.line - 1 && sourcePane(test).code.view.cursorColumn === range.start.column - 1,
 		'BT duplicate: held Source navigates to the second occurrence without another source edit');
 	check(!ide.editor.commands.isEnabled(duplicate), 'BT duplicate: code focus does not inherit graph commands');
@@ -75,7 +75,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.weighted-order');
-	const nextDefinition2 = ide.editor.editorGroup.model.activeTab;
+	const nextDefinition2 = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
 	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
 	lens = nextDefinition2;

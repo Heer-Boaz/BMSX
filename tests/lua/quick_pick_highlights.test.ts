@@ -117,7 +117,7 @@ test('shared picker consumes provider spans, updates them without text queries a
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const picker = new QuickInputController(menu);
+	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); constants.setIdeThemeVariant('light'); });
 	const item = { label: 'source_choice', description: 'independent.lua', detail: '7:1' };
 	const highlights = new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 }));

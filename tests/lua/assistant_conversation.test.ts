@@ -1,3 +1,4 @@
+import { editorViewState } from '../../ide/editor/ui/view/state';
 import { WorkspaceToolService } from '../../ide/workbench/services/assistant/tool_service';
 import { assistantFooter, AssistantFooter } from '../../ide/workbench/contrib/assistant/footer';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
@@ -399,7 +400,7 @@ for (const command of ['assistant.commands', 'assistant.history', 'assistant.new
 		group.openEditor(current);
 		const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, () => assert.fail('invalid draft cannot publish'));
 		control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
-		const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+		const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 		const commands = new AssistantChatCommands(c, group, quickInput, new HeadlessClipboard());
 		t.after(() => {
 			control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose(); group.dispose();
@@ -437,7 +438,7 @@ test('a rejected observer view neither disconnects the shared observer nor reque
 	group.openEditor(current);
 	const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, () => assert.fail('invalid draft cannot publish'));
 	control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => {
 		control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose(); group.dispose(); conversation.dispose();
 	});

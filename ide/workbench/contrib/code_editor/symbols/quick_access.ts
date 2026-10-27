@@ -22,13 +22,13 @@ export function buildSymbolQuickPickItems(symbols: readonly EditorLuaSymbolEntry
 export function openSymbolSearch(pane: CodeEditorPane, scope: 'file' | 'workspace'): void {
 	const input = pane.input, resource = input.workingCopy.resource;
 	pane.code.references.clear();
-	pane.editor.quickInput.pick(scope === 'file' ? `SYMBOLS: ${resource.path}` : 'GO TO WORKSPACE SYMBOL',
+	pane.part.quickInput.pick(scope === 'file' ? `SYMBOLS: ${resource.path}` : 'GO TO WORKSPACE SYMBOL',
 		scope === 'file' ? 'Type a symbol name' : 'Symbol name, then source path', (_origin, lifetime) => {
 			const symbols = scope === 'file'
 				? listLuaSymbols(pane.sources.catalog, resource.contextId, resource.path)
 				: listGlobalLuaSymbols(pane.sources.catalog, resource.contextId);
-			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, pane.sources.catalog, resource.contextId, () => pane.editor.quickInput.hide()));
+			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, pane.sources.catalog, resource.contextId, () => pane.part.quickInput.hide()));
 			return new SymbolQuickPickProvider(buildSymbolQuickPickItems(symbols, scope), scope);
 		}, item => navigateToLuaDefinition(pane, item.symbol.resource, item.symbol.location),
-		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));
+		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.part.quickInput.hide()) }));
 }

@@ -23,7 +23,8 @@ export function openLuaCodeTab(
 	catalog: WorkspaceSourceCatalog,
 	resource: RuntimeResource,
 	selection?: EditorTextSelection,
+	preserveFocus = false,
 ): void {
 	const input = resolveLuaCodeEditorInput(catalog, resource);
-	editorGroup.openEditor(input, { selection });
+	editorGroup.openEditor(input, { selection, preserveFocus });
 }

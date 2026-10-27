@@ -50,16 +50,13 @@ let debuggerState: RuntimeBreakpointState = null;
 let storage: KeyValueStorage = null;
 let clock: HostClock = null;
 let logOutput: LogOutput = null;
-let unsubscribeEditorGroup: (() => void) | undefined;
-let unsubscribeEditorPane: (() => void) | undefined;
+let unsubscribeEditorParts: (() => void) | undefined;
 let unsubscribeModelSaved: (() => void) | undefined;
 
 export async function shutdownWorkspaceStorage(): Promise<void> {
-	unsubscribeEditorGroup?.();
-	unsubscribeEditorPane?.();
+	unsubscribeEditorParts?.();
 	unsubscribeModelSaved?.();
-	unsubscribeEditorGroup = undefined;
-	unsubscribeEditorPane = undefined;
+	unsubscribeEditorParts = undefined;
 	unsubscribeModelSaved = undefined;
 	cancelWorkspaceAutosave();
 	try {
@@ -257,8 +254,7 @@ export async function restoreWorkspaceStorageSession(
 	editor = workspaceEditor;
 	catalog = sourceCatalog;
 	debuggerState = runtimeDebuggerState;
-	unsubscribeEditorGroup = editor.editorGroup.model.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
-	unsubscribeEditorPane = editor.editorGroup.panes.onDidClearEditor(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
+	unsubscribeEditorParts = editor.editorParts.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
 	unsubscribeModelSaved = editorTextModelService.onDidSaveModel(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles));
 	if (restorePayload !== payload) {
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);

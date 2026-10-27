@@ -136,7 +136,7 @@ export async function initializeIdeFeatures(
 		workspacePayload,
 		rejectedDirtyPaths,
 	);
-	if (state.editor.editorGroup.model.tabs.length === 0) openHome(state.editor.editorGroup, workspaceState.context);
+	if (state.editor.editorParts.main.group.model.tabs.length === 0) openHome(state.editor.editorParts.main.group, workspaceState.context);
 	registerRuntimeShortcuts(state, runtime, input);
 	return state;
 }

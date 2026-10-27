@@ -1,4 +1,4 @@
-import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
+import { copy_rect_bounds, create_rect_bounds, point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
@@ -27,6 +27,17 @@ export class EditorTabStrip implements PointerHoverTarget {
 	public hoverId: EditorTabId | null = null;
 	public lastClickId: EditorTabId | null = null;
 	public lastClickTime = 0;
+	private layoutBounds: Readonly<RectBounds> | undefined;
+	private layoutContext: EditorTabStripLayoutContext | undefined;
+	private readonly projectedBounds = create_rect_bounds();
+	private projectedRevision = -1;
+	private projectedFont: EditorTabStripLayoutContext['font'] | undefined;
+	private projectedTabHeight = 0;
+	private projectedCharAdvance = 0;
+	private projectedHover: EditorTabId | null = null;
+	private projectedDragging = false;
+	private projectedScroll = 0;
+	private actionsAttached = false;
 
 	public constructor(public readonly model: EditorTabGroupModel, commands: EditorCommandRunner,
 		private readonly focusParent: InputFocusTarget, private readonly activate: (id: EditorTabId) => void,
@@ -41,12 +52,33 @@ export class EditorTabStrip implements PointerHoverTarget {
 	/** Host-time gesture advancement runs before the owning group publishes its next layout. */
 	public update(now: number): void {
 		this.drag.advance(now);
+		if (this.actionsAttached && !this.needsLayout) this.actionBar.update();
+	}
+	public get needsLayout(): boolean {
+		const bounds = this.layoutBounds, context = this.layoutContext;
+		return context === undefined || this.projectedRevision !== this.model.revision
+			|| this.projectedBounds.left !== bounds!.left || this.projectedBounds.top !== bounds!.top
+			|| this.projectedBounds.right !== bounds!.right || this.projectedBounds.bottom !== bounds!.bottom
+			|| this.projectedFont !== context.font || this.projectedTabHeight !== context.tabBarHeight
+			|| this.projectedCharAdvance !== context.charAdvance || this.projectedHover !== this.hoverId
+			|| this.projectedDragging !== (this.drag.state?.hasDragged === true) || this.projectedScroll !== this.scrollbar.getScroll();
 	}
 
 	public layout(bounds: Readonly<RectBounds>, context: EditorTabStripLayoutContext): void {
-		this.layoutState.layout(bounds, context, this.hoverId, this.drag.state?.hasDragged === true);
-		this.drag.refreshTarget();
-		this.actionBar.setInput(this.actions, this.focusParent);
+		this.layoutBounds = bounds; this.layoutContext = context;
+		if (this.needsLayout) {
+			this.layoutState.layout(bounds, context, this.hoverId, this.drag.state?.hasDragged === true);
+			this.drag.refreshTarget();
+			copy_rect_bounds(this.projectedBounds, bounds);
+			this.projectedRevision = this.model.revision; this.projectedFont = context.font;
+			this.projectedTabHeight = context.tabBarHeight; this.projectedCharAdvance = context.charAdvance;
+			this.projectedHover = this.hoverId; this.projectedDragging = this.drag.state?.hasDragged === true;
+			this.projectedScroll = this.scrollbar.getScroll();
+		}
+		if (!this.actionsAttached) {
+			this.actionBar.setInput(this.actions, this.focusParent);
+			this.actionsAttached = true;
+		}
 		this.actionBar.update();
 	}
 
@@ -61,6 +93,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 		this.scrollControl.cancelPointer();
 		pointerCapture.cancelTarget(this.actionBar);
 		this.actionBar.clearInput();
+		this.actionsAttached = false;
 		for (const item of this.actions.items) item.visible = false;
 		pointerHover.release(this);
 		this.hoverId = null;
@@ -68,6 +101,7 @@ export class EditorTabStrip implements PointerHoverTarget {
 		this.lastClickTime = 0;
 		this.scrollbar.setScroll(0);
 		this.layoutState.clear();
+		this.projectedRevision = -1;
 	}
 
 	public dispose(): void {

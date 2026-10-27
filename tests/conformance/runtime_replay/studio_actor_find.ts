@@ -30,10 +30,10 @@ export async function runStudioActorFind(test: StudioFixture) {
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'actor find: baseline frame boundary settles');
 	await runPaletteCommand('Actor Lab: Open'); await press('Enter'); await frame();
-	const lab = ide.editor.editorGroup.model.activeTab;
+	const lab = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
-	const pane = ide.editor.editorGroup.panes.activePane as ActorLabEditorPane, inspector = pane.inspector;
-	const outline = lab.outline, picker = ide.editor.quickInput;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane as ActorLabEditorPane, inspector = pane.inspector;
+	const outline = lab.outline, picker = ide.editor.editorParts.activePart.quickInput;
 	const nests = outline.rows.filter(row => row.element.node.kind === 'state' && row.element.node.name === 'nest');
 	check(nests.length === 2, 'real cartlib exposes two distinct instances of the same machine definition');
 	const collapsed = nests[1], target = collapsed.children.find(row => row.element.node.name === 'wait')!;

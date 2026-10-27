@@ -12,12 +12,12 @@ export async function runStudioEditReview(test: StudioFixture) {
 	await reachNemesisTitle(test);
 	harness.openLuaSource('cart.lua');
 	await frame();
-	const main = harness.getActiveEditorDocument().model, mainTab = ide.editor.editorGroup.model.activeTab;
+	const main = harness.getActiveEditorDocument().model, mainTab = ide.editor.editorParts.activeGroup.model.activeTab;
 	const originalMain = main.buffer.getText();
 	const record = ide.sources.catalog.getContext(test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId).luaSources.records.find(record => record.program_module
 		&& !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 	harness.openLuaSource(record.source_path);
-	const provider = harness.getActiveEditorDocument().model, providerTab = ide.editor.editorGroup.model.activeTab;
+	const provider = harness.getActiveEditorDocument().model, providerTab = ide.editor.editorParts.activeGroup.model.activeTab;
 	const originalProvider = provider.buffer.getText();
 	const mainText = 'return fixture_rename, fixture_rename';
 	const providerText = 'fixture_rename = { value = 1 }\n'
@@ -31,7 +31,7 @@ export async function runStudioEditReview(test: StudioFixture) {
 		await runPaletteCommand('Edit: Rename Symbol with Preview');
 		await test.clipboard.writeText('fixture_reviewed');
 		await press('ControlLeft', 'KeyV'); await press('Enter');
-		const input = ide.editor.editorGroup.model.activeTab;
+		const input = ide.editor.editorParts.activeGroup.model.activeTab;
 		if (input.kind !== 'workspace_edit_review') throw new Error('edit review: production review pane expected');
 		check(sourcePane(test).code.model === null && input.proposal.files.length === 2,
 			'edit review: resource-based pane detaches the code widget and shows both sources');
@@ -78,8 +78,8 @@ export async function runStudioEditReview(test: StudioFixture) {
 	await frame(); await test.capture?.('stale');
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyZ');
 	const transient = await show();
-	const serialized = ide.editor.editorGroup.model.serialize(ide.editor.editorInputSerializers);
-	check(serialized.inputs.every(input => input.kind !== ('workspace_edit_review' as string)), 'edit review: session never serializes edit rights');
+	const serialized = ide.editor.editorParts.serialize(ide.editor.editorInputSerializers);
+	check([serialized.main, ...serialized.documents.map(part => part.group)].every(group => group.inputs.every(input => input.kind !== ('workspace_edit_review' as string))), 'edit review: session never serializes edit rights');
 	await press('ControlLeft', 'KeyW');
 	check(transient.proposal.state === 'discarded', 'edit review: Close discards the unaccepted proposal');
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyZ');
@@ -101,7 +101,7 @@ async function sourceToolReview(test: StudioFixture, mainPath: string): Promise<
 			if (catalog.kind !== 'sources') throw new Error('source tools: catalog expected');
 			const selected = [catalog.data.find(source => source.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && source.path === mainPath)!,
 				catalog.data.find(source => source.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && source.path.endsWith('nemesis_s_stage.yaml'))!];
-			const tabCount = ide.editor.editorGroup.model.tabs.length;
+			const tabCount = ide.editor.editorParts.groups.reduce((count, group) => count + group.model.tabs.length, 0);
 			const reads = await Promise.all(selected.map(source => tools.execute('studio_read_source', { resource: source.resource })));
 			const files = reads.map((read, index) => {
 				if (read.kind !== 'source') throw new Error('source tools: captured source expected');
@@ -110,9 +110,9 @@ async function sourceToolReview(test: StudioFixture, mainPath: string): Promise<
 			});
 			const result = await tools.execute('studio_propose_edits', { title: 'Source tools: Lua and YAML review', files });
 			if (result.kind !== 'proposal') throw new Error('source tools: review proposal expected');
-			check(ide.editor.editorGroup.model.tabs.length === tabCount, 'source tools: source reads/proposal do not create hidden source tabs');
+			check(ide.editor.editorParts.groups.reduce((count, group) => count + group.model.tabs.length, 0) === tabCount, 'source tools: source reads/proposal do not create hidden source tabs');
 			const input = new WorkspaceEditReviewInput(result.proposal);
-			ide.editor.editorGroup.openEditor(input);
+			ide.editor.editorParts.activeGroup.openEditor(input);
 			return { input, before: selected.map(source => editorTextModelService.get(source)!.buffer.getText()),
 				models: selected.map(source => editorTextModelService.get(source)!) };
 		} finally { tools.dispose(); }

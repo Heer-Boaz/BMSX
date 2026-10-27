@@ -20,7 +20,7 @@ export async function runAssistantAccount(kind: StudioRendererKind, canvas: HTML
 	await press('ControlRight', 'ShiftRight'); await test.runPaletteCommand('Run: Pause');
 	ide.editor.setFontVariant('tiny');
 	await test.runPaletteCommand('View: Codex Assistant');
-	let view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
+	let view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
 	const conversation = ide.editor.assistant;
 	check(conversation.state === 'disconnected', 'view attachment does not start authentication');
 	await submitAssistantText(test, 'Do not send before authorization.');
@@ -61,7 +61,7 @@ export async function runAssistantAccount(kind: StudioRendererKind, canvas: HTML
 	await press('ControlLeft', 'KeyW');
 	check(conversation.state === 'disconnected' && conversation.loginCode === undefined, 'closing the pane retires pending authentication');
 	await test.runPaletteCommand('View: Codex Assistant');
-	view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
+	view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
 	check(conversation.state === 'disconnected', 'reopening never retries login');
 	await submitAssistantText(test, '/login device');
 	await until(() => conversation.loginCode !== undefined, 'account: new process owns its own attempt');

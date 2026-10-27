@@ -13,7 +13,7 @@ import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-test('real group surfaces route pointer and wheel to their own Source and retire without disturbing a sibling gesture', t => {
+test('real group surfaces route pointer and wheel to their own Source and retire without disturbing a sibling gesture', async t => {
 	const f = createActualSourcePanes(t, true), a = f.first.code, b = f.second.code;
 	assert.ok(f.editor.surfaces.findByScope(f.firstGroup.captureScope) === f.firstGroup.paneSurface);
 	assert.ok(f.editor.surfaces.findByScope(f.secondGroup.captureScope) === f.secondGroup.paneSurface);
@@ -31,8 +31,7 @@ test('real group surfaces route pointer and wheel to their own Source and retire
 	assert.ok(inputFocus.target === b.focusTarget); assert.equal(b.pointer.pointerSelecting, true);
 	assert.ok(pointerCapture.routeScope === f.secondGroup.captureScope);
 	// Forced container retirement, not a user dirty-close decision.
-	f.editor.editorGroups.splice(f.editor.editorGroups.indexOf(f.firstGroup), 1);
-	f.firstGroup.dispose();
+	await f.editor.editorParts.close(f.firstPart);
 	assert.equal(f.firstGroup.paneSurface.retired, true); assert.equal(f.firstGroup.tabSurface.retired, true);
 	assert.equal(f.secondGroup.paneSurface.retired, false); assert.equal(f.secondGroup.tabSurface.retired, false);
 	assert.ok(inputFocus.target === b.focusTarget); assert.equal(pointerCapture.active, true);
@@ -201,6 +200,23 @@ test('stationary Source hover consumes modifier changes while a sibling retains 
 	assert.equal(b.hoverTooltip, null); assert.equal(a.hoverTooltip, null);
 });
 
+test('moving a raised sibling over stationary Source revokes its old hover without replaying input', t => {
+	const f = createActualSourcePanes(t), a = f.first.code, b = f.second.code;
+	const target = { left: 0, top: 0, right: 0, bottom: 0 };
+	resolveTextPositionBounds(b, 1, 8, target);
+	const x = target.left + 1, y = (target.top + target.bottom) / 2;
+	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0,
+		modifiers: KeyModifier.ctrl, spaceDown: false, timestamp: f.host.clock.now() });
+	a.focusTarget.focus(); f.update();
+	assert.notEqual(b.gotoHoverHighlight, null);
+	Object.assign(f.firstBounds, f.secondBounds); f.arrange();
+	assert.ok(f.editor.surfaces.hitTest(x, y) === f.firstGroup.paneSurface, 'the raised sibling now owns the physical hit');
+	assert.equal(b.gotoHoverHighlight, null); assert.equal(a.gotoHoverHighlight, null);
+	f.editor.dispatchKey(new KeyInputEvent('AltLeft', KeyModifier.alt)); f.update();
+	assert.equal(b.hoverTooltip, null); assert.equal(a.hoverTooltip, null);
+	assert.ok(inputFocus.target === a.focusTarget);
+});
+
 test('Source navigation restore and input retirement target one actual pane without changing its sibling', t => {
 	const f = createActualSourcePanes(t), a = f.first.code, b = f.second.code;
 	a.focusTarget.textInput!.setSelection(6, 11); b.focusTarget.textInput!.setSelection(6, 10);
@@ -221,7 +237,7 @@ test('a Source popup follows its owning attachment rather than sibling retiremen
 	const f = createActualSourcePanes(t), b = f.second.code;
 	b.focusTarget.focus();
 	f.editor.commands.execute('symbolSearch', b.focusTarget);
-	const picker = f.editor.quickInput;
+	const picker = f.secondPart.quickInput;
 	assert.equal(picker.visible, true);
 	assert.ok(picker.invocationOrigin === b.focusTarget, 'the picker retains its actual Source invocation');
 	const pickerFocus = inputFocus.target;

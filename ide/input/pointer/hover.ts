@@ -1,4 +1,5 @@
 import { KeyModifier } from '../../../hosts/common/input/text';
+import type { PointerCaptureScope } from './capture';
 
 export interface PointerHoverTarget {
 	onPointerEnter?(): void;
@@ -10,6 +11,7 @@ export interface PointerHoverTarget {
 export class PointerHoverService {
 	private readonly targets = new Map<PointerHoverTarget, number>();
 	private dispatchId = 0;
+	private routeScope: PointerCaptureScope | undefined;
 	private modifiers = KeyModifier.none;
 	private readonly updateModifiers = (_dispatchId: number, target: PointerHoverTarget): void => {
 		target.onPointerModifiersChanged?.(this.modifiers);
@@ -21,7 +23,15 @@ export class PointerHoverService {
 
 	public has(target: PointerHoverTarget): boolean { return this.targets.has(target); }
 
-	public beginDispatch(): void { this.dispatchId += 1; }
+	public beginDispatch(scope?: PointerCaptureScope): void {
+		this.dispatchId += 1;
+		this.routeScope = scope;
+	}
+
+	/** Presentation changes revoke only a hover path that no longer owns the physical hit. */
+	public reconcileRoute(scope: PointerCaptureScope | undefined): void {
+		if (this.routeScope === undefined || this.routeScope !== scope) this.clear();
+	}
 
 	/** Called by a control only after the normal input route accepts its hit. */
 	public visit(target: PointerHoverTarget): void {
@@ -43,7 +53,10 @@ export class PointerHoverService {
 		if (this.targets.delete(target)) target.onPointerLeave();
 	}
 
-	public clear(): void { this.targets.forEach(this.leaveTarget); }
+	public clear(): void {
+		this.routeScope = undefined;
+		this.targets.forEach(this.leaveTarget);
+	}
 }
 
 export const pointerHover = new PointerHoverService();

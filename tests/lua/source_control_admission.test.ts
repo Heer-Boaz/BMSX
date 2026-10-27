@@ -54,9 +54,9 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
-	editor.editorGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
+	editor.editorParts.main.group.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	t.after(async () => {
-		const pane = editor.editorGroup.panes.activePane;
+		const pane = editor.editorParts.main.group.panes.activePane;
 		if (pane instanceof SceneEditorPane) {
 			for (const control of pane.controls) control.cancel();
 			for (const control of pane.options.controls) control.cancel();
@@ -66,7 +66,7 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
-	const model = (editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane).code.model!;
+	const model = (editor.editorParts.main.group.panes.getPane('code_editor') as CodeEditorPane).code.model!;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	const version = model.version, cycles = host.runtime.machine.scheduler.nowCycles;
 	const press = (code: string, modifiers = KeyModifier.none) => {
@@ -79,8 +79,8 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 		assert.equal(host.runtime.machine.scheduler.nowCycles, cycles);
 	};
 	const scene = () => {
-		editor.sceneEditor.openResource(editor.editorGroup, model.resource); editor.update(0);
-		const input = editor.editorGroup.model.activeTab!, pane = editor.editorGroup.panes.activePane!;
+		editor.sceneEditor.openResource(editor.editorParts.main.group, model.resource); editor.update(0);
+		const input = editor.editorParts.main.group.model.activeTab!, pane = editor.editorParts.main.group.panes.activePane!;
 		assert.ok(input.kind === 'scene_editor' && pane instanceof SceneEditorPane);
 		press('Home'); press('ArrowDown'); press('Enter');
 		assert.equal(input.outline.rows[input.outline.selectionIndex].element.kind, 'member');
@@ -139,23 +139,23 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 		return () => { subscriptions--; unbind(); };
 	});
 	const { pane } = f.scene();
-	// One listener belongs to the Scene input; another active source kind must replace it.
+	// Each concurrently attached view owns one listener; reselection must not add another.
 	assert.equal(subscriptions, 1);
-	f.editor.sceneEditor.openResource(f.editor.editorGroup, f.model.resource); f.editor.update(0);
+	f.editor.sceneEditor.openResource(f.editor.editorParts.main.group, f.model.resource); f.editor.update(0);
 	assert.equal(subscriptions, 1);
 	f.editor.commands.execute('sceneEditor.source', inputFocus.target!.commandContext); await setImmediate(); f.editor.update(0);
-	assert.ok(f.editor.editorGroup.panes.activePane !== pane);
-	assert.equal(subscriptions, 1, 'Source replaces, rather than retains, the Scene observer');
-	f.editor.sceneEditor.openResource(f.editor.editorGroup, f.model.resource); f.editor.update(0);
-	assert.ok(f.editor.editorGroup.panes.activePane === pane);
-	assert.equal(subscriptions, 1);
+	assert.ok(f.editor.editorParts.main.group.panes.activePane === pane, 'Source leaves the main Scene attached');
+	assert.equal(subscriptions, 2, 'the separate Source and Scene controls each retain one observer');
+	f.editor.sceneEditor.openResource(f.editor.editorParts.main.group, f.model.resource); f.editor.update(0);
+	assert.ok(f.editor.editorParts.main.group.panes.activePane === pane);
+	assert.equal(subscriptions, 2, 'reselecting the main Scene does not duplicate either retained view subscription');
 	f.unchanged();
 });
 
 test('a fully covered Lua Program has no destructive keyboard admission and preserves its selected source', t => {
 	const f = fixture(t, PROGRAM_SOURCE, 'cartlib/progression');
-	f.editor.luaPrograms.openResource(f.editor.editorGroup, f.model.resource, 'progression'); f.editor.update(0);
-	const input = f.editor.editorGroup.model.activeTab!, pane = f.editor.editorGroup.panes.activePane!;
+	f.editor.luaPrograms.openResource(f.editor.editorParts.main.group, f.model.resource, 'progression'); f.editor.update(0);
+	const input = f.editor.editorParts.main.group.model.activeTab!, pane = f.editor.editorParts.main.group.panes.activePane!;
 	assert.ok(input.kind === 'lua_program' && pane instanceof LuaProgramEditorPane);
 	const target = input.tree.rows.findIndex(row => row.element.field !== undefined && row.element.container?.structural);
 	assert.ok(target >= 0); f.press('Home');

@@ -26,16 +26,16 @@ export async function resolveAemEditorInput(catalog: WorkspaceSourceCatalog, res
 
 export class AemEditorController {
 	public constructor(private readonly sources: RuntimeSourceState,
-		public readonly quickInput: QuickInputController, private readonly guest: SuspendedGuestSession,
+		private readonly guest: SuspendedGuestSession,
 		private readonly runtime: Runtime, private readonly tasks: RuntimeTaskQueue) {}
-	public open(group: EditorGroupView): void {
-		this.quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', () => new TextQuickPickProvider(this.sources.catalog.resources
+	public open(group: EditorGroupView, quickInput: QuickInputController): void {
+		quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', () => new TextQuickPickProvider(this.sources.catalog.resources
 			.filter(resource => resource.source.type === 'aem').map(resource => ({ label: resource.path, description: this.sources.catalog.getContext(resource.contextId).projectRootPath, detail: '', resource }))),
 			item => {
 				void group.openResolvedEditor(resolveAemEditorInput(this.sources.catalog, item.resource))
 					.catch(error => showEditorWarningBanner(`Cannot open audio map: ${error instanceof Error ? error.message : String(error)}`));
 			}, lifetime => {
-				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
 	public openSource(group: EditorGroupView, input: AemEditorInput): void {
@@ -46,7 +46,7 @@ export class AemEditorController {
 			{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } })
 			.catch(error => showEditorWarningBanner(`Cannot open audio source: ${error instanceof Error ? error.message : String(error)}`));
 	}
-	public apply(input: AemEditorInput): void {
+	public apply(input: AemEditorInput, quickInput: QuickInputController): void {
 		const resource = input.workingCopy.resource;
 		const choices: Array<{ label: string; description: string; detail: string; domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
@@ -54,9 +54,9 @@ export class AemEditorController {
 			if (image === null || image.sourceContextId !== resource.contextId) continue;
 			choices.push({ label: `Physical ${domain}`, description: resource.path, detail: 'Apply the current source buffer to this installed attachment', domain, image });
 		}
-		this.quickInput.pick('APPLY AUDIO EVENT MAP', 'Choose the actual installed execution attachment; Save only writes source', (_origin, lifetime) => {
-			lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
-			lifetime.add({ dispose: input.onWillDispose(() => this.quickInput.hide()) });
+		quickInput.pick('APPLY AUDIO EVENT MAP', 'Choose the actual installed execution attachment; Save only writes source', (_origin, lifetime) => {
+			lifetime.add({ dispose: this.guest.onDidInvalidate(() => quickInput.hide()) });
+			lifetime.add({ dispose: input.onWillDispose(() => quickInput.hide()) });
 			return new TextQuickPickProvider(choices);
 		}, async choice => {
 			const installed = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
@@ -76,41 +76,41 @@ export class AemEditorController {
 	public audioIds(input: AemEditorInput): readonly string[] {
 		return [...this.sources.catalog.getAssetBindings(input.workingCopy.resource.contextId, 'audio').keys()];
 	}
-	public add(input: AemEditorInput): void {
+	public add(input: AemEditorInput, quickInput: QuickInputController): void {
 		const property = input.tree.rows[input.tree.selectionIndex]?.element ?? input.tree.roots[0].element;
 		const collection = property.node as StructuredCollection;
 		const format = aemDocumentFormat(input.workingCopy.resource.path);
 		const insertion = (value: string, name?: string) => createStructuredInsertionEdit(input.source, format, collection, value, name);
 		if (property.path.length === 1 && property.path[0] === 'events') {
-			this.quickInput.input('NEW AUDIO EVENT', 'Event name', 'game.effect', async name => {
+			quickInput.input('NEW AUDIO EVENT', 'Event name', 'game.effect', async name => {
 				if (collection.has(name)) throw new Error(`Event '${name}' already exists.`);
 				return name;
 			}, name => {
-				this.quickInput.pick('EVENT AUDIO', 'Real cartridge audio asset', (_origin, lifetime) => {
-					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+				quickInput.pick('EVENT AUDIO', 'Real cartridge audio asset', (_origin, lifetime) => {
+					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					return new TextQuickPickProvider(this.audioIds(input).map(id => ({ label: id, description: '', detail: '' })));
 				}, audio => input.workingCopy.pushEditOperations([insertion(JSON.stringify({ channel: 'sfx', rules: [{ go: { audio_id: audio.label } }] }), name)]));
 			}, lifetime => {
-				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 			});
 			return;
 		}
 		if (isSeq(collection)) {
 			const value = aemSequenceValueTemplate(property.path);
 			if (value !== undefined) {
-				this.quickInput.input('NEW VALUE', 'YAML / JSON value', value,
+				quickInput.input('NEW VALUE', 'YAML / JSON value', value,
 					async text => insertion(text), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
-						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					});
 				return;
 			}
-			this.quickInput.pick('RULE / ACTION AUDIO', 'Choose an actual asset for the new action', (_origin, lifetime) => {
-				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+			quickInput.pick('RULE / ACTION AUDIO', 'Choose an actual asset for the new action', (_origin, lifetime) => {
+				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 				return new TextQuickPickProvider(this.audioIds(input).map(id => ({ label: id, description: '', detail: '' })));
 			}, audio => {
-				this.quickInput.input('NEW AUDIO RULE / ACTION', 'YAML / JSON value', aemSequenceTemplate(property.path, audio.label),
+				quickInput.input('NEW AUDIO RULE / ACTION', 'YAML / JSON value', aemSequenceTemplate(property.path, audio.label),
 					async text => insertion(text), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
-						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					});
 			});
 			return;
@@ -118,33 +118,33 @@ export class AemEditorController {
 		const choices = aemFieldTemplates(property.path, collection).filter(item => !collection.has(item.name))
 			.map(item => ({ ...item, label: item.name, description: '', detail: item.value }));
 		choices.push({ name: '', value: '{}', label: 'Custom property', description: 'Authored map key', detail: 'Event payload names or schema extensions' });
-		this.quickInput.pick('ADD AUDIO PROPERTY', 'Authored event / rule / action', (_origin, lifetime) => {
-			lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+		quickInput.pick('ADD AUDIO PROPERTY', 'Authored event / rule / action', (_origin, lifetime) => {
+			lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 			return new TextQuickPickProvider(choices);
 		}, item => {
 			if (item.name === 'audio_id') {
-				this.quickInput.pick('ACTION AUDIO', 'Real cartridge audio asset', (_origin, lifetime) => {
-					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+				quickInput.pick('ACTION AUDIO', 'Real cartridge audio asset', (_origin, lifetime) => {
+					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					return new TextQuickPickProvider(this.audioIds(input).map(id => ({ label: id, description: '', detail: '' })));
 				}, audio => input.workingCopy.pushEditOperations([insertion(JSON.stringify(audio.label), item.name)]));
 				return;
 			}
 			if (item.name === '') {
-				this.quickInput.input('PROPERTY NAME', 'Authored map key', '', async name => {
+				quickInput.input('PROPERTY NAME', 'Authored map key', '', async name => {
 					if (collection.has(name)) throw new Error(`Property '${name}' already exists.`);
 					return name;
 				}, name => {
-					this.quickInput.input(name, 'YAML / JSON value', '{}', async text => insertion(text, name), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
-						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+					quickInput.input(name, 'YAML / JSON value', '{}', async text => insertion(text, name), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
+						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					});
 				}, lifetime => {
-					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 				});
 				return;
 			}
-			this.quickInput.input(item.name, 'YAML / JSON value', item.value,
+			quickInput.input(item.name, 'YAML / JSON value', item.value,
 				async text => insertion(text, item.name), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
-					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 				});
 		});
 	}

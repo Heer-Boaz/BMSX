@@ -36,7 +36,7 @@ const CASES = {
 
 function assertSourcePosition(test: StudioFixture, path: string, line: number, column: number, route: string): void {
 	const { model, view } = sourcePane(test).code;
-	check(test.ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && model.resource.path === path
+	check(test.ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && model.resource.path === path
 		&& view.cursorRow === line - 1 && view.cursorColumn === column - 1,
 		`${route}: expected ${path}:${line}:${column}, got ${model.resource.path}:${view.cursorRow + 1}:${view.cursorColumn + 1}`);
 	check(view.selectionAnchor === null || (view.selectionAnchor.row === view.cursorRow && view.selectionAnchor.column === view.cursorColumn),
@@ -49,7 +49,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: spec.path })!;
-	await ide.editor.navigation.openResource(ide.editor.editorGroup, resource);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource);
 	await frame();
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
@@ -68,7 +68,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 		`${cart}: semantic source owner already returns the exact local declaration`);
 	console.info(`STUDIO: ${cart} source ranges and held keyboard/Ctrl-click/context-menu/lens navigation`);
 	for (const route of ['keyboard', 'ctrl-click', 'context-menu'] as const) {
-		await ide.editor.navigation.openResource(ide.editor.editorGroup, resource, { row: useRow, startColumn: useColumn, endColumn: useColumn });
+		await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource, { row: useRow, startColumn: useColumn, endColumn: useColumn });
 		await frame();
 		if (route === 'keyboard') {
 			await runPaletteCommand('Go: Go to Definition');
@@ -107,7 +107,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 
 	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, spec.behavior);
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('navigation: actual behavior lens missing');
 	const view = lens.view;
 	const sourceLines = lens.workingCopy.buffer.getText().split('\n');

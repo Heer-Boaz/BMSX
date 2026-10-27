@@ -9,7 +9,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'actor pins: boot authoring');
 	await press('ControlRight', 'ShiftRight');
 	harness.openLuaSource('cart.lua');
-	const sourceTab = ide.editor.editorGroup.model.activeTab, source = harness.getActiveEditorDocument().model;
+	const sourceTab = ide.editor.editorParts.activeGroup.model.activeTab, source = harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: source.buffer.length,
 		text: ACTOR_TOOLS_SOURCE.replace('\tworld:update()', '\tactor_tool_first.x = actor_tool_first.x + 1\n\tworld:update()') }]);
 	await runPaletteCommand('Run: Reboot'); await press('Enter');
@@ -22,12 +22,12 @@ export async function runStudioActorPins(test: StudioFixture) {
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'actor pins: baseline frame boundary settles');
 	await runPaletteCommand('Actor Lab: Open');
-	check(ide.editor.quickInput.visible && ide.editor.quickInput.model.list.rows.map(row => row.item.label).join(',') === 'first,second',
+	check(ide.editor.editorParts.activePart.quickInput.visible && ide.editor.editorParts.activePart.quickInput.model.list.rows.map(row => row.item.label).join(',') === 'first,second',
 		'Actor picker reads both guest-owned instances');
 	await press('Enter'); await frame();
-	const lab = ide.editor.editorGroup.model.activeTab;
+	const lab = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
-	const pane = ide.editor.editorGroup.panes.activePane as ActorLabEditorPane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane as ActorLabEditorPane;
 	let inspector = pane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	const inspectionCycles = cycles(), inspectionHeap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('actor_tool_callbacks');

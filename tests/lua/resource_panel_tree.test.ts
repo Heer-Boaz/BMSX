@@ -19,19 +19,20 @@ import type { FileElement } from '../../ide/workbench/contrib/resources/panel/fi
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
-import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1))) {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const sources = createScenarioTestSourceState(records);
-	const group = createTestEditorGroup(), editor = { editorGroup: group, isActive: true } as CartEditor;
+	const parts = createTestEditorParts(t), group = parts.createDocument().group;
+	const resourceEditors = createResourceEditorResolver(sources.catalog), editor = { editorParts: parts, resourceEditors, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
-	const navigation = new EditorNavigationController(sources.catalog, panel, createResourceEditorResolver(sources.catalog));
+	const navigation = new EditorNavigationController(sources.catalog, panel, resourceEditors);
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();
 	group.panes.layout({ left: 140, top: 20, right: 384, bottom: 270 });
-	t.after(() => { panel.hide(); group.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
+	t.after(() => { panel.hide(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
 	return { panel, sources, group, navigation };
 }
 

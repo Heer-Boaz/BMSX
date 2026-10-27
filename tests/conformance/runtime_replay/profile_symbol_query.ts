@@ -16,7 +16,7 @@ import { medianMilliseconds } from '../../helpers/performance';
 configureFontVariant('tiny');
 editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 const menu = new ContextMenuController(inputFocus, pointerCapture);
-const picker = new QuickInputController(menu);
+const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 const names = ['spawn_enemy', 'update_scene', 'before_enter', 'apply_effect', 'start_timeline', 'select_target', 'execute_task', 'dispatch_event'];
 for (const count of [128, 1024, 8192]) {
 	const symbols: EditorLuaSymbolEntry[] = Array.from({ length: count }, (_, index) => {

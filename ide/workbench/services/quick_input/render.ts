@@ -11,18 +11,20 @@ import type { QuickInputController } from './controller';
 export function layoutQuickInput(input: QuickInputController): void {
 	const layout = input.layout;
 	const view = editorViewState;
+	const area = input.presentation.bounds, width = area.right - area.left, height = area.bottom - area.top;
 	const model = input.model;
-	const labelsChanged = input.labelsDirty || layout.width !== view.viewportWidth || layout.font !== view.font;
+	const labelsChanged = input.labelsDirty || layout.width !== width || layout.font !== view.font;
 	const layoutChanged = labelsChanged || layout.projectionRevision !== model.revision
-		|| layout.height !== view.viewportHeight;
+		|| layout.height !== height || layout.left !== area.left || layout.top !== area.top;
 	if (layoutChanged) {
-		layout.width = view.viewportWidth;
-		layout.height = view.viewportHeight;
+		layout.left = area.left; layout.top = area.top;
+		layout.width = width;
+		layout.height = height;
 		layout.font = view.font;
 		layout.projectionRevision = model.revision;
-		const left = 8;
-		const right = view.viewportWidth - 8;
-		const top = 4;
+		const left = area.left + 8;
+		const right = area.right - 8;
+		const top = area.top + 4;
 		const fieldTop = top + view.lineHeight + 6;
 		const fieldBottom = fieldTop + view.lineHeight + 4;
 		const rowsTop = fieldBottom + 4;
@@ -39,10 +41,10 @@ export function layoutQuickInput(input: QuickInputController): void {
 		}
 		if (input.inputBox) {
 			write_rect_bounds(layout.bounds, left, top, right,
-				Math.min(view.viewportHeight - 4, rowsTop + layout.messageLines.length * view.lineHeight + 4));
+				Math.min(area.bottom - 4, rowsTop + layout.messageLines.length * view.lineHeight + 4));
 		} else {
 			const rowHeight = view.lineHeight * 2 + 2;
-			const capacity = Math.min(10, ((view.viewportHeight - rowsTop - 8) / rowHeight) | 0);
+			const capacity = Math.min(10, ((area.bottom - rowsTop - 8) / rowHeight) | 0);
 			const visible = Math.min(model.list.rows.length, capacity);
 			model.rowHeight = rowHeight;
 			model.viewport.layout(left + 4, rowsTop, right - 4, rowsTop + Math.max(1, visible) * rowHeight, model.list.rows.length * rowHeight);

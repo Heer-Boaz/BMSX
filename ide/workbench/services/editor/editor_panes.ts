@@ -22,15 +22,24 @@ export class EditorPanes {
 	private readonly panes = new Map<EditorInputKind, EditorPane<EditorInput>>();
 	private activePaneValue: EditorPane<EditorInput> | null = null;
 	private readonly clearListeners = new Set<() => void>();
+	private readonly showListeners = new Set<(options: EditorPaneOpenOptions) => void>();
 	private readonly disposeListeners = new Set<() => void>();
 	private openGenerationValue = 0;
+	private layoutRevision = 0;
 	public readonly contentBounds = create_rect_bounds();
 
 	public layout(bounds: Readonly<RectBounds>): void {
 		const current = this.contentBounds;
 		if (current.left === bounds.left && current.top === bounds.top && current.right === bounds.right && current.bottom === bounds.bottom) return;
 		write_rect_bounds(current, bounds.left, bounds.top, bounds.right, bounds.bottom);
+		this.layoutRevision++;
 		this.activePaneValue?.layout(current);
+	}
+
+	/** The container arranges the attached input before native input and focus can enter it. */
+	public onWillShowEditor(listener: (options: EditorPaneOpenOptions) => void): () => void {
+		this.showListeners.add(listener);
+		return () => this.showListeners.delete(listener);
 	}
 
 	/** Resolution can await storage; only the latest opening may attach its input. */
@@ -74,6 +83,7 @@ export class EditorPanes {
 					|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 			}
 			activePane.setOptions(selection, navigationSelection);
+			for (const listener of this.showListeners) listener(options);
 			if (!preserveFocus) activePane.focus();
 			return;
 		}
@@ -81,7 +91,9 @@ export class EditorPanes {
 		const pane = this.getOrCreatePane(input);
 		this.activePaneValue = pane;
 		pane.setInput(input, this.contentBounds, selection, navigationSelection);
-		pane.layout(this.contentBounds);
+		const layoutRevision = this.layoutRevision;
+		for (const listener of this.showListeners) listener(options);
+		if (this.layoutRevision === layoutRevision) pane.layout(this.contentBounds);
 		if (!preserveFocus) pane.focus();
 	}
 
@@ -109,6 +121,7 @@ export class EditorPanes {
 		for (const pane of this.panes.values()) pane.dispose();
 		this.panes.clear();
 		this.clearListeners.clear();
+		this.showListeners.clear();
 	}
 
 	private getOrCreatePane(input: EditorInput): EditorPane<EditorInput> {

@@ -4,8 +4,8 @@
 
 Studio has a persistent project work area, with document editors that can be
 used without replacing that work area. Home is welcome/navigation content,
-not the main window's identity or its lifetime owner. This is a target contract;
-the existing single active editor group does not implement it.
+not the main window's identity or its lifetime owner. This document defines the
+workspace interaction and ownership contract, not an Unreal feature checklist.
 
 The target supports multiple independently living editor parts and Source
 controls. It is not restricted to the number of windows in the first delivery.
@@ -80,6 +80,37 @@ Window presentation and physical input follow the existing
 [surface/window contract](workbench_windowing_design.md). Document/input
 identity follows [definition inputs](workbench_definition_inputs_design.md);
 selection bookmarks follow [navigation history](workbench_navigation_history_design.md).
+
+## Capability translation and missing prerequisites
+
+The [Unreal editor interface](https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-editor-interface)
+is a reference for separating a permanent work area, content navigation and
+specialized editors. Translating that workflow requires distinguishing an
+existing BMSX capability from missing presentation, and missing presentation
+from a missing authored-domain contract. `cartlib` is independent gameplay
+software, not a hardware specification or a mandatory Studio project format.
+
+| Workflow | Existing BMSX owners | Missing capability or boundary |
+| --- | --- | --- |
+| Main workspace and document editors | `services/editor/editor_parts.ts` and `editor_part.ts` compose main/document lifetime, controls and local sessions over shared documents. | Canvas placement does not supply docking or native host windows. Those require separate presentation and lifecycle contracts, rather than another editor instance. |
+| Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
+| Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Cart-owned domain information may be required; adding a generic Details window does not produce it. |
+| Hierarchy and Details | Scene's outline/options project authored membership; Actor Lab independently inspects runtime actors/components. | Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations before Studio can offer that kind of hierarchy. |
+| Project content browser | `contrib/resources/panel/files_model.ts` owns project/shared/generated trees; resource creation/import and viewers provide real source operations and image/metadata views. | Thumbnail browsing, richer asset-type filters, collections and cross-project migration are content-tooling capabilities, not missing cartlib runtime features. Epic's [Content Browser](https://dev.epicgames.com/documentation/en-us/unreal-engine/content-browser-in-unreal-engine) distinguishes these operations from the level viewport. |
+| Project/session entry | Project creation, Build Jobs, admitted source contexts and workspace recovery already have owners. | Selecting/opening/replacing a project in the frontend and starting without an execution target remain distinct lifecycle capabilities. Creating a cartridge or building it must not silently substitute for attaching its source workspace. The existing source-admission boundary, not an installed socket, owns that identity. |
+| BT, FSM and action effects | `cartlib/behaviour_tree/`, `cartlib/fsm/` and `cartlib/actioneffects.lua` provide domains; Behavior Lens has source-derived graphs, editing and runtime inspection. | These are existing tools that must be discoverable and correctly routed in the workspace. Their absence from a Home section is not evidence that the domain is missing, nor a reason to introduce a competing behavior format. |
+| Animation | Timeline programs, seek/scrub and sprite animation have cartlib owners. `contrib/animation/` edits tracks, keys, curves, clips and frames and supplies bitmap previews. | Skeletal hierarchies and retargeting would be separate domain/product extensions, not prerequisites for arranging the existing animation editor. Unreal's animation workbench is not one indivisible feature to copy. |
+| Audio | `cartlib/aem.lua` and `apu.lua` support event-driven audio; `contrib/aem/` edits canonical maps, rules/actions and transitions, with explicit installed-target application. | Standalone waveform/asset audition and mixer/graph authoring need their own Studio surface and preview owner. Lack of a Sound Cue-style graph must not be confused with lack of event-driven audio. |
+| Play/debug/edit correspondence | Isolated Play, Scenario Lab, Source breakpoints, Actor/GPU/GTE/Event tools, replay and explicit Hot Resume already exist. | “Play this authored Scene” needs an authored launch contract. Applying runtime transforms back to source needs explicit subject/property correspondence and normal source edits. Neither operation follows automatically from an editable inspector or rewind. Epic's [PIE/SIE workflow](https://dev.epicgames.com/documentation/unreal-engine/ineditor-testing-play-and-simulate-in-unreal-engine) is a comparison, not permission to reconstruct authored data from runtime state. |
+| Editor/project settings | Theme/font commands, session placement and source-backed cart configuration exist at separate owners. | A searchable settings model and UI with explicit defaults, scopes and persistence are missing. Editor preferences are not gameplay configuration. Go to File needs a configurable project-only versus BIOS/shared-library inclusion policy based on admitted provenance; folder-name guesses and isolated tool toggles are not a settings system. |
+
+This mapping records prerequisites and product choices, not approval to build
+every missing Unreal subsystem. Complete the main/document workspace using
+existing source and execution owners first. Spatial authoring, project entry,
+content-browser expansion and other domain extensions are separately admitted
+work. Unified settings follow that workspace work; [VS Code's user/workspace
+settings](https://code.visualstudio.com/docs/configure/settings) provide a scope
+and discovery reference without requiring a new mandatory cartridge manifest.
 
 ## Owners and representations
 
@@ -346,6 +377,15 @@ Shared control implementations and immutable command/menu contributions are
 reused. Part-local sessions do not compete for a root controller's single slot,
 and a separate command/semantic/filesystem service is not manufactured for each
 prompt or window.
+
+An explicitly opened chooser takes foreground focus in its destination part,
+even when invoked from another part. It retains the actual invoker for command
+context and Cancel focus return. Publishing a background chooser instead declares
+preserve-focus intent; owning a part is not itself permission to steal focus.
+Moving to a sibling does not dismiss an already retained local session. A delayed
+submission can complete its canonical edit without returning keyboard focus from
+that sibling. A background close decision likewise remains local without
+interrupting an unrelated part's draft.
 
 ## Execution and input
 

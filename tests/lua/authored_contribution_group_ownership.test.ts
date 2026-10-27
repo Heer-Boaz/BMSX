@@ -33,21 +33,21 @@ function fixture(t: TestContext) {
 	const first = createTestEditorGroup(), second = createTestEditorGroup();
 	first.openEditor(resolveLuaCodeEditorInput(sources.catalog, resource));
 	second.openEditor(resolveLuaCodeEditorInput(sources.catalog, resource));
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const guest = new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload()));
-	const aem = new AemEditorController(sources, picker, guest, null!, null!);
-	const programs = new LuaProgramController(sources, guest, null!, picker, null!, null!);
+	const aem = new AemEditorController(sources, guest, null!, null!);
+	const programs = new LuaProgramController(sources, guest, null!, null!, null!);
 	t.after(() => {
 		picker.dispose(); menu.dispose(); first.dispose(); second.dispose();
 		editorTextModelService.clear(); inputFocus.setTarget(null);
 	});
-	return { sources, resource, audioModel, first, second, picker, aem, programs };
+	return { sources, resource, audioModel, first, second, menu, picker, aem, programs };
 }
 
 test('a shared audio controller opens into its requested group despite focus returning to another group', async t => {
 	const f = fixture(t), sibling = f.second.model.activeTab;
 	f.first.panes.activePane!.focus();
-	f.aem.open(f.first);
+	f.aem.open(f.first, f.picker);
 	f.picker.accept();
 	f.second.panes.activePane!.focus();
 	await new Promise<void>(resolve => setImmediate(resolve));
@@ -61,8 +61,8 @@ test('a shared audio controller opens into its requested group despite focus ret
 for (const kind of ['aem', 'lua'] as const) test(`${kind} opening picker belongs only to its requested group`, t => {
 	const f = fixture(t);
 	f.first.panes.activePane!.focus();
-	if (kind === 'aem') f.aem.open(f.first);
-	else f.programs.open(f.first, 'progression');
+	if (kind === 'aem') f.aem.open(f.first, f.picker);
+	else f.programs.open(f.first, f.picker, 'progression');
 	assert.equal(f.picker.visible, true);
 	f.second.dispose();
 	assert.equal(f.picker.visible, true, 'retiring another group cannot cancel this request');
@@ -74,8 +74,8 @@ for (const kind of ['aem', 'lua'] as const) test(`${kind} opening picker belongs
 for (const kind of ['aem', 'lua'] as const) test(`${kind} chooser retains its invoking attachment independently of its destination group`, t => {
 	const f = fixture(t), destination = f.first.model.activeTab, origin = f.second.model.activeTab;
 	f.second.panes.activePane!.focus();
-	if (kind === 'aem') f.aem.open(f.first);
-	else f.programs.open(f.first, 'progression');
+	if (kind === 'aem') f.aem.open(f.first, f.picker);
+	else f.programs.open(f.first, f.picker, 'progression');
 	assert.equal(f.picker.visible, true);
 	f.second.panes.clearEditor();
 	assert.equal(f.picker.visible, false, 'retiring the invoking attachment revokes the pending choice');
@@ -88,8 +88,8 @@ for (const kind of ['aem', 'lua'] as const) test(`${kind} destination retirement
 	f.first.panes.activePane!.focus();
 	const origin = inputFocus.target!;
 	t.after(origin.onDidBlur(next => { if (next === f.picker.field.focusTarget) f.first.dispose(); }));
-	if (kind === 'aem') f.aem.open(f.first);
-	else f.programs.open(f.first, 'progression');
+	if (kind === 'aem') f.aem.open(f.first, f.picker);
+	else f.programs.open(f.first, f.picker, 'progression');
 	assert.equal(f.picker.visible, false);
 	assert.equal(f.first.model.tabs.length, 0);
 });
@@ -104,7 +104,7 @@ test('Lua opening choices consume the canonical source published by invoking-con
 	t.after(origin.onDidBlur(next => {
 		if (next === f.picker.field.focusTarget) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: PROGRAM }]);
 	}));
-	f.programs.open(f.first, 'progression');
+	f.programs.open(f.first, f.picker, 'progression');
 	assert.equal(f.picker.model.items.length, 1, 'the picker sees the producer admitted during blur, not the earlier source snapshot');
 	assert.equal(model.buffer.getText(), PROGRAM);
 	assert.equal(model.canUndo, true);
@@ -135,4 +135,22 @@ test('one Lua program controller retains distinct group inputs over the same can
 	assert.equal(f.second.model.activeTab, second);
 	assert.equal(second.workingCopy.buffer.getText(), `-- retained source\n${PROGRAM}`);
 	assert.equal(source.canUndo, true, 'retiring a view does not retire its sibling source history');
+});
+
+
+for (const kind of ['aem', 'program'] as const) test(`one shared ${kind} controller opens only the actual operation picker`, t => {
+	const f = fixture(t);
+	const local = new QuickInputController(f.menu, undefined, undefined,
+		{ scope: f.second.focusScope, bounds: { left: 30, top: 40, right: 310, bottom: 240 }, kind: 'part', reveal() {} });
+	t.after(() => local.dispose());
+	const root = t.mock.method(f.picker, 'pick', () => assert.fail('the shared controller cannot open an unrelated root picker'));
+	f.second.panes.activePane!.focus();
+	if (kind === 'aem') f.aem.open(f.second, local);
+	else f.programs.open(f.second, local, 'progression');
+	assert.equal(local.visible, true); assert.equal(f.picker.visible, false);
+	assert.equal(root.mock.callCount(), 0);
+	f.first.dispose();
+	assert.equal(local.visible, true, 'retiring another group does not retire the chosen dialog');
+	f.second.dispose();
+	assert.equal(local.visible, false, 'the actual destination lifetime retires its operation dialog');
 });

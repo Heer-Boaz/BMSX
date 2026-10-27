@@ -52,6 +52,20 @@ test('one retained surface order drives painting and targeting; raising keeps ch
 	assert.equal(changes, 7, 'attachments and reordering publish immediate invalidation');
 });
 
+test('raising an already top surface in its role band publishes no false ordering change', () => {
+	let changes = 0;
+	const surfaces = new WorkbenchSurfaceService(() => { changes++; });
+	const painted: string[] = [];
+	const a = surfaces.attach({ ...controller('a', painted), role: 'window' });
+	const b = surfaces.attach({ ...controller('b', painted), role: 'window' });
+	surfaces.attach({ ...controller('feedback', painted), role: 'feedback' });
+	const attached = changes;
+	surfaces.raise(b); assert.equal(changes, attached);
+	surfaces.raise(a); assert.equal(changes, attached + 1);
+	for (let publication = 0; publication < 20; publication++) surfaces.raise(a);
+	assert.equal(changes, attached + 1, 'focus synchronization cannot turn unchanged z-order into another publication');
+});
+
 test('geometry and visibility are read from their retained producer without copying or re-registration', () => {
 	const surfaces = new WorkbenchSurfaceService();
 	const painted: string[] = [];
@@ -105,7 +119,7 @@ test('root and local modality are admission boundaries, not arbitrary globally r
 	const a = surfaces.attach({ ...controller('a', painted, firstWindow), role: 'window' });
 	const b = surfaces.attach({ ...controller('b', painted, secondWindow), role: 'window' });
 	const local = surfaces.attach({
-		...controller('local modal', painted, firstWindow), role: 'modal', blockedScope: a, getClip: () => firstWindow,
+		...controller('local modal', painted, firstWindow), role: 'modal', blockedScope: a, presentationParent: a, getClip: () => firstWindow,
 		lifetimeOwner: b, // Lifetime and blocked scope deliberately differ.
 	});
 	assert.equal(local.presentationParent, a);
@@ -117,18 +131,77 @@ test('root and local modality are admission boundaries, not arbitrary globally r
 	assert.equal(surfaces.topBlockingSurface, null, 'a local modal does not globally cancel unrelated captures');
 	surfaces.raise(a);
 	assert.equal(surfaces.hitTest(100, 80), local);
-	const root = surfaces.attach({ ...controller('root modal', painted, secondWindow), role: 'modal', blockedScope: null });
+	const root = surfaces.attach({ ...controller('root modal', painted, secondWindow), role: 'modal', blockedScope: null, presentationParent: null });
 	assert.equal(surfaces.hitTest(10, 10), root, 'the root backdrop owns points outside the dialog');
 	assert.equal(surfaces.topBlockingSurface, root);
 	assert.equal(surfaces.isAdmitted(local), false);
 	assert.equal(surfaces.isAdmitted(b), false);
 	assert.equal(surfaces.isAdmitted(root), true);
-	const nested = surfaces.attach({ ...controller('nested', painted, firstWindow), role: 'modal', blockedScope: root, lifetimeOwner: root });
+	const nested = surfaces.attach({ ...controller('nested', painted, firstWindow), role: 'modal', blockedScope: root, presentationParent: root, lifetimeOwner: root });
 	assert.equal(surfaces.isAdmitted(root), false);
 	assert.equal(surfaces.isAdmitted(nested), true);
 	root.dispose();
 	assert.equal(surfaces.isAdmitted(local), true);
 	assert.equal(nested.retired, true);
+});
+
+test('a promoted main modal is visible and reachable while unrelated document windows remain interactive and raisable', () => {
+	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
+	const chrome = surfaces.attach({ ...controller('chrome', painted), role: 'content' });
+	const main = surfaces.attach({ ...controller('main', painted), role: 'content', lifetimeOwner: chrome, presentationParent: chrome });
+	const document = surfaces.attach({ ...controller('document', painted, secondWindow), role: 'window', lifetimeOwner: chrome });
+	const modal = surfaces.attach({ ...controller('main chooser', painted, firstWindow), role: 'modal', blockedScope: main,
+		presentationParent: null, lifetimeOwner: main,
+	});
+	assert.equal(surfaces.isAdmitted(main), false);
+	assert.equal(surfaces.isAdmitted(modal), true);
+	assert.equal(surfaces.isAdmitted(document), true);
+	assert.equal(surfaces.topBlockingSurface, null, 'promotion does not turn a part-local chooser into a workspace blocker');
+	surfaces.draw(painter);
+	assert.deepEqual(painted, ['chrome', 'main', 'document', 'main chooser']);
+	assert.equal(surfaces.hitTest(100, 80), modal, 'the promoted chooser owns the visible overlap');
+	assert.equal(surfaces.hitTest(180, 80), document, 'outside the chooser rectangle an unrelated sibling receives its own input');
+	assert.equal(surfaces.hitTest(250, 180), modal, 'the named main owner cannot receive input around its local chooser');
+	surfaces.raise(document);
+	painted.length = 0; surfaces.draw(painter);
+	assert.deepEqual(painted, ['chrome', 'main', 'main chooser', 'document']);
+	assert.equal(surfaces.hitTest(100, 80), document, 'a later sibling raise uses that same retained paint order');
+	assert.equal(surfaces.isAdmitted(modal), true, 'covering a retained local session does not cancel it');
+	surfaces.raise(modal);
+	assert.equal(surfaces.hitTest(100, 80), modal);
+	main.dispose();
+	assert.equal(modal.retired, true, 'presentation promotion preserves its main-owner lifetime');
+	assert.equal(surfaces.isAdmitted(document), true);
+	assert.equal(surfaces.hitTest(100, 80), document);
+});
+
+test('later local and workspace modals revoke promoted descendants through their declared admission owner', () => {
+	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
+	const owner = surfaces.attach({ ...controller('owner', painted), role: 'content' });
+	const sibling = surfaces.attach({ ...controller('sibling', painted, secondWindow), role: 'window' });
+	const first = surfaces.attach({ ...controller('first chooser', painted, firstWindow), role: 'modal', blockedScope: owner,
+		presentationParent: null, lifetimeOwner: owner,
+	});
+	const popup = surfaces.attach({ ...controller('promoted popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: first });
+	assert.equal(surfaces.isAdmitted(popup), true, 'a promoted popup retains the modal attachment as its admitted owner');
+	const second = surfaces.attach({ ...controller('second chooser', painted, firstWindow), role: 'modal', blockedScope: owner,
+		presentationParent: null, lifetimeOwner: owner,
+	});
+	assert.equal(surfaces.isAdmitted(first), false);
+	assert.equal(surfaces.isAdmitted(second), true);
+	assert.equal(popup.retired, true, 'a later local decision revokes the earlier promoted popup family');
+	assert.equal(surfaces.isAdmitted(sibling), true);
+	const workspace = surfaces.attach({ ...controller('workspace decision', painted), role: 'modal', blockedScope: null,
+		presentationParent: null,
+	});
+	assert.equal(surfaces.isAdmitted(second), false);
+	assert.equal(surfaces.isAdmitted(sibling), false);
+	assert.equal(surfaces.hitTest(180, 80), workspace);
+	workspace.dispose();
+	assert.equal(surfaces.isAdmitted(second), true);
+	assert.equal(surfaces.isAdmitted(sibling), true);
+	second.dispose();
+	assert.equal(surfaces.isAdmitted(first), true, 'retiring the top decision restores the surviving modal owner');
 });
 
 test('a later owner-local modal retires promoted popup families and drains their captured gesture', () => {
@@ -157,7 +230,7 @@ test('a later owner-local modal retires promoted popup families and drains their
 	capture.beginRoute(submenu.captureScope, held);
 	capture.capture(drag);
 
-	const modal = surfaces.attach({ ...controller('modal', painted, firstWindow), role: 'modal', blockedScope: owner,
+	const modal = surfaces.attach({ ...controller('modal', painted, firstWindow), role: 'modal', blockedScope: owner, presentationParent: owner,
 		lifetimeOwner: sibling, getClip: () => firstWindow,
 	});
 	assert.deepEqual(retired, ['popup', 'submenu']);
@@ -178,7 +251,7 @@ test('a later owner-local modal retires promoted popup families and drains their
 	const replacementPopup = surfaces.attach({ ...controller('replacement popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: owner });
 	capture.beginRoute(siblingPopup.captureScope, held);
 	capture.capture(drag);
-	surfaces.attach({ ...controller('another local modal', painted, firstWindow), role: 'modal', blockedScope: owner, lifetimeOwner: owner });
+	surfaces.attach({ ...controller('another local modal', painted, firstWindow), role: 'modal', blockedScope: owner, presentationParent: owner, lifetimeOwner: owner });
 	assert.equal(replacementPopup.retired, true);
 	assert.equal(capture.active, true, 'retiring another admission family preserves the sibling capture');
 	assert.equal(capture.routeScope, siblingPopup.captureScope);
@@ -195,16 +268,16 @@ test('modal visibility and raising revoke promoted sessions only in the affected
 	const sibling = surfaces.attach({ ...controller('sibling', painted, secondWindow), role: 'window' });
 	const siblingPopup = surfaces.attach({ ...controller('sibling popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: sibling });
 	let visible = false;
-	const firstModal = surfaces.attach({ ...controller('first modal', painted, firstWindow), role: 'modal', blockedScope: owner,
+	const firstModal = surfaces.attach({ ...controller('first modal', painted, firstWindow), role: 'modal', blockedScope: owner, presentationParent: owner,
 		lifetimeOwner: owner, isVisible: () => visible,
 	});
 	const popup = surfaces.attach({ ...controller('popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: owner });
 	assert.equal(popup.retired, false);
 	visible = true;
-	assert.equal(surfaces.isAdmitted(popup), false, 'admission reads the owner restriction before visibility notification');
 	surfaces.changed();
+	assert.equal(surfaces.isAdmitted(owner), false, 'the visibility producer publishes its new modal admission');
 	assert.equal(popup.retired, true);
-	const secondModal = surfaces.attach({ ...controller('second modal', painted, firstWindow), role: 'modal', blockedScope: owner, lifetimeOwner: owner });
+	const secondModal = surfaces.attach({ ...controller('second modal', painted, firstWindow), role: 'modal', blockedScope: owner, presentationParent: owner, lifetimeOwner: owner });
 	const modalPopup = surfaces.attach({ ...controller('modal popup', painted), role: 'transient', outsidePress: 'consume',
 		lifetimeOwner: secondModal, presentationParent: secondModal,
 	});
@@ -229,7 +302,7 @@ test('nested local modality settles reentrant popup retirement before publishing
 	});
 	const popupScope = Symbol('popup'), submenuScope = Symbol('submenu');
 	const owner = surfaces.attach({ ...controller('owner', painted), role: 'content' });
-	const modal = surfaces.attach({ ...controller('modal', painted, firstWindow), role: 'modal', blockedScope: owner, lifetimeOwner: owner });
+	const modal = surfaces.attach({ ...controller('modal', painted, firstWindow), role: 'modal', blockedScope: owner, presentationParent: owner, lifetimeOwner: owner });
 	const client = surfaces.attach({ ...controller('client', painted, firstWindow), role: 'content', presentationParent: modal, lifetimeOwner: modal });
 	const popup = surfaces.attach({ ...controller('popup', painted), captureScope: popupScope, role: 'transient', outsidePress: 'consume',
 		lifetimeOwner: client, presentationParent: modal,
@@ -243,7 +316,7 @@ test('nested local modality settles reentrant popup retirement before publishing
 	assert.equal(surfaces.isAdmitted(submenu), true);
 	const before = published;
 	checking = true;
-	const nested = surfaces.attach({ ...controller('nested modal', painted, firstWindow), role: 'modal', blockedScope: modal, lifetimeOwner: modal });
+	const nested = surfaces.attach({ ...controller('nested modal', painted, firstWindow), role: 'modal', blockedScope: modal, presentationParent: modal, lifetimeOwner: modal });
 	assert.deepEqual(retired, ['popup', 'submenu']);
 	assert.equal(published, before + 1, 'structural reconciliation publishes only the settled admission state');
 	assert.equal(surfaces.isAdmitted(nested), true);

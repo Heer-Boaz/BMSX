@@ -21,11 +21,11 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, click, frame, until, setKey, input, cycles } = test;
 	console.info('STUDIO: focus-owned commands and control history');
 	harness.openLuaSource(GX_REGISTER_SOURCE_PATH);
-	const readonlyTab = ide.editor.editorGroup.model.activeTab;
+	const readonlyTab = ide.editor.editorParts.activeGroup.model.activeTab;
 	const readonlyModel = harness.getActiveEditorDocument().model;
 	check(readonlyModel.readOnly, 'focus: real generated GX source is read-only');
 	harness.openLuaSource('title_screen.lua');
-	const titleTab = ide.editor.editorGroup.model.activeTab;
+	const titleTab = ide.editor.editorParts.activeGroup.model.activeTab;
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
 	const position = cycles();
@@ -84,7 +84,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await until(() => !model.dirty, 'focus: restore the original source through physical Save');
 	for (const prompt of [
 		{ keys: ['ControlLeft', 'KeyL'], field: sourcePane(test).lineJump.state.field, value: () => sourcePane(test).lineJump.state.value },
-		{ keys: ['ControlLeft', 'ShiftLeft', 'KeyO'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
+		{ keys: ['ControlLeft', 'ShiftLeft', 'KeyO'], field: sourcePane(test).part.quickInput.field, value: () => sourcePane(test).part.quickInput.field.text },
 		{ keys: ['ControlLeft', 'Comma'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
 		{ keys: ['ControlLeft', 'KeyN'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
 	]) {
@@ -139,7 +139,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 		'focus: an explicit new Rename binds a fresh reference context');
 	let blurOnOldInput = false;
 	const unbind = renameField.focusTarget.onDidBlur(() => {
-		blurOnOldInput = ide.editor.editorGroup.model.activeTab === titleTab && sourcePane(test).code.model === model;
+		blurOnOldInput = ide.editor.editorParts.activeGroup.model.activeTab === titleTab && sourcePane(test).code.model === model;
 	});
 	await test.clickTab(readonlyTab.id);
 	unbind();
@@ -167,7 +167,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await click(editorChromeState.menuEntryBounds.view);
 	const scenarioLabItem = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'scenarioLab')!;
 	await test.clickContextCommand(scenarioLabItem.command!);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'scenario_lab' && !sourcePane(test).code.focusTarget.hasFocus && model.canRedo,
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'scenario_lab' && !sourcePane(test).code.focusTarget.hasFocus && model.canRedo,
 		'focus: real non-code view takes input ownership while the source retains redoable history');
 	const viewTarget = inputFocus.target;
 	await press('ControlLeft', 'KeyY');
@@ -184,7 +184,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 
 	await test.runPaletteCommand('View: ROM Inspector');
 	await press('ArrowDown'); await press('Enter');
-	const rom = ide.editor.editorGroup.model.activeTab;
+	const rom = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (rom.kind !== 'rom_inspector') throw new Error('focus: ROM Inspector did not open');
 	await click(rom.filterBounds);
 	const filterTarget = inputFocus.target!;

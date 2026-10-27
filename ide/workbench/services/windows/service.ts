@@ -9,6 +9,7 @@ class Surface implements WorkbenchSurface {
 	public readonly captureScope: WorkbenchSurface['captureScope'];
 	public readonly lifetimeOwner: Surface | undefined;
 	public readonly presentationParent: Surface | null | undefined;
+	public readonly admissionParent: Surface | null | undefined;
 	public readonly getBounds: WorkbenchSurface['getBounds'];
 	public readonly getClip: WorkbenchSurface['getClip'];
 	public readonly draw: WorkbenchSurface['draw'];
@@ -16,6 +17,7 @@ class Surface implements WorkbenchSurface {
 	public readonly handleWheel: WorkbenchSurface['handleWheel'];
 	public readonly onRetire: WorkbenchSurface['onRetire'];
 	public retired = false;
+	public activeModal: Surface | null = null;
 
 	public constructor(
 		public readonly options: WorkbenchSurfaceOptions,
@@ -24,9 +26,12 @@ class Surface implements WorkbenchSurface {
 		this.role = options.role;
 		this.captureScope = options.captureScope;
 		this.lifetimeOwner = options.lifetimeOwner as Surface | undefined;
-		// A local modal's presentation boundary is the scope it blocks, not its
-		// lifetime owner. Unrelated window groups remain independently raisable.
-		this.presentationParent = (options.role === 'modal' ? options.blockedScope : options.presentationParent) as Surface | null | undefined;
+		this.presentationParent = options.presentationParent as Surface | null | undefined;
+		// Promotion changes placement and clipping, not the scope whose input a
+		// modal blocks or the invoking attachment whose authority a popup borrows.
+		this.admissionParent = (options.role === 'modal' ? options.blockedScope
+			: options.role === 'transient' && options.lifetimeOwner !== undefined ? options.lifetimeOwner
+				: options.presentationParent) as Surface | null | undefined;
 		this.getBounds = options.getBounds;
 		this.getClip = options.getClip;
 		this.draw = options.draw;
@@ -51,6 +56,7 @@ class Surface implements WorkbenchSurface {
 export class WorkbenchSurfaceService implements IDisposable {
 	private readonly roots: Surface[] = [];
 	private readonly scopes = new Map<WorkbenchSurface['captureScope'], Surface>();
+	private rootModal: Surface | null = null;
 	private changing = false;
 	private changePending = false;
 
@@ -93,6 +99,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 		try {
 			do {
 				this.changePending = false;
+				this.indexModals();
 				// Popup teardown can change another session's visibility or membership.
 				// Settle those owner changes before publishing input admission.
 				for (const node of this.scopes.values()) {
@@ -109,7 +116,9 @@ export class WorkbenchSurfaceService implements IDisposable {
 	public raise(surface: WorkbenchSurface): void {
 		const node = surface as Surface;
 		const siblings = node.presentationParent == null ? this.roots : node.presentationParent.children;
-		siblings.splice(siblings.indexOf(node), 1);
+		const index = siblings.indexOf(node), next = siblings[index + 1];
+		if (next === undefined || this.band(next) > this.band(node)) return;
+		siblings.splice(index, 1);
 		this.insert(node);
 		this.changed();
 	}
@@ -128,7 +137,8 @@ export class WorkbenchSurfaceService implements IDisposable {
 		for (let index = this.roots.length - 1; index >= 0; index -= 1) {
 			const node = this.roots[index];
 			if (!node.visible) continue;
-			if (node.role === 'modal' || node.options.role === 'transient' && node.options.outsidePress === 'consume') return node;
+			if (node.options.role === 'modal' && node.options.blockedScope === null
+				|| node.options.role === 'transient' && node.options.outsidePress === 'consume') return node;
 		}
 		return null;
 	}
@@ -136,20 +146,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 	/** Admission is independent of pointer position and applies to commands too. */
 	public isAdmitted(surface: WorkbenchSurface): boolean {
 		const node = surface as Surface;
-		if (!node.visible) return false;
-		let context: Surface | null | undefined = node;
-		while (context != null) {
-			// Promotion changes clipping, never the invoking owner's authority.
-			// Modal lifetime owners need not be their blocked scope, so only
-			// transient contexts inherit this additional admission restriction.
-			if (context.role === 'transient' && context.lifetimeOwner !== undefined
-				&& !this.isAdmitted(context.lifetimeOwner)) return false;
-			const modal = this.topModal(context.children);
-			if (modal !== null && !this.belongsTo(node, modal)) return false;
-			context = context.presentationParent;
-		}
-		const rootModal = this.topModal(this.roots);
-		return rootModal === null || this.belongsTo(node, rootModal);
+		return node.visible && this.blockingModal(node) === null;
 	}
 
 	/** Detach first, then notify the owner before descendant membership is retired. */
@@ -166,6 +163,9 @@ export class WorkbenchSurfaceService implements IDisposable {
 		const siblings = node.presentationParent == null ? this.roots : node.presentationParent.children;
 		siblings.splice(siblings.indexOf(node), 1);
 		if (node.lifetimeOwner !== undefined) node.lifetimeOwner.owned.splice(node.lifetimeOwner.owned.indexOf(node), 1);
+		// Retirement callbacks observe the remaining modal owner, not the
+		// detached modal's last published admission.
+		if (node.role === 'modal') this.indexModals();
 		node.onRetire?.();
 		while (node.owned.length !== 0) this.retireNode(node.owned[node.owned.length - 1]);
 		while (node.children.length !== 0) this.retireNode(node.children[node.children.length - 1]);
@@ -188,7 +188,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 			case 'content': return 0;
 			case 'window': case 'subwindow': return 1;
 			case 'transient': return 2;
-			case 'modal': return 3;
+			case 'modal': return node.options.role === 'modal' && node.options.blockedScope !== null && node.presentationParent === null ? 1 : 3;
 			case 'feedback': return 4;
 		}
 	}
@@ -211,22 +211,47 @@ export class WorkbenchSurfaceService implements IDisposable {
 			if (!node.visible || node.role === 'feedback' || !point_in_rect(x, y, node.getClip())) continue;
 			const child = this.hitContext(node.children, x, y);
 			if (child !== null) return child;
-			if (point_in_rect(x, y, node.getBounds())) return node;
-			if (node.role === 'modal' || node.options.role === 'transient' && node.options.outsidePress === 'consume') return node;
+			if (point_in_rect(x, y, node.getBounds())
+				|| node.options.role === 'modal' && (node.options.blockedScope === null || node.presentationParent !== null)
+				|| node.options.role === 'transient' && node.options.outsidePress === 'consume') {
+				let admitted = node, blocker = this.blockingModal(admitted);
+				while (blocker !== null) { admitted = blocker; blocker = this.blockingModal(admitted); }
+				return admitted;
+			}
 		}
 		return null;
 	}
 
-	private topModal(siblings: readonly Surface[]): Surface | null {
-		for (let index = siblings.length - 1; index >= 0; index -= 1) {
-			const node = siblings[index];
-			if (node.role === 'modal' && node.visible) return node;
+	/** Admission indexes are a projection of paint order, rebuilt only on publication. */
+	private indexModals(): void {
+		this.rootModal = null;
+		for (const node of this.scopes.values()) node.activeModal = null;
+		this.indexContextModals(this.roots);
+	}
+
+	private indexContextModals(siblings: readonly Surface[]): void {
+		for (const node of siblings) {
+			if (!node.visible) continue;
+			if (node.options.role === 'modal') {
+				if (node.options.blockedScope === null) this.rootModal = node;
+				else (node.options.blockedScope as Surface).activeModal = node;
+			}
+			this.indexContextModals(node.children);
 		}
-		return null;
+	}
+
+	private blockingModal(node: Surface): Surface | null {
+		let blocked: Surface | null = null;
+		for (let context: Surface | null | undefined = node; context != null; context = context.admissionParent) {
+			const modal = context.activeModal;
+			if (modal !== null && !this.belongsTo(node, modal)) blocked = modal;
+		}
+		const root = this.rootModal;
+		return root !== null && !this.belongsTo(node, root) ? root : blocked;
 	}
 
 	private belongsTo(node: Surface, ancestor: Surface): boolean {
-		for (let current: Surface | null | undefined = node; current != null; current = current.presentationParent) {
+		for (let current: Surface | null | undefined = node; current != null; current = current.admissionParent) {
 			if (current === ancestor) return true;
 		}
 		return false;

@@ -81,7 +81,7 @@ export class RomEntryInspectorWindow {
 		private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
 		private readonly focusReturn: InputFocusTarget, private readonly group: EditorGroupView, private readonly workArea: Readonly<RectBounds>) {
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
-			model: input.readerWindow, actionBar: input.readerActions, lifetimeOwner: owner, focusReturn, workArea,
+			model: input.readerWindow, actionBar: input.readerActions, lifetimeOwner: owner, focusScope: focusReturn.scope, focusReturn, workArea,
 			getTitleTooltip: () => this.titleTooltip,
 			content: {
 				draw: () => this.draw(),
@@ -153,7 +153,7 @@ export class RomEntryInspectorWindow {
 		const document = this.input.reader;
 		if (command === 'romInspector.hold') return document.subject !== undefined || this.input.readerHeld;
 		if (command === 'romInspector.source') return this.source() !== undefined;
-		if (this.window.clientSurface === undefined) return false;
+		if (this.window.clientSurface?.visible !== true) return false;
 		if (command === 'romInspector.content') return document.subject !== undefined;
 		if (command === 'romInspector.zoom') return document.view === 'preview' && document.preview !== undefined;
 		return command === 'romInspector.collision' && document.view === 'preview' && document.hasCollision;

@@ -13,14 +13,14 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = ide.editor.editorGroup.model.activeTab;
+	const code = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (code.kind !== 'code_editor') throw new Error('bookmark: source code input required');
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_TRANSFER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.second');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('bookmark: BT graph required');
 	const view = lens.view;
 	const graph = lens.view.presentation;
@@ -59,7 +59,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const transferred = model.buffer.getText();
 	version = model.version;
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
+	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
 		&& sourcePane(test).code.view.cursorRow === range.start.line - 1 && sourcePane(test).code.view.cursorColumn === range.start.column - 1,
 		'bookmark: held Source click is navigation, not a document edit or drag into the source editor');
 	await press('ArrowRight');
@@ -71,7 +71,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	check(sourcePane(test).code.view.cursorColumn === typingColumn + 1, 'bookmark: physical typing produces code-owned edit state');
 	await test.clickTab(lens.id);
 	await runPaletteCommand('Edit: Undo');
-	check(ide.editor.editorGroup.model.activeTab === lens && code.context.view.cursorRow === typingRow && code.context.view.cursorColumn === typingColumn,
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && code.context.view.cursorRow === typingRow && code.context.view.cursorColumn === typingColumn,
 		'bookmark: graph Undo restores the hidden code input through the document event, without a code Undo caller');
 	await runPaletteCommand('Edit: Redo');
 	check(code.context.view.cursorColumn === typingColumn + 1, 'bookmark: graph Redo restores the hidden code result too');

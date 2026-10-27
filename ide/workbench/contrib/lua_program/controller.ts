@@ -10,7 +10,7 @@ import type { Blua32SourceImage, RuntimeSourceState } from '../../../runtime/sou
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { collectLuaPrograms, projectLuaProgram, type LuaProgramKind, type LuaProgramOccurrence } from './source';
@@ -24,10 +24,10 @@ import type { RuntimeTransport } from '../../../runtime/transport';
 export class LuaProgramController {
 	private readonly projections = new WeakMap<LuaProgramInput, LuaProgramRuntimeProjection>();
 	public constructor(private readonly sources: RuntimeSourceState, public readonly guest: SuspendedGuestSession,
-		private readonly navigation: EditorNavigationController, public readonly quickInput: QuickInputController,
+		private readonly navigation: EditorNavigationController,
 		private readonly rewind: HostRewind, private readonly transport: RuntimeTransport) {}
-	public open(group: EditorGroupView, kind: LuaProgramKind): void {
-		this.quickInput.pick(kind === 'progression' ? 'PROGRESSION PROGRAMS' : 'INPUT BINDINGS', 'Choose a producer call',
+	public open(group: EditorGroupView, quickInput: QuickInputController, kind: LuaProgramKind): void {
+		quickInput.pick(kind === 'progression' ? 'PROGRESSION PROGRAMS' : 'INPUT BINDINGS', 'Choose a producer call',
 			() => {
 				const choices: { label: string; description: string; detail: string; occurrence: LuaProgramOccurrence }[] = [];
 				const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
@@ -46,16 +46,16 @@ export class LuaProgramController {
 				}
 				return new TextQuickPickProvider(choices);
 			}, item => this.openOccurrence(group, item.occurrence), lifetime => {
-				lifetime.add({ dispose: group.onWillDispose(() => this.quickInput.hide()) });
+				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
-	public openResource(group: EditorGroupView, resource: RuntimeResource, kind: LuaProgramKind): void {
+	public openResource(group: EditorGroupView, resource: RuntimeResource, kind: LuaProgramKind, options: EditorTabOpenOptions = {}): void {
 		const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId);
 		project.synchronizeSources(this.sources.catalog);
 		const occurrence = collectLuaPrograms(resource, project.getSnapshot()).find(item => item.kind === kind)!;
-		this.openOccurrence(group, occurrence);
+		this.openOccurrence(group, occurrence, options);
 	}
-	public openOccurrence(group: EditorGroupView, occurrence: LuaProgramOccurrence): LuaProgramInput {
+	public openOccurrence(group: EditorGroupView, occurrence: LuaProgramOccurrence, options: EditorTabOpenOptions = {}): LuaProgramInput {
 		const resource = this.sources.catalog.resolveResource(occurrence.resource)!;
 		const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
 		const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
@@ -65,7 +65,7 @@ export class LuaProgramController {
 			input = new LuaProgramInput(model, occurrence.kind, span, this.guest);
 			this.refresh(input);
 		}
-		group.openEditor(input);
+		group.openEditor(input, options);
 		return input;
 	}
 	public refreshRuntime(input: LuaProgramInput): void {
@@ -120,7 +120,7 @@ export class LuaProgramController {
 		this.navigation.focusChunkSource(group, file === undefined ? input.workingCopy.resource : input.sourceModels.get(file.file)!.resource,
 			range === undefined ? null : { row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1 });
 	}
-	public chooseInstance(input: LuaProgramInput): void {
+	public chooseInstance(input: LuaProgramInput, quickInput: QuickInputController): void {
 		input.interaction.running = false;
 		const choices: Array<ProgramInstanceChoice & { domain: ResourceDomain; image: Blua32SourceImage }> = [];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
@@ -130,8 +130,8 @@ export class LuaProgramController {
 				choices.push({ ...item, domain, image, detail: `Physical ${domain} / ${item.detail}` });
 			}
 		}
-		this.quickInput.pick('LIVE PROGRAM INSTANCE', 'Actual mounted contexts / components; no source-ID guess', (_origin, lifetime) => {
-			lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+		quickInput.pick('LIVE PROGRAM INSTANCE', 'Actual mounted contexts / components; no source-ID guess', (_origin, lifetime) => {
+			lifetime.add({ dispose: this.guest.onDidInvalidate(() => quickInput.hide()) });
 			return new TextQuickPickProvider(choices);
 		}, item => {
 			input.instance = item.identity; input.instanceLabel = item.label; input.runtimeDomain = item.domain; input.runtimeImage = item.image;
@@ -139,17 +139,17 @@ export class LuaProgramController {
 			input.inspectRuntime(this.transport);
 		});
 	}
-	public add(input: LuaProgramInput): void {
+	public add(input: LuaProgramInput, quickInput: QuickInputController): void {
 		const property = input.tree.rows[input.tree.selectionIndex]?.element ?? input.tree.roots[0]?.element;
 		const target = property?.table;
 		if (target === undefined || !target.structural) return;
 		const model = input.sourceModels.get(target.file.file)!;
 		const entry = programEntryTemplate(input.programKind, property);
 		if (entry !== undefined) {
-			this.quickInput.input('ADD ENTRY', 'Authored Lua table', entry,
+			quickInput.input('ADD ENTRY', 'Authored Lua table', entry,
 				async text => validateLuaTableFieldExpression(text), value => model.pushEditOperations(
 					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])), lifetime => {
-					lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+					lifetime.add({ dispose: input.onDidInvalidateProjection(() => quickInput.hide()) });
 				});
 			return;
 		}
@@ -157,11 +157,11 @@ export class LuaProgramController {
 		const choices = programFieldTemplates(input.programKind, property).filter(item => !existing.has(item.name))
 			.map(item => ({ ...item, label: item.name, description: '', detail: item.value }));
 		choices.push({ name: '', value: '', label: 'Custom field', description: 'Lua table field', detail: 'Handlers, event matchers, custom commands and authored extensions' });
-		this.quickInput.pick('ADD PROPERTY', 'Canonical Lua table field', (_origin, lifetime) => {
-			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+		quickInput.pick('ADD PROPERTY', 'Canonical Lua table field', (_origin, lifetime) => {
+			lifetime.add({ dispose: input.onDidInvalidateProjection(() => quickInput.hide()) });
 			return new TextQuickPickProvider(choices);
 		}, item => {
-			this.quickInput.input(item.label, item.name === '' ? 'Complete Lua field: name = expression or [key] = expression' : 'Lua expression', item.value,
+			quickInput.input(item.label, item.name === '' ? 'Complete Lua field: name = expression or [key] = expression' : 'Lua expression', item.value,
 				async text => {
 					if (item.name !== '') return formatLuaTableFieldSource(item.name, validateLuaTableFieldExpression(text));
 					// Admit a complete authored table field through the same Lua grammar as source insertion.
@@ -169,7 +169,7 @@ export class LuaProgramController {
 					return text;
 				}, value => model.pushEditOperations(
 					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])), lifetime => {
-					lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
+					lifetime.add({ dispose: input.onDidInvalidateProjection(() => quickInput.hide()) });
 				});
 		});
 	}

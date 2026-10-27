@@ -20,9 +20,9 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	await until(() => test.cycles() > test.runtime.timing.cpuHz * 13, 'history: boot actual cart');
 	await reachNemesisTitle(test);
 	test.harness.openLuaSource('cart.lua'); await frame();
-	const mainTab = ide.editor.editorGroup.model.activeTab, main = test.harness.getActiveEditorDocument().model;
+	const mainTab = ide.editor.editorParts.activeGroup.model.activeTab, main = test.harness.getActiveEditorDocument().model;
 	await test.runPaletteCommand('View: Codex Assistant');
-	let view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant required');
+	let view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant required');
 	const model = ide.editor.assistant, picker = ide.editor.quickInput, position = test.cycles();
 	check(view.turnActions.items.filter(item => item.visible).length === 1, 'idle chat shows only Send, no account/connect/disconnect toolbar');
 	await submitAssistantText(test, '/');
@@ -75,7 +75,7 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	await press('ControlLeft', 'KeyW');
 	check(pending.state === 'stale' && model.state === 'disconnected', 'closing retires source rights, not persisted text');
 	await test.runPaletteCommand('View: Codex Assistant');
-	view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant required');
+	view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant required');
 	await submitAssistantText(test, '/queue');
 	await until(() => picker.visible, 'history: queue inspection reconnects without executing');
 	check(picker.model.list.rows.length === 1, 'cold queue snapshot retains the pending message'); await press('Escape');

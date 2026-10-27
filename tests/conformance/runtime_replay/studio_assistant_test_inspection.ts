@@ -37,12 +37,12 @@ export async function runAssistantTestInspection(kind: StudioRendererKind, canva
 	check(result.state === 'failed' && ide.scenarioRuns.canInspect(result), 'a physical failed test target remains after prompt completion');
 	await frame(); await renderer.capture!('conversation-values');
 	await runPaletteCommand('Scenario Lab: Open'); await frame();
-	const lab = ide.editor.editorGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
+	const lab = ide.editor.editorParts.activeGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');
 	await press('Tab'); await press('Home');
 	const index = lab.view.resultPane.rows.findIndex(row => row.id === result.id);
 	for (let i = 0; i < index; i++) await press('ArrowDown');
 	await runPaletteCommand('Scenario Lab: Inspect Retained Test Target'); await frame();
-	const pane = ide.editor.editorGroup.panes.activePane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab pane required');
 	const model = pane.targetInspection.model!;
 	check(model !== undefined && model.tree.roots[0].children.length === 0, 'ordinary inspection lazily binds same target without reading values during paint');

@@ -6,17 +6,17 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	const { ide, harness, runPaletteCommand, press, clipboard, cycles } = test;
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
-	const picker = ide.editor.quickInput;
 	console.info('STUDIO: typed ActionEffect/FSM/BT choices share the source lens and ordinary navigation');
 	await runPaletteCommand('Scenario Lab: Open');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
+	const picker = ide.editor.editorParts.activePart.quickInput;
 	const entries = picker.model.items.slice();
 	await press('KeyQ');
 	await press('Backspace');
 	check(picker.model.items.every((row, index) => row === entries[index]) && picker.model.list.rows.length === entries.length,
 		'behavior kinds: query changes retain the typed catalog instead of rebuilding or losing the kind constraint');
 	await chooseBehavior(test, 'EFFECT fire_salvo');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior kinds: selected ActionEffect lens missing');
 	const model = lens.workingCopy;
 	const properties = lens.view.presentation;
@@ -39,7 +39,7 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	model.pushEditOperations([{ offset: original.indexOf(expression), deleteLength: expression.length, text: '80' }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fire_salvo');
-	check(ide.editor.editorGroup.model.activeTab === lens,
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens,
 		'behavior kinds: the same ActionEffect lens reflects dirty canonical Lua without a new document or runtime edit');
 	await runPaletteCommand('Behavior Lens: Open Source');
 	await press('ControlLeft', 'KeyZ');
@@ -54,16 +54,16 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	await press('Enter');
 	check(picker.visible && picker.model.list.selectionIndex === -1, 'behavior kinds: an effect query cannot bypass the FSM kind');
 	await press('Escape');
-	check(inputFocus.target === focus && ide.editor.editorGroup.model.activeTab === lens && lens.view.selection === selected,
+	check(inputFocus.target === focus && ide.editor.editorParts.activeGroup.model.activeTab === lens && lens.view.selection === selected,
 		'behavior kinds: cancellation preserves the actual ActionEffect view, focus and selection');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
-	const fsm = ide.editor.editorGroup.model.activeTab;
+	const fsm = ide.editor.editorParts.activeGroup.model.activeTab;
 	check(fsm.kind === 'behavior_lens' && fsm.view.source.nodesByRowKey.get(fsm.view.selection!.rowKey)!.behaviorKind === 'state_machine',
 		'behavior kinds: typed FSM selection reaches its definition from the effect lens');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT moon_tree.id');
-	const bt = ide.editor.editorGroup.model.activeTab;
+	const bt = ide.editor.editorParts.activeGroup.model.activeTab;
 	check(bt.kind === 'behavior_lens' && bt.view.presentation.kind === 'graph'
 		&& bt.view.presentation.viewport.selection?.kind === 'node'
 		&& bt.view.presentation.viewport.selection.source.behaviorKind === 'behavior_tree',

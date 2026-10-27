@@ -1,5 +1,6 @@
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import { RuntimeBreakpoints } from '../../ide/runtime/breakpoints';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
@@ -10,7 +11,7 @@ import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runti
 import { resolveWorkspacePath } from '../../ide/workspace/path';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { createTestRuntimeSourceState, createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
-import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createTestEditorParts } from '../helpers/editor_panes';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -68,8 +69,9 @@ function fixture(t: TestContext) {
 		registerLuaSourceRecord(system, createScenarioTestSourceRecord(`${module}.lua`, 0, '', `system/${module}.lua`));
 	}
 	const sources = createTestRuntimeSourceState(system, [registry('game', SOURCE), registry('extension', '-- second slot')], 0);
-	const group = createTestEditorGroup();
-	const behavior = new BehaviorLensController(sources, null, null, new BehaviorSourceDocuments(editorTextModelService, sources.catalog), () => assert.fail('metadata must not start an FSM layout worker'), null, null, null);
+	const editorParts = createTestEditorParts(t);
+	const group = editorParts.main.group;
+	const behavior = new BehaviorLensController(sources, null, new BehaviorSourceDocuments(editorTextModelService, sources.catalog), () => assert.fail('metadata must not start an FSM layout worker'), null, null, null);
 	const scene = new SceneEditorController(sources.catalog, null);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const runs = new ScenarioRunService(editorTextModelService, sources, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
@@ -87,10 +89,10 @@ function fixture(t: TestContext) {
 		resource_view: new ResourceViewerInputSerializer(sources.catalog),
 		scenario_lab: new ScenarioLabInputSerializer(scenario),
 	};
-	t.after(() => { group.dispose(); scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
+	t.after(() => { scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
-	return { sources, group, behavior, scene, scenario, serializers, model, runtime };
+	return { sources, group, editorParts, behavior, scene, scenario, serializers, model, runtime };
 }
 
 test('group round-trip restores ordered clean/dirty views, preview and distinct definitions sharing one hydrated model', async t => {
@@ -118,8 +120,9 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	assert.equal(f.group.model.serialize(f.serializers, before), before, 'unchanged checkpoint reuses immutable group');
 	const dirtySource = f.model.buffer.getText();
 	workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath('game', TEST_CARTRIDGE_CONTEXT_IDS[0], 'definitions.lua'), { contents: dirtySource, updatedAt: 50 });
-	const generation = JSON.parse(JSON.stringify({ dirtyFiles: [{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', updatedAt: 50 }], editorGroup: before, fontVariant: 'tiny', breakpoints: [] }));
-	await applyWorkspaceAutosavePayload({ editorGroup: f.group, editorInputSerializers: f.serializers, setFontVariant() {} },
+	const generation = JSON.parse(JSON.stringify({ version: 3, dirtyFiles: [{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', updatedAt: 50 }],
+		editorParts: { main: before, documents: [], active: 0, mru: [0] }, fontVariant: 'tiny', breakpoints: [] }));
+	await applyWorkspaceAutosavePayload({ editorParts: f.editorParts, editorInputSerializers: f.serializers, setFontVariant() {} },
 		f.sources.catalog, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation);
 	const after = f.group.model.serialize(f.serializers);
 	assert.deepEqual(after, before);
@@ -271,18 +274,21 @@ test('resource refresh replaces content, not the retained viewport or group memb
 	const f = fixture(t);
 	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'refresh.data', location: { kind: 'workspace' as const, path: 'refresh.data' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'refresh.data', source: { resid: 'refresh', type: 'data' as const } };
 	const data = f.sources.cartridgeSlots[1]!.package.data;
-	data.refresh = { revision: 'before' };
+	const rows = Array.from({ length: 120 }, (_, index) => index);
+	data.refresh = { revision: 'before', rows };
 	const input = new ResourceViewerInput(f.sources.catalog, resource);
 	f.group.openEditor(input);
 	const view = input.view, content = view.content;
-	view.scroll = 3;
-	data.refresh = { revision: 'after' };
+	f.group.panes.activePane!.handleKeyboard(new KeyInputEvent('PageDown', KeyModifier.none));
+	const scroll = view.scroll;
+	assert.ok(scroll > 0, 'the admitted resource viewport must have a retained reading position before refresh');
+	data.refresh = { revision: 'after', rows };
 	f.group.openEditor(new ResourceViewerInput(f.sources.catalog, resource));
 	const reopened = f.group.model.activeTab!;
 	assert.ok(reopened.kind === 'resource_view');
 	assert.equal(reopened, input);
 	assert.equal(reopened.view, view, 'content resolution cannot replace view state');
-	assert.equal(view.scroll, 3, 'no resetting then restoring the cursor at a callsite');
+	assert.equal(view.scroll, scroll, 'no resetting then restoring the cursor at a callsite');
 	assert.notEqual(view.content, content, 'resolution still refreshes content');
 	assert.match(view.content.lines.join('\n'), /after/);
 	assert.doesNotMatch(view.content.lines.join('\n'), /before/);

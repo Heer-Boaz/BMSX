@@ -14,7 +14,7 @@ import { ResourcePanelController } from '../../ide/workbench/contrib/resources/p
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
-import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 // The contract under test is the font-dependent measurement cache, not UI wording or pixel placement.
@@ -23,7 +23,7 @@ function fixture(t: TestContext, variant: FontVariant) {
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const path = `deep/tree/${'wide_name_'.repeat(12)}.lua`;
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(path, 1), createScenarioTestSourceRecord('short.lua', 1)]);
-	const group = createTestEditorGroup(), editor = { editorGroup: group, isActive: true } as CartEditor;
+	const parts = createTestEditorParts(t), editor = { editorParts: parts, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35);
 	panel.setFontMetrics(editorViewState.font); panel.queuePendingSelection({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }); panel.show();
 	const index = panel.files.tree.rows.findIndex(node => node.element.kind === 'file' && node.element.resource.path === path); assert.ok(index >= 0);
@@ -31,7 +31,7 @@ function fixture(t: TestContext, variant: FontVariant) {
 		configureFontVariant(next);
 		panel.setFontMetrics(editorViewState.font); refreshWorkbenchLayout();
 	};
-	t.after(() => { panel.hide(); group.dispose(); inputFocus.setTarget(null); });
+	t.after(() => { panel.hide(); inputFocus.setTarget(null); });
 	return { panel, index, publish };
 }
 

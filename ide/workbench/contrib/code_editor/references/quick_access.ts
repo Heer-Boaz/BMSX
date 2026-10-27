@@ -41,11 +41,11 @@ export function openReferenceSearch(pane: CodeEditorPane): void {
 		return;
 	}
 	pane.code.references.clear();
-	pane.editor.quickInput.pick(`REFERENCES: ${result.info.expression}`, 'Type to filter references', (_origin, lifetime) => {
+	pane.part.quickInput.pick(`REFERENCES: ${result.info.expression}`, 'Type to filter references', (_origin, lifetime) => {
 		pane.code.references.apply(result.info, result.initialIndex);
 		lifetime.add({ dispose: () => pane.code.references.clear() });
-		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, pane.sources.catalog, resource.contextId, () => pane.editor.quickInput.hide()));
+		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, pane.sources.catalog, resource.contextId, () => pane.part.quickInput.hide()));
 		return createReferenceQuickPickProvider(references, resource, row + 1, column + 1);
 	}, item => navigateToLuaDefinition(pane, item.source.resource, definitionLocationFromSourceRange(item.source.range)),
-		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));
+		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.part.quickInput.hide()) }));
 }

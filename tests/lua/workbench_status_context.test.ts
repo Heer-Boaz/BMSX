@@ -56,7 +56,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const status = t.mock.fn(() => { buildStatusLeftInfo(code); });
 	const pane: NonNullable<Parameters<typeof renderStatusBar>[2]> = { drawStatusBar: status };
 	const lineCount = t.mock.method(model.buffer, 'getLineCount');
-	const menu = new ContextMenuController(inputFocus, pointerCapture), quick = new QuickInputController(menu);
+	const menu = new ContextMenuController(inputFocus, pointerCapture), quick = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const paint = (owner: InputFocusTarget | null) => {
 		refreshWorkbenchLayout(); overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 		renderStatusBar(resources, fault, pane, evaluation, 'standalone', owner);
@@ -127,9 +127,9 @@ for (const variant of ['tiny', 'msx'] as const) {
 			await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 		});
 		editorRuntimeState.active = true; editorFeedbackState.message.visible = false;
-		await editor.navigation.openResource(editor.editorGroup, sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'status.lua' }))!);
+		await editor.navigation.openResource(editor.editorParts.main.group, sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'status.lua' }))!);
 		editor.setFontVariant(variant);
-		const pane = editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane, status = t.mock.method(pane, 'drawStatusBar');
+		const pane = editor.editorParts.main.group.panes.getPane('code_editor') as CodeEditorPane, status = t.mock.method(pane, 'drawStatusBar');
 		const model = pane.code.model, view = pane.code.view;
 		const draw = () => {
 			editor.update(0); ide.overlayRenderer.beginFrame(host.presenter); api.beginFrame(ide.overlayRenderer);

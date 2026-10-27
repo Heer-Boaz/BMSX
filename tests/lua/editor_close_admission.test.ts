@@ -8,6 +8,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import type { WorkspaceRecord, WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
@@ -45,9 +46,52 @@ test('closing a clean Source view retires synchronously without a dirty decision
 	f.second.code.focusTarget.focus();
 	const closing = f.firstGroup.close(f.firstInput.id);
 	assert.ok(f.firstGroup.model.findById(f.firstInput.id) === undefined, 'the admitted Source input has retired');
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 	assert.ok(inputFocus.target === f.second.code.focusTarget, 'the surviving Source control retains focus');
 	assert.equal(await closing, true);
+});
+
+test('closing a document window never constructs or activates its other admitted closing panes', async t => {
+	const f = await fixture(t);
+	// Restored inactive inputs have membership without constructing their lazy panes.
+	const inactive = new ResourceViewerInput(f.sources.catalog, f.firstInput.workingCopy.resource);
+	f.firstGroup.model.add(inactive);
+	const activation = t.mock.method(f.firstGroup.panes, 'openEditor');
+	assert.equal(f.firstGroup.panes.getPane('resource_view'), undefined);
+	assert.equal(await f.editor.editorParts.close(f.firstPart), true);
+	assert.equal(activation.mock.callCount(), 0, 'accepted whole-window retirement does not visit doomed successors');
+	assert.equal(f.firstGroup.panes.getPane('resource_view'), undefined);
+	assert.equal(f.firstGroup.panes.activePane, null);
+	assert.equal(f.firstGroup.model.tabs.length, 0);
+});
+
+test('workspace save-before-execution decisions block all parts rather than borrowing a local close dialog', async t => {
+	const f = await fixture(t);
+	f.firstInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- draft\n' }]);
+	f.editor.commands.execute('reboot', f.first.commandTarget);
+	assert.equal(f.editor.actionPrompt.visible, true);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
+	assert.equal(f.editor.surfaces.isAdmitted(f.secondGroup.paneSurface), false);
+	f.editor.actionPrompt.close('cancel'); await setImmediate();
+	assert.equal(f.firstInput.workingCopy.dirty, true);
+	assert.equal(f.editor.surfaces.isAdmitted(f.secondGroup.paneSurface), true);
+});
+
+test('save-before-action includes a sibling that becomes dirty during an accepted write', async t => {
+	const f = await fixture(t);
+	f.files.delayed = true;
+	f.firstInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- first draft\n' }]);
+	const action = f.editor.commands.executeConfirmedAction({ action: 'close' }, true);
+	await setImmediate();
+	assert.equal(f.files.writes.length, 1);
+	f.secondInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- sibling draft\n' }]);
+	f.files.writes[0].complete(); await setImmediate();
+	assert.equal(f.files.writes.length, 2, 'the action re-admits dirty working copies after awaited writes');
+	f.files.writes[1].complete();
+	assert.equal(await action, true);
+	assert.equal(f.firstInput.workingCopy.dirty, false); assert.equal(f.secondInput.workingCopy.dirty, false);
+	assert.equal(f.editor.isActive, false);
+	assert.deepEqual(f.files.writes.map(write => write.record.contents), [f.firstInput.workingCopy.buffer.getText(), f.secondInput.workingCopy.buffer.getText()]);
 });
 
 test('closing a clean background view does not try to commit the focused sibling draft', async t => {
@@ -65,7 +109,7 @@ test('closing a clean background view does not try to commit the focused sibling
 	assert.ok(target.edit === draft, 'the surviving sibling retains its own uncommitted draft');
 	assert.equal(draft.pending, true);
 	assert.ok(inputFocus.target === target, 'closing a background view does not blur the sibling');
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 });
 
 test('closing one shared dirty Source view preserves the surviving model, focus and Undo history', async t => {
@@ -74,7 +118,7 @@ test('closing one shared dirty Source view preserves the surviving model, focus 
 	f.second.code.focusTarget.focus();
 	const closing = f.firstGroup.close(f.firstInput.id);
 	assert.ok(f.firstGroup.model.findById(f.firstInput.id) === undefined, 'the admitted Source input has retired');
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 	assert.ok(f.secondInput.workingCopy === model, 'the surviving input keeps the same canonical model');
 	assert.equal(model.dirty, true);
 	assert.equal(model.canUndo, true);
@@ -105,7 +149,7 @@ test('closing a non-last dirty view leaves the focused shared-model sibling draf
 	assert.equal(model.buffer.getText(), source);
 	assert.equal(model.dirty, true);
 	assert.equal(model.canUndo, true);
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 });
 
 test('Cancel on the last dirty Source view retains its source, history and invoking focus', async t => {
@@ -113,7 +157,7 @@ test('Cancel on the last dirty Source view retains its source, history and invok
 	f.first.code.focusTarget.focus();
 	f.first.code.focusTarget.textInput!.replaceText(6, 11, 'changed');
 	const source = model.buffer.getText(), closing = f.firstGroup.close(f.firstInput.id);
-	assert.equal(f.editor.actionPrompt.visible, true);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
 	assert.ok(f.firstGroup.model.findById(f.firstInput.id) === f.firstInput, 'the requested input remains admitted');
 	f.key('Escape');
 	assert.equal(await closing, false);
@@ -129,10 +173,10 @@ for (const retire of ['workspace', 'close-owner'] as const) test(`${retire} reti
 	f.first.code.focusTarget.focus();
 	f.first.code.focusTarget.textInput!.replaceText(6, 11, 'retained');
 	const closing = f.firstGroup.close(f.firstInput.id);
-	assert.equal(f.editor.actionPrompt.visible, true);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
 	if (retire === 'workspace') f.ide.models.clear(); else f.editor.editorClose.dispose();
 	assert.equal(await closing, false);
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 	assert.ok(inputFocus.target !== f.first.code.focusTarget, 'retired admission cannot refocus its old Source control');
 	assert.ok(f.firstGroup.model.findById(f.firstInput.id) === f.firstInput, 'user-close admission does not force owner teardown');
 	assert.equal(f.files.records.size, 0);
@@ -206,7 +250,7 @@ test('an edit while Save is pending requires another dirty decision instead of r
 	const newer = model.buffer.getText();
 	f.files.writes[0].complete();
 	await setImmediate();
-	assert.equal(f.editor.actionPrompt.visible, true);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
 	assert.equal(f.files.records.get('first.lua')!.contents, saved);
 	assert.equal(model.buffer.getText(), newer);
 	assert.equal(model.dirty, true);
@@ -233,7 +277,7 @@ test('a new sibling view during Save preserves newer source and its focus when t
 	assert.ok(f.firstGroup.model.findById(f.firstInput.id) === undefined, 'the admitted Source input has retired');
 	assert.ok(f.secondGroup.model.activeTab === sibling, 'the independently opened sibling remains active');
 	assert.ok(inputFocus.target === f.second.code.focusTarget, 'the surviving Source control retains focus');
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 	assert.equal(model.buffer.getText(), newer);
 	assert.equal(model.dirty, true);
 	assert.equal(model.canUndo, true);
@@ -251,7 +295,7 @@ test('Discard waits for an already accepted Save and re-admits any edit made dur
 	const closing = f.firstGroup.close(f.firstInput.id);
 	f.key('Tab'); f.key('Enter');
 	await setImmediate();
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 	assert.ok(f.firstGroup.model.findById(f.firstInput.id) === f.firstInput, 'the requested input remains admitted');
 	assert.equal(model.buffer.getText(), f.source.replace('alpha', 'discard'));
 	f.first.code.focusTarget.textInput!.replaceText(6, 13, 'latest');
@@ -260,7 +304,7 @@ test('Discard waits for an already accepted Save and re-admits any edit made dur
 	await saving.completion;
 	await setImmediate();
 	assert.equal(f.files.records.get('first.lua')!.contents, saved);
-	assert.equal(f.editor.actionPrompt.visible, true);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
 	assert.equal(model.buffer.getText(), latest);
 	assert.equal(model.dirty, true);
 	f.key('Tab'); f.key('Enter');
@@ -274,13 +318,13 @@ test('a captured dirty-close request cannot retire a same-id replacement after i
 	f.first.code.focusTarget.focus();
 	f.first.code.focusTarget.textInput!.replaceText(6, 11, 'retained');
 	const closing = f.firstGroup.close(f.firstInput.id);
-	assert.equal(f.editor.actionPrompt.visible, true);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
 	f.firstGroup.removeEditor(f.firstInput);
 	const replacement = new CodeEditorInput(model);
 	assert.equal(replacement.id, f.firstInput.id);
 	f.firstGroup.openEditor(replacement);
 	assert.equal(await closing, false);
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 	assert.ok(f.firstGroup.model.activeTab === replacement, 'the replacement remains active');
 	assert.ok(f.firstGroup.model.findById(replacement.id) === replacement, 'the retired operation cannot close the replacement');
 	assert.equal(model.buffer.getText(), f.source.replace('alpha', 'retained'));
@@ -301,7 +345,7 @@ test('an invalid draft in the closing Source control vetoes close without losing
 	assert.ok(target.edit === draft, 'close retains the concrete uncommitted draft');
 	assert.equal(draft.pending, true);
 	assert.ok(inputFocus.target === target, 'close does not blur the retained control');
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 	assert.ok(f.firstGroup.model.findById(f.firstInput.id) === f.firstInput, 'the requested input remains admitted');
 	assert.equal(model.buffer.getText(), source);
 	assert.equal(model.dirty, true);
@@ -316,7 +360,7 @@ test('an invalid focused sibling draft vetoes root-modal close admission without
 	const draft = { pending: true, commit() { attempts++; return false; } };
 	target.edit = draft;
 	t.after(() => { target.edit = priorEdit; });
-	assert.equal(await f.firstGroup.close(f.firstInput.id), false);
+	assert.equal(await f.editor.editorClose.close([{ group: f.firstGroup, input: f.firstInput }]), false);
 	assert.equal(attempts, 1);
 	assert.ok(target.edit === draft, 'close retains the concrete uncommitted draft');
 	assert.equal(draft.pending, true);
@@ -347,7 +391,7 @@ test('retiring a saved view does not commit a sibling draft entered while its Sa
 	assert.ok(target.edit === draft, 'close retains the concrete uncommitted draft');
 	assert.equal(draft.pending, true);
 	assert.ok(inputFocus.target === target, 'close does not blur the retained control');
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
 });
 
@@ -368,7 +412,7 @@ test('a close reentered by the focused draft commit joins its original operation
 	assert.equal(attempts, 1);
 	assert.equal(model.version, version + 1);
 	assert.equal(model.buffer.getText(), f.source.replace('alpha', 'published'));
-	assert.equal(f.editor.actionPrompt.visible, true);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
 	f.key('Escape');
 	assert.equal(await closing, false);
 	assert.equal(await reentered, false);
@@ -391,11 +435,11 @@ test('closing a genuine imported-effect lens considers every represented working
 	f.firstGroup.openEditor(lens);
 	assert.equal(await f.firstGroup.close(f.firstInput.id), true);
 	assert.equal(await f.secondGroup.close(f.secondInput.id), true);
-	assert.equal(f.editor.actionPrompt.visible, false);
+	assert.equal(f.firstPart.actionPrompt.visible, false);
 	const cancelled = f.firstGroup.close(lens.id);
 	f.key('Tab'); f.key('Enter');
 	await setImmediate();
-	assert.equal(f.editor.actionPrompt.visible, true);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
 	assert.equal(main.buffer.getText(), registration);
 	assert.equal(imported.buffer.getText(), definition);
 	assert.equal(main.dirty, true);
@@ -408,7 +452,7 @@ test('closing a genuine imported-effect lens considers every represented working
 	const discarded = f.firstGroup.close(lens.id);
 	f.key('Tab'); f.key('Enter');
 	await setImmediate();
-	assert.equal(f.editor.actionPrompt.visible, true);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
 	f.key('Tab'); f.key('Enter');
 	assert.equal(await discarded, true);
 	assert.equal(main.buffer.getText(), f.source);

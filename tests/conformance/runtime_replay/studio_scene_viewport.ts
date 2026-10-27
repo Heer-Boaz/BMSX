@@ -25,30 +25,31 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	// Their contents and names are irrelevant to this form fixture.
 	for (const resource of ide.sources.catalog.luaResources) {
 		if (resource.contextId !== test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId) continue;
-		await ide.editor.navigation.openResource(ide.editor.editorGroup, resource); await frame(); await frame();
-		if (ide.editor.editorGroup.tabStrip.scrollbar.isVisible()) break;
+		await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource); await frame(); await frame();
+		if (ide.editor.editorParts.activeGroup.tabStrip.scrollbar.isVisible()) break;
 	}
-	await ide.editor.navigation.openResource(ide.editor.editorGroup, ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!);
+	const sourceGroup = ide.editor.editorParts.activeGroup;
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: SCENE_VIEWPORT_SOURCE }]);
 	const authored = model.buffer.getText();
 	const scene = await openSceneEditor(test);
 	await selectMember(test, scene, 0);
-	const pane = ide.editor.editorGroup.panes.activePane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('A02: actual Scene pane required');
 	const [x, y, z] = pane.controls;
 	check(scene.properties[0].value === 11 && scene.properties[2].value === 33, 'A02: independent fixture is selected');
 	// Reuse a real workspace input as transport, not its game implementation.
 	const record = ide.sources.catalog.getContext(model.resource.contextId).luaSources.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== model.resource.path && !record.module_path.startsWith('cartlib/'))!;
-	await ide.editor.navigation.openResource(ide.editor.editorGroup, ide.sources.catalog.resolveResource({ contextId: model.resource.contextId, path: record.source_path })!);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), ide.sources.catalog.resolveResource({ contextId: model.resource.contextId, path: record.source_path })!);
 	const provider = harness.getActiveEditorDocument().model;
 	const originalProvider = provider.buffer.getText();
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: "return require('cartlib/world/scene_library')" }]);
 	const apiOffset = authored.indexOf('cartlib/world/scene_library');
 	model.pushEditOperations([{ offset: apiOffset, deleteLength: 'cartlib/world/scene_library'.length, text: record.module_path }]);
-	await ide.editor.navigation.openResource(ide.editor.editorGroup, model.resource);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), model.resource);
 	check(await openSceneEditor(test) === scene, 'scene imports: the actual menu reopens the same scene through a reexport');
 	await selectMember(test, scene, 0);
 	await test.click(scene.properties[0].bounds);
@@ -94,10 +95,11 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	};
 	for (const variant of ['msx', 'tiny'] as const) {
 		ide.editor.setFontVariant(variant); await frame();
-		check(ide.editor.editorGroup.tabStrip.scrollbar.isVisible() && editorViewState.tabBarTotalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
-			'A02/A04: overflowing tabs remain one bounded row at either font');
-		check(scene.layout.top === editorViewState.editorAreaTop && scene.layout.bottom === editorViewState.editorAreaBottom,
-			'A02/A04: font and tab-strip height reach the child layout in one update');
+		check(sourceGroup.tabStrip.scrollbar.isVisible() && sourceGroup.tabStrip.layoutState.totalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
+			'A02/A04: the document part retains its independently overflowing strip at either font');
+		const mainBounds = ide.editor.editorParts.main.group.panes.contentBounds;
+		check(scene.layout.top === mainBounds.top && scene.layout.bottom === mainBounds.bottom,
+			'A02/A04: font and the main part strip reach the Scene child layout independently of document overflow');
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
 		await testStudioPointerHover(test, scene);
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
@@ -160,7 +162,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		const selectedProblem = problemsPanel.selectedDiagnostic;
 		const panel = getProblemsPanelBounds()!;
 		await test.click(point(panel.left + 4, panel.bottom - 1));
-		check(problemsPanel.isFocused && problemsPanel.getHoverIndex() === -1 && ide.editor.editorGroup.panes.activePane === pane,
+		check(problemsPanel.isFocused && problemsPanel.getHoverIndex() === -1 && ide.editor.editorParts.activeGroup.panes.activePane === pane,
 			'A02: Problems padding focuses the panel without activating a clipped diagnostic');
 		check(problemsPanel.selectedDiagnostic === selectedProblem && model.buffer.getText() === authored,
 			'A02: panel focus does not change diagnostic selection or authored source');

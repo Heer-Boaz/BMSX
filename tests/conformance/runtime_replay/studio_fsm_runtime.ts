@@ -10,7 +10,7 @@ import { sourcePane, check, type StudioFixture } from './studio_fixture';
 export async function openRuntimeStateMachineLens(test: StudioFixture) {
 	const { ide, press } = test;
 	await test.runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	const picker = ide.editor.quickInput;
+	const picker = ide.editor.editorParts.activePart.quickInput;
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!;
 	const index = picker.model.list.rows.findIndex(row => {
 		const item = row.item as BehaviorQuickPickItem;
@@ -20,9 +20,9 @@ export async function openRuntimeStateMachineLens(test: StudioFixture) {
 	check(index >= 0, 'runtime FSM: unexecuted source remains independently discoverable');
 	for (let n = 0; n < index; n += 1) await press('ArrowDown');
 	await press('Enter');
-	const input = ide.editor.editorGroup.model.activeTab;
+	const input = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'state-graph') throw new Error('runtime FSM: real source graph required');
-	const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	if (inspector.visible) await press('Escape');
 	check(!inspector.visible, 'runtime FSM: explicit close returns from a retained inspection to its source graph');
 	return input;
@@ -30,7 +30,7 @@ export async function openRuntimeStateMachineLens(test: StudioFixture) {
 
 export async function openRuntimeStateMachinePicker(test: StudioFixture): Promise<void> {
 	const input = await openRuntimeStateMachineLens(test);
-	const picker = test.ide.editor.quickInput;
+	const picker = test.ide.editor.editorParts.activePart.quickInput;
 	const live = input.view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.inspectRuntimeStateMachine')!;
 	await test.click(live.bounds);
 	check(picker.visible, 'runtime FSM: Live opens the shared instance picker');
@@ -41,7 +41,7 @@ export async function openRuntimeStateMachinePicker(test: StudioFixture): Promis
 
 export async function openRuntimeStatePicker(test: StudioFixture, component: 'first' | 'second'): Promise<void> {
 	await openRuntimeStateMachinePicker(test);
-	const picker = test.ide.editor.quickInput;
+	const picker = test.ide.editor.editorParts.activePart.quickInput;
 	await test.clipboard.writeText(`walker inspection.fsm.${component}`);
 	await test.press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1,
@@ -58,12 +58,12 @@ export async function openRuntimeStateInspector(test: StudioFixture, component: 
 	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('inspection_fsm_callback_count');
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' })!, version = model.version;
 	await openRuntimeStatePicker(test, component);
-	const picker = test.ide.editor.quickInput;
+	const picker = test.ide.editor.editorParts.activePart.quickInput;
 	const index = picker.model.list.rows.findIndex(row => row.item.label === `${component}_actor.walker${path}`);
 	check(index >= 0, 'runtime FSM: choose a concrete state by its actual instance id');
 	for (let n = 0; n < index; n += 1) await press('ArrowDown');
 	await press('Enter');
-	const inspector = (test.ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (test.ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !picker.visible, 'runtime FSM: the selected state opens the retained inspector');
 	const rows = inspector.model.rows;
 	check(rows.find(row => row.element.label === 'LOADED DEFAULTS')!.element.value === `revision: ${loadedRevision}`,
@@ -124,7 +124,7 @@ export async function testRuntimeStateSource(test: StudioFixture): Promise<void>
 	check(menu.visible && liveIndex >= 0 && menu.model.rows[liveIndex].enabled, 'runtime FSM: the selected state context menu shares Live admission');
 	for (let n = 0; n < liveIndex; n += 1) await press('ArrowDown');
 	await press('Enter');
-	check(!menu.visible && test.ide.editor.quickInput.visible, 'runtime FSM: context Live enters the same instance scope');
+	check(!menu.visible && test.ide.editor.editorParts.activePart.quickInput.visible, 'runtime FSM: context Live enters the same instance scope');
 	await press('Escape');
 	const instances = readStateMachineInstances(test.ide.sources, guest, 0);
 	const machine = instances.items.find(item => item.description === 'COMPONENT inspection.fsm.first')!;

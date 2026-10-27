@@ -1,11 +1,10 @@
 import type { RectBounds } from '../../../machine/ts/common/rect';
-import { editorViewState } from '../ui/view/state';
 
-export function writeCenteredDialogBounds(out: RectBounds, dialogWidth: number, dialogHeight: number, margin: number): void {
-	const centeredLeft = (editorViewState.viewportWidth - dialogWidth) >> 1;
-	const centeredTop = (editorViewState.viewportHeight - dialogHeight) >> 1;
-	const left = centeredLeft < margin ? margin : centeredLeft;
-	const top = centeredTop < margin ? margin : centeredTop;
+export function writeCenteredDialogBounds(out: RectBounds, area: Readonly<RectBounds>, dialogWidth: number, dialogHeight: number, margin: number): void {
+	const centeredLeft = area.left + ((area.right - area.left - dialogWidth) >> 1);
+	const centeredTop = area.top + ((area.bottom - area.top - dialogHeight) >> 1);
+	const left = Math.max(area.left + margin, centeredLeft);
+	const top = Math.max(area.top + margin, centeredTop);
 	out.left = left;
 	out.top = top;
 	out.right = left + dialogWidth;

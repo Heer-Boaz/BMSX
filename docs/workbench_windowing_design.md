@@ -169,6 +169,19 @@ local modals stack inside the named group; their popups cannot promote beyond
 its admission boundary. A backdrop covers exactly the blocked scope, so blocked
 input cannot reach a visibly uncovered lower branch accidentally.
 
+The blocked scope and presentation parent are explicit, independent references.
+A main-part chooser may present above document windows without becoming a
+workspace modal. Such a promoted local modal shares the modeless-window order:
+its owner raises it for a foreground interaction, and an unrelated window can
+subsequently rise above it. Outside the chooser's actual rectangle, an unrelated
+window remains a pointer target; hits on the blocked main content are consumed
+by its modal. Promotion never transfers command authority or a popup's lifetime.
+Applicable modal admission is derived from the published surface order, not a
+second independently mutable stack. Visibility and arrangement are published
+after the outgoing control's blur publishes its draft, before the incoming
+control acquires focus. Dismissal publishes its admission change before returning
+focus to a previously blocked control.
+
 Modality is enforced for pointer, wheel, keyboard, gamepad, text, clipboard and
 command dispatch within the blocked scope. It does not merely intercept a
 pointer rectangle. A root modal requires explicit admission for root-global

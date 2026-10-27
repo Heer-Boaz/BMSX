@@ -56,6 +56,7 @@ export class EditorGroupView {
 	public readonly tabSurface: WorkbenchSurface;
 	public readonly workArea: Readonly<RectBounds>;
 	private readonly unbindFocus: () => void;
+	private openingAdmitted = true;
 	private readonly disposeListeners = new Set<() => void>();
 
 	public constructor(factories: EditorPaneFactories, commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
@@ -108,7 +109,17 @@ export class EditorGroupView {
 		return () => this.disposeListeners.delete(listener);
 	}
 
+	public setOpenAdmission(admitted: boolean): void {
+		if (this.openingAdmitted === admitted) return;
+		this.openingAdmitted = admitted;
+		this.panes.beginOpen();
+	}
+
 	public openEditor(input: EditorInput, options: EditorTabOpenOptions = {}): boolean {
+		if (!this.openingAdmitted) {
+			if (this.model.indexOf(input) < 0) input.dispose();
+			return false;
+		}
 		if (!this.commitPendingEdit()) {
 			if (this.model.indexOf(input) < 0) input.dispose();
 			return false;
@@ -129,7 +140,7 @@ export class EditorGroupView {
 		let departure = options.preserveFocus ? null : beginNavigationCapture();
 		try {
 			const input = await candidate;
-			if (generation !== this.panes.openGeneration) { input.dispose(); return undefined; }
+			if (!this.openingAdmitted || generation !== this.panes.openGeneration) { input.dispose(); return undefined; }
 			const preserveFocus = options.preserveFocus || focusRevision !== inputFocus.revision;
 			if (!withNavigationCaptureSuspended(() => this.openEditor(input, { ...options, preserveFocus }))) return undefined;
 			if (!preserveFocus) {
@@ -176,13 +187,20 @@ export class EditorGroupView {
 	}
 
 	/** Commit an admitted close or explicit owner retirement for this known member. */
-	public removeEditor(input: EditorInput): void {
+	public removeEditor(input: EditorInput, closing?: ReadonlySet<EditorInput>): void {
 		if (this.tabStrip.drag.state?.tabId === input.id) this.tabStrip.cancelDrag();
 		const index = this.model.indexOf(input);
 		if (this.model.activeTab === input) {
 			const tabs = this.model.tabs;
-			if (tabs.length > 1) this.doActivate(index > 0 ? tabs[index - 1] : tabs[index + 1],
-				undefined, undefined, navigationState.activeGroup !== this);
+			// A bulk close selects a surviving view once, never a doomed lazy pane.
+			let successor: EditorInput | undefined;
+			for (let position = index - 1; position >= 0; position--) if (!closing?.has(tabs[position])) {
+				successor = tabs[position]; break;
+			}
+			if (successor === undefined) for (let position = index + 1; position < tabs.length; position++) if (!closing?.has(tabs[position])) {
+				successor = tabs[position]; break;
+			}
+			if (successor !== undefined) this.doActivate(successor, undefined, undefined, navigationState.activeGroup !== this);
 			else this.panes.clearEditor();
 		}
 		this.model.removeAt(index);
@@ -203,6 +221,7 @@ export class EditorGroupView {
 	}
 
 	public dispose(): void {
+		this.setOpenAdmission(false);
 		groupsByScope.set(this.focusScope, null);
 		groupsByScope.set(this.tabFocusTarget.scope, null);
 		for (const listener of this.disposeListeners) listener();

@@ -14,19 +14,19 @@ export async function testBehaviorValueChanges(test: StudioFixture) {
 	] as const) {
 		await runPaletteCommand(sourceCommand);
 		await test.clipboard.writeText(query); await press('ControlLeft', 'KeyV');
-		check(ide.editor.quickInput.model.list.rows.length === 1, 'fixture source registration is uniquely selected');
+		check(ide.editor.editorParts.activePart.quickInput.model.list.rows.length === 1, 'fixture source registration is uniquely selected');
 		await press('Enter');
 		await runPaletteCommand(liveCommand);
 		await test.clipboard.writeText('first'); await press('ControlLeft', 'KeyV');
-		check(ide.editor.quickInput.model.list.rows.length === 1, 'instance choice belongs to the first actor');
+		check(ide.editor.editorParts.activePart.quickInput.model.list.rows.length === 1, 'instance choice belongs to the first actor');
 		await press('Enter');
 		if (kind === 'fsm') {
-			const index = ide.editor.quickInput.model.list.rows.findIndex(row => row.item.label.endsWith(':/nest'));
+			const index = ide.editor.editorParts.activePart.quickInput.model.list.rows.findIndex(row => row.item.label.endsWith(':/nest'));
 			check(index >= 0, 'choose the retained nest state, not an authored registration');
 			for (let n = 0; n < index; n++) await press('ArrowDown');
 			await press('Enter');
 		}
-		const inspector = (ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+		const inspector = (ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 		check(inspector.visible && inspector.model.rows.every(row => !row.element.valueChanged), 'opening a live instance starts neutral');
 		const index = inspector.model.rows.findIndex(row => {
 			const identity = (row.element as RuntimeInspectionProperty).identity;
@@ -70,7 +70,7 @@ export async function testBehaviorValueChanges(test: StudioFixture) {
 		await press('Escape');
 		await runPaletteCommand(liveCommand);
 		await test.clipboard.writeText('second'); await press('ControlLeft', 'KeyV');
-		check(ide.editor.quickInput.model.list.rows.length === 1, 'select the distinct second owner');
+		check(ide.editor.editorParts.activePart.quickInput.model.list.rows.length === 1, 'select the distinct second owner');
 		await press('Enter');
 		if (kind === 'fsm') await press('Enter');
 		check(inspector.visible && inspector.model.rows.every(row => !row.element.valueChanged), 'a new selected instance cannot inherit another baseline');

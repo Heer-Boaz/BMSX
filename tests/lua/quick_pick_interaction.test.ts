@@ -23,7 +23,7 @@ function fixture(t: TestContext) {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const picker = new QuickInputController(menu);
+	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const items = Array.from({ length: 100 }, (_, id) => ({ id, label: `row_${id}`, description: 'independent catalog', detail: `${id}` }));
 	let accepted: typeof items[number] | undefined, pressId = 0;
 	const open = () => picker.pick('Choose', 'Filter', () => new TextQuickPickProvider(items), item => { accepted = item; });
@@ -62,7 +62,7 @@ test('chooser query, geometry, outside release and session changes cancel pendin
 		const x = model.viewport.bounds.left + 5, y = model.viewport.bounds.top + 4;
 		pointer(x, y, PRIMARY, PRIMARY);
 		if (change === 'query') { insertValue(picker.field, 'row_99'); picker.update(); }
-		if (change === 'geometry') { editorViewState.viewportWidth = 256; picker.update(); }
+		if (change === 'geometry') { editorViewState.viewportWidth = 256; Object.assign(picker.presentation.bounds, { right: 256 }); picker.update(); }
 		if (change === 'session') open();
 		pointer(change === 'outside' ? model.viewport.bounds.right + 20 : x, y, 0, 0, PRIMARY);
 		assert.equal(accepted(), undefined, change);
@@ -135,7 +135,7 @@ test('picker prepares visible rows lazily across scrolling, query replacement an
 	assert.equal(presented.has(50), true);
 	assert.equal(hidden.label.text, hidden.item.label, 'a new query at the same scroll position prepares its actual result');
 	const widthRevision = hidden.textRevision;
-	editorViewState.viewportWidth = 256; picker.update();
+	editorViewState.viewportWidth = 256; Object.assign(picker.presentation.bounds, { right: 256 }); picker.update();
 	assert.notEqual(hidden.textRevision, widthRevision);
 	const measure = t.mock.method(editorViewState.font, 'advance', () => assert.fail('idle text measurement'));
 	for (let frame = 0; frame < 1000; frame += 1) picker.update();

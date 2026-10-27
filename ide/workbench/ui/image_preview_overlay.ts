@@ -56,7 +56,7 @@ export class ImagePreviewOverlay {
 			});
 		}
 		this.surface = surfaces.attach({
-			role: 'modal', lifetimeOwner: owner, blockedScope: owner, captureScope: this.context.scope.surfaceScope,
+			role: 'modal', lifetimeOwner: owner, blockedScope: owner, presentationParent: owner, captureScope: this.context.scope.surfaceScope,
 			getBounds: () => this.bounds, getClip: () => this.bounds, isVisible: () => this.visible,
 			draw: () => this.draw(),
 			handlePointer: snapshot => {
@@ -84,8 +84,7 @@ export class ImagePreviewOverlay {
 		this.statusEdge = 'start';
 		this.layoutBody(this.previews.use(url));
 		this.viewport.scrollbar.setScroll(0);
-		this.scroll.focusTarget.focus();
-		this.surfaces.changed();
+		inputFocus.setTarget(this.scroll.focusTarget, this.publishVisibility);
 	}
 	public close(): void {
 		if (!this.visible) return;
@@ -95,10 +94,11 @@ export class ImagePreviewOverlay {
 		this.image!.dispose(); this.image = undefined;
 		const origin = this.returnFocus;
 		this.returnFocus = null;
-		if (this.scroll.focusTarget.hasFocus) inputFocus.setTarget(origin);
 		this.surfaces.changed();
+		if (this.scroll.focusTarget.hasFocus) inputFocus.setTarget(origin);
 	}
 	public dispose(): void { this.surface.dispose(); this.scroll.dispose(); }
+	private readonly publishVisibility = (): void => { this.surfaces.changed(); };
 	public layout(bounds: Readonly<RectBounds>, rowHeight: number): void {
 		const font = editorViewState.font.renderFont();
 		if (this.bounds.left === bounds.left && this.bounds.top === bounds.top && this.bounds.right === bounds.right

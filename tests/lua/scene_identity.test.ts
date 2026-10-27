@@ -123,7 +123,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} full iden
 	assert.deepEqual(f.labels, [], 'fitting keyboard labels do not produce an unsolicited explanation layer');
 	f.input.outline.hoverIndex = 1; f.point.viewportX++; f.feedback.pointer(f.input, 1, f.point); f.update(); f.paint();
 	assert.ok(f.labels.join('').includes("Scene 'room'"), 'explicit hover exposes full qualification even when the short member label fits');
-	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, captureScope: Symbol('modal'), isVisible: () => true,
+	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: Symbol('modal'), isVisible: () => true,
 		getBounds: () => f.area, getClip: () => f.area, draw() {} });
 	f.paint(); assert.deepEqual(f.labels, [], 'an owned hint cannot paint above a modal blocking its Scene'); modal.dispose();
 	f.feedback.clear(); f.paint(); assert.deepEqual(f.labels, []);

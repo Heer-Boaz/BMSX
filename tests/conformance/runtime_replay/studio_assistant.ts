@@ -35,13 +35,13 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'assistant: boot actual cart');
 	await reachNemesisTitle(test);
 	harness.openLuaSource('cart.lua'); await frame();
-	const main = harness.getActiveEditorDocument().model, mainTab = ide.editor.editorGroup.model.activeTab;
+	const main = harness.getActiveEditorDocument().model, mainTab = ide.editor.editorParts.activeGroup.model.activeTab;
 	await press('ControlLeft', 'Home'); await test.clipboard.writeText('-- UNSAVED ASSISTANT FIXTURE\n'); await press('ControlLeft', 'KeyV');
 	await press('ArrowDown'); // Keep module<entry> before the first executable statement.
 	await test.clipboard.writeText('local studio_diagnostic_probe = missing_from_assistant_context\nstruct studio_type_probe\n\tvalue: word\nend\nlocal invalid_type_value = studio_type_probe\n'); await press('ControlLeft', 'KeyV');
 	const before = main.buffer.getText(), saved = main.lastSavedSource, media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: Codex Assistant');
-	const view = ide.editor.editorGroup.model.activeTab;
+	const view = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
 	const conversation = ide.editor.assistant;
 	check(conversation.state === 'disconnected', 'opening a pane never starts the process or account');
@@ -95,7 +95,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await test.clickTab(mainTab.id); await test.clickTab(view.id);
 	check(conversation.state === 'ready' && proposal.state === 'pending', 'switching panes does not retire conversation/review');
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.review')!.bounds);
-	const review = ide.editor.editorGroup.model.activeTab; if (review.kind !== 'workspace_edit_review') throw new Error('Shared review expected');
+	const review = ide.editor.editorParts.activeGroup.model.activeTab; if (review.kind !== 'workspace_edit_review') throw new Error('Shared review expected');
 	await frame(); await capture('review');
 	check(cycles() === position && !test.execution.userPaused, 'assistant: opening edit review never releases the workbench hold');
 	await test.click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
@@ -121,7 +121,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await until(() => conversation.state === 'ready' && conversation.entries.filter(entry => entry.kind === 'proposal').length === 2, 'assistant: new prompt has fresh source rights');
 	const discarded = conversation.entries.filter(entry => entry.kind === 'proposal')[1].proposal!;
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.review')!.bounds);
-	const discardReview = ide.editor.editorGroup.model.activeTab; if (discardReview.kind !== 'workspace_edit_review') throw new Error('Shared review expected');
+	const discardReview = ide.editor.editorParts.activeGroup.model.activeTab; if (discardReview.kind !== 'workspace_edit_review') throw new Error('Shared review expected');
 	await test.click(discardReview.actionBar.items.find(item => item.command === 'workspaceEditReview.discard')!.bounds);
 	await test.clickTab(view.id);
 	check(discarded.state === 'discarded' && main.buffer.getText() === before, 'Discard settles without source changes');
@@ -138,7 +138,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(stale.state === 'stale' && view.transcript.rows.some(row => row.text === 'REVIEW: STALE'), 'source invalidation settles the transcript without a network event');
 	await capture('stale');
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.review')!.bounds);
-	const staleReview = ide.editor.editorGroup.model.activeTab; if (staleReview.kind !== 'workspace_edit_review') throw new Error('Shared review expected');
+	const staleReview = ide.editor.editorParts.activeGroup.model.activeTab; if (staleReview.kind !== 'workspace_edit_review') throw new Error('Shared review expected');
 	await test.click(staleReview.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
 	check(main.buffer.getText() === corrected, 'stale Apply is disabled rather than rebasing or replacing user edits');
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'KeyZ');
@@ -148,8 +148,8 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await until(() => conversation.state === 'ready' && conversation.entries.filter(entry => entry.kind === 'proposal').length === 4, 'assistant: final pending review before disconnect');
 	const pending = conversation.entries.filter(entry => entry.kind === 'proposal')[3].proposal!;
 	check(pending.state === 'pending', 'new review stays pending until user action');
-	const serialized = ide.editor.editorGroup.model.serialize(ide.editor.editorInputSerializers);
-	check(serialized.inputs.every(input => input.kind !== ('assistant' as string) && input.kind !== ('workspace_edit_review' as string)), 'session does not persist conversations or edit rights');
+	const serialized = ide.editor.editorParts.serialize(ide.editor.editorInputSerializers);
+	check([serialized.main, ...serialized.documents.map(part => part.group)].every(group => group.inputs.every(input => input.kind !== ('assistant' as string) && input.kind !== ('workspace_edit_review' as string))), 'session does not persist conversations or edit rights');
 	await press('ControlLeft', 'KeyW'); check(conversation.state === 'disconnected' && pending.state === 'stale', 'closing the tab retires process and pending review');
 	await test.runPaletteCommand('View: Codex Assistant');
 	check(conversation.state === 'disconnected', 'reopening does not replay a prompt');

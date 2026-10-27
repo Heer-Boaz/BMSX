@@ -1,3 +1,5 @@
+import { resourceIdentityEquals } from '../../../common/resource';
+import type { ResourceEditorIdentity } from '../../common/editor_input';
 import type { HostErrorInput } from '../../contrib/host_error/editor_input';
 import type { BuildLogInput } from '../../contrib/builds/editor_input';
 import type { PlayEditorInput } from '../../contrib/play/editor_input';
@@ -135,7 +137,8 @@ export class EditorTabGroupModel {
 		const listeners = new DisposableStore();
 		listeners.add({ dispose: tab.onDidChangeLabel(() => this.updateLabels()) });
 		if (tab.onDidChangeDirty !== undefined) listeners.add({ dispose: tab.onDidChangeDirty(() => {
-			if (tab.isDirty()) this.pin(tab);
+			if (this.previewEditor === tab && tab.isDirty()) this.pin(tab);
+			else this.emitChanged();
 		}) });
 		this.listeners.set(tab, listeners);
 	}
@@ -190,6 +193,15 @@ export class EditorTabGroupModel {
 			if (tab.id === tabId) {
 				return tab;
 			}
+		}
+		return undefined;
+	}
+
+	/** Match document identity independently of a contribution's view/input object. */
+	public findByResourceEditor(identity: ResourceEditorIdentity): EditorInput | undefined {
+		for (const input of this.editorTabs) {
+			const candidate = input.toResourceEditor?.();
+			if (candidate !== undefined && candidate.editorId === identity.editorId && resourceIdentityEquals(candidate.resource, identity.resource)) return input;
 		}
 		return undefined;
 	}

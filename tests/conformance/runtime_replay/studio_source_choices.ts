@@ -8,10 +8,10 @@ import { checkQuickPickHighlightRuns } from './studio_quick_pick_highlights';
 /** Independent Lua source, real file Save and shared physical popup/navigation routes. */
 export async function testStudioSourceChoices(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, frame, runPaletteCommand } = test;
-	const picker = ide.editor.quickInput;
 	console.info('STUDIO A06: symbols, definitions and references share Quick Input');
 	harness.openLuaSource('cart.lua');
 	await frame();
+	const picker = sourcePane(test).part.quickInput;
 	await press('ControlLeft', 'ShiftLeft', 'KeyO');
 	check(picker.visible && inputFocus.target === picker.field.focusTarget,
 		'A06: physical document-symbol command opens the shared picker, not the old inline widget');
@@ -99,7 +99,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	definitions.undo();
 	check(picker.visible, 'A06: the expired source generation cannot close a newer file picker');
 	await press('Escape');
-	check(editorTextModelService.get(usage.resource) === usage && ide.editor.editorGroup.model.activeTab.kind === 'code_editor',
+	check(editorTextModelService.get(usage.resource) === usage && ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor',
 		'A06: choosing sources retains the same working copy and ordinary editor pane');
 	check(test.cycles() === cycles && ide.sources.currentBlua32Media === media, 'A06: source choices never run or replace guest media');
 

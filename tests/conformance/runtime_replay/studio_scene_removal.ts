@@ -24,7 +24,7 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	const original = model.buffer.getText();
 	const scene = await openSceneEditor(test);
 	await selectMember(test, scene, 2);
-	const pane = ide.editor.editorGroup.panes.activePane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('remove: actual Scene Editor pane required');
 	const x = pane.controls[0];
 	const field = scene.outline.roots[0].children[2].element.source;

@@ -60,6 +60,7 @@ export function executeEditorWorkspaceCommand(
 	group: EditorGroupView,
 	runTargets: RunTargetSelection,
 ): void {
+	const part = editor.editorParts.partForGroup(group);
 	switch (command) {
 		case 'createResource':
 			openCreateResourcePrompt(editor, group, sources.catalog, clock);
@@ -81,7 +82,7 @@ export function executeEditorWorkspaceCommand(
 				const dirtyWorkingCopies = editorTextModelService.dirtyWorkingCopies;
 				if (request.action !== 'theme-toggle' && dirtyWorkingCopies.length !== 0) {
 					void editor.actionPrompt.show(ACTION_PROMPTS[request.action]).then(choice => {
-						if (choice !== 'cancel') return editor.commands.executeConfirmedAction(request, dirtyWorkingCopies, choice === 'primary');
+						if (choice !== 'cancel') return editor.commands.executeConfirmedAction(request, choice === 'primary');
 					}).catch(error => editor.handleRuntimeTaskError(error, 'Source action failed'));
 					return;
 				}
@@ -98,9 +99,9 @@ export function executeEditorWorkspaceCommand(
 					projects.push({ domain, image, label: context.projectRootPath, description: `Physical ${domain}`,
 						detail: command === 'runCurrentFile' ? resource!.path : 'Run this installed source context' });
 				}
-				editor.quickInput.pick(command === 'runCurrentFile' ? 'RUN CURRENT FILE' : 'RUN PROJECT', 'Choose the actual installed execution attachment', (_origin, lifetime) => {
-					lifetime.add({ dispose: group.onWillDispose(() => editor.quickInput.hide()) });
-					if (input !== undefined) lifetime.add({ dispose: input.onWillDispose(() => editor.quickInput.hide()) });
+				part.quickInput.pick(command === 'runCurrentFile' ? 'RUN CURRENT FILE' : 'RUN PROJECT', 'Choose the actual installed execution attachment', (_origin, lifetime) => {
+					lifetime.add({ dispose: group.onWillDispose(() => part.quickInput.hide()) });
+					if (input !== undefined) lifetime.add({ dispose: input.onWillDispose(() => part.quickInput.hide()) });
 					return new TextQuickPickProvider(projects);
 				}, project => {
 					if (sources.currentBlua32Media.cartridgeSlots[project.domain] !== project.image) return;

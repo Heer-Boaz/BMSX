@@ -31,10 +31,10 @@ export function openDefinitionSearch(pane: CodeEditorPane, row: number, column: 
 		return true;
 	}
 	pane.code.references.clear();
-	pane.editor.quickInput.pick(`DEFINITIONS: ${query.label}`, 'Type to filter definitions', (_origin, lifetime) => {
-		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, pane.sources.catalog, resource.contextId, () => pane.editor.quickInput.hide()));
+	pane.part.quickInput.pick(`DEFINITIONS: ${query.label}`, 'Type to filter definitions', (_origin, lifetime) => {
+		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, pane.sources.catalog, resource.contextId, () => pane.part.quickInput.hide()));
 		return new TextQuickPickProvider(buildDefinitionQuickPickItems(query.definitions));
 	}, item => navigateToLuaDefinition(pane, item.target.resource, item.target.location),
-		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.editor.quickInput.hide()) }));
+		lifetime => lifetime.add({ dispose: input.onWillDispose(() => pane.part.quickInput.hide()) }));
 	return true;
 }

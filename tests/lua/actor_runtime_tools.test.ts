@@ -103,7 +103,7 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraMod
 
 for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} stops at rejected focused draft admission`, t => {
 	configureFontVariant('tiny');
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const f = fixture(ENTRY, true, WORLD_SOURCE, [], quickInput);
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'draft.lua', contextId: TEST_SYSTEM_CONTEXT_ID, path: 'draft.lua', location: { kind: 'workspace', path: 'draft.lua' },
 		source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
@@ -361,7 +361,7 @@ test('navigation retains the independent Details lock and subject, but never res
 });
 
 test('the actual floating pane retains locked pins while collapsed or detached without formatting the hidden client', t => {
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => { quickInput.dispose(); contextMenu.hide(); });
 	const f = fixture(ENTRY.replace('return world', `function remove_subject() world._objects = { world._objects[2] } end
 function replace_subject() world._objects[2] = { id = 1, definition_id = 'same', active = false, _components = {}, _components_by_class = {} } end
@@ -395,7 +395,7 @@ return world`), true, WORLD_SOURCE, [], quickInput);
 	assert.strictEqual(input.interaction.transport, controller.viewport.transport);
 	assert.equal(input.interaction.running, false);
 	const contentFocus = inputFocus.target;
-	const transport = new RuntimeTimelineControl(commands, () => pane.focus());
+	const transport = new RuntimeTimelineControl(commands, () => pane.focus(), pane.commandTarget, bounds);
 	t.after(() => transport.dispose());
 	transport.attach(surfaces, owner, bounds, contextMenu);
 	transport.setContext(pane.commandTarget.scope.runtimeOwner!.runtime); transport.update();

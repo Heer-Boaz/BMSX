@@ -1,4 +1,4 @@
-import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
+import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import * as constants from '../../../common/constants';
 import { writeWrappedMeasuredText } from '../../../common/text';
@@ -34,13 +34,30 @@ export class ActionPromptView {
 	private width = -1;
 	private height = -1;
 	private lineHeight = -1;
+	private left = 0;
+	private top = 0;
+	public constructor(private readonly area: Readonly<RectBounds>) {}
 
 	public update(request: ActionPromptRequest): void {
-		const { viewportWidth, viewportHeight, font, lineHeight } = editorViewState;
+		const { font, lineHeight } = editorViewState;
+		const viewportWidth = this.area.right - this.area.left, viewportHeight = this.area.bottom - this.area.top;
 		const renderFont = font.renderFont();
 		if (request === this.request && viewportWidth === this.width && viewportHeight === this.height
-			&& renderFont === this.font && lineHeight === this.lineHeight) return;
+			&& renderFont === this.font && lineHeight === this.lineHeight) {
+			const dx = this.area.left - this.left, dy = this.area.top - this.top;
+			if (dx !== 0 || dy !== 0) {
+				const bounds = this.bounds;
+				write_rect_bounds(bounds, bounds.left + dx, bounds.top + dy, bounds.right + dx, bounds.bottom + dy);
+				for (const button of this.buttons) {
+					const bounds = button.bounds;
+					write_rect_bounds(bounds, bounds.left + dx, bounds.top + dy, bounds.right + dx, bounds.bottom + dy);
+				}
+				this.left = this.area.left; this.top = this.area.top;
+			}
+			return;
+		}
 		this.request = request; this.width = viewportWidth; this.height = viewportHeight; this.font = renderFont; this.lineHeight = lineHeight;
+		this.left = this.area.left; this.top = this.area.top;
 		this.buttons[0].label = request.primary; this.buttons[0].enabled = request.primaryEnabled;
 		this.buttons[1].label = request.secondary; this.buttons[2].label = 'CANCEL';
 		const spacing = constants.HEADER_BUTTON_SPACING;
@@ -72,7 +89,7 @@ export class ActionPromptView {
 			textRows - this.titleLines.length, measureTextRange);
 		const textHeight = (lineHeight + 2) * (this.titleLines.length + this.messageLines.length);
 		const height = PADDING * 2 + textHeight + 6 + buttonsHeight;
-		writeCenteredDialogBounds(this.bounds, contentWidth + PADDING * 2, height, 4);
+		writeCenteredDialogBounds(this.bounds, this.area, contentWidth + PADDING * 2, height, 4);
 		let x = this.bounds.left + PADDING, y = this.bounds.top + PADDING + textHeight + 6;
 		for (const button of this.buttons) {
 			const width = button.bounds.right, buttonHeight = stacked ? button.bounds.bottom : buttonsHeight;
@@ -82,9 +99,9 @@ export class ActionPromptView {
 	}
 
 	public draw(focused: number, pressed: number, hovered: number): void {
-		const { font, lineHeight, viewportWidth, viewportHeight } = editorViewState;
+		const { font, lineHeight } = editorViewState;
 		const bounds = this.bounds;
-		api.fill_rect(0, 0, viewportWidth, viewportHeight, 0, constants.ACTION_OVERLAY_COLOR);
+		api.fill_rect(this.area.left, this.area.top, this.area.right, this.area.bottom, 0, constants.ACTION_OVERLAY_COLOR);
 		drawWorkbenchSurfaceShadow(bounds);
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.ACTION_DIALOG_BACKGROUND_COLOR);
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);

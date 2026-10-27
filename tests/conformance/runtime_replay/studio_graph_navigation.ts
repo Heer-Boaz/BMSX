@@ -4,7 +4,7 @@ import { inputFocus } from '../../../ide/input/focus';
 
 /** Same physical navigation on BT and FSM, in the actual Studio host/focus/input composition. */
 export async function testStudioGraphNavigation(test: StudioFixture): Promise<void> {
-	const lens = test.ide.editor.editorGroup.model.activeTab;
+	const lens = test.ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || (lens.view.presentation.kind !== 'graph' && lens.view.presentation.kind !== 'state-graph')) throw new Error('navigation probe requires a real behavior diagram');
 	const view = lens.view.presentation.viewport;
 	const sourceSelection = lens.view.selection;

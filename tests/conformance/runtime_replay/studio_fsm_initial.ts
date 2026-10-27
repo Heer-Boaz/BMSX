@@ -24,13 +24,13 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 		harness.openLuaSource(record.source_path);
 	}
 	const source = imported ? FSM_INITIAL_MODULE_SOURCE : FSM_INITIAL_SOURCE;
-	const code = ide.editor.editorGroup.model.activeTab;
+	const code = ide.editor.editorParts.activeGroup.model.activeTab;
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.other');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('initial: FSM graph required');
 	await lens.graphLayout.settled; await frame();
 	const graph = lens.view.presentation;
@@ -56,7 +56,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 		'initial: real worker reroutes the entry to the new state');
 	console.info('STUDIO: FSM initial edit ready for visual inspection');
 	await click(graph.actionBar.items[0].bounds, 6);
-	check(ide.editor.editorGroup.model.activeTab === code && model.buffer.getText() === changed && !hasSelection(sourcePane(test).code), 'initial: held Source action is navigation only');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.buffer.getText() === changed && !hasSelection(sourcePane(test).code), 'initial: held Source action is navigation only');
 	check(inputFocus.getCommand('behaviorLens.setInitialState') === undefined, 'initial: code focus has no graph-authoring command');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'initial: code Undo restores the token while the graph is hidden');

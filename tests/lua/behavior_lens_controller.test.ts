@@ -44,11 +44,11 @@ function fixture(t: TestContext, source = SOURCE) {
 		createScenarioTestSourceRecord('cartlib/behaviour_tree/library.lua', 1, ''),
 		createScenarioTestSourceRecord('cartlib/actioneffects.lua', 1, ''),
 	]);
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const surfaces = new WorkbenchSurfaceService();
 	const navigation = new EditorNavigationController(sources.catalog, null!, null!);
 	const documents = new BehaviorSourceDocuments(editorTextModelService, sources.catalog);
-	const controller = new BehaviorLensController(sources, navigation, picker, documents,
+	const controller = new BehaviorLensController(sources, navigation, documents,
 		() => assert.fail('Behavior-tree views do not create an FSM layout worker'), null!, null!, null!);
 	const unused = (): never => assert.fail('This owner regression only opens Behavior Lens views');
 	const createGroup = () => {
@@ -60,7 +60,7 @@ function fixture(t: TestContext, source = SOURCE) {
 			game_view: unused, cart_map: unused, scene_editor: unused, scenario_lab: unused,
 			behavior_lens: owner => {
 
-				return new BehaviorLensEditorPane(controller, null!, menu, surfaces, owner.paneSurface, owner.workArea, owner, owner.focusScope);
+				return new BehaviorLensEditorPane(controller, null!, menu, surfaces, owner.paneSurface, owner.workArea, owner, owner.focusScope, picker);
 			},
 		}, { isEnabled: () => false, execute() {} }, unused, createTestGroupPresentation(surfaces, BOUNDS));
 		group.panes.layout(BOUNDS);
@@ -157,7 +157,7 @@ for (const command of ['behaviorLens.removeChild', 'behaviorLens.inspectRuntimeT
 
 test('the shared Behavior picker retains its requested group when focus returns elsewhere at acceptance', t => {
 	const f = fixture(t), sibling = f.controller.openDefinition(f.second, f.registration);
-	f.controller.open(f.first, 'behavior_tree');
+	f.controller.open(f.first, f.picker, 'behavior_tree');
 	assert.equal(f.picker.visible, true);
 	t.after(f.picker.field.focusTarget.onDidBlur(() => f.second.panes.activePane!.focus()));
 	f.picker.accept();
@@ -172,7 +172,7 @@ test('Behavior picker destination retirement does not couple unrelated sibling g
 	f.controller.openDefinition(f.first, f.registration);
 	f.controller.openDefinition(f.second, f.registration);
 	f.first.panes.activePane!.focus();
-	f.controller.open(f.first, 'behavior_tree');
+	f.controller.open(f.first, f.picker, 'behavior_tree');
 	f.second.dispose();
 	assert.equal(f.picker.visible, true, 'a sibling group cannot revoke this picker');
 	f.first.dispose();
@@ -183,7 +183,7 @@ test('Behavior picker destination retirement does not couple unrelated sibling g
 test('Behavior picker also retires with its invoking group when that differs from the destination', t => {
 	const f = fixture(t);
 	f.controller.openDefinition(f.second, f.registration);
-	f.controller.open(f.first, 'behavior_tree');
+	f.controller.open(f.first, f.picker, 'behavior_tree');
 	assert.equal(f.picker.visible, true);
 	f.second.dispose();
 	assert.equal(f.picker.visible, false, 'destination admission does not replace the invoking attachment lifetime');
@@ -195,7 +195,7 @@ test('Behavior destination retirement during invoking-control blur cancels befor
 	f.controller.openDefinition(f.first, f.registration);
 	const origin = inputFocus.target!;
 	t.after(origin.onDidBlur(next => { if (next === f.picker.field.focusTarget) f.first.dispose(); }));
-	f.controller.open(f.first, 'behavior_tree');
+	f.controller.open(f.first, f.picker, 'behavior_tree');
 	assert.equal(f.picker.visible, false);
 	assert.equal(f.first.model.tabs.length, 0);
 });

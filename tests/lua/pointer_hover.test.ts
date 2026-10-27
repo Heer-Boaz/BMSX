@@ -3,6 +3,7 @@ import test from 'node:test';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { InputFocusService } from '../../ide/input/focus';
+import { KeyModifier } from '../../hosts/common/input/text';
 
 test('hover enters once, retains an actual nested route and leaves unvisited targets once', () => {
 	const hover = new PointerHoverService(), calls: string[] = [];
@@ -53,4 +54,22 @@ test('popup/capture early routes revoke hover, never focus or capture', () => {
 	hover.beginDispatch(); hover.visit(target); hover.endDispatch(); hover.release(target);
 	assert.equal(leaves, 2); assert.equal(focus.target, field); assert.equal(capture.active, true);
 	assert.equal(Object.hasOwn(target, 'onPointerEnter'), false, 'leave-only controls need no no-op enter implementation');
+});
+
+test('presentation changes retain only the same physically routed hover path', () => {
+	const hover = new PointerHoverService(), owner = Symbol('owner'), sibling = Symbol('sibling');
+	const modifiers: KeyModifier[] = [];
+	let leaves = 0;
+	const target = { onPointerModifiersChanged(value: KeyModifier) { modifiers.push(value); }, onPointerLeave() { leaves += 1; } };
+	hover.beginDispatch(owner); hover.visit(target); hover.endDispatch();
+	hover.reconcileRoute(owner); hover.dispatchModifiers(KeyModifier.ctrl);
+	assert.equal(hover.has(target), true); assert.deepEqual(modifiers, [KeyModifier.ctrl]); assert.equal(leaves, 0);
+	hover.reconcileRoute(sibling); hover.dispatchModifiers(KeyModifier.alt);
+	assert.equal(hover.has(target), false); assert.deepEqual(modifiers, [KeyModifier.ctrl]); assert.equal(leaves, 1);
+	hover.reconcileRoute(owner);
+	assert.equal(hover.has(target), false, 'restored geometry does not replay a pointer occurrence');
+	hover.beginDispatch(owner); hover.visit(target); hover.endDispatch(); hover.reconcileRoute(undefined);
+	assert.equal(leaves, 2);
+	hover.beginDispatch(); hover.visit(target); hover.endDispatch(); hover.reconcileRoute(owner);
+	assert.equal(leaves, 3, 'direct control input carries no structural route authority');
 });

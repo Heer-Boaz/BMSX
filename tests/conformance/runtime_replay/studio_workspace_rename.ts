@@ -7,13 +7,13 @@ export async function testStudioWorkspaceRename(test: StudioFixture): Promise<vo
 	console.info('STUDIO: multi-resource Rename and shared Undo/Redo');
 	harness.openLuaSource('cart.lua');
 	const main = harness.getActiveEditorDocument().model;
-	const mainTab = ide.editor.editorGroup.model.activeTab;
+	const mainTab = ide.editor.editorParts.activeGroup.model.activeTab;
 	const originalMain = main.buffer.getText();
 	const providerSource = ide.sources.catalog.getContext(main.resource.contextId).luaSources.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
 	harness.openLuaSource(providerSource.source_path);
 	const provider = harness.getActiveEditorDocument().model;
-	const providerTab = ide.editor.editorGroup.model.activeTab;
+	const providerTab = ide.editor.editorParts.activeGroup.model.activeTab;
 	const originalProvider = provider.buffer.getText();
 	const mainText = 'return fixture_rename, fixture_rename';
 	const providerText = 'fixture_rename = { value = 1 }\nreturn fixture_rename';

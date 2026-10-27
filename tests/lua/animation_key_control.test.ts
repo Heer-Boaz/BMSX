@@ -28,7 +28,7 @@ test('a key beneath a coincident tangent endpoint owns the pointer gesture', t =
 	input.trackIndex = 0;
 	input.keys.bind(input.document.tracks[0], 0, input.document);
 	const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
-	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
+	const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!);
 	const control = new AnimationKeyControl(parent, { selectKey(input, index) { input.keyIndex = index; input.keys.select(index); } }, authoring);
 	control.setInput(input); control.layout(0, 0, 106, 20); input.keys.curve.layout(0, 30, 106, 142); input.keys.curve.update(input.keys);
 	t.after(() => { control.dispose(); input.dispose(); model.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
@@ -156,7 +156,7 @@ test('tangent direction uses both pointer axes and commits one native slope with
 		const keyIndex = field === 'leave' ? 0 : 1;
 		input.keys.bind(input.document.tracks[0], keyIndex, input.document);
 		const parent = inputFocus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
-		const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!, undefined!);
+		const authoring = new AnimationAuthoring({ modelFor: () => model, refresh() {}, selectKey() {}, selectTrack() {}, selectProperty() {} }, undefined!);
 		const control = new AnimationKeyControl(parent, { selectKey(input, index) { input.keyIndex = index; input.keys.select(index); } }, authoring);
 		control.setInput(input); control.layout(0, 0, 806, 20);
 		input.keys.curve.layout(0, 30, 806, 230); input.keys.curve.update(input.keys);

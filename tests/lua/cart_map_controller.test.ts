@@ -1,3 +1,4 @@
+import { editorViewState } from '../../ide/editor/ui/view/state';
 import { beforeEach } from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
@@ -19,10 +20,10 @@ beforeEach(() => configureFontVariant('tiny'));
 
 test('a map picker retains only its explicit destination group lifetime', t => {
 	const sources = createScenarioTestSourceState([]), destination = createTestEditorGroup(), sibling = createTestEditorGroup();
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
-	const controller = new CartMapController(sources.catalog, picker);
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const controller = new CartMapController(sources.catalog);
 	t.after(() => { picker.dispose(); menu.dispose(); destination.dispose(); sibling.dispose(); inputFocus.setTarget(null); });
-	controller.open(destination);
+	controller.open(destination, picker);
 	assert.equal(picker.visible, true);
 	sibling.dispose();
 	assert.equal(picker.visible, true, 'retiring another group does not revoke this opening');
@@ -34,8 +35,8 @@ test('a map choice cannot reopen its destination when chrome return focus retire
 	const sources = createScenarioTestSourceState([]), destination = createTestEditorGroup();
 	sources.catalog.registerTextSources(TEST_CARTRIDGE_CONTEXT_IDS[0], [{ type: 'data', resid: 'stage',
 		source_path: 'res/data/nemesis_s_stage.yaml', sourcemeta: { text: 'map_rows: ["m "]\n' } }]);
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
-	const controller = new CartMapController(sources.catalog, picker), chrome = inputFocus.createTarget();
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const controller = new CartMapController(sources.catalog), chrome = inputFocus.createTarget();
 	const unbindKeyboard = chrome.bindKeyboard(() => {});
 	const open = t.mock.method(controller, 'openResource');
 	t.after(() => {
@@ -43,7 +44,7 @@ test('a map choice cannot reopen its destination when chrome return focus retire
 		editorTextModelService.clear(); inputFocus.setTarget(null);
 	});
 	chrome.focus();
-	controller.open(destination);
+	controller.open(destination, picker);
 	assert.equal(picker.invocationOrigin, chrome);
 	assert.equal(picker.model.items.length, 1);
 	picker.model.list.selectionIndex = 0;
@@ -67,7 +68,7 @@ test('one map controller admits concurrent Source views into their explicit dest
 	const left = new CartMapInput(model, 'nemesis'), right = new CartMapInput(model, 'nemesis');
 	first.openEditor(left); second.openEditor(right);
 	t.after(() => { first.dispose(); second.dispose(); editorTextModelService.clear(); });
-	const controller = new CartMapController(sources.catalog, undefined!);
+	const controller = new CartMapController(sources.catalog);
 	controller.openSource(first, left);
 	controller.openSource(second, right);
 	await new Promise<void>(resolve => setImmediate(resolve));
@@ -96,7 +97,7 @@ for (const existing of [false, true]) test(`superseded map source opening dispos
 	const disposed: CodeEditorInput[] = [];
 	const dispose = CodeEditorInput.prototype.dispose;
 	t.mock.method(CodeEditorInput.prototype, 'dispose', function (this: CodeEditorInput) { disposed.push(this); dispose.call(this); });
-	const controller = new CartMapController(sources.catalog, null!);
+	const controller = new CartMapController(sources.catalog);
 	controller.openSource(group, input);
 	group.panes.beginOpen();
 	await new Promise<void>(resolve => setImmediate(resolve));

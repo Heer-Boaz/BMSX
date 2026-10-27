@@ -32,7 +32,7 @@ export class RomMapKeyWindow {
 		this.total = formatByteSize(input.snapshot.rom.byteLength);
 		input.keyWindow.title = `Map key: ${input.snapshot.label}`;
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, {
-			model: input.keyWindow, actionBar: input.keyActions, lifetimeOwner: owner, focusReturn, workArea,
+			model: input.keyWindow, actionBar: input.keyActions, lifetimeOwner: owner, focusScope: focusReturn.scope, focusReturn, workArea,
 			content: {
 				draw: () => this.draw(),
 				handlePointer: snapshot => { this.scroll.handlePointer(snapshot); },

@@ -43,5 +43,5 @@ export function showCommandPalette(picker: QuickInputController, commands: Pick<
 			return;
 		}
 		commands.execute(item.command, item.target);
-	}, undefined, invocationOrigin);
+	}, undefined, { invocationOrigin });
 }

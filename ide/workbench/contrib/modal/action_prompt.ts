@@ -6,6 +6,7 @@ import { consumeIdeKey, isKeyDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import { ActionPromptView, type ActionPromptRequest, type ActionPromptChoice } from './action_prompt_view';
+import type { WorkbenchModalPresentation } from '../../services/windows/model';
 
 const TRIGGER_KEYS = ['Enter', 'NumpadEnter', 'Space'] as const;
 const NAVIGATION_KEYS = ['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'] as const;
@@ -14,42 +15,60 @@ const NAVIGATION_KEYS = ['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown
 export class ActionPrompt implements PointerCaptureTarget {
 	public readonly focusTarget: InputFocusTarget;
 	public readonly pointerScope = Symbol('action-prompt');
-	public readonly view = new ActionPromptView();
+	public readonly view: ActionPromptView;
 	private request: ActionPromptRequest | undefined;
 	private resolve: ((choice: ActionPromptChoice) => void) | undefined;
 	private returnFocus: InputFocusTarget | null = null;
 	private unbindOrigin: (() => void) | undefined;
+	private unbindPresentation: (() => void) | undefined;
 	private focused = 0;
 	private hovered = -1;
 	private pointerButton = -1;
 	private triggerKey: string | undefined;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
+	private readonly presentForFocus = (): void => {
+		const request = this.request!;
+		if (this.presentation.kind === 'part') this.presentation.reveal();
+		if (this.request !== request) return;
+		this.view.update(request);
+		this.onDidChangeVisibility();
+	};
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly onDidChangeVisibility: () => void = () => {},
-		private readonly acceptsFocusTransfer: (next: InputFocusTarget | null) => boolean = () => false) {
-		this.focusTarget = focus.createTarget(null, new InputFocusScope(this.pointerScope));
+		private readonly acceptsFocusTransfer: (next: InputFocusTarget | null) => boolean = () => false,
+		public readonly presentation: WorkbenchModalPresentation) {
+		this.view = new ActionPromptView(presentation.bounds);
+		this.focusTarget = focus.createTarget(null, new InputFocusScope(this.pointerScope, presentation.scope));
 		this.focusTarget.canFocus = () => this.visible;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());
-		this.unbindBlur = this.focusTarget.onDidBlur(next => { if (!this.acceptsFocusTransfer(next)) this.close(); });
+		this.unbindBlur = this.focusTarget.onDidBlur(next => {
+			this.cancelPointer();
+			if (presentation.kind === 'workspace' && !this.acceptsFocusTransfer(next)) this.close();
+		});
 	}
 
 	public get visible(): boolean { return this.request !== undefined; }
 	public get invocationOrigin(): InputFocusTarget | null { return this.returnFocus; }
 
-	public show(request: ActionPromptRequest): Promise<ActionPromptChoice> {
+	public show(request: ActionPromptRequest, invocationOrigin?: InputFocusTarget | null): Promise<ActionPromptChoice> {
+		const focusedScope = this.focus.target?.scope.interactionOrigin ?? this.focus.target?.scope;
+		const takeFocus = this.presentation.kind === 'workspace' || focusedScope !== undefined && this.presentation.scope.contains(focusedScope);
 		this.close();
-		this.capture.cancel();
-		this.returnFocus = this.focus.target;
-		this.focusTarget.scope.interactionOrigin = this.returnFocus?.scope;
+		if (this.presentation.kind === 'workspace') this.capture.cancel();
+		let origin = invocationOrigin === undefined ? this.focus.target : invocationOrigin;
+		if (invocationOrigin === undefined && this.presentation.kind === 'part' && origin !== null && !this.presentation.scope.contains(origin.scope)) origin = null;
+		this.returnFocus = origin;
+		this.focusTarget.scope.interactionOrigin = origin === null ? this.presentation.scope : origin.scope;
 		this.request = request;
-		this.unbindOrigin = this.returnFocus?.commandContext.scope.onDidRetireContext(() => this.close('cancel', false));
+		const originScope = origin === null ? this.presentation.scope : origin.commandContext.scope;
+		this.unbindOrigin = originScope.onDidRetireContext(() => this.close('cancel', false));
+		if (!this.presentation.scope.contains(originScope)) this.unbindPresentation = this.presentation.scope.onDidRetireContext(() => this.close('cancel', false));
 		this.focused = this.view.buttons.findIndex(button => button.choice === request.defaultChoice);
-		this.view.update(request);
 		const result = new Promise<ActionPromptChoice>(resolve => { this.resolve = resolve; });
-		this.focusTarget.focus();
-		this.onDidChangeVisibility();
+		if (takeFocus) this.focus.setTarget(this.focusTarget, this.presentForFocus);
+		else { this.view.update(request); this.onDidChangeVisibility(); }
 		return result;
 	}
 
@@ -65,9 +84,11 @@ export class ActionPrompt implements PointerCaptureTarget {
 		this.request = undefined; this.resolve = undefined; this.returnFocus = null;
 		this.focusTarget.scope.interactionOrigin = undefined;
 		this.unbindOrigin?.(); this.unbindOrigin = undefined;
+		this.unbindPresentation?.(); this.unbindPresentation = undefined;
 		this.cancelPointer();
-		if (this.focusTarget.hasFocus || this.acceptsFocusTransfer(this.focus.target)) this.focus.setTarget(restoreFocus ? returnFocus : null);
 		this.onDidChangeVisibility();
+		if (this.request === undefined && (this.focusTarget.hasFocus || this.acceptsFocusTransfer(this.focus.target)))
+			this.focus.setTarget(restoreFocus ? returnFocus : null);
 		resolve(choice);
 	}
 
@@ -77,6 +98,9 @@ export class ActionPrompt implements PointerCaptureTarget {
 		const index = this.hitTest(snapshot);
 		this.hovered = index;
 		if (index < 0 || (snapshot.justPressedButtons & PointerButton.Primary) === 0) return;
+		const request = this.request;
+		this.focusTarget.focus();
+		if (this.request !== request) return;
 		this.cancelPointer();
 		this.capture.capture(this, PointerButton.Primary, this.pointerScope);
 		this.focused = this.pointerButton = this.hovered = index;

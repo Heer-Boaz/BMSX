@@ -16,16 +16,16 @@ const MESSAGE = `expected:\n\n${Array.from({ length: 65 }, (_, n) => `line_${n}:
 /** Independent result/source data through the actual Lab, inspector and Quick Input routes. */
 export async function testStudioScenarioOutput(test: StudioFixture): Promise<void> {
 	const { ide, press, click, frame, runPaletteCommand, cycles } = test;
-	const origin = ide.editor.editorGroup.model.activeTab;
+	const origin = ide.editor.editorParts.activeGroup.model.activeTab;
 	// Open the canonical cartridge resource independently of test-target lifetime.
 	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' });
 	check(resource !== undefined, 'A05: test cancellation retains the cartridge source');
-	await ide.editor.navigation.openResource(ide.editor.editorGroup, resource!);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), resource!);
 	const model = sourcePane(test).code.model, original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: EFFECTS }]);
 	const version = model.version, dirty = model.dirty, position = cycles();
 	await runPaletteCommand('Scenario Lab: Open');
-	const lab = ide.editor.editorGroup.model.activeTab;
+	const lab = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lab.kind !== 'scenario_lab') throw new Error('A05: actual Lab input required');
 	const view = lab.view, service = view.resultService;
 	const testRow = view.testPane.rows.find(row => row.kind === 'test')!;
@@ -41,7 +41,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	service.fail(result, 53, { message: MESSAGE }, null);
 	service.completeRun(run);
 	await frame(); await press('Tab');
-	const pane = ide.editor.editorGroup.panes.activePane as ScenarioLabEditorPane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane as ScenarioLabEditorPane;
 	const inspector = pane.inspector;
 	const select = async (matches: (row: ScenarioLabResultRow) => boolean) => {
 		const index = view.resultPane.rows.findIndex(matches);
@@ -53,7 +53,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	await select(row => row.kind === 'log' && row.log.text === MESSAGE);
 	const selectedId = view.resultPane.rows[view.resultPane.selectionIndex].id;
 	await press('Enter');
-	check(ide.editor.editorGroup.model.activeTab === lab, 'A05: activating output inspects the message, not an invented test-file source');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lab, 'A05: activating output inspects the message, not an invented test-file source');
 	check(inspector.visible && inspector.model.rows[0].element.value === MESSAGE, 'A05: original multiline output is available');
 	check(!inspector.isEnabled('propertyInspector.source'), 'A05: host output has no fabricated source');
 	const measured = inspector.model.rows[0];
@@ -88,10 +88,10 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	await press('Enter');
 	check(inspector.isEnabled('propertyInspector.source'), 'A05: real diagnostic source is enabled');
 	await click(inspector.actionBar.items.find(item => item.command === 'propertyInspector.source')!.bounds);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === 3,
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model && sourcePane(test).code.view.cursorRow === 3,
 		'A05: Source uses the message location, not its test context');
 	await runPaletteCommand('Go: Back');
-	check(ide.editor.editorGroup.model.activeTab === lab && view.resultPane.rows[view.resultPane.selectionIndex].kind === 'log', 'A05: navigation Back restores retained result selection');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lab && view.resultPane.rows[view.resultPane.selectionIndex].kind === 'log', 'A05: navigation Back restores retained result selection');
 	await select(row => row.kind === 'log' && row.log.text === MESSAGE);
 	await press('Enter');
 	for (let n = 0; n < SCENARIO_RESULT_LOG_RETAIN_COUNT; n += 1) service.appendLog(result, 60 + n, `replacement ${n}`);
@@ -103,7 +103,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	check(!ide.editor.isActive && !inspector.visible, 'A05: leaving the IDE disposes message inspection');
 	await press('ControlRight', 'ShiftRight');
 	await testScenarioEffectSourceChoice(test, lab.view, result, model);
-	await ide.editor.navigation.openResource(ide.editor.editorGroup, model.resource);
+	await ide.editor.navigation.openResource(ide.editor.editorParts.documentDestination(ide.editor.editorParts.activeGroup), model.resource);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'A05: inspection and source choice add no edit/Undo operation');
 	await test.clickTab(origin.id);

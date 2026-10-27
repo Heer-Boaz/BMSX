@@ -45,7 +45,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx') {
 	origin.bindKeyboard(() => {}); origin.focus();
 	const owner = surfaces.attach({ role: 'content', captureScope: origin.scope.surfaceScope, isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw() {} });
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	let formats = 0;
 	const createDetails = () => {
 		const window = new GpuDetailsWindow(input, {

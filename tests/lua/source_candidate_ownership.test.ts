@@ -30,7 +30,7 @@ test('a superseded audio Source opening retires only its fresh candidate, not re
 	t.mock.method(CodeEditorInput.prototype, 'dispose', function (this: CodeEditorInput): void {
 		discarded.push(this); dispose.call(this);
 	});
-	new AemEditorController(sources, null!, null!, null!, null!).openSource(group, audio);
+	new AemEditorController(sources, null!, null!, null!).openSource(group, audio);
 	group.panes.beginOpen();
 	await new Promise<void>(resolve => setImmediate(resolve));
 	assert.equal(discarded.length, 1);

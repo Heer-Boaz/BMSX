@@ -36,7 +36,7 @@ export async function runAssistantDebugger(kind: StudioRendererKind, canvas: HTM
 	await until(() => ide.debuggerExecution.active !== undefined, 'debugger tools: conversation owns ongoing Continue');
 	const operation = ide.debuggerExecution.active!;
 	await until(() => cycles() > completedAt + runtime.timing.cpuHz / 60, 'debugger tools: Continue actually runs game behind chat');
-	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
+	const view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
 	await renderer.capture!('stop-dispatched');
 	check(operation.outcome?.reason === 'cancelled' || operation.result?.reason === 'cancelled',

@@ -46,7 +46,7 @@ function createPicker(t: TestContext, onDidChangeVisibility?: () => void): Quick
 	editorViewState.viewportWidth = 384;
 	editorViewState.viewportHeight = 288;
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const picker = new QuickInputController(menu, onDidChangeVisibility);
+	const picker = new QuickInputController(menu, onDidChangeVisibility, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
@@ -374,7 +374,7 @@ for (const phase of ['show', 'hide'] as const) test(`a visibility callback can r
 for (const kind of ['pick', 'input'] as const) test(`a ${kind} replacing a context menu retains its actual return client, not its action subject`, t => {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu);
+	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	const invoker = inputFocus.createTarget(), subject = inputFocus.createTarget(), client = inputFocus.createTarget();
 	invoker.focus();
@@ -713,6 +713,7 @@ test('picker uses the actual tiny font and draws only a bounded span of an unbou
 	assert.ok(view.start > 0);
 	assert.ok(view.advances[view.end] - view.offset <= picker.layout.field.right - picker.layout.field.left - 6);
 	editorViewState.viewportWidth = 256;
+	Object.assign(picker.presentation.bounds, { right: 256 });
 	picker.update();
 	assert.equal(picker.layout.bounds.right, 248);
 	assert.ok(view.advances[picker.field.text.length] + view.caretWidth - view.offset <= 226);

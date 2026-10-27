@@ -1,3 +1,4 @@
+import type { QuickInputController } from '../../services/quick_input/controller';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurface } from '../../services/windows/model';
@@ -51,7 +52,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 	private readonly edit: WorkbenchPropertyEdit<EditorTextEdit>;
 	private readonly actionTooltip = new WorkbenchTooltip();
 	public constructor(private readonly controller: AemEditorController, private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.tree.layout.visibleRowCount > 0;
 		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
@@ -69,10 +70,10 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		this.actions.focusTarget.next = this.focusTarget; this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('aem.edit', { isEnabled: () => !this.input.workingCopy.readOnly && this.input.tree.rows[this.input.tree.selectionIndex]?.element.inlineEditable === true,
 			run: () => this.editProperty() });
-		this.focusTarget.registerCommand('aem.add', { isEnabled: () => this.controller.canAdd(this.input), run: () => this.controller.add(this.input) });
+		this.focusTarget.registerCommand('aem.add', { isEnabled: () => this.controller.canAdd(this.input), run: () => this.controller.add(this.input, this.quickInput) });
 		this.focusTarget.registerCommand('aem.remove', { isEnabled: () => !this.input.workingCopy.readOnly && this.input.tree.rows[this.input.tree.selectionIndex]?.element.parent !== undefined,
 			run: () => this.controller.remove(this.input) });
-		this.focusTarget.registerCommand('aem.apply', { isEnabled: () => !this.input.applying, run: () => this.controller.apply(this.input) });
+		this.focusTarget.registerCommand('aem.apply', { isEnabled: () => !this.input.applying, run: () => this.controller.apply(this.input, this.quickInput) });
 		this.focusTarget.registerCommand('aem.source', { isEnabled: () => true, run: () => this.controller.openSource(group, this.input) });
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => true, run: () => {
 			const tree = this.input.tree;

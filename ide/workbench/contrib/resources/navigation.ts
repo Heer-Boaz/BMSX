@@ -24,8 +24,8 @@ export class EditorNavigationController {
 	}
 
 	/** The attached generation, or undefined when another opening superseded this request. */
-	public async openResource(group: EditorGroupView, resource: RuntimeResource, selection?: EditorTextSelection): Promise<number | undefined> {
-		const result = await group.openResolvedEditor(this.editorResolver.resolveEditorInput(resource), { selection });
+	public async openResource(group: EditorGroupView, resource: RuntimeResource, selection?: EditorTextSelection, preserveFocus = false): Promise<number | undefined> {
+		const result = await group.openResolvedEditor(this.editorResolver.resolveEditorInput(resource), { selection, preserveFocus });
 		if (result === undefined) return undefined;
 		if (!result.activated) return result.generation;
 		this.resourcePanel.queuePendingSelection(resource);

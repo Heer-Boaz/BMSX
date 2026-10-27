@@ -17,9 +17,9 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.second');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'properties') throw new Error('Effect editing requires its property input.');
-	const pane = ide.editor.editorGroup.panes.activePane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof BehaviorLensEditorPane)) throw new Error('Effect editing requires its contribution pane.');
 	const editor = pane.propertyEdit, view = lens.view, properties = lens.view.presentation;
 	const select = async (name: string) => {
@@ -109,7 +109,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	await press('ControlLeft', 'KeyZ');
 	const handler = await select('handler');
 	await runPaletteCommand('Behavior Lens: Edit Authored Property');
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model
 		&& sourcePane(test).code.view.cursorRow === handler.source.occurrenceRange.start.line - 1 && !editor.active,
 		'effect: multiline code uses the full source editor, not a flattened cell');
 	await press('AltLeft', 'ArrowLeft');

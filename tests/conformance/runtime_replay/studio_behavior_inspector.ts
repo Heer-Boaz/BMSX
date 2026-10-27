@@ -24,7 +24,7 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.inspection');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('inspection: actual BT graph required');
 	const graph = lens.view.presentation, viewport = graph.viewport;
 	await press('Home'); await press('ArrowDown');
@@ -35,12 +35,12 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	const version = model.version, dirty = model.dirty, geometry = viewport.model, x = viewport.scrollX, y = viewport.scrollY;
 	const sourceSelection = lens.view.selection;
 	ide.editor.commands.execute('behaviorLens.details');
-	const pane = ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane;
 	pane.update();
 	const inspector = pane.inspector;
 	check(inspector.model.rowAt(inspector.model.viewport.bounds.top + 1) === 0,
 		'inspection: the pane prepares readable hit targets before its first paint');
-	check(inspector.visible && !ide.editor.quickInput.visible, 'inspection: full property reader replaces the canvas, not its model or source');
+	check(inspector.visible && !ide.editor.editorParts.activePart.quickInput.visible, 'inspection: full property reader replaces the canvas, not its model or source');
 	const targetIndex = inspector.model.rows.findIndex(row => row.element.label.endsWith('ON_FINISHED'));
 	check(targetIndex >= 0, 'inspection: unknown extension field remains inspectable');
 	for (let n = 0; n < targetIndex; n += 1) await press('ArrowDown');
@@ -61,10 +61,10 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	for (let n = 0; n < targetIndex; n += 1) await press('ArrowDown');
 	await click(inspector.actionBar.items[0].bounds, 30);
-	check(ide.editor.editorGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === property.element.source!.range.start.line - 1
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.view.cursorRow === property.element.source!.range.start.line - 1
 		&& model.version === version && cycles() === position, 'inspection: held Source opens the property, never inserts text or runs the guest');
 	await press('AltLeft', 'ArrowLeft');
-	check(ide.editor.editorGroup.model.activeTab === lens && viewport.model === geometry, 'inspection: ordinary navigation Back restores the retained diagram');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && viewport.model === geometry, 'inspection: ordinary navigation Back restores the retained diagram');
 	if (!hadProblems) await runPaletteCommand('View: Problems Panel');
 	model.undo(); await frame();
 	check(model.buffer.getText() === original, 'inspection: one ordinary Undo removes only the independent fixture');

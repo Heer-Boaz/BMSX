@@ -47,9 +47,9 @@ export async function runStudioEventNavigation(test: StudioFixture) {
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined, 'events: physical baseline settles');
 	await runPaletteCommand('View: Event Viewer'); await frame();
-	const view = ide.editor.editorGroup.model.activeTab;
+	const view = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (view.kind !== 'event_viewer') throw new Error('Event Viewer required');
-	const pane = ide.editor.editorGroup.panes.activePane as EventViewerPane;
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane as EventViewerPane;
 	await click(view.actions.items.find(item => item.command === 'events.filter')!.bounds);
 	await test.clipboard.writeText('navigation.match'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	check(view.projection.rows.length >= 20 && view.projection.rows.every(record => record.event.kind === 'string' && record.event.value === 'navigation.match'),

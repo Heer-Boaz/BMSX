@@ -34,7 +34,7 @@ export class SceneEditorController {
 			startColumn: row.source.start.column - 1,
 			endColumn: row.source.start.column - 1,
 		};
-		this.navigation.focusChunkSource(group, input.workingCopy.resource, position);
+		void this.navigation.focusChunkSource(group, input.workingCopy.resource, position);
 	}
 
 	/** Current source-command target; definition roots and source-only rows are not members. */

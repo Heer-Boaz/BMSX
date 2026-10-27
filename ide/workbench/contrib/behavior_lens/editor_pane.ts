@@ -1,3 +1,4 @@
+import type { QuickInputController } from '../../services/quick_input/controller';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
@@ -88,6 +89,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, workArea: Readonly<RectBounds>,
 		private readonly group: EditorGroupView,
 		scope: InputFocusScope,
+		private readonly quickInput: QuickInputController,
 	) {
 		super(scope);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
@@ -111,7 +113,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		});
 		this.focusTarget.registerCommand('behaviorLens.addProperty', {
 			isEnabled: () => !this.inspector.visible && editableActionEffect(this.input.view) !== undefined,
-			run: () => addActionEffectProperty(this.input.view, this.controller.quickInput),
+			run: () => addActionEffectProperty(this.input.view, this.quickInput),
 		});
 		this.focusTarget.registerCommand('behaviorLens.removeProperty', {
 			isEnabled: () => !this.inspector.visible && editableActionEffect(this.input.view) !== undefined
@@ -134,28 +136,28 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 			isEnabled: () => this.input.view.presentation.kind === 'properties',
 			run: () => {
 				const input = this.input;
-				if (this.focusInput(input)) this.controller.inspectRuntimeEffect(this.group, input, this.inspector);
+				if (this.focusInput(input)) this.controller.inspectRuntimeEffect(this.group, this.quickInput, input, this.inspector);
 			},
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.inspectRuntimeStateMachine', {
 			isEnabled: () => this.input.view.presentation.kind === 'state-graph',
 			run: () => {
 				const input = this.input;
-				if (this.focusInput(input)) this.controller.inspectRuntimeStateMachine(this.group, input, this.inspector);
+				if (this.focusInput(input)) this.controller.inspectRuntimeStateMachine(this.group, this.quickInput, input, this.inspector);
 			},
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.inspectRuntimeTree', {
 			isEnabled: () => this.input.view.presentation.kind === 'graph',
 			run: () => {
 				const input = this.input;
-				if (this.focusInput(input)) this.controller.inspectRuntimeTree(this.group, input, this.inspector);
+				if (this.focusInput(input)) this.controller.inspectRuntimeTree(this.group, this.quickInput, input, this.inspector);
 			},
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.inspectRegisteredDefinitions', {
 			isEnabled: () => this.input.view.presentation.kind === 'state-graph' || this.input.view.presentation.kind === 'properties',
 			run: () => {
 				const input = this.input;
-				if (this.focusInput(input)) this.controller.inspectRegisteredDefinitions(this.group, input, this.inspector);
+				if (this.focusInput(input)) this.controller.inspectRegisteredDefinitions(this.group, this.quickInput, input, this.inspector);
 			},
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('contextMenu', {

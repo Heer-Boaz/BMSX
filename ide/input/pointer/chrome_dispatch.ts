@@ -9,9 +9,6 @@ export function handleEditorChromePointerDispatch(
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 ): boolean {
-	if (editor.runtimeTimeline.handlePointer(snapshot)) {
-		return true;
-	}
 	if (editor.gamePanel.handlePointer(snapshot)) {
 		return true;
 	}

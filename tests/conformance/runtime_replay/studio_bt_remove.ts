@@ -13,13 +13,13 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = ide.editor.editorGroup.model.activeTab;
+	const code = ide.editor.editorParts.activeGroup.model.activeTab;
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.order');
-	let lens = ide.editor.editorGroup.model.activeTab;
+	let lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT removal requires the concrete graph');
 	let graph = lens.view.presentation;
 	let viewport = graph.viewport;
@@ -38,9 +38,9 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	const graphContext = inputFocus.admittedTarget!;
 	movePointer(sourceButton.bounds); await frame();
 	setPointerButton('pointer_primary', true); await frame();
-	check(ide.editor.editorGroup.model.activeTab === lens && model.version === version, 'A01: Source does not navigate on mouse down');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && model.version === version, 'A01: Source does not navigate on mouse down');
 	movePointer(viewport.bounds); setPointerButton('pointer_primary', false); await frame();
-	check(ide.editor.editorGroup.model.activeTab === lens && model.version === version, 'A01: releasing Source outside cancels navigation');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && model.version === version, 'A01: releasing Source outside cancels navigation');
 	await press('Tab');
 	check(graph.actionBar.hasFocus && inputFocus.admittedTarget!.commandContext === graphContext,
 		'A01: toolbar actions retain their explicit graph command context');
@@ -51,9 +51,9 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await press('Home');
 	setKey('Enter', true);
 	for (let index = 0; index < 6; index += 1) await frame();
-	check(ide.editor.editorGroup.model.activeTab === lens && model.version === version, 'A01: held toolbar Enter does not navigate or edit');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && model.version === version, 'A01: held toolbar Enter does not navigate or edit');
 	setKey('Enter', false); await frame();
-	check(ide.editor.editorGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
+	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version && !hasSelection(sourcePane(test).code)
 		&& sourcePane(test).code.view.cursorRow === selected.source.occurrenceRange.start.line - 1
 		&& sourcePane(test).code.view.cursorColumn === selected.source.occurrenceRange.start.column - 1,
 		'BT removal: held Source remains navigation only');
@@ -111,7 +111,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	console.info('STUDIO: BT removed child ready for visual inspection');
 	await click(sourceButton.bounds);
 	const definitionRange = lens.view.document.definitions[0].occurrenceRange;
-	check(ide.editor.editorGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code)
+	check(ide.editor.editorParts.activeGroup.model.activeTab === code && model.version === version + 1 && !hasSelection(sourcePane(test).code)
 		&& sourcePane(test).code.view.cursorRow === definitionRange.start.line - 1,
 		'BT removal: with no selected child, Source navigates to the selected registration');
 	const hiddenDocument = lens.view.document;
@@ -132,7 +132,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.weighted-order');
-	const nextDefinition2 = ide.editor.editorGroup.model.activeTab;
+	const nextDefinition2 = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
 	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
 	lens = nextDefinition2;

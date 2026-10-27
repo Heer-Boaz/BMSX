@@ -19,13 +19,13 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
-	const code = ide.editor.editorGroup.model.activeTab;
+	const code = ide.editor.editorParts.activeGroup.model.activeTab;
 	const model = sourcePane(test).code.model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_BEHAVIOR_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.first');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens') throw new Error('FSM source: expected the real Behavior Lens input');
 	const view = lens.view;
 	const outline = view.presentation;
@@ -35,7 +35,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	await click(outline.actionBar.items[0].bounds, 6);
 	const lines = FSM_BEHAVIOR_SOURCE.split('\n');
 	const row = lines.findIndex(line => line.includes('update = step'));
-	check(ide.editor.editorGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
+	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
 		'FSM source: held Source gesture opens the callback binding without dragging code');
 	const oldDocument = view.document;
 	const prefix = '-- 🐉 moved FSM source\n';

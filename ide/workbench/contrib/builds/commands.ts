@@ -62,7 +62,7 @@ function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, job: Stud
 			run: () => inspectBuild(editor, builds, id) },
 		{ label: 'Refresh status', description: 'Read the original request', detail: '', run: () => inspectBuild(editor, builds, id) },
 		{ label: 'View build log', description: 'Read the captured output and failure diagnostic', detail: job.error ?? '', run: async () => {
-			openBuildLog(editor.editorGroup, builds, job);
+			openBuildLog(editor.editorParts.documentDestination(), builds, job);
 		} },
 		{ label: 'Copy request ID', description: id, detail: '', run: async () => { await editor.clipboard.writeText(id); } },
 	];

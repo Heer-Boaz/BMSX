@@ -56,6 +56,14 @@ or install a cartridge. Project selection belongs at workspace attachment, not
 inside Home or a tool pane. Physical execution remains with the workbench's
 execution services and their explicit targets.
 
+`services/editor/editor_parts.ts` owns the frontend's permanent main part,
+document-part membership, activation/MRU and normal opening destinations. An
+`EditorPart` is an actual container with its own group, retained client bounds,
+timeline, Quick Input and decision dialogs. Document parts use the shared window
+container; they are not another Studio session or workspace. Opening a document
+does not replace the main part's authored subject. Workspace storage records
+part topology and requested placement independently of shared source recovery.
+
 Shared execution composition owns the primary `RuntimeTransport` and
 `RunTargetSelection`. Global run/debug controls and audio monitoring consume
 that explicit selection; editor focus and Source navigation do not select a
@@ -142,6 +150,13 @@ retain that pane and its group; they do not resolve through a primary editor.
 `workbench/services/editor/` owns editor-kind resolution and pane attachment:
 a pane is a reusable control
 bound to one input, not the lifetime owner of that input or its source.
+
+Part-local prompts block their own part and retain its invocation and focus
+return lifetime. Workspace-wide commands use explicitly workspace-owned
+prompts. Closing a document part runs shared last-view close admission against
+that part's actual dialog owner; cancellation reopens new input admission, not
+outstanding asynchronous openings. Forced teardown retires the part's controls
+and command authority without closing shared documents or sibling views.
 
 The frontend owns shared navigation history. Captured selections belong to their
 group/input lifetime and name their destination group. Opening admission is

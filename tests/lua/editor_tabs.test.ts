@@ -29,14 +29,16 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	const models: EditorTextModel[] = [];
 	const commands: EditorCommandId[] = [];
 	const scope = Symbol('test tab strip');
+	let commandsEnabled = true;
 	const focusParent = inputFocus.createTarget(null, new InputFocusScope(scope));
 	const strip = new EditorTabStrip(group, {
-		isEnabled: () => true,
+		isEnabled: () => commandsEnabled,
 		execute: command => { commands.push(command); },
 	}, focusParent, id => { group.activate(group.findById(id)!); }, id => { group.removeAt(group.indexOf(group.findById(id)!)); }, () => {});
 	const bounds = { left, top, right: left + width, bottom: top };
 	let font = new EditorFont(variant);
-	const setFont = (variant: 'tiny' | 'msx') => { font = new EditorFont(variant); };
+	let charAdvance = font.advance('M');
+	const setFont = (variant: 'tiny' | 'msx') => { font = new EditorFont(variant); charAdvance = font.advance('M'); };
 	const add = (label: string, preview = false) => {
 		const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: label + '.lua', location: { kind: 'workspace' as const, path: label + '.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: label + '.lua', source: { type: 'lua', resid: label } }, 'lua', 'return {}');
 		models.push(model);
@@ -49,7 +51,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 	const context = {
 		get font() { return font.renderFont(); },
 		get tabBarHeight() { return font.lineHeight + 3; },
-		get charAdvance() { return font.advance('M'); },
+		get charAdvance() { return charAdvance; },
 		measureText(text: string) { if (text !== 'x') measuredLabels += 1; return font.measure(text); },
 		measureTextRange(text: string, start: number, end: number) { return font.measure(text.slice(start, end)); },
 		drawText(text: string, x: number, y: number, z: number, color: number) {
@@ -77,6 +79,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 		for (const model of models) model.dispose();
 	});
 	return { add, group, strip, bounds, scope, item, begin, dispatch, press, layout, paint, draw, frame, context, commands, setFont,
+		setCommandsEnabled: (enabled: boolean) => { commandsEnabled = enabled; },
 		measured: () => measuredLabels, drawn: () => drawnLabels, bar: strip.scrollbar };
 }
 
@@ -110,18 +113,20 @@ test('tab layout publishes height and hits before paint; paint cannot measure or
 	t.after(() => { f.strip.hoverId = null; });
 });
 
-test('retained tab layout observes clean/dirty changes even without a group revision', t => {
+test('pinned input dirty and clean transitions publish group revisions for the retained tab layout', t => {
 	const f = fixture(t);
 	const tab = f.add('working copy');
 	f.layout();
 	const revision = f.group.revision, record = f.strip.layoutState.items.peek(0);
 	const bounds = record.bounds, rectangle = structuredClone(bounds);
 	tab.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]);
-	assert.equal(f.group.revision, revision, 'already pinned input needs no membership change');
+	assert.equal(f.group.revision, revision + 1, 'a pinned dirty edge invalidates presentation without changing membership');
+	assert.equal(f.strip.needsLayout, true);
 	f.layout();
 	assert.equal(record.dirty, true);
 	tab.workingCopy.completeSave(tab.workingCopy.createSnapshot());
-	assert.equal(f.group.revision, revision);
+	assert.equal(f.group.revision, revision + 2, 'Save publishes the clean edge too');
+	assert.equal(f.strip.needsLayout, true);
 	f.layout();
 	assert.equal(record.dirty, false);
 	assert.equal(record.bounds, bounds);
@@ -457,4 +462,44 @@ test('a resized title action publishes the new tab viewport to a stationary drag
 	assert.ok(f.strip.layoutState.revision > revision);
 	assert.equal(f.strip.drag.state!.targetLayoutRevision, f.strip.layoutState.revision);
 	assert.equal(f.strip.drag.state!.targetIndex, -1, 'reserved action space is no longer an accepted tab drop target');
+});
+
+test('stationary tab ownership skips projection and dirty scans while action availability remains live', t => {
+	const f = fixture(t, 'tiny', 256), first = f.add('First');
+	for (let index = 0; index < 20; index++) f.add(`Retained ${index}`);
+	f.layout();
+	const projection = t.mock.method(f.strip.layoutState, 'layout'), dirty = t.mock.method(first, 'isDirty');
+	const measure = t.mock.method(f.context, 'measureText'), range = t.mock.method(f.context, 'measureTextRange');
+	const record = f.item(first.id);
+	for (let frame = 0; frame < 1000; frame++) {
+		f.strip.update(frame);
+		assert.equal(f.strip.needsLayout, false);
+		f.layout();
+	}
+	assert.equal(projection.mock.callCount(), 0); assert.equal(dirty.mock.callCount(), 0);
+	assert.equal(measure.mock.callCount(), 0); assert.equal(range.mock.callCount(), 0);
+	assert.ok(f.item(first.id) === record);
+	f.setCommandsEnabled(false); f.strip.update(1001);
+	assert.ok(f.strip.actions.items.filter(item => item.visible).every(item => !item.enabled));
+	f.setCommandsEnabled(true); f.strip.update(1002);
+	assert.ok(f.strip.actions.items.filter(item => item.visible).every(item => item.enabled));
+	assert.equal(projection.mock.callCount(), 0);
+});
+
+test('retained strip layout keys observe hover, manual scroll, drag lifetime and owning geometry', t => {
+	const f = fixture(t, 'tiny', 256), first = f.add('First');
+	for (let index = 0; index < 20; index++) f.add(`Retained ${index}`);
+	f.layout();
+	f.strip.hoverId = first.id; assert.equal(f.strip.needsLayout, true); f.layout();
+	assert.equal(f.item(first.id).hovered, true); assert.equal(f.strip.needsLayout, false);
+	f.bar.setScroll(0); assert.equal(f.strip.needsLayout, true); f.layout();
+	assert.equal(f.bar.getScroll(), 0); assert.equal(f.strip.needsLayout, false);
+	const bounds = f.item(first.id).bounds, y = bounds.top + 1;
+	f.begin(first.id, pointer(bounds.left + 2, y, primary, primary), 0);
+	f.dispatch(pointer(bounds.left + 12, y, primary), false, 20);
+	assert.equal(f.strip.needsLayout, true); f.layout();
+	f.strip.cancelDrag(); assert.equal(f.strip.needsLayout, true); f.layout();
+	f.bounds.top += 10; assert.equal(f.strip.needsLayout, true); f.layout();
+	f.setFont('msx'); assert.equal(f.strip.needsLayout, true); f.layout();
+	assert.equal(f.strip.needsLayout, false);
 });

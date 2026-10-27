@@ -17,7 +17,7 @@ export async function runAssistantRuntime(kind: StudioRendererKind, canvas: HTML
 	const model = test.harness.getActiveEditorDocument().model;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- uninstalled source, not runtime state\n' }]);
 	await test.runPaletteCommand('View: Codex Assistant');
-	const view = ide.editor.editorGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
+	const view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	const position = cycles(), videoTick = runtime.frameScheduler.lastTickSequence, heap = runtime.machine.cpu.luaHeap.usedBytes(), version = model.version;
 	const media = ide.sources.currentBlua32Media, conversation = ide.editor.assistant;
 	await test.click(view.composerBounds);

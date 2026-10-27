@@ -9,7 +9,7 @@ import { sourcePane, check, type StudioFixture } from './studio_fixture';
 /** Open the unexecuted same-id registration: its wait node is not the running program. */
 export async function openRuntimeTreePicker(test: StudioFixture, expectedCount = 4): Promise<void> {
 	await test.runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	const picker = test.ide.editor.quickInput;
+	const picker = test.ide.editor.editorParts.activePart.quickInput;
 	const model = editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'inspection_trees.lua' })!;
 	const index = picker.model.list.rows.findIndex(row => {
 		const item = row.item as BehaviorQuickPickItem;
@@ -19,9 +19,9 @@ export async function openRuntimeTreePicker(test: StudioFixture, expectedCount =
 	check(index >= 0, 'runtime BT: unexecuted same-id registration remains independently authored');
 	for (let n = 0; n < index; n += 1) await test.press('ArrowDown');
 	await test.press('Enter');
-	const input = test.ide.editor.editorGroup.model.activeTab;
+	const input = test.ide.editor.editorParts.activeGroup.model.activeTab;
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'graph') throw new Error('runtime BT: source graph required');
-	const inspector = (test.ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	const inspector = (test.ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
 	if (inspector.visible) await test.press('Escape');
 	check(!inspector.visible, 'runtime BT: explicit close returns from a retained inspection to its source graph');
 	await test.click(input.view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.inspectRuntimeTree')!.bounds);
@@ -39,10 +39,10 @@ export async function openRuntimeTreeInspector(test: StudioFixture, component: '
 	await openRuntimeTreePicker(test);
 	await test.clipboard.writeText(`inspection.bt.${component}`);
 	await press('ControlLeft', 'KeyV');
-	check(test.ide.editor.quickInput.model.list.rows.length === 1, 'runtime BT: component choice disambiguates the shared tree id');
+	check(test.ide.editor.editorParts.activePart.quickInput.model.list.rows.length === 1, 'runtime BT: component choice disambiguates the shared tree id');
 	await press('Enter');
-	const inspector = (test.ide.editor.editorGroup.panes.activePane as BehaviorLensEditorPane).inspector;
-	check(inspector.visible && !test.ide.editor.quickInput.visible, 'runtime BT: chosen component opens the same property inspector');
+	const inspector = (test.ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
+	check(inspector.visible && !test.ide.editor.editorParts.activePart.quickInput.visible, 'runtime BT: chosen component opens the same property inspector');
 	const first = inspector.model.rows[0], wrapped = first.value;
 	for (let n = 0; n < 10; n += 1) await frame();
 	check(inspector.model.rows[0] === first && first.value === wrapped, 'runtime BT: paint retains projection and measured text');
@@ -103,7 +103,7 @@ export async function testRuntimeTreeSource(test: StudioFixture): Promise<void> 
 	check(menu.visible && index >= 0 && menu.model.rows[index].enabled, 'runtime BT: node context has the same Live admission');
 	for (let n = 0; n < index; n += 1) await press('ArrowDown');
 	await press('Enter');
-	check(test.ide.editor.quickInput.visible && !menu.visible, 'runtime BT: context command enters actual instance scope');
+	check(test.ide.editor.editorParts.activePart.quickInput.visible && !menu.visible, 'runtime BT: context command enters actual instance scope');
 	await press('Escape');
 	const instances = readBehaviorTreeInstances(test.ide.sources, guest, 0);
 	const first = instances.items.find(item => item.description === 'COMPONENT inspection.bt.first')!;

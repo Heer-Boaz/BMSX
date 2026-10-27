@@ -43,11 +43,11 @@ function referenceFixture(t: TestContext) {
 	return { project, info };
 }
 
-function pickerFixture(t: TestContext) {
+function pickerFixture(t: TestContext, height = 288) {
 	configureFontVariant('tiny');
-	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
+	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = height;
 	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const picker = new QuickInputController(menu);
+	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
@@ -117,11 +117,10 @@ test('definition choices keep module and declaration targets, including unqualif
 });
 
 test('initial source choice is revealed and accepted through the shared picker without index translation', t => {
-	const picker = pickerFixture(t);
+	const picker = pickerFixture(t, 80);
 	const { info } = referenceFixture(t);
 	const sources = buildReferenceSources(info);
 	const provider = createReferenceQuickPickProvider(sources, usageResource, 6, 10);
-	editorViewState.viewportHeight = 80;
 	const origin = inputFocus.createTarget(); origin.focus();
 	let accepted = false;
 	picker.pick('REFERENCES', 'Filter', () => provider, item => {

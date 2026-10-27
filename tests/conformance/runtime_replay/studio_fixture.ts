@@ -51,6 +51,7 @@ import type { EditorCommandId } from '../../../ide/common/commands';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { EditorTabId } from '../../../ide/workbench/ui/tab/id';
+import { measureText } from '../../../ide/editor/common/text/layout';
 
 export function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
@@ -178,7 +179,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const visiblePreviewPoint = (bounds: Readonly<RectBounds>): RectBounds => {
 		for (let y = bounds.top + 1; y < bounds.bottom; y += 1) {
 			for (let x = bounds.left + 1; x < bounds.right; x += 1) {
-				if (ide.editor.surfaces.hitTest(x, y) === ide.editor.editorGroup.paneSurface) return { left: x, top: y, right: x, bottom: y };
+				if (ide.editor.surfaces.hitTest(x, y) === ide.editor.editorParts.activeGroup.paneSurface) return { left: x, top: y, right: x, bottom: y };
 			}
 		}
 		throw new Error('The embedded preview has no unobscured pointer target');
@@ -213,8 +214,30 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	/** Reach an offscreen tab through the real wheel route, then click its visible label. */
 	const clickTab = async (id: EditorTabId, heldFrames = 1) => {
 		await frame();
-		const bounds = ide.editor.editorGroup.tabStrip.layoutState.items.peek(ide.editor.editorGroup.model.indexOf(ide.editor.editorGroup.model.findById(id)!)).bounds;
-		const viewport = ide.editor.editorGroup.tabStrip.layoutState.viewportBounds;
+		const groups = ide.editor.editorParts.groups.filter(group => group.model.findById(id) !== undefined);
+		check(groups.length === 1, `tab ${id} has one concrete owning group`);
+		const group = groups[0], part = ide.editor.editorParts.partForGroup(group);
+		if (part.window !== undefined) {
+			const model = part.window.model, header = model.header;
+			let titlePoint: RectBounds | undefined;
+			for (let y = header.top + 4; y < Math.min(header.bottom, header.top + 4 + model.font!.lineHeight) && titlePoint === undefined; y++) {
+				for (let x = header.left + 4; x < header.left + 4 + measureText(model.displayTitle); x++) {
+					if (ide.editor.surfaces.hitTest(x, y) === part.surface) {
+						titlePoint = { left: x, right: x, top: y, bottom: y }; break;
+					}
+				}
+			}
+			check(titlePoint !== undefined, `tab ${id} has an unobscured owning window title`);
+			await click(titlePoint!);
+			if (model.collapsed) {
+				if (!part.window.actionFocusTarget.hasFocus) await press('Tab');
+				check(part.window.actionFocusTarget.hasFocus, `tab ${id} reaches its window action controls`);
+				await press('Home'); await press('Enter');
+				check(!model.collapsed, `tab ${id} expands through its owning window controls`);
+			}
+		}
+		const bounds = group.tabStrip.layoutState.items.peek(group.model.indexOf(group.model.findById(id)!)).bounds;
+		const viewport = group.tabStrip.layoutState.viewportBounds;
 		const delta = bounds.left < viewport.left ? bounds.left - viewport.left
 			: bounds.right > viewport.right ? bounds.right - viewport.right : 0;
 		if (delta !== 0) {
@@ -226,7 +249,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		const left = Math.max(viewport.left, bounds.left), right = Math.min(viewport.right, bounds.right);
 		check(right > left, `tab ${id} is reachable through horizontal scrolling`);
 		await click({ left, right, top: bounds.top, bottom: bounds.bottom }, heldFrames);
-		check(ide.editor.editorGroup.model.activeTab.id === id, `tab ${id} opens through its visible label`);
+		check(ide.editor.editorParts.activeGroup === group && group.model.activeTab.id === id, `tab ${id} opens through its owning visible strip`);
 	};
 	const runMenuCommand = async (command: EditorCommandId) => {
 		check(ide.editor.isActive, 'Run-menu commands require editor focus');
@@ -287,13 +310,13 @@ export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;
 
 /** The retained real Source pane belonging to this fixture's concrete editor group. */
 export function sourcePane(test: Pick<StudioFixture, 'ide'>): CodeEditorPane | undefined {
-	return test.ide.editor.editorGroup.panes.getPane('code_editor') as CodeEditorPane | undefined;
+	return test.ide.editor.editorParts.activeGroup.panes.getPane('code_editor') as CodeEditorPane | undefined;
 }
 
 
 /** Shared product file-creation flow; callers author bytes and choose Save/Reboot themselves. */
 export async function createStudioLuaSource(test: StudioFixture, path: string, source: string) {
-	const root = test.ide.sources.catalog.getContext(test.ide.editor.editorGroup.model.activeTab.resource!.contextId).projectRootPath;
+	const root = test.ide.sources.catalog.getContext(test.ide.editor.editorParts.activeGroup.model.activeTab.resource!.contextId).projectRootPath;
 	await test.press('ControlLeft', 'KeyN');
 	await test.press('ControlLeft', 'KeyA');
 	await test.clipboard.writeText(stripProjectRootPrefix(path, root));

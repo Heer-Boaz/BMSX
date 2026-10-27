@@ -8,7 +8,7 @@ import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '
 import { ELLIPSIS, truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import { InputFocusScope, type InputFocusService, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
-import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
+import type { PointerCaptureScope, PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import type { WorkbenchSurface, WorkbenchSurfaceCallbacks } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
@@ -23,7 +23,9 @@ export type WorkbenchWindowOptions = {
 	readonly actionBar: WorkbenchActionBarState;
 	readonly lifetimeOwner: WorkbenchSurface;
 	readonly presentationParent?: WorkbenchSurface;
-	/** Current concrete return control within the same owning focus scope. */
+	/** Logical command and interaction ancestry, independent of current focus return. */
+	readonly focusScope: InputFocusScope;
+	/** Current concrete return control, not the window's ownership ancestry. */
 	readonly focusReturn: InputFocusTarget;
 	/** Borrowed layout extent; its owner updates this same rectangle in place. */
 	readonly workArea: Readonly<RectBounds>;
@@ -33,6 +35,7 @@ export type WorkbenchWindowOptions = {
 	retireContentInput(): void;
 	restoreContentInput(): void;
 	focusContent(): void;
+	requestClose?(): void;
 	onDidHide?(): void;
 };
 
@@ -61,11 +64,12 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	private measureText: ((text: string) => number) | undefined;
 	private readonly tooltip = new WorkbenchTooltip();
 	private headerHovered = false;
+	private clientInputAttached = false;
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly hover: PointerHoverService, private readonly surfaces: WorkbenchSurfaceService, commands: EditorCommandRunner,
 		private readonly options: WorkbenchWindowOptions) {
-		this.scope = new InputFocusScope(Symbol('window'), options.focusReturn.scope);
+		this.scope = new InputFocusScope(Symbol('window'), options.focusScope);
 		this.clientScope = new InputFocusScope(Symbol('window client'), this.scope);
 		this.focusTarget = focus.createTarget(options.focusReturn, this.scope);
 		this.focusTarget.canFocus = () => this.visible;
@@ -84,7 +88,8 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.clientFocusTarget.next = this.focusTarget;
 		this.focusTarget.previous = this.actions.focusTarget;
 		this.focusTarget.registerCommand('window.collapse', { isEnabled: () => this.visible, run: () => this.setCollapsed(!options.model.collapsed) });
-		this.focusTarget.registerCommand('window.hide', { isEnabled: () => this.visible, run: () => this.hide() });
+		this.focusTarget.registerCommand('window.hide', { isEnabled: () => this.visible,
+			run: () => { if (options.requestClose !== undefined) options.requestClose(); else this.hide(); } });
 		for (const command of ['window.collapse', 'window.hide'] as const)
 			this.clientFocusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.updateCollapseState();
@@ -92,7 +97,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	public get visible(): boolean { return this.surface !== undefined && this.surface.visible; }
 	/** Chrome, client and promoted owned popups form one active window family. */
-	public get hasFocus(): boolean { return this.focusedIn(this.surface); }
+	public get hasFocus(): boolean { return this.containsScope(this.surface, this.focus.target?.scope.surfaceScope); }
 	public get model(): WorkbenchWindowModel { return this.options.model; }
 
 	/** Reattaching a pane preserves its input-owned open/collapse/placement model. */
@@ -107,18 +112,26 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			draw: () => drawWorkbenchWindow(this.model, options.actionBar, this.hasFocus),
 			handlePointer: snapshot => this.handlePointer(snapshot), handleWheel: () => true,
 			onRetire: () => {
-				const ownedFocus = this.focus.target?.scope === this.scope || this.focusedIn(this.surface);
+				const surface = this.surface;
+				const ownedFocus = this.focus.target?.scope === this.scope || this.containsScope(surface, this.focus.target?.scope.surfaceScope);
 				this.surface = undefined;
+				// The window owns return admission. Child cleanup must not first
+				// activate a different parent while this attachment is retiring.
+				if (ownedFocus) this.focus.setTarget(null);
 				this.capture.cancelScope(this.scope.surfaceScope);
 				this.cancelPointer();
 				this.actions.clearInput();
 				this.hover.release(this); this.headerHovered = false; this.tooltip.hide();
-				if (ownedFocus) this.focus.setTarget(options.focusReturn);
+				this.retireClientInput();
+				this.scope.retireContext();
+				if (ownedFocus && (this.focus.target === null || this.focus.target.scope === this.scope
+					|| this.containsScope(surface, this.focus.target.scope.surfaceScope))) this.focus.setTarget(options.focusReturn);
 			},
 		});
 		this.actions.setInput(options.actionBar, this.focusTarget);
 		this.tooltip.attach(this.surfaces, this.surface, options.workArea);
-		if (!this.model.collapsed) this.attachClient();
+		this.attachClient();
+		if (!this.model.collapsed) this.restoreClientInput();
 	}
 
 	public detach(): void {
@@ -148,29 +161,30 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	public setCollapsed(collapsed: boolean): void {
 		if (this.model.collapsed === collapsed) return;
-		const clientHadFocus = this.focusedIn(this.clientSurface);
+		const clientHadFocus = this.containsScope(this.clientSurface, this.focus.target?.scope.surfaceScope);
 		if (this.resizing !== WindowResizeEdge.None) this.cancelPointer();
 		this.model.setCollapsed(collapsed);
 		this.updateCollapseState();
 		if (collapsed) {
-			this.clientSurface?.dispose();
-			if (clientHadFocus) {
+			this.retireClientInput();
+			if (clientHadFocus && (this.focus.target === null || this.focus.target.scope === this.scope
+				|| this.containsScope(this.clientSurface, this.focus.target.scope.surfaceScope))) {
 				this.options.actionBar.focusedIndex = this.options.actionBar.items.findIndex(item => item.command === 'window.collapse');
 				this.actions.focusTarget.focus();
 			}
-		} else if (this.visible) this.attachClient();
+		} else if (this.visible) this.restoreClientInput();
 		if (this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
 	}
 
 	/** Font, producer revisions and work-area changes are the only chrome layout triggers. */
-	public layout(font: BFont, measure: TextRangeMeasure, measureText: (text: string) => number): void {
-		if (!this.visible) return;
+	public layout(font: BFont, measure: TextRangeMeasure, measureText: (text: string) => number): boolean {
+		if (!this.visible) return false;
 		const model = this.model;
 		const arranged = model.arrange(this.options.workArea, font.lineHeight + 8);
 		const fontChanged = this.measuredFont !== font;
 		const dirty = arranged || this.measuredRevision !== model.revision || fontChanged
 			|| this.measure !== measure || this.measureText !== measureText;
-		if (!dirty) return;
+		if (!dirty) return false;
 		this.measuredFont = model.font = font;
 		this.measure = measure;
 		this.measureText = measureText;
@@ -179,9 +193,11 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		layoutWorkbenchActionBar(this.options.actionBar, header.right - 3, header.top + 2, header.bottom - 2, measureText, font, header.left + 4);
 		const firstAction = this.options.actionBar.items.find(item => item.visible);
 		model.displayTitle = truncateMeasuredText(model.title, (firstAction === undefined ? header.right : firstAction.bounds.left) - header.left - 8, measure, ELLIPSIS, 'middle');
-		if (!model.collapsed && (arranged || fontChanged)) this.options.layoutContent(model.client);
+		const contentChanged = !model.collapsed && (arranged || fontChanged);
+		if (contentChanged) this.options.layoutContent(model.client);
 		this.updateTooltip();
 		this.surfaces.changed();
+		return contentChanged;
 	}
 
 	public update(): void {
@@ -227,7 +243,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.bounds)) return;
 		if (snapshot.justPressedButtons !== 0) {
 			this.surfaces.raise(this.surface!);
-			if (!this.focusedIn(this.surface)) this.focus.setTarget(this.scope.lastFocused ?? this.focusTarget);
+			if (!this.containsScope(this.surface, this.focus.target?.scope.surfaceScope)) this.focus.setTarget(this.scope.lastFocused ?? this.focusTarget);
 		}
 		if (this.actions.handlePointer(snapshot)) { this.hover.release(this); this.headerHovered = false; return; }
 		const edge = this.model.resizeEdgeAt(snapshot.viewportX, snapshot.viewportY);
@@ -292,8 +308,6 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	private attachClient(): void {
 		const options = this.options;
-		this.actions.focusTarget.next = this.clientFocusTarget;
-		this.focusTarget.previous = this.clientFocusTarget;
 		this.clientSurface = this.surfaces.attach({
 			role: 'content', lifetimeOwner: this.surface!, presentationParent: this.surface!, captureScope: this.clientScope.surfaceScope,
 			getBounds: () => this.model.client, getClip: () => this.model.client, isVisible: () => !this.model.collapsed,
@@ -301,26 +315,40 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			handlePointer: (snapshot, now) => {
 				if (snapshot.justPressedButtons !== 0) {
 					this.surfaces.raise(this.surface!);
-					if (!this.focusedIn(this.surface)) this.focus.setTarget(this.clientScope.lastFocused ?? this.clientFocusTarget);
+					if (!this.containsScope(this.surface, this.focus.target?.scope.surfaceScope)) this.focus.setTarget(this.clientScope.lastFocused ?? this.clientFocusTarget);
 				}
 				options.content.handlePointer?.(snapshot, now);
 			},
 			handleWheel: event => this.handleWheel(event),
 			onRetire: () => {
 				this.clientSurface = undefined;
-				this.actions.focusTarget.next = this.focusTarget;
-				this.focusTarget.previous = this.actions.focusTarget;
-				this.capture.cancelScope(this.clientScope.surfaceScope);
-				options.retireContentInput();
+				this.retireClientInput();
 				options.content.onRetire?.();
 			},
 		});
-		options.restoreContentInput();
 	}
 
-	private focusedIn(surface: WorkbenchSurface | undefined): boolean {
-		if (surface === undefined || this.focus.target === null) return false;
-		for (let current = this.surfaces.findByScope(this.focus.target.scope.surfaceScope); current !== undefined; current = current.lifetimeOwner) {
+	private restoreClientInput(): void {
+		this.clientInputAttached = true;
+		this.actions.focusTarget.next = this.clientFocusTarget;
+		this.focusTarget.previous = this.clientFocusTarget;
+		this.options.restoreContentInput();
+	}
+
+	private retireClientInput(): void {
+		if (!this.clientInputAttached) return;
+		this.clientInputAttached = false;
+		this.actions.focusTarget.next = this.focusTarget;
+		this.focusTarget.previous = this.actions.focusTarget;
+		if (this.containsScope(this.clientSurface, this.capture.routeScope)) this.capture.cancelScope(this.capture.routeScope!);
+		this.capture.cancelScope(this.clientScope.surfaceScope);
+		this.options.retireContentInput();
+		this.clientScope.retireContext();
+	}
+
+	private containsScope(surface: WorkbenchSurface | undefined, scope: PointerCaptureScope | undefined): boolean {
+		if (surface === undefined || scope === undefined) return false;
+		for (let current = this.surfaces.findByScope(scope); current !== undefined; current = current.lifetimeOwner) {
 			if (current === surface) return true;
 		}
 		return false;

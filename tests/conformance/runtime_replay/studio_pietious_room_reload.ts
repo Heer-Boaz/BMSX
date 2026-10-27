@@ -23,14 +23,14 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	await test.click(editorChromeState.menuEntryBounds.view);
 	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'actorLab')!;
 	await test.clickContextCommand(item.command!);
-	const picker = ide.editor.quickInput;
+	const picker = ide.editor.editorParts.activePart.quickInput;
 	check(picker.visible, 'Actor Lab offers the actual running instances');
 	await typeSourceText(test, 'd');
 	const index = picker.model.list.rows.findIndex(row => row.item.label === 'd');
 	check(index >= 0, 'director is visible by its real runtime id');
 	for (let i = 0; i < index; i++) await press('ArrowDown');
 	await press('Enter');
-	const lab = ide.editor.editorGroup.model.activeTab;
+	const lab = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab did not open');
 	await until(() => lab.outline.rows.length > 0 && lab.outline.rows[0].element.node.label === 'd', 'inspect the actual director');
 	const reload = async () => {

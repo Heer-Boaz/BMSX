@@ -13,7 +13,7 @@ import type { ActionPromptRequest } from '../../contrib/modal/action_prompt_view
 import type { TextFileSaveService } from '../working_copy/text_file_save';
 
 export type EditorCloseTarget = { readonly group: EditorGroupView; readonly input: EditorInput };
-export type CloseEditors = (targets: readonly EditorCloseTarget[], origin?: InputFocusTarget | null) => Promise<boolean>;
+export type CloseEditors = (targets: readonly EditorCloseTarget[], origin?: InputFocusTarget | null, prompt?: ActionPrompt) => Promise<boolean>;
 
 type DiscardIntent = { readonly version: number; readonly readOnly: boolean };
 
@@ -21,6 +21,7 @@ type CloseOperation = {
 	readonly targets: readonly EditorCloseTarget[];
 	readonly inputs: ReadonlySet<EditorInput>;
 	readonly origin: InputFocusTarget | null;
+	readonly decisionUI: ActionPrompt;
 	readonly lifetime: DisposableStore;
 	readonly discards: Map<EditorTextModel, DiscardIntent>;
 	readonly result: PromiseWithResolvers<boolean>;
@@ -42,7 +43,7 @@ export class EditorCloseController {
 		});
 	}
 
-	public readonly close: CloseEditors = (targets, origin = inputFocus.target) => {
+	public readonly close: CloseEditors = (targets, origin = inputFocus.target, decisionUI = this.prompt) => {
 		if (this.disposed) return Promise.resolve(false);
 		const distinct: EditorCloseTarget[] = [];
 		const inputs = new Set<EditorInput>();
@@ -62,10 +63,10 @@ export class EditorCloseController {
 			}
 			return Promise.all(Array.from(waiting, operation => operation.result.promise)).then(results => {
 				if (results.some(closed => !closed)) return false;
-				return this.close(distinct.filter(target => target.group.model.findById(target.input.id) === target.input), origin);
+				return this.close(distinct.filter(target => target.group.model.findById(target.input.id) === target.input), origin, decisionUI);
 			});
 		}
-		const operation: CloseOperation = { targets: distinct, inputs, origin,
+		const operation: CloseOperation = { targets: distinct, inputs, origin, decisionUI,
 			lifetime: new DisposableStore(), discards: new Map(), result: Promise.withResolvers<boolean>(),
 			cancelled: false, prompt: undefined };
 		this.operations.add(operation);
@@ -117,11 +118,14 @@ export class EditorCloseController {
 				}
 			}
 			if (undecided !== undefined) {
-				// The root dialog will blur the currently focused control, including a sibling.
-				const edit = inputFocus.target?.edit;
-				if (edit?.pending === true) {
-					if (!edit.commit()) return false;
-					continue;
+				// Only a workspace-wide dialog blurs unrelated clients. A local decision
+				// cannot publish or be blocked by a sibling part's unsubmitted draft.
+				if (operation.decisionUI.presentation.kind === 'workspace') {
+					const edit = inputFocus.target?.edit;
+					if (edit?.pending === true) {
+						if (!edit.commit()) return false;
+						continue;
+					}
 				}
 				const model = undecided, version = model.version, readOnly = model.readOnly;
 				const request: ActionPromptRequest = { title: 'Save changes?',
@@ -129,7 +133,7 @@ export class EditorCloseController {
 					primary: 'Save', secondary: 'Discard', primaryEnabled: !readOnly,
 					defaultChoice: readOnly ? 'cancel' : 'primary' };
 				operation.prompt = request;
-				const choice = await this.prompt.show(request);
+				const choice = await operation.decisionUI.show(request, operation.origin);
 				operation.prompt = undefined;
 				if (operation.cancelled || choice === 'cancel') return false;
 				if (!this.lastWorkingCopies(operation).has(model) || !model.dirty) continue;
@@ -167,7 +171,7 @@ export class EditorCloseController {
 
 			operation.lifetime.dispose();
 			for (const { group, input } of operation.targets) {
-				if (group.model.findById(input.id) === input) group.removeEditor(input);
+				if (group.model.findById(input.id) === input) group.removeEditor(input, operation.inputs);
 			}
 			return true;
 		}
@@ -188,7 +192,7 @@ export class EditorCloseController {
 	private cancel(operation: CloseOperation): void {
 		operation.cancelled = true;
 		operation.lifetime.dispose();
-		if (operation.prompt !== undefined) this.prompt.cancel(operation.prompt);
+		if (operation.prompt !== undefined) operation.decisionUI.cancel(operation.prompt);
 	}
 
 	private finish(operation: CloseOperation): void {

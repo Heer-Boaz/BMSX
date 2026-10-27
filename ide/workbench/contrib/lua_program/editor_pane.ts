@@ -1,3 +1,4 @@
+import type { QuickInputController } from '../../services/quick_input/controller';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurface } from '../../services/windows/model';
@@ -63,7 +64,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	public constructor(private readonly controller: LuaProgramController,
 		private readonly commands: IdeCommandController, private readonly tester: ActionStringTester,
 		private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && (this.input.liveVisible ? this.input.live : this.input.tree).layout.visibleRowCount > 0;
 		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
@@ -87,7 +88,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		this.focusTarget.registerCommand('luaProgram.add', { isEnabled: () => {
 			const property = this.selected() ?? this.input.tree.roots[0]?.element;
 			return !this.input.liveVisible && property?.table?.structural === true && !this.input.sourceModels.get(property.table.file.file)!.readOnly;
-		}, run: () => this.controller.add(this.input) });
+		}, run: () => this.controller.add(this.input, this.quickInput) });
 		this.focusTarget.registerCommand('luaProgram.remove', { isEnabled: () => {
 			const property = this.selected();
 			return property?.field !== undefined && property.container!.structural && !this.input.sourceModels.get(property.file.file)!.readOnly;
@@ -95,14 +96,14 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		this.focusTarget.registerCommand('luaProgram.source', { isEnabled: () => true, run: () => this.controller.openSource(group, this.input) });
 		this.focusTarget.registerCommand('luaProgram.live', { isEnabled: () => !this.input.liveVisible, run: () => {
 			this.input.interaction.running = false;
-			if (this.input.instance === undefined) this.controller.chooseInstance(this.input);
+			if (this.input.instance === undefined) this.controller.chooseInstance(this.input, this.quickInput);
 			else this.input.inspectRuntime(this.commands.transport);
 		} });
 		this.focusTarget.registerCommand('luaProgram.authoring', { isEnabled: () => this.input.liveVisible,
 			run: () => this.input.showAuthoring() });
 		this.focusTarget.registerCommand('luaProgram.more', { isEnabled: () => this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
 		this.focusTarget.registerCommand('luaProgram.selectInstance', { isEnabled: () => this.input.liveVisible,
-			run: () => this.controller.chooseInstance(this.input) });
+			run: () => this.controller.chooseInstance(this.input, this.quickInput) });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => this.input.interaction.transport?.playbackEnabled === true,
 			run: () => { this.input.interaction.running = this.input.interaction.transport!.togglePlayback(); } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) {

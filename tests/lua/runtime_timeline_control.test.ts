@@ -45,7 +45,7 @@ async function fixture(t: TestContext) {
 	const owner = surfaces.attach({ role: 'content', captureScope: content.scope.surfaceScope,
 		isVisible: () => true, getBounds: () => bounds, getClip: () => bounds, draw() {} });
 	let focusReturns = 0;
-	const timeline = new RuntimeTimelineControl(commands, () => { focusReturns++; content.focus(); });
+	const timeline = new RuntimeTimelineControl(commands, () => { focusReturns++; content.focus(); }, content, bounds);
 	timeline.attach(surfaces, owner, bounds, menu);
 	timeline.setContext(context);
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, 0, rewind, execution);

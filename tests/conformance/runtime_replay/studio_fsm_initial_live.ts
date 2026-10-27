@@ -37,7 +37,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	check(guest.readStringMember(data, 'retained') === 73, 'initial live: actual mutable FSM data exists');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.initial');
-	const lens = ide.editor.editorGroup.model.activeTab;
+	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('initial live: FSM graph required');
 	await lens.graphLayout.settled; await frame();
 	const graph = lens.view.presentation;
