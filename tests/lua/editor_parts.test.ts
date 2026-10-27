@@ -70,6 +70,27 @@ test('Focus Main changes actual paint and hit order while document inputs and lo
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
+test('document placement transitions retain its exact Source view, local picker and canonical source authority', t => {
+	const f = createActualSourcePanes(t, true), part = f.firstPart, window = part.window!;
+	const input = f.firstInput, pane = f.first, model = input.workingCopy;
+	const text = model.buffer.getText(), version = model.version, cycles = f.host.runtime.machine.scheduler.nowCycles;
+	const requested = { ...window.model.requestedBounds }, surface = window.surface, client = window.clientSurface;
+	part.quickInput.input('', '', 'retained placement draft', async value => value, () => {});
+	for (const placement of ['left', 'right', 'maximized', 'normal'] as const) {
+		window.setPlacement(placement); f.update();
+		assert.equal(window.model.placement, placement);
+		assert.ok(part.group.model.activeTab === input && part.group.panes.activePane === pane);
+		assert.ok(window.surface === surface && window.clientSurface === client);
+		assert.equal(surface!.retired, false); assert.equal(client!.retired, false);
+		assert.ok(inputFocus.target === part.quickInput.field.focusTarget);
+		assert.equal(part.quickInput.visible, true); assert.equal(part.quickInput.field.text, 'retained placement draft');
+		assert.deepEqual(window.model.requestedBounds, requested);
+	}
+	assert.strictEqual(f.secondInput.workingCopy, model);
+	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
 test('the workspace window picker activates actual MRU parts and restores their retained local input', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	parts.main.group.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();

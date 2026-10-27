@@ -69,8 +69,7 @@ export class WorkspaceSourceRecovery {
 	public async initialize(): Promise<ReadonlyMap<string, WorkspaceRecord>> {
 		const state = await workspaceRecords.read(this.statePath);
 		if (state !== null) {
-			const manifest: { readonly version: 2; readonly dirtyFiles: WorkingCopyRecoveryEntry[] } = JSON.parse(state.contents);
-			if (manifest.version !== 2) throw new Error(`Unsupported source recovery version '${manifest.version}'.`);
+			const manifest: { readonly dirtyFiles: WorkingCopyRecoveryEntry[] } = JSON.parse(state.contents);
 			this.entries = manifest.dirtyFiles;
 			const loaded = await loadWorkspaceDirtySources(this.options.catalog, this.entries, async (_root, path) => {
 				const record = await workspaceRecords.read(path);
@@ -113,7 +112,7 @@ export class WorkspaceSourceRecovery {
 			const { models, catalog, clock } = this.options;
 			const generation = captureWorkspaceDirtySources(models, catalog, clock, this.records);
 			await publishWorkspaceDirtySources(catalog, generation.dirtyFiles, generation.dirtyRecords, this.entries, this.identity);
-			await workspaceRecords.write(this.statePath, createWorkspaceRecord(clock, JSON.stringify({ version: 2, dirtyFiles: generation.dirtyFiles })));
+			await workspaceRecords.write(this.statePath, createWorkspaceRecord(clock, JSON.stringify({ dirtyFiles: generation.dirtyFiles })));
 			await pruneWorkspaceDirtySources(catalog, this.entries, generation.dirtyFiles, this.identity);
 			this.entries = generation.dirtyFiles;
 			this.records.clear();

@@ -10,7 +10,7 @@ import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
-import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
+import { WorkbenchWindowModel, type WindowPlacement } from '../../ide/workbench/ui/window/model';
 import { WorkbenchFloatingWindow, type WorkbenchWindowOptions } from '../../ide/workbench/ui/window/control';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -114,16 +114,16 @@ test('minimize is admitted only by the concrete window owner and its title actio
 	f.focus.executeCommand('window.minimize', tool.control.clientFocusTarget);
 	assert.equal(tool.model.minimized, false); assert.equal(requests, 0);
 	const client = document.control.clientSurface!, requested = { ...document.model.requestedBounds };
-	document.control.setMaximized(true); document.control.update();
+	document.control.setPlacement('maximized'); document.control.update();
 	const action = document.actions.items.find(item => item.command === 'window.minimize')!;
 	assert.equal(action.visible, true);
 	f.click((action.bounds.left + action.bounds.right) / 2, (action.bounds.top + action.bounds.bottom) / 2, 10);
-	assert.equal(requests, 1); assert.equal(document.model.minimized, true); assert.equal(document.model.maximized, true);
+	assert.equal(requests, 1); assert.equal(document.model.minimized, true); assert.equal(document.model.placement, 'maximized');
 	assert.equal(document.model.open, true); assert.equal(document.hidden(), 0); assert.equal(document.retires(), 0);
 	assert.ok(document.control.clientSurface === client); assert.equal(client.retired, false); assert.equal(client.visible, false);
 	assert.equal(document.input(), true); assert.ok(f.focus.target === f.parent);
 	document.show();
-	assert.equal(document.model.minimized, false); assert.equal(document.model.maximized, true);
+	assert.equal(document.model.minimized, false); assert.equal(document.model.placement, 'maximized');
 	assert.deepEqual(document.model.requestedBounds, requested); assert.deepEqual(document.model.bounds, f.workArea);
 	assert.ok(document.control.clientSurface === client); assert.equal(document.restores(), 1);
 });
@@ -133,7 +133,7 @@ test('maximized placement fills the work area without replacing normal requested
 	const model = new WorkbenchWindowModel(requested, 150, 100);
 	const area = { left: 10, top: 20, right: 500, bottom: 380 };
 	const retainedRequested = model.requestedBounds;
-	model.setMaximized(true); model.arrange(area, 16);
+	model.setPlacement('maximized'); model.arrange(area, 16);
 	assert.deepEqual(model.bounds, area);
 	assert.equal(model.requestedBounds, retainedRequested); assert.deepEqual(model.requestedBounds, requested);
 	assert.equal(model.resizeEdgeAt(area.left, area.top), 0);
@@ -143,7 +143,7 @@ test('maximized placement fills the work area without replacing normal requested
 	model.arrange(area, 16);
 	assert.deepEqual(model.bounds, area); assert.deepEqual(model.requestedBounds, requested);
 	area.left = 10; area.top = 20; area.right = 500; area.bottom = 380;
-	model.arrange(area, 16); model.setMaximized(false); model.arrange(area, 16);
+	model.arrange(area, 16); model.setPlacement('normal'); model.arrange(area, 16);
 	assert.deepEqual(model.bounds, requested); assert.deepEqual(model.requestedBounds, requested);
 	assert.equal(model.arrange(area, 16), false);
 });
@@ -153,17 +153,17 @@ test('focused maximize and restore commands preserve the retained client', t => 
 	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
 	const client = a.control.clientSurface!, requested = { ...a.model.requestedBounds };
 	f.focus.executeCommand('window.maximize', a.control.clientFocusTarget);
-	assert.equal(a.model.maximized, true); assert.deepEqual(a.model.bounds, f.workArea);
+	assert.equal(a.model.placement, 'maximized'); assert.deepEqual(a.model.bounds, f.workArea);
 	assert.equal(a.control.clientSurface, client); assert.equal(a.retires(), 0); assert.equal(a.restores(), 1);
 	assert.equal(f.focus.target, a.client);
 	const maximize = a.actions.items.find(item => item.command === 'window.maximize')!;
 	assert.equal(maximize.checked, true); assert.equal(maximize.checkedIcon, 'restore');
 	f.focus.executeCommand('window.maximize', a.control.actionFocusTarget);
-	assert.equal(a.model.maximized, false);
+	assert.equal(a.model.placement, 'normal');
 	assert.deepEqual(a.model.bounds, requested); assert.equal(maximize.checked, false);
 	assert.equal(a.control.clientSurface, client); assert.equal(client.visible, true);
 	f.focus.executeCommand('window.maximize', a.control.focusTarget);
-	assert.equal(a.model.maximized, true);
+	assert.equal(a.model.placement, 'maximized');
 	assert.deepEqual(a.model.bounds, f.workArea); assert.deepEqual(a.model.requestedBounds, requested);
 	a.control.update();
 	const measured = f.measurements(), layouts = a.layouts();
@@ -190,20 +190,18 @@ test('maximize and restore cancel held chrome moves and resizes without committi
 	}
 });
 
-test('maximized windows capture pending title clicks but attempted drags cannot move or resize normal placement', t => {
-	const f = fixture(), a = f.window('FIXED'); a.show(); a.control.setMaximized(true);
+test('a maximized title drag presents an uncommitted normal window and cancellation retains placement intent', t => {
+	const f = fixture(), a = f.window('DRAG'); a.show(); a.control.setPlacement('maximized');
 	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
-	const requested = { ...a.model.requestedBounds };
-	for (const edge of [false, true]) {
-		const bounds = a.model.bounds;
-		const down = edge ? pointer(bounds.left + 1, bounds.top + 1, 1, 1) : pointer(bounds.left + 12, bounds.top + 7, 1, 1);
-		f.dispatch(down, 0);
-		assert.equal(f.capture.active, true, 'maximized title clicks remain admitted for restore');
-		f.dispatch(pointer(down.viewportX + colors.POINTER_DRAG_ACTIVATION_THRESHOLD, down.viewportY, 1), 1);
-		f.dispatch(pointer(down.viewportX + colors.POINTER_DRAG_ACTIVATION_THRESHOLD, down.viewportY, 0, 0, 1), 2);
-		assert.equal(f.capture.active, false);
-		assert.deepEqual(a.model.requestedBounds, requested); assert.equal(a.model.maximized, true);
-	}
+	const requested = { ...a.model.requestedBounds }, point = titlePoint(a.model);
+	f.dispatch(pointer(point.x, point.y, 1, 1), 0);
+	f.dispatch(pointer(point.x + 50, point.y + 50, 1), 1);
+	assert.equal(f.capture.active, true);
+	assert.equal(a.model.placement, 'maximized'); assert.equal(a.model.arrangedPlacement, 'normal');
+	assert.deepEqual(a.model.requestedBounds, requested);
+	f.capture.cancel();
+	assert.equal(a.model.placement, 'maximized'); assert.equal(a.model.arrangedPlacement, 'maximized');
+	assert.deepEqual(a.model.bounds, f.workArea); assert.deepEqual(a.model.requestedBounds, requested);
 });
 
 test('complete title click pairs maximize and restore at event time zero while retaining clients and normal placement', t => {
@@ -214,16 +212,16 @@ test('complete title click pairs maximize and restore at event time zero while r
 	const writes = t.mock.method(a.model, 'setRequestedBounds');
 	let point = titlePoint(a.model);
 	f.click(point.x, point.y, 0);
-	assert.equal(a.model.maximized, false, 'one complete click cannot maximize');
+	assert.equal(a.model.placement, 'normal', 'one complete click cannot maximize');
 	f.dispatch(pointer(point.x, point.y, 1, 1), 100);
-	assert.equal(a.model.maximized, false, 'the second press alone is not a complete click');
+	assert.equal(a.model.placement, 'normal', 'the second press alone is not a complete click');
 	f.dispatch(pointer(point.x, point.y, 0, 0, 1), 101);
-	assert.equal(a.model.maximized, true); assert.deepEqual(a.model.bounds, f.workArea);
+	assert.equal(a.model.placement, 'maximized'); assert.deepEqual(a.model.bounds, f.workArea);
 	point = titlePoint(a.model);
-	f.click(point.x, point.y, 200); assert.equal(a.model.maximized, true);
-	f.click(point.x, point.y, 300); assert.equal(a.model.maximized, false);
+	f.click(point.x, point.y, 200); assert.equal(a.model.placement, 'maximized');
+	f.click(point.x, point.y, 300); assert.equal(a.model.placement, 'normal');
 	assert.deepEqual(a.model.bounds, requested); assert.deepEqual(a.model.requestedBounds, requested);
-	assert.deepEqual(b.model.requestedBounds, siblingRequested); assert.equal(b.model.maximized, false);
+	assert.deepEqual(b.model.requestedBounds, siblingRequested); assert.equal(b.model.placement, 'normal');
 	assert.ok(a.control.clientSurface === surface); assert.ok(b.control.clientSurface === sibling);
 	assert.equal(a.retires(), 0); assert.equal(b.retires(), 0); assert.equal(a.restores(), 1); assert.equal(b.restores(), 1);
 	assert.equal(writes.mock.callCount(), 0, 'title clicks never write normal requested placement');
@@ -235,9 +233,9 @@ test('complete title clicks coalesced into single pointer occurrences still form
 	const point = titlePoint(a.model), requested = { ...a.model.requestedBounds };
 	const writes = t.mock.method(a.model, 'setRequestedBounds');
 	f.dispatch(pointer(point.x, point.y, 0, PointerButton.Primary, PointerButton.Primary), 0);
-	assert.equal(a.model.maximized, false); assert.equal(f.capture.active, false);
+	assert.equal(a.model.placement, 'normal'); assert.equal(f.capture.active, false);
 	f.dispatch(pointer(point.x, point.y, 0, PointerButton.Primary, PointerButton.Primary), 100);
-	assert.equal(a.model.maximized, true); assert.equal(f.capture.active, false);
+	assert.equal(a.model.placement, 'maximized'); assert.equal(f.capture.active, false);
 	assert.deepEqual(a.model.requestedBounds, requested); assert.equal(writes.mock.callCount(), 0);
 });
 
@@ -250,10 +248,10 @@ test('sub-threshold title jitter completes clicks without placement writes or cl
 	f.dispatch(pointer(point.x, point.y, 1, 1), 0);
 	f.dispatch(pointer(point.x + delta, point.y, 1), 1);
 	f.dispatch(pointer(point.x + delta, point.y, 0, 0, 1), 2);
-	assert.equal(a.model.maximized, false); assert.deepEqual(a.model.requestedBounds, requested);
+	assert.equal(a.model.placement, 'normal'); assert.deepEqual(a.model.requestedBounds, requested);
 	assert.equal(writes.mock.callCount(), 0); assert.equal(a.layouts(), layouts);
 	f.click(point.x + delta, point.y, 100);
-	assert.equal(a.model.maximized, true); assert.equal(writes.mock.callCount(), 0);
+	assert.equal(a.model.placement, 'maximized'); assert.equal(writes.mock.callCount(), 0);
 });
 
 test('title clicks require nearby press origins even within the double-click interval', t => {
@@ -262,9 +260,9 @@ test('title clicks require nearby press origins even within the double-click int
 	const point = titlePoint(a.model), distance = colors.POINTER_DRAG_ACTIVATION_THRESHOLD;
 	f.click(point.x, point.y, 0);
 	f.click(point.x + distance, point.y, 100);
-	assert.equal(a.model.maximized, false);
+	assert.equal(a.model.placement, 'normal');
 	f.click(point.x + distance, point.y, 200);
-	assert.equal(a.model.maximized, true, 'the distant click starts a new local pair');
+	assert.equal(a.model.placement, 'maximized', 'the distant click starts a new local pair');
 });
 
 test('a long first title hold cannot make a late second press into a double-click', t => {
@@ -274,9 +272,9 @@ test('a long first title hold cannot make a late second press into a double-clic
 	f.dispatch(pointer(point.x, point.y, 1, 1), 0);
 	f.dispatch(pointer(point.x, point.y, 0, 0, 1), afterInterval);
 	f.click(point.x, point.y, afterInterval + 1);
-	assert.equal(a.model.maximized, false, 'the interval is between physical press times, not release times');
+	assert.equal(a.model.placement, 'normal', 'the interval is between physical press times, not release times');
 	f.click(point.x, point.y, afterInterval + 100);
-	assert.equal(a.model.maximized, true);
+	assert.equal(a.model.placement, 'maximized');
 });
 
 for (const coalesced of [false, true]) test(`title drag invalidates click history with ${coalesced ? 'release-only movement' : 'movement away and back'}`, t => {
@@ -289,15 +287,16 @@ for (const coalesced of [false, true]) test(`title drag invalidates click histor
 	if (coalesced) f.dispatch(pointer(point.x + delta, point.y, 0, 0, 1), 101);
 	else {
 		f.dispatch(pointer(point.x + delta, point.y, 1), 101);
-		assert.equal(a.model.requestedBounds.left, requested.left + delta);
+		assert.equal(a.model.bounds.left, requested.left + delta);
+		assert.deepEqual(a.model.requestedBounds, requested, 'held motion is presentation, not a committed placement');
 		f.dispatch(pointer(point.x, point.y, 1), 102);
 		f.dispatch(pointer(point.x, point.y, 0, 0, 1), 103);
 	}
-	assert.equal(a.model.maximized, false);
+	assert.equal(a.model.placement, 'normal');
 	assert.equal(a.model.requestedBounds.left, requested.left + (coalesced ? delta : 0));
 	const next = titlePoint(a.model);
-	f.click(next.x, next.y, 200); assert.equal(a.model.maximized, false, 'a drag release cannot become a first click');
-	f.click(next.x, next.y, 300); assert.equal(a.model.maximized, true, 'fresh complete clicks still maximize');
+	f.click(next.x, next.y, 200); assert.equal(a.model.placement, 'normal', 'a drag release cannot become a first click');
+	f.click(next.x, next.y, 300); assert.equal(a.model.placement, 'maximized', 'fresh complete clicks still maximize');
 });
 
 for (const interruption of ['action', 'resize', 'content', 'nonprimary', 'cancel', 'hide'] as const)
@@ -321,10 +320,10 @@ for (const interruption of ['action', 'resize', 'content', 'nonprimary', 'cancel
 				f.dispatch(pointer(point.x, point.y, 0, 0, 1), 31); break;
 			case 'hide': a.control.hide(); a.show(); break;
 		}
-		assert.equal(a.model.maximized, false);
+		assert.equal(a.model.placement, 'normal');
 		const next = titlePoint(a.model);
-		f.click(next.x, next.y, 100); assert.equal(a.model.maximized, false);
-		f.click(next.x, next.y, 200); assert.equal(a.model.maximized, true);
+		f.click(next.x, next.y, 100); assert.equal(a.model.placement, 'normal');
+		f.click(next.x, next.y, 200); assert.equal(a.model.placement, 'maximized');
 	});
 
 test('complete title clicks belong to their own retained window', t => {
@@ -332,9 +331,9 @@ test('complete title clicks belong to their own retained window', t => {
 	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
 	const first = titlePoint(a.model), second = titlePoint(b.model);
 	f.click(first.x, first.y, 0); f.click(second.x, second.y, 100);
-	assert.equal(a.model.maximized, false); assert.equal(b.model.maximized, false);
+	assert.equal(a.model.placement, 'normal'); assert.equal(b.model.placement, 'normal');
 	f.click(second.x, second.y, 200);
-	assert.equal(b.model.maximized, true); assert.equal(a.model.maximized, false);
+	assert.equal(b.model.placement, 'maximized'); assert.equal(a.model.placement, 'normal');
 });
 
 test('maximize and restore retain client and sibling captures without retiring the input surface', t => {
@@ -347,7 +346,7 @@ test('maximize and restore retain client and sibling captures without retiring t
 		current.client.focus();
 		f.capture.beginRoute(current.control.clientScope.surfaceScope, pointer(250, 150, 1, 1)); f.capture.capture(target);
 		for (const maximized of [true, false]) {
-			a.control.setMaximized(maximized);
+			a.control.setPlacement(maximized ? 'maximized' : 'normal');
 			assert.equal(f.capture.active, true); assert.equal(f.capture.draining, false); assert.equal(cancelled, 0);
 			assert.equal(f.focus.target, current.client);
 			assert.equal(a.control.clientSurface, surface); assert.equal(surface.retired, false); assert.equal(a.retires(), 0); assert.equal(a.restores(), 1);
@@ -363,9 +362,9 @@ test('custom window action contributions may omit maximize while the actual wind
 	const a = f.window('CUSTOM', 40, 40, undefined, undefined, { focusScope: f.parent.scope }, custom);
 	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
 	a.show(); f.focus.executeCommand('window.maximize', a.control.clientFocusTarget);
-	assert.equal(a.model.maximized, true); assert.deepEqual(a.model.bounds, f.workArea);
+	assert.equal(a.model.placement, 'maximized'); assert.deepEqual(a.model.bounds, f.workArea);
 	f.focus.executeCommand('window.maximize', a.control.focusTarget);
-	assert.equal(a.model.maximized, false); assert.deepEqual(a.model.bounds, a.model.requestedBounds);
+	assert.equal(a.model.placement, 'normal'); assert.deepEqual(a.model.bounds, a.model.requestedBounds);
 });
 
 test('requested placement survives narrow work areas', () => {
@@ -793,17 +792,17 @@ test('window ownership ancestry is independent of focus return and close admissi
 
 test('placement notifications publish requested placement and modes, not passive arrangement or chrome updates', () => {
 	const bounds = { left: 40, top: 40, right: 280, bottom: 220 };
-	const model = new WorkbenchWindowModel(bounds, 120, 80), changes: [boolean, boolean][] = [];
-	const unbind = model.onDidChangePlacement(() => changes.push([model.minimized, model.maximized]));
-	model.setRequestedBounds(bounds); model.setMinimized(false); model.setMaximized(false);
+	const model = new WorkbenchWindowModel(bounds, 120, 80), changes: [boolean, WindowPlacement][] = [];
+	const unbind = model.onDidChangePlacement(() => changes.push([model.minimized, model.placement]));
+	model.setRequestedBounds(bounds); model.setMinimized(false); model.setPlacement('normal');
 	model.arrange({ left: 0, top: 20, right: 500, bottom: 380 }, 16);
 	model.title = 'CHROME'; model.invalidate(); model.setMinimumSize(140, 90);
 	assert.deepEqual(changes, []);
 	model.setRequestedBounds({ left: 60, top: 50, right: 300, bottom: 230 });
 	model.setMinimized(true); model.setMinimized(true);
-	model.setMaximized(true); model.setMaximized(true);
+	model.setPlacement('maximized'); model.setPlacement('maximized');
 	model.arrange({ left: 0, top: 20, right: 100, bottom: 90 }, 16);
-	assert.deepEqual(changes, [[false, false], [true, false], [true, true]]);
-	unbind(); model.setMinimized(false); model.setMaximized(false);
-	assert.deepEqual(changes, [[false, false], [true, false], [true, true]]);
+	assert.deepEqual(changes, [[false, 'normal'], [true, 'normal'], [true, 'maximized']]);
+	unbind(); model.setMinimized(false); model.setPlacement('normal');
+	assert.deepEqual(changes, [[false, 'normal'], [true, 'normal'], [true, 'maximized']]);
 });

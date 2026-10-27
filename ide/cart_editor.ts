@@ -139,6 +139,7 @@ import { ScenarioLabController } from './workbench/contrib/scenario_lab/controll
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { drawResourcePanel } from './workbench/render/resource_panel';
 import { WorkbenchWindowStatus } from './workbench/ui/window/status';
+import { EditorCommandKeybindingController } from './input/keyboard/global_bindings';
 import { renderStatusBar } from './workbench/render/status_bar';
 import { renderTopBar } from './workbench/render/top_bar';
 import { layoutTopBar } from './workbench/ui/top_bar/layout';
@@ -188,6 +189,7 @@ export type CartEditor = TextInputHost & {
 	readonly resourcePanel: ResourcePanelController;
 	readonly breakpoints: BreakpointController;
 	readonly commands: IdeCommandController;
+	readonly keybindings: EditorCommandKeybindingController;
 	readonly gamePanel: GamePanel;
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorParts: EditorParts;
@@ -249,6 +251,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly resourcePanel: ResourcePanelController;
 	public readonly breakpoints: BreakpointController;
 	public readonly commands: IdeCommandController;
+	public readonly keybindings: EditorCommandKeybindingController;
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorParts: EditorParts;
 	private readonly windowStatus: WorkbenchWindowStatus;
@@ -401,6 +404,7 @@ export class RuntimeCartEditor implements CartEditor {
 			logOutput,
 			textFileSaves,
 		);
+		this.keybindings = new EditorCommandKeybindingController(inputFocus, clock);
 		inputFocus.workbenchScope.commands = this.commands;
 		const workArea = getWorkbenchWorkArea();
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
@@ -660,6 +664,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public cancelInput(): void {
+		this.keybindings.cancel();
 		this.menubar.cancelAlt();
 		this.cancelPointerInput();
 		inputFocus.cancelInput();
@@ -725,6 +730,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public deactivate(): void {
+		this.keybindings.cancel();
 		this.interaction.setActive(false);
 		this.menubar.cancelAlt();
 		pointerCapture.cancel();
@@ -856,10 +862,11 @@ export class RuntimeCartEditor implements CartEditor {
 		if (contextTarget === this.quickInput.field.focusTarget) contextTarget = this.quickInput.invocationOrigin;
 		if (contextTarget === this.actionPrompt.focusTarget) contextTarget = this.actionPrompt.invocationOrigin;
 		renderStatusBar(this.resourcePanel, this.fault, this.editorParts.main.group.panes.activePane, this.luaEvaluation, this.serverConnectionState,
-			contextTarget === null ? null : contextTarget.commandContext, this.windowStatus.width);
+			contextTarget === null ? null : contextTarget.commandContext, this.windowStatus.width, this.keybindings.pendingLabel);
 	}
 
 	public async shutdown(): Promise<void> {
+		this.keybindings.dispose();
 		this.interaction.dispose();
 		this.editorClose.dispose();
 		inputFocus.workbenchScope.commands = undefined;

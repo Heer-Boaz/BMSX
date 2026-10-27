@@ -1,3 +1,4 @@
+import type { RectBounds } from '../../../machine/ts/common/rect';
 import * as colors from '../../common/constants';
 import { api } from '../../runtime/overlay_api';
 import type { WorkbenchActionBarState } from '../ui/action_bar';
@@ -21,8 +22,14 @@ export function drawWorkbenchWindow(model: WorkbenchWindowModel, actions: Workbe
 	api.popClipRect();
 	api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, active ? colors.COLOR_FOCUS_BORDER : colors.COLOR_WINDOW_BORDER);
 	api.fill_rect(header.left + 1, header.bottom - 1, header.right - 1, header.bottom, 0, colors.COLOR_WINDOW_BORDER);
-	if (!model.maximized) {
+	if (model.arrangedPlacement !== 'maximized') {
 		api.fill_rect(bounds.right - 5, bounds.bottom - 2, bounds.right - 2, bounds.bottom - 1, 0, colors.COLOR_WINDOW_BORDER);
 		api.fill_rect(bounds.right - 3, bounds.bottom - 4, bounds.right - 2, bounds.bottom - 2, 0, colors.COLOR_WINDOW_BORDER);
 	}
+}
+
+/** Passive outline advertises a prospective frame without obscuring its content. */
+export function drawWorkbenchWindowPlacement(bounds: Readonly<RectBounds>): void {
+	api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
+	api.blit_rect(bounds.left + 1, bounds.top + 1, bounds.right - 1, bounds.bottom - 1, 0, colors.COLOR_WINDOW_BORDER);
 }

@@ -7,31 +7,31 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
-import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
+import { WorkbenchWindowModel, type WindowPlacement } from '../../ide/workbench/ui/window/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-test('minimized placement retains normal requested bounds and the independent maximized mode', () => {
+test('minimized placement retains normal requested bounds and the independent placement mode', () => {
 	const requested = { left: 70, top: 90, right: 370, bottom: 330 };
 	const model = new WorkbenchWindowModel(requested, 150, 100);
 	const area = { left: 10, top: 20, right: 500, bottom: 380 };
-	const retained = model.requestedBounds, changes: [boolean, boolean][] = [];
-	const unbind = model.onDidChangePlacement(() => changes.push([model.maximized, model.minimized]));
-	model.setMaximized(true); model.arrange(area, 16);
+	const retained = model.requestedBounds, changes: [WindowPlacement, boolean][] = [];
+	const unbind = model.onDidChangePlacement(() => changes.push([model.placement, model.minimized]));
+	model.setPlacement('maximized'); model.arrange(area, 16);
 	model.setMinimized(true); model.setMinimized(true); model.arrange(area, 16);
 	assert.equal(model.requestedBounds, retained); assert.deepEqual(model.requestedBounds, requested);
-	assert.equal(model.maximized, true); assert.equal(model.minimized, true);
+	assert.equal(model.placement, 'maximized'); assert.equal(model.minimized, true);
 	model.setMinimized(false); model.arrange(area, 16);
 	assert.deepEqual(model.bounds, area); assert.deepEqual(model.requestedBounds, requested);
-	model.setMaximized(false); model.arrange(area, 16);
+	model.setPlacement('normal'); model.arrange(area, 16);
 	assert.deepEqual(model.bounds, requested);
 	assert.equal(model.arrange(area, 16), false);
-	assert.deepEqual(changes, [[true, false], [true, true], [true, false], [false, false]]);
+	assert.deepEqual(changes, [['maximized', false], ['maximized', true], ['maximized', false], ['normal', false]]);
 	unbind();
 });
 
 test('document minimization retains actual controls, canonical Source and local drafts while moving only owned focus and capture', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
-	f.firstPart.window!.setMaximized(true);
+	f.firstPart.window!.setPlacement('right');
 	f.firstPart.quickInput.input('', '', 'retained local draft', async value => value, () => {});
 	const input = f.firstInput, pane = f.firstGroup.panes.activePane, window = f.firstPart.window!;
 	const surface = window.surface!, client = window.clientSurface!;
@@ -63,7 +63,7 @@ test('document minimization retains actual controls, canonical Source and local 
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 	assert.equal(pointerCapture.draining, false);
 	f.firstPart.focus(); f.update();
-	assert.equal(parts.minimizedCount, 1); assert.equal(window.model.minimized, false); assert.equal(window.model.maximized, true);
+	assert.equal(parts.minimizedCount, 1); assert.equal(window.model.minimized, false); assert.equal(window.model.placement, 'right');
 	assert.ok(inputFocus.target === f.firstPart.quickInput.field.focusTarget);
 	assert.ok(window.surface === surface && window.clientSurface === client && f.firstGroup.panes.activePane === pane);
 	assert.equal(f.secondPart.window!.model.minimized, true); assert.equal(accepted, 7);

@@ -128,6 +128,7 @@ export class IdeCommandController {
 				this.editor.editorParts.createDocument().group.openEditor(view, { pinned: true });
 				return;
 			}
+			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
 			case 'window.maximize': case 'window.minimize': case 'window.hide': {
 				const window = originWindow === undefined ? part.window : originWindow;
 				const implementation = window?.focusTarget.getCommand(command);
@@ -383,6 +384,7 @@ export class IdeCommandController {
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
 			case 'window.copyEditor': return !part.closing && group.model.activeTab?.createView !== undefined;
+			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
 			case 'window.maximize': case 'window.minimize': case 'window.hide': {
 				const window = originWindow === undefined ? part.window : originWindow;
 				return window?.focusTarget.getCommand(command)?.isEnabled() === true;
@@ -537,7 +539,7 @@ export class IdeCommandController {
 		if (implementation !== undefined) return implementation.isChecked?.() === true;
 		const part = this.editor.editorParts.partForGroup(group);
 		switch (command) {
-			case 'window.maximize': {
+			case 'window.snapLeft': case 'window.snapRight': case 'window.maximize': {
 				const window = originWindow === undefined ? part.window : originWindow;
 				return window?.focusTarget.getCommand(command)?.isChecked?.() === true;
 			}

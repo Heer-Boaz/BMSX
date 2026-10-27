@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -10,7 +11,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
-import { handleEditorCommandBindings } from '../../ide/input/keyboard/global_bindings';
+import { EditorCommandKeybindingController } from '../../ide/input/keyboard/global_bindings';
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import { CartMapPane } from '../../ide/workbench/contrib/cart_maps/editor_pane';
 import { projectCartMap, selectCartMapRow } from '../../ide/workbench/contrib/cart_maps/source_projection';
@@ -45,14 +46,17 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 	};
 	const pane = new CartMapPane(null!, commands,
 		createScenarioTestSourceState([]), surfaces, surface, bounds, undefined!, inputFocus.workbenchScope);
+	const keybindings = new EditorCommandKeybindingController(inputFocus, new VirtualHeadlessClock());
 	pane.setInput(input, bounds); pane.update();
 	const layout = (nextWidth = bounds.right - bounds.left, nextVariant: 'tiny' | 'msx' = editorViewState.font.variant) => {
 		if (nextVariant !== editorViewState.font.variant) configureFontVariant(nextVariant);
 		bounds.right = bounds.left + nextWidth; pane.layout(bounds); pane.update();
 	};
 	const press = (code: string) => {
-		inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, true));
-		inputFocus.handleKeyboard(new KeyInputEvent(code, KeyModifier.none, false, false));
+		for (const down of [true, false]) {
+			const event = new KeyInputEvent(code, KeyModifier.none, false, down);
+			if (!keybindings.handle(event, undefined)) inputFocus.handleKeyboard(event);
+		}
 		pane.update();
 	};
 	let time = 0;
@@ -62,10 +66,10 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		if (!pointerCapture.dispatch(snapshot, false, ++time)) pane.handlePointer(snapshot, down !== 0, false, time, false);
 	};
 	t.after(() => {
-		pane.clearInput(); inputFocus.setTarget(null); pointerCapture.cancel(); pane.dispose(); surfaces.dispose(); input.dispose(); model.dispose();
+		keybindings.dispose(); pane.clearInput(); inputFocus.setTarget(null); pointerCapture.cancel(); pane.dispose(); surfaces.dispose(); input.dispose(); model.dispose();
 
 	});
-	return { model, input, pane, bounds, layout, press, pointer };
+	return { model, input, pane, bounds, layout, press, pointer, keybindings };
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
@@ -202,18 +206,18 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const edited = SOURCE.replace('x: 1', 'x: 3');
 		assert.equal(model.buffer.getText(), edited); assert.equal(inputFocus.target, grid); assert.equal(model.canUndo, true);
 		const undo = new KeyInputEvent('KeyZ', KeyModifier.ctrl);
-		assert.equal(handleEditorCommandBindings(undo, undefined, grid), true, 'the physical grid target must own document Undo, not merely alias the outline command context');
+		assert.equal(f.keybindings.handle(undo, undefined, grid), true, 'the physical grid target must own document Undo, not merely alias the outline command context');
 		assert.equal(undo.consumed, true); assert.equal(model.buffer.getText(), SOURCE); assert.equal(input.selected!.x, 1);
 		assert.equal(grid.getCommand('undo'), outline.getCommand('undo'));
 		const redo = new KeyInputEvent('KeyY', KeyModifier.ctrl);
-		assert.equal(handleEditorCommandBindings(redo, undefined, grid), true); assert.equal(redo.consumed, true);
+		assert.equal(f.keybindings.handle(redo, undefined, grid), true); assert.equal(redo.consumed, true);
 		assert.equal(model.buffer.getText(), edited); assert.equal(input.selected!.x, 3); assert.equal(grid.getCommand('redo'), outline.getCommand('redo'));
 		field.focusTarget.focus(); assert.equal(field.replaceText(0, field.text.length, '30'), true);
 		const version = model.version;
 		assert.notEqual(field.focusTarget.getCommand('undo'), grid.getCommand('undo'));
 		for (let index = 0; index < 2; index++) {
 			const localUndo = new KeyInputEvent('KeyZ', KeyModifier.ctrl);
-			assert.equal(handleEditorCommandBindings(localUndo, undefined, field.focusTarget), true); assert.equal(localUndo.consumed, true);
+			assert.equal(f.keybindings.handle(localUndo, undefined, field.focusTarget), true); assert.equal(localUndo.consumed, true);
 			assert.equal(field.text, '3'); assert.equal(model.buffer.getText(), edited); assert.equal(model.version, version);
 		}
 	});

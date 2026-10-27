@@ -1,11 +1,12 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { SerializedEditorGroup } from './editor_serialization';
+import type { WindowPlacement } from '../../ui/window/model';
 
 /** Requested placement belongs to the document part, not its constrained render bounds. */
 export type SerializedDocumentEditorPart = {
 	readonly group: SerializedEditorGroup;
 	readonly requestedBounds: Readonly<RectBounds>;
-	readonly maximized: boolean;
+	readonly placement: WindowPlacement;
 	readonly minimized: boolean;
 };
 

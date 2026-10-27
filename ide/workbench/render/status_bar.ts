@@ -23,6 +23,7 @@ export function renderStatusBar(
 	connection: StudioServerConnectionState,
 	contextTarget: InputFocusTarget | null,
 	windowRestoreWidth = 0,
+	keyChordLabel?: string,
 ): void {
 	const hostFailed = fault.hostFrameFailure !== undefined;
 	const runtimeFaulted = hostFailed || fault.faultSnapshot !== null;
@@ -59,7 +60,9 @@ export function renderStatusBar(
 	}
 	const context = layout.context;
 	api.pushClipRect(context.left, context.top, context.right, context.bottom);
-	if (!runtimeFaulted && evaluation.active !== undefined) {
+	if (!runtimeFaulted && keyChordLabel !== undefined) {
+		drawEditorText(editorViewState.font, keyChordLabel, context.left + 4, context.top + 2, 0, statusTextColor);
+	} else if (!runtimeFaulted && evaluation.active !== undefined) {
 		drawEditorText(editorViewState.font, evaluation.paused ? 'LUA CALL PAUSED' : 'LUA CALL RUNNING', context.left + 4, context.top + 2, 0, statusTextColor);
 	} else if (problemsPanel.isVisible && contextTarget === problemsPanel.focusTarget) {
 		const diagnostic = problemsPanel.selectedDiagnostic;

@@ -1,5 +1,4 @@
 import type { CartEditor } from '../../cart_editor';
-import { handleEditorCommandBindings } from './global_bindings';
 import type { KeyInputEvent } from '../../../hosts/common/input/text';
 import { inputFocus } from '../focus';
 import { handleClipboardBindings } from '../clipboard';
@@ -13,19 +12,22 @@ export function handleEditorInput(
 	const focused = inputFocus.admittedTarget;
 	if (playerInput.down && !playerInput.consumed) focused?.activate();
 	if (focused === null && (editor.surfaces.topBlockingSurface !== null || inputFocus.target !== null)) {
+		editor.keybindings.cancel();
 		editor.menubar.cancelAlt();
 		// A blocked retained focus is not permission to dispatch root shortcuts.
 		playerInput.consumed = true;
 		return;
 	}
 	if (focused?.guestInput !== undefined) {
+		editor.keybindings.cancel();
 		editor.menubar.cancelAlt();
 		focused!.handleKeyboard(playerInput);
 		return;
 	}
+	const commands = inputFocus.commandRunner;
+	if (editor.keybindings.inChordMode && editor.keybindings.handle(playerInput, commands, focused)) return;
 	if (editor.menubar.handleKeyboard(playerInput, focused)) return;
 	if (handleClipboardBindings(playerInput, editor.clipboard, focused)) return;
-	const commands = inputFocus.commandRunner;
 	if (pointerCapture.active && isKeyJustPressed('Escape', playerInput)) {
 		consumeIdeKey('Escape', playerInput);
 		pointerCapture.cancel();
@@ -35,7 +37,7 @@ export function handleEditorInput(
 		focused?.handleKeyboard(playerInput);
 		return;
 	}
-	if (handleEditorCommandBindings(playerInput, commands, focused)) return;
+	if (!editor.keybindings.inChordMode && editor.keybindings.handle(playerInput, commands, focused)) return;
 	if (isKeyJustPressed('Tab', playerInput) && !isCtrlDown(playerInput) && !isMetaDown(playerInput) && !isAltDown(playerInput)
 		&& inputFocus.moveFocus(isShiftDown(playerInput))) {
 		consumeIdeKey('Tab', playerInput);

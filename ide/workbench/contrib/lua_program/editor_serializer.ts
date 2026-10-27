@@ -10,20 +10,19 @@ import type { LuaProgramKind } from './source';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 
-type ProgramSnapshot = { readonly version: 1; readonly source: TextFileModelSnapshot; readonly dependencies: readonly TextFileModelSnapshot[];
+type ProgramSnapshot = { readonly source: TextFileModelSnapshot; readonly dependencies: readonly TextFileModelSnapshot[];
 	readonly kind: LuaProgramKind; readonly occurrence: TrackedTextRange; readonly view: WorkbenchTreeViewSnapshot };
 
 export class LuaProgramInputSerializer implements EditorInputSerializer<LuaProgramInput> {
 	public constructor(private readonly catalog: WorkspaceSourceCatalog, private readonly controller: LuaProgramController) {}
 	public serialize(input: LuaProgramInput): string {
-		const state: ProgramSnapshot = { version: 1, source: captureTextFileModel(input.workingCopy), dependencies: input.getWorkingCopies()
+		const state: ProgramSnapshot = { source: captureTextFileModel(input.workingCopy), dependencies: input.getWorkingCopies()
 			.filter(model => model !== input.workingCopy).map(captureTextFileModel), kind: input.programKind,
 			occurrence: input.occurrenceRange, view: captureWorkbenchTreeView(input.tree, element => element.key) };
 		return JSON.stringify(state);
 	}
 	public async deserialize(value: string): Promise<LuaProgramInput> {
 		const state: ProgramSnapshot = JSON.parse(value);
-		if (state.version !== 1) throw new Error(`Unsupported lua program editor version '${state.version}'.`);
 		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
 		const dependencies: EditorTextModel[] = [];
 		let sameDependencies = true;

@@ -63,10 +63,15 @@ timeline, Quick Input and decision dialogs. Document parts use the shared window
 container; they are not another Studio session or workspace. Opening a document
 does not replace the main part's authored subject. Workspace storage records
 part topology and requested placement independently of shared source recovery.
+Workspace persistence is unversioned. Frontend layout, editor-view mementos
+and source-recovery manifests use the current shape without schema version
+fields, version gates, migrations or compatibility layers.
 The main presentation family and document windows share the surface owner's
 ordered window band. Window navigation raises actual parts; owned inspectors
 stay in their window/modal presentation family. Shared window models retain
-normal placement independently of maximized presentation and minimized visibility.
+normal requested intent separately from normal/snapped/maximized arrangement
+and independently minimized visibility. Window gesture drafts are presentation,
+not persisted placement; only a completed drop publishes new intent.
 Document minimization retains frontend sessions; part membership owns restore
 and activation. Owned utility inspectors expose their own chrome capabilities.
 
@@ -178,7 +183,9 @@ focus. Constructing or disposing a group cannot reset another group's history.
 Shared window/control code owns presentation and input mechanics. Contributions
 own their subjects and register their commands on the appropriate focus target.
 `input/` owns keyboard focus and pointer-gesture routing independently of which
-view or physical target happens to be active.
+view or physical target happens to be active. Each frontend owns its central
+keybinding controller and pending chord lifetime. Binding metadata supplies
+resolution and shortcut presentation; pane handlers do not own chord state.
 
 ## Workbench Quick Input
 

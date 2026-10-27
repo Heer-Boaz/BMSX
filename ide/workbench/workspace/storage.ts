@@ -37,7 +37,6 @@ import type { WorkspaceSourceCatalog } from '../../workspace/source_catalog';
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import {
 	WorkspaceAutosaveChange,
-	deserializeWorkspaceAutosavePayload,
 	type WorkspaceAutosavePayload,
 } from './models';
 import { editorTextModelService } from '../../editor/model/model_service';
@@ -137,7 +136,7 @@ export async function initializeWorkspaceStorage(
 		WORKSPACE_STATE_FILE,
 	);
 	const localRecord = readLocalWorkspaceRecord(storage, projectRootPath, statePath);
-	const localPayload: WorkspaceAutosavePayload | null = localRecord === null ? null : deserializeWorkspaceAutosavePayload(localRecord.contents);
+	const localPayload: WorkspaceAutosavePayload | null = localRecord === null ? null : JSON.parse(localRecord.contents);
 	let remoteRecord: WorkspaceRecord | null = null;
 	let providerRead = false;
 	try {
@@ -148,7 +147,7 @@ export async function initializeWorkspaceStorage(
 		logOutput.log(LogLevel.Warn, `[WorkspaceStorage] ${message}`);
 		showEditorWarningBanner(message, 5.0);
 	}
-	const remotePayload: WorkspaceAutosavePayload | null = remoteRecord === null ? null : deserializeWorkspaceAutosavePayload(remoteRecord.contents);
+	const remotePayload: WorkspaceAutosavePayload | null = remoteRecord === null ? null : JSON.parse(remoteRecord.contents);
 	const record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
 	const payload = record === null ? null : record === remoteRecord ? remotePayload : localPayload;
 	// An incomplete generation is an error, not permission to discard unsaved edits or rewrite the manifest.

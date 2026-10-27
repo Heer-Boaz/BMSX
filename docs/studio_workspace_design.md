@@ -104,7 +104,7 @@ not an editable asset schema or an isolated preview contract.
 | Workflow | Existing BMSX owners | Missing capability or boundary |
 | --- | --- | --- |
 | Main workspace and document editors | `services/editor/editor_parts.ts` and `editor_part.ts` compose main/document lifetime, controls and local sessions over shared documents. | Canvas placement does not supply docking or native host windows. Those require separate presentation and lifecycle contracts, rather than another editor instance. |
-| Window navigation and additional views | The Window menu exposes main-workspace activation, an MRU window picker, new editor windows and contribution-owned additional views. Shared window chrome exposes maximize/restore and owner-admitted document minimization; document close requests go through `EditorCloseController`. | Snapping needs the shared placement/drag/keyboard contract below; it is not supplied by floating placement alone. Docking and native host-window integration remain separate capabilities. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
+| Window navigation and additional views | The Window menu exposes main-workspace activation, an MRU window picker, new editor windows and contribution-owned additional views. Shared window chrome exposes maximize/restore and owner-admitted document minimization; document close requests go through `EditorCloseController`. | Snapping uses the shared placement/drag/keyboard contract below without moving editors or their inputs. Docking and native host-window integration remain separate capabilities. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
 | Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
 | Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Studio adapters for known factories and cart-owned authoring metadata are possible producers; a mandatory new cartlib schema is not assumed. The read-only [runtime inspection contract](cartlib_inspection_contract.md) does not supply that authoring metadata. |
 | Hierarchy and Details | Scene's outline/options project authored membership; Actor Lab independently inspects runtime actors/components. | Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations before Studio can offer that kind of hierarchy. |
@@ -422,7 +422,8 @@ the actual main and document parts in activation order, including minimized
 windows and windows awaiting a local close decision. Choosing one reveals that
 part and focuses its retained local dialog or client. Cancel returns to the
 invoking control; retiring a listed owner revokes the picker rather than
-redirecting its stale choice. The tab overflow picker remains group-local. A document window retains its tab
+redirecting its stale choice. The tab overflow picker remains group-local.
+A document window retains its tab
 group: the window frame and group tabs represent distinct scopes, even when
 only one document is currently open. The main/document distinction must remain
 legible through chrome and activation rather than suppressing group navigation.
@@ -446,8 +447,13 @@ tab, splitting a group or docking a tool. The [snapped placement contract](workb
 defines left/right work-area halves, top-edge maximize, drag preview and common
 menu/keyboard placement transitions. No source, group or execution attachment
 moves during a snap. Normal placement survives mode changes and live work-area
-reflow. Central keybinding/chord ownership is a prerequisite for discoverable
-multi-key shortcuts; OS Snap keys and guest gameplay input are not reclaimed.
+reflow. Ctrl/Cmd+K then Left/Right snaps the invoking window; Up toggles
+maximize/restore and Down restores normal placement. Release Ctrl/Cmd before
+the unmodified arrow stroke. These bindings appear in the ordinary command
+palette and Window menu. Their pending hint occupies existing status space;
+it does not move the work area. Focus/owner changes, Escape and the central
+five-second deadline cancel the chord. OS Snap keys and guest gameplay input
+are not reclaimed.
 
 Owned modeless inspectors escape the pane's clip within the nearest real window
 or modal context, rather than becoming unrelated root windows. Raising the part

@@ -8,7 +8,6 @@ import { AnimationEditorInput, type AnimationClient, type AnimationSourceSelecti
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 
 type AnimationSnapshot = {
-	readonly version: 3;
 	readonly projectContextId: string;
 	readonly source: TextFileModelSnapshot;
 	readonly definition: TrackedTextRange | undefined;
@@ -30,7 +29,7 @@ type AnimationSnapshot = {
 export class AnimationInputSerializer implements EditorInputSerializer<AnimationEditorInput> {
 	public constructor(private readonly catalog: WorkspaceSourceCatalog, private readonly controller: AnimationEditorController) {}
 	public serialize(input: AnimationEditorInput): string {
-		const state: AnimationSnapshot = { version: 3, projectContextId: input.projectContextId, source: captureTextFileModel(input.workingCopy), definition: input.definitionRange, label: input.definitionLabel, consumer: input.consumerPath,
+		const state: AnimationSnapshot = { projectContextId: input.projectContextId, source: captureTextFileModel(input.workingCopy), definition: input.definitionRange, label: input.definitionLabel, consumer: input.consumerPath,
 			dependencies: input.getWorkingCopies().filter(model => model !== input.workingCopy).map(captureTextFileModel),
 			track: input.trackSelection, key: input.keySelection, detail: input.detailSelection, scroll: input.tracks.scroll, cursor: input.keys.cursor,
 			client: input.activeClient, columnRatio: input.columnSplit.ratio, rowRatio: input.rowSplit.ratio,
@@ -39,7 +38,6 @@ export class AnimationInputSerializer implements EditorInputSerializer<Animation
 	}
 	public async deserialize(value: string): Promise<AnimationEditorInput> {
 		const state: AnimationSnapshot = JSON.parse(value);
-		if (state.version !== 3) throw new Error(`Unsupported animation editor view version '${state.version}'.`);
 		const primary = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
 		const input = new AnimationEditorInput(primary.model, state.projectContextId, state.definition, state.label, state.consumer, this.controller.createView);
 		if (!primary.sameSource && input.definitionRange !== undefined) input.definitionRange.end = input.definitionRange.start;

@@ -7,19 +7,11 @@ import type { PersistedDirtyEntry } from '../../workspace/source_recovery_store'
 export type { PersistedDirtyEntry } from '../../workspace/source_recovery_store';
 
 export type WorkspaceAutosavePayload = {
-	version: 5;
 	dirtyFiles: PersistedDirtyEntry[];
 	editorParts: SerializedEditorParts;
 	breakpoints: SerializedBreakpoints;
 	fontVariant: FontVariant;
 };
-
-/** Persistent layout and source references are admitted as one versioned format. */
-export function deserializeWorkspaceAutosavePayload(source: string): WorkspaceAutosavePayload {
-	const payload: WorkspaceAutosavePayload = JSON.parse(source);
-	if (payload.version !== 5) throw new Error(`Unsupported workspace session version '${payload.version}'.`);
-	return payload;
-}
 
 export const enum WorkspaceAutosaveChange {
 	None = 0,

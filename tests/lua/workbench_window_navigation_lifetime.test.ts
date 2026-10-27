@@ -15,7 +15,7 @@ test('actual Problems and coverage-header activation reveal the main frontend wi
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(73); f.update();
 	t.after(() => { problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); });
-	f.secondPart.window!.setMaximized(true); f.update();
+	f.secondPart.window!.setPlacement('maximized'); f.update();
 	const owner = parts.main.surface.presentationParent!;
 	const placement = { ...f.secondPart.window!.model.requestedBounds };
 	const source = f.secondInput.workingCopy.buffer.getText();
@@ -32,7 +32,7 @@ test('actual Problems and coverage-header activation reveal the main frontend wi
 		assert.equal(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, owner.captureScope), true,
 			'giving a main frontend control keyboard focus must reveal that same foreground family');
 		assert.ok(f.secondPart.group.model.activeTab === f.secondInput);
-		assert.equal(f.secondPart.retired, false); assert.equal(f.secondPart.window!.model.maximized, true);
+		assert.equal(f.secondPart.retired, false); assert.equal(f.secondPart.window!.model.placement, 'maximized');
 		assert.deepEqual(f.secondPart.window!.model.requestedBounds, placement);
 	}
 	assert.equal(f.secondInput.workingCopy.buffer.getText(), source);

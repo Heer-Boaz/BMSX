@@ -329,7 +329,7 @@ test('animation recovery restores the native cursor after the document admits it
 	}
 });
 
-test('versioned animation recovery persists project ownership and opaque source selections without legacy path inference', async t => {
+test('animation recovery persists project ownership and opaque source selections', async t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',keys={{time_ms=0,value=1},{time_ms=100,value=2}}}}}";
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
@@ -341,7 +341,6 @@ test('versioned animation recovery persists project ownership and opaque source 
 	input.activeClient = 'details'; input.columnSplit.resize(0.45); input.rowSplit.resize(0.4);
 	const serializer = new AnimationInputSerializer(sources.catalog, controller);
 	const current = JSON.parse(serializer.serialize(input));
-	assert.equal(current.version, 3);
 	assert.equal(current.projectContextId, resource.contextId);
 	for (const selection of [current.track, current.key, current.detail]) assert.equal(selection.path, resourceIdentityKey(resource));
 	const restored = await serializer.deserialize(JSON.stringify(current)); t.after(() => restored.dispose());
@@ -352,13 +351,6 @@ test('versioned animation recovery persists project ownership and opaque source 
 	assert.equal(restored.keys.range.minimum, 10); assert.equal(restored.keys.range.maximum, 90); assert.equal(restored.keys.cursor, 50);
 	assert.equal(restored.activeClient, input.activeClient);
 	assert.equal(restored.columnSplit.ratio, input.columnSplit.ratio); assert.equal(restored.rowSplit.ratio, input.rowSplit.ratio);
-	const models = [...editorTextModelService.models];
-	for (const version of [undefined, 1, 2, 4]) {
-		await assert.rejects(serializer.deserialize(JSON.stringify({ ...current, version,
-			source: { ...current.source, resource: { ...current.source.resource, path: 'not-retained.lua' } } })),
-			new RegExp(`Unsupported animation editor view version '${version}'`));
-		assert.deepEqual([...editorTextModelService.models], models, 'unsupported formats are rejected before resolving or retaining a model');
-	}
 });
 
 function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=0,value=1},{time_ms=100,value=2}}},{kind='event',keys={{time_ms=25,event='other'}}}}}") {

@@ -3,13 +3,14 @@ import test, { type TestContext } from 'node:test';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { insertValue } from '../../ide/editor/ui/inline/text_field';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { inputFocus } from '../../ide/input/focus';
-import { handleEditorCommandBindings } from '../../ide/input/keyboard/global_bindings';
+import { EditorCommandKeybindingController } from '../../ide/input/keyboard/global_bindings';
 import { pointerCapture, WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { WorkbenchTextViewControl } from '../../ide/workbench/ui/text_view/control';
@@ -26,10 +27,11 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const bounds = { left: 20, top: 30, right: 320, bottom: 210 };
 	const update = () => control.update(bounds, editorViewState.font, editorViewState.lineHeight);
 	control.setInput(model); update(); control.focusTarget.focus();
+	const keybindings = new EditorCommandKeybindingController(inputFocus, new VirtualHeadlessClock());
 	const press = (code: string, modifiers = KeyModifier.none) => {
 		for (const down of [true, false]) {
 			const event = new KeyInputEvent(code, modifiers, false, down);
-			if (!handleEditorCommandBindings(event, undefined)) inputFocus.handleKeyboard(event);
+			if (!keybindings.handle(event, undefined)) inputFocus.handleKeyboard(event);
 		} update();
 	};
 	let time = 0;
@@ -42,7 +44,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		}
 		pointerCapture.endRoute(event); pointerHover.endDispatch(); update();
 	};
-	t.after(() => { control.dispose(); pointerCapture.interrupt(false); pointerHover.clear(); inputFocus.setTarget(null); });
+	t.after(() => { keybindings.dispose(); control.dispose(); pointerCapture.interrupt(false); pointerHover.clear(); inputFocus.setTarget(null); });
 	return { control, model, actions, bounds, update, press, pointer };
 }
 

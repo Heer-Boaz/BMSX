@@ -7,7 +7,7 @@ import type { BehaviorLensInput } from './editor_input';
 import type { BehaviorLensViewState } from './view_model';
 import { captureBehaviorLensView, restoreBehaviorLensView, type BehaviorLensViewSnapshot } from './view_snapshot';
 
-export type SerializedBehaviorLensInput = { readonly version: 1;
+export type SerializedBehaviorLensInput = {
 	readonly source: TextFileModelSnapshot;
 	readonly dependencies: readonly TextFileModelSnapshot[];
 	readonly presentation: BehaviorLensViewState['presentation']['kind'];
@@ -23,14 +23,13 @@ export class BehaviorLensInputSerializer implements EditorInputSerializer<Behavi
 		for (const model of input.view.source.models.values()) {
 			if (model !== input.workingCopy) dependencies.push(captureTextFileModel(model));
 		}
-		const state: SerializedBehaviorLensInput = { version: 1, source: captureTextFileModel(input.workingCopy),
+		const state: SerializedBehaviorLensInput = { source: captureTextFileModel(input.workingCopy),
 			dependencies, presentation: input.view.presentation.kind, view: captureBehaviorLensView(input) };
 		return JSON.stringify(state);
 	}
 
 	public async deserialize(value: string): Promise<BehaviorLensInput> {
 		const state: SerializedBehaviorLensInput = JSON.parse(value);
-		if (state.version !== 1) throw new Error(`Unsupported behavior lens editor version '${state.version}'.`);
 		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
 		let sameDependencies = true;
 		for (const dependency of state.dependencies) {

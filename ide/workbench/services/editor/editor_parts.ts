@@ -7,6 +7,7 @@ import type { WorkbenchSurface } from '../windows/model';
 import type { WorkbenchSurfaceService } from '../windows/service';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
 import type { EditorPaneFactories } from './editor_panes';
+import type { WindowPlacement } from '../../ui/window/model';
 import type { CloseEditors } from './editor_close';
 import type { EditorGroupView } from './editor_group';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
@@ -80,11 +81,11 @@ export class EditorParts {
 		this.changed();
 	}
 
-	public createDocument(requestedBounds?: Readonly<RectBounds>, maximized = false, minimized = false): EditorPart {
+	public createDocument(requestedBounds?: Readonly<RectBounds>, placement: WindowPlacement = 'normal', minimized = false): EditorPart {
 		const area = this.options.workArea;
 		const width = Math.round((area.right - area.left) * 0.86), height = Math.round((area.bottom - area.top) * 0.86);
 		const offset = 8 * (this.documentParts.length % 4 + 1);
-		const part = new EditorPart({ ...this.options, kind: 'document', maximized, minimized,
+		const part = new EditorPart({ ...this.options, kind: 'document', placement, minimized,
 			focusReturn: this.main.focusTarget,
 			requestedBounds: requestedBounds === undefined ? {
 				left: area.right - width - offset, top: area.top + offset,
@@ -196,10 +197,10 @@ export class EditorParts {
 		const documents: SerializedDocumentEditorPart[] = this.documentParts.map((part, index) => {
 			const prior = previous?.documents[index], model = part.window!.model, bounds = model.requestedBounds;
 			const group = part.group.model.serialize(serializers, prior?.group);
-			if (prior !== undefined && group === prior.group && model.maximized === prior.maximized && model.minimized === prior.minimized
+			if (prior !== undefined && group === prior.group && model.placement === prior.placement && model.minimized === prior.minimized
 				&& bounds.left === prior.requestedBounds.left && bounds.top === prior.requestedBounds.top
 				&& bounds.right === prior.requestedBounds.right && bounds.bottom === prior.requestedBounds.bottom) return prior;
-			return { group, requestedBounds: { ...bounds }, maximized: model.maximized, minimized: model.minimized };
+			return { group, requestedBounds: { ...bounds }, placement: model.placement, minimized: model.minimized };
 		});
 		const active = this.activePart === this.main ? 0 : this.documentParts.indexOf(this.activePart) + 1;
 		const mru = this.mru.map(part => part === this.main ? 0 : this.documentParts.indexOf(part) + 1);
@@ -212,7 +213,7 @@ export class EditorParts {
 	public async restore(state: SerializedEditorParts, serializers: EditorInputSerializers): Promise<void> {
 		await this.main.group.model.deserialize(state.main, serializers);
 		for (const document of state.documents) {
-			const part = this.createDocument(document.requestedBounds, document.maximized, document.minimized);
+			const part = this.createDocument(document.requestedBounds, document.placement, document.minimized);
 			await part.group.model.deserialize(document.group, serializers);
 		}
 		for (const group of this.groupList) {

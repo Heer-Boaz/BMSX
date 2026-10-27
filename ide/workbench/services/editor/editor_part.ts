@@ -18,7 +18,7 @@ import type { WorkbenchSurfaceService } from '../windows/service';
 import type { WorkbenchSurface } from '../windows/model';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
 import { WorkbenchFloatingWindow } from '../../ui/window/control';
-import { WorkbenchWindowModel } from '../../ui/window/model';
+import { WorkbenchWindowModel, type WindowPlacement } from '../../ui/window/model';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { RuntimeTimelineControl } from '../../ui/runtime_timeline_control';
 import { EditorGroupView } from './editor_group';
@@ -45,7 +45,7 @@ type EditorPartOptions = {
 	requestMinimize(part: EditorPart): void;
 	readonly requestedBounds: Readonly<RectBounds>;
 	readonly minimized: boolean;
-	readonly maximized: boolean;
+	readonly placement: WindowPlacement;
 });
 
 /** One real editor container: controls and sessions live here, documents do not. */
@@ -85,7 +85,7 @@ export class EditorPart {
 		if (options.kind === 'document') {
 			const model = new WorkbenchWindowModel(options.requestedBounds, 160, 96);
 			model.open = true;
-			model.setMaximized(options.maximized);
+			model.setPlacement(options.placement);
 			model.setMinimized(options.minimized);
 			this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, options.surfaces, options.commands, {
 				model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: options.owner, presentationParent: null,

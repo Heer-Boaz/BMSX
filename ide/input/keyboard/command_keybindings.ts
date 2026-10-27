@@ -16,10 +16,19 @@ export const enum EditorKeybindingWeight {
 	WorkbenchContrib = 200,
 }
 
-export type EditorCommandKeybinding = {
+export type EditorKeybindingStroke = {
 	readonly code: string;
-	readonly command: EditorCommandId;
 	readonly modifiers: EditorModifierConstraint;
+};
+
+export type EditorKeybindingPress = {
+	readonly code: string;
+	readonly modifiers: KeyModifier;
+};
+
+export type EditorCommandKeybinding = EditorKeybindingStroke & {
+	readonly command: EditorCommandId;
+	readonly chord?: EditorKeybindingStroke;
 	/** Applicability is distinct from command enablement (e.g. empty field history). */
 	readonly when?: (target: InputFocusTarget | null) => boolean;
 	readonly repeat?: boolean;
@@ -52,6 +61,10 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'KeyK', command: 'window.snapLeft', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'ArrowLeft', modifiers: NO_MODIFIERS } },
+	{ code: 'KeyK', command: 'window.snapRight', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'ArrowRight', modifiers: NO_MODIFIERS } },
+	{ code: 'KeyK', command: 'window.maximize', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'ArrowUp', modifiers: NO_MODIFIERS } },
+	{ code: 'KeyK', command: 'window.restore', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'ArrowDown', modifiers: NO_MODIFIERS } },
 	{ code: 'KeyW', command: 'tabs.close', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'Tab', command: 'tabs.next', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'Tab', command: 'tabs.previous', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
@@ -117,10 +130,14 @@ for (let groupIndex = 0; groupIndex < EDITOR_DEFAULT_KEYBINDING_GROUPS.length; g
 	const group = EDITOR_DEFAULT_KEYBINDING_GROUPS[groupIndex];
 	const bindings = group.bindings;
 	for (let bindingIndex = 0; bindingIndex < bindings.length; bindingIndex += 1) {
-		const code = bindings[bindingIndex].code;
-		if (!registeredKeybindingCodes.has(code)) {
-			registeredKeybindingCodes.add(code);
-			editorKeybindingCodes.push(code);
+		const binding = bindings[bindingIndex];
+		if (!registeredKeybindingCodes.has(binding.code)) {
+			registeredKeybindingCodes.add(binding.code);
+			editorKeybindingCodes.push(binding.code);
+		}
+		if (binding.chord !== undefined && !registeredKeybindingCodes.has(binding.chord.code)) {
+			registeredKeybindingCodes.add(binding.chord.code);
+			editorKeybindingCodes.push(binding.chord.code);
 		}
 	}
 }
@@ -143,12 +160,18 @@ export function resolveEditorCommandKeybinding(
 	modifiers: KeyModifier,
 	commands: EditorCommandEnablement | undefined,
 	target: InputFocusTarget | null = inputFocus.target,
+	prefix?: EditorKeybindingPress,
 ): EditorCommandKeybinding | null {
 	for (let groupIndex = EDITOR_DEFAULT_KEYBINDING_GROUPS.length - 1; groupIndex >= 0; groupIndex -= 1) {
 		const bindings = EDITOR_DEFAULT_KEYBINDING_GROUPS[groupIndex].bindings;
 		for (let bindingIndex = bindings.length - 1; bindingIndex >= 0; bindingIndex -= 1) {
 			const binding = bindings[bindingIndex];
-			if (binding.code !== code || !matchesModifierConstraint(binding.modifiers, modifiers)) continue;
+			if (prefix === undefined) {
+				if (binding.code !== code || !matchesModifierConstraint(binding.modifiers, modifiers)) continue;
+			} else {
+				if (binding.chord === undefined || binding.code !== prefix.code || !matchesModifierConstraint(binding.modifiers, prefix.modifiers)
+					|| binding.chord.code !== code || !matchesModifierConstraint(binding.chord.modifiers, modifiers)) continue;
+			}
 			const ownCommand = target?.getCommand(binding.command);
 			if (ownCommand === undefined && commands === undefined) continue;
 			if (binding.when !== undefined ? binding.when(target)
@@ -166,6 +189,10 @@ function keyCodeLabel(code: string): string {
 		case 'Comma': return ',';
 		case 'BracketLeft': return '[';
 		case 'BracketRight': return ']';
+		case 'ArrowLeft': return 'LEFT';
+		case 'ArrowRight': return 'RIGHT';
+		case 'ArrowUp': return 'UP';
+		case 'ArrowDown': return 'DOWN';
 		default: return code.toUpperCase();
 	}
 }
@@ -174,7 +201,7 @@ function appendModifierLabel(label: string, modifier: string): string {
 	return label.length === 0 ? modifier : `${label}+${modifier}`;
 }
 
-export function editorKeybindingLabel(binding: EditorCommandKeybinding): string {
+export function editorKeybindingStrokeLabel(binding: EditorKeybindingStroke): string {
 	let label = '';
 	const any = binding.modifiers.any;
 	if (any === PRIMARY_MODIFIER) {
@@ -188,6 +215,11 @@ export function editorKeybindingLabel(binding: EditorCommandKeybinding): string 
 		if ((required & KeyModifier.alt) !== 0) label = appendModifierLabel(label, 'ALT');
 	}
 	return appendModifierLabel(label, keyCodeLabel(binding.code));
+}
+
+export function editorKeybindingLabel(binding: EditorCommandKeybinding): string {
+	const first = editorKeybindingStrokeLabel(binding);
+	return binding.chord === undefined ? first : `${first}, ${editorKeybindingStrokeLabel(binding.chord)}`;
 }
 
 const editorCommandKeybindingLabels = new Map<EditorCommandId, string>();

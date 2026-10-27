@@ -43,6 +43,7 @@ exact UI. Source links pin the relevant revisions.
 | VS Code [modal editor part](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/modalEditorPart.ts#L154-L221), [drag](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/modalEditorPart.ts#L477-L568) and [layering](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/media/modalEditorPart.css#L7-L17) | An in-workbench shell composes existing editor content, scoped context, resizing and a shared pointer monitor. Its modality is explicit. | Reuse content and input infrastructure; do not copy modal behaviour into a modeless Details window. |
 | VS Code [auxiliary window service](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/services/auxiliaryWindow/browser/auxiliaryWindowService.ts) | A real host window has separate container and unload/resize lifetime. | Keep multi-host-window support outside the canvas window model. |
 | Epic [tab roles](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/ETabRole) and [window arguments](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/SlateCore/SWindow/FArguments) | Major/document/panel roles and window minimize/maximize capabilities are distinct declarations. | Give document and owned utility windows their actual capabilities; a minus button must not mean titlebar-only collapse. |
+| KWin [quick-tile restore and outline](https://github.com/KDE/kwin/blob/v6.5.0/src/window.cpp#L3284-L3360), [pointer reanchoring](https://github.com/KDE/kwin/blob/v6.5.0/src/window.cpp#L3566-L3603) and [snap/maximize integration](https://github.com/KDE/kwin/blob/v6.5.0/autotests/integration/quick_tiling_test.cpp#L966-L1055) | Normal restore geometry, tiling mode and prospective feedback have separate lifetimes; restoring after maximize need not reinstate a former tile. | Preserve normal intent, derive live half geometry and stage drag placement before committing a drop. |
 | Qt [MDI title double-click](https://github.com/qt/qtbase/blob/v6.8.3/src/widgets/widgets/qmdisubwindow.cpp#L2977-L3013) | The subwindow owns title gestures and maximize/restore, excluding its action controls. | Recognize title clicks/drag in shared window chrome rather than each document pane. |
 | VS Code [context view](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/base/browser/ui/contextview/contextview.ts#L322-L352) and [container selection](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/platform/contextview/browser/contextViewService.ts#L19-L61) | A transient surface receives an anchor and content delegate with an attachment lifetime. | Popup placement and dismissal belong to presentation; menu/provider meaning remains in its controller. |
 | VS Code [action presentation](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/base/browser/ui/actionbar/actionViewItems.ts) and [Variables view](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/contrib/debug/browser/variablesView.ts) | Icon actions retain semantic labels/hints; a value tree requests explicit children rather than using its rendered preview as data. | Compact chrome and structured inspection keep their meaning independently of font size, clipped text or expanded presentation. |
@@ -269,9 +270,13 @@ Maximize selects the published work area as the expanded arranged bounds while
 retaining normal requested placement unchanged. Restore arranges those same
 normal bounds against the current work area and font; it never restores a
 captured rectangle from another layout generation. The shared title actions and
-window commands expose the mode with maximize/restore icons. Move/resize and the
-resize grip are unavailable while maximized; switching mode cancels only an
+window commands expose the mode with maximize/restore icons. Resize and the
+resize grip are unavailable while maximized; a real title drag presents the
+retained normal size under the pointer. Switching mode cancels only an
 active chrome gesture, not an unrelated client or sibling capture.
+
+The normal request remains unchanged during the drag; only a free release
+commits its new placement. Cancellation discards the pending arrangement.
 
 Double-clicking the draggable title region toggles maximize/restore. Action
 buttons and resize edges do not participate. A completed title click must stay
@@ -304,8 +309,8 @@ local dialog or client. Passive restacking never restores a minimized part.
 A close decision for a minimized dirty document reveals its local prompt only
 when the close owner actually requires a decision; clean close need not reveal.
 
-Session placement records normal requested bounds, maximized and minimized
-independently. It does not persist arranged pixels, focus authorization or a
+Session placement records normal requested bounds, the normal/snapped/maximized
+placement and independently minimized visibility. It does not persist arranged pixels, focus authorization or a
 live capture. Owned utility close retains input-owned placement/subject intent;
 accepted document close disposes the actual document part through close
 admission. Neither operation is window collapse.
@@ -313,7 +318,7 @@ admission. Neither operation is window collapse.
 ### Snapped placement contract
 
 Snapping is a placement operation on an existing floating window, distinct from
-docking, splitting an editor group or creating another document view. The target
+docking, splitting an editor group or creating another document view. The
 placement model distinguishes normal, maximized, left-half and right-half
 placement; minimized visibility is independent. Normal requested bounds remain
 the restore intent. A snapped rectangle is derived from the current owning work
@@ -324,11 +329,17 @@ the user's normal placement.
 The shared title-drag owner proposes left/right half placement at the side
 edges and maximize at the top edge, with passive prospective-bounds feedback.
 Only a real drag past the common activation threshold proposes a destination.
-Release resolves the final pointer occurrence before committing; cancellation,
-Escape, a modal takeover or owner retirement clears the proposal without a
-snap. Leaving a maximized/snapped title region for a real drag returns to normal
-placement with the pointer anchored to the same relative title position. A
-normal resize leaves snapped placement and edits the normal request. Minimum
+The held gesture owns an uncommitted normal arrangement: its visible frame can
+move or resize without publishing source/session placement or autosaving each
+motion. Release resolves the final pointer occurrence before committing either
+that free placement or the offered snap. Cancellation, Escape, modal takeover
+or owner retirement discards the pending arrangement and proposal; no previous
+state is written back. Leaving a maximized/snapped title region for a real drag
+presents normal size with the pointer anchored at the same horizontal title
+fraction and title-local vertical offset. A free resize leaves snapped
+placement and commits its new normal request. Snapping or maximizing instead
+retains the previous normal request. Maximize/restore returns to normal, not a
+remembered preceding half; minimized visibility does not change placement. Minimum
 content requirements govern which halves are offered: an unavailable half is
 not silently enlarged over its neighbor or accepted without room for chrome.
 
@@ -341,13 +352,23 @@ input bypasses Studio bindings. VS Code's [editor-group split](https://github.co
 [focus](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorActions.ts#L324-L334) and
 [move](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorActions.ts#L899-L911) shortcuts
 are not evidence for intercepting OS Snap shortcuts or mutating groups when a
-canvas window is snapped. A multi-key chord requires a real central chord
-lifetime, not an ad-hoc title/pane keyboard handler.
+canvas window is snapped.
 
-This target requires a shared placement-mode transition, drag feedback and
-central shortcut support. Existing maximize/minimize support alone does not
-provide snapping. Persist the placement mode and normal request at the document
-part's storage boundary; never persist a pending proposal. Acceptance exercises
+The frontend's central keybinding controller owns a two-stroke chord and its
+actual invocation target. Ctrl/Cmd+K followed by an unmodified Left or Right
+snaps that window; Up toggles maximize/restore and Down restores normal
+placement. The common binding metadata supplies command-palette/menu labels.
+The prefix hint occupies the existing status context slot: waiting for a second
+key must not add a status row, change the work area or invalidate half admission.
+Escape, focus/admission loss, owner retirement, frontend suspension or a
+five-second host-clock deadline ends the pending chord. A completed chord is
+resolved against the retained live target and current command admission.
+Unrelated modified arrow navigation and guest input retain their own owners.
+
+Persist the placement mode and normal request at the document part's storage
+boundary; never persist a pending gesture or proposal. Workspace layout,
+editor-view mementos and source-recovery manifests use the current unversioned
+shape, without schema gates or migrations. Acceptance exercises
 work-area shrink/growth, snap/maximize/restore/minimize round trips, pointer
 cancellation/coalesced release, stale command origins and unchanged
 source/group/runtime ownership.

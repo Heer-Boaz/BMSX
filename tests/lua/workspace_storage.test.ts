@@ -94,7 +94,6 @@ import {
 } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import {
 	WorkspaceAutosaveChange,
-	deserializeWorkspaceAutosavePayload,
 	type WorkspaceAutosavePayload,
 } from '../../ide/workbench/workspace/models';
 import { createTestRuntimeSourceState, TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
@@ -399,22 +398,12 @@ function payload(
 	editorGroup: SerializedEditorGroup = { inputs: [], active: null, preview: null },
 ): WorkspaceAutosavePayload {
 	return {
-		version: 5,
 		dirtyFiles,
 		editorParts: { main: editorGroup, documents: [], active: 0, mru: [0] },
 		breakpoints: [],
 		fontVariant: DEFAULT_FONT_VARIANT,
 	};
 }
-
-test('workspace sessions admit the complete part topology format and reject other schema versions', () => {
-	const saved = payload();
-	assert.deepEqual(deserializeWorkspaceAutosavePayload(JSON.stringify(saved)), saved);
-	for (const version of [1, 2, 3, 4]) {
-		assert.throws(() => deserializeWorkspaceAutosavePayload(JSON.stringify({ ...saved, version })),
-			new RegExp(`Unsupported workspace session version '${version}'`));
-	}
-});
 
 function codeInputSnapshot(path: string, text: string, contextId: string, cursor = 0, anchor: number | null = null, scrollLeft = 0): SerializedEditorInput {
 	const model = new EditorTextModel(testResource(path, contextId), 'lua', text);
@@ -432,12 +421,12 @@ function codeInputState(input: SerializedEditorInput): SerializedCodeEditorInput
 	return JSON.parse(input.value);
 }
 
-test('code-input version 2 persists fractional pixel scroll with the exact source and selection', async t => {
+test('code-input persistence retains fractional pixel scroll with the exact source and selection', async t => {
 	installBrowserWorkspace(t, new MockStorage());
 	const source = '-- original source\nreturn 1';
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry(source), null], TEST_DOMAIN);
 	const saved = codeInputState(codeInputSnapshot('entry.lua', source, TEST_CONTEXT_ID, 7, 2, 19.75));
-	assert.equal(saved.version, 2); assert.equal(saved.view.scrollLeft, 19.75);
+	assert.equal(saved.view.scrollLeft, 19.75);
 	assert.equal('scrollColumn' in saved.view, false);
 	const serializer = new CodeEditorInputSerializer(sources.catalog);
 	const input = await serializer.deserialize(JSON.stringify({ ...saved, view: { ...saved.view, scrollRow: 1.25 } }));
@@ -445,25 +434,6 @@ test('code-input version 2 persists fractional pixel scroll with the exact sourc
 	assert.equal(input.context.view.cursorColumn, 7); assert.deepEqual(input.context.view.selectionAnchor, { row: 0, column: 2 });
 	assert.equal(input.context.view.scrollRow, 1.25); assert.equal(input.context.view.scrollLeft, 19.75);
 	assert.deepEqual(JSON.parse(serializer.serialize(input)).view, { cursor: 7, anchor: 2, scrollRow: 1.25, scrollLeft: 19.75 });
-});
-
-test('unversioned code-input state cannot reconstruct source or reinterpret old glyph coordinates', async t => {
-	installBrowserWorkspace(t, new MockStorage());
-	const source = '-- original source\nreturn 1';
-	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry(source), null], TEST_DOMAIN);
-	const saved = codeInputState(codeInputSnapshot('entry.lua', source, TEST_CONTEXT_ID, 7, 2));
-	const legacy = JSON.stringify({ source: saved.source, view: { cursor: 7, anchor: 2, scrollRow: 1.25, scrollColumn: 91.75 } });
-	await assert.rejects(new CodeEditorInputSerializer(sources.catalog).deserialize(legacy), /Unsupported code editor view version/);
-	assert.equal([...editorTextModelService.models].length, 0);
-});
-
-test('a future code-input schema is rejected before source reconstruction, not treated as the glyph migration', async t => {
-	installBrowserWorkspace(t, new MockStorage());
-	const source = '-- original source', saved = codeInputState(codeInputSnapshot('entry.lua', source, TEST_CONTEXT_ID));
-	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry(source), null], TEST_DOMAIN);
-	await assert.rejects(new CodeEditorInputSerializer(sources.catalog).deserialize(JSON.stringify({ ...saved, version: 3 })),
-		/Unsupported code editor view version '3'/);
-	assert.equal([...editorTextModelService.models].length, 0);
 });
 
 function editorStub(
@@ -1131,25 +1101,24 @@ test('workspace part recovery preserves independent views and requested placemen
 	second.context.view.cursorRow = 1;
 	second.context.view.cursorColumn = 3;
 	const requested = { left: 650, top: 400, right: 1100, bottom: 900 };
-	const firstDocument = parts.createDocument(requested, true);
-	const secondDocument = parts.createDocument({ left: 50, top: 70, right: 370, bottom: 310 }, true, true);
+	const firstDocument = parts.createDocument(requested, 'left');
+	const secondDocument = parts.createDocument({ left: 50, top: 70, right: 370, bottom: 310 }, 'right', true);
 	parts.main.group.openEditor(main);
 	secondDocument.group.openEditor(second, { preserveFocus: true });
 	firstDocument.group.openEditor(first);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	const saved = workspaceState.localGeneration!;
-	assert.equal(saved.payload.version, 5);
 	assert.equal(saved.payload.editorParts.documents.length, 2);
 	assert.equal(saved.payload.editorParts.active, 1);
 	assert.deepEqual([...saved.payload.editorParts.mru].sort(), [0, 1, 2]);
 	assert.deepEqual(saved.payload.editorParts.documents[0].requestedBounds, requested,
 		'recovery records requested placement, not bounds constrained by the current work area');
-	assert.equal(saved.payload.editorParts.documents[0].maximized, true);
+	assert.equal(saved.payload.editorParts.documents[0].placement, 'left');
 	assert.equal(saved.payload.editorParts.documents[1].minimized, true);
-	assert.equal(saved.payload.editorParts.documents[1].maximized, true);
+	assert.equal(saved.payload.editorParts.documents[1].placement, 'right');
 	assert.equal(saved.payload.dirtyFiles.length, 1, 'multiple views share one dirty-source record');
-	const payloadCopy = JSON.parse(JSON.stringify(saved.payload)) as WorkspaceAutosavePayload;
+	const payloadCopy: WorkspaceAutosavePayload = JSON.parse(JSON.stringify(saved.payload));
 	await applyWorkspaceAutosavePayload(editor, sources.catalog,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, payloadCopy);
 	const restored = [parts.main.group.model.activeTab!, ...parts.documents.map(part => part.group.model.activeTab!)];
@@ -1169,13 +1138,63 @@ test('workspace part recovery preserves independent views and requested placemen
 	assert.equal(restoredSecond.context.view.cursorRow, 1);
 	assert.equal(restoredSecond.context.view.cursorColumn, 3);
 	assert.deepEqual(parts.documents[0].window!.model.requestedBounds, requested,
-		'reload retains the normal placement independently from maximized arrangement');
-	assert.equal(parts.documents[0].window!.model.maximized, true);
+		'reload retains the normal placement independently from snapped arrangement');
+	assert.equal(parts.documents[0].window!.model.placement, 'left');
 	assert.equal(parts.documents[1].window!.model.minimized, true);
-	assert.equal(parts.documents[1].window!.model.maximized, true);
+	assert.equal(parts.documents[1].window!.model.placement, 'right');
 	assert.equal(parts.minimizedCount, 1);
 	assert.ok(parts.activePart === parts.documents[0]);
 	assert.deepEqual(parts.serialize(editor.editorInputSerializers), saved.payload.editorParts);
+});
+
+test('workspace recovery keeps every placement mode independent from minimized visibility and normal bounds', async t => {
+	const storage = new MockStorage();
+	installBrowserWorkspace(t, storage);
+	const { sources, editor } = await startAutosaveSession(t, storage);
+	const parts = editor.editorParts, requested = { left: 60, top: 70, right: 360, bottom: 280 };
+	const placements = ['normal', 'maximized', 'left', 'right'] as const;
+	for (const [index, placement] of placements.entries()) parts.createDocument(requested, placement, (index & 1) !== 0);
+	await flushRequestedAutosave();
+	const saved = workspaceState.localGeneration!.payload;
+	assert.deepEqual(saved.editorParts.documents.map(part => [part.placement, part.minimized]),
+		[['normal', false], ['maximized', true], ['left', false], ['right', true]]);
+	assert.strictEqual(parts.serialize(editor.editorInputSerializers, saved.editorParts), saved.editorParts);
+	const payloadCopy: WorkspaceAutosavePayload = JSON.parse(JSON.stringify(saved));
+	await applyWorkspaceAutosavePayload(editor, sources.catalog, { breakpoints: new RuntimeBreakpoints(sources, () => {}) }, payloadCopy);
+	for (const [index, part] of parts.documents.entries()) {
+		assert.equal(part.window!.model.placement, placements[index]);
+		assert.equal(part.window!.model.minimized, (index & 1) !== 0);
+		assert.deepEqual(part.window!.model.requestedBounds, requested,
+			'recovered mode pixels must not replace the retained normal request');
+	}
+	assert.equal(parts.minimizedCount, 2); assert.strictEqual(parts.activePart, parts.main);
+	assert.deepEqual(parts.serialize(editor.editorInputSerializers), saved.editorParts);
+});
+
+test('pending placement geometry never enters workspace checkpoints or schedules a write before commit', async t => {
+	const storage = new MockStorage();
+	const clock = installBrowserWorkspace(t, storage);
+	const { editor } = await startAutosaveSession(t, storage);
+	const parts = editor.editorParts, requested = { left: 60, top: 70, right: 360, bottom: 280 };
+	const part = parts.createDocument(requested, 'left'), model = part.window!.model;
+	await flushRequestedAutosave();
+	const initial = workspaceState.localGeneration!, area = { left: 10, top: 20, right: 610, bottom: 400 };
+	const draft = { left: 90, top: 100, right: 390, bottom: 310 };
+	model.arrange(area, 16, draft);
+	assert.equal(model.arrangedPlacement, 'normal'); assert.equal(model.placement, 'left');
+	assert.equal(clock.activeCount, 0);
+	assert.strictEqual(parts.serialize(editor.editorInputSerializers, initial.payload.editorParts), initial.payload.editorParts);
+	model.arrange(area, 16);
+	assert.equal(clock.activeCount, 0, 'discarding uncommitted geometry does not require a compensating write');
+	model.setRequestedBounds(draft, 'normal');
+	assert.equal(clock.activeCount, 1);
+	await flushRequestedAutosave();
+	const committed = workspaceState.localGeneration!;
+	assert.equal(committed.payload.editorParts.documents[0].placement, 'normal');
+	assert.deepEqual(committed.payload.editorParts.documents[0].requestedBounds, draft);
+	assert.equal(initial.payload.editorParts.documents[0].placement, 'left');
+	assert.deepEqual(initial.payload.editorParts.documents[0].requestedBounds, requested);
+	assert.strictEqual(committed.payload.editorParts.documents[0].group, initial.payload.editorParts.documents[0].group);
 });
 
 test('part membership, model and requested-placement changes schedule topology autosave through the parts owner', async t => {
@@ -1188,25 +1207,25 @@ test('part membership, model and requested-placement changes schedule topology a
 	const initial = workspaceState.localGeneration!;
 	assert.equal(initial.payload.editorParts.documents.length, 1);
 	assert.equal(initial.payload.editorParts.documents[0].group.inputs.length, 0);
-	part.window!.model.setMaximized(true);
+	part.window!.model.setPlacement('left');
 	assert.equal(clock.activeCount, 1);
 	await flushRequestedAutosave();
-	const maximized = workspaceState.localGeneration!;
-	assert.notStrictEqual(maximized.payload.editorParts, initial.payload.editorParts);
-	assert.strictEqual(maximized.payload.editorParts.documents[0].group, initial.payload.editorParts.documents[0].group,
+	const snapped = workspaceState.localGeneration!;
+	assert.notStrictEqual(snapped.payload.editorParts, initial.payload.editorParts);
+	assert.strictEqual(snapped.payload.editorParts.documents[0].group, initial.payload.editorParts.documents[0].group,
 		'placement mode changes reuse the unchanged immutable editor group');
-	assert.equal(maximized.payload.editorParts.documents[0].maximized, true);
-	assert.equal(initial.payload.editorParts.documents[0].maximized, false,
+	assert.equal(snapped.payload.editorParts.documents[0].placement, 'left');
+	assert.equal(initial.payload.editorParts.documents[0].placement, 'normal',
 		'a mode change does not mutate the previous checkpoint');
 	part.window!.model.setMinimized(true);
 	assert.equal(editor.editorParts.minimizedCount, 1);
 	assert.equal(clock.activeCount, 1);
 	await flushRequestedAutosave();
 	const minimized = workspaceState.localGeneration!;
-	assert.notStrictEqual(minimized.payload.editorParts, maximized.payload.editorParts);
-	assert.strictEqual(minimized.payload.editorParts.documents[0].group, maximized.payload.editorParts.documents[0].group);
+	assert.notStrictEqual(minimized.payload.editorParts, snapped.payload.editorParts);
+	assert.strictEqual(minimized.payload.editorParts.documents[0].group, snapped.payload.editorParts.documents[0].group);
 	assert.equal(minimized.payload.editorParts.documents[0].minimized, true);
-	assert.equal(maximized.payload.editorParts.documents[0].minimized, false,
+	assert.equal(snapped.payload.editorParts.documents[0].minimized, false,
 		'minimization creates a new immutable checkpoint without mutating the prior presentation');
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CONTEXT_ID, path: 'entry.lua' })!;
 	part.group.model.add(new CodeEditorInput(editorTextModelService.retain(resource, 'lua', '-- cart source')));
@@ -1218,7 +1237,7 @@ test('part membership, model and requested-placement changes schedule topology a
 	assert.equal(changed.payload.editorParts.documents[0].group.inputs.length, 1);
 	assert.deepEqual(changed.payload.editorParts.documents[0].requestedBounds, moved);
 	assert.equal(changed.payload.editorParts.documents[0].minimized, true);
-	assert.equal(changed.payload.editorParts.documents[0].maximized, true);
+	assert.equal(changed.payload.editorParts.documents[0].placement, 'left');
 	assert.deepEqual(initial.payload.editorParts.documents[0].requestedBounds, { left: 20, top: 30, right: 340, bottom: 270 },
 		'previous immutable checkpoints retain their placement');
 	assert.strictEqual(changed.payload.dirtyFiles, initial.payload.dirtyFiles);
