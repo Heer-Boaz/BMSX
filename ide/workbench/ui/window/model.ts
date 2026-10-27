@@ -6,15 +6,15 @@ export const WINDOW_RESIZE_MARGIN = 3;
 
 export const enum WindowResizeEdge { None = 0, Left = 1, Top = 2, Right = 4, Bottom = 8 }
 
-/** Normal requested placement survives work-area constraints, maximize and title-only collapse. */
+/** Normal requested placement survives work-area constraints, maximize and minimize. */
 export class WorkbenchWindowModel {
 	public readonly requestedBounds = create_rect_bounds();
 	public readonly bounds = create_rect_bounds();
 	public readonly header = create_rect_bounds();
 	public readonly client = create_rect_bounds();
 	public open = false;
-	public collapsed = false;
 	public maximized = false;
+	public minimized = false;
 	public font: BFont | undefined;
 	public displayTitle = '';
 	public revision = 0;
@@ -52,9 +52,9 @@ export class WorkbenchWindowModel {
 		this.publishPlacement();
 	}
 
-	public setCollapsed(collapsed: boolean): void {
-		if (this.collapsed === collapsed) return;
-		this.collapsed = collapsed;
+	public setMinimized(minimized: boolean): void {
+		if (this.minimized === minimized) return;
+		this.minimized = minimized;
 		this.revision += 1;
 		this.placementRevision += 1;
 		this.publishPlacement();
@@ -91,10 +91,9 @@ export class WorkbenchWindowModel {
 		this.headerHeight = headerHeight;
 		const requested = this.requestedBounds;
 		const areaWidth = workArea.right - workArea.left, areaHeight = workArea.bottom - workArea.top;
-		const maximized = this.maximized && !this.collapsed;
+		const maximized = this.maximized;
 		const width = maximized ? areaWidth : clamp(requested.right - requested.left, Math.min(this.minimumWidth, areaWidth), areaWidth);
-		const height = this.collapsed ? Math.min(headerHeight, areaHeight)
-			: maximized ? areaHeight : clamp(requested.bottom - requested.top, Math.min(this.minimumHeight, areaHeight), areaHeight);
+		const height = maximized ? areaHeight : clamp(requested.bottom - requested.top, Math.min(this.minimumHeight, areaHeight), areaHeight);
 		const left = maximized ? workArea.left : clamp(requested.left, workArea.left, workArea.right - width);
 		const top = maximized ? workArea.top : clamp(requested.top, workArea.top, workArea.bottom - height);
 		write_rect_bounds(this.bounds, left, top, left + width, top + height);
@@ -112,10 +111,8 @@ export class WorkbenchWindowModel {
 		let edge = WindowResizeEdge.None;
 		if (x < bounds.left + WINDOW_RESIZE_MARGIN) edge |= WindowResizeEdge.Left;
 		else if (x >= bounds.right - WINDOW_RESIZE_MARGIN) edge |= WindowResizeEdge.Right;
-		if (!this.collapsed) {
-			if (y < bounds.top + WINDOW_RESIZE_MARGIN) edge |= WindowResizeEdge.Top;
-			else if (y >= bounds.bottom - WINDOW_RESIZE_MARGIN) edge |= WindowResizeEdge.Bottom;
-		}
+		if (y < bounds.top + WINDOW_RESIZE_MARGIN) edge |= WindowResizeEdge.Top;
+		else if (y >= bounds.bottom - WINDOW_RESIZE_MARGIN) edge |= WindowResizeEdge.Bottom;
 		return edge;
 	}
 }

@@ -116,16 +116,16 @@ test('GPU Details preserves one observation through expiry and shows explicit em
 	assert.equal(input.detailsWindow.open, false); assert.equal(details.inspector.visible, false);
 });
 
-test('GPU collapse and close retain view bookmarks, but a newer selected observation cannot inherit a stale client bookmark', t => {
+test('GPU close retains view bookmarks, but a newer selected observation cannot inherit a stale client bookmark', t => {
 	const f = fixture(t), { input, details } = f; details.show();
 	const last = details.inspector.model.rows.length - 1;
 	details.inspector.model.select(last);
 	const anchor = details.inspector.model.rowAt(details.inspector.model.viewport.bounds.top), scroll = details.inspector.model.viewport.scrollTop, requested = { ...input.detailsWindow.requestedBounds };
-	details.window.setCollapsed(true);
+	details.window.hide();
 	assert.equal(details.inspector.visible, false); assert.equal(input.detailsView.selectionIndex, last); assert.equal(input.detailsView.anchorIndex, anchor);
 	for (let frame = 0; frame < 1000; frame++) details.update();
 	assert.equal(f.formats(), 1);
-	details.window.setCollapsed(false);
+	details.show();
 	assert.equal(details.inspector.model.viewport.scrollTop, scroll, 'restoration finishes during the actual client reflow, not a later paint');
 	assert.equal(details.inspector.model.selectionIndex, last);
 	details.inspector.focusTarget.focus(); f.press('Home'); details.update();
@@ -135,19 +135,19 @@ test('GPU collapse and close retain view bookmarks, but a newer selected observa
 	details.show(); assert.equal(f.formats(), 1);
 	details.inspector.model.select(last);
 	f.emit(0x77); input.update(); input.select(input.history.endSequence - 1);
-	details.window.setCollapsed(true); // A new input occurrence can precede its first paint.
+	details.window.hide(); // A new input occurrence can precede its first paint.
 	assert.equal(input.detailsView.selectionIndex, 0); assert.equal(input.detailsView.anchorIndex, 0);
-	details.window.setCollapsed(false); details.update();
+	details.show(); details.update();
 	assert.equal(details.inspector.model.selectionIndex, 0); assert.equal(f.formats(), 2);
 	assert.deepEqual(input.detailsWindow.requestedBounds, requested);
 });
 
 test('GPU Words exposes the complete upload and keeps its selection independent of Properties bookmarks', t => {
-	const f = fixture(t), { input, details } = f; details.show(); details.window.setCollapsed(true);
+	const f = fixture(t), { input, details } = f; details.show(); details.window.hide();
 	f.write([0xa0000000, 0, 0x0001008c, ...Array.from({ length: 70 }, (_, index) => 0x11110000 | index)]);
 	input.update(); input.select(input.history.endSequence - 1); input.selectedWord = 65;
 	assert.equal(input.selected.wordCount, 73);
-	details.window.setCollapsed(false); details.update();
+	details.show(); details.update();
 	assert.equal(details.inspector.model.rows.find(row => row.element.label === 'Words')!.element.value, '73');
 	assert.equal(details.inspector.model.rows.some(row => row.element.label.startsWith('Word[')), false);
 	details.inspector.model.select(details.inspector.model.rows.length - 1);
@@ -170,8 +170,8 @@ test('GPU pane detachment restores the retained page document instead of mistaki
 	const restored = f.createDetails(); t.after(() => restored.dispose()); restored.update();
 	assert.equal(restored.inspector.model.selectionIndex, selected);
 	assert.equal(restored.inspector.model.viewport.scrollTop, scroll);
-	restored.window.setCollapsed(true); configureFontVariant('tiny'); restored.update();
-	restored.window.setCollapsed(false); restored.update();
+	restored.window.hide(); configureFontVariant('tiny'); restored.update();
+	restored.show(); restored.update();
 	const row = restored.inspector.model.rows[selected], view = restored.inspector.model.viewport;
 	assert.ok(view.offsetTop + row.top < view.bounds.bottom && view.offsetTop + row.bottom > view.bounds.top);
 	assert.equal(input.detailsWindow.open, true);

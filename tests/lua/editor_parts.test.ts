@@ -206,7 +206,7 @@ test('the main Scene survives its actual Source window, canonical edits, Save an
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'authoring_scene.lua' })!;
-	f.firstPart.window!.setCollapsed(true);
+	f.editor.editorParts.minimize(f.firstPart);
 	f.secondGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, resource)); f.update();
 	const source = f.second;
 	// Scene is selected from the invoking Source resource, not the previous main subject.
@@ -285,20 +285,20 @@ test('local dirty close preserves an invalid sibling draft and revokes asynchron
 	assert.ok(f.editor.editorParts.activePart === f.editor.editorParts.main);
 });
 
-test('a background input attachment preserves a collapsed window and sibling focus until explicit activation', async t => {
+test('a background input attachment preserves a minimized window and sibling focus until explicit activation', async t => {
 	const f = createActualSourcePanes(t);
-	f.firstPart.window!.setCollapsed(true);
+	f.editor.editorParts.minimize(f.firstPart);
 	f.second.focus();
 	const sibling = inputFocus.target;
 	const input = new CodeEditorInput(f.secondInput.workingCopy);
 	const result = await f.firstGroup.openResolvedEditor(input, { preserveFocus: true });
 	assert.equal(result?.activated, false);
 	assert.ok(f.firstGroup.panes.activePane!.input === input);
-	assert.equal(f.firstPart.window!.model.collapsed, true);
+	assert.equal(f.firstPart.window!.model.minimized, true);
 	assert.ok(inputFocus.target === sibling);
 	assert.ok(f.editor.editorParts.activePart === f.secondPart);
 	f.firstGroup.activate(input.id);
-	assert.equal(f.firstPart.window!.model.collapsed, false);
+	assert.equal(f.firstPart.window!.model.minimized, false);
 	assert.ok(inputFocus.target === f.first.commandTarget);
 	assert.ok(f.editor.editorParts.activePart === f.firstPart);
 });
@@ -366,14 +366,14 @@ test('closing the foreground document restores its sibling retained local input'
 	assert.ok(f.editor.editorParts.activePart === f.firstPart);
 });
 
-test('a foreground tool command reveals and arranges its reused collapsed document before admitting the chooser', t => {
+test('a foreground tool command reveals and arranges its reused minimized document before admitting the chooser', t => {
 	const f = createActualSourcePanes(t), main = f.editor.editorParts.main;
 	main.group.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
-	f.firstPart.window!.setCollapsed(true); f.secondPart.window!.setCollapsed(true);
+	f.editor.editorParts.minimize(f.firstPart); f.editor.editorParts.minimize(f.secondPart);
 	f.editor.commands.execute('animation', main.group.panes.activePane!.commandTarget);
 	const part = f.editor.editorParts.activePart;
 	assert.ok(part !== main && part.quickInput.visible);
-	assert.equal(part.window!.model.collapsed, false);
+	assert.equal(part.window!.model.minimized, false);
 	assert.ok(inputFocus.target === part.quickInput.field.focusTarget);
 	const field = part.quickInput.layout.field, x = (field.left + field.right) / 2, y = (field.top + field.bottom) / 2;
 	assert.ok(f.editor.surfaces.hitTest(x, y)?.captureScope === part.quickInput.pointerScope);
@@ -400,7 +400,7 @@ for (const activation of ['keyboard', 'pointer'] as const) test(`${activation} P
 	const diagnostics = problemsPanel.getDiagnostics(), index = diagnostics.findIndex(diagnostic => diagnostic.model === model);
 	assert.ok(index >= 0, 'the authored invalid source supplies a real diagnostic');
 	const diagnostic = diagnostics[index], text = model.buffer.getText(), version = model.version;
-	f.firstPart.window!.setCollapsed(true); f.secondPart.window!.setCollapsed(true);
+	f.editor.editorParts.minimize(f.firstPart); f.editor.editorParts.minimize(f.secondPart);
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(73); f.update();
 	problemsPanel.setFocused(true); problemsPanel.setSelectionIndex(index);
 	if (activation === 'keyboard') f.key('Enter');

@@ -132,10 +132,6 @@ export class ActorLabController {
 		let changed = false;
 		if (input.dirty) {
 			changed = this.projection.update(); input.dirty = false;
-			if (input.detailsWindow.open && input.detailsWindow.collapsed) {
-				this.followDetailsSelection(input);
-				input.details!.resolveSubject(input.runtime, input.domain, input.worldHashId, input.historical);
-			}
 		}
 		if (input.presentation === 'outline' && input.actorPresent && input.follow.pending !== undefined) {
 			const scope = resolveActorTarget(input.runtime.roots, input.follow.pending, this.guest);
@@ -288,7 +284,7 @@ export class ActorLabController {
 		return input.details!.refreshSubject(input.runtime, input.domain, input.worldHashId, input.historical);
 	}
 
-	/** Collapse can follow scalar selection/title without formatting the hidden property client. */
+	/** Hidden Details retain selection without formatting a property client. */
 	public followDetailsSelection(input: ActorLabInput): void {
 		if (input.dirty || this.rewind.seeking) return;
 		input.details!.followSelection(input.domain, input.worldHashId, input.actorHashId, input.presentation === 'outline'

@@ -42,8 +42,9 @@ type EditorPartOptions = {
 	requestClose(part: EditorPart): void;
 } & ({ readonly kind: 'main' } | {
 	readonly kind: 'document';
+	requestMinimize(part: EditorPart): void;
 	readonly requestedBounds: Readonly<RectBounds>;
-	readonly collapsed: boolean;
+	readonly minimized: boolean;
 	readonly maximized: boolean;
 });
 
@@ -85,7 +86,7 @@ export class EditorPart {
 			const model = new WorkbenchWindowModel(options.requestedBounds, 160, 96);
 			model.open = true;
 			model.setMaximized(options.maximized);
-			model.setCollapsed(options.collapsed);
+			model.setMinimized(options.minimized);
 			this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, options.surfaces, options.commands, {
 				model, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: options.owner, presentationParent: null,
 				focusScope: options.scope, focusReturn: options.focusReturn, workArea: options.workArea,
@@ -93,6 +94,7 @@ export class EditorPart {
 				layoutContent: bounds => this.layoutDocument(bounds),
 				retireContentInput: () => this.suspend(), restoreContentInput() {},
 				focusContent: () => this.focus(), requestClose: () => options.requestClose(this),
+				requestMinimize: () => options.requestMinimize(this),
 			});
 			this.window.attach();
 			this.scope = this.window.scope;
@@ -134,7 +136,7 @@ export class EditorPart {
 			{ ...presentation, reveal: () => this.reveal(this.quickInputSurface) });
 		this.actionPrompt = new ActionPrompt(inputFocus, pointerCapture, () => options.surfaces.changed(),
 			next => next !== null && options.surfaces.isInContext(next.scope.surfaceScope, this.actionPrompt.pointerScope),
-			{ ...presentation, reveal: () => this.reveal(this.promptSurface) });
+			{ ...presentation, reveal: () => this.reveal(this.promptSurface), shouldRevealOnShow: () => this.window?.model.minimized === true });
 		this.quickInputSurface = options.surfaces.attach({ role: 'modal', blockedScope: this.surface,
 			presentationParent: this.kind === 'main' ? options.owner : this.surface, captureScope: this.quickInput.pointerScope,
 			lifetimeOwner: this.clientSurface, isVisible: () => this.quickInput.visible,
@@ -166,9 +168,9 @@ export class EditorPart {
 		}), this.group.panes.onDidClearEditor(options.onDidChange), this.group.panes.onWillShowEditor(openOptions => {
 			if (this.window === undefined) options.layoutMain();
 			else {
-				if (!openOptions.preserveFocus) this.window.setCollapsed(false);
+				if (!openOptions.preserveFocus) this.window.show(false);
 				const arranged = this.window.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
-				if (!arranged && !this.window.model.collapsed) this.layoutDocument(this.window.model.client);
+				if (!arranged && this.window.visible) this.layoutDocument(this.window.model.client);
 			}
 		}));
 		this.subscriptions.push(inputFocus.onDidChangeTarget(() => {
@@ -199,7 +201,6 @@ export class EditorPart {
 	private reveal(modal: WorkbenchSurface | null): void {
 		if (this.window === undefined) { this.options.layoutMain(); this.raise(); }
 		else {
-			this.window.setCollapsed(false);
 			this.window.show(false);
 			this.window.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
 		}
@@ -208,7 +209,7 @@ export class EditorPart {
 
 	public raise(): void {
 		if (this.window === undefined) this.options.surfaces.raise(this.options.owner);
-		else this.window.show(false);
+		else this.options.surfaces.raise(this.surface);
 	}
 
 	public setClosing(closing: boolean): void {
@@ -249,7 +250,7 @@ export class EditorPart {
 		if (this.window !== undefined) {
 			this.group.tabStrip.update(editorRuntimeState.currentTimeMs);
 			this.window.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
-			if (!this.window.model.collapsed) {
+			if (this.window.visible) {
 				if (this.group.tabStrip.needsLayout || this.laidOutTimelineHeight !== this.timeline.height) this.layoutDocument(this.window.model.client);
 			}
 			this.window.update();
@@ -259,7 +260,7 @@ export class EditorPart {
 		this.quickInput.update(); this.actionPrompt.update();
 	}
 
-	/** Whole frontend suspension/collapse ends UI input, not document membership. */
+	/** Whole frontend suspension ends UI input, not document membership. */
 	public suspend(): void {
 		this.quickInput.hide(false); this.actionPrompt.close('cancel', false);
 		pointerCapture.cancelScope(this.group.captureScope); pointerCapture.cancelScope(this.group.tabScope);

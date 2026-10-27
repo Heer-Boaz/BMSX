@@ -120,7 +120,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	assert.equal(f.group.model.serialize(f.serializers, before), before, 'unchanged checkpoint reuses immutable group');
 	const dirtySource = f.model.buffer.getText();
 	workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath('game', TEST_CARTRIDGE_CONTEXT_IDS[0], 'definitions.lua'), { contents: dirtySource, updatedAt: 50 });
-	const generation = JSON.parse(JSON.stringify({ version: 4, dirtyFiles: [{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', updatedAt: 50 }],
+	const generation = JSON.parse(JSON.stringify({ version: 5, dirtyFiles: [{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', updatedAt: 50 }],
 		editorParts: { main: before, documents: [], active: 0, mru: [0] }, fontVariant: 'tiny', breakpoints: [] }));
 	await applyWorkspaceAutosavePayload({ editorParts: f.editorParts, editorInputSerializers: f.serializers, setFontVariant() {} },
 		f.sources.catalog, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation);

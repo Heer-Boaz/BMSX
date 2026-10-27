@@ -66,7 +66,9 @@ part topology and requested placement independently of shared source recovery.
 The main presentation family and document windows share the surface owner's
 ordered window band. Window navigation raises actual parts; owned inspectors
 stay in their window/modal presentation family. Shared window models retain
-normal placement independently of maximized and collapsed presentation.
+normal placement independently of maximized presentation and minimized visibility.
+Document minimization retains frontend sessions; part membership owns restore
+and activation. Owned utility inspectors expose their own chrome capabilities.
 
 Shared execution composition owns the primary `RuntimeTransport` and
 `RunTargetSelection`. Global run/debug controls and audio monitoring consume

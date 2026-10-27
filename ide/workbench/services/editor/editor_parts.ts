@@ -38,12 +38,14 @@ export class EditorParts {
 	private readonly mru: EditorPart[] = [];
 	private readonly listeners = new Set<() => void>();
 	private readonly closing = new Map<EditorPart, Promise<boolean>>();
+	private minimizedDocumentCount = 0;
 	public activePart: EditorPart;
 	public get documents(): readonly EditorPart[] { return this.documentParts; }
 	/** Membership projection is updated only by actual part construction/retirement. */
 	public get groups(): readonly EditorGroupView[] { return this.groupList; }
 	public get activeGroup(): EditorGroupView { return this.activePart.group; }
 	public get mostRecentlyActive(): readonly EditorPart[] { return this.mru; }
+	public get minimizedCount(): number { return this.minimizedDocumentCount; }
 
 	public constructor(private readonly options: EditorPartsOptions) {
 		this.main = new EditorPart({ ...options, kind: 'main', onDidActivate: part => this.activate(part),
@@ -53,7 +55,12 @@ export class EditorParts {
 	}
 
 	public onDidChange(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-	private changed(): void { for (const listener of this.listeners) listener(); }
+	private changed(): void {
+		let minimized = 0;
+		for (const part of this.documentParts) if (part.window!.model.minimized) minimized++;
+		this.minimizedDocumentCount = minimized;
+		for (const listener of this.listeners) listener();
+	}
 
 	public partForGroup(group: EditorGroupView): EditorPart { return this.owners.get(group)!; }
 	/** Retained command origins distinguish frontend chrome from retired part controls. */
@@ -73,11 +80,11 @@ export class EditorParts {
 		this.changed();
 	}
 
-	public createDocument(requestedBounds?: Readonly<RectBounds>, collapsed = false, maximized = false): EditorPart {
+	public createDocument(requestedBounds?: Readonly<RectBounds>, maximized = false, minimized = false): EditorPart {
 		const area = this.options.workArea;
 		const width = Math.round((area.right - area.left) * 0.86), height = Math.round((area.bottom - area.top) * 0.86);
 		const offset = 8 * (this.documentParts.length % 4 + 1);
-		const part = new EditorPart({ ...this.options, kind: 'document', collapsed, maximized,
+		const part = new EditorPart({ ...this.options, kind: 'document', maximized, minimized,
 			focusReturn: this.main.focusTarget,
 			requestedBounds: requestedBounds === undefined ? {
 				left: area.right - width - offset, top: area.top + offset,
@@ -85,10 +92,31 @@ export class EditorParts {
 			} : requestedBounds,
 			onDidActivate: next => this.activate(next), onDidChange: () => this.changed(),
 			requestClose: next => { void this.close(next); },
+			requestMinimize: next => this.minimize(next),
 		});
 		this.documentParts.push(part);
 		this.register(part);
 		return part;
+	}
+
+	public minimize(part: EditorPart): void {
+		if (part === this.main) return;
+		const window = part.window!;
+		const returnFocus = this.activePart === part || window.hasFocus;
+		const next = returnFocus ? this.nextVisiblePart(part) : undefined;
+		window.minimize();
+		if (!window.model.minimized || next === undefined) return;
+		if (inputFocus.target === null || window.hasFocus) next.focus();
+		else if (this.activePart === part) this.activate(next);
+	}
+
+	private nextVisiblePart(excluding: EditorPart): EditorPart {
+		let next = this.main;
+		for (const part of this.mru) {
+			if (part === excluding || part.kind === 'document' && part.window!.model.minimized) continue;
+			next = part; break;
+		}
+		return next;
 	}
 
 	public activate(part: EditorPart): void {
@@ -115,7 +143,6 @@ export class EditorParts {
 		if (part === this.main) return Promise.resolve(false);
 		const pending = this.closing.get(part);
 		if (pending !== undefined) return pending;
-		part.window!.setCollapsed(false);
 		part.setClosing(true);
 		const targets = part.group.model.tabs.map(input => ({ group: part.group, input }));
 		const origin = inputFocus.resolveTarget(part.scope.lastFocused) ?? part.group.panes.activePane?.commandTarget ?? part.focusTarget;
@@ -136,7 +163,7 @@ export class EditorParts {
 		// Accepted close may already have retired the focused pane. An unrelated
 		// live control keeps focus; the retiring active part's empty route returns.
 		const ownsFocus = target === null ? this.activePart === part : part.scope.contains(target.commandContext.scope);
-		const next = this.activePart === part ? (this.mru[0] === part ? this.mru[1] : this.mru[0]) : this.activePart;
+		const next = this.activePart === part ? this.nextVisiblePart(part) : this.activePart;
 		if (ownsFocus) next.focus();
 		this.partsByScope.set(part.scope, null);
 		part.dispose();
@@ -169,10 +196,10 @@ export class EditorParts {
 		const documents: SerializedDocumentEditorPart[] = this.documentParts.map((part, index) => {
 			const prior = previous?.documents[index], model = part.window!.model, bounds = model.requestedBounds;
 			const group = part.group.model.serialize(serializers, prior?.group);
-			if (prior !== undefined && group === prior.group && model.collapsed === prior.collapsed && model.maximized === prior.maximized
+			if (prior !== undefined && group === prior.group && model.maximized === prior.maximized && model.minimized === prior.minimized
 				&& bounds.left === prior.requestedBounds.left && bounds.top === prior.requestedBounds.top
 				&& bounds.right === prior.requestedBounds.right && bounds.bottom === prior.requestedBounds.bottom) return prior;
-			return { group, requestedBounds: { ...bounds }, collapsed: model.collapsed, maximized: model.maximized };
+			return { group, requestedBounds: { ...bounds }, maximized: model.maximized, minimized: model.minimized };
 		});
 		const active = this.activePart === this.main ? 0 : this.documentParts.indexOf(this.activePart) + 1;
 		const mru = this.mru.map(part => part === this.main ? 0 : this.documentParts.indexOf(part) + 1);
@@ -185,7 +212,7 @@ export class EditorParts {
 	public async restore(state: SerializedEditorParts, serializers: EditorInputSerializers): Promise<void> {
 		await this.main.group.model.deserialize(state.main, serializers);
 		for (const document of state.documents) {
-			const part = this.createDocument(document.requestedBounds, document.collapsed, document.maximized);
+			const part = this.createDocument(document.requestedBounds, document.maximized, document.minimized);
 			await part.group.model.deserialize(document.group, serializers);
 		}
 		for (const group of this.groupList) {
@@ -204,6 +231,7 @@ export class EditorParts {
 		for (const part of this.documentParts) { this.partsByScope.set(part.scope, null); part.dispose(); }
 		this.partsByScope.set(this.main.scope, null);
 		this.main.dispose(); this.documentParts.length = 0; this.groupList.length = 0;
+		this.minimizedDocumentCount = 0;
 		this.owners.clear(); this.mru.length = 0; this.listeners.clear();
 	}
 }

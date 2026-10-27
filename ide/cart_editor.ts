@@ -138,6 +138,7 @@ import type { StudioWorkbench } from './workbench/workbench';
 import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { drawResourcePanel } from './workbench/render/resource_panel';
+import { WorkbenchWindowStatus } from './workbench/ui/window/status';
 import { renderStatusBar } from './workbench/render/status_bar';
 import { renderTopBar } from './workbench/render/top_bar';
 import { layoutTopBar } from './workbench/ui/top_bar/layout';
@@ -250,6 +251,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly commands: IdeCommandController;
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorParts: EditorParts;
+	private readonly windowStatus: WorkbenchWindowStatus;
 	public readonly editorClose: EditorCloseController;
 	public readonly surfaces: WorkbenchSurfaceService;
 	private readonly chromeScope = Symbol('workbench chrome');
@@ -466,6 +468,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
 		}, closeEditors: (targets, origin, prompt) => this.editorClose.close(targets, origin, prompt),
 		});
+		this.windowStatus = new WorkbenchWindowStatus(this.editorParts, this.commands, this.surfaces, chromeSurface, this.rootSurfaceBounds);
 		this.unbindMainChromeActivation = inputFocus.onDidActivateInteraction(target => {
 			if (target.scope.surfaceScope === this.chromeScope) this.editorParts.activate(this.editorParts.main);
 		});
@@ -796,6 +799,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorParts.main.group.tabStrip.update(editorRuntimeState.currentTimeMs);
 		this.layoutMainEditor();
 		this.editorParts.update(deltaSeconds);
+		this.windowStatus.update(inputFocus.admittedTarget?.guestInput !== undefined, this.fault.hostFrameFailure !== undefined);
 		problemsPanel.update();
 		this.quickInput.update();
 		this.actionPrompt.update();
@@ -852,7 +856,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (contextTarget === this.quickInput.field.focusTarget) contextTarget = this.quickInput.invocationOrigin;
 		if (contextTarget === this.actionPrompt.focusTarget) contextTarget = this.actionPrompt.invocationOrigin;
 		renderStatusBar(this.resourcePanel, this.fault, this.editorParts.main.group.panes.activePane, this.luaEvaluation, this.serverConnectionState,
-			contextTarget === null ? null : contextTarget.commandContext);
+			contextTarget === null ? null : contextTarget.commandContext, this.windowStatus.width);
 	}
 
 	public async shutdown(): Promise<void> {
@@ -861,6 +865,7 @@ export class RuntimeCartEditor implements CartEditor {
 		inputFocus.workbenchScope.commands = undefined;
 		this.unbindHostInput();
 		this.unbindSurfaceAdmission();
+		this.windowStatus.dispose();
 		this.surfaces.dispose();
 		this.input.setEditingInput(undefined);
 		this.assistant.dispose();

@@ -70,7 +70,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 		}
 		return { glyphs, rects };
 	};
-	const clickAction = (command: 'window.collapse' | 'window.hide') => {
+	const clickAction = (command: 'window.hide') => {
 		const bounds = input.keyActions.items.find(item => item.command === command)!.bounds;
 		const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
 		const surface = surfaces.hitTest(x, y)!, down = point(x, y, 1, 1);
@@ -137,42 +137,29 @@ test('key scrolling is passive, its actual Tab ring is complete and Escape retur
 	inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); assert.equal(inputFocus.target, f.origin); assert.equal(f.input.keyWindow.open, true);
 });
 
-test('client-owned window commands collapse and close the captured client without replacing its snapshot or viewport', t => {
+test('client-owned close and the title close action retire capture without replacing its snapshot or viewport', t => {
 	const f = fixture(t); f.key.show(); inputFocus.handleKeyboard(new KeyInputEvent('End', KeyModifier.none));
 	const context = f.key.scroll.focusTarget;
-	for (const command of ['window.collapse', 'window.hide'] as const) {
-		assert.equal(context.getCommand(command), f.key.window.focusTarget.getCommand(command));
-		assert.equal(f.commands.isEnabled(command, context), true);
-	}
+	assert.ok(context.getCommand('window.hide') === f.key.window.focusTarget.getCommand('window.hide'));
+	assert.equal(f.commands.isEnabled('window.hide', context), true);
 	assert.equal(inputFocus.target, context);
 	const view = f.input.keyViewport, scroll = view.scrollTop, snapshot = f.input.snapshot, thumb = view.scrollbar.getThumb()!;
 	const down = point((thumb.left + thumb.right) / 2, (thumb.top + thumb.bottom) / 2, PointerButton.Primary, PointerButton.Primary);
 	pointerCapture.beginRoute(f.key.window.clientScope.surfaceScope, down); f.key.window.clientSurface!.handlePointer!(down, 0);
 	assert.equal(pointerCapture.active, true);
-	f.commands.execute('window.collapse', context); f.key.update();
-	assert.equal(f.input.keyWindow.collapsed, true); assert.equal(inputFocus.target, f.key.window.actionFocusTarget);
-	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
-	assert.equal(f.key.window.clientSurface!.visible, false); assert.equal(view.scrollTop, scroll);
-	pointerCapture.dispatch(point(down.viewportX, down.viewportY, 0, 0, 1), false, 1); pointerCapture.endRoute(point(0, 0));
-	f.clickAction('window.collapse'); assert.ok(f.key.window.clientSurface); assert.equal(view.scrollTop, scroll);
-	f.clickAction('window.hide'); assert.equal(f.input.keyWindow.open, false); assert.equal(f.key.window.surface, undefined);
-	assert.equal(view.scrollTop, scroll); f.key.show();
-	assert.equal(f.input.snapshot, snapshot); assert.equal(view.scrollTop, scroll);
-	const closingThumb = view.scrollbar.getThumb()!;
-	const closingDown = point((closingThumb.left + closingThumb.right) / 2, (closingThumb.top + closingThumb.bottom) / 2,
-		PointerButton.Primary, PointerButton.Primary);
-	pointerCapture.beginRoute(f.key.window.clientScope.surfaceScope, closingDown); f.key.window.clientSurface!.handlePointer!(closingDown, 0);
-	assert.equal(pointerCapture.active, true); assert.equal(inputFocus.target, context);
-	f.commands.execute('window.hide', context);
-	assert.equal(f.input.keyWindow.open, false); assert.equal(inputFocus.target, f.origin);
+	f.commands.execute('window.hide', context); f.key.update();
+	assert.equal(f.input.keyWindow.open, false); assert.ok(inputFocus.target === f.origin);
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	assert.equal(f.key.window.clientSurface, undefined); assert.equal(view.scrollTop, scroll);
 	assert.equal(f.commands.isEnabled('window.hide', context), false);
-	const closingUp = point(closingDown.viewportX, closingDown.viewportY, 0, 0, PointerButton.Primary);
-	pointerCapture.dispatch(closingUp, false, 1); pointerCapture.endRoute(closingUp);
+	pointerCapture.dispatch(point(down.viewportX, down.viewportY, 0, 0, 1), false, 1); pointerCapture.endRoute(point(0, 0));
+	f.key.show(); assert.ok(f.key.window.clientSurface); assert.equal(view.scrollTop, scroll);
+	f.clickAction('window.hide'); assert.equal(f.input.keyWindow.open, false); assert.equal(f.key.window.surface, undefined);
+	assert.equal(view.scrollTop, scroll); f.key.show();
+	assert.equal(f.input.snapshot, snapshot); assert.equal(view.scrollTop, scroll);
 });
 
-test('controller recreation retains placement/open/collapse per snapshot and never steals another surface family focus', t => {
+test('controller recreation retains placement and open state per snapshot without stealing another surface family focus', t => {
 	const f = fixture(t); f.key.show();
 	const model = f.input.keyWindow;
 	const original = { ...model.requestedBounds }, down = point(model.header.left + 12, model.header.top + 7, 1, 1);
@@ -182,20 +169,19 @@ test('controller recreation retains placement/open/collapse per snapshot and nev
 	assert.notDeepEqual(model.requestedBounds, original, 'the actual key title drag must change retained placement');
 	f.key.scroll.focusTarget.focus(); inputFocus.handleKeyboard(new KeyInputEvent('End', KeyModifier.none));
 	const requested = { ...model.requestedBounds }, scroll = f.input.keyViewport.scrollTop;
-	f.key.window.setCollapsed(true); f.key.update(); f.unrelated.focus();
-	f.recreate(); assert.equal(model.open, true); assert.equal(model.collapsed, true);
+	f.unrelated.focus();
+	f.recreate(); assert.equal(model.open, true);
 	f.key.update(); assert.equal(inputFocus.target, f.unrelated);
 	assert.deepEqual(model.requestedBounds, requested); assert.equal(f.input.keyViewport.scrollTop, scroll);
-	assert.equal(f.key.window.clientSurface!.visible, false);
-	f.key.window.setCollapsed(false); f.key.update(); assert.equal(inputFocus.target, f.unrelated);
+	assert.equal(f.key.window.clientSurface!.visible, true);
 	f.key.window.hide(); assert.equal(inputFocus.target, f.unrelated);
 	f.recreate(); f.key.update(); assert.equal(model.open, false); assert.equal(f.key.window.surface, undefined);
 	f.key.show(); assert.deepEqual(model.requestedBounds, requested); assert.equal(f.input.keyViewport.scrollTop, scroll);
 	const other = new RomInspectorInput({ ...f.input.snapshot, rom: f.input.snapshot.rom.slice() }); t.after(() => other.dispose());
-	assert.equal(other.keyWindow.open, false); assert.equal(other.keyWindow.collapsed, false); assert.equal(other.keyPlacementInitialized, false);
+	assert.equal(other.keyWindow.open, false); assert.equal(other.keyPlacementInitialized, false);
 });
 
-test('closed and stable collapsed keys do no label measurement or hidden client painting', t => {
+test('closed keys do no label measurement or hidden client painting before or after their first attachment', t => {
 	const f = fixture(t), font = editorViewState.font;
 	let measurements = 0;
 	const measure = font.measure.bind(font), advance = font.advance.bind(font);
@@ -205,11 +191,11 @@ test('closed and stable collapsed keys do no label measurement or hidden client 
 	for (let frame = 0; frame < 1000; frame++) f.key.update();
 	assert.equal(measurements, 0, 'a closed input must not lay out or measure the key');
 	f.key.show(); assert.ok(measurements > 0);
-	f.key.window.setCollapsed(true); f.key.update(); f.draw(); measurements = 0;
+	f.key.window.hide(); f.key.update(); f.draw(); measurements = 0;
 	for (let frame = 0; frame < 1000; frame++) {
 		f.key.update();
 		const drawn = f.draw();
 		assert.ok(!drawn.glyphs.some(glyph => f.input.model.keyEntries.some(entry => glyph.items === entry.category.label)));
 	}
-	assert.equal(measurements, 0, 'the retained font and caption cache must stay cold on unchanged collapsed frames');
+	assert.equal(measurements, 0, 'a closed window cannot measure or paint its retained key document');
 });

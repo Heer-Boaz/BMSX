@@ -259,18 +259,17 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await click(actor.detailsActions.items.find(item => item.command === 'actorLab.lockDetails')!.bounds);
 	check(!details!.locked && details!.subject !== lockedSubject, 'unlock immediately follows the current tree selection');
 	const expandedRequest = { ...actor.detailsWindow.requestedBounds };
-	await click(actor.detailsActions.items.find(item => item.command === 'window.collapse')!.bounds);
-	check(actor.detailsWindow.collapsed && actor.detailsWindow.open && actorPane.detailsWindow.clientSurface === undefined
-		&& actor.detailsWindow.bounds.bottom === actor.detailsWindow.header.bottom
+	await click(actor.detailsActions.items.find(item => item.command === 'window.hide')!.bounds);
+	check(!actor.detailsWindow.open && actorPane.detailsWindow.clientSurface === undefined
 		&& JSON.stringify(actor.detailsWindow.requestedBounds) === JSON.stringify(expandedRequest),
-		'collapse retires the client surface while retaining subject, open intent and expanded requested placement');
-	await test.capture?.('actor-details-collapsed');
+		'closing Details retires the client surface while retaining its requested placement');
+	await test.capture?.('actor-details-closed');
 	await click(test.visiblePreviewPoint(actor.previewBounds));
-	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && actor.detailsWindow.collapsed,
-		'collapsed Details expose their old client area to the game preview');
-	await click(actor.detailsActions.items.find(item => item.command === 'window.collapse')!.bounds);
-	check(!actor.detailsWindow.collapsed && actorPane.detailsWindow.clientSurface !== undefined,
-		'the same titlebar expands and reattaches Details without replacing its subject model');
+	check(inputFocus.target?.guestInput?.bounds === actor.previewBounds && !actor.detailsWindow.open,
+		'closed Details leave their former client area available to the game preview');
+	await runPaletteCommand('Actor Lab: Inspect Instance');
+	check(actor.detailsWindow.open && actorPane.detailsWindow.clientSurface !== undefined && actor.details === details,
+		'explicit inspection reattaches Details without replacing its subject model');
 	const resizeBefore = { ...actor.detailsWindow.bounds };
 	test.movePointer({ left: resizeBefore.left + 1, right: resizeBefore.left + 1,
 		top: resizeBefore.bottom - 2, bottom: resizeBefore.bottom - 2 });

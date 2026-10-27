@@ -5,8 +5,8 @@ import type { SerializedEditorGroup } from './editor_serialization';
 export type SerializedDocumentEditorPart = {
 	readonly group: SerializedEditorGroup;
 	readonly requestedBounds: Readonly<RectBounds>;
-	readonly collapsed: boolean;
 	readonly maximized: boolean;
+	readonly minimized: boolean;
 };
 
 /** Part references use their positions in this memento: main is 0, documents follow. */

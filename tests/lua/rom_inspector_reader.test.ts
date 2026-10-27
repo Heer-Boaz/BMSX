@@ -190,7 +190,7 @@ test('Hold and Follow bind exact shown identities, including an empty catalog, a
 	f.reader.show(); assert.equal(f.input.reader.subject, f.input.model.selection);
 });
 
-test('reader view changes, collapse and controller recreation preserve the same bitmap and reading positions', t => {
+test('reader view changes, close and controller recreation preserve the same bitmap and reading positions', t => {
 	const f = fixture(t); f.select('a-image'); f.reader.show(); const bitmap = f.input.reader.preview!;
 	let released = 0; bitmap.onDispose(() => { released++; });
 	f.input.reader.imageView.setScale(16); const scale = f.input.reader.imageView.mode;
@@ -200,9 +200,9 @@ test('reader view changes, collapse and controller recreation preserve the same 
 	f.choose('Metadata'); f.choose('Preview');
 	assert.equal(f.input.reader.preview, bitmap); assert.equal(f.input.reader.imageView.mode, scale);
 	f.choose('Properties'); assert.equal(f.reader.inspector.model.selectionIndex, selected); assert.equal(f.reader.inspector.model.viewport.scrollTop, scroll);
-	f.reader.window.setCollapsed(true); f.reader.update(); assert.equal(f.reader.window.clientSurface!.visible, false);
-	f.recreate(); f.reader.update(); assert.equal(f.input.readerWindow.collapsed, true); assert.equal(f.input.reader.preview, bitmap);
-	f.reader.window.setCollapsed(false); f.reader.update(); assert.equal(f.reader.inspector.model.selectionIndex, selected);
+	f.reader.window.hide(); f.reader.update(); assert.equal(f.reader.window.clientSurface, undefined);
+	f.recreate(); f.reader.update(); assert.equal(f.input.readerWindow.open, false); assert.equal(f.input.reader.preview, bitmap);
+	f.reader.show(); f.reader.update(); assert.equal(f.reader.inspector.model.selectionIndex, selected);
 	assert.equal(f.reader.inspector.model.viewport.scrollTop, scroll); assert.equal(released, 0);
 	f.commands.execute('window.hide', f.reader.inspector.focusTarget);
 	assert.equal(f.input.readerWindow.open, false); assert.equal(inputFocus.target, f.origin); assert.equal(f.input.reader.preview, bitmap);
@@ -210,9 +210,9 @@ test('reader view changes, collapse and controller recreation preserve the same 
 
 test('an actual image capture is retired before Follow retargets pixels, and hidden clients stay lazy', t => {
 	const f = fixture(t); f.select('a-image'); f.reader.update(); assert.equal(f.input.reader.preview, undefined);
-	f.input.readerWindow.setCollapsed(true); f.reader.show();
-	assert.equal(f.input.reader.subject, f.input.model.selection); assert.equal(f.input.reader.preview, undefined);
-	f.reader.window.setCollapsed(false); f.reader.update(); const bitmap = f.input.reader.preview!;
+	f.reader.show();
+	assert.equal(f.input.reader.subject, f.input.model.selection);
+	const bitmap = f.input.reader.preview!;
 	let released = 0; bitmap.onDispose(() => { released++; });
 	const bounds = f.input.reader.imageView.bounds, down = point(bounds.left + 3, bounds.top + 3, 1, 1);
 	pointerCapture.beginRoute(f.reader.window.clientScope.surfaceScope, down); f.reader.window.clientSurface!.handlePointer!(down, 0);
@@ -222,7 +222,7 @@ test('an actual image capture is retired before Follow retargets pixels, and hid
 	const up = point(down.viewportX, down.viewportY, 0, 0, 1); pointerCapture.dispatch(up, false, 1); pointerCapture.endRoute(up);
 	assert.equal(inputFocus.target, f.reader.inspector.focusTarget); f.press('Escape');
 	assert.equal(inputFocus.target, f.origin); assert.equal(f.input.readerWindow.open, true);
-	f.commands.execute('window.collapse', f.reader.inspector.focusTarget); f.reader.update();
+	f.commands.execute('window.hide', f.reader.inspector.focusTarget); f.reader.update();
 	const properties = t.mock.getter(f.input.reader, 'properties');
 	for (let frame = 0; frame < 1000; frame++) f.reader.update();
 	assert.equal(properties.mock.callCount(), 0); assert.equal(f.draw().bitmaps, 0);
@@ -256,15 +256,4 @@ test('byte reading stays anchored to its document offset when window columns or 
 	f.reader.window.hide(); f.recreate();
 	configureFontVariant('msx'); f.reader.show(); f.reader.update();
 	assert.equal(address(), first, 'input-owned reading metrics survive controller detachment and a font change');
-});
-
-test('a collapsed reader admits subject actions but not hidden client view commands', t => {
-	const f = fixture(t); f.select('a-image'); f.input.readerWindow.setCollapsed(true); f.reader.show();
-	assert.equal(f.reader.window.clientSurface!.visible, false); assert.equal(f.input.reader.preview, undefined);
-	assert.equal(f.reader.isEnabled('romInspector.source'), true); assert.equal(f.reader.isEnabled('romInspector.hold'), true);
-	for (const command of ['romInspector.content', 'romInspector.zoom', 'romInspector.collision'] as const) {
-		assert.equal(f.reader.isEnabled(command), false);
-		f.reader.execute(command);
-	}
-	assert.equal(f.quickInput.visible, false); assert.equal(f.input.reader.preview, undefined);
 });

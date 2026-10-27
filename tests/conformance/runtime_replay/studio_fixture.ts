@@ -229,12 +229,6 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 			}
 			check(titlePoint !== undefined, `tab ${id} has an unobscured owning window title`);
 			await click(titlePoint!);
-			if (model.collapsed) {
-				if (!part.window.actionFocusTarget.hasFocus) await press('Tab');
-				check(part.window.actionFocusTarget.hasFocus, `tab ${id} reaches its window action controls`);
-				await press('Home'); await press('Enter');
-				check(!model.collapsed, `tab ${id} expands through its owning window controls`);
-			}
 		}
 		const bounds = group.tabStrip.layoutState.items.peek(group.model.indexOf(group.model.findById(id)!)).bounds;
 		const viewport = group.tabStrip.layoutState.viewportBounds;

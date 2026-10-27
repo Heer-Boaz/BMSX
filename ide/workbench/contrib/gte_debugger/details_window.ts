@@ -122,8 +122,7 @@ export class GteDetailsWindow {
 			target.registerCommand('gte.view', { isEnabled: () => input.detailsWindow.open && input.selected.sequence >= 0,
 				run: () => this.chooseView() });
 			target.registerCommand('gte.source', { isEnabled: () => this.canOpenSource(), run: () => this.openSource() });
-			if (target !== this.window.focusTarget) for (const command of ['window.collapse', 'window.hide'] as const)
-				target.registerCommand(command, this.window.focusTarget.getCommand(command)!);
+			if (target !== this.window.focusTarget) target.registerCommand('window.hide', this.window.focusTarget.getCommand('window.hide')!);
 		}
 		this.unbindSelection = input.onWillChangeSelection(() => {
 			this.retireChooser(); this.retireOverflow(); this.window.actions.cancelCommand('gte.source');
@@ -139,7 +138,7 @@ export class GteDetailsWindow {
 	}
 	public chooseView(): void {
 		const input = this.input;
-		this.window.setCollapsed(false); this.update();
+		this.update();
 		const choices = input.selected.kind === 'normal' ? VIEWS : PLUS_VIEWS;
 		this.quickInput.pick('GTE view', 'Captured properties or diagram', (_origin, lifetime) => {
 			this.chooser = lifetime;
@@ -307,15 +306,13 @@ export class GteDetailsWindow {
 		if (!model.open) { this.window.detach(); return; }
 		this.initializePlacement(); this.updateCaption();
 		if (!this.window.visible) this.window.show(false);
-		if (!model.collapsed) this.refreshClient();
+		this.refreshClient();
 		this.window.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
-		if (!model.collapsed) {
-			this.layoutClient(model.client); this.viewActions.update(); this.inspector.update();
-			this.diagramControl.lineStep = editorViewState.lineHeight;
-			const item = this.viewActions.tooltipItem;
-			if (item === undefined) this.tooltip.hide();
-			else this.tooltip.show(item.tooltip, item.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
-		}
+		this.layoutClient(model.client); this.viewActions.update(); this.inspector.update();
+		this.diagramControl.lineStep = editorViewState.lineHeight;
+		const item = this.viewActions.tooltipItem;
+		if (item === undefined) this.tooltip.hide();
+		else this.tooltip.show(item.tooltip, item.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		this.window.update();
 	}
 	private draw(): void {

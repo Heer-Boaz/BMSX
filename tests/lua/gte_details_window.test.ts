@@ -139,35 +139,35 @@ test('GTE Details follows selected owned evidence, retires held activation and p
 	inputFocus.executeCommand('window.hide', details.inspector.focusTarget); assert.equal(input.detailsWindow.open, false);
 });
 
-test('GTE collapse restores bookmarks at reflow and never applies them to a newly selected command', t => {
+test('GTE reopening restores bookmarks at reflow and never applies them to a newly selected command', t => {
 	const f = fixture(t), { input, details } = f; details.show();
 	const last = details.inspector.model.rows.length - 1;
 	details.inspector.model.select(last);
 	const anchor = details.inspector.model.rowAt(details.inspector.model.viewport.bounds.top), scroll = details.inspector.model.viewport.scrollTop, placement = { ...input.detailsWindow.requestedBounds };
-	details.window.setCollapsed(true);
+	details.window.hide();
 	assert.equal(input.detailsView.selectionIndex, last); assert.equal(input.detailsView.anchorIndex, anchor);
 	for (let frame = 0; frame < 1000; frame++) details.update();
 	assert.equal(f.formats(), 1);
-	details.window.setCollapsed(false);
+	details.show();
 	assert.equal(details.inspector.model.selectionIndex, last); assert.equal(details.inspector.model.viewport.scrollTop, scroll);
 	details.inspector.focusTarget.focus(); f.press('Home'); details.update(); assert.equal(details.inspector.model.viewport.scrollTop, 0);
 	details.window.hide(); details.show(); assert.equal(f.formats(), 1);
 	details.inspector.model.select(last);
 	f.issue(); input.update(); input.select(input.history.endSequence - 1); f.synchronize();
-	details.window.setCollapsed(true);
+	details.window.hide();
 	assert.equal(input.detailsView.selectionIndex, 0); assert.equal(input.detailsView.anchorIndex, 0);
-	details.window.setCollapsed(false); details.update();
+	details.show(); details.update();
 	assert.equal(details.inspector.model.selectionIndex, 0); assert.equal(f.formats(), 2);
 	assert.deepEqual(input.detailsWindow.requestedBounds, placement);
 });
 
-test('GTE expanded reading position survives a font change while its client is collapsed', t => {
+test('GTE reading position survives a font change while its window is closed', t => {
 	const f = fixture(t, 'tiny'), { details } = f;
 	details.show();
 	details.inspector.model.select(67);
-	details.window.setCollapsed(true);
+	details.window.hide();
 	configureFontVariant('msx'); details.update();
-	details.window.setCollapsed(false); details.update();
+	details.show(); details.update();
 	const model = details.inspector.model, view = model.viewport, last = model.rows[67];
 	assert.equal(model.selectionIndex, 67);
 	assert.ok(view.offsetTop + last.top < view.bounds.bottom && view.offsetTop + last.bottom > view.bounds.top,
@@ -238,10 +238,9 @@ for (const variant of ['tiny', 'msx'] as const) test(`GTE ${variant} Diagram own
 	const advances = t.mock.method(editorViewState.font, 'advance');
 	for (let frame = 0; frame < 1000; frame++) details.update();
 	assert.equal(advances.mock.callCount(), 0); assert.equal(f.formats(), 1);
-	details.window.setCollapsed(true);
 	assert.equal(inputFocus.getCommand('gte.view', details.window.focusTarget)!.isEnabled(), true);
 	inputFocus.executeCommand('gte.view', details.window.focusTarget);
-	assert.equal(input.detailsWindow.collapsed, false); assert.equal(quickInput.visible, true);
+	assert.equal(quickInput.visible, true);
 	quickInput.hide();
 });
 

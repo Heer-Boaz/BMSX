@@ -22,10 +22,11 @@ const statusLayout = {
 	hostFault: create_rect_bounds(),
 	guestHint: create_rect_bounds(),
 	guestHintText: '',
+	windowRestore: create_rect_bounds(),
 };
 let statusLayoutFont: EditorFont | undefined;
 let statusLayoutGuestInput = false, statusLayoutHostFailed = false;
-let hostFailureWidth = 0;
+let hostFailureWidth = 0, statusWindowWidth = 0;
 
 export type WorkbenchStatusLayout = {
 	readonly bounds: Readonly<RectBounds>;
@@ -35,6 +36,7 @@ export type WorkbenchStatusLayout = {
 	readonly hostFault: Readonly<RectBounds>;
 	readonly guestHint: Readonly<RectBounds>;
 	readonly guestHintText: string;
+	readonly windowRestore: Readonly<RectBounds>;
 };
 
 export type WorkbenchChromeLayout = {
@@ -65,10 +67,10 @@ export function getWorkbenchConnectionBounds(): Readonly<RectBounds> {
 }
 
 /** Feedback keeps its full-width rows; context and release guidance share the existing bottom row. */
-export function getWorkbenchStatusLayout(guestInput: boolean, hostFailed: boolean): WorkbenchStatusLayout {
+export function getWorkbenchStatusLayout(guestInput: boolean, hostFailed: boolean, windowWidth = 0): WorkbenchStatusLayout {
 	const bounds = getWorkbenchStatusBounds(), rowTop = getWorkbenchConnectionBounds().top;
 	const font = editorViewState.font;
-	if (statusLayoutFont === font && statusLayoutGuestInput === guestInput && statusLayoutHostFailed === hostFailed
+	if (statusLayoutFont === font && statusLayoutGuestInput === guestInput && statusLayoutHostFailed === hostFailed && statusWindowWidth === windowWidth
 		&& statusLayout.message.left === bounds.left && statusLayout.message.right === bounds.right
 		&& statusLayout.message.top === bounds.top && statusLayout.context.top === rowTop
 		&& statusLayout.context.bottom === bounds.bottom) return statusLayout;
@@ -77,8 +79,9 @@ export function getWorkbenchStatusLayout(guestInput: boolean, hostFailed: boolea
 		hostFailureWidth = measureText(HOST_FAILURE_STATUS) + 8;
 		statusLayoutFont = font;
 	}
-	statusLayoutGuestInput = guestInput; statusLayoutHostFailed = hostFailed;
-	const contextLeft = hostFailed ? Math.min(bounds.right, bounds.left + hostFailureWidth) : bounds.left;
+	statusLayoutGuestInput = guestInput; statusLayoutHostFailed = hostFailed; statusWindowWidth = windowWidth;
+	const windowLeft = hostFailed ? Math.min(bounds.right, bounds.left + hostFailureWidth) : bounds.left;
+	const contextLeft = Math.min(bounds.right, windowLeft + windowWidth);
 	let hintWidth = 0;
 	statusLayout.guestHintText = '';
 	if (guestInput) {
@@ -92,7 +95,8 @@ export function getWorkbenchStatusLayout(guestInput: boolean, hostFailed: boolea
 		}
 	}
 	write_rect_bounds(statusLayout.message, bounds.left, bounds.top, bounds.right, rowTop);
-	write_rect_bounds(statusLayout.hostFault, bounds.left, rowTop, contextLeft, bounds.bottom);
+	write_rect_bounds(statusLayout.hostFault, bounds.left, rowTop, windowLeft, bounds.bottom);
+	write_rect_bounds(statusLayout.windowRestore, windowLeft, rowTop, contextLeft, bounds.bottom);
 	write_rect_bounds(statusLayout.context, contextLeft, rowTop, bounds.right - hintWidth, bounds.bottom);
 	write_rect_bounds(statusLayout.guestHint, bounds.right - hintWidth, rowTop, bounds.right, bounds.bottom);
 	return statusLayout;

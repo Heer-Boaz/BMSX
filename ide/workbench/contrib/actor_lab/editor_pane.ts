@@ -183,9 +183,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			});
 			target.registerCommand('actorLab.details', { isEnabled: () => input.detailsWindow.open, run: () => this.showDetails(true) });
 		}
-		for (const command of ['window.collapse', 'window.hide'] as const) {
-			this.inspector.focusTarget.registerCommand(command, this.detailsWindow.focusTarget.getCommand(command)!);
-		}
+		this.inspector.focusTarget.registerCommand('window.hide', this.detailsWindow.focusTarget.getCommand('window.hide')!);
 		for (const [command, enabled, execute] of [
 			['actorLab.pinProperty', ActorLabController.prototype.canPinProperty, ActorLabController.prototype.pinProperty],
 			['actorLab.unpinProperty', ActorLabController.prototype.canUnpinProperty, ActorLabController.prototype.unpinProperty],
@@ -222,15 +220,15 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.initializeDetailsPlacement();
 		const attached = this.detailsWindow.visible;
 		if (!attached) this.detailsWindow.show(false);
-		if (!model.collapsed && attached) {
+		if (attached) {
 			const items = this.controller.refreshDetails(input);
 			if (items !== undefined) this.inspector.updateItems(items, actorDetailsPropertiesEqual);
-		} else if (model.collapsed) this.controller.followDetailsSelection(input);
+		}
 		model.title = details.caption;
 		const lock = input.detailsActions.items.find(item => item.command === 'actorLab.lockDetails')!;
 		if (lock.checked !== details.locked) { lock.checked = details.locked; model.invalidate(); }
 		this.detailsWindow.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
-		if (!model.collapsed) this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, model.client);
+		this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, model.client);
 		if (this.restoreDetailsScroll && this.inspector.visible) {
 			this.inspector.model.viewport.scrollbar.setScroll(input.detailsScroll);
 			this.restoreDetailsScroll = false;
@@ -387,10 +385,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.input.detailsWindow.open = true;
 		this.updateDetailsWindow();
 		if (attached) this.surfaces.raise(this.detailsWindow.surface!);
-		if (focus) {
-			if (this.input.detailsWindow.collapsed) this.detailsWindow.focusTarget.focus();
-			else this.inspector.focusTarget.focus();
-		}
+		if (focus) this.inspector.focusTarget.focus();
 	}
 	public onPointerLeave(): void {
 		this.viewportHover = false; this.viewportHit = undefined;

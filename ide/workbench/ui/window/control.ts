@@ -17,6 +17,7 @@ import { layoutWorkbenchActionBar, type WorkbenchActionBarState } from '../actio
 import { WorkbenchActionBarControl } from '../action_bar_control';
 import { WorkbenchTooltip } from '../tooltip';
 import { WindowResizeEdge, type WorkbenchWindowModel } from './model';
+import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
 
 const windowsByScope = new WeakMap<InputFocusScope, WorkbenchFloatingWindow | null>();
 
@@ -47,6 +48,7 @@ export type WorkbenchWindowOptions = {
 	restoreContentInput(): void;
 	focusContent(): void;
 	requestClose?(): void;
+	requestMinimize?(): void;
 	onDidHide?(): void;
 };
 
@@ -62,6 +64,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public readonly actions: WorkbenchActionBarControl;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindClientKeyboard: () => void;
+	private readonly unbindTitleBlur: () => void;
 	private readonly startBounds = create_rect_bounds();
 	private readonly startRequested = create_rect_bounds();
 	private readonly nextRequested = create_rect_bounds();
@@ -69,6 +72,11 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	private resizing = WindowResizeEdge.None;
 	private startX = 0;
 	private startY = 0;
+	private titleClick = false;
+	private titlePressTime = 0;
+	private lastTitleClickTime: number | undefined;
+	private lastTitleClickX = 0;
+	private lastTitleClickY = 0;
 	private measuredRevision = -1;
 	private measuredFont: BFont | undefined;
 	private measure: TextRangeMeasure | undefined;
@@ -85,6 +93,9 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.focusTarget = focus.createTarget(options.focusReturn, this.scope);
 		this.focusTarget.canFocus = () => this.visible;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindTitleBlur = this.focusTarget.onDidBlur(() => {
+			this.titleClick = false; this.lastTitleClickTime = undefined;
+		});
 		this.clientFocusTarget = focus.createTarget(this.focusTarget, this.clientScope);
 		this.clientFocusTarget.canFocus = () => this.clientSurface !== undefined && this.clientSurface.visible;
 		this.clientFocusTarget.commandContext = this.focusTarget;
@@ -98,13 +109,13 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.clientFocusTarget.previous = this.actions.focusTarget;
 		this.clientFocusTarget.next = this.focusTarget;
 		this.focusTarget.previous = this.actions.focusTarget;
-		this.focusTarget.registerCommand('window.collapse', { isEnabled: () => this.visible, isChecked: () => options.model.collapsed,
-			run: () => this.setCollapsed(!options.model.collapsed) });
+		this.focusTarget.registerCommand('window.minimize', { isEnabled: () => this.visible && options.requestMinimize !== undefined,
+			run: () => options.requestMinimize!() });
 		this.focusTarget.registerCommand('window.maximize', { isEnabled: () => this.visible, isChecked: () => options.model.maximized,
 			run: () => this.setMaximized(!options.model.maximized) });
 		this.focusTarget.registerCommand('window.hide', { isEnabled: () => this.visible,
 			run: () => { if (options.requestClose !== undefined) options.requestClose(); else this.hide(); } });
-		for (const command of ['window.collapse', 'window.maximize', 'window.hide'] as const)
+		for (const command of ['window.minimize', 'window.maximize', 'window.hide'] as const)
 			this.clientFocusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.updateChromeState();
 		windowsByScope.set(this.scope, this);
@@ -115,7 +126,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public get hasFocus(): boolean { return this.containsScope(this.surface, this.focus.target?.scope.surfaceScope); }
 	public get model(): WorkbenchWindowModel { return this.options.model; }
 
-	/** Reattaching a pane preserves its input-owned open/collapse/placement model. */
+	/** Reattaching a pane preserves its input-owned open/minimized/placement model. */
 	public attach(): void {
 		if (this.surface !== undefined || !this.model.open) return;
 		const options = this.options;
@@ -123,9 +134,9 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			role: 'window', lifetimeOwner: options.lifetimeOwner, presentationParent: options.presentationParent,
 			captureScope: this.scope.surfaceScope,
 			getBounds: () => options.model.bounds, getClip: () => options.workArea,
-			isVisible: () => options.model.open,
+			isVisible: () => options.model.open && !options.model.minimized,
 			draw: () => drawWorkbenchWindow(this.model, options.actionBar, this.hasFocus),
-			handlePointer: snapshot => this.handlePointer(snapshot), handleWheel: () => true,
+			handlePointer: (snapshot, now) => this.handlePointer(snapshot, now), handleWheel: () => true,
 			onRetire: () => {
 				const surface = this.surface;
 				const ownedFocus = this.focus.target?.scope === this.scope || this.containsScope(surface, this.focus.target?.scope.surfaceScope);
@@ -147,7 +158,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.actions.setInput(options.actionBar, this.focusTarget);
 		this.tooltip.attach(this.surfaces, this.surface, options.workArea);
 		this.attachClient();
-		if (!this.model.collapsed) this.restoreClientInput();
+		this.restoreClientInput();
 	}
 
 	public detach(): void {
@@ -156,7 +167,10 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	public show(focus = true): void {
 		this.model.open = true;
+		this.model.setMinimized(false);
 		this.attach();
+		if (this.measuredFont !== undefined) this.layout(this.measuredFont, this.measure!, this.measureText!);
+		this.surfaces.changed();
 		this.surfaces.raise(this.surface!);
 		if (focus) this.focusContent();
 	}
@@ -174,34 +188,30 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.actions.dispose();
 		this.unbindKeyboard();
 		this.unbindClientKeyboard();
+		this.unbindTitleBlur();
 	}
 
-	public setCollapsed(collapsed: boolean): void {
-		if (this.model.collapsed === collapsed) return;
-		const clientHadFocus = this.containsScope(this.clientSurface, this.focus.target?.scope.surfaceScope);
-		this.capture.cancelTarget(this);
-		this.model.setCollapsed(collapsed);
-		this.updateChromeState();
-		if (collapsed) {
-			this.retireClientInput();
-			if (clientHadFocus && (this.focus.target === null || this.focus.target.scope === this.scope
-				|| this.containsScope(this.clientSurface, this.focus.target.scope.surfaceScope))) {
-				this.options.actionBar.focusedIndex = this.options.actionBar.items.findIndex(item => item.command === 'window.collapse');
-				this.actions.focusTarget.focus();
-			}
-		} else if (this.visible) this.restoreClientInput();
-		if (this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
+	/** Minimize revokes presentation/input, not retained editor or modal lifetimes. */
+	public minimize(): void {
+		if (this.model.minimized) return;
+		const route = this.capture.routeScope;
+		if (this.containsScope(this.surface, route)) this.capture.cancelScope(route!);
+		this.cancelPointer();
+		this.actions.cancelPointer();
+		this.hover.release(this.actions);
+		this.hover.release(this); this.headerHovered = false; this.tooltip.hide();
+		this.model.setMinimized(true);
+		this.surfaces.changed();
+		if (this.model.minimized && this.hasFocus) this.focus.setTarget(null);
 	}
 
 	public setMaximized(maximized: boolean): void {
 		if (this.model.maximized === maximized) return;
+		this.lastTitleClickTime = undefined;
 		this.capture.cancelTarget(this);
 		this.model.setMaximized(maximized);
-		if (this.model.collapsed) this.setCollapsed(false);
-		else {
-			this.updateChromeState();
-			if (this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
-		}
+		this.updateChromeState();
+		if (this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
 	}
 
 	/** Font, producer revisions and work-area changes are the only chrome layout triggers. */
@@ -221,7 +231,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		layoutWorkbenchActionBar(this.options.actionBar, header.right - 3, header.top + 2, header.bottom - 2, measureText, font, header.left + 4);
 		const firstAction = this.options.actionBar.items.find(item => item.visible);
 		model.displayTitle = truncateMeasuredText(model.title, (firstAction === undefined ? header.right : firstAction.bounds.left) - header.left - 8, measure, ELLIPSIS, 'middle');
-		const contentChanged = !model.collapsed && (arranged || fontChanged);
+		const contentChanged = arranged || fontChanged;
 		if (contentChanged) this.options.layoutContent(model.client);
 		this.updateTooltip();
 		this.surfaces.changed();
@@ -235,13 +245,14 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	}
 
 	private updateChromeState(): void {
-		this.options.actionBar.items.find(item => item.command === 'window.collapse')!.checked = this.model.collapsed;
+		const minimize = this.options.actionBar.items.find(item => item.command === 'window.minimize');
+		if (minimize !== undefined) minimize.visible = this.options.requestMinimize !== undefined;
 		const maximize = this.options.actionBar.items.find(item => item.command === 'window.maximize');
 		if (maximize !== undefined) maximize.checked = this.model.maximized;
 	}
 
 	private updateTooltip(): void {
-		if (this.moving || this.resizing !== WindowResizeEdge.None) { this.tooltip.hide(); return; }
+		if (this.titleClick || this.moving || this.resizing !== WindowResizeEdge.None) { this.tooltip.hide(); return; }
 		const item = this.actions.tooltipItem;
 		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, this.measuredFont!, this.measure!, this.measureText!, this.options.workArea);
 		else if (this.headerHovered && (this.options.getTitleTooltip !== undefined || this.model.displayTitle !== this.model.title)) {
@@ -253,8 +264,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public onPointerLeave(): void { this.headerHovered = false; }
 
 	private focusContent(): void {
-		if (this.model.collapsed) this.focusTarget.focus();
-		else this.options.focusContent();
+		this.options.focusContent();
 	}
 
 	private handleKeyboard(input: KeyInputEvent): void {
@@ -269,25 +279,34 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		}
 	}
 
-	private handlePointer(snapshot: PointerInputSnapshot): void {
+	private handlePointer(snapshot: PointerInputSnapshot, now: number): void {
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.bounds)) return;
 		if (snapshot.justPressedButtons !== 0) {
 			this.surfaces.raise(this.surface!);
 			if (!this.containsScope(this.surface, this.focus.target?.scope.surfaceScope)) this.focus.setTarget(this.scope.lastFocused ?? this.focusTarget);
 		}
-		if (this.actions.handlePointer(snapshot)) { this.hover.release(this); this.headerHovered = false; return; }
+		if (this.actions.handlePointer(snapshot)) {
+			if (snapshot.justPressedButtons !== 0) this.lastTitleClickTime = undefined;
+			this.hover.release(this); this.headerHovered = false; return;
+		}
 		const edge = this.model.resizeEdgeAt(snapshot.viewportX, snapshot.viewportY);
 		const header = point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.header);
 		this.headerHovered = header;
 		if (header) this.hover.visit(this);
 		else this.hover.release(this);
-		if (!this.model.maximized && (snapshot.justPressedButtons & PointerButton.Primary) !== 0 && (edge !== WindowResizeEdge.None || header)) {
+		if (snapshot.justPressedButtons !== 0 && (snapshot.justPressedButtons !== PointerButton.Primary || edge !== WindowResizeEdge.None || !header)) {
+			this.lastTitleClickTime = undefined;
+		}
+		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && (edge !== WindowResizeEdge.None || header)) {
 			this.focusTarget.focus();
 			this.startX = snapshot.viewportX; this.startY = snapshot.viewportY;
+			this.titlePressTime = now;
+			this.titleClick = edge === WindowResizeEdge.None && snapshot.justPressedButtons === PointerButton.Primary
+				&& (snapshot.pressedButtons & ~PointerButton.Primary) === 0;
 			copy_rect_bounds(this.startBounds, this.model.bounds);
 			copy_rect_bounds(this.startRequested, this.model.requestedBounds);
 			this.resizing = edge;
-			this.moving = edge === WindowResizeEdge.None;
+			this.moving = false;
 			this.capture.capture(this);
 			return;
 		}
@@ -302,12 +321,21 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.capture.release(this);
 		this.moving = false;
 		this.resizing = WindowResizeEdge.None;
+		this.titleClick = false; this.lastTitleClickTime = undefined;
 	}
 
 	public handleCapturedPointer(snapshot: PointerSnapshot): void {
 		const start = this.startBounds, requested = this.startRequested, next = this.nextRequested;
 		const workArea = this.options.workArea;
 		const dx = snapshot.viewportX - this.startX, dy = snapshot.viewportY - this.startY;
+		if ((snapshot.justPressedButtons & ~PointerButton.Primary) !== 0) {
+			this.titleClick = false; this.lastTitleClickTime = undefined;
+		}
+		if (this.resizing === WindowResizeEdge.None && !this.moving) {
+			if (Math.max(Math.abs(dx), Math.abs(dy)) < POINTER_DRAG_ACTIVATION_THRESHOLD) return;
+			this.moving = true; this.titleClick = false; this.lastTitleClickTime = undefined;
+		}
+		if (this.model.maximized) return;
 		copy_rect_bounds(next, requested);
 		if (this.moving) {
 			const left = clamp(start.left + dx, workArea.left, workArea.right - (start.right - start.left));
@@ -333,17 +361,33 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
 		this.handleCapturedPointer(snapshot);
-		this.cancelPointer();
+		const click = this.titleClick && snapshot.valid && snapshot.insideViewport
+			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.header)
+			&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.options.actionBar.bounds)
+			&& this.model.resizeEdgeAt(snapshot.viewportX, snapshot.viewportY) === WindowResizeEdge.None;
+		this.capture.release(this);
+		this.moving = false; this.resizing = WindowResizeEdge.None; this.titleClick = false;
+		if (!click) { this.lastTitleClickTime = undefined; return; }
+		const previous = this.lastTitleClickTime;
+		if (previous !== undefined && this.titlePressTime - previous <= DOUBLE_CLICK_MAX_INTERVAL_MS
+			&& Math.max(Math.abs(this.startX - this.lastTitleClickX), Math.abs(this.startY - this.lastTitleClickY)) < POINTER_DRAG_ACTIVATION_THRESHOLD) {
+			this.lastTitleClickTime = undefined;
+			this.setMaximized(!this.model.maximized);
+		} else {
+			this.lastTitleClickTime = this.titlePressTime;
+			this.lastTitleClickX = this.startX; this.lastTitleClickY = this.startY;
+		}
 	}
 
 	private attachClient(): void {
 		const options = this.options;
 		this.clientSurface = this.surfaces.attach({
 			role: 'content', lifetimeOwner: this.surface!, presentationParent: this.surface!, captureScope: this.clientScope.surfaceScope,
-			getBounds: () => this.model.client, getClip: () => this.model.client, isVisible: () => !this.model.collapsed,
+			getBounds: () => this.model.client, getClip: () => this.model.client, isVisible: () => true,
 			draw: () => options.content.draw(),
 			handlePointer: (snapshot, now) => {
 				if (snapshot.justPressedButtons !== 0) {
+					this.lastTitleClickTime = undefined;
 					this.surfaces.raise(this.surface!);
 					if (!this.containsScope(this.surface, this.focus.target?.scope.surfaceScope)) this.focus.setTarget(this.clientScope.lastFocused ?? this.clientFocusTarget);
 				}

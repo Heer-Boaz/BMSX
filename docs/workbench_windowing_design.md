@@ -42,6 +42,8 @@ exact UI. Source links pin the relevant revisions.
 | VS Code [workbench layout](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/layout.ts#L1644-L1685) | Workbench parts are composed by a layout/grid owner. | Split geometry remains layout, not window chrome. |
 | VS Code [modal editor part](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/modalEditorPart.ts#L154-L221), [drag](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/modalEditorPart.ts#L477-L568) and [layering](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/media/modalEditorPart.css#L7-L17) | An in-workbench shell composes existing editor content, scoped context, resizing and a shared pointer monitor. Its modality is explicit. | Reuse content and input infrastructure; do not copy modal behaviour into a modeless Details window. |
 | VS Code [auxiliary window service](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/services/auxiliaryWindow/browser/auxiliaryWindowService.ts) | A real host window has separate container and unload/resize lifetime. | Keep multi-host-window support outside the canvas window model. |
+| Epic [tab roles](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Slate/ETabRole) and [window arguments](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/SlateCore/SWindow/FArguments) | Major/document/panel roles and window minimize/maximize capabilities are distinct declarations. | Give document and owned utility windows their actual capabilities; a minus button must not mean titlebar-only collapse. |
+| Qt [MDI title double-click](https://github.com/qt/qtbase/blob/v6.8.3/src/widgets/widgets/qmdisubwindow.cpp#L2977-L3013) | The subwindow owns title gestures and maximize/restore, excluding its action controls. | Recognize title clicks/drag in shared window chrome rather than each document pane. |
 | VS Code [context view](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/base/browser/ui/contextview/contextview.ts#L322-L352) and [container selection](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/platform/contextview/browser/contextViewService.ts#L19-L61) | A transient surface receives an anchor and content delegate with an attachment lifetime. | Popup placement and dismissal belong to presentation; menu/provider meaning remains in its controller. |
 | VS Code [action presentation](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/base/browser/ui/actionbar/actionViewItems.ts) and [Variables view](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/contrib/debug/browser/variablesView.ts) | Icon actions retain semantic labels/hints; a value tree requests explicit children rather than using its rendered preview as data. | Compact chrome and structured inspection keep their meaning independently of font size, clipped text or expanded presentation. |
 | Eclipse Theia [application shell](https://github.com/eclipse-theia/theia/blob/7c024f642855549f254e022d26526f4ee0ba8ba5/packages/core/src/browser/shell/application-shell.ts#L175-L300) | The shell owns areas and activation; panels/layouts own their child geometry. | One surface owner coordinates placement without replacing every existing control. |
@@ -240,7 +242,7 @@ icon actions. The full qualified subject is separate hint/status content, not
 a path forced into every titlebar. Changing the active font remeasures text,
 header height and content constraints while preserving requested placement.
 Both fonts supply the same single ellipsis character; truncation is owned by
-the common measured-text path. Pin, close, expand/collapse and disclosure icons
+the common measured-text path. Pin, close, minimize/restore and disclosure icons
 use shared pixel geometry, not punctuation strings in the chosen text font.
 
 Window surfaces have shared semantic theme colours for content, active/inactive
@@ -271,30 +273,84 @@ window commands expose the mode with maximize/restore icons. Move/resize and the
 resize grip are unavailable while maximized; switching mode cancels only an
 active chrome gesture, not an unrelated client or sibling capture.
 
-Collapse preserves the maximized flag but uses normal requested placement for
-its title-only presentation. Expanding returns to maximized presentation; using
-the maximize/restore action also expands the client. Session placement records
-normal requested bounds, maximized and collapsed independently. It does not
-persist arranged pixels, focus authorization or a live capture.
+Double-clicking the draggable title region toggles maximize/restore. Action
+buttons and resize edges do not participate. A completed title click must stay
+within the shared drag threshold; an interrupted or real drag cannot count as
+one half of a double-click.
 
-### Collapsed window presentation
+### Minimized document windows
 
-Collapse reduces an attached window to its titlebar and preserves its expanded
-requested bounds. Its content model, subject and property selection remain
-alive; the client area and owned transients stop painting and receiving input.
-Client hover and continuations are retired through their central owners, with
-any remaining physical hold drained. A drag already owned by unrelated content
-continues unchanged. A collapsed window excludes hits only over its remaining
-titlebar rectangle, exposing the area previously occupied by its client.
+Minimize removes the entire document window family from paint and input while
+retaining its groups, inputs, views, working copies and local decision/picker
+sessions. It is not titlebar-only presentation: window roll-up is not supported.
+Owned utility inspectors expose their close/pin/maximize capabilities, not a
+minus action without an independent restore destination. The permanent main
+workspace cannot be minimized or closed through document-window commands.
 
-If focus was in the client family, collapse moves it to the window's expand
-action. Focus already outside that family stays there. Titlebar move, close and
-expand remain available, and horizontal resizing retains the expanded height;
-vertical client resizing resumes after expansion. Expansion restores the
-requested size subject to the current work area and permits explicit content
-reactivation; it does not silently seize focus from another window. The feature
-chooses the collapse affordance, default state and supported persistence; the
-container owns these geometry/input transitions.
+The concrete document-part owner admits minimization and chooses the next
+non-minimized part in activation order, with the main part as the final
+candidate. Minimizing a background part leaves unrelated focus and drafts
+alone. The surface/input owners revoke only the hidden family's hover, native
+input and held pointer route; remaining physical buttons drain normally. A
+sibling's capture survives. Visibility changes do not retire attachment context
+or suspend the retained client. Explicit later reveal wins over an earlier
+minimize, including a reveal issued by a focus-change callback.
+
+The existing global status row exposes an icon and count for minimized document
+parts; it opens a chooser of those actual owners. The Window menu and complete
+window picker also restore them. No permanent taskbar row reduces client space.
+Explicit restore arranges and raises the family, then focuses its retained
+local dialog or client. Passive restacking never restores a minimized part.
+A close decision for a minimized dirty document reveals its local prompt only
+when the close owner actually requires a decision; clean close need not reveal.
+
+Session placement records normal requested bounds, maximized and minimized
+independently. It does not persist arranged pixels, focus authorization or a
+live capture. Owned utility close retains input-owned placement/subject intent;
+accepted document close disposes the actual document part through close
+admission. Neither operation is window collapse.
+
+### Snapped placement contract
+
+Snapping is a placement operation on an existing floating window, distinct from
+docking, splitting an editor group or creating another document view. The target
+placement model distinguishes normal, maximized, left-half and right-half
+placement; minimized visibility is independent. Normal requested bounds remain
+the restore intent. A snapped rectangle is derived from the current owning work
+area, not stored over that intent or copied from a rendered frame. Maximizing,
+restoring, resizing the work area and minimizing/restoring therefore cannot lose
+the user's normal placement.
+
+The shared title-drag owner proposes left/right half placement at the side
+edges and maximize at the top edge, with passive prospective-bounds feedback.
+Only a real drag past the common activation threshold proposes a destination.
+Release resolves the final pointer occurrence before committing; cancellation,
+Escape, a modal takeover or owner retirement clears the proposal without a
+snap. Leaving a maximized/snapped title region for a real drag returns to normal
+placement with the pointer anchored to the same relative title position. A
+normal resize leaves snapped placement and edits the normal request. Minimum
+content requirements govern which halves are offered: an unavailable half is
+not silently enlarged over its neighbor or accepted without room for chrome.
+
+Keyboard, menu and pointer actions invoke the same placement transition on the
+nearest actual window. Main workspace commands are not redirected to an
+arbitrary document. Retired origins remain invalid. Commands and shortcuts are
+discoverable through the existing Window menu, command palette and centralized
+keybinding resolution. OS window shortcuts remain with the OS; ordinary guest
+input bypasses Studio bindings. VS Code's [editor-group split](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorActions.ts#L74-L85),
+[focus](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorActions.ts#L324-L334) and
+[move](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/parts/editor/editorActions.ts#L899-L911) shortcuts
+are not evidence for intercepting OS Snap shortcuts or mutating groups when a
+canvas window is snapped. A multi-key chord requires a real central chord
+lifetime, not an ad-hoc title/pane keyboard handler.
+
+This target requires a shared placement-mode transition, drag feedback and
+central shortcut support. Existing maximize/minimize support alone does not
+provide snapping. Persist the placement mode and normal request at the document
+part's storage boundary; never persist a pending proposal. Acceptance exercises
+work-area shrink/growth, snap/maximize/restore/minimize round trips, pointer
+cancellation/coalesced release, stale command origins and unchanged
+source/group/runtime ownership.
 
 ## One pointer gesture owner
 
@@ -492,12 +548,12 @@ gameplay shortcut is assigned by this design. Escape is handled once: first by
 an active local UI interaction, then the top applicable transient/modal. If
 neither consumes it, a modeless tool can return focus through its declared
 owner relationship while remaining open. Details returns to the Actor Lab tree,
-without changing its subject, lock, scroll or collapsed state. An Escape that
+without changing its subject, lock or scroll. An Escape that
 dismissed a property menu does not also move focus to the tree. The rule applies
 inside Studio scopes; a gameplay Escape remains gameplay input.
 
 Concrete region activation commands name their owner. **Actor Lab: Inspect
-Instance** activates the retained Details instance, including a collapsed or
+Instance** activates the retained Details instance, including a hidden or
 unavailable locked subject. **View: Show Runtime Timeline** reveals and enters the shared
 transport controls. Its local Tab order returns to the owning content and
 skips an unavailable range; it does not splice or restore a pane's internal
@@ -647,7 +703,7 @@ operation sequence and type; expired observations remain explicitly historical.
 Clear leaves an open, explicitly empty Details window rather than resolving a
 replacement ring slot.
 
-The input retains placement, open/collapse intent and property-view bookmarks.
+The input retains placement and open intent and property-view bookmarks.
 The pane owns surfaces and controls. Initial placement is lower-left above the
 shared runtime transport; user movement is permitted throughout the root work
 area. Default geometry preserves useful diagram context in both fonts, while
@@ -658,7 +714,7 @@ retains open intent; Close clears it without discarding placement.
 A changed observation or raw-word page replaces the inspector document in its
 existing attachment, ending old keyboard/controller activations, scroll drags
 and feedback before the new fields receive input. Unchanged documents retain
-their measured rows; hidden and collapsed clients perform no field formatting.
+their measured rows; hidden clients perform no field formatting.
 The shared inspector bookmark retains selection, top row and its intra-row offset,
 not an absolute scroll pixel. Restoration resolves that row at the actual reflow
 boundary, preserving a visible selection across changed font or annotation metrics
@@ -673,7 +729,7 @@ GTE Details composes the same modeless window and property document beside the
 command list and diagram. Its subject is the input's selected owned observation,
 including the normal register banks or the distinct PLUS acceptance/publication
 banks. Follow owns changing that subject; Details adds neither another pin nor
-another capture. Placement, collapse, close, focus return, empty selection and
+another capture. Placement, close, focus return, empty selection and
 expired-observation behavior follow the GPU window contract.
 
 The Source icon and actionable source row refer only to the instruction observed
@@ -781,7 +837,7 @@ Acceptance:
 
 ### C — Window chrome and floating Actor Lab Details
 
-Add shared move/resize/close/collapse chrome and attach the existing property
+Add shared move/resize/close chrome and attach the existing property
 content to one independently subject-bound, lockable Details instance. Remove
 the embedded Details split and its preview-height subtraction, paint/input
 branches and split focus links. A single product instance exercises general
@@ -792,11 +848,11 @@ Acceptance:
 - Two overlapping test windows prove independent subjects, raising, empty-area
   exclusion, owned popup ordering, focus return and teardown isolation. They
   are fixtures for a general container, not new product commands.
-- Move/resize observes shared root work-area bounds and font metrics. Collapse
-  hides client input/paint, retires its continuation and transients, keeps the
-  titlebar usable and restores the retained expanded bounds. Small viewports
-  constrain arrangement without discarding requested placement.
-- Chrome uses pin/unpin, collapse/expand and close icons with semantic
+- Move/resize observes shared root work-area bounds and font metrics. Close
+  retires inspector input/paint and owned continuations/transients while the
+  input retains its subject and placement for explicit reopening. Small
+  viewports constrain arrangement without discarding requested placement.
+- Chrome uses pin/unpin, maximize/restore and close icons with semantic
   hover/keyboard hints, a compact subject caption, a wrapped full-identity hint
   and shared themed depth cues. The title budget excludes the measured action
   targets. Truncation consumes one supported ellipsis glyph in either font.
@@ -806,7 +862,7 @@ Acceptance:
   to the tree while leaving Details open and locked as applicable.
 - Lock/unlock preserves the typed subject across tree navigation, playback and
   settled history; missing/retired subjects stay unavailable rather than
-  resolving by name. Hidden/collapsed Details retains identity retirement but
+  resolving by name. Hidden Details retains identity retirement but
   performs no hidden property layout, formatting or preview picking.
 - Semantic caption/full identity, checked subject-pin action, unavailable
   presentation and active/inactive chrome follow the

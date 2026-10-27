@@ -10,7 +10,8 @@ import type { PointerSnapshot } from '../../ide/common/models';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
-import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
+import { createWorkbenchActionBar, layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ITEM_PADDING_X, WORKBENCH_ACTION_BAR_ITEM_SPACING } from '../../ide/workbench/ui/action_bar';
+import type { WorkbenchActionMenuId } from '../../ide/workbench/ui/menu/registry';
 import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
@@ -21,13 +22,13 @@ import * as colors from '../../ide/common/constants';
 import { WORKBENCH_ICON_SIZE, type WorkbenchIcon } from '../../ide/workbench/ui/icon';
 import { drawWorkbenchIcon } from '../../ide/workbench/render/icon';
 
-function fixture(t: TestContext, orientation: 'horizontal' | 'vertical' = 'horizontal') {
+function fixture(t: TestContext, orientation: 'horizontal' | 'vertical' = 'horizontal', menu: WorkbenchActionMenuId = 'workspaceEditReview.evidence.title') {
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
 	const hover = new PointerHoverService();
 	const content = focus.createTarget();
 	content.bindKeyboard(() => {});
-	const state = createWorkbenchActionBar('workspaceEditReview.evidence.title');
+	const state = createWorkbenchActionBar(menu);
 	layoutWorkbenchActionBar(state, 240, 10, 22, text => text.length * 4, null, 0);
 	const enabled = new Set(state.items.map(item => item.command));
 	const calls: EditorCommandId[] = [];
@@ -52,10 +53,10 @@ function fixture(t: TestContext, orientation: 'horizontal' | 'vertical' = 'horiz
 		focus.handleKeyboard(new KeyInputEvent(code, input.getPlayerInput(1).modifiers, false, down));
 	};
 	const press = (code: string) => { key(code, true); key(code, false); };
-	const pointer = (index: number, pressed = 0, down = 0, up = 0, blocked = false) => {
+	const pointer = (index: number, pressed = 0, down = 0, up = 0, blocked = false, viewportX?: number) => {
 		const bounds = index < 0 ? { left: 0, right: 4 } : state.items[index].bounds;
 		const snapshot: PointerSnapshot = { valid: true, insideViewport: true,
-			viewportX: (bounds.left + bounds.right) / 2, viewportY: 16,
+			viewportX: viewportX ?? (bounds.left + bounds.right) / 2, viewportY: 16,
 			pressedButtons: pressed, justPressedButtons: down, justReleasedButtons: up };
 		hover.beginDispatch();
 		if (!capture.dispatch(snapshot, blocked, clock.now())) bar.handlePointer(snapshot);
@@ -83,7 +84,7 @@ test('compact window actions reserve icon cells instead of measuring hidden text
 });
 
 test('shared UI icons are retained pixel geometry, not font glyph substitutions', t => {
-	const icons = ['pin', 'unpin', 'close', 'collapse', 'expand', 'maximize', 'restore', 'play', 'pause', 'stepBack', 'stepForward', 'present',
+	const icons = ['pin', 'unpin', 'close', 'minimize', 'maximize', 'restore', 'play', 'pause', 'stepBack', 'stepForward', 'present',
 		'accept', 'back', 'source', 'more', 'info', 'actor', 'follow', 'chevronRight', 'chevronDown'] as const satisfies readonly WorkbenchIcon[];
 	const pixels: number[][] = [];
 	t.mock.method(api, 'fill_rect', (...args) => { pixels.push(args); });
@@ -101,6 +102,66 @@ test('shared UI icons are retained pixel geometry, not font glyph substitutions'
 });
 
 const PRIMARY = PointerButton.Primary;
+
+test('icon-and-label actions measure their complete retained cell only when the label or font changes', () => {
+	const state = createWorkbenchActionBar('window.status'), item = state.items[0], bounds = item.bounds;
+	for (const variant of ['tiny', 'msx'] as const) {
+		const font = new Font({ variant });
+		let measurements = 0;
+		const measure = (text: string) => { measurements++; return font.measure(text); };
+		for (const label of ['9', '12']) {
+			item.label = label;
+			layoutWorkbenchActionBar(state, 200, 2, font.lineHeight + 6, measure, font, 0);
+			assert.equal(item.width, font.measure(label) + WORKBENCH_ICON_SIZE + WORKBENCH_ACTION_BAR_ITEM_SPACING + WORKBENCH_ACTION_BAR_ITEM_PADDING_X * 2);
+			assert.equal(item.bounds.right - item.bounds.left, item.width, 'the complete icon and label belong to one action hit cell');
+			const revision = state.layoutRevision, measured = measurements;
+			for (let frame = 0; frame < 1000; frame++) layoutWorkbenchActionBar(state, 200, 2, font.lineHeight + 6, measure, font, 0);
+			assert.equal(measurements, measured);
+			assert.equal(state.layoutRevision, revision);
+			assert.equal(item.bounds, bounds);
+		}
+		assert.equal(measurements, 2);
+	}
+});
+
+test('icon and visible label paint together in the one action cell with shared enabled foreground', t => {
+	const state = createWorkbenchActionBar('window.status'), item = state.items[0], font = new Font({ variant: 'tiny' });
+	item.label = '12';
+	layoutWorkbenchActionBar(state, 200, 10, 22, text => font.measure(text), font, 0);
+	const fills: number[][] = [];
+	t.mock.method(api, 'fill_rect', (...args) => { fills.push(args); });
+	t.mock.method(api, 'blit_rect', () => {});
+	const text = t.mock.method(api, 'blit_text_inline_span_with_font', () => {});
+	for (const enabled of [true, false]) {
+		item.enabled = enabled; fills.length = 0; text.mock.resetCalls();
+		renderWorkbenchActionBar(state, font, colors.COLOR_STATUS_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED);
+		assert.equal(text.mock.callCount(), 1);
+		const [value, start, end, x, , , foreground, renderedFont] = text.mock.calls[0].arguments;
+		assert.equal(value.slice(start, end), item.label, 'the published count is rendered, not merely measured or exposed as a tooltip');
+		const iconLeft = item.bounds.left + WORKBENCH_ACTION_BAR_ITEM_PADDING_X;
+		assert.equal(x, iconLeft + WORKBENCH_ICON_SIZE + WORKBENCH_ACTION_BAR_ITEM_SPACING);
+		assert.equal(renderedFont, font);
+		assert.equal(foreground, enabled ? colors.COLOR_HEADER_BUTTON_TEXT : colors.COLOR_HEADER_BUTTON_TEXT_DISABLED);
+		assert.ok(fills.some(([left, , right, , , color]) => left >= iconLeft && right <= iconLeft + WORKBENCH_ICON_SIZE && color === foreground), 'the glyph is painted alongside the label with the same admission state');
+	}
+});
+
+test('icon-and-label actions share pointer and keyboard admission without splitting the command target', t => {
+	const f = fixture(t, 'horizontal', 'window.status'), item = f.state.items[0];
+	item.label = '12';
+	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => text.length * 4, null, 0); f.bar.update();
+	for (const x of [item.bounds.left + WORKBENCH_ACTION_BAR_ITEM_PADDING_X + 1, item.bounds.right - WORKBENCH_ACTION_BAR_ITEM_PADDING_X - 1]) {
+		f.pointer(0, PRIMARY, PRIMARY, 0, false, x);
+		assert.equal(f.calls.length, 0);
+		f.pointer(0, 0, 0, PRIMARY, false, x);
+		assert.deepEqual(f.calls.splice(0), [item.command]);
+	}
+	f.bar.focusTarget.focus(); f.press('Enter');
+	assert.deepEqual(f.calls.splice(0), [item.command]);
+	f.enabled.delete(item.command); f.bar.update();
+	f.pointer(0, 0, PRIMARY, PRIMARY); f.press('Space');
+	assert.deepEqual(f.calls, []);
+});
 
 test('ordinary actions commit on matching primary release, not down, hover or repeat', t => {
 	const f = fixture(t);

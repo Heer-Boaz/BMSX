@@ -3,6 +3,7 @@ import * as constants from '../../common/constants';
 import { api } from '../../runtime/overlay_api';
 import {
 	WORKBENCH_ACTION_BAR_ITEM_PADDING_X,
+	WORKBENCH_ACTION_BAR_ITEM_SPACING,
 	type WorkbenchActionBarState,
 	type WorkbenchActionBarAction,
 	type WorkbenchActionBarItem,
@@ -27,7 +28,7 @@ export function renderWorkbenchActionBar(
 		const pressed = state.pressedCommand === item.command || item.checked;
 		const focused = state.hasFocus && state.focusedIndex === index;
 		const highlighted = hovered || focused;
-		const paintsBackground = item.icon === undefined || hovered || pressed || focused;
+		const paintsBackground = item.icon === undefined || item.showLabel || hovered || pressed || focused;
 		const background = !enabled
 			? constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND
 			: pressed ? constants.COLOR_HEADER_BUTTON_PRESSED_BACKGROUND
@@ -48,7 +49,7 @@ export function renderWorkbenchActionBar(
 			0,
 			background,
 		);
-		if (item.icon === undefined) api.blit_rect(
+		if (item.icon === undefined || item.showLabel) api.blit_rect(
 			item.bounds.left,
 			item.bounds.top,
 			item.bounds.right,
@@ -57,13 +58,13 @@ export function renderWorkbenchActionBar(
 			constants.COLOR_HEADER_BUTTON_BORDER,
 		);
 		if (item.icon !== undefined) drawWorkbenchIcon(item.checked && item.checkedIcon !== undefined ? item.checkedIcon : item.icon,
-			item.bounds.left + ((item.bounds.right - item.bounds.left - WORKBENCH_ICON_SIZE) >> 1),
+			item.bounds.left + (item.showLabel ? WORKBENCH_ACTION_BAR_ITEM_PADDING_X : ((item.bounds.right - item.bounds.left - WORKBENCH_ICON_SIZE) >> 1)),
 			item.bounds.top + ((item.bounds.bottom - item.bounds.top - WORKBENCH_ICON_SIZE) >> 1), textColor);
-		else api.blit_text_inline_span_with_font(
+		if (item.icon === undefined || item.showLabel) api.blit_text_inline_span_with_font(
 			item.label,
 			0,
 			item.label.length,
-			item.bounds.left + WORKBENCH_ACTION_BAR_ITEM_PADDING_X,
+			item.bounds.left + WORKBENCH_ACTION_BAR_ITEM_PADDING_X + (item.icon === undefined ? 0 : WORKBENCH_ICON_SIZE + WORKBENCH_ACTION_BAR_ITEM_SPACING),
 			item.bounds.top + 1,
 			0,
 			textColor,

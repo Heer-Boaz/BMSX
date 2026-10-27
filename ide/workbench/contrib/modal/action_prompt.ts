@@ -54,7 +54,8 @@ export class ActionPrompt implements PointerCaptureTarget {
 
 	public show(request: ActionPromptRequest, invocationOrigin?: InputFocusTarget | null): Promise<ActionPromptChoice> {
 		const focusedScope = this.focus.target?.scope.interactionOrigin ?? this.focus.target?.scope;
-		const takeFocus = this.presentation.kind === 'workspace' || focusedScope !== undefined && this.presentation.scope.contains(focusedScope);
+		const takeFocus = this.presentation.kind === 'workspace' || this.presentation.shouldRevealOnShow?.() === true
+			|| focusedScope !== undefined && this.presentation.scope.contains(focusedScope);
 		this.close();
 		if (this.presentation.kind === 'workspace') this.capture.cancel();
 		let origin = invocationOrigin === undefined ? this.focus.target : invocationOrigin;

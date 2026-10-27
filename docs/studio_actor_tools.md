@@ -272,7 +272,7 @@ independently subject-bound, lockable instance model.
 Actor Lab composes its existing outline/graph, game preview and property inspector
 without replacing the preview with a modal property document or subtracting
 space from it. Details occupies a separate floating window; its generic
-container owns placement, chrome, collapse and input attachment. There is one
+container owns placement, chrome and input attachment. There is one
 layout path, with no embedded Details split or docking mode.
 
 The implementation follows [VS Code's Variables view](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts)
@@ -327,18 +327,17 @@ editor group or panel, but not over permanently reserved workbench chrome.
 Activating a different editor input detaches the Actor Lab window with its
 owner; it does not leave an orphaned always-on-top inspector. Returning to that
 Actor Lab restores its attachment and placement. An ordinary Close/reopen within
-that input retains the subject, lock, collapse and property-view state.
+that input retains the subject, lock and property-view state.
 
 Details uses font- and work-area-relative requested dimensions,
 not desktop-pixel minima or a fixed `384 × 288` canvas assumption. Let `W × H`
 be the root work area, `c` the current common character advance, `l` the current
-font line height and `t = l + 8` the window-header metric:
+font line height. The header height is `l + 8`:
 
 | Dimension | Requested minimum | Initial request |
 | --- | --- | --- |
 | Width | `32c + 12`, for icon actions and a compact semantic subject caption. | The larger of the minimum and `W / 2`. |
-| Expanded height | `7l + 16`, with a font-relative client area. | The larger of the minimum and `H / 2`. |
-| Collapsed height | Titlebar `t` only. | Uses the retained expanded width. |
+| Height | `7l + 16`, with a font-relative client area. | The larger of the minimum and `H / 2`. |
 
 Font changes recompute minimum size, header/actions and client rows without
 discarding the retained requested placement. Arrangement fits the available
@@ -358,7 +357,7 @@ owned property menu, has focus. Middle truncation uses the common single
 ellipsis glyph only when the caption itself exceeds its measured budget.
 
 The right-hand titlebar actions are real, font-independent **pin/unpin**,
-**collapse/expand** and **close X** icons, with measured hit targets and full
+**maximize/restore** and **close X** icons, with measured hit targets and full
 hover/keyboard hints. Pinning Details locks the subject; the checked treatment
 distinguishes that state from following selection, and its reverse action is
 **Follow Selection**. This is separate from pinning an individual property.
@@ -378,20 +377,20 @@ An absent subject keeps its last subject path, adds **Unavailable** to the capti
 and shows the existing unavailable-instance notice in the client with the
 common warning treatment. Subject-dependent mutations/source actions are
 disabled while the exact target is unavailable; subject pinning,
-collapse/expand and Close remain usable. A temporary historical absence can
+maximize/restore and Close remain usable. A temporary historical absence can
 resolve when that same
 identity is present again. Heap replacement or retired identity never binds
 the window to a new same-named actor.
 
-#### Collapse, focus and commands
+#### Window presentation, focus and commands
 
-Details starts expanded. The titlebar collapse action reduces the window to its
-titlebar rather than closing Details or losing its subject. Expand restores its
-previous requested size.
-This uses the [container collapse contract](workbench_windowing_design.md#collapsed-window-presentation):
-client hover/capture and owned transients retire, client focus goes to Expand,
-and no property formatting/layout runs solely for the collapsed client.
-Identity retirement still runs while collapsed or hidden.
+Details is an owned utility inspector, not a document editor or an OS window.
+It supports move/resize, maximize/restore and Close. Double-clicking its
+non-action title area toggles maximize/restore. There is no titlebar-only
+collapse or minimize action. Close/reopen retains the input-owned subject,
+lock, placement and property bookmark; identity retirement continues while
+hidden. The shared container owns presentation/input transitions, while Actor
+Lab owns subject selection and reopening through Inspect Instance.
 
 The shared window theme supplies distinct active/inactive header and text
 colours, content background, border and a common floating-surface shadow. Shadow
@@ -406,8 +405,8 @@ icon geometry or introduce a new capitalisation policy.
 Escape first cancels a local interaction or dismisses a property popup, consuming
 that key once. Otherwise Escape in Details returns focus to the current Actor
 Lab primary control: the tree or its open state graph.
-Details remains open, with subject, lock, property selection, scroll and collapse
-state unchanged. It is not a Close shortcut and does not reserve Escape while
+Details remains open, with subject, lock, property selection and scroll
+unchanged. It is not a Close shortcut and does not reserve Escape while
 the game has focus. Tab traverses Details' eligible client and titlebar controls;
 **Actor Lab: Inspect Instance** activates or reopens the retained Details
 instance even when a locked subject is unavailable and the tree has no current
@@ -679,7 +678,7 @@ provide different kinds of evidence.
 | Owner | Contract exercised |
 | --- | --- |
 | [`actor_details.test.ts`](../tests/lua/actor_details.test.ts) | Compiled-guest property identity, value comparison, pins, independent Details subjects and history retirement. |
-| [`actor_runtime_tools.test.ts`](../tests/lua/actor_runtime_tools.test.ts) | Typed runtime handles, ordinary Actor Lab composition/navigation, scoped commands and hidden/collapsed lifetime work. |
+| [`actor_runtime_tools.test.ts`](../tests/lua/actor_runtime_tools.test.ts) | Typed runtime handles, ordinary Actor Lab composition/navigation, scoped commands and hidden-window lifetime work. |
 | [`actor_state_graph_navigation.test.ts`](../tests/lua/actor_state_graph_navigation.test.ts) | Graph membership, selection, focus/reveal and history identity. |
 | [`actor_execution.test.ts`](../tests/lua/actor_execution.test.ts) | Instance admission, cancellation, physical call control and replacement races. |
 | [`studio_game_input.ts`](../tests/conformance/runtime_replay/studio_game_input.ts) | Ordinary gameplay input beside floating Details and scoped Studio focus. |

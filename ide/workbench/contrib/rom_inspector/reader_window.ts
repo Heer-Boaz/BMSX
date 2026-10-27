@@ -132,8 +132,7 @@ export class RomEntryInspectorWindow {
 			for (const command of READER_COMMANDS) target.registerCommand(command, {
 				isEnabled: () => this.isEnabled(command), run: () => this.execute(command),
 			});
-			if (target !== this.window.focusTarget) for (const command of ['window.collapse', 'window.hide'] as const)
-				target.registerCommand(command, this.window.focusTarget.getCommand(command)!);
+			if (target !== this.window.focusTarget) target.registerCommand('window.hide', this.window.focusTarget.getCommand('window.hide')!);
 		}
 	}
 
@@ -351,16 +350,14 @@ export class RomEntryInspectorWindow {
 			}
 		}
 		if (!this.window.visible) this.window.show(false);
-		if (!model.collapsed) this.refreshClient();
+		this.refreshClient();
 		this.window.layout(font.renderFont(), measureTextRange, measureText);
-		if (!model.collapsed) {
-			this.layoutClient(model.client);
-			this.viewActions.update();
-			if (this.attachedView === 'info') this.inspector.update();
-			const item = this.viewActions.tooltipItem;
-			if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, font.renderFont(), measureTextRange, measureText, this.workArea);
-			else this.tooltip.hide();
-		}
+		this.layoutClient(model.client);
+		this.viewActions.update();
+		if (this.attachedView === 'info') this.inspector.update();
+		const item = this.viewActions.tooltipItem;
+		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, font.renderFont(), measureTextRange, measureText, this.workArea);
+		else this.tooltip.hide();
 		this.window.update();
 	}
 

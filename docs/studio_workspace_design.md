@@ -104,7 +104,7 @@ not an editable asset schema or an isolated preview contract.
 | Workflow | Existing BMSX owners | Missing capability or boundary |
 | --- | --- | --- |
 | Main workspace and document editors | `services/editor/editor_parts.ts` and `editor_part.ts` compose main/document lifetime, controls and local sessions over shared documents. | Canvas placement does not supply docking or native host windows. Those require separate presentation and lifecycle contracts, rather than another editor instance. |
-| Window navigation and additional views | The Window menu exposes main-workspace activation, an MRU window picker, new editor windows and contribution-owned additional views. Shared window chrome owns maximize/restore, collapse and close admission. | Docking and native host-window integration remain separate capabilities. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
+| Window navigation and additional views | The Window menu exposes main-workspace activation, an MRU window picker, new editor windows and contribution-owned additional views. Shared window chrome exposes maximize/restore and owner-admitted document minimization; document close requests go through `EditorCloseController`. | Snapping needs the shared placement/drag/keyboard contract below; it is not supplied by floating placement alone. Docking and native host-window integration remain separate capabilities. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
 | Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
 | Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Studio adapters for known factories and cart-owned authoring metadata are possible producers; a mandatory new cartlib schema is not assumed. The read-only [runtime inspection contract](cartlib_inspection_contract.md) does not supply that authoring metadata. |
 | Hierarchy and Details | Scene's outline/options project authored membership; Actor Lab independently inspects runtime actors/components. | Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations before Studio can offer that kind of hierarchy. |
@@ -411,24 +411,43 @@ preserve-focus intent; owning a part is not itself permission to steal focus.
 Moving to a sibling does not dismiss an already retained local session. A delayed
 submission can complete its canonical edit without returning keyboard focus from
 that sibling. A background close decision likewise remains local without
-interrupting an unrelated part's draft.
+interrupting an unrelated part's draft. A decision for an explicitly minimized
+part reveals that part when user attention is actually required; a clean close
+does not reveal it.
 
 ## Window navigation and presentation
 
 The Window menu makes frontend membership actionable. Show Open Windows lists
-the actual main and document parts in activation order, including collapsed
+the actual main and document parts in activation order, including minimized
 windows and windows awaiting a local close decision. Choosing one reveals that
 part and focuses its retained local dialog or client. Cancel returns to the
 invoking control; retiring a listed owner revokes the picker rather than
-redirecting its stale choice. The tab overflow picker remains group-local.
+redirecting its stale choice. The tab overflow picker remains group-local. A document window retains its tab
+group: the window frame and group tabs represent distinct scopes, even when
+only one document is currently open. The main/document distinction must remain
+legible through chrome and activation rather than suppressing group navigation.
+
+Document minimization removes the full family without ending any document or
+local session. The global status row's restore icon/count and the Window menu
+make the retained owners discoverable. Owned utility inspectors have no roll-up
+or minimize action. See [window presentation](workbench_windowing_design.md#minimized-document-windows)
+for input, local-decision and restore lifetimes.
 
 The permanent main presentation family and document windows are peers in the
 same ordered window band. The main family includes project navigation, its
 client and its opaque background. Focus Main Workspace raises that family;
-focusing a document raises its own family again. Neither action hides, collapses
+focusing a document raises its own family again. Neither action minimizes
 or disposes another part. An empty main container still owns keyboard focus:
 Enter opens Home and Escape returns to project navigation. It cannot leave
 typing routed to a document covered by the main work area.
+
+Snapping an existing window is separate from opening/copying a view, moving a
+tab, splitting a group or docking a tool. The [snapped placement contract](workbench_windowing_design.md#snapped-placement-contract)
+defines left/right work-area halves, top-edge maximize, drag preview and common
+menu/keyboard placement transitions. No source, group or execution attachment
+moves during a snap. Normal placement survives mode changes and live work-area
+reflow. Central keybinding/chord ownership is a prerequisite for discoverable
+multi-key shortcuts; OS Snap keys and guest gameplay input are not reclaimed.
 
 Owned modeless inspectors escape the pane's clip within the nearest real window
 or modal context, rather than becoming unrelated root windows. Raising the part
@@ -640,7 +659,7 @@ or fixed pixel positions:
 | Open/edit/close an FSM or BT above a main Scene view | Main subject, selection and viewport survive; both views observe canonical source changes. |
 | Invoke Source/Save/Undo through a popup, then change focus | The invocation targets its original admitted input; retired origins cannot act on a replacement. |
 | Rebind a reusable pane while its old popup/action is pending | The old attachment loses command authority, even if the old input survives in another tab. |
-| Resize/cover/collapse one surface during a hold | That surface loses input and drains its gesture; a sibling's unrelated capture survives. |
+| Resize/cover/minimize one surface during a hold | That surface loses input and drains its gesture; a sibling's unrelated capture survives. |
 | Complete an open after its part/workspace has closed | No late attachment or focus transfer into another part. |
 | Open a menu from a live Play client while the main authoring view remains visible | The menu inherits that client's policy; neither visibility nor popup focus changes another target's holds. |
 | Retire the target of an open runtime menu or timeline | Its commands become unavailable; none act on the primary target instead. |

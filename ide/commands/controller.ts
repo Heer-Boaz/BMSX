@@ -117,6 +117,7 @@ export class IdeCommandController {
 			return;
 		}
 		switch (command) {
+			case 'window.restoreMinimized': showOpenWindows(this.editor.editorParts, this.editor.quickInput, true); return;
 			case 'window.showAll': showOpenWindows(this.editor.editorParts, this.editor.quickInput); return;
 			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
 			case 'window.newEditor': this.editor.editorParts.createDocument().focus(); return;
@@ -127,7 +128,7 @@ export class IdeCommandController {
 				this.editor.editorParts.createDocument().group.openEditor(view, { pinned: true });
 				return;
 			}
-			case 'window.maximize': case 'window.collapse': case 'window.hide': {
+			case 'window.maximize': case 'window.minimize': case 'window.hide': {
 				const window = originWindow === undefined ? part.window : originWindow;
 				const implementation = window?.focusTarget.getCommand(command);
 				if (implementation?.isEnabled()) implementation.run();
@@ -380,8 +381,9 @@ export class IdeCommandController {
 		if (implementation !== undefined) return implementation.isEnabled();
 		switch (command) {
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
+			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
 			case 'window.copyEditor': return !part.closing && group.model.activeTab?.createView !== undefined;
-			case 'window.maximize': case 'window.collapse': case 'window.hide': {
+			case 'window.maximize': case 'window.minimize': case 'window.hide': {
 				const window = originWindow === undefined ? part.window : originWindow;
 				return window?.focusTarget.getCommand(command)?.isEnabled() === true;
 			}
@@ -535,7 +537,7 @@ export class IdeCommandController {
 		if (implementation !== undefined) return implementation.isChecked?.() === true;
 		const part = this.editor.editorParts.partForGroup(group);
 		switch (command) {
-			case 'window.maximize': case 'window.collapse': {
+			case 'window.maximize': {
 				const window = originWindow === undefined ? part.window : originWindow;
 				return window?.focusTarget.getCommand(command)?.isChecked?.() === true;
 			}

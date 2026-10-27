@@ -7,7 +7,7 @@ import type { InputFocusScope } from '../../../input/focus';
 export type WorkbenchModalPresentation = {
 	readonly scope: InputFocusScope;
 	readonly bounds: Readonly<RectBounds>;
-} & ({ readonly kind: 'workspace' } | { readonly kind: 'part'; reveal(): void });
+} & ({ readonly kind: 'workspace' } | { readonly kind: 'part'; reveal(): void; shouldRevealOnShow?(): boolean });
 
 /** Actual controller operations, retained for the attachment's lifetime. */
 export interface WorkbenchSurfaceCallbacks {

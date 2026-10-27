@@ -123,8 +123,7 @@ export class GpuDetailsWindow {
 		};
 		for (const target of [this.window.focusTarget, this.inspector.focusTarget, this.diagram.focusTarget, this.words.focusTarget]) {
 			target.registerCommand('gpu.view', { isEnabled: () => input.detailsWindow.open, run: () => this.chooseView() });
-			if (target !== this.window.focusTarget) for (const command of ['window.collapse', 'window.hide'] as const)
-				target.registerCommand(command, this.window.focusTarget.getCommand(command)!);
+			if (target !== this.window.focusTarget) target.registerCommand('window.hide', this.window.focusTarget.getCommand('window.hide')!);
 		}
 		this.words.focusTarget.clipboard = { readOnly: true, copy: () => input.selected.sequence < 0 ? null : formatNumberAsHex(input.selected.words[input.selectedWord], 8) };
 		this.unbindSelection = input.onWillChangeSelection(() => {
@@ -142,7 +141,6 @@ export class GpuDetailsWindow {
 
 	public chooseView(): void {
 		if (!this.window.visible) this.show();
-		if (this.input.detailsWindow.collapsed) this.window.setCollapsed(false);
 		this.update();
 		this.quickInput.pick('GPU view', 'Choose captured operation evidence', (_origin, lifetime) => {
 			this.chooser = lifetime; lifetime.add({ dispose: () => { if (this.chooser === lifetime) this.chooser = undefined; } });
@@ -274,14 +272,12 @@ export class GpuDetailsWindow {
 				: `Emitted GPU operation #${record.sequence} / timeline ${record.timeline}\nObserved at ${record.cycles} cycles / tick ${record.completedTick}${expired ? '\nRecord expired; retained captured words.' : ''}`;
 		}
 		if (!this.window.visible) this.window.show(false);
-		if (!model.collapsed) this.refreshClient();
+		this.refreshClient();
 		this.window.layout(font.renderFont(), measureTextRange, measureText);
-		if (!model.collapsed) {
-			this.layoutClient(model.client); this.contentActions.update(); if (this.activePage === 'properties') this.inspector.update();
-			const item = this.contentActions.tooltipItem;
-			if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, font.renderFont(), measureTextRange, measureText, this.workArea);
-			else this.tooltip.hide();
-		}
+		this.layoutClient(model.client); this.contentActions.update(); if (this.activePage === 'properties') this.inspector.update();
+		const item = this.contentActions.tooltipItem;
+		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, font.renderFont(), measureTextRange, measureText, this.workArea);
+		else this.tooltip.hide();
 		this.window.update();
 	}
 

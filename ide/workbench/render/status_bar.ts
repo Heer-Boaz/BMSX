@@ -22,11 +22,12 @@ export function renderStatusBar(
 	evaluation: RuntimeLuaEvaluation,
 	connection: StudioServerConnectionState,
 	contextTarget: InputFocusTarget | null,
+	windowRestoreWidth = 0,
 ): void {
 	const hostFailed = fault.hostFrameFailure !== undefined;
 	const runtimeFaulted = hostFailed || fault.faultSnapshot !== null;
 	const guestInput = inputFocus.admittedTarget?.guestInput !== undefined;
-	const layout = getWorkbenchStatusLayout(guestInput, hostFailed), bounds = layout.bounds;
+	const layout = getWorkbenchStatusLayout(guestInput, hostFailed, windowRestoreWidth), bounds = layout.bounds;
 	const statusTop = bounds.top, statusBottom = bounds.bottom;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;
 	api.fill_rect(0, statusTop, editorViewState.viewportWidth, statusBottom, 0, statusBackground);

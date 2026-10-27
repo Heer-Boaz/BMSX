@@ -21,6 +21,7 @@ export type WorkbenchActionBarItem<Command = EditorCommandId> = {
 	tooltip: string;
 	icon?: WorkbenchIcon;
 	checkedIcon?: WorkbenchIcon;
+	readonly showLabel?: boolean;
 	readonly bounds: RectBounds;
 	visible: boolean;
 	overflowed: boolean;
@@ -60,6 +61,7 @@ export function createWorkbenchActionBar(menuId: WorkbenchActionMenuId, responsi
 			tooltip: editorCommandTitle(contribution.command, false),
 			icon: contribution.icon,
 			checkedIcon: contribution.checkedIcon,
+			showLabel: contribution.showLabel,
 			bounds: create_rect_bounds(),
 			visible: true,
 			overflowed: false,
@@ -86,10 +88,11 @@ export function layoutWorkbenchActionBar(
 ): void {
 	const remeasure = state.measuredFont !== font || state.measuredBy !== measure;
 	for (const item of state.items) {
-		if (item.icon !== undefined) {
+		if (item.icon !== undefined && !item.showLabel) {
 			item.width = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, bottom - top);
 		} else if (remeasure || item.measuredLabel !== item.label) {
-			item.width = measure(item.label) + WORKBENCH_ACTION_BAR_ITEM_PADDING_X * 2;
+			item.width = measure(item.label) + WORKBENCH_ACTION_BAR_ITEM_PADDING_X * 2
+				+ (item.icon === undefined ? 0 : WORKBENCH_ICON_SIZE + WORKBENCH_ACTION_BAR_ITEM_SPACING);
 			item.measuredLabel = item.label;
 		}
 	}
