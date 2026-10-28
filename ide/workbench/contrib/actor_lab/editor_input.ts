@@ -43,6 +43,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public readonly timeline = new ActorTimelineTransport();
 	public readonly timelineLayout = new ActorTimelineLayout();
 	public readonly split = new WorkbenchSplitView(0.4);
+	public readonly rowSplit = new WorkbenchSplitView(0.4, 'vertical');
 	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
 	public detailsPlacementInitialized = false;
 	public readonly detailsActions = createWorkbenchActionBar('actorLab.details.title');
@@ -51,7 +52,7 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public readonly stateGraphActions = createWorkbenchActionBar('actorLab.stateGraph.title');
 	public readonly layout: ActorLabLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
-		primaryRight: 0, previewVisible: false,
+		primaryRight: 0, primaryBottom: 0, previewVisible: false, split: undefined,
 	};
 	public constructor(public readonly controller: ActorLabController, id: ActorLabTabId, title: string,
 		public override readonly serializable: boolean) {

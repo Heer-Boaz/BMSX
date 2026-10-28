@@ -25,6 +25,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	public readonly detailsRetired: boolean;
 	private readonly outlineScroll: number;
 	private readonly splitRatio: number;
+	private readonly rowSplitRatio: number;
 	public constructor(input: ActorLabInput, worldHashId: number | undefined, public readonly generation: number) {
 		super();
 		this.presentation = input.presentation;
@@ -49,6 +50,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		this.detailsRetired = details.retired;
 		this.outlineScroll = input.outline.scroll;
 		this.splitRatio = input.split.ratio;
+		this.rowSplitRatio = input.rowSplit.ratio;
 	}
 
 	public matches(other: ActorLabNavigationSelection): boolean {
@@ -69,6 +71,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		input.details!.restoreSubject(admitted ? this.detailsSubject : undefined, admitted && this.detailsLocked,
 			admitted ? this.detailsSubjectPath : '', admitted ? this.detailsSubjectName : '', admitted && this.detailsRetired);
 		input.split.ratio = this.splitRatio;
+		input.rowSplit.ratio = this.rowSplitRatio;
 	}
 
 	/** Restore scroll after the pane lays out the reacquired rows and diagram. */

@@ -12,6 +12,7 @@ import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import { ActorLabController } from '../../ide/workbench/contrib/actor_lab/controller';
 import { layoutActorLab, measureActorLab } from '../../ide/workbench/contrib/actor_lab/layout';
+import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
 import { RuntimeTransport } from '../../ide/runtime/transport';
 import { captureActorDetailsSelection } from '../../ide/workbench/contrib/actor_lab/details';
 import { ActorProjection, readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
@@ -208,7 +209,7 @@ test('Actor Lab history restores the typed member and Details after choosing ano
 	saved.dispose(); second.dispose();
 });
 
-for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history restores requested split intent while the preview is withheld`, t => {
+for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history restores both split intents through stacked and withheld previews`, t => {
 	configureFontVariant(variant);
 	const f = fixture(t); t.after(() => f.stop.dispose());
 	const controller = f.controller, input = controller.resolveInput(); t.after(() => input.dispose());
@@ -217,24 +218,39 @@ for (const variant of ['tiny', 'msx'] as const) test(`Actor ${variant} history r
 	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
 	const font = editorViewState.font, measured = measureActorLab(font);
 	const bounds = { left: 23, top: 31, right: 923, bottom: 431 };
-	const arrange = (width: number) => {
-		bounds.right = bounds.left + width; updateFullWidthWorkbenchLayout(input.layout, bounds); layoutActorLab(input);
+	const arrange = (width: number, height = 400) => {
+		bounds.right = bounds.left + width; bounds.bottom = bounds.top + height;
+		updateFullWidthWorkbenchLayout(input.layout, bounds); layoutActorLab(input);
 	};
 	arrange(900); input.split.resize(0.55); layoutActorLab(input);
-	const primaryRight = input.layout.primaryRight, selected = controller.selected(input);
+	assert.ok(input.layout.split === input.split);
+	const selected = controller.selected(input);
+	const narrow = measured.outlineMinimumWidth + WORKBENCH_SPLIT_SIZE + measured.previewMinimumWidth - 1;
+	arrange(narrow); assert.ok(input.layout.previewVisible && input.layout.split === input.rowSplit);
+	input.rowSplit.resize(0.45); layoutActorLab(input);
 	const saved = controller.captureSelection(input); t.after(() => saved.dispose());
 	const cycles = f.runtime.machine.scheduler.nowCycles, heap = f.runtime.machine.cpu.luaHeap.usedBytes();
-	const narrow = measured.outlineMinimumWidth + 4 + measured.previewMinimumWidth - 1;
-	arrange(narrow); assert.equal(input.layout.previewVisible, false);
+	arrange(900); input.split.resize(0.7);
+	arrange(narrow); input.rowSplit.resize(0.6);
+	arrange(narrow, measured.previewMinimumHeight);
+	assert.ok(!input.layout.previewVisible && input.layout.split === undefined);
 	controller.restoreSelection(input, saved, font.renderFont());
 	assert.equal(input.split.ratio, 0.55, 'restoring view intent must not apply current interactive sash limits');
-	assert.equal(controller.selected(input), selected);
+	assert.equal(input.rowSplit.ratio, 0.45);
+	assert.ok(controller.selected(input) === selected);
 	const roundTrip = controller.captureSelection(input); t.after(() => roundTrip.dispose());
 	arrange(900); input.split.resize(0.7); layoutActorLab(input);
-	arrange(narrow); controller.restoreSelection(input, roundTrip, font.renderFont());
+	arrange(narrow); input.rowSplit.resize(0.6); layoutActorLab(input);
+	arrange(narrow, measured.previewMinimumHeight);
+	controller.restoreSelection(input, roundTrip, font.renderFont());
 	assert.equal(input.split.ratio, 0.55, 'a history round-trip while withheld retains the same requested placement');
+	assert.equal(input.rowSplit.ratio, 0.45);
+	arrange(narrow);
+	assert.ok(input.layout.previewVisible && input.layout.split === input.rowSplit);
+	assert.equal(input.rowSplit.ratio, 0.45);
 	arrange(900);
-	assert.equal(input.layout.previewVisible, true); assert.equal(input.layout.primaryRight, primaryRight);
+	assert.ok(input.layout.previewVisible && input.layout.split === input.split);
+	assert.equal(input.split.ratio, 0.55);
 	assert.equal(f.runtime.machine.scheduler.nowCycles, cycles); assert.equal(f.runtime.machine.cpu.luaHeap.usedBytes(), heap);
 });
 

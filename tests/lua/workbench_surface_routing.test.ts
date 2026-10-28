@@ -153,7 +153,7 @@ return { _objects = { actor, other } }` },
 	return { ...f, controller, input, pane, sourceModel };
 }
 
-for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview retirement drains a real guest hold without migrating it into the expanded primary client`, t => {
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview reorientation retains its guest binding and retirement drains the held input`, t => {
 	const { editor, host, pointer, input, pane } = actorFixture(t);
 	editor.setFontVariant(variant); editor.update(0); pane.focus();
 	const primary = inputFocus.target!, selected = input.outline.rows[input.outline.selectionIndex];
@@ -162,31 +162,120 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview r
 	const sample = createInputControllerSnapshot();
 	let point = center(); pointer(point.x, point.y, PointerButton.Primary);
 	const preview = inputFocus.target!, binding = preview.guestInput!;
-	assert.notEqual(preview, primary); assert.equal(binding.recipient, host.input);
+	assert.ok(preview !== primary && binding.recipient === host.input);
 	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
-	assert.equal(sample.pointerButtons, 1); assert.equal(pointerCapture.guestBinding, binding);
-	editor.updateViewport({ width: 256, height: 360 }); editor.update(0);
+	assert.equal(sample.pointerButtons, 1); assert.ok(pointerCapture.guestBinding === binding);
+	editor.updateViewport({ width: 320, height: 400 }); editor.update(0);
+	assert.equal(input.layout.previewVisible, true, 'the actual tall client retains a stacked preview');
+	assert.ok(input.layout.split === input.rowSplit);
+	assert.ok(preview.guestInput === binding && inputFocus.target === preview && pointerCapture.guestBinding === binding);
+	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 1);
+	editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
+	assert.ok(input.layout.split === input.split && preview.guestInput === binding && inputFocus.target === preview);
+	editor.updateViewport({ width: 320, height: 160 }); editor.update(0);
 	assert.ok(preview.guestInput === undefined, 'withheld preview retires its actual input attachment');
-	assert.equal(inputFocus.target, primary); assert.equal(editor.guestInputRecipient, null);
-	preview.focus(); assert.equal(inputFocus.target, primary, 'a withheld preview is not a direct focus destination');
-	assert.equal(pointerCapture.guestBinding, undefined); assert.equal(pointerCapture.draining, true);
+	assert.ok(inputFocus.target === primary && editor.guestInputRecipient === null);
+	preview.focus(); assert.ok(inputFocus.target === primary, 'a withheld preview is not a direct focus destination');
+	assert.ok(pointerCapture.guestBinding === undefined); assert.equal(pointerCapture.draining, true);
 	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 0);
 	const otherRow = input.outline.selectionIndex === 0 ? 1 : 0;
 	pointer((input.outline.layout.contentLeft + input.outline.layout.contentRight) / 2,
 		input.outline.layout.contentTop + (otherRow + 0.5) * input.outline.layout.rowHeight,
 		PointerButton.Primary | PointerButton.Secondary);
-	assert.equal(input.outline.rows[input.outline.selectionIndex], selected, 'the interrupted guest hold cannot select the newly expanded tree');
-	editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
-	assert.equal(preview.guestInput, binding, 'reappearance reuses the same viewport binding');
-	assert.equal(inputFocus.target, primary, 'reappearance does not steal primary keyboard focus');
+	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected, 'the interrupted guest hold cannot select the newly expanded tree');
+	editor.updateViewport({ width: 320, height: 400 }); editor.update(0);
+	assert.equal(input.layout.previewVisible, true); assert.ok(input.layout.split === input.rowSplit);
+	assert.ok(preview.guestInput === binding, 'reappearance reuses the same viewport binding');
+	assert.ok(inputFocus.target === primary, 'reappearance does not steal primary keyboard focus');
 	point = center(); pointer(point.x, point.y, PointerButton.Primary | PointerButton.Secondary | PointerButton.Auxiliary);
-	assert.equal(inputFocus.target, primary); assert.equal(pointerCapture.guestBinding, undefined);
-	assert.equal(input.outline.rows[input.outline.selectionIndex], selected);
+	assert.ok(inputFocus.target === primary && pointerCapture.guestBinding === undefined);
+	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
 	pointer(point.x, point.y, 0); assert.equal(pointerCapture.draining, false);
 	pointer(point.x, point.y, PointerButton.Primary);
-	assert.equal(inputFocus.target, preview); assert.equal(pointerCapture.guestBinding, binding);
+	assert.ok(inputFocus.target === preview && pointerCapture.guestBinding === binding);
 	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 1);
 	pointer(point.x, point.y, 0);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor sash reorientation cancels the old axis capture and admits only the active keyboard axis`, t => {
+	const { editor, host, pointer, input, pane, sourceModel } = actorFixture(t);
+	editor.setFontVariant(variant); editor.update(0); pane.focus();
+	const primary = inputFocus.target!, selected = input.outline.rows[input.outline.selectionIndex], path = input.selectionPath;
+	const source = sourceModel.buffer.getText(), version = sourceModel.version, cycles = host.runtime.machine.scheduler.currentNowCycles();
+	const timeline = input.timeline, viewport = input.previewBounds;
+	const x = input.split.position, y = (input.split.bounds.top + input.split.bounds.bottom) / 2;
+	pointer(x, y, PointerButton.Primary); assert.equal(pointerCapture.active, true);
+	const horizontalRatio = input.split.ratio;
+	editor.updateViewport({ width: 320, height: 400 }); editor.update(0);
+	assert.equal(input.layout.previewVisible, true); assert.ok(input.layout.split === input.rowSplit);
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
+	assert.ok(inputFocus.target === primary && inputFocus.target.guestInput === undefined);
+	const rowRatio = input.rowSplit.ratio;
+	const rowX = (input.rowSplit.bounds.left + input.rowSplit.bounds.right) / 2, rowY = input.rowSplit.position;
+	pointer(rowX, rowY + 12, PointerButton.Primary | PointerButton.Secondary); editor.update(0);
+	assert.equal(input.rowSplit.ratio, rowRatio); assert.equal(input.split.ratio, horizontalRatio);
+	pointer(rowX, rowY + 12, 0); assert.equal(pointerCapture.draining, false);
+	assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.moveFocus(false), true);
+	const sash = inputFocus.target!;
+	assert.ok(sash !== primary && sash.guestInput === undefined && sash.canFocus!());
+	editor.dispatchKey(new KeyInputEvent('ArrowRight', KeyModifier.none));
+	editor.dispatchKey(new KeyInputEvent('ArrowRight', KeyModifier.none, false, false)); editor.update(0);
+	assert.equal(input.rowSplit.ratio, rowRatio, 'horizontal arrows cannot resize the stacked sash');
+	editor.dispatchKey(new KeyInputEvent('ArrowDown', KeyModifier.none));
+	editor.dispatchKey(new KeyInputEvent('ArrowDown', KeyModifier.none, false, false)); editor.update(0);
+	assert.notEqual(input.rowSplit.ratio, rowRatio); assert.equal(input.split.ratio, horizontalRatio);
+	const keyboardRowRatio = input.rowSplit.ratio, currentY = input.rowSplit.position;
+	pointer(rowX, currentY, PointerButton.Primary); assert.equal(pointerCapture.active, true);
+	pointer(rowX, currentY + 12); editor.update(0);
+	pointer(rowX, currentY + 12, 0);
+	assert.notEqual(input.rowSplit.ratio, keyboardRowRatio); assert.equal(input.split.ratio, horizontalRatio);
+	const requestedRowRatio = input.rowSplit.ratio;
+	editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
+	assert.ok(input.layout.split === input.split); assert.equal(input.split.ratio, horizontalRatio);
+	editor.updateViewport({ width: 320, height: 400 }); editor.update(0);
+	assert.ok(input.layout.split === input.rowSplit); assert.equal(input.rowSplit.ratio, requestedRowRatio);
+	assert.ok(input.outline.rows[input.outline.selectionIndex] === selected && input.selectionPath === path);
+	assert.ok(input.timeline === timeline && input.previewBounds === viewport);
+	const navigation = pane.getSelection(); t.after(() => navigation.dispose());
+	input.split.ratio = 0.7; input.rowSplit.ratio = 0.6;
+	pane.setOptions(undefined, navigation); editor.update(0);
+	assert.equal(input.split.ratio, horizontalRatio); assert.equal(input.rowSplit.ratio, requestedRowRatio);
+	assert.equal(sourceModel.buffer.getText(), source); assert.equal(sourceModel.version, version);
+	assert.equal(host.runtime.machine.scheduler.currentNowCycles(), cycles);
+});
+
+test('Actor preview retirement keeps newer outside focus admitted by the departing guest control', t => {
+	const { editor, host, pointer, input, pane } = actorFixture(t);
+	pane.focus();
+	pointer((input.previewBounds.left + input.previewBounds.right) / 2,
+		(input.previewBounds.top + input.previewBounds.bottom) / 2, PointerButton.Primary);
+	const preview = inputFocus.target!, outside = editor.resourcePanel.focusTarget;
+	assert.ok(preview.guestInput !== undefined);
+	let blurs = 0;
+	t.after(preview.onDidBlur(() => { blurs++; editor.commands.execute('resources.focus', pane.commandTarget); }));
+	editor.updateViewport({ width: 320, height: 160 }); editor.update(0);
+	assert.equal(blurs, 1); assert.ok(editor.resourcePanel.isVisible() && inputFocus.admittedTarget === outside);
+	assert.ok(editor.editorParts.main.activeGroup.panes.activePane === pane && pane.input === input);
+	assert.ok(preview.guestInput === undefined && pointerCapture.guestBinding === undefined);
+	const sample = createInputControllerSnapshot();
+	host.input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal); assert.equal(sample.pointerButtons, 0);
+});
+
+test('Actor preview retirement stops the old pane update when guest blur opens another real editor', t => {
+	const { editor, host, pointer, input, pane } = actorFixture(t), group = editor.editorParts.main.activeGroup;
+	pane.focus();
+	pointer((input.previewBounds.left + input.previewBounds.right) / 2,
+		(input.previewBounds.top + input.previewBounds.bottom) / 2, PointerButton.Primary);
+	const preview = inputFocus.target!, replacement = new GameViewInput(), cycles = host.runtime.machine.scheduler.currentNowCycles();
+	assert.ok(preview.guestInput !== undefined);
+	let blurs = 0;
+	t.after(preview.onDidBlur(() => { blurs++; group.openEditor(replacement); }));
+	editor.updateViewport({ width: 320, height: 160 }); editor.update(0);
+	assert.equal(blurs, 1);
+	assert.ok(group.model.activeTab === replacement && group.panes.activePane?.input === replacement);
+	assert.ok(inputFocus.admittedTarget === group.panes.activePane?.commandTarget);
+	assert.ok(preview.guestInput === undefined && pointerCapture.guestBinding === undefined);
+	assert.equal(host.runtime.machine.scheduler.currentNowCycles(), cycles);
 });
 
 test('Actor reflow retires the real sash while retaining primary, graph and locked Details owners in both fonts', t => {
@@ -207,7 +296,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 		assert.equal(pointerCapture.active, true); assert.ok(inputFocus.target === primary);
 		pointer(x + 12, y); editor.update(0);
 		const ratio = input.split.ratio;
-		editor.updateViewport({ width: 256, height: 360 }); editor.update(0);
+		editor.updateViewport({ width: 320, height: 160 }); editor.update(0);
 		assert.equal(pointerCapture.active, false, 'withholding the split retires its captured control');
 		assert.equal(pointerCapture.draining, true); assert.equal(sash.canFocus!(), false);
 		assert.ok(inputFocus.target === primary);
@@ -222,7 +311,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 		}
 		pane.focus(); pointer(220, y, PointerButton.Primary | PointerButton.Secondary); pointer(220, y, 0);
 		assert.equal(input.split.ratio, ratio); assert.ok(input.outline.rows[input.outline.selectionIndex] === selected);
-		assert.equal(input.selectionPath, path);
+		assert.ok(input.selectionPath === path);
 		editor.updateViewport({ width: 640, height: 360 }); editor.update(0);
 		assert.equal(sash.canFocus!(), true); assert.equal(input.split.ratio, ratio); assert.ok(inputFocus.target === primary);
 	}
@@ -239,8 +328,8 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 	for (const variant of ['tiny', 'msx'] as const) {
 		editor.setFontVariant(variant); editor.update(0);
 		const model = graph.viewport.model;
-		for (const width of [256, 640]) {
-			editor.updateViewport({ width, height: 360 }); editor.update(0);
+		for (const size of [{ width: 320, height: 400 }, { width: 320, height: 160 }, { width: 640, height: 360 }]) {
+			editor.updateViewport(size); editor.update(0);
 			assert.ok(inputFocus.target === detailsFocus, 'preview retirement does not blur an independently focused Details client');
 			assert.ok(input.stateGraph === graph); assert.ok(graph.viewport.model === model); assert.ok(graph.viewport.selection === selection);
 			assert.ok(graph.viewport === viewport);
@@ -249,7 +338,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 			assert.ok(pane.commandTarget === graphFocus, 'compact composition retains the real graph command origin');
 		}
 		pane.focus(); assert.ok(inputFocus.target === graphFocus);
-		editor.updateViewport({ width: 256, height: 360 }); editor.update(0);
+		editor.updateViewport({ width: 320, height: 160 }); editor.update(0);
 		assert.ok(inputFocus.target === graphFocus);
 		pane.inspector.focusTarget.focus();
 	}

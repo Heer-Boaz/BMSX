@@ -4,6 +4,7 @@ import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
 import { ActorLabEditorActions } from './actions';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { WorkbenchSplitControl } from '../../ui/split_control';
+import type { WorkbenchSplitView } from '../../ui/split_view';
 import { drawWorkbenchSplit } from '../../render/split_view';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import { COLOR_TAB_BORDER } from '../../../common/constants';
@@ -57,8 +58,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	private readonly scrub = (node: ActorNode, time: number, program: number, current: () => boolean, finished: (completed: boolean) => void) =>
 		this.actorActions.scrub(this.input, node, time, program, current, finished);
 	private timelineVisible = false;
-	private splitAttached = false;
-	private splitRevision = -1;
+	private boundSplit: WorkbenchSplitView | undefined;
+	private splitRevision: number | undefined;
 	private restoreDetailsScroll = false;
 	private navigationSelection: ActorLabNavigationSelection | undefined;
 	private renderedTopology = -1;
@@ -281,7 +282,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.split.focusTarget.commandContext = this.focusTarget;
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
 		this.split.clearInput();
-		this.splitAttached = false;
+		this.boundSplit = undefined;
 		// Detaching is not execution; the controller still observes guest invalidation while hidden.
 		this.timelineSlider.clearInput(); this.input.timeline.clear(); this.scrollbar.cancelPointer(); super.clearInput(reason);
 	}
@@ -321,16 +322,16 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		follow.label = followLabel;
 		follow.checked = input.follow.target !== undefined;
 		if (this.timelineVisible) input.timelineLayout.update(input.timeline, layout);
-		const viewportChanged = layoutChanged || timelineChanged || graphChanged || this.splitRevision !== input.split.revision;
+		const viewportChanged = layoutChanged || timelineChanged || graphChanged || this.splitRevision !== input.layout.split?.revision;
 		if (viewportChanged && input.follow.target !== undefined) input.follow.pending = input.follow.target;
 		if (followChanged || contentsChanged || viewportChanged) {
-			this.updateContentLayout();
+			if (!this.updateContentLayout()) return;
 			layoutWorkbenchActionBar(input.presentation === 'outline' ? input.actionBar : input.stateGraphActions, layout.primaryRight - 4,
 				layout.top + 2, layout.top + layout.rowHeight + 8, measureText, editorViewState.font.renderFont(), layout.left + 4);
 			if (input.presentation === 'graph') input.stateGraph!.titleLabel = truncateTextToWidth(input.stateGraph!.title, layout.primaryRight - layout.left - 16);
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
-		} else this.updatePreviewInput();
+		} else if (!this.updatePreviewInput()) return;
 		this.updateViewportHit();
 		this.controller.layoutNavigation(input);
 		this.timelineSlider.update();
@@ -365,7 +366,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		drawEditorText(editorViewState.font, this.detailsWindow.hasFocus ? this.input.details!.title
-			: this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET'
+			: this.split.focusTarget.hasFocus ? this.boundSplit!.orientation === 'horizontal' ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : 'RESIZE PANES: UP/DOWN | HOME: RESET'
 			: this.viewportHit !== undefined ? this.viewportHit.label
 			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
 	}
@@ -382,11 +383,11 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			api.popClipRect();
 		}
 		this.gameInput.draw();
-		drawWorkbenchSplit(this.input.split, this.split.hovered || this.split.focusTarget.hasFocus);
+		drawWorkbenchSplit(this.input.layout.split!, this.split.hovered || this.split.focusTarget.hasFocus);
 	}
 	private showDetails(focus: boolean): void {
 		updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);
-		this.updateContentLayout();
+		if (!this.updateContentLayout()) return;
 		const attached = this.detailsWindow.visible;
 		this.input.detailsWindow.open = true;
 		this.updateDetailsWindow();
@@ -421,18 +422,18 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		}
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.commands.execute('actorLab.details'); }
 	}
-	private updateContentLayout(): void {
+	private updateContentLayout(): boolean {
 		layoutActorLab(this.input);
-		this.splitRevision = this.input.split.revision;
-		this.updatePreviewInput();
+		this.splitRevision = this.input.layout.split?.revision;
+		return this.updatePreviewInput();
 	}
-	/** Arrangement owns whether the retained viewport and sash admit input. */
-	private updatePreviewInput(): void {
-		const input = this.input;
+	/** Arrangement retires old controls before admitting input for this attachment. */
+	private updatePreviewInput(): boolean {
+		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
 		let restoreFocus = false;
-		if (this.splitAttached !== input.layout.previewVisible) {
-			this.splitAttached = input.layout.previewVisible;
-			if (this.splitAttached) this.split.setInput(input.split);
+		if (this.boundSplit !== input.layout.split) {
+			this.boundSplit = input.layout.split;
+			if (this.boundSplit !== undefined) this.split.setInput(this.boundSplit);
 			else {
 				restoreFocus = this.split.focusTarget.hasFocus;
 				pointerCapture.cancelTarget(this.split);
@@ -440,13 +441,16 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 				pointerHover.release(this);
 			}
 		}
+		if (scope.contextGeneration !== context) return false;
 		const viewport = this.controller.viewport;
 		if (input.layout.previewVisible && (viewport.kind === 'direct' || viewport.frames.bitmap !== undefined)) this.gameInput.setInput(input.previewBounds);
 		else if (this.gameInput.focusTarget.guestInput !== undefined) {
 			restoreFocus ||= this.gameInput.focusTarget.hasFocus;
 			this.gameInput.clearInput();
 		}
-		if (restoreFocus) this.focus();
+		if (scope.contextGeneration !== context) return false;
+		if (restoreFocus && inputFocus.target === this.focusTarget) this.focus();
+		return scope.contextGeneration === context;
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.input.layout.previewVisible && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {

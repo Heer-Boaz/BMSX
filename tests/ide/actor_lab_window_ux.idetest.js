@@ -49,9 +49,9 @@ const insetCycles = t.runtime().machine.scheduler.nowCycles;
 // Resize only an admitted sash, using its real keyboard focus route. Passive Files
 // reflow below must retain this requested placement rather than resetting to 40%.
 if (input.layout.previewVisible) {
-	const ratio = input.split.ratio;
-	await press('Tab'); await press('Tab'); await press('ArrowRight');
-	t.assert(input.split.ratio !== ratio, 'the admitted Actor sash did not receive keyboard resizing');
+	const split = input.layout.split, ratio = split.ratio;
+	await press('Tab'); await press('Tab'); await press(split.orientation === 'horizontal' ? 'ArrowRight' : 'ArrowDown');
+	t.assert(split.ratio !== ratio, 'the admitted Actor sash did not receive keyboard resizing');
 	await press('ShiftLeft', 'Tab'); await press('ShiftLeft', 'Tab');
 }
 t.assert(t.runtime().machine.scheduler.nowCycles === insetCycles, 'Actor sash navigation executed the paused guest');
@@ -60,17 +60,27 @@ t.assert(t.runtime().machine.scheduler.nowCycles === insetCycles, 'Actor sash na
 for (let fontIndex = 0; fontIndex < 2; fontIndex++) {
 	const variant = input.layout.font.variant;
 	for (let theme = 0; theme < 2; theme++) {
+		t.assert(input.layout.previewVisible && input.layout.split !== undefined,
+			'the full Actor client did not retain its preview in the current font');
+		const split = input.layout.split, beforeResize = split.ratio;
+		const horizontal = split.orientation === 'horizontal';
+		const sashX = horizontal ? split.position : (split.bounds.left + split.bounds.right) / 2;
+		const sashY = horizontal ? (split.bounds.top + split.bounds.bottom) / 2 : split.position;
+		await drag(sashX, sashY, sashX + (horizontal ? 8 : 0), sashY + (horizontal ? 0 : 8));
+		t.assert(input.layout.split === split && split.ratio !== beforeResize,
+			'the current Actor sash did not route an ordinary pointer resize to its retained axis');
+		await capture(`${variant}-theme-${theme}-adaptive-outline`);
 		await press('Home'); await press('ArrowDown'); await press('ArrowRight');
 		const timelineIndex = input.outline.selectionIndex;
 		const timeline = input.outline.rows[timelineIndex].element.node;
 		const nextTimeline = input.outline.rows[timelineIndex + 1].element.node;
-		const ratio = input.split.ratio;
+		const ratio = input.split.ratio, rowRatio = input.rowSplit.ratio;
 		t.assert(timeline.kind === 'timeline' && nextTimeline.kind === 'timeline', 'the shipped actor did not expose its actual adjacent timelines');
 		await press('ControlLeft', 'KeyB');
 		t.assert(t.activeWorkbenchTab() === input && input.outline.rows[input.outline.selectionIndex].element.node === timeline,
 			'opening Files replaced the Actor client or selected subject');
-		t.assert(!input.layout.previewVisible && input.split.ratio === ratio,
-			'Files did not withhold the unusable preview while retaining the requested split');
+		t.assert(input.split.ratio === ratio && input.rowSplit.ratio === rowRatio,
+			'Files reflow changed a requested Actor split');
 		const tree = input.outline.layout;
 		await click(tree.contentRight - 4, tree.contentTop + (timelineIndex + 1 - (input.outline.scroll | 0) + 0.5) * tree.rowHeight);
 		t.assert(input.outline.rows[input.outline.selectionIndex].element.node === nextTimeline, 'the translated Actor tree did not receive the actual timeline pointer');
@@ -79,13 +89,14 @@ for (let fontIndex = 0; fontIndex < 2; fontIndex++) {
 			&& input.timeline.visible && input.timeline.entryHashId === timeline.hashId, 'pointer focus did not return keyboard navigation to the same live timeline');
 		await capture(`${variant}-theme-${theme}-timeline-with-files`);
 		await press('ControlLeft', 'KeyB');
-		t.assert(input.outline.rows[input.outline.selectionIndex].element.node === timeline && input.split.ratio === ratio,
+		t.assert(input.outline.rows[input.outline.selectionIndex].element.node === timeline && input.split.ratio === ratio && input.rowSplit.ratio === rowRatio,
 			'closing Files replaced the timeline or its requested split');
 		await press('ArrowDown');
 		t.assert(input.outline.rows[input.outline.selectionIndex].element.node === nextTimeline,
 			'closing Files did not restore keyboard focus to the actual Actor tree');
 		await press('ArrowUp');
-		await capture(`${variant}-theme-${theme}-timeline-without-files-${input.layout.previewVisible ? 'companion' : 'primary'}`);
+		t.assert(input.layout.previewVisible, 'the full Actor timeline lost its useful game preview');
+		await capture(`${variant}-theme-${theme}-timeline-without-files`);
 		const machineIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'machine');
 		t.assert(machineIndex >= 0, 'the real actor has no FSM machine to inspect');
 		await press('Home');
@@ -97,17 +108,19 @@ for (let fontIndex = 0; fontIndex < 2; fontIndex++) {
 			&& graph.selectedTarget.path.at(-1).hashId === machine.hashId, 'the translated client did not open the exact physical FSM graph');
 		await press('Home');
 		const zoom = graph.viewport.zoom;
-		await capture(`${variant}-theme-${theme}-graph-without-files-${input.layout.previewVisible ? 'companion' : 'primary'}`);
+		t.assert(input.layout.previewVisible, 'the full Actor graph lost its useful game preview');
+		await capture(`${variant}-theme-${theme}-graph-without-files`);
 		await press('ControlLeft', 'KeyB');
 		t.assert(input.stateGraph === graph && graph.viewport.selection === selected && graph.viewport.zoom === zoom
-			&& input.split.ratio === ratio && !input.layout.previewVisible,
+			&& input.split.ratio === ratio && input.rowSplit.ratio === rowRatio,
 			'Files reflow replaced the actual FSM graph, selection, zoom or requested split');
 		await click(graph.viewport.graphToViewportX(selected.bounds.left) + 4,
 			graph.viewport.graphToViewportY(selected.bounds.top) + selected.headerHeight / 2);
 		t.assert(graph.viewport.selection === selected, 'the translated graph pointer selected a different physical node');
 		await capture(`${variant}-theme-${theme}-graph-with-files`);
 		await press('ControlLeft', 'KeyB');
-		t.assert(input.stateGraph === graph && graph.viewport.selection === selected && graph.viewport.zoom === zoom && input.split.ratio === ratio,
+		t.assert(input.stateGraph === graph && graph.viewport.selection === selected && graph.viewport.zoom === zoom
+			&& input.split.ratio === ratio && input.rowSplit.ratio === rowRatio,
 			'closing Files replaced the retained FSM graph context');
 		await press('Escape');
 		t.assert(input.presentation === 'outline' && input.outline.rows[input.outline.selectionIndex].element.node === machine,
@@ -120,11 +133,10 @@ for (let fontIndex = 0; fontIndex < 2; fontIndex++) {
 	}
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
-// The first floating Details window must be reachable even when Actor Lab has
-// withheld its internal preview. Its actions are exercised through their real hit bounds.
+// Details belongs to the same selected subject independently of client arrangement.
+// Its actions are exercised through their real hit bounds.
 await press('ControlLeft', 'KeyB');
-t.assert(!input.layout.previewVisible && !input.detailsPlacementInitialized,
-	'the first Details inspection did not begin in the primary-only Actor client');
+t.assert(!input.detailsPlacementInitialized, 'Details placement was initialized before the first inspection');
 const firstDetailsTree = input.outline.layout;
 await click(firstDetailsTree.contentRight - 4, firstDetailsTree.contentTop + firstDetailsTree.rowHeight / 2);
 await press('Enter');
@@ -206,11 +218,12 @@ await press('Escape');
 // graph or selection when the primary client reflows in either shipped font.
 for (let fontIndex = 0; fontIndex < 2; fontIndex++) {
 	const variant = input.layout.font.variant, graph = input.stateGraph;
-	const path = JSON.stringify(input.selectionPath), ratio = input.split.ratio;
+	const path = JSON.stringify(input.selectionPath), ratio = input.split.ratio, rowRatio = input.rowSplit.ratio;
 	const placement = JSON.stringify(input.detailsWindow.requestedBounds);
 	await press('ControlLeft', 'KeyB');
-	t.assert(!input.layout.previewVisible && input.stateGraph === graph && JSON.stringify(input.selectionPath) === path
-		&& input.details.subject === subject && input.details.locked && !input.details.available && input.split.ratio === ratio,
+	t.assert(input.stateGraph === graph && JSON.stringify(input.selectionPath) === path
+		&& input.details.subject === subject && input.details.locked && !input.details.available
+		&& input.split.ratio === ratio && input.rowSplit.ratio === rowRatio,
 		'Files reflow replaced the unavailable historical Actor context');
 	await capture(`${variant}-historical-details-with-files`);
 	await press('ControlLeft', 'KeyB');

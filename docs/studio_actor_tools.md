@@ -91,12 +91,20 @@ These interaction patterns inform the view; they do not require guest tracing.
   distinguishing suffixes; the selected full identifier remains in the status
   bar. This uses the common text
   layout owner, following [VS Code's middle truncation](https://github.com/microsoft/vscode/blob/main/src/vs/base/common/strings.ts).
-- The hierarchy or graph is the primary client. Its current-font reading budget
-  and a useful game image must both fit after reserving the visible timeline;
-  otherwise the primary client receives the complete area. The withheld preview
-  and sash leave pointer admission and keyboard navigation until they fit again.
-  Reflow retains the requested split ratio, selected subject and playback mode;
-  Details remains available independently of preview visibility.
+- The hierarchy or graph and useful game image compose side by side when their
+  current-font minimum sizes fit; otherwise they stack when both fit vertically.
+  Both arrangements reserve the visible timeline and the complete shared sash
+  target. The primary client receives the complete area only when neither
+  arrangement fits. A withheld preview and sash leave pointer admission and
+  keyboard navigation until they fit again. Each axis retains its own requested
+  split ratio; reflow retains the selected subject, graph viewport and playback
+  mode. Changing axes cancels an old sash gesture rather than resizing along a
+  different axis mid-gesture. A still-visible game frame retains its existing
+  input attachment. Details remains available independently of preview visibility.
+  This follows the separation between requested placement, minimum constraints
+  and actual arrangement in [VS Code SplitView](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/splitview/splitview.ts);
+  a responsive alternative preserves content rather than dropping it, as in
+  [VS Code's narrow diff presentation](https://github.com/microsoft/vscode/blob/main/src/vs/editor/browser/widget/diffEditor/diffEditorOptions.ts).
 - Follow observes only the completed history position. Missing historical
   instances are visibly unavailable and cannot receive actions; live-branch
   admission and heap replacement retire invalid bookmarks. Timeline **Scrub**

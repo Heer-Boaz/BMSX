@@ -116,3 +116,26 @@ test('unarranged or minimum-filled sashes cannot receive resize focus or capture
 	view.resize(0.99); assert.equal(view.ratio, 1 - 10 / 110);
 	view.resize(0); assert.equal(view.ratio, 90 / 110);
 });
+
+test('rebinding the same sash control to another arranged axis drains its old hold without withdrawing admitted keyboard focus', t => {
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const parent = focus.createTarget(), control = new WorkbenchSplitControl(focus, capture, hover, parent);
+	const columns = new WorkbenchSplitView(0.4), rows = new WorkbenchSplitView(0.6, 'vertical');
+	columns.layout(10, 20, 610, 420); rows.layout(10, 20, 610, 420);
+	control.setInput(columns); control.focusTarget.focus();
+	let blurred = false; const unbind = control.focusTarget.onDidBlur(() => { blurred = true; });
+	t.after(() => { unbind(); control.dispose(); });
+	const pointer: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0,
+		viewportX: columns.position, viewportY: 60 };
+	const scope = Symbol('physical sash'); capture.beginRoute(scope, pointer); control.handlePointer(pointer);
+	assert.equal(capture.active, true);
+	control.setInput(rows);
+	assert.equal(capture.active, false); assert.equal(capture.draining, true); assert.equal(blurred, false);
+	assert.ok(focus.target === control.focusTarget);
+	const columnRatio = columns.ratio, rowRatio = rows.ratio, key = new KeyInputEvent('ArrowDown', KeyModifier.none);
+	focus.handleKeyboard(key); assert.equal(key.consumed, true); assert.ok(rows.ratio > rowRatio); assert.equal(columns.ratio, columnRatio);
+	const wrongAxis = new KeyInputEvent('ArrowRight', KeyModifier.none); focus.handleKeyboard(wrongAxis); assert.equal(wrongAxis.consumed, false);
+	capture.dispatch({ ...pointer, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 1, scope);
+	assert.equal(capture.draining, false); assert.equal(columns.ratio, columnRatio);
+});
