@@ -266,8 +266,7 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 		if (pressed) {
 			const index = Math.trunc((snapshot.viewportY - input.viewport.offsetTop) / input.layout.rowHeight), record = input.projection.rows[index];
 			const target = this.scroll.focusTarget, scope = target.scope, context = scope.contextGeneration, historyGeneration = input.history.generation;
-			target.focus();
-			if (scope.contextGeneration !== context || inputFocus.admittedTarget !== target
+			if (!target.focus() || scope.contextGeneration !== context || inputFocus.admittedTarget !== target
 				|| input.history.generation !== historyGeneration || input.projection.rows[index] !== record) return true;
 			input.selected = record === undefined ? -1 : index;
 		}

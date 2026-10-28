@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../hosts/common/input/text';
+import { inputFocus } from '../../ide/input/focus';
+import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
+import { createActualSourcePanes } from '../helpers/source_panes';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { WorkbenchPropertyInspectorModel, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -39,6 +44,155 @@ function fixture() {
 	]);
 	return { runtime, history, input, issue, write };
 }
+
+/** Physical list admission shares the real runtime, Source client and retained GPU observation. */
+function pointerFixture(t: TestContext) {
+	const f = createActualSourcePanes(t), input = new GpuDebuggerInput(f.editor.gpu);
+	f.firstGroup.openEditor(input);
+	const emit = (count = 1) => {
+		const runtime = f.host.runtime;
+		for (let index = 0; index < count; index++) {
+			for (const word of [0x60000033, 0x00100010, 0x00040008]) {
+				runtime.machine.scheduler.advanceTo(runtime.machine.scheduler.currentNowCycles() + 1000);
+				runtime.machine.memory.writeMappedWord(IO_GX_GPU_GP0, word);
+			}
+			runtime.machine.scheduler.advanceTo(runtime.machine.scheduler.currentNowCycles() + 1000);
+			runtime.machine.memory.readMappedU32LE(IO_GX_GPU_GP1);
+		}
+	};
+	emit(3); f.update();
+	assert.equal(input.projection.rows.length, 3);
+	const pane = f.firstGroup.panes.activePane!;
+	f.second.focus();
+	const press = (index: number, button: PointerButton) => f.editor.dispatchPointer({
+		x: input.list.bounds.left + 4, y: input.list.offsetTop + (index + 0.5) * input.layout.rowHeight,
+		buttons: button, pressedButtons: button, releasedButtons: 0, cancelledButtons: 0,
+		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now(),
+	});
+	return { ...f, input, pane, emit, press };
+}
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`GPU button ${button} cannot pin old evidence after Source blur replaces its real pane`, t => {
+	const f = pointerFixture(t), selected = f.input.selected.sequence, revision = f.input.selectionRevision;
+	const words = f.input.selected.words.slice(0, f.input.selected.wordCount), replacement = new HostErrorInput('newer GPU-group document');
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.firstGroup.openEditor(replacement); });
+	t.after(unbind);
+	assert.doesNotThrow(() => f.press(0, button));
+	assert.equal(callbacks, 1); assert.equal(f.input.selected.sequence, selected);
+	assert.equal(f.input.selectionRevision, revision); assert.equal(f.input.following, true);
+	assert.deepEqual(f.input.selected.words.subarray(0, f.input.selected.wordCount), words);
+	assert.equal(f.editor.contextMenu.visible, false);
+	assert.ok(f.firstGroup.model.activeTab === replacement && inputFocus.admittedTarget === f.firstGroup.panes.activePane!.commandTarget);
+	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
+});
+
+test('GPU secondary press rejects a superseded focus request even when blur returns to its same live client and sequence', t => {
+	const f = pointerFixture(t), target = f.pane.commandTarget, context = target.scope.contextGeneration;
+	const offered = f.input.projection.rows[0], selected = f.input.selected.sequence, revision = f.input.selectionRevision;
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++;
+		f.second.focus(); assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+		target.focus(); assert.ok(inputFocus.admittedTarget === target);
+		assert.equal(target.scope.contextGeneration, context); assert.equal(f.input.projection.rows[0], offered);
+	}); t.after(unbind);
+	f.press(0, PointerButton.Secondary);
+	assert.equal(callbacks, 1); assert.ok(inputFocus.admittedTarget === target);
+	assert.equal(target.scope.contextGeneration, context); assert.equal(f.input.projection.rows[0], offered);
+	assert.equal(f.input.selected.sequence, selected); assert.equal(f.input.selectionRevision, revision);
+	assert.equal(f.input.following, true); assert.equal(f.editor.contextMenu.visible, false);
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (const admission of ['files', 'reattach', 'rebind'] as const)
+test(`GPU button ${button} rejects its previous attachment when Source blur admits ${admission}`, t => {
+	const f = pointerFixture(t), selected = f.input.selected.sequence, revision = f.input.selectionRevision;
+	const context = f.pane.inputScope!.contextGeneration;
+	const replacement = admission === 'rebind' ? new GpuDebuggerInput(f.editor.gpu) : f.input;
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind();
+		if (admission === 'files') f.editor.commands.execute('resources.focus', f.pane.commandTarget);
+		else {
+			if (admission === 'reattach') f.firstGroup.panes.clearEditor();
+			f.firstGroup.openEditor(replacement);
+		}
+	}); t.after(unbind);
+	f.press(0, button);
+	assert.equal(f.input.selected.sequence, selected); assert.equal(f.input.selectionRevision, revision);
+	assert.equal(f.input.following, true); assert.equal(f.editor.contextMenu.visible, false);
+	if (admission === 'files') {
+		assert.ok(inputFocus.admittedTarget === f.editor.resourcePanel.focusTarget);
+		assert.equal(f.pane.inputScope!.contextGeneration, context);
+	} else {
+		assert.ok(f.pane.input === replacement && f.firstGroup.model.contains(f.input));
+		assert.ok(f.pane.inputScope!.contextGeneration > context);
+		assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+	}
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`GPU button ${button} selects its exact admitted sequence across unrelated Source rebind and history append`, t => {
+	const f = pointerFixture(t), sequence = f.input.projection.rows[0], generation = f.input.history.generation;
+	const replacement = new HostErrorInput('unrelated Source document');
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind(); f.secondGroup.openEditor(replacement, { preserveFocus: true }); f.emit();
+	}); t.after(unbind);
+	f.press(0, button);
+	assert.equal(f.input.history.generation, generation); assert.equal(f.input.history.count, 4);
+	assert.equal(f.input.selected.sequence, sequence); assert.equal(f.input.following, false);
+	assert.ok(f.firstGroup.panes.activePane === f.pane && f.secondGroup.model.activeTab === replacement);
+	assert.equal(f.editor.contextMenu.visible, button === PointerButton.Secondary);
+	if (button === PointerButton.Secondary) {
+		assert.ok(f.editor.contextMenu.invocationOrigin === f.pane.commandTarget);
+		assert.ok(f.editor.contextMenu.model.rows.find(row => row.command === 'gpu.details')!.enabled);
+		f.key('Escape');
+	}
+	assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+});
+
+for (const change of ['clear', 'expiry', 'filter'] as const) test(`GPU secondary press cannot copy a retired sequence after blur ${change}`, t => {
+	const f = pointerFixture(t), sequence = f.input.projection.rows[0], selected = f.input.selected.sequence;
+	const revision = f.input.selectionRevision, generation = f.input.history.generation;
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind();
+		if (change === 'clear') f.input.history.clear();
+		else if (change === 'expiry') f.emit(f.input.history.capacity);
+		else { f.input.filter = 'no matching observation'; f.input.update(); }
+	}); t.after(unbind);
+	f.press(0, PointerButton.Secondary);
+	assert.equal(f.editor.contextMenu.visible, false); assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+	assert.equal(f.input.following, true);
+	if (change === 'filter') {
+		assert.equal(f.input.projection.rows.length, 0); assert.equal(f.input.selected.sequence, -1);
+	} else {
+		assert.equal(f.input.projection.rows[0], sequence, 'normal projection has not consumed the domain change yet');
+		assert.equal(f.input.selected.sequence, selected); assert.equal(f.input.selectionRevision, revision);
+		assert.ok(sequence < f.input.history.firstSequence);
+		assert.equal(f.input.history.generation === generation, change === 'expiry', 'ring expiry does not change history generation');
+	}
+});
+
+test('GPU admitted empty-body context keeps owned evidence and exposes history actions', t => {
+	const f = pointerFixture(t), selected = f.input.selected.sequence, revision = f.input.selectionRevision;
+	f.press(5, PointerButton.Secondary);
+	assert.equal(f.input.selected.sequence, selected); assert.equal(f.input.selectionRevision, revision);
+	assert.equal(f.input.following, false); assert.equal(f.editor.contextMenu.visible, true);
+	assert.ok(f.editor.contextMenu.invocationOrigin === f.pane.commandTarget);
+	assert.ok(f.editor.contextMenu.model.rows.find(row => row.command === 'gpu.filter')!.enabled);
+	f.key('Escape'); assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+});
+
+test('GPU scrollbar scrolls without accepting Source focus or pinning evidence', t => {
+	const f = pointerFixture(t); f.emit(80); f.update(); f.second.focus();
+	const selected = f.input.selected.sequence, revision = f.input.selectionRevision, track = f.input.list.scrollbar.getTrack();
+	f.input.list.scrollbar.setScroll(0);
+	let blurs = 0; t.after(f.second.commandTarget.onDidBlur(() => { blurs++; }));
+	f.editor.dispatchPointer({ x: (track.left + track.right) / 2, y: track.bottom - 2,
+		buttons: 0, pressedButtons: PointerButton.Primary, releasedButtons: PointerButton.Primary, cancelledButtons: 0,
+		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	assert.ok(f.input.list.scrollTop > 0); assert.equal(blurs, 0);
+	assert.equal(f.input.selected.sequence, selected); assert.equal(f.input.selectionRevision, revision);
+	assert.ok(inputFocus.admittedTarget === f.second.commandTarget); assert.equal(f.editor.contextMenu.visible, false);
+});
 
 test('GPU input owns emitted words and latched state while pinning across ring reuse, clear and tab leases', () => {
 	const { history, input, issue, write } = fixture();

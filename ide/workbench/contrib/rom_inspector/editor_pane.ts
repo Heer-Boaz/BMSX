@@ -83,6 +83,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		private readonly surfaces: WorkbenchSurfaceService, private readonly owner: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>, private readonly group: EditorGroupView, scope: InputFocusScope) {
 		super(scope);
+		this.filter.focusTarget.canFocus = () => this.hasInput;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actionTooltip.attach(surfaces, owner, workArea);
 		this.actions.onDidOpenOverflow = () => this.actionTooltip.hide();
@@ -211,41 +212,46 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		if (this.actions.handlePointer(snapshot)) return true;
 		const map = this.input.mapBounds;
 		if (justPressed && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, map)) {
-			const input = this.input, model = input.model;
+			const model = input.model, target = this.list.focusTarget, scope = target.scope, context = scope.contextGeneration;
 			const offset = (snapshot.viewportX - map.left) / (map.right - map.left) * input.snapshot.rom.byteLength;
+			if (!target.focus() || scope.contextGeneration !== context || inputFocus.admittedTarget !== target) return true;
 			model.filter = ''; setFieldText(this.filter, '', true);
 			if (model.mode === 'structure') model.project(); else model.setMode('structure');
 			model.select(model.rows.findIndex(row => row.start <= offset && row.end > offset));
 			const top = model.selected * (input.layout.rowHeight * 2 + 4);
 			this.update();
 			input.list.scrollbar.reveal(top, top + input.layout.rowHeight * 2 + 4, 0);
-			this.list.focusTarget.focus();
 			return true;
 		}
 
-		const bounds = this.input.filterBounds;
+		const bounds = input.filterBounds;
 		if (this.filter.pointerSelecting || snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)) {
-			if (justPressed) this.filter.focusTarget.focus();
-			this.filterPointer.textLeft = bounds.left + 3 - this.filterViewport.offset;
+			const textLeft = bounds.left + 3 - this.filterViewport.offset;
+			if (justPressed) {
+				const target = this.filter.focusTarget, scope = target.scope, context = scope.contextGeneration, revision = this.filter.revision;
+				if (!target.focus() || scope.contextGeneration !== context || inputFocus.admittedTarget !== target || this.filter.revision !== revision) return true;
+			}
+			this.filterPointer.textLeft = textLeft;
 			this.filterPointer.pointerX = snapshot.viewportX;
 			this.filterPointer.justPressed = justPressed;
 			this.filterPointer.pointerPressed = (snapshot.pressedButtons & PointerButton.Primary) !== 0;
 			if (applyInlineFieldPointer(this.filter, this.filterPointer).requestBlinkReset) resetInlineBlink();
 			return true;
 		}
-		if (!this.list.handlePointer(snapshot)) return false;
-		if (justPressed && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.list.bounds)) {
+		if (justPressed && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.list.bounds)) {
 			const index = Math.trunc((snapshot.viewportY - input.list.offsetTop) / (input.layout.rowHeight * 2 + 4));
-			if (index >= 0 && index < input.model.rows.length) {
-				const row = input.model.rows[index];
+			const row = input.model.rows[index], target = this.list.focusTarget, scope = target.scope, context = scope.contextGeneration;
+			if (!target.focus() || scope.contextGeneration !== context || inputFocus.admittedTarget !== target || input.model.rows[index] !== row) return true;
+			if (row !== undefined) {
 				input.model.select(index);
 				const doubleClick = this.lastClickRow === row && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
 				this.lastClickRow = doubleClick ? undefined : row;
 				this.lastClickTime = now;
 				if (doubleClick) this.execute('romInspector.inspect');
 			}
+			return true;
 		}
-		return true;
+		return this.list.handlePointer(snapshot);
 	}
 	public handleWheel(event: WheelInputSnapshot): void {
 		this.list.handleWheel(event, event.deltaY * this.input.layout.rowHeight * 3);

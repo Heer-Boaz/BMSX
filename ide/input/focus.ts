@@ -130,8 +130,9 @@ export class InputFocusTarget {
 		return this.owner.target === this;
 	}
 
-	public focus(): void {
-		this.owner.setTarget(this);
+	/** Whether this exact request completed; structural admission remains a separate query. */
+	public focus(): boolean {
+		return this.owner.setTarget(this);
 	}
 	/** Actual client interaction can activate a view without moving keyboard focus. */
 	public activate(): void { this.owner.activateInteraction(this); }
@@ -282,35 +283,39 @@ export class InputFocusService {
 			&& (this.scopeAdmission === undefined || this.scopeAdmission(target.scope)) ? target : null;
 	}
 
-	/** Incoming modal owners publish after outgoing blur commits its draft, before focus admission. */
-	public setTarget(target: InputFocusTarget | null, present?: () => void): void {
+	/** Publish after blur; report completion only for the original, unsuperseded concrete request. */
+	public setTarget(target: InputFocusTarget | null, present?: () => void): boolean {
+		const requested = target;
 		target = this.resolveTarget(target);
-		if (present === undefined && target !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) return;
+		if (present === undefined && target !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) return false;
 		const revision = ++this.focusRevision;
 		this.pendingTargetValue = target;
 		const previous = this.targetValue;
 		if (previous === target) {
 			present?.();
-			if (revision !== this.focusRevision) return;
+			if (revision !== this.focusRevision) return false;
 			this.pendingTargetValue = null;
 			if (target !== null) this.activateInteraction(target);
-			this.notifyTargetChanged(); return;
+			if (revision !== this.focusRevision) return false;
+			this.notifyTargetChanged();
+			return revision === this.focusRevision && this.targetValue === requested;
 		}
 		// Like Godot's Viewport, detach before notifying the departing control.
 		this.targetValue = null;
 		if (previous !== null) previous.didBlur(target);
-		if (revision !== this.focusRevision) return;
+		if (revision !== this.focusRevision) return false;
 		present?.();
-		if (revision !== this.focusRevision) return;
+		if (revision !== this.focusRevision) return false;
 		target = this.resolveTarget(target);
 		if (target !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) target = null;
 		this.pendingTargetValue = null;
 		this.targetValue = target;
 		if (target !== null) { target.scope.lastFocused = target; target.didFocus(); }
-		if (revision !== this.focusRevision) return;
+		if (revision !== this.focusRevision) return false;
 		if (target !== null) this.activateInteraction(target);
-		if (revision !== this.focusRevision) return;
+		if (revision !== this.focusRevision) return false;
 		this.notifyTargetChanged();
+		return revision === this.focusRevision && this.targetValue === requested;
 	}
 
 	/** A retired inline control returns to its containing focus scope. */

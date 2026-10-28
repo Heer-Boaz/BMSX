@@ -31,15 +31,15 @@ test('surface admission gates focus and keyboard delivery without replacing reta
 	const content = focus.createTarget(), modal = focus.createTarget();
 	let keys = 0;
 	content.bindKeyboard(() => { keys++; });
-	content.focus();
+	assert.equal(content.focus(), true);
 	const unbind = focus.bindScopeAdmission(scope => scope === modal.scope);
 	assert.equal(focus.target, content);
 	assert.equal(focus.admittedTarget, null);
 	focus.handleKeyboard(new KeyInputEvent('KeyX', KeyModifier.none, false, true));
 	assert.equal(keys, 0);
-	modal.focus(); content.focus();
+	assert.equal(modal.focus(), true); assert.equal(content.focus(), false);
 	assert.equal(focus.target, modal, 'blocked underlying content cannot steal focus');
-	unbind(); content.focus();
+	unbind(); assert.equal(content.focus(), true);
 	focus.handleKeyboard(new KeyInputEvent('KeyX', KeyModifier.none, false, true));
 	assert.equal(keys, 1);
 });
@@ -52,10 +52,10 @@ test('incoming presentation follows outgoing draft publication and precedes focu
 	incoming.onDidFocus(() => { assert.equal(committed, true); assert.equal(published, true); });
 	outgoing.focus();
 	focus.onDidChangeTarget(() => { notifications++; });
-	focus.setTarget(incoming, () => {
+	assert.equal(focus.setTarget(incoming, () => {
 		assert.equal(committed, true); assert.equal(focus.target, null);
 		assert.ok(focus.pendingTarget === incoming); published = true;
-	});
+	}), true);
 	assert.ok(focus.admittedTarget === incoming);
 	assert.equal(notifications, 1, 'presentation is inside the focus transition, not a blur-to-null and refocus workaround');
 });
@@ -64,17 +64,17 @@ test('a newer focus owner during outgoing blur prevents stale incoming presentat
 	const focus = new InputFocusService(), outgoing = focus.createTarget(), incoming = focus.createTarget(), newer = focus.createTarget();
 	outgoing.focus(); outgoing.onDidBlur(() => newer.focus());
 	let presentations = 0;
-	focus.setTarget(incoming, () => { presentations++; });
+	assert.equal(focus.setTarget(incoming, () => { presentations++; }), false);
 	assert.equal(presentations, 0); assert.ok(focus.target === newer); assert.equal(focus.pendingTarget, null);
 });
 
 test('incoming publication cannot admit a retired request or overwrite its newer focus owner', () => {
 	const focus = new InputFocusService(), outgoing = focus.createTarget(), incoming = focus.createTarget(), newer = focus.createTarget();
 	outgoing.focus();
-	focus.setTarget(incoming, () => newer.focus());
+	assert.equal(focus.setTarget(incoming, () => { newer.focus(); }), false);
 	assert.ok(focus.target === newer); assert.equal(focus.pendingTarget, null);
 	focus.bindScopeAdmission(scope => scope !== incoming.scope);
-	focus.setTarget(incoming, () => {});
+	assert.equal(focus.setTarget(incoming, () => {}), false);
 	assert.equal(focus.target, null, 'a denied post-publication request does not select an unrelated control');
 	assert.equal(focus.pendingTarget, null);
 });
@@ -175,10 +175,10 @@ test('focus dispatch has one concrete keyboard owner and detaches before blur no
 		assert.equal(first.hasFocus, false);
 		calls.push('first-blur');
 	});
-	first.focus();
+	assert.equal(first.focus(), true);
 	focus.handleKeyboard(input);
-	first.focus();
-	second.focus();
+	assert.equal(first.focus(), true);
+	assert.equal(second.focus(), true);
 	focus.handleKeyboard(input);
 	first.release();
 	assert.equal(focus.target, second, 'hiding an unfocused control does not steal focus');
@@ -198,9 +198,9 @@ for (const destination of ['control', 'none'] as const) test(`a newer ${destinat
 		assert.equal(next, requested);
 		assert.equal(focus.target, null);
 		assert.equal(focus.pendingTarget, requested);
-		focus.setTarget(accepted);
+		assert.equal(focus.setTarget(accepted), true);
 	});
-	requested.focus();
+	assert.equal(requested.focus(), false);
 	assert.equal(focus.target, accepted);
 	assert.equal(focus.admittedTarget, accepted);
 	assert.equal(focus.pendingTarget, null);
@@ -217,7 +217,7 @@ test('a nested focus request from didFocus owns the only settled-focus notificat
 	requested.onDidFocus(() => { assert.equal(focus.pendingTarget, null); newer.focus(); });
 	requested.onDidBlur(() => { requestedBlurs++; });
 	focus.onDidChangeTarget(() => notifications.push(focus.target));
-	requested.focus();
+	assert.equal(requested.focus(), false);
 	assert.equal(focus.target, newer);
 	assert.equal(focus.admittedTarget, newer);
 	assert.equal(focus.pendingTarget, null);
@@ -234,10 +234,22 @@ test('a target-change listener cannot replay older notification delivery after r
 		if (focus.target === requested) newer.focus();
 	});
 	focus.onDidChangeTarget(() => notifications.push(focus.target === requested ? 'second-requested' : 'second-newer'));
-	requested.focus();
+	assert.equal(requested.focus(), false);
 	assert.equal(focus.target, newer);
 	assert.equal(focus.pendingTarget, null);
 	assert.deepEqual(notifications, ['first-requested', 'first-newer', 'second-newer']);
+});
+
+test('same-target interaction supersession cannot replay its newer owner settled-focus notification', () => {
+	const focus = new InputFocusService(), requested = focus.createTarget(), newer = focus.createTarget();
+	requested.focus();
+	const notifications: (InputFocusTarget | null)[] = [];
+	focus.onDidChangeTarget(() => notifications.push(focus.target));
+	focus.onDidActivateInteraction(target => { if (target === requested) newer.focus(); });
+	const completed = requested.focus();
+	assert.ok(focus.target === newer);
+	assert.deepEqual(notifications, [newer], 'the superseded transition must not publish a second notification for its replacement');
+	assert.equal(completed, false);
 });
 
 test('blur retirement resolves the requested control through its actual focus-return relation', () => {
@@ -247,11 +259,80 @@ test('blur retirement resolves the requested control through its actual focus-re
 	requested.canFocus = () => attached;
 	requested.onDidFocus(() => { requestedFocuses++; });
 	departing.onDidBlur(() => { attached = false; });
-	departing.focus(); requested.focus();
+	departing.focus(); assert.equal(requested.focus(), false);
 	assert.equal(focus.target, parent);
 	assert.equal(focus.admittedTarget, parent);
 	assert.equal(focus.pendingTarget, null);
 	assert.equal(requestedFocuses, 0);
+});
+
+test('request completion identifies the original control even when it was retired before resolution', () => {
+	const focus = new InputFocusService(), parent = focus.createTarget(), retired = focus.createTarget(parent);
+	retired.canFocus = () => false;
+	assert.equal(retired.focus(), false); assert.ok(focus.target === parent);
+	assert.equal(retired.focus(), false, 'already focused parent is not completion of its retired child request');
+	assert.equal(parent.focus(), true);
+	const orphan = focus.createTarget(); orphan.canFocus = () => false;
+	assert.equal(orphan.focus(), false); assert.equal(focus.target, null);
+});
+
+test('clearing focus completes only its own unsuperseded request, including an already empty owner', () => {
+	const focus = new InputFocusService(), departing = focus.createTarget(), newer = focus.createTarget();
+	assert.equal(focus.setTarget(null), true);
+	assert.equal(departing.focus(), true); assert.equal(focus.setTarget(null), true);
+	assert.equal(departing.focus(), true);
+	departing.onDidBlur(() => {
+		assert.equal(newer.focus(), true);
+		assert.equal(focus.setTarget(null), true);
+	});
+	assert.equal(focus.setTarget(null), false, 'ending empty cannot revive a clear superseded during outgoing blur');
+	assert.equal(focus.target, null); assert.equal(focus.pendingTarget, null);
+});
+
+for (const boundary of ['blur', 'focus', 'interaction', 'notification', 'presentation'] as const)
+test(`a ${boundary} callback focusing away and back cannot complete the superseded original request`, () => {
+	const focus = new InputFocusService(), departing = focus.createTarget(), requested = focus.createTarget(), newer = focus.createTarget();
+	assert.equal(departing.focus(), true);
+	let callbacks = 0, unbind = () => {};
+	const supersede = () => {
+		unbind(); callbacks++;
+		assert.equal(newer.focus(), true); assert.equal(requested.focus(), true);
+	};
+	switch (boundary) {
+		case 'blur': unbind = departing.onDidBlur(supersede); break;
+		case 'focus': unbind = requested.onDidFocus(supersede); break;
+		case 'interaction': unbind = focus.onDidActivateInteraction(target => { if (target === requested) supersede(); }); break;
+		case 'notification': unbind = focus.onDidChangeTarget(() => { if (focus.target === requested) supersede(); }); break;
+	}
+	const completed = boundary === 'presentation' ? focus.setTarget(requested, supersede) : requested.focus();
+	assert.equal(callbacks, 1); assert.ok(focus.target === requested && focus.admittedTarget === requested);
+	assert.equal(focus.pendingTarget, null); assert.equal(completed, false);
+});
+
+for (const boundary of ['interaction', 'notification', 'presentation'] as const)
+test(`same-target ${boundary} callbacks cannot make an older request complete after focusing away and back`, () => {
+	const focus = new InputFocusService(), requested = focus.createTarget(), newer = focus.createTarget();
+	assert.equal(requested.focus(), true);
+	let callbacks = 0, unbind = () => {};
+	const supersede = () => {
+		unbind(); callbacks++;
+		assert.equal(newer.focus(), true); assert.equal(requested.focus(), true);
+	};
+	if (boundary === 'interaction') unbind = focus.onDidActivateInteraction(supersede);
+	else if (boundary === 'notification') unbind = focus.onDidChangeTarget(supersede);
+	const completed = boundary === 'presentation' ? focus.setTarget(requested, supersede) : requested.focus();
+	assert.equal(callbacks, 1); assert.ok(focus.target === requested && focus.admittedTarget === requested);
+	assert.equal(completed, false);
+});
+
+for (const sameTarget of [false, true]) test(`focus request completion remains distinct from late structural admission (same target ${sameTarget})`, () => {
+	const focus = new InputFocusService(), requested = focus.createTarget();
+	let admitted = true;
+	focus.bindScopeAdmission(() => admitted);
+	if (sameTarget) assert.equal(requested.focus(), true);
+	focus.onDidChangeTarget(() => { admitted = false; });
+	assert.equal(requested.focus(), true, 'the original request survived without another focus transition');
+	assert.ok(focus.target === requested); assert.equal(focus.admittedTarget, null);
 });
 
 test('empty and disabled focused history cannot fall through to document commands', (t) => {

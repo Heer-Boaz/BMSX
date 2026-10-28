@@ -21,6 +21,7 @@ import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_inp
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
+import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import { eventClipboardText } from '../../ide/workbench/contrib/events/presentation';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -171,6 +172,22 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`Eve
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
+test('Events secondary press rejects a superseded focus request even when blur returns to its same live client and row', t => {
+	const f = eventFixture(t), target = f.pane.commandTarget, context = target.scope.contextGeneration;
+	const offered = f.input.projection.rows[1], selected = f.input.projection.rows[f.input.selected];
+	let callbacks = 0;
+	const unbind = f.sourcePane.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++;
+		f.sourcePane.focus(); assert.ok(inputFocus.admittedTarget === f.sourcePane.commandTarget);
+		target.focus(); assert.ok(inputFocus.admittedTarget === target);
+		assert.equal(target.scope.contextGeneration, context); assert.ok(f.input.projection.rows[1] === offered);
+	}); t.after(unbind);
+	f.pointer(f.input.viewport.bounds.left + 4, f.input.viewport.offsetTop + 1.5 * f.input.layout.rowHeight, PointerButton.Secondary);
+	assert.equal(callbacks, 1); assert.ok(inputFocus.admittedTarget === target);
+	assert.equal(target.scope.contextGeneration, context); assert.ok(f.input.projection.rows[1] === offered);
+	assert.ok(f.input.projection.rows[f.input.selected] === selected); assert.equal(f.editor.contextMenu.visible, false);
+});
+
 for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (const admission of ['files', 'reattach', 'rebind'] as const)
 test(`Events button ${button} rejects its old row when Source blur admits ${admission}`, t => {
 	const f = eventFixture(t), selected = f.input.projection.rows[f.input.selected];
@@ -286,6 +303,181 @@ test('Events scrollbar press scrolls without accepting Source focus or changing 
 	assert.ok(f.input.viewport.scrollTop > before); assert.equal(blurs, 0);
 	assert.ok(f.input.projection.rows[f.input.selected] === selected && inputFocus.admittedTarget === f.sourcePane.commandTarget);
 	assert.equal(f.editor.contextMenu.visible, false); assert.equal(pointerCapture.active, false);
+});
+
+function romFixture(t: TestContext) {
+	const f = createActualSourcePanes(t), rom = f.sources.systemRom;
+	const input = new RomInspectorInput({ domain: -1, sourceContextId: f.sources.systemContextId,
+		label: 'System', rom: rom.bytes, header: rom.header, assets: rom.index.entries });
+	f.firstGroup.openEditor(input); input.model.setMode('structure'); f.update();
+	assert.ok(input.model.rows.length > 1);
+	const pane = f.firstGroup.panes.activePane!;
+	f.second.focus(); assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+	let buttons = 0;
+	const pointer = (x: number, y: number, next = buttons) => {
+		f.editor.dispatchPointer({ x, y, buttons: next, pressedButtons: next & ~buttons, releasedButtons: buttons & ~next,
+			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+		buttons = next;
+	};
+	return { ...f, input, pane, pointer };
+}
+
+for (const client of ['map', 'list'] as const) test(`ROM ${client} press cannot mutate its old packed-image model after Source blur opens another real pane`, t => {
+	const f = romFixture(t), model = f.input.model, selected = model.selection, revision = model.revision;
+	const replacement = new HostErrorInput('newer ROM-group document'), cycles = f.host.runtime.machine.scheduler.nowCycles;
+	let x: number, y: number;
+	if (client === 'map') {
+		const offered = model.rows.reduce((largest, row) => row.byteLength > largest.byteLength ? row : largest);
+		assert.ok(offered !== selected && offered.start !== undefined && offered.end !== undefined);
+		x = f.input.mapBounds.left + (offered.start + offered.end) / 2 / f.input.snapshot.rom.byteLength * (f.input.mapBounds.right - f.input.mapBounds.left);
+		y = (f.input.mapBounds.top + f.input.mapBounds.bottom) / 2;
+	} else {
+		x = f.input.list.bounds.left + 4; y = f.input.list.offsetTop + 1.5 * (f.input.layout.rowHeight * 2 + 4);
+	}
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.firstGroup.openEditor(replacement); });
+	t.after(unbind);
+	assert.doesNotThrow(() => f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() }));
+	assert.equal(callbacks, 1); assert.ok(model.selection === selected); assert.equal(model.revision, revision);
+	assert.equal(model.mode, 'structure'); assert.equal(model.filter, ''); assert.equal(f.input.readerWindow.open, false);
+	assert.ok(f.firstGroup.model.activeTab === replacement && f.firstGroup.panes.activePane!.input === replacement);
+	assert.ok(inputFocus.admittedTarget === f.firstGroup.panes.activePane!.commandTarget);
+	assert.equal(f.firstInput.workingCopy.buffer.getText(), f.source); assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+test('ROM filter press cannot continue native field selection after Source blur retires its actual pane', t => {
+	const f = romFixture(t), replacement = new HostErrorInput('newer filter-group document');
+	f.pane.focus(); f.editor.commands.execute('list.find', f.pane.commandTarget);
+	const field = inputFocus.admittedTarget!, text = field.textInput!;
+	assert.ok(field !== f.pane.commandTarget && text !== undefined);
+	assert.equal(text.replaceText(0, text.readText().text.length, 'header'), true);
+	text.setSelection(1, 3);
+	const state = text.readText(), selected = f.input.model.selection;
+	f.second.focus();
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.firstGroup.openEditor(replacement); });
+	t.after(unbind);
+	const bounds = f.input.filterBounds;
+	assert.doesNotThrow(() => f.editor.dispatchPointer({ x: bounds.right - 4, y: (bounds.top + bounds.bottom) / 2,
+		buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary, releasedButtons: 0, cancelledButtons: 0,
+		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() }));
+	assert.equal(callbacks, 1); assert.deepEqual(text.readText(), state);
+	assert.equal(f.input.model.filter, 'header'); assert.ok(f.input.model.selection === selected);
+	assert.ok(f.firstGroup.model.activeTab === replacement && inputFocus.admittedTarget === f.firstGroup.panes.activePane!.commandTarget);
+	assert.equal(f.input.readerWindow.open, false); assert.equal(pointerCapture.active, false);
+});
+
+test('ROM pending native filter focus cannot attach to a pane cleared without a replacement focus request', t => {
+	const f = romFixture(t); f.pane.focus(); f.editor.commands.execute('list.find', f.pane.commandTarget);
+	const field = inputFocus.admittedTarget!, text = field.textInput!;
+	assert.equal(text.replaceText(0, text.readText().text.length, 'header'), true); text.setSelection(1, 3);
+	const state = text.readText(); f.second.focus();
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.firstGroup.panes.clearEditor(); });
+	t.after(unbind); const bounds = f.input.filterBounds;
+	f.pointer(bounds.right - 4, (bounds.top + bounds.bottom) / 2, PointerButton.Primary);
+	assert.equal(callbacks, 1); assert.ok(f.firstGroup.panes.activePane === null);
+	assert.ok(f.firstGroup.model.contains(f.input)); assert.equal(field.canFocus!(), false);
+	assert.ok(inputFocus.target === null && inputFocus.admittedTarget === null && f.editor.textTarget === undefined);
+	assert.deepEqual(text.readText(), state); assert.equal(f.input.readerWindow.open, false);
+});
+
+for (const client of ['map', 'list'] as const) for (const admission of ['files', 'reattach', 'rebind', 'away-back'] as const)
+test(`ROM ${client} press rejects its old model when Source blur admits ${admission}`, t => {
+	const f = romFixture(t), model = f.input.model, selected = model.selection, revision = model.revision;
+	const generation = f.pane.inputScope!.contextGeneration;
+	const replacement = admission === 'rebind' ? new RomInspectorInput(f.input.snapshot) : f.input;
+	let x: number, y: number;
+	if (client === 'map') {
+		const offered = model.rows.reduce((largest, row) => row.byteLength > largest.byteLength ? row : largest);
+		assert.ok(offered !== selected && offered.start !== undefined && offered.end !== undefined);
+		x = f.input.mapBounds.left + (offered.start + offered.end) / 2 / f.input.snapshot.rom.byteLength * (f.input.mapBounds.right - f.input.mapBounds.left);
+		y = (f.input.mapBounds.top + f.input.mapBounds.bottom) / 2;
+	} else {
+		x = f.input.list.bounds.left + 4; y = f.input.list.offsetTop + 1.5 * (f.input.layout.rowHeight * 2 + 4);
+	}
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++;
+		if (admission === 'files' || admission === 'away-back') {
+			f.editor.commands.execute('resources.focus', f.pane.commandTarget);
+			if (admission === 'away-back') f.pane.focus();
+		} else {
+			if (admission === 'reattach') f.firstGroup.panes.clearEditor();
+			f.firstGroup.openEditor(replacement);
+		}
+	});
+	t.after(unbind); f.pointer(x, y, PointerButton.Primary);
+	assert.equal(callbacks, 1); assert.ok(f.firstGroup.panes.activePane === f.pane);
+	if (admission === 'files') assert.ok(inputFocus.admittedTarget === f.editor.resourcePanel.focusTarget);
+	else assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+	if (admission === 'reattach' || admission === 'rebind') {
+		assert.ok(f.pane.inputScope!.contextGeneration > generation && f.pane.input === replacement);
+		assert.ok(f.firstGroup.model.contains(f.input));
+	} else assert.equal(f.pane.inputScope!.contextGeneration, generation);
+	assert.ok(model.selection === selected); assert.equal(model.revision, revision);
+	assert.equal(f.input.readerWindow.open, false);
+});
+
+for (const publication of ['same-slots', 'filtered-slots'] as const) test(`ROM list press consumes its captured semantic row across ${publication} publication`, t => {
+	const f = romFixture(t), model = f.input.model;
+	const filtered = model.rows.filter(row => row.searchText.includes('a'));
+	const index = publication === 'same-slots' ? 1 : model.rows.findIndex((row, index) => filtered[index] !== undefined && filtered[index] !== row);
+	assert.ok(index >= 0);
+	const offered = model.rows[index]; let published = model.selection, callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++;
+		if (publication === 'filtered-slots') model.filter = 'a';
+		model.project(); published = model.selection;
+	});
+	t.after(unbind);
+	f.pointer(f.input.list.bounds.left + 4, f.input.list.offsetTop + (index + 0.5) * (f.input.layout.rowHeight * 2 + 4), PointerButton.Primary);
+	assert.equal(callbacks, 1); assert.ok(model.selection === (publication === 'same-slots' ? offered : published));
+	assert.equal(f.input.readerWindow.open, false); assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+});
+
+test('ROM map press retains its exact packed section when Source blur only rebinds the sibling pane', t => {
+	const f = romFixture(t), model = f.input.model;
+	const offered = model.rows.reduce((largest, row) => row.byteLength > largest.byteLength ? row : largest);
+	assert.ok(offered.start !== undefined && offered.end !== undefined);
+	const replacement = new HostErrorInput('sibling replacement'); let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.secondGroup.openEditor(replacement, { preserveFocus: true }); });
+	t.after(unbind);
+	f.pointer(f.input.mapBounds.left + (offered.start + offered.end) / 2 / f.input.snapshot.rom.byteLength * (f.input.mapBounds.right - f.input.mapBounds.left),
+		(f.input.mapBounds.top + f.input.mapBounds.bottom) / 2, PointerButton.Primary);
+	assert.equal(callbacks, 1); assert.ok(model.selection === offered);
+	assert.ok(inputFocus.admittedTarget === f.pane.commandTarget && f.secondGroup.model.activeTab === replacement);
+	assert.equal(f.input.readerWindow.open, false);
+});
+
+test('ROM admitted list double-click opens the exact selected packed row in its owning reader', t => {
+	const f = romFixture(t), offered = f.input.model.rows[1];
+	const x = f.input.list.bounds.left + 4, y = f.input.list.offsetTop + 1.5 * (f.input.layout.rowHeight * 2 + 4);
+	f.pointer(x, y, PointerButton.Primary); f.pointer(x, y, 0);
+	assert.ok(f.input.model.selection === offered); assert.equal(f.input.readerWindow.open, false);
+	f.host.clock.advance(10); f.pointer(x, y, PointerButton.Primary); f.pointer(x, y, 0);
+	assert.equal(f.input.readerWindow.open, true); assert.ok(f.input.reader.subject === offered);
+	assert.ok(f.firstGroup.panes.activePane === f.pane && f.firstGroup.model.activeTab === f.input);
+});
+
+for (const admission of ['ordinary', 'away-back'] as const) test(`ROM filter native selection ${admission === 'ordinary' ? 'accepts an ordinary press' : 'rejects an outer press superseded by focus away and back'}`, t => {
+	const f = romFixture(t); f.pane.focus(); f.editor.commands.execute('list.find', f.pane.commandTarget);
+	const field = inputFocus.admittedTarget!, text = field.textInput!;
+	assert.equal(text.replaceText(0, text.readText().text.length, 'header'), true); text.setSelection(1, 3);
+	const state = text.readText(); f.second.focus();
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++;
+		if (admission === 'away-back') { f.editor.commands.execute('resources.focus', f.pane.commandTarget); field.focus(); }
+	});
+	t.after(unbind); const bounds = f.input.filterBounds;
+	f.pointer(bounds.right - 4, (bounds.top + bounds.bottom) / 2, PointerButton.Primary);
+	assert.equal(callbacks, 1); assert.ok(inputFocus.admittedTarget === field);
+	if (admission === 'away-back') assert.deepEqual(text.readText(), state);
+	else assert.deepEqual(text.readText(), { ...state, selectionStart: state.text.length, selectionEnd: state.text.length });
+	assert.equal(f.input.model.filter, 'header'); assert.equal(f.input.readerWindow.open, false);
 });
 
 /** Compiled guest membership and the production Actor pane, not a substituted input/focus control. */

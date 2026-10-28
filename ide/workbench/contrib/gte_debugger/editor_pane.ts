@@ -253,14 +253,21 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
-		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
+		const input = this.input, secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
 		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport
 			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.contentBounds)) {
-			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.list.bounds)) {
-				const index = Math.trunc((snapshot.viewportY - this.input.list.offsetTop) / this.input.layout.rowHeight);
-				if (index < this.input.projection.rows.length) this.input.select(this.input.projection.rows[index]);
+			const inside = point_in_rect(snapshot.viewportX, snapshot.viewportY, input.list.bounds);
+			if (inside || secondary) {
+				const index = inside ? Math.trunc((snapshot.viewportY - input.list.offsetTop) / input.layout.rowHeight) : -1;
+				const sequence = input.projection.rows[index];
+				const target = this.scroll.focusTarget, scope = target.scope, context = scope.contextGeneration, historyGeneration = input.history.generation;
+				if (!target.focus() || scope.contextGeneration !== context || inputFocus.admittedTarget !== target
+					|| input.history.generation !== historyGeneration || input.projection.rows[index] !== sequence
+					|| sequence !== undefined && sequence < input.history.firstSequence) return true;
+				if (sequence !== undefined) input.select(sequence);
+				if (secondary) { input.following = false; this.showContextMenu(snapshot.viewportX, snapshot.viewportY); }
+				return true;
 			}
-			if (secondary) { this.input.following = false; this.showContextMenu(snapshot.viewportX, snapshot.viewportY); return true; }
 		}
 		return this.scroll.handlePointer(snapshot);
 	}

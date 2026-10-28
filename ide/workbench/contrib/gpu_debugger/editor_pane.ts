@@ -206,9 +206,14 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 		if (this.actions.handlePointer(snapshot)) return true;
 		const input = this.input, secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
 		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.list.bounds)) {
-			const index = Math.trunc((snapshot.viewportY - input.list.offsetTop) / input.layout.rowHeight);
-			if (index < input.projection.rows.length) input.select(input.projection.rows[index]);
-			if (secondary) { this.showContextMenu(snapshot.viewportX, snapshot.viewportY); return true; }
+			const index = Math.trunc((snapshot.viewportY - input.list.offsetTop) / input.layout.rowHeight), sequence = input.projection.rows[index];
+			const target = this.list.focusTarget, scope = target.scope, context = scope.contextGeneration, historyGeneration = input.history.generation;
+			if (!target.focus() || scope.contextGeneration !== context || inputFocus.admittedTarget !== target
+				|| input.history.generation !== historyGeneration || input.projection.rows[index] !== sequence
+				|| sequence !== undefined && sequence < input.history.firstSequence) return true;
+			if (sequence !== undefined) input.select(sequence);
+			if (secondary) this.showContextMenu(snapshot.viewportX, snapshot.viewportY);
+			return true;
 		}
 		return this.list.handlePointer(snapshot);
 	}
